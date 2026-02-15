@@ -53,6 +53,7 @@ kiso skill search [query]                      # search official skills on GitHu
 kiso skill install <name>                      # official: resolves from kiso-run org
 kiso skill install <git-url>                   # unofficial: clone from any git URL
 kiso skill install <git-url> --name foo        # unofficial with custom name
+kiso skill install <git-url> --no-deps         # skip deps.sh execution
 kiso skill update <name>                       # git pull + deps.sh + uv sync
 kiso skill update all                          # update all installed skills
 kiso skill remove <name>
@@ -79,12 +80,13 @@ $ kiso skill search web
 ```
 1. git clone → ~/.kiso/skills/{name}/
 2. Validate kiso.toml (exists? type=skill?)
-3. Validate run.py and SKILL.md exist
-4. If deps.sh exists → run it
+3. Validate run.py, pyproject.toml, and SKILL.md exist — fail if any missing
+4. If unofficial repo → warn user, ask confirmation
+5. If deps.sh exists → run it (skipped with --no-deps)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"
-5. uv sync (pyproject.toml → .venv)
-6. Check [kiso.deps].bin
-7. Check env vars from [kiso.skill.env]
+6. uv sync (pyproject.toml → .venv)
+7. Check [kiso.deps].bin
+8. Check env vars from [kiso.skill.env]
 ```
 
 ### Naming
@@ -106,17 +108,21 @@ kiso connector search [query]                  # search official connectors on G
 kiso connector install <name>                  # official: resolves from kiso-run org
 kiso connector install <git-url>               # unofficial: clone from any git URL
 kiso connector install <git-url> --name foo    # unofficial with custom name
+kiso connector install <git-url> --no-deps     # skip deps.sh execution
 kiso connector update <name>
 kiso connector update all
 kiso connector remove <name>
 kiso connector list
 ```
 
-### Run / Stop
+### Run / Stop / Status
+
+Kiso manages connectors as daemon processes:
 
 ```bash
-kiso connector discord run                     # start the connector process
-kiso connector discord stop                    # stop it
+kiso connector discord run                     # start as daemon
+kiso connector discord stop                    # stop the daemon
+kiso connector discord status                  # check if running
 ```
 
 ## Notes
@@ -126,3 +132,4 @@ kiso connector discord stop                    # stop it
 - Works against a remote server — useful for running kiso on a VPS and working from a laptop.
 - Session logs: `tail -f ~/.kiso/sessions/{session}/session.log`
 - Only admins can install/update/remove skills and connectors.
+- Unofficial packages show a warning before installation.

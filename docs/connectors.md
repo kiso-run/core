@@ -2,7 +2,7 @@
 
 A connector bridges an external platform (Discord, Telegram, Slack, etc.) and kiso's API. Lives in `~/.kiso/connectors/{name}/`.
 
-Connectors are standalone processes. Kiso doesn't manage their lifecycle — they're just clients of the `/msg` API.
+Connectors are long-running daemon processes managed by kiso.
 
 ## Structure
 
@@ -10,17 +10,17 @@ Connectors are standalone processes. Kiso doesn't manage their lifecycle — the
 ~/.kiso/connectors/
 ├── discord/
 │   ├── kiso.toml            # manifest (required)
-│   ├── pyproject.toml       # python dependencies (uv-managed)
+│   ├── pyproject.toml       # python dependencies (required, uv-managed)
 │   ├── run.py               # entry point (required)
-│   ├── config.example.json  # example config (in repo)
-│   ├── config.json          # actual config (gitignored, NO secrets)
+│   ├── config.example.toml  # example config (in repo)
+│   ├── config.toml          # actual config (gitignored, NO secrets)
 │   ├── deps.sh              # system deps installer (optional, idempotent)
 │   ├── README.md            # setup instructions
 │   └── .venv/               # created by uv on install
 └── .../
 ```
 
-A directory is a valid connector if it contains `kiso.toml` (with `type = "connector"`) and `run.py`.
+A directory is a valid connector if it contains `kiso.toml` (with `type = "connector"`), `pyproject.toml`, and `run.py`.
 
 ## kiso.toml
 
@@ -55,22 +55,20 @@ Env vars follow the convention `KISO_CONNECTOR_{NAME}_{KEY}`, built automaticall
 
 Name and key are uppercased, `-` becomes `_`.
 
-**Secrets always go in env vars, never in config.json.**
+**Secrets always go in env vars, never in config files.**
 
-## config.json
+## config.toml
 
-Structural, non-secret configuration. The repo ships `config.example.json`, the real `config.json` is gitignored and created by the user post-install.
+Structural, non-secret, deployment-specific configuration. The repo ships `config.example.toml`, the real `config.toml` is gitignored and created by the user post-install.
 
-```json
-{
-  "kiso_api": "http://localhost:8333",
-  "session_prefix": "discord",
-  "webhook_port": 9001,
-  "channel_map": {
-    "general": "discord-general",
-    "dev": "discord-dev"
-  }
-}
+```toml
+kiso_api = "http://localhost:8333"
+session_prefix = "discord"
+webhook_port = 9001
+
+[channel_map]
+general = "discord-general"
+dev = "discord-dev"
 ```
 
 No tokens, no secrets. Those come from env vars declared in `kiso.toml`.
@@ -122,9 +120,24 @@ kiso connector install git@github.com:someone/my-connector.git --name custom
 # → ~/.kiso/connectors/custom/
 ```
 
-### Naming Convention
+### Unofficial Repo Warning
 
-Same as skills:
+When installing from a non-official source (not `kiso-run` org), kiso warns:
+
+```
+⚠ This is an unofficial package from github.com:someone/my-connector.
+  deps.sh will be executed and may install system packages.
+  Review the repo before proceeding.
+  Continue? [y/N]
+```
+
+Use `--no-deps` to skip `deps.sh` execution:
+
+```bash
+kiso connector install git@github.com:someone/my-connector.git --no-deps
+```
+
+### Naming Convention
 
 | Source | Name |
 |---|---|
@@ -137,20 +150,20 @@ Same as skills:
 ```
 1. git clone → ~/.kiso/connectors/{name}/
 2. Validate kiso.toml (exists? type=connector? has name?)
-3. Validate run.py exists
-4. If deps.sh exists → run it
+3. Validate run.py and pyproject.toml exist
+4. If deps.sh exists → run it (with warning for unofficial repos)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for connector {name}"
 5. uv sync (pyproject.toml → .venv)
 6. Check [kiso.deps].bin (verify with `which`)
 7. Check [kiso.connector.env] vars
    ⚠ KISO_CONNECTOR_DISCORD_BOT_TOKEN not set (warn, don't block)
-8. If config.example.json exists and config.json doesn't → copy it
+8. If config.example.toml exists and config.toml doesn't → copy it
 ```
 
 ### Update / Remove / Search
 
 ```bash
-kiso connector update discord
+kiso connector update discord          # git pull + deps.sh + uv sync
 kiso connector update all
 kiso connector remove discord
 kiso connector list
@@ -160,15 +173,22 @@ kiso connector search [query]
 
 ## Running
 
-```bash
-kiso connector discord run       # start the connector
-kiso connector discord stop      # stop it
-```
-
-Or run manually:
+Kiso manages connectors as daemon processes:
 
 ```bash
-python ~/.kiso/connectors/discord/run.py
+kiso connector discord run             # start as daemon
+kiso connector discord stop            # stop the daemon
+kiso connector discord status          # check if running
 ```
 
-Or use systemd, supervisor, etc. Kiso does not manage connector lifecycles beyond start/stop convenience commands.
+Kiso spawns the connector as a background process, tracks its PID, and restarts it on crash. Logs go to `~/.kiso/connectors/{name}/connector.log`.
+
+Under the hood:
+
+```bash
+# start
+.venv/bin/python ~/.kiso/connectors/discord/run.py &
+
+# stop
+kill <pid>
+```

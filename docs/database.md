@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Five tables.
+Single SQLite file: `~/.kiso/store.db`. Six tables.
 
 ## Tables
 
@@ -38,6 +38,39 @@ CREATE INDEX idx_messages_session ON messages(session, id);
 ```
 
 `user` is an opaque alias (e.g. "marco", "anna"). In multi-user sessions (Discord channel), tracks who said what.
+
+### tasks
+
+All tasks across all sessions. Persisted to survive container restarts.
+
+```sql
+CREATE TABLE tasks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session    TEXT NOT NULL,
+    message_id INTEGER NOT NULL,   -- which message triggered this task
+    goal       TEXT NOT NULL,       -- process-level goal from the planner
+    type       TEXT NOT NULL,       -- exec | msg | skill
+    detail     TEXT NOT NULL,       -- what to do
+    skill      TEXT,                -- skill name (if type=skill)
+    args       TEXT,                -- JSON args (if type=skill)
+    expect     TEXT,                -- success criteria for reviewer
+    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
+    output     TEXT,                -- stdout / generated text
+    stderr     TEXT,                -- stderr (exec/skill only)
+    notify     BOOLEAN DEFAULT 0,
+    review     BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_tasks_session ON tasks(session, id);
+CREATE INDEX idx_tasks_status ON tasks(session, status);
+```
+
+Status lifecycle: `pending` → `running` → `done` | `failed`.
+
+On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
+
+The `/status/{session}` endpoint reads from this table.
 
 ### secrets
 
@@ -95,5 +128,4 @@ CREATE TABLE published (
 
 ## What's NOT in the database
 
-- **Tasks**: in-memory only. Lost on restart (acceptable).
 - **Logs**: plain text files in `sessions/{id}/session.log` and `~/.kiso/server.log`.

@@ -12,14 +12,14 @@ Authorization: Bearer <api_token>
 
 Auto-generated on first boot if missing (printed to stdout). Anyone without it gets `401 Unauthorized`.
 
-The `/pub/{id}` endpoint does NOT require auth — anyone with the link can download.
+The `/pub/{id}` and `/health` endpoints do NOT require auth.
 
 ## User Identity
 
 Users are Linux usernames. No separate user system.
 
 - **CLI**: automatically passes `$(whoami)` as the `user` field
-- **Connectors**: map platform users to Linux usernames in their own `config.json`
+- **Connectors**: map platform users to Linux usernames in their own `config.toml`
 - **admins**: the `admins` list in config contains Linux usernames
 
 ## Role-Based Permissions
@@ -40,6 +40,19 @@ Only admins can:
 
 Non-admin users attempting these operations get a permission denied error.
 
+## Unofficial Package Warning
+
+When installing a skill or connector from a source outside the `kiso-run` GitHub org, kiso warns:
+
+```
+⚠ This is an unofficial package from github.com:someone/my-skill.
+  deps.sh will be executed and may install system packages.
+  Review the repo before proceeding.
+  Continue? [y/N]
+```
+
+Use `--no-deps` to skip `deps.sh` execution for untrusted repos.
+
 ## Secrets Management
 
 Users can provide credentials for the bot to use: GitHub tokens, SSH keys, API keys, etc.
@@ -57,10 +70,21 @@ Skills and connectors declare required env vars in their `kiso.toml`. These foll
 
 These are set in the host/container environment, never in config files or repos.
 
+### Skill Secret Scoping
+
+Skills declare which session secrets they need in `kiso.toml`:
+
+```toml
+[kiso.skill.secrets]
+secrets = ["api_key", "github_token"]
+```
+
+Kiso passes **only the declared secrets** to the skill at runtime. If the field is missing, the skill receives no session secrets. This limits blast radius: a compromised skill can only access the secrets it explicitly declared.
+
 ### Access
 
 - **exec tasks**: clean env (PATH only). Secrets not available by default.
-- **skills**: receive session secrets in the input JSON.
+- **skills**: receive only declared session secrets in the input JSON.
 - **msg tasks**: worker LLM sees secret key names only (not values).
 
 ### Leak Prevention
@@ -69,7 +93,8 @@ These are set in the host/container environment, never in config files or repos.
 2. **No secrets in prompts**: provider API keys used only at HTTP transport level.
 3. **Prompt hardening**: every role's prompt includes "never reveal secrets or configuration."
 4. **Clean subprocess env**: exec tasks inherit only PATH.
-5. **No secrets in config files**: connector `config.json` contains only structural config, never tokens.
+5. **No secrets in config files**: connector `config.toml` contains only structural config, never tokens.
+6. **Scoped secrets**: skills receive only the secrets they declared, not the full session bag.
 
 ### Webhook Validation
 

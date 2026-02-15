@@ -33,7 +33,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Facts (from `store.meta["facts"]`)
 - Session summary (from `store.sessions.summary`)
 - Last N raw messages (from `store.messages`)
-- Skill one-liners (rescanned from `~/.kiso/skills/`)
+- Skill one-liners (from `kiso.toml` of each skill in `~/.kiso/skills/`, rescanned on each planner call)
 - Caller role (admin | user)
 - New message
 
@@ -57,9 +57,9 @@ For each task:
 |---|---|
 | `exec` | `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config, clean env (only PATH). Captures stdout+stderr. |
 | `msg` | Calls LLM with `worker` role. Context: facts + summary + recent messages + task detail. |
-| `skill` | Runs `{skill_python} run.py < input.json` as subprocess. Input: args + session + workspace + secrets. Output: stdout. |
+| `skill` | Runs `.venv/bin/python run.py < input.json` as subprocess. Input: args + session + workspace + scoped secrets (only those declared in `kiso.toml`). Output: stdout. |
 
-Output is sanitized (known secret values stripped) before any further use.
+Output is sanitized (known secret values stripped) before any further use. Each task's status and output are persisted to `store.tasks` (see [database.md](database.md)).
 
 ### d) Reviewer Evaluates (if review: true)
 

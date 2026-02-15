@@ -21,14 +21,14 @@ kiso/                               # installable python package
 ├── llm.py                          # LLM client, routes calls to configured providers
 ├── brain.py                        # planner + reviewer
 ├── worker.py                       # consumes tasks from queue, one per session
-├── store.py                        # SQLite: sessions, messages, secrets, meta, published
+├── store.py                        # SQLite: sessions, messages, tasks, secrets, meta, published
 ├── skills.py                       # skill discovery and loading
 ├── config.py                       # loads and validates ~/.kiso/config.json
 └── cli.py                          # interactive client + management commands
 
 ~/.kiso/                            # user data (outside the repo)
 ├── config.json                     # providers, models, settings
-├── store.db                        # SQLite database (5 tables)
+├── store.db                        # SQLite database (6 tables)
 ├── server.log                      # server-level log
 ├── roles/                          # system prompt for each LLM role
 │   ├── planner.md
@@ -40,7 +40,7 @@ kiso/                               # installable python package
 │       ├── kiso.toml               # manifest (required)
 │       ├── pyproject.toml          # dependencies (uv-managed)
 │       ├── run.py                  # entry point (required)
-│       ├── SKILL.md                # docs for the planner (required)
+│       ├── SKILL.md                # docs for the worker (required)
 │       ├── deps.sh                 # system deps installer (optional)
 │       └── .venv/                  # created by uv on install
 ├── connectors/                     # platform bridges (git clone)
@@ -48,8 +48,8 @@ kiso/                               # installable python package
 │       ├── kiso.toml               # manifest (required)
 │       ├── pyproject.toml          # dependencies (uv-managed)
 │       ├── run.py                  # entry point (required)
-│       ├── config.example.json     # example config (in repo)
-│       ├── config.json             # actual config (gitignored, no secrets)
+│       ├── config.example.toml     # example config (in repo)
+│       ├── config.toml             # actual config (gitignored, no secrets)
 │       ├── deps.sh                 # system deps installer (optional)
 │       └── .venv/                  # created by uv on install
 └── sessions/                       # per-session data
@@ -71,14 +71,9 @@ Unofficial packages: any git repo with a valid `kiso.toml`.
 
 ## Docker
 
-Kiso runs in Docker by default. The container comes with Python, `uv`, and common tools pre-installed. Skills and connectors install their system deps inside the container via `deps.sh`.
+Kiso runs in Docker by default. The container comes with Python, `uv`, and common tools pre-installed. All user data lives in a single volume (`~/.kiso/`). Skills and connectors can be pre-installed in the Dockerfile or installed at runtime into the volume.
 
-```
-Dockerfile
-├── python + uv preinstalled
-├── kiso core
-└── ~/.kiso/ mounted as volume (persistence)
-```
+See [docker.md](docs/docker.md).
 
 ## Minimal Setup
 
@@ -93,7 +88,7 @@ Everything else has sensible defaults. See [config.md](docs/config.md).
 ## Design Documents
 
 - [config.md](docs/config.md) - Configuration, providers, defaults
-- [database.md](docs/database.md) - Database schema (5 tables)
+- [database.md](docs/database.md) - Database schema (6 tables)
 - [llm-roles.md](docs/llm-roles.md) - The 4 LLM roles, their prompts, and what context each receives
 - [flow.md](docs/flow.md) - Full message lifecycle
 - [skills.md](docs/skills.md) - Skill system (subprocess, isolated venv)
@@ -101,4 +96,5 @@ Everything else has sensible defaults. See [config.md](docs/config.md).
 - [api.md](docs/api.md) - API endpoints
 - [cli.md](docs/cli.md) - Terminal client and management commands
 - [security.md](docs/security.md) - Authentication, permissions, secrets
+- [docker.md](docs/docker.md) - Docker setup, volumes, pre-installing packages
 - [logging.md](docs/logging.md) - Logs

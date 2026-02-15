@@ -10,7 +10,8 @@ Kiso makes 4 distinct types of LLM calls. Each type has its own model (from `con
 | Last N raw messages | yes | - | yes | - |
 | New message | yes | - | - | - |
 | Facts (from meta) | yes | - | yes | - |
-| Skill one-liners | yes | - | - | - |
+| Skill one-liners (from kiso.toml) | yes | - | - | - |
+| Skill SKILL.md (full) | - | - | yes (for skill tasks) | - |
 | Caller role (admin/user) | yes | - | - | - |
 | Process goal | generates | yes | - | - |
 | Current task detail | - | yes | yes | - |

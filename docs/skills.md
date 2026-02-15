@@ -8,16 +8,18 @@ A skill is a git-cloned package in `~/.kiso/skills/{name}/` with a standard stru
 ~/.kiso/skills/
 ├── search/
 │   ├── kiso.toml           # manifest (required)
-│   ├── pyproject.toml      # python dependencies (uv-managed)
+│   ├── pyproject.toml      # python dependencies (required, uv-managed)
 │   ├── run.py              # entry point (required)
-│   ├── SKILL.md            # docs for the planner (required)
+│   ├── SKILL.md            # docs for the worker (required)
 │   ├── deps.sh             # system deps installer (optional, idempotent)
 │   ├── README.md           # human docs
 │   └── .venv/              # created by uv on install
 └── .../
 ```
 
-A directory is a valid skill if it contains `kiso.toml` (with `type = "skill"`), `run.py`, and `SKILL.md`.
+A directory is a valid skill if it contains `kiso.toml` (with `type = "skill"`), `pyproject.toml`, `run.py`, and `SKILL.md`.
+
+All four are required. No fallbacks — if `pyproject.toml` is missing, install fails.
 
 ## kiso.toml
 
@@ -36,6 +38,9 @@ summary = "Web search using Brave Search API"    # one-liner for the planner
 [kiso.skill.env]
 api_key = { required = true }     # → KISO_SKILL_SEARCH_API_KEY
 
+[kiso.skill.secrets]
+secrets = ["api_key"]             # which session secrets this skill receives
+
 [kiso.deps]
 python = ">=3.11"
 bin = ["curl"]                    # checked with `which` after install
@@ -52,14 +57,22 @@ Env vars follow the convention `KISO_SKILL_{NAME}_{KEY}`, built automatically:
 
 Name and key are uppercased, `-` becomes `_`.
 
+### Secret Scoping
+
+Skills declare which session secrets they need in `[kiso.skill.secrets]`. Kiso passes **only those secrets** to the skill at runtime — not the entire session secrets bag. If the field is missing, the skill receives no secrets.
+
+This limits blast radius: a compromised skill can only leak the secrets it declared.
+
 ## SKILL.md
 
-Docs for the planner and worker. The planner sees only the one-liner from `kiso.toml`. The worker receives the full `SKILL.md` to understand how to use the skill.
+Documentation for the worker. The worker receives the full content of this file to understand how to use the skill — what arguments to pass, when it's appropriate, what to expect.
 
-Must start with a one-line summary after the heading.
+Free format. Write whatever helps the worker use the skill correctly.
 
 ```markdown
-# search — Web search using Brave Search API
+# search
+
+Web search using Brave Search API.
 
 ## When to use
 - The user asks to look up information on the web
@@ -68,7 +81,16 @@ Must start with a one-line summary after the heading.
 ## Arguments
 - query (required): search query string
 - max_results (optional): number of results, default 5
+
+## Output
+Returns a text summary of the top search results with titles, URLs, and snippets.
+
+## Notes
+- Requires KISO_SKILL_SEARCH_API_KEY to be set
+- Rate limited to 1 request per second
 ```
+
+The planner does **not** see SKILL.md. It sees only the one-liner from `kiso.toml` (`[kiso.skill] summary`).
 
 ## run.py
 
@@ -109,6 +131,8 @@ No async, no imports from kiso, no shared state. JSON in, text out.
 }
 ```
 
+`secrets` contains **only** the keys declared in `[kiso.skill.secrets]`, not the full session secrets.
+
 ### Output (stdout)
 
 Plain text. Everything on stdout becomes the task output. Stderr is captured separately for debugging.
@@ -125,7 +149,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends ffmpeg curl
 ```
 
-Runs inside the Docker container, so `apt install` works without sudo. If it fails, kiso warns the user and suggests asking the bot to fix it.
+Runs inside the Docker container. If it fails, kiso warns the user and suggests asking the bot to fix it.
 
 ## Installation
 
@@ -148,6 +172,23 @@ kiso skill install git@github.com:someone/my-skill.git --name custom
 # → ~/.kiso/skills/custom/
 ```
 
+### Unofficial Repo Warning
+
+When installing from a non-official source (not `kiso-run` org), kiso warns:
+
+```
+⚠ This is an unofficial package from github.com:someone/my-skill.
+  deps.sh will be executed and may install system packages.
+  Review the repo before proceeding.
+  Continue? [y/N]
+```
+
+Use `--no-deps` to skip `deps.sh` execution:
+
+```bash
+kiso skill install git@github.com:someone/my-skill.git --no-deps
+```
+
 ### Naming Convention
 
 | Source | Name |
@@ -156,7 +197,7 @@ kiso skill install git@github.com:someone/my-skill.git --name custom
 | Unofficial URL | `{domain}_{namespace}_{repo}` |
 | Explicit `--name` | whatever you pass |
 
-URL to name: lowercase, `.` → `-`, `/` → `_`, strip `skill-` prefix if present.
+URL to name: lowercase, `.` → `-`, `/` → `_`.
 
 Examples:
 ```
@@ -169,8 +210,8 @@ https://gitlab.com/team/cool-skill.git        → gitlab-com_team_cool-skill
 ```
 1. git clone → ~/.kiso/skills/{name}/
 2. Validate kiso.toml (exists? type=skill? has name?)
-3. Validate run.py and SKILL.md exist
-4. If deps.sh exists → run it
+3. Validate run.py, pyproject.toml, and SKILL.md exist — fail if any missing
+4. If deps.sh exists → run it (with warning/confirmation for unofficial repos)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"
 5. uv sync (pyproject.toml → .venv)
 6. Check [kiso.deps].bin (verify with `which`)
@@ -198,18 +239,18 @@ kiso skill search [query]
 
 When the worker encounters `{"type": "skill", "skill": "search", "args": {...}}`:
 
-1. Builds input JSON (args + session + workspace path + secrets)
-2. Picks Python: `.venv/bin/python` (created by `uv`)
-3. Runs: `{python} ~/.kiso/skills/search/run.py < input.json` with `cwd=~/.kiso/sessions/{session}`
-4. Captures stdout (output) and stderr (debug)
-5. Sanitizes output (strips known secret values)
+1. Builds input JSON (args + session + workspace path + scoped secrets)
+2. Runs: `.venv/bin/python ~/.kiso/skills/search/run.py < input.json` with `cwd=~/.kiso/sessions/{session}`
+3. Captures stdout (output) and stderr (debug)
+4. Sanitizes output (strips known secret values)
+5. Stores task result in DB (status, output)
 6. If `review: true`, passes to the reviewer
 
 ## Discovery
 
-Rescanned from `~/.kiso/skills/` before each planner call. No restart needed.
+Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each skill directory. No restart needed.
 
-The planner sees one-liners from `kiso.toml`:
+The planner sees one-liners from `[kiso.skill] summary`:
 
 ```
 Available skills:

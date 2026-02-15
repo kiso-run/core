@@ -88,3 +88,15 @@ When a task has `notify: true`, the worker POSTs to the session's webhook:
 ```
 
 `final: true` on the last notifying task in the queue.
+
+## GET /health
+
+Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and monitoring tools.
+
+**Response** `200 OK`:
+
+```json
+{
+  "status": "ok"
+}
+```
