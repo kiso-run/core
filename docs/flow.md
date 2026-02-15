@@ -46,7 +46,7 @@ The LLM returns JSON with a `goal`, optional `secrets`, and a `tasks` list.
 - `secrets`: if present, the worker stores them in `store.secrets` before executing tasks.
 - `tasks`: each task with `review: true` must include an `expect` field with semantic success criteria.
 
-If JSON parsing fails, retries once. If it fails again, kiso marks the message as failed and notifies the user: "Planning failed." No silent fallback.
+If JSON parsing fails, kiso sends the broken response back to the planner asking it to fix the JSON, up to `max_parse_retries` times (default 3). If all retries are exhausted, kiso marks the message as failed and notifies the user. No silent fallback.
 
 The planner generates task types appropriate for the caller's role (admin: unrestricted exec; user: sandboxed exec).
 

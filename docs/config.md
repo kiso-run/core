@@ -63,6 +63,7 @@ summarize_threshold = 30
 knowledge_max_facts = 50
 max_review_depth = 3
 max_replan_depth = 3
+max_parse_retries = 3
 exec_timeout = 120
 worker_idle_timeout = 300
 host = "0.0.0.0"
@@ -91,6 +92,7 @@ port = 8333
 | `settings.knowledge_max_facts` | `50` | Max facts before consolidation |
 | `settings.max_review_depth` | `3` | Max reviewer inject rounds per chain |
 | `settings.max_replan_depth` | `3` | Max replan cycles per original message |
+| `settings.max_parse_retries` | `3` | Max retries when planner returns invalid JSON. Each retry sends the broken output back asking to fix it. |
 | `settings.exec_timeout` | `120` | Seconds before exec task is killed |
 | `settings.worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
 | `settings.host` | `0.0.0.0` | Server bind address |

@@ -77,7 +77,7 @@ Key principles:
 | `notify` | no | If `true`, output is sent to the webhook |
 | `review` | no | If `true`, the reviewer evaluates this task's output. Default `false` |
 
-**On parse failure**: retry once (transient errors). If it fails again, kiso marks the message as failed and notifies the user: "Planning failed: could not parse planner response." No silent fallback.
+**On parse failure**: kiso sends the broken response back to the planner asking it to fix the JSON. This retry loop runs up to `max_parse_retries` times (default 3, configurable in `config.toml`). Each retry includes the previous broken output and the parse error. If all retries are exhausted, kiso marks the message as failed and notifies the user: "Planning failed: could not parse planner response after {n} attempts." No silent fallback, no fake response.
 
 ---
 
