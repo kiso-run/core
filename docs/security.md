@@ -7,10 +7,20 @@ Three layers: API authentication, role-based permissions, and secrets management
 Every call to `/msg` and `/status` requires a bearer token:
 
 ```
-Authorization: Bearer <api_token>
+Authorization: Bearer <token>
 ```
 
-Auto-generated on first boot if missing (printed to stdout). Anyone without it gets `401 Unauthorized`.
+Tokens are defined in `config.toml`. Each client (CLI, connector) gets its own named token:
+
+```toml
+[tokens]
+cli = "tok-abc123"
+discord = "tok-def456"
+```
+
+Kiso matches the token to its name, logs which client made the call. Revoking a client = removing its token from config and restarting.
+
+If no matching token is found: `401 Unauthorized`.
 
 The `/pub/{id}` and `/health` endpoints do NOT require auth.
 
@@ -24,12 +34,19 @@ Users are Linux usernames. No separate user system.
 
 ## Role-Based Permissions
 
-| Role | Allowed actions | Who |
-|---|---|---|
-| `admin` | `exec`, `msg`, `skill` tasks + install/update/remove skills and connectors | Linux users listed in `config.admins` |
-| `user` | `msg` tasks only | Everyone else |
+| Role | Allowed task types | Package management | Who |
+|---|---|---|---|
+| `admin` | `exec` (unrestricted), `msg`, `skill` | yes (install/update/remove) | Linux users listed in `config.admins` |
+| `user` | `exec` (sandboxed), `msg`, `skill` | no | Everyone else |
 
-The role is passed to the planner. The planner only generates allowed task types. The worker enforces as a second check — skips disallowed tasks and logs a warning.
+Both roles can use all task types. The difference is the **sandbox**.
+
+### Exec Sandbox
+
+- **admin exec**: runs with `cwd=~/.kiso/sessions/{session}`. Can access any path in the container. Full permissions.
+- **user exec**: runs with `cwd=~/.kiso/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `~/.kiso/sessions/{session}/`. Enforced at OS level (restricted Linux user per session).
+
+Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
 ### Package Management (admin only)
 
@@ -75,11 +92,11 @@ These are set in the host/container environment, never in config files or repos.
 Skills declare which session secrets they need in `kiso.toml`:
 
 ```toml
-[kiso.skill.secrets]
+[kiso.skill]
 secrets = ["api_key", "github_token"]
 ```
 
-Kiso passes **only the declared secrets** to the skill at runtime. If the field is missing, the skill receives no session secrets. This limits blast radius: a compromised skill can only access the secrets it explicitly declared.
+Kiso passes **only the declared secrets** to the skill at runtime. If omitted, the skill receives no session secrets. This limits blast radius: a compromised skill can only access the secrets it explicitly declared.
 
 ### Access
 
@@ -95,6 +112,7 @@ Kiso passes **only the declared secrets** to the skill at runtime. If the field 
 4. **Clean subprocess env**: exec tasks inherit only PATH.
 5. **No secrets in config files**: connector `config.toml` contains only structural config, never tokens.
 6. **Scoped secrets**: skills receive only the secrets they declared, not the full session bag.
+7. **Named tokens**: each client has its own token, revocable independently.
 
 ### Webhook Validation
 

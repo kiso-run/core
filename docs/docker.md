@@ -8,7 +8,7 @@ One volume, mounted at `~/.kiso/`:
 
 ```
 ~/.kiso/                    # single volume
-├── config.json
+├── config.toml
 ├── store.db
 ├── server.log
 ├── roles/
@@ -109,7 +109,7 @@ Build-time installs provide a base. Runtime installs add or override. Since both
 
 | Port | Service |
 |---|---|
-| `8333` | Kiso API (configurable via `config.json`) |
+| `8333` | Kiso API (configurable via `config.toml`) |
 | `9001+` | Connector webhooks (per-connector, configurable) |
 
 Expose connector ports as needed:

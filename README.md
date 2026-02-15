@@ -17,18 +17,18 @@ KISO (基礎) = foundation in Japanese.
 
 ```
 kiso/                               # installable python package
-├── main.py                         # FastAPI, /msg, /status, /pub endpoints
+├── main.py                         # FastAPI, /msg, /status, /pub, /health
 ├── llm.py                          # LLM client, routes calls to configured providers
 ├── brain.py                        # planner + reviewer
 ├── worker.py                       # consumes tasks from queue, one per session
-├── store.py                        # SQLite: sessions, messages, tasks, secrets, meta, published
+├── store.py                        # SQLite: sessions, messages, tasks, facts, secrets, meta, published
 ├── skills.py                       # skill discovery and loading
-├── config.py                       # loads and validates ~/.kiso/config.json
+├── config.py                       # loads and validates ~/.kiso/config.toml
 └── cli.py                          # interactive client + management commands
 
 ~/.kiso/                            # user data (outside the repo)
-├── config.json                     # providers, models, settings
-├── store.db                        # SQLite database (6 tables)
+├── config.toml                     # providers, tokens, models, settings
+├── store.db                        # SQLite database (7 tables)
 ├── server.log                      # server-level log
 ├── roles/                          # system prompt for each LLM role
 │   ├── planner.md
@@ -37,17 +37,16 @@ kiso/                               # installable python package
 │   └── summarizer.md
 ├── skills/                         # bot capabilities (git clone)
 │   └── {name}/
-│       ├── kiso.toml               # manifest (required)
-│       ├── pyproject.toml          # dependencies (uv-managed)
-│       ├── run.py                  # entry point (required)
-│       ├── SKILL.md                # docs for the worker (required)
+│       ├── kiso.toml               # manifest: identity, args schema, deps
+│       ├── pyproject.toml          # python dependencies (uv-managed)
+│       ├── run.py                  # entry point
 │       ├── deps.sh                 # system deps installer (optional)
 │       └── .venv/                  # created by uv on install
 ├── connectors/                     # platform bridges (git clone)
 │   └── {name}/
-│       ├── kiso.toml               # manifest (required)
-│       ├── pyproject.toml          # dependencies (uv-managed)
-│       ├── run.py                  # entry point (required)
+│       ├── kiso.toml               # manifest: identity, env vars, deps
+│       ├── pyproject.toml          # python dependencies (uv-managed)
+│       ├── run.py                  # entry point
 │       ├── config.example.toml     # example config (in repo)
 │       ├── config.toml             # actual config (gitignored, no secrets)
 │       ├── deps.sh                 # system deps installer (optional)
@@ -77,18 +76,29 @@ See [docker.md](docs/docker.md).
 
 ## Minimal Setup
 
-Set your API key as an environment variable:
+Create `~/.kiso/config.toml` with at least a token and a provider:
+
+```toml
+[tokens]
+cli = "your-secret-token"
+
+[providers.openrouter]
+api_key_env = "KISO_OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+```
+
+Set your API key:
 
 ```bash
 export KISO_OPENROUTER_API_KEY="sk-or-..."
 ```
 
-Everything else has sensible defaults. See [config.md](docs/config.md).
+See [config.md](docs/config.md) for full reference.
 
 ## Design Documents
 
-- [config.md](docs/config.md) - Configuration, providers, defaults
-- [database.md](docs/database.md) - Database schema (6 tables)
+- [config.md](docs/config.md) - Configuration, providers, tokens
+- [database.md](docs/database.md) - Database schema (7 tables)
 - [llm-roles.md](docs/llm-roles.md) - The 4 LLM roles, their prompts, and what context each receives
 - [flow.md](docs/flow.md) - Full message lifecycle
 - [skills.md](docs/skills.md) - Skill system (subprocess, isolated venv)

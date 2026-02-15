@@ -1,6 +1,6 @@
 # LLM Roles
 
-Kiso makes 4 distinct types of LLM calls. Each type has its own model (from `config.json`), its own system prompt (from `~/.kiso/roles/{role}.md`), and receives **only the context it needs**.
+Kiso makes 4 distinct types of LLM calls. Each type has its own model (from `config.toml`), its own system prompt (from `~/.kiso/roles/{role}.md`), and receives **only the context it needs**.
 
 ## Context per Role
 
@@ -9,9 +9,8 @@ Kiso makes 4 distinct types of LLM calls. Each type has its own model (from `con
 | Session summary | yes | - | yes | yes (old) |
 | Last N raw messages | yes | - | yes | - |
 | New message | yes | - | - | - |
-| Facts (from meta) | yes | - | yes | - |
-| Skill one-liners (from kiso.toml) | yes | - | - | - |
-| Skill SKILL.md (full) | - | - | yes (for skill tasks) | - |
+| Facts (from store.facts) | yes | - | yes | - |
+| Skill summaries + args schemas | yes | - | - | - |
 | Caller role (admin/user) | yes | - | - | - |
 | Process goal | generates | yes | - | - |
 | Current task detail | - | yes | yes | - |
@@ -25,7 +24,7 @@ Kiso makes 4 distinct types of LLM calls. Each type has its own model (from `con
 | Replan history | replan only | - | - | - |
 
 Key principles:
-- The **planner** gets the big picture to decide what to do. It generates a `goal` (process-level objective) and an `expect` (success criteria) for each reviewable task.
+- The **planner** gets the big picture to decide what to do. It generates a `goal` (process-level objective) and an `expect` (success criteria) for each reviewed task. It sees skill summaries and args schemas to generate correct invocations.
 - The **reviewer** gets the task, its output, the expected outcome, and the process goal — enough to evaluate whether the task succeeded in context, not just in isolation.
 - The **worker** gets conversation context to generate relevant text, not skills or role info.
 - The **summarizer** gets only what it needs to compress.
@@ -36,11 +35,11 @@ Key principles:
 
 **When**: a new message arrives on a session.
 
-**Input**: facts + session summary + last N raw messages + new message + skill one-liners + caller role.
+**Input**: facts + session summary + last N raw messages + new message + skill summaries and args schemas + caller role.
 
 **Output**: JSON with a `goal`, optional `secrets`, and a `tasks` list.
 
-**Prompt** (`roles/planner.md`): tells it who it is, how to reason, the expected JSON format, available task types, and skills. Tells it the caller's role so it only plans allowed task types. Must always end the task list with a `msg` task with `notify: true`.
+**Prompt** (`roles/planner.md`): tells it who it is, how to reason, the expected JSON format, available task types, and skills with their args schemas. Tells it the caller's role so it plans appropriate tasks. Must always end the task list with a `msg` task with `notify: true`.
 
 **Example output:**
 
@@ -71,14 +70,14 @@ Key principles:
 |---|---|---|
 | `type` | yes | `exec`, `msg`, `skill` |
 | `detail` | yes | What to do |
-| `expect` | no | Success criteria for this task. Semantic, not literal (e.g. "tests pass" not exact output). Used by the reviewer to evaluate task output. Recommended for all tasks with `review: true`. |
-| `model` | no | Role name to use that role's model (e.g. `"reviewer"` for cheap tasks) |
+| `expect` | **yes** if `review: true` | Success criteria for this task. Semantic, not literal (e.g. "tests pass" not exact output). Required for all reviewed tasks — a reviewer without criteria is useless. |
+| `model` | no | Role name to use that role's model (e.g. `"reviewer"` to use the reviewer model for a cheap msg task) |
 | `skill` | if type=skill | Skill name |
-| `args` | if type=skill | Arguments for the skill |
+| `args` | if type=skill | Arguments for the skill (validated against kiso.toml schema) |
 | `notify` | no | If `true`, output is sent to the webhook |
 | `review` | no | If `true`, the reviewer evaluates this task's output. Default `false` |
 
-**On parse failure**: retry once. If it fails again, fall back to `{"tasks": [{"type": "msg", "detail": "reply to the user", "notify": true}]}`.
+**On parse failure**: retry once (transient errors). If it fails again, kiso marks the message as failed and notifies the user: "Planning failed: could not parse planner response." No silent fallback.
 
 ---
 
@@ -107,7 +106,9 @@ Key principles:
   "status": "needs_fix",
   "inject": [
     {"type": "exec", "detail": "uv pip install pytest"},
-    {"type": "exec", "detail": "python -m pytest", "review": true}
+    {"type": "exec", "detail": "python -m pytest",
+     "expect": "all tests pass, exit code 0",
+     "review": true}
   ],
   "learn": "Project uses pytest for testing"
 }
@@ -117,9 +118,7 @@ Key principles:
 
 ```json
 {
-  "status": "ok",
-  "inject": [],
-  "learn": null
+  "status": "ok"
 }
 ```
 
@@ -133,7 +132,7 @@ Key principles:
 }
 ```
 
-- `learn`: free-form string appended to the `facts` value in `store.meta`.
+- `learn`: free-form string. Stored as a new entry in `store.facts`. See [database.md](database.md).
 - `reason`: required when status is `"replan"`. Explains why local fixes are insufficient. Included in the notification to the user and in the replanner context.
 - **Max depth**: after `max_review_depth` inject rounds in the same chain, the worker stops calling the reviewer and moves on.
 - **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
@@ -168,10 +167,10 @@ When the reviewer returns `"replan"`:
 
 ## Summarizer
 
-**When**: after queue completion, if raw messages > `summarize_threshold`. Also when facts exceed `knowledge_max_lines`.
+**When**: after queue completion, if raw messages > `summarize_threshold`. Also when facts exceed `knowledge_max_facts`.
 
 **For messages**: takes current session summary + oldest messages → updated summary (overwrites `sessions.summary`).
 
-**For facts**: takes the full facts text → consolidates into fewer lines (overwrites `meta.facts`).
+**For facts**: takes all fact entries → consolidates into fewer entries (merges duplicates, removes outdated). Replaces old rows in `store.facts`.
 
 **Prompt** (`roles/summarizer.md`): preserve facts, decisions, and technical context. Discard noise and redundancy.

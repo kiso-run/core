@@ -42,7 +42,7 @@ You: add authentication
 ...
 ```
 
-The API token is read from `~/.kiso/config.json`.
+The API token is read from `~/.kiso/config.toml` (`[tokens]` section).
 
 ## Skill Management
 
@@ -80,7 +80,7 @@ $ kiso skill search web
 ```
 1. git clone → ~/.kiso/skills/{name}/
 2. Validate kiso.toml (exists? type=skill?)
-3. Validate run.py, pyproject.toml, and SKILL.md exist — fail if any missing
+3. Validate run.py and pyproject.toml exist — fail if missing
 4. If unofficial repo → warn user, ask confirmation
 5. If deps.sh exists → run it (skipped with --no-deps)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"

@@ -2,104 +2,144 @@
 
 ## What Goes Where
 
-**JSON** for static stuff you edit by hand: providers, models, settings.
+**TOML** for static stuff you edit by hand: providers, models, tokens, settings.
 
-**SQLite** for everything dynamic: sessions, messages, secrets, facts, published files.
+**SQLite** for everything dynamic: sessions, messages, tasks, facts, secrets, published files.
 
 ```
 ~/.kiso/
-├── config.json          # static, human-readable, versionable
+├── config.toml          # static, human-readable, versionable
 └── store.db             # dynamic, machine-managed
 ```
 
-## Minimal config.json
+## Minimal config.toml
 
-An empty `config.json` (or just `{}`) is enough to start — all fields have sensible defaults. Kiso will auto-generate an API token on first boot and use the Linux user system for identity.
+Kiso requires explicit configuration for anything that talks to external services. No magic, no guessing.
 
-**API keys are never stored in config.json.** They are read from environment variables so that the config can be safely versioned and backed up. The config only specifies *which* env variable to use (see Providers below).
+**Required on first run:**
 
-## Full config.json
+```toml
+[tokens]
+cli = "your-secret-token"
 
-All fields with their defaults:
-
-```json
-{
-  "api_token": "auto-generated-on-first-boot",
-  "admins": [],
-
-  "providers": {
-    "openrouter": {
-      "api_key_env": "KISO_OPENROUTER_API_KEY",
-      "base_url": "https://openrouter.ai/api/v1"
-    }
-  },
-
-  "models": {
-    "planner":    "moonshotai/kimi-k2.5",
-    "reviewer":   "moonshotai/kimi-k2.5",
-    "worker":     "deepseek/deepseek-v3.2",
-    "summarizer": "deepseek/deepseek-v3.2"
-  },
-
-  "summarize_threshold": 30,
-  "knowledge_max_lines": 50,
-  "max_review_depth": 3,
-  "max_replan_depth": 3,
-  "exec_timeout": 120,
-  "worker_idle_timeout": 300,
-  "host": "0.0.0.0",
-  "port": 8333
-}
+[providers.openrouter]
+api_key_env = "KISO_OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
 ```
 
-### Defaults
+If `[tokens]` or `[providers]` are missing, kiso refuses to start and tells you what's missing.
+
+## Full config.toml
+
+All fields:
+
+```toml
+# --- Required ---
+
+[tokens]
+cli = "your-secret-token"              # used by the CLI
+# discord = "another-token"            # used by the discord connector
+# telegram = "yet-another-token"       # each client gets its own token
+
+[providers.openrouter]
+api_key_env = "KISO_OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+# [providers.ollama]
+# base_url = "http://localhost:11434/v1"
+
+# --- Optional (defaults shown) ---
+
+admins = []                             # Linux usernames with admin role
+
+[models]
+planner = "moonshotai/kimi-k2.5"
+reviewer = "moonshotai/kimi-k2.5"
+worker = "deepseek/deepseek-v3.2"
+summarizer = "deepseek/deepseek-v3.2"
+
+[settings]
+summarize_threshold = 30
+knowledge_max_facts = 50
+max_review_depth = 3
+max_replan_depth = 3
+exec_timeout = 120
+worker_idle_timeout = 300
+host = "0.0.0.0"
+port = 8333
+```
+
+### Required Fields
+
+| Field | Description |
+|---|---|
+| `[tokens]` | At least one named token. Each client (CLI, connector) uses its own token. |
+| `[providers]` | At least one provider with `base_url`. Kiso refuses to start without it. |
+| `providers.*.api_key_env` | Env variable name for the API key. Optional for local providers (e.g. Ollama). |
+| `providers.*.base_url` | Required. No implicit default. |
+
+### Optional Fields (defaults)
 
 | Field | Default | Description |
 |---|---|---|
-| `api_token` | auto-generated | Bearer token for API auth. Generated on first boot, printed to stdout. |
 | `admins` | `[]` | Linux usernames with admin role. Empty = nobody is admin. |
-| `providers` | openrouter | At least one required. Each provider reads its API key from an env variable (`api_key_env`). |
-| `models.planner` | `moonshotai/kimi-k2.5` | Strong reasoning model for planning and deciding |
-| `models.reviewer` | `moonshotai/kimi-k2.5` | Strong reasoning model for evaluating task output |
-| `models.worker` | `deepseek/deepseek-v3.2` | Fast model for text generation and conversation |
+| `models.planner` | `moonshotai/kimi-k2.5` | Strong reasoning model for planning |
+| `models.reviewer` | `moonshotai/kimi-k2.5` | Strong reasoning model for evaluation |
+| `models.worker` | `deepseek/deepseek-v3.2` | Fast model for text generation |
 | `models.summarizer` | `deepseek/deepseek-v3.2` | Fast model for compression |
-| `summarize_threshold` | `30` | Raw messages before summarizer triggers |
-| `knowledge_max_lines` | `50` | Max lines of facts before consolidation |
-| `max_review_depth` | `3` | Max reviewer inject rounds per chain |
-| `max_replan_depth` | `3` | Max replan cycles per original message. After this, the worker notifies the user of failure and moves on. |
-| `exec_timeout` | `120` | Seconds before exec task is killed |
-| `worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
-| `host` | `0.0.0.0` | Server bind address |
-| `port` | `8333` | Server port |
+| `settings.summarize_threshold` | `30` | Raw messages before summarizer triggers |
+| `settings.knowledge_max_facts` | `50` | Max facts before consolidation |
+| `settings.max_review_depth` | `3` | Max reviewer inject rounds per chain |
+| `settings.max_replan_depth` | `3` | Max replan cycles per original message |
+| `settings.exec_timeout` | `120` | Seconds before exec task is killed |
+| `settings.worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
+| `settings.host` | `0.0.0.0` | Server bind address |
+| `settings.port` | `8333` | Server port |
+
+## Tokens
+
+Each client (CLI, connector, external service) gets its own named token. This allows revoking a single client without affecting others.
+
+```toml
+[tokens]
+cli = "tok-abc123"
+discord = "tok-def456"
+telegram = "tok-ghi789"
+```
+
+API calls use the standard bearer header:
+
+```
+Authorization: Bearer tok-abc123
+```
+
+Kiso matches the token to its name and logs which client made the call. Revoking = removing the token from config and restarting.
+
+Generate tokens however you want (`openssl rand -hex 32`, `uuidgen`, etc.). Kiso does not auto-generate tokens.
 
 ## Providers
 
-All providers are OpenAI-compatible HTTP endpoints. Adding a provider = adding a few lines to config.json.
+All providers are OpenAI-compatible HTTP endpoints. Adding a provider = adding a section to config.
 
-```json
-{
-  "providers": {
-    "openrouter": {
-      "api_key_env": "KISO_OPENROUTER_API_KEY",
-      "base_url": "https://openrouter.ai/api/v1"
-    },
-    "ollama": {
-      "base_url": "http://localhost:11434/v1"
-    }
-  }
-}
+```toml
+[providers.openrouter]
+api_key_env = "KISO_OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[providers.ollama]
+base_url = "http://localhost:11434/v1"
 ```
 
-- `api_key_env`: name of the environment variable containing the API key. Kiso reads the key from the env at startup — it is **never** stored in config.json.
-- `base_url`: **required**. No implicit default — if missing, Kiso refuses to start. This follows the "no magic" principle: every provider must be explicitly configured.
+- `api_key_env`: name of the environment variable containing the API key. Kiso reads the key from the env at startup — it is **never** stored in config. Optional for local providers.
+- `base_url`: **required**. No implicit default. If missing, kiso refuses to start.
 
 ## Model Routing
 
-Model strings use `:` to specify a non-default provider. No `:` means openrouter.
+Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-moonshotai/kimi-k2               → openrouter, model "moonshotai/kimi-k2"
-deepseek/deepseek-r1             → openrouter, model "deepseek/deepseek-r1"
+moonshotai/kimi-k2               → first provider, model "moonshotai/kimi-k2"
+deepseek/deepseek-r1             → first provider, model "deepseek/deepseek-r1"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```
 

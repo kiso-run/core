@@ -7,23 +7,22 @@ A skill is a git-cloned package in `~/.kiso/skills/{name}/` with a standard stru
 ```
 ~/.kiso/skills/
 ├── search/
-│   ├── kiso.toml           # manifest (required)
+│   ├── kiso.toml           # manifest (required) — identity, args schema, deps
 │   ├── pyproject.toml      # python dependencies (required, uv-managed)
 │   ├── run.py              # entry point (required)
-│   ├── SKILL.md            # docs for the worker (required)
 │   ├── deps.sh             # system deps installer (optional, idempotent)
-│   ├── README.md           # human docs
+│   ├── README.md           # docs for humans (optional)
 │   └── .venv/              # created by uv on install
 └── .../
 ```
 
-A directory is a valid skill if it contains `kiso.toml` (with `type = "skill"`), `pyproject.toml`, `run.py`, and `SKILL.md`.
+A directory is a valid skill if it contains `kiso.toml` (with `type = "skill"`), `pyproject.toml`, and `run.py`.
 
-All four are required. No fallbacks — if `pyproject.toml` is missing, install fails.
+All three are required. No fallbacks — if any is missing, install fails.
 
 ## kiso.toml
 
-The manifest. Declares what this package is.
+The single source of truth. Declares what this skill is, what arguments it takes, what secrets it needs, and what system deps it requires.
 
 ```toml
 [kiso]
@@ -34,17 +33,32 @@ description = "Web search using Brave Search API"
 
 [kiso.skill]
 summary = "Web search using Brave Search API"    # one-liner for the planner
+secrets = ["api_key"]                             # which session secrets this skill receives
+
+[kiso.skill.args]
+query = { type = "string", required = true, description = "search query" }
+max_results = { type = "int", required = false, default = 5, description = "number of results to return" }
 
 [kiso.skill.env]
 api_key = { required = true }     # → KISO_SKILL_SEARCH_API_KEY
-
-[kiso.skill.secrets]
-secrets = ["api_key"]             # which session secrets this skill receives
 
 [kiso.deps]
 python = ">=3.11"
 bin = ["curl"]                    # checked with `which` after install
 ```
+
+### What the Planner Sees
+
+The planner receives the one-liner and the args schema:
+
+```
+Available skills:
+- search — Web search using Brave Search API
+  args: query (string, required): search query
+        max_results (int, optional, default=5): number of results to return
+```
+
+This is enough for the planner to generate correct invocations. No ambiguity.
 
 ### Env Var Naming
 
@@ -59,38 +73,9 @@ Name and key are uppercased, `-` becomes `_`.
 
 ### Secret Scoping
 
-Skills declare which session secrets they need in `[kiso.skill.secrets]`. Kiso passes **only those secrets** to the skill at runtime — not the entire session secrets bag. If the field is missing, the skill receives no secrets.
+`secrets` lists which session secrets this skill receives at runtime. Kiso passes **only those** — not the entire session secrets bag. If omitted, the skill receives no session secrets.
 
 This limits blast radius: a compromised skill can only leak the secrets it declared.
-
-## SKILL.md
-
-Documentation for the worker. The worker receives the full content of this file to understand how to use the skill — what arguments to pass, when it's appropriate, what to expect.
-
-Free format. Write whatever helps the worker use the skill correctly.
-
-```markdown
-# search
-
-Web search using Brave Search API.
-
-## When to use
-- The user asks to look up information on the web
-- Current data or facts are needed
-
-## Arguments
-- query (required): search query string
-- max_results (optional): number of results, default 5
-
-## Output
-Returns a text summary of the top search results with titles, URLs, and snippets.
-
-## Notes
-- Requires KISO_SKILL_SEARCH_API_KEY to be set
-- Rate limited to 1 request per second
-```
-
-The planner does **not** see SKILL.md. It sees only the one-liner from `kiso.toml` (`[kiso.skill] summary`).
 
 ## run.py
 
@@ -124,14 +109,14 @@ No async, no imports from kiso, no shared state. JSON in, text out.
 
 ```json
 {
-  "args": {"query": "python async patterns"},
+  "args": {"query": "python async patterns", "max_results": 5},
   "session": "dev-backend",
   "workspace": "/home/user/.kiso/sessions/dev-backend",
   "secrets": {"api_key": "sk-abc123"}
 }
 ```
 
-`secrets` contains **only** the keys declared in `[kiso.skill.secrets]`, not the full session secrets.
+`secrets` contains **only** the keys declared in `kiso.toml`, not the full session secrets.
 
 ### Output (stdout)
 
@@ -209,8 +194,8 @@ https://gitlab.com/team/cool-skill.git        → gitlab-com_team_cool-skill
 
 ```
 1. git clone → ~/.kiso/skills/{name}/
-2. Validate kiso.toml (exists? type=skill? has name?)
-3. Validate run.py, pyproject.toml, and SKILL.md exist — fail if any missing
+2. Validate kiso.toml (exists? type=skill? has name? has [kiso.skill.args]?)
+3. Validate run.py and pyproject.toml exist — fail if any missing
 4. If deps.sh exists → run it (with warning/confirmation for unofficial repos)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"
 5. uv sync (pyproject.toml → .venv)
@@ -239,23 +224,28 @@ kiso skill search [query]
 
 When the worker encounters `{"type": "skill", "skill": "search", "args": {...}}`:
 
-1. Builds input JSON (args + session + workspace path + scoped secrets)
-2. Runs: `.venv/bin/python ~/.kiso/skills/search/run.py < input.json` with `cwd=~/.kiso/sessions/{session}`
-3. Captures stdout (output) and stderr (debug)
-4. Sanitizes output (strips known secret values)
-5. Stores task result in DB (status, output)
-6. If `review: true`, passes to the reviewer
+1. Validates args against the schema in `kiso.toml`
+2. Builds input JSON (args + session + workspace path + scoped secrets)
+3. Runs: `.venv/bin/python ~/.kiso/skills/search/run.py < input.json` with `cwd=~/.kiso/sessions/{session}`
+4. Captures stdout (output) and stderr (debug)
+5. Sanitizes output (strips known secret values)
+6. Stores task result in DB (status, output)
+7. If `review: true`, passes to the reviewer
 
 ## Discovery
 
 Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each skill directory. No restart needed.
 
-The planner sees one-liners from `[kiso.skill] summary`:
+The planner sees one-liners and args schemas:
 
 ```
 Available skills:
 - search — Web search using Brave Search API
+  args: query (string, required): search query
+        max_results (int, optional, default=5): number of results to return
 - aider — Code editing tool using LLM to apply changes in natural language
+  args: message (string, required): description of the change
+        files (list, optional): files to operate on
 ```
 
 The planner decides whether to use a skill or a plain `exec` task.

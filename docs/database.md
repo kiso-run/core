@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Six tables.
+Single SQLite file: `~/.kiso/store.db`. Seven tables.
 
 ## Tables
 
@@ -53,7 +53,7 @@ CREATE TABLE tasks (
     detail     TEXT NOT NULL,       -- what to do
     skill      TEXT,                -- skill name (if type=skill)
     args       TEXT,                -- JSON args (if type=skill)
-    expect     TEXT,                -- success criteria for reviewer
+    expect     TEXT,                -- success criteria (required if review=1)
     status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     output     TEXT,                -- stdout / generated text
     stderr     TEXT,                -- stderr (exec/skill only)
@@ -71,6 +71,31 @@ Status lifecycle: `pending` → `running` → `done` | `failed`.
 On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
 
 The `/status/{session}` endpoint reads from this table.
+
+### facts
+
+Persistent knowledge learned across sessions. Individual entries, not a blob.
+
+```sql
+CREATE TABLE facts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT NOT NULL,
+    source     TEXT NOT NULL,       -- "reviewer" | "summarizer" | "manual"
+    session    TEXT,                -- which session generated this fact (null for manual)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+- **Reviewer** adds entries via the `learn` field in review output.
+- **Summarizer** consolidates when entries exceed `knowledge_max_facts`: merges duplicates and removes outdated entries, replacing old rows with fewer consolidated ones.
+- The planner and worker see all facts as a flat list.
+
+Example entries:
+```
+id=1  content="Project uses FastAPI + SQLite"             source="reviewer"  session="dev-backend"
+id=2  content="Team: marco (backend), anna (frontend)"    source="reviewer"  session="dev-backend"
+id=3  content="Conventions: snake_case, type hints"       source="manual"    session=NULL
+```
 
 ### secrets
 
@@ -92,7 +117,7 @@ See [security.md](security.md).
 
 ### meta
 
-Global key-value store for persistent data that lives outside any session.
+Global key-value store for miscellaneous persistent data.
 
 ```sql
 CREATE TABLE meta (
@@ -102,13 +127,7 @@ CREATE TABLE meta (
 );
 ```
 
-Primary use: the `facts` key stores a text blob of shared knowledge across all sessions. Managed by the reviewer (appends via `learn`) and consolidated by the summarizer when it exceeds `knowledge_max_lines`.
-
-Example:
-```
-key: "facts"
-value: "Project uses FastAPI + SQLite. Team: marco (backend), anna (frontend). Conventions: snake_case, type hints."
-```
+General purpose. Not used for facts (which have their own table).
 
 ### published
 
