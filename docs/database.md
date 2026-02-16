@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Eight tables. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
+Single SQLite file: `~/.kiso/store.db`. Seven tables. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
 
 ## Tables
 
@@ -77,7 +77,7 @@ CREATE INDEX idx_tasks_status ON tasks(session, status);
 - Status lifecycle: `pending` → `running` → `done` | `failed`.
 - On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
 - The `/status/{session}` endpoint reads from this table.
-- Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
+- Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#f-reviews-and-delivers).
 
 ### facts
 

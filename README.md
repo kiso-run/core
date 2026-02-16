@@ -29,7 +29,7 @@ kiso/                               # installable python package
 ~/.kiso/                            # user data (outside the repo)
 ├── config.toml                     # providers, tokens, models, settings
 ├── .env                            # deploy secrets (managed via `kiso env`)
-├── store.db                        # SQLite database (8 tables)
+├── store.db                        # SQLite database (7 tables)
 ├── server.log                      # server-level log
 ├── audit/                          # LLM call logs, task execution logs
 ├── roles/                          # system prompt for each LLM role
@@ -134,7 +134,7 @@ Naming: providers use whatever `api_key_env` says; skills use `KISO_SKILL_{NAME}
 mkdir -p ~/.kiso/roles
 ```
 
-Create one `.md` file per LLM role in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`, `curator.md`. These are the system prompts for each role. See [llm-roles.md](docs/llm-roles.md) for what each role does.
+Create one `.md` file per LLM role in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`, `curator.md`. The paraphraser reuses the summarizer model and prompt — no separate file needed. See [llm-roles.md](docs/llm-roles.md) for what each role does.
 
 ### 5. Start
 
@@ -209,7 +209,7 @@ See [config.md](docs/config.md) for full configuration reference.
 ## Design Documents
 
 - [config.md](docs/config.md) — Configuration, providers, tokens
-- [database.md](docs/database.md) — Database schema (8 tables)
+- [database.md](docs/database.md) — Database schema (7 tables)
 - [llm-roles.md](docs/llm-roles.md) — The 6 LLM roles, their prompts, and what context each receives
 - [flow.md](docs/flow.md) — Full message lifecycle
 - [skills.md](docs/skills.md) — Skill system (subprocess, isolated venv)
