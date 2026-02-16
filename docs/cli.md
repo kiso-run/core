@@ -42,7 +42,7 @@ You: add authentication
 ...
 ```
 
-The API token is read from `~/.kiso/config.toml` (`[tokens]` section).
+The API token is read from `~/.kiso/config.toml`: the CLI always uses the token named `cli` from the `[tokens]` section.
 
 ## Skill Management
 
@@ -97,7 +97,7 @@ $ kiso skill search web
 | `kiso skill install git@github.com:foo/bar.git` | `~/.kiso/skills/github-com_foo_bar/` |
 | `kiso skill install <url> --name custom` | `~/.kiso/skills/custom/` |
 
-URL to name: lowercase, `.` → `-`, `/` → `_`.
+URL to name: see [skills.md — Naming Convention](skills.md#naming-convention) for the full algorithm.
 
 ## Connector Management
 

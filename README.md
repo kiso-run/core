@@ -104,7 +104,7 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 ```
 
-Only whitelisted users get responses. Messages from unknown users are saved but ignored. See [config.md](docs/config.md) for user roles and skill permissions.
+Only whitelisted users get responses. Messages from unknown users are saved for audit (the caller still receives `202 Accepted`) but no worker is spawned and no response is sent. See [config.md](docs/config.md) for user roles and skill permissions.
 
 ### 3. Set up secrets
 

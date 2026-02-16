@@ -6,7 +6,7 @@ Kiso makes 4 distinct types of LLM calls. Each type has its own model (from `con
 
 | Context piece | Planner | Reviewer | Worker | Summarizer |
 |---|---|---|---|---|
-| Session summary | yes | - | yes | yes (old) |
+| Session summary | yes | - | yes | yes (existing, to be updated) |
 | Last N raw messages | yes | - | - | - |
 | Recent msg outputs | yes | - | - | - |
 | New message | yes | - | - | - |
@@ -79,12 +79,12 @@ response_format = {
                             "model": {"type": "string"}
                         },
                         "required": ["type", "detail"],
-                        "additionalProperties": false
+                        "additionalProperties": False
                     }
                 }
             },
             "required": ["goal", "tasks"],
-            "additionalProperties": false
+            "additionalProperties": False
         }
     }
 }
@@ -177,7 +177,7 @@ Common patterns:
 | `type` | yes | `exec`, `msg`, `skill` |
 | `detail` | yes | What to do. For `msg` tasks, must include all context the worker needs to generate a good response. For `exec` tasks, the shell command. |
 | `expect` | **yes** if `review: true` | Semantic success criteria (e.g. "tests pass", not exact output). |
-| `model` | no | Role name to use that role's model (e.g. `"reviewer"` to use a stronger model for a msg task) |
+| `model` | no | Role name to override the model for `msg` tasks only (e.g. `"reviewer"` to use the reviewer's stronger model). Ignored on `exec` and `skill` tasks. Valid values: `planner`, `reviewer`, `worker`, `summarizer`. |
 | `skill` | if type=skill | Skill name |
 | `args` | if type=skill | Arguments for the skill (validated against kiso.toml schema) |
 | `review` | no | If `true`, the reviewer evaluates this task's output. Default `false`. |
@@ -233,7 +233,7 @@ response_format = {
                 "learn": {"type": "string"}
             },
             "required": ["status"],
-            "additionalProperties": false
+            "additionalProperties": False
         }
     }
 }
@@ -267,7 +267,7 @@ There is no "local fix" status. When something fails, the planner replans with f
 ```
 
 - `learn`: free-form string, optional. Stored as a new entry in `store.facts` (global). Persists across all sessions.
-- `reason`: required when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context.
+- `reason`: expected when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context. The JSON schema doesn't enforce this conditionally — semantic validation catches `replan` without `reason` and retries.
 - **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
 
 ### Replan Flow

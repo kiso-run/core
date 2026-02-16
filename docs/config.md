@@ -51,8 +51,6 @@ base_url = "https://openrouter.ai/api/v1"
 # [providers.ollama]
 # base_url = "http://localhost:11434/v1"
 
-# --- Required ---
-
 [users.marco]
 role = "admin"                          # full access, package management
 aliases.discord = "Marco#1234"          # platform identity on Discord
@@ -98,7 +96,7 @@ port = 8333
 | `providers.*.base_url` | Required. No implicit default. |
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
-| `users.*.skills` | Required for `user` role. `"*"` for all skills, or a list of skill names. Ignored for admins (always all). |
+| `users.*.skills` | Required for `user` role. `"*"` for all skills, or a list of skill names. Ignored for admins (always all). If missing on a `user` role, kiso refuses to start. |
 
 ### Optional Fields (defaults)
 
@@ -110,7 +108,7 @@ port = 8333
 | `models.worker` | `deepseek/deepseek-v3.2` | Free-form text output, no constraints. |
 | `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text output, no constraints. |
 | `settings.context_messages` | `5` | Number of recent raw messages sent to the planner. Msg outputs are sent separately. |
-| `settings.summarize_threshold` | `30` | Raw messages before summarizer triggers |
+| `settings.summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value |
 | `settings.knowledge_max_facts` | `50` | Max global facts before consolidation |
 | `settings.max_replan_depth` | `3` | Max replan cycles per original message |
 | `settings.max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation |
@@ -163,8 +161,8 @@ base_url = "http://localhost:11434/v1"
 Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-moonshotai/kimi-k2               → first provider, model "moonshotai/kimi-k2"
-deepseek/deepseek-r1             → first provider, model "deepseek/deepseek-r1"
+moonshotai/kimi-k2.5             → first provider, model "moonshotai/kimi-k2.5"
+deepseek/deepseek-v3.2           → first provider, model "deepseek/deepseek-v3.2"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```
 

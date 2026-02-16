@@ -33,7 +33,7 @@ description = "Web search using Brave Search API"
 
 [kiso.skill]
 summary = "Web search using Brave Search API"    # one-liner for the planner
-session_secrets = ["api_key"]                     # user-provided credentials from the session
+session_secrets = ["github_token"]                  # user-provided credentials from the session
 
 [kiso.skill.args]
 query = { type = "string", required = true, description = "search query" }
@@ -95,7 +95,6 @@ Display metadata. Shown in `kiso skill list` output. Kiso does not enforce versi
 Standalone script. Reads JSON from stdin, writes result to stdout.
 
 ```python
-#!/usr/bin/env python
 import json
 import sys
 
@@ -125,7 +124,7 @@ No async, no imports from kiso, no shared state. JSON in, text out.
   "args": {"query": "python async patterns", "max_results": 5},
   "session": "dev-backend",
   "workspace": "/home/user/.kiso/sessions/dev-backend",
-  "session_secrets": {"api_key": "sk-abc123"}
+  "session_secrets": {"github_token": "ghp_abc123"}
 }
 ```
 
@@ -195,7 +194,12 @@ kiso skill install git@github.com:someone/my-skill.git --no-deps
 | Unofficial URL | `{domain}_{namespace}_{repo}` |
 | Explicit `--name` | whatever you pass |
 
-URL to name: lowercase, `.` → `-`, `/` → `_`.
+**URL to name algorithm:**
+1. Strip the `.git` suffix
+2. Normalize SSH URLs (`git@host:ns/repo` → `host/ns/repo`) and HTTPS URLs (`https://host/ns/repo` → `host/ns/repo`)
+3. Lowercase everything
+4. Replace `.` with `-` (in the domain)
+5. Replace `/` with `_`
 
 Examples:
 ```
@@ -245,7 +249,7 @@ When the worker encounters `{"type": "skill", "skill": "search", "args": {...}}`
 
 1. Validates args against the schema in `kiso.toml`
 2. Builds input JSON (args + session + workspace path + scoped session secrets)
-3. Runs: `.venv/bin/python ~/.kiso/skills/search/run.py < input.json` with `cwd=~/.kiso/sessions/{session}`
+3. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/search/run.py` with `cwd=~/.kiso/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values)
 6. Stores task result in DB (status, output)

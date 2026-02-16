@@ -173,7 +173,7 @@ Planner generates:
 1. exec: git clone git@github.com:kiso-run/connector-discord.git ~/.kiso/connectors/discord/
 2. exec: cd ~/.kiso/connectors/discord && uv sync
 3. exec: test -f ~/.kiso/connectors/discord/deps.sh && bash ~/.kiso/connectors/discord/deps.sh
-4. exec: test -f ~/.kiso/connectors/discord/config.example.toml && cp config.example.toml config.toml
+4. exec: test -f ~/.kiso/connectors/discord/config.example.toml && cp ~/.kiso/connectors/discord/config.example.toml ~/.kiso/connectors/discord/config.toml
    (review: true, expect: "connector directory set up with venv and config")
 5. msg: "Discord connector installed. Next steps:
         1. Set KISO_CONNECTOR_DISCORD_BOT_TOKEN in the container environment
@@ -207,7 +207,7 @@ kiso connector discord status          # check if running
 
 Kiso spawns the connector as a background process, tracks its PID, and manages restarts automatically. Logs go to `~/.kiso/connectors/{name}/connector.log`.
 
-Under the hood:
+Under the hood (simplified — the actual implementation includes a management loop that monitors the PID and respawns with backoff):
 
 ```bash
 # start

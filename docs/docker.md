@@ -78,7 +78,7 @@ Skills and connectors can be installed in two ways:
 Baked into the image. Reproducible, immutable.
 
 ```dockerfile
-FROM kiso-run/core:latest
+FROM your-registry/kiso:latest    # your own built image
 
 # Pre-install official skills
 RUN kiso skill install search
@@ -88,7 +88,7 @@ RUN kiso skill install aider
 RUN kiso connector install discord
 ```
 
-These become part of the image. Updates require a rebuild.
+Build a base image first (`docker compose build`), then extend it. These become part of the image. Updates require a rebuild.
 
 ### At runtime (in volume)
 
@@ -162,7 +162,7 @@ When skills or connectors are installed (build-time or runtime), their `deps.sh`
 - `apt install` works without sudo
 - The script is idempotent (safe to re-run)
 
-Build-time installs bake system deps into the image layer. Runtime installs persist only if the volume includes the installed packages (they don't — system packages live in the container filesystem and are lost on restart unless baked into the image).
+Build-time installs bake system deps into the image layer. Note: system packages installed by `deps.sh` at runtime live in the container filesystem, not in the volume — they are lost when the container is recreated. Python packages (installed via `uv sync` into `.venv`) persist in the volume and survive restarts.
 
 **Recommendation**: for skills/connectors with heavy system deps, prefer build-time installation.
 

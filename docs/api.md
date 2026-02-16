@@ -59,9 +59,17 @@ For polling. Used by the CLI and clients without a webhook.
     {"id": 6, "type": "msg", "status": "done", "output": "Done!"}
   ],
   "queue_length": 0,
-  "active_task": null
+  "active_task": null,
+  "worker_running": true
 }
 ```
+
+| Field | Description |
+|---|---|
+| `tasks` | All tasks since `after` (or all if `after` not specified). Each has `id`, `type`, `status`, `output`. |
+| `queue_length` | Number of pending messages waiting in the session queue. |
+| `active_task` | Currently running task (`{"id": 5, "type": "exec", "status": "running"}`) or `null` if idle. |
+| `worker_running` | Whether the session's worker is alive. `false` if idle-timed-out or never started. |
 
 Returns all tasks (for monitoring and debugging). Clients that only want user-facing messages filter by `type: "msg"`.
 
@@ -107,9 +115,9 @@ Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and m
 }
 ```
 
-## Future: GET /stream/{session} (SSE)
+## GET /stream/{session} (SSE) — not yet implemented
 
-Not yet implemented. Server-Sent Events endpoint for real-time task progress:
+Server-Sent Events endpoint for real-time task progress. **Status: planned, not yet implemented.**
 
 ```
 event: task_start

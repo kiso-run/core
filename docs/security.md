@@ -104,7 +104,7 @@ The planner receives the user's allowed skill list and only sees those skills in
 ### Exec Sandbox
 
 - **admin exec**: runs with `cwd=~/.kiso/sessions/{session}`. Can access any path in the container. Full permissions.
-- **user exec**: runs with `cwd=~/.kiso/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `~/.kiso/sessions/{session}/`. Enforced at OS level: each session gets a dedicated restricted Linux user that only has access to its own workspace directory.
+- **user exec**: runs with `cwd=~/.kiso/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `~/.kiso/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
 Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
@@ -158,7 +158,7 @@ Kiso checks these on install and warns if they're missing. The skill receives th
 
 **Lifecycle**: live as long as the session. Created when the user mentions them. Deleted when the session is deleted.
 
-**Storage**: database table `store.secrets`, encrypted at rest, scoped per session.
+**Storage**: database table `store.secrets`, scoped per session.
 
 **How they get there**: the planner detects credentials in user messages and extracts them into the `secrets` field of its JSON output. The worker stores them in `store.secrets` before executing tasks.
 

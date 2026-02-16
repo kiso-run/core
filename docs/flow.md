@@ -71,8 +71,8 @@ For each task (status updated to `running` in DB):
 | Type | Execution |
 |---|---|
 | `exec` | `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Captures stdout+stderr. |
-| `msg` | Calls LLM with `worker` role. Context: facts + session summary + task detail. The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
-| `skill` | Validates args against `kiso.toml` schema. Runs `.venv/bin/python run.py < input.json` as subprocess. Input: args + session + workspace + scoped secrets (only those declared in `kiso.toml`). Output: stdout. |
+| `msg` | Calls LLM with `worker` role (or override via the task's `model` field). Context: facts + session summary + task detail. The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
+| `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped secrets (only those declared in `kiso.toml`). Output: stdout. |
 
 Output is sanitized (known secret values stripped) before any further use. Task status and output are persisted to `store.tasks` (`done` or `failed`).
 
@@ -133,7 +133,7 @@ After draining the task list:
 
 ### a) Summarize Messages
 
-If `len(raw_messages) > summarize_threshold`, calls the **Summarizer**: current summary + oldest messages → new summary → writes to `store.sessions.summary`.
+If `len(raw_messages) >= summarize_threshold`, calls the **Summarizer**: current summary + oldest messages → new summary → writes to `store.sessions.summary`.
 
 ### b) Consolidate Facts
 
