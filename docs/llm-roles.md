@@ -184,7 +184,9 @@ Common patterns:
 - The last task must be `type: "msg"` — the user always gets a final response
 - `exec` and `skill` tasks must have an `expect` field (they are always reviewed)
 - `msg` tasks are the only way to communicate with the user
-- If the request is ambiguous or missing critical information, produce a single `msg` task asking for clarification — do not guess
+- **Asking the user**: if the planner needs information it doesn't have, it ends the plan with a `msg` task asking the question. The next message cycle will have the user's answer in context (recent messages + msg outputs). Two cases:
+  - Request is ambiguous or missing critical info **upfront** → produce a single `msg` task asking for clarification, do not guess
+  - Planner realizes **mid-planning** that a later step depends on unknown user input → stop planning at that point, end with a `msg` asking the question. Do not plan tasks that depend on answers you don't have yet
 - If a user (non-admin) shares credentials, extract them into `secrets` (ephemeral, not persisted) and inform the user they are temporary
 - If a user asks to permanently configure a credential, respond with a `msg` task telling them to ask an admin to set it as a deploy secret via `kiso env set`
 - If an admin asks to configure a credential, generate exec tasks: `kiso env set ... && kiso env reload`
