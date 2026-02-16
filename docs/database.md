@@ -52,7 +52,7 @@ CREATE TABLE tasks (
     type       TEXT NOT NULL,       -- exec | msg | skill
     detail     TEXT NOT NULL,       -- what to do
     skill      TEXT,                -- skill name (if type=skill)
-    args       TEXT,                -- JSON args (if type=skill)
+    args       TEXT,                -- JSON string of skill args (parsed before execution)
     expect     TEXT,                -- success criteria (required if review=1)
     status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     output     TEXT,                -- stdout / generated text

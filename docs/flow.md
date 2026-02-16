@@ -44,7 +44,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 
 Uses structured output (`response_format` with strict JSON schema). The provider guarantees valid JSON at the decoding level — no parse retries needed.
 
-The LLM returns JSON with a `goal`, optional `secrets`, and a `tasks` list.
+The LLM returns JSON with a `goal`, `secrets` (nullable), and a `tasks` list.
 
 - `goal`: the high-level objective for the entire process (e.g. "Add JWT authentication with login endpoint, middleware, and tests"). Stored for the reviewer and potential replan cycles.
 - `secrets`: array of `{key, value}` pairs, or `null`. If present, the worker stores them in `store.secrets` before executing tasks.
@@ -57,7 +57,7 @@ Before execution, kiso validates the plan programmatically:
 1. Every task with `review: true` has an `expect` field
 2. The last task is `type: "msg"` (the user always gets a final response)
 3. Every `skill` reference exists in the installed skills
-4. Every `skill` task's `args` match the skill's schema from `kiso.toml`
+4. Every `skill` task's `args` is valid JSON and matches the skill's schema from `kiso.toml`
 5. The `tasks` list is not empty
 
 If validation fails, kiso sends the plan back to the planner with specific errors, up to `max_validation_retries` times (default 3). If all retries are exhausted, kiso marks the message as failed and notifies the user. No silent fallback.

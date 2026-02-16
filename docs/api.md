@@ -39,6 +39,13 @@ Receives a message and queues it for processing.
 }
 ```
 
+**Error responses:**
+
+| Status | When |
+|---|---|
+| `401 Unauthorized` | Bearer token does not match any entry in `config.toml` |
+| `202 Accepted` | Unknown user — message saved for audit but not processed (same response as success, by design) |
+
 ## GET /status/{session}
 
 For polling. Used by the CLI and clients without a webhook.

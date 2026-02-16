@@ -96,8 +96,8 @@ import sys
 
 def run(args, context):
     """
-    args:    arguments passed by the planner (dict)
-    context: {"session", "workspace", "session_secrets"} (dict)
+    args:    arguments passed by the planner (dict, parsed from JSON string)
+    context: full input dict (includes args, session, workspace, session_secrets)
     return:  result text (str)
     """
     # skill logic here
@@ -240,10 +240,10 @@ kiso skill search [query]
 
 ## Execution
 
-When the worker encounters `{"type": "skill", "skill": "search", "args": {...}}`:
+When the worker encounters a `skill` task:
 
-1. Validates args against the schema in `kiso.toml`
-2. Builds input JSON (args + session + workspace path + scoped session secrets)
+1. Parses `args` from JSON string, validates against the schema in `kiso.toml`
+2. Builds input JSON (parsed args as object + session + workspace path + scoped session secrets as dict)
 3. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/search/run.py` with `cwd=~/.kiso/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values)

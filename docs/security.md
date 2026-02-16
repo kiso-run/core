@@ -160,7 +160,7 @@ Kiso checks these on install and warns if they're missing. The skill receives th
 
 **Storage**: database table `store.secrets`, scoped per session.
 
-**How they get there**: the planner detects credentials in user messages and extracts them into the `secrets` field of its JSON output. The worker stores them in `store.secrets` before executing tasks.
+**How they get there**: the planner detects credentials in user messages and extracts them into the `secrets` field of its JSON output as an array of `{key, value}` pairs (e.g. `[{"key": "github_token", "value": "ghp_abc123"}]`). The worker stores them in `store.secrets` before executing tasks.
 
 **Scoping**: skills declare which session secrets they need in `kiso.toml`:
 

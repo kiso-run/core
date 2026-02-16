@@ -45,7 +45,7 @@ The planner sees three layers of history:
 
 This keeps the prompt lean while giving the planner both the immediate conversation and a record of recent actions.
 
-**Output**: JSON with a `goal`, optional `secrets`, and a `tasks` list.
+**Output**: JSON with a `goal`, `secrets` (nullable), and a `tasks` list.
 
 ### Structured Output (required)
 
@@ -117,10 +117,10 @@ No silent fallback, no manual JSON parsing. Structured output is a hard requirem
 
 The JSON is guaranteed valid by the provider, but kiso still validates the **semantics** before execution:
 
-1. Every task with `review: true` must have an `expect` field
+1. Every task with `review: true` must have a non-null `expect`
 2. The last task must be `type: "msg"` (the user always gets a final response)
 3. Every `skill` reference must exist in the installed skills list
-4. Every `skill` task's `args` must match the skill's schema from `kiso.toml`
+4. Every `skill` task's `args` must be valid JSON and match the skill's schema from `kiso.toml`
 5. No empty `tasks` list
 
 If validation fails, kiso sends the plan back to the planner with the specific error, up to `max_validation_retries` times (default 3). Example:
@@ -138,20 +138,25 @@ If all retries are exhausted: fail the message, notify the user. No silent fallb
 
 **System prompt** (`roles/planner.md`) includes:
 
-**1. Few-shot examples.** Two complete plan examples covering different scenarios:
+**1. Few-shot examples.** Two complete plan examples covering different scenarios. Note: all task fields are always present (strict mode); nullable fields are `null` when not applicable.
 
 ```
 Example 1 — coding task:
 User: "add JWT authentication"
 {
   "goal": "Add JWT auth with login endpoint, middleware, and tests",
+  "secrets": null,
   "tasks": [
-    {"type": "msg", "detail": "Tell the user: starting work on JWT authentication."},
-    {"type": "skill", "skill": "aider", "args": {"message": "create JWT auth module with /login and /logout endpoints and jwt_required middleware"},
-     "expect": "auth module created with login endpoint and JWT middleware", "review": true},
+    {"type": "msg", "detail": "Tell the user: starting work on JWT authentication.",
+     "skill": null, "args": null, "expect": null, "review": null, "model": null},
+    {"type": "skill", "detail": "Add JWT auth module",
+     "skill": "aider", "args": "{\"message\": \"create JWT auth module with /login and /logout endpoints\"}",
+     "expect": "auth module created with login endpoint and JWT middleware", "review": true, "model": null},
     {"type": "exec", "detail": "python -m pytest tests/",
-     "expect": "all tests pass", "review": true},
-    {"type": "msg", "detail": "We added JWT auth with /login, /logout, and jwt_required middleware. Tests pass. Summarize for the user."}
+     "skill": null, "args": null,
+     "expect": "all tests pass", "review": true, "model": null},
+    {"type": "msg", "detail": "We added JWT auth with /login, /logout, and jwt_required middleware. Tests pass. Summarize for the user.",
+     "skill": null, "args": null, "expect": null, "review": null, "model": null}
   ]
 }
 
@@ -159,10 +164,13 @@ Example 2 — research task:
 User: "find out how to deploy on fly.io"
 {
   "goal": "Research fly.io deployment and summarize for the user",
+  "secrets": null,
   "tasks": [
-    {"type": "skill", "skill": "search", "args": {"query": "fly.io python deployment guide"},
-     "expect": "relevant search results about fly.io deployment", "review": true},
-    {"type": "msg", "detail": "The user wants to deploy on fly.io. Based on the search results: [search output will be here]. Write a clear summary of the deployment steps."}
+    {"type": "skill", "detail": "Search for fly.io deployment guides",
+     "skill": "search", "args": "{\"query\": \"fly.io python deployment guide\"}",
+     "expect": "relevant search results about fly.io deployment", "review": true, "model": null},
+    {"type": "msg", "detail": "The user wants to deploy on fly.io. Based on the search results: [search output will be here]. Write a clear summary of the deployment steps.",
+     "skill": null, "args": null, "expect": null, "review": null, "model": null}
   ]
 }
 ```
@@ -186,15 +194,17 @@ Common patterns:
 
 ### Task Fields
 
-| Field | Required | Description |
+All fields are always present in the JSON output (strict mode requires it). The "Non-null when" column indicates when the field must have a meaningful value; otherwise it is `null`.
+
+| Field | Non-null when | Description |
 |---|---|---|
-| `type` | yes | `exec`, `msg`, `skill` |
-| `detail` | yes | What to do. For `msg` tasks, must include all context the worker needs to generate a good response. For `exec` tasks, the shell command. |
-| `expect` | **yes** if `review: true` | Semantic success criteria (e.g. "tests pass", not exact output). |
-| `model` | no | Role name to override the model for `msg` tasks only (e.g. `"reviewer"` to use the reviewer's stronger model). Ignored on `exec` and `skill` tasks. Valid values: `planner`, `reviewer`, `worker`, `summarizer`. |
-| `skill` | if type=skill | Skill name |
-| `args` | if type=skill | Arguments for the skill as a JSON string (validated against kiso.toml schema after parsing) |
-| `review` | no | If `true`, the reviewer evaluates this task's output. Default `false`. |
+| `type` | always | `exec`, `msg`, `skill` |
+| `detail` | always | What to do. For `msg` tasks, must include all context the worker needs. For `exec` tasks, the shell command. |
+| `expect` | `review` is `true` | Semantic success criteria (e.g. "tests pass", not exact output). |
+| `model` | optional | Role name to use that role's configured model for `msg` tasks (e.g. `"reviewer"` for a stronger model). Ignored on `exec` and `skill` tasks. Valid values: `planner`, `reviewer`, `worker`, `summarizer`. |
+| `skill` | `type` is `skill` | Skill name. |
+| `args` | `type` is `skill` | Skill arguments as a JSON string. Kiso parses and validates against `kiso.toml` schema. |
+| `review` | optional | `true` to have the reviewer evaluate this task's output. `null` or `false` means no review. |
 
 ### Example Output
 
@@ -221,7 +231,7 @@ Common patterns:
 
 `goal` is the high-level objective for the entire process. The reviewer uses it to evaluate individual tasks in context.
 
-`secrets` is optional. Present only when the user mentioned credentials in the message.
+`secrets` is always present in the output. `null` when the user did not mention credentials; an array of `{key, value}` pairs when they did.
 
 ---
 
@@ -270,7 +280,9 @@ There is no "local fix" status. When something fails, the planner replans with f
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "reason": null,
+  "learn": null
 }
 ```
 
@@ -282,10 +294,21 @@ There is no "local fix" status. When something fails, the planner replans with f
   "reason": "The project uses Flask, not FastAPI. The entire approach to adding middleware needs to change.",
   "learn": "Project framework is Flask, not FastAPI"
 }
+
+```
+
+**Example — ok with a learning:**
+
+```json
+{
+  "status": "ok",
+  "reason": null,
+  "learn": "Project uses pytest for testing"
+}
 ```
 
 - `learn`: free-form string, optional. Stored as a new entry in `store.facts` (global). Persists across all sessions.
-- `reason`: expected when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context. The schema makes it nullable (not conditionally required) — kiso validates that `replan` responses include a non-null `reason` before proceeding. If missing, kiso retries the reviewer call.
+- `reason`: expected when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context. The schema makes it nullable (not conditionally required) — kiso validates that `replan` responses include a non-null `reason` before proceeding. If missing, kiso retries the reviewer call (up to `max_validation_retries`).
 - **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
 
 ### Replan Flow
