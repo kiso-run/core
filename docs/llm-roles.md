@@ -18,11 +18,11 @@ Kiso makes 6 distinct types of LLM calls. Each type has its own model (from `con
 | Process goal | generates | yes | - | - | - | - |
 | Current task detail | - | yes | yes | - | - | - |
 | Current task expect | - | yes | - | - | - | - |
-| Current task output | - | yes | - | - | - | - |
+| Current task output (fenced) | - | yes | - | - | - | - |
 | Original user request | - | yes | - | - | - | - |
 | Messages to compress + their msg outputs | - | - | - | yes | - | - |
 | Pending learnings | - | - | - | - | yes | - |
-| Completed tasks + outputs | replan only | - | - | - | - | - |
+| Completed tasks + outputs (fenced) | replan only | - | - | - | - | - |
 | Remaining tasks | replan only | - | - | - | - | - |
 | Failure reason | replan only | - | - | - | - | - |
 | Replan history | replan only | - | - | - | - | - |
@@ -221,7 +221,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 **When**: after execution of every `exec` and `skill` task (always — no opt-out).
 
-**Input**: process goal + task detail + task expect + task output + original user message.
+**Input**: process goal + task detail + task expect + task output (fenced — see [security.md](security.md#layer-2-random-boundary-fencing)) + original user message.
 
 **Output**: JSON (via structured output, same as planner) with `status`, optional `reason`, and optional `learn`.
 

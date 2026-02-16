@@ -91,7 +91,7 @@ For each task (status updated to `running` in DB):
 | `msg` | Calls LLM with `worker` role (or override via the task's `model` field). Context: facts + session summary + task detail. The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
 | `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets (only those declared in `kiso.toml`). Output: stdout. |
 
-Output is sanitized (known secret values stripped — plaintext, base64, URL-encoded) before any further use. Task status and output are persisted to `store.tasks` (`done` or `failed`).
+Output is sanitized (known secret values stripped — plaintext, base64, URL-encoded) before any further use. Task output is fenced with random boundary tokens before inclusion in any LLM prompt (reviewer, replan planner) — see [security.md — Random Boundary Fencing](security.md#layer-2-random-boundary-fencing). Task status and output are persisted to `store.tasks` (`done` or `failed`).
 
 All LLM calls, task executions, and webhook deliveries are logged to the audit trail. See [audit.md](audit.md).
 
