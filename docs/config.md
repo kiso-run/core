@@ -112,7 +112,7 @@ port = 8333
 | `settings.knowledge_max_facts` | `50` | Max global facts before consolidation |
 | `settings.max_replan_depth` | `3` | Max replan cycles per original message |
 | `settings.max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation |
-| `settings.exec_timeout` | `120` | Seconds before exec task is killed |
+| `settings.exec_timeout` | `120` | Seconds before exec or skill subprocess is killed |
 | `settings.worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
 | `settings.host` | `0.0.0.0` | Server bind address |
 | `settings.port` | `8333` | Server port |

@@ -33,7 +33,7 @@ description = "Web search using Brave Search API"
 
 [kiso.skill]
 summary = "Web search using Brave Search API"    # one-liner for the planner
-session_secrets = ["github_token"]                  # user-provided credentials from the session
+# session_secrets = ["github_token"]             # user-provided credentials (not needed for this skill)
 
 [kiso.skill.args]
 query = { type = "string", required = true, description = "search query" }
@@ -49,16 +49,11 @@ bin = ["curl"]                    # checked with `which` after install
 
 ### Two Kinds of Secrets
 
-Skills can receive two kinds of credentials. See [security.md](security.md) for the full picture.
+Skills can receive two kinds of credentials — **deploy secrets** (env vars, set once by admin) and **session secrets** (user-provided at runtime). See [security.md](security.md#4-secrets) for the full comparison.
 
-| | Deploy Secrets (`[kiso.skill.env]`) | Session Secrets (`session_secrets`) |
-|---|---|---|
-| **What** | The skill's own API keys | Credentials the user gave the bot |
-| **When** | Deploy-time, set once | Runtime, per-session |
-| **Storage** | Container env var (`KISO_SKILL_SEARCH_API_KEY`) | DB `store.secrets`, extracted by planner |
-| **Example** | Brave Search API key | Marco's GitHub token |
-| **Who sets it** | Admin installing the skill | User chatting with the bot |
-| **Passed via** | Subprocess environment (automatic) | Input JSON (`session_secrets` field) |
+In `kiso.toml`:
+- `[kiso.skill.env]` declares deploy secrets → passed via subprocess environment
+- `session_secrets` declares which session secrets the skill needs → passed via input JSON
 
 `session_secrets` lists which user-provided credentials this skill receives at runtime. Kiso passes **only those** — not the entire session bag. If omitted, the skill receives no session secrets. This limits blast radius.
 

@@ -85,7 +85,7 @@ No tokens, no secrets. Those come from env vars declared in `kiso.toml`.
 4. Receives webhook callbacks from kiso
 5. Sends responses back to the platform
 
-The connector does **not** need to know about Linux usernames. It sends the platform identity as-is. Kiso resolves it using the `aliases.{connector_name}` field in `config.toml`, where the connector name matches the token name.
+The connector does **not** need to know about Linux usernames. It sends the platform identity as-is. Kiso resolves it using the `aliases.{token_name}` field in `config.toml`, where the token name is determined by the bearer token the connector uses.
 
 ## deps.sh
 

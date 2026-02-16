@@ -47,7 +47,7 @@ Uses structured output (`response_format` with strict JSON schema). The provider
 The LLM returns JSON with a `goal`, optional `secrets`, and a `tasks` list.
 
 - `goal`: the high-level objective for the entire process (e.g. "Add JWT authentication with login endpoint, middleware, and tests"). Stored for the reviewer and potential replan cycles.
-- `secrets`: if present, the worker stores them in `store.secrets` before executing tasks.
+- `secrets`: array of `{key, value}` pairs, or `null`. If present, the worker stores them in `store.secrets` before executing tasks.
 - `tasks`: each task with `review: true` must include an `expect` field with semantic success criteria.
 
 ### c) Validates the Plan
@@ -97,6 +97,8 @@ Every `msg` task output is delivered to the user:
 
 Only `msg` tasks are delivered. `exec` and `skill` outputs are internal — the planner adds `msg` tasks wherever it wants to communicate with the user.
 
+If the webhook POST fails, kiso logs the failure and continues execution. Task outputs remain available via `/status`. No retries.
+
 ### f) Reviewer Evaluates (if review: true)
 
 Only for tasks with `"review": true`. Reviewer context: process goal + task detail + task expect + task output + original user message.
@@ -123,7 +125,7 @@ When the reviewer determines that the task failed and the plan needs revision:
 
 3. The planner produces a new `goal` and `tasks` list. The old remaining tasks are marked `failed` in DB. New tasks go through validation (step c) again.
 
-4. Execution continues with the new task list.
+4. Execution continues with the new task list. Even on replan, the planner must produce at least one task (typically a `msg` task summarizing the situation).
 
 **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
 

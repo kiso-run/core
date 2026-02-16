@@ -49,7 +49,7 @@ This keeps the prompt lean while giving the planner both the immediate conversat
 
 ### Structured Output (required)
 
-The planner call uses `response_format` with a strict JSON schema:
+The planner call uses `response_format` with a strict JSON schema. OpenAI strict mode requires all properties to be in `required` (optional fields use nullable types) and prohibits `additionalProperties` as anything other than `false`:
 
 ```python
 response_format = {
@@ -62,8 +62,16 @@ response_format = {
             "properties": {
                 "goal": {"type": "string"},
                 "secrets": {
-                    "type": "object",
-                    "additionalProperties": {"type": "string"}
+                    "type": ["array", "null"],
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string"},
+                            "value": {"type": "string"}
+                        },
+                        "required": ["key", "value"],
+                        "additionalProperties": False
+                    }
                 },
                 "tasks": {
                     "type": "array",
@@ -72,23 +80,28 @@ response_format = {
                         "properties": {
                             "type": {"type": "string", "enum": ["exec", "msg", "skill"]},
                             "detail": {"type": "string"},
-                            "skill": {"type": "string"},
-                            "args": {"type": "object"},
-                            "expect": {"type": "string"},
-                            "review": {"type": "boolean"},
-                            "model": {"type": "string"}
+                            "skill": {"type": ["string", "null"]},
+                            "args": {"type": ["string", "null"]},
+                            "expect": {"type": ["string", "null"]},
+                            "review": {"type": ["boolean", "null"]},
+                            "model": {"type": ["string", "null"]}
                         },
-                        "required": ["type", "detail"],
+                        "required": ["type", "detail", "skill", "args", "expect", "review", "model"],
                         "additionalProperties": False
                     }
                 }
             },
-            "required": ["goal", "tasks"],
+            "required": ["goal", "secrets", "tasks"],
             "additionalProperties": False
         }
     }
 }
 ```
+
+Notes on the schema:
+- **`secrets`** uses an array of `{key, value}` pairs instead of a freeform object (strict mode prohibits `additionalProperties` as a schema). `null` when no secrets.
+- **`args`** is a JSON string (the worker parses it). Strict mode doesn't allow dynamic-key objects, so skill args are serialized. `null` for non-skill tasks.
+- **Optional task fields** (`skill`, `args`, `expect`, `review`, `model`) are nullable — the planner sets them to `null` when not applicable.
 
 This guarantees valid JSON from the provider at the decoding level. **No parse retries needed.** If the provider does not support `response_format` with `json_schema`, the call fails with a clear error:
 
@@ -169,6 +182,7 @@ Common patterns:
 - The last task must be `type: "msg"` — the user always gets a final response
 - Every task with `review: true` must have an `expect` field
 - `msg` tasks are the only way to communicate with the user
+- If the user mentions credentials (API keys, tokens, passwords), extract them into the `secrets` array
 
 ### Task Fields
 
@@ -179,7 +193,7 @@ Common patterns:
 | `expect` | **yes** if `review: true` | Semantic success criteria (e.g. "tests pass", not exact output). |
 | `model` | no | Role name to override the model for `msg` tasks only (e.g. `"reviewer"` to use the reviewer's stronger model). Ignored on `exec` and `skill` tasks. Valid values: `planner`, `reviewer`, `worker`, `summarizer`. |
 | `skill` | if type=skill | Skill name |
-| `args` | if type=skill | Arguments for the skill (validated against kiso.toml schema) |
+| `args` | if type=skill | Arguments for the skill as a JSON string (validated against kiso.toml schema after parsing) |
 | `review` | no | If `true`, the reviewer evaluates this task's output. Default `false`. |
 
 ### Example Output
@@ -187,16 +201,20 @@ Common patterns:
 ```json
 {
   "goal": "Add JWT authentication with login endpoint, middleware, and tests",
-  "secrets": {"github_token": "ghp_abc123"},
+  "secrets": [{"key": "github_token", "value": "ghp_abc123"}],
   "tasks": [
-    {"type": "msg",   "detail": "Tell the user: starting work on JWT authentication with login/logout endpoints and middleware."},
-    {"type": "skill", "skill": "aider", "args": {"message": "create JWT auth module with /login and /logout endpoints and jwt_required middleware"},
+    {"type": "msg",   "detail": "Tell the user: starting work on JWT authentication.",
+     "skill": null, "args": null, "expect": null, "review": null, "model": null},
+    {"type": "skill", "detail": "Add JWT auth module",
+     "skill": "aider", "args": "{\"message\": \"create JWT auth module with /login and /logout endpoints\"}",
      "expect": "auth module created with login endpoint and JWT middleware",
-     "review": true},
+     "review": true, "model": null},
     {"type": "exec",  "detail": "python -m pytest tests/test_auth.py",
+     "skill": null, "args": null,
      "expect": "all tests pass, exit code 0",
-     "review": true},
-    {"type": "msg",   "detail": "The user asked for JWT auth. We created auth module with /login, /logout, and jwt_required middleware. All 3 tests pass. Summarize this for the user."}
+     "review": true, "model": null},
+    {"type": "msg",   "detail": "The user asked for JWT auth. We created auth module with /login, /logout, and jwt_required middleware. All 3 tests pass. Summarize this for the user.",
+     "skill": null, "args": null, "expect": null, "review": null, "model": null}
   ]
 }
 ```
@@ -229,10 +247,10 @@ response_format = {
             "type": "object",
             "properties": {
                 "status": {"type": "string", "enum": ["ok", "replan"]},
-                "reason": {"type": "string"},
-                "learn": {"type": "string"}
+                "reason": {"type": ["string", "null"]},
+                "learn": {"type": ["string", "null"]}
             },
-            "required": ["status"],
+            "required": ["status", "reason", "learn"],
             "additionalProperties": False
         }
     }
@@ -267,7 +285,7 @@ There is no "local fix" status. When something fails, the planner replans with f
 ```
 
 - `learn`: free-form string, optional. Stored as a new entry in `store.facts` (global). Persists across all sessions.
-- `reason`: expected when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context. The JSON schema doesn't enforce this conditionally — semantic validation catches `replan` without `reason` and retries.
+- `reason`: expected when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context. The schema makes it nullable (not conditionally required) — kiso validates that `replan` responses include a non-null `reason` before proceeding. If missing, kiso retries the reviewer call.
 - **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
 
 ### Replan Flow

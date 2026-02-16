@@ -127,6 +127,7 @@ kiso connector discord status                  # check if running
 
 ## Notes
 
+- `kiso serve` starts the HTTP server (used in the Docker CMD, not typically run directly).
 - Chat mode has no agent logic. It's just an HTTP wrapper.
 - All intelligence lives in the server.
 - Works against a remote server — useful for running kiso on a VPS and working from a laptop.
