@@ -71,7 +71,7 @@ On startup, any tasks left in `running` status are marked as `failed` (container
 
 The `/status/{session}` endpoint reads from this table.
 
-**Delivery rule**: all `msg` task outputs are delivered to the user (via webhook and/or polling). `exec` and `skill` outputs are internal — the planner adds `msg` tasks wherever it wants to communicate. See [flow.md](flow.md).
+Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
 
 ### facts
 
@@ -87,11 +87,7 @@ CREATE TABLE facts (
 );
 ```
 
-**Facts are global.** All facts are visible to all sessions regardless of the `session` column. The `session` column is **provenance only** — it records where the fact came from, not where it's visible.
-
-- **Reviewer** adds entries via the `learn` field in review output.
-- **Summarizer** consolidates when entries exceed `knowledge_max_facts`: merges duplicates and removes outdated entries, replacing old rows with fewer consolidated ones.
-- The planner and worker see all facts as a flat list.
+**Facts are global.** All facts are visible to all sessions. The `session` column is **provenance only** — it records where the fact came from, not where it's visible.
 
 Example entries:
 ```
@@ -102,7 +98,7 @@ id=3  content="Conventions: snake_case, type hints"      source="manual"      se
 
 All three are visible in every session. Fact #1, learned in `dev-backend`, helps the planner in `discord-general` too.
 
-See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle) for creation, usage, and consolidation flows.
+See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle) for how facts are created (reviewer `learn` field), used (planner + worker), and consolidated (summarizer, when count exceeds `knowledge_max_facts`).
 
 ### secrets
 

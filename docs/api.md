@@ -94,9 +94,7 @@ Every `msg` task output is POSTed to the session's webhook:
 }
 ```
 
-`final: true` on the last `msg` task in the current plan.
-
-Only `msg` tasks trigger webhooks. `exec` and `skill` outputs are internal — the planner adds `msg` tasks wherever it wants to communicate with the user. See [flow.md](flow.md).
+`final: true` on the last `msg` task in the current plan. Only `msg` tasks trigger webhooks — `exec` and `skill` outputs are internal. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
 
 ## GET /pub/{id}
 
@@ -137,4 +135,4 @@ event: msg
 data: {"task_id": 5, "content": "JWT auth added. Tests pass."}
 ```
 
-The current architecture (worker loop emitting events per task) supports adding this without structural changes. The webhook + polling model covers all current use cases.
+The webhook + polling model covers all current use cases. The worker loop architecture supports adding SSE without structural changes.

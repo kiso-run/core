@@ -150,22 +150,12 @@ services:
     env_file: .env
 ```
 
-## Health Check
-
-`GET /health` returns `200 OK` when the server is running. Used by Docker's `HEALTHCHECK` directive.
-
 ## deps.sh and System Packages
 
-When skills or connectors are installed (build-time or runtime), their `deps.sh` runs inside the container as root. This is safe because:
+`deps.sh` runs inside the container as root (isolated, no sudo needed, idempotent). See [skills.md — deps.sh](skills.md#depssh).
 
-- The container is isolated from the host
-- `apt install` works without sudo
-- The script is idempotent (safe to re-run)
-
-Build-time installs bake system deps into the image layer. Note: system packages installed by `deps.sh` at runtime live in the container filesystem, not in the volume — they are lost when the container is recreated. Python packages (installed via `uv sync` into `.venv`) persist in the volume and survive restarts.
-
-**Recommendation**: for skills/connectors with heavy system deps, prefer build-time installation.
+**Important difference between build-time and runtime installs**: system packages installed at runtime live in the container filesystem (not the volume) — lost on container recreation. Python packages (`uv sync` into `.venv`) persist in the volume. For heavy system deps, prefer build-time installation.
 
 ## Task Persistence
 
-Tasks are stored in `store.db` (inside the volume). If the container crashes, completed tasks and their outputs are preserved. In-flight tasks are marked as `failed` on next startup.
+Tasks in `store.db` (volume) survive container crashes. In-flight tasks marked `failed` on next startup.

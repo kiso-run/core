@@ -14,8 +14,6 @@
 
 ## Minimal config.toml
 
-Kiso requires explicit configuration for anything that talks to external services. No magic, no guessing.
-
 **Required on first run:**
 
 ```toml
@@ -91,7 +89,7 @@ port = 8333
 | Field | Description |
 |---|---|
 | `[tokens]` | At least one named token. Each client (CLI, connector) uses its own token. |
-| `[providers]` | At least one provider with `base_url`. Kiso refuses to start without it. |
+| `[providers]` | At least one provider with `base_url`. |
 | `providers.*.api_key_env` | Env variable name for the API key. Optional for local providers (e.g. Ollama). |
 | `providers.*.base_url` | Required. No implicit default. |
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
@@ -103,11 +101,11 @@ port = 8333
 | Field | Default | Description |
 |---|---|---|
 | `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform username. See [security.md](security.md). |
-| `models.planner` | `moonshotai/kimi-k2.5` | Must support structured output (`response_format` with `json_schema`). |
-| `models.reviewer` | `moonshotai/kimi-k2.5` | Must support structured output. |
-| `models.worker` | `deepseek/deepseek-v3.2` | Free-form text output, no constraints. |
-| `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text output, no constraints. |
-| `settings.context_messages` | `5` | Number of recent raw messages sent to the planner. Msg outputs are sent separately. |
+| `models.planner` | `moonshotai/kimi-k2.5` | Requires structured output (`response_format` with `json_schema`). |
+| `models.reviewer` | `moonshotai/kimi-k2.5` | Requires structured output. |
+| `models.worker` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
+| `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
+| `settings.context_messages` | `5` | Number of recent raw messages sent to the planner (see [llm-roles.md](llm-roles.md#planner)). |
 | `settings.summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value |
 | `settings.knowledge_max_facts` | `50` | Max global facts before consolidation |
 | `settings.max_replan_depth` | `3` | Max replan cycles per original message |
@@ -119,7 +117,7 @@ port = 8333
 
 ## Tokens
 
-Each client (CLI, connector, external service) gets its own named token. This allows revoking a single client without affecting others.
+Each client (CLI, connector, external service) gets its own named token. Revoking a client = removing its token and restarting.
 
 ```toml
 [tokens]
@@ -128,15 +126,7 @@ discord = "tok-def456"
 telegram = "tok-ghi789"
 ```
 
-API calls use the standard bearer header:
-
-```
-Authorization: Bearer tok-abc123
-```
-
-Kiso matches the token to its name and logs which client made the call. The token name also identifies the connector for alias resolution (see [security.md](security.md)). Revoking = removing the token from config and restarting.
-
-Generate tokens however you want (`openssl rand -hex 32`, `uuidgen`, etc.). Kiso does not auto-generate tokens.
+The token name identifies the connector for alias resolution and is logged on each call. Generate tokens however you want (`openssl rand -hex 32`, `uuidgen`, etc.). See [security.md — API Authentication](security.md#1-api-authentication) for details.
 
 ## Providers
 
@@ -151,10 +141,10 @@ base_url = "https://openrouter.ai/api/v1"
 base_url = "http://localhost:11434/v1"
 ```
 
-- `api_key_env`: name of the environment variable containing the API key. Kiso reads the key from the env at startup — it is **never** stored in config. Optional for local providers.
-- `base_url`: **required**. No implicit default. If missing, kiso refuses to start.
+- `api_key_env`: env var name for the API key. Read from env at startup — **never** stored in config. Optional for local providers (e.g. Ollama).
+- `base_url`: **required**. No implicit default.
 
-**Structured output requirement**: the Planner and Reviewer use `response_format` with strict `json_schema`. The provider used for these roles must support it. If it doesn't, the call fails with a clear error — no silent fallback. Worker and Summarizer produce free-form text and work with any provider.
+**Structured output requirement**: Planner and Reviewer require `response_format` with strict `json_schema`. If the provider doesn't support it, the call fails with a clear error — no fallback. Worker and Summarizer produce free-form text and work with any provider.
 
 ## Model Routing
 
@@ -170,7 +160,7 @@ ollama:llama3                    → provider "ollama", model "llama3"
 
 ## Users
 
-Kiso uses a whitelist. Only users listed in `[users]` get responses. Messages from unknown users are saved to `store.messages` but not processed — no worker is spawned, no response is sent.
+Whitelist-based. Only users in `[users]` get responses. Unknown users' messages are saved for audit but not processed.
 
 ```toml
 [users.marco]
@@ -189,9 +179,7 @@ skills = ["search", "aider"]
 ```
 
 - **`role`**: `"admin"` (unrestricted exec, package management, all skills) or `"user"` (sandboxed exec, allowed skills only).
-- **`skills`**: which skills the planner can use for this user. `"*"` = all installed skills. A list = only those. Admins always have all skills regardless of this field.
-- **`aliases.*`**: maps platform identities to this Linux user. Key is the connector/token name, value is the platform username. See [security.md](security.md).
+- **`skills`**: which skills the planner can use for this user. `"*"` = all, or a list. Admins always have all skills regardless of this field.
+- **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform username.
 
-User identifiers are Linux usernames:
-- **CLI**: `user` defaults to `$(whoami)` — direct API call, no alias needed
-- **Connectors**: pass the platform identity as `user`, kiso resolves it via aliases
+User identifiers are Linux usernames. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#2-user-identity) for the full resolution flow.

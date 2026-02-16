@@ -104,7 +104,7 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 ```
 
-Only whitelisted users get responses. Messages from unknown users are saved for audit (the caller still receives `202 Accepted`) but no worker is spawned and no response is sent. See [config.md](docs/config.md) for user roles and skill permissions.
+Only whitelisted users get responses (unknown users' messages are saved for audit but not processed). See [config.md](docs/config.md) for user roles and skill permissions.
 
 ### 3. Set up secrets
 
@@ -123,10 +123,7 @@ KISO_OPENROUTER_API_KEY=sk-or-v1-...
 # KISO_CONNECTOR_DISCORD_BOT_TOKEN=...
 ```
 
-The naming convention:
-- **Provider keys**: whatever you put in `api_key_env` in config.toml
-- **Skill keys**: `KISO_SKILL_{SKILLNAME}_{KEY}` — declared in each skill's `kiso.toml`
-- **Connector keys**: `KISO_CONNECTOR_{NAME}_{KEY}` — declared in each connector's `kiso.toml`
+Naming: providers use whatever `api_key_env` says; skills use `KISO_SKILL_{NAME}_{KEY}`; connectors use `KISO_CONNECTOR_{NAME}_{KEY}`. All declared in their respective `kiso.toml`.
 
 ### 4. Create role prompts
 
@@ -195,11 +192,7 @@ kiso connector discord run
 
 Users can give the bot credentials during conversation (e.g. "here's my GitHub token: ghp_abc123"). The planner extracts these and stores them per-session in the database. Skills that declare `session_secrets` in their `kiso.toml` receive only the secrets they declared — nothing more.
 
-These **session secrets** are different from **deploy secrets**:
-- Deploy secrets = env vars, set once by the admin, for the skill's own API keys
-- Session secrets = runtime, provided by users in chat, for user-specific credentials
-
-See [security.md](docs/security.md) for the full picture.
+These **session secrets** are different from **deploy secrets** (env vars, set once by admin). See [security.md — Secrets](docs/security.md#4-secrets) for the full comparison.
 
 See [config.md](docs/config.md) for full configuration reference.
 

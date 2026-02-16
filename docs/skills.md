@@ -49,13 +49,10 @@ bin = ["curl"]                    # checked with `which` after install
 
 ### Two Kinds of Secrets
 
-Skills can receive two kinds of credentials — **deploy secrets** (env vars, set once by admin) and **session secrets** (user-provided at runtime). See [security.md](security.md#4-secrets) for the full comparison.
+- `[kiso.skill.env]` → **deploy secrets** (env vars, set once by admin, passed via subprocess environment)
+- `session_secrets` → **session secrets** (user-provided at runtime, passed via input JSON — only declared ones, not the full session bag)
 
-In `kiso.toml`:
-- `[kiso.skill.env]` declares deploy secrets → passed via subprocess environment
-- `session_secrets` declares which session secrets the skill needs → passed via input JSON
-
-`session_secrets` lists which user-provided credentials this skill receives at runtime. Kiso passes **only those** — not the entire session bag. If omitted, the skill receives no session secrets. This limits blast radius.
+See [security.md — Secrets](security.md#4-secrets) for the full comparison and scoping rules.
 
 ### What the Planner Sees
 
@@ -166,20 +163,7 @@ kiso skill install git@github.com:someone/my-skill.git --name custom
 
 ### Unofficial Repo Warning
 
-When installing from a non-official source (not `kiso-run` org), kiso warns:
-
-```
-⚠ This is an unofficial package from github.com:someone/my-skill.
-  deps.sh will be executed and may install system packages.
-  Review the repo before proceeding.
-  Continue? [y/N]
-```
-
-Use `--no-deps` to skip `deps.sh` execution:
-
-```bash
-kiso skill install git@github.com:someone/my-skill.git --no-deps
-```
+Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#5-unofficial-package-warning) for the full warning text.
 
 ### Naming Convention
 
@@ -252,25 +236,11 @@ When the worker encounters a `skill` task:
 
 ## Discovery
 
-Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each skill directory. No restart needed.
-
-The planner sees one-liners and args schemas:
-
-```
-Available skills:
-- search — Web search using Brave Search API
-  args: query (string, required): search query
-        max_results (int, optional, default=5): number of results to return
-- aider — Code editing tool using LLM to apply changes in natural language
-  args: message (string, required): description of the change
-        files (list, optional): files to operate on
-```
-
-The planner decides whether to use a skill or a plain `exec` task.
+Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each directory. No restart needed. The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
 
 ## Why Subprocesses
 
-- **Isolation**: each skill has its own venv. No dependency conflicts.
-- **Simplicity**: no dynamic imports, no async coordination. JSON in, text out.
-- **Safety**: a crashing skill doesn't take down the worker.
-- **Language-agnostic**: run.py can internally call anything (Node, Go, curl, etc.).
+- **Isolation**: own venv, no dependency conflicts.
+- **Simplicity**: JSON in, text out. No dynamic imports or async coordination.
+- **Safety**: crashing skill doesn't take down the worker.
+- **Language-agnostic**: run.py can call anything (Node, Go, curl, etc.).

@@ -127,10 +127,7 @@ kiso connector discord status                  # check if running
 
 ## Notes
 
-- `kiso serve` starts the HTTP server (used in the Docker CMD, not typically run directly).
-- Chat mode has no agent logic. It's just an HTTP wrapper.
-- All intelligence lives in the server.
-- Works against a remote server — useful for running kiso on a VPS and working from a laptop.
+- `kiso serve` starts the HTTP server (used in Docker CMD, not typically run directly).
+- Chat mode is a thin HTTP wrapper — all intelligence lives in the server.
+- Works against a remote server (`--api`) — useful for running kiso on a VPS.
 - Session logs: `tail -f ~/.kiso/sessions/{session}/session.log`
-- Only admins can install/update/remove skills and connectors.
-- Unofficial packages show a warning before installation.

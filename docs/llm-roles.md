@@ -49,7 +49,7 @@ This keeps the prompt lean while giving the planner both the immediate conversat
 
 ### Structured Output (required)
 
-The planner call uses `response_format` with a strict JSON schema. OpenAI strict mode requires all properties to be in `required` (optional fields use nullable types) and prohibits `additionalProperties` as anything other than `false`:
+Uses `response_format` with a strict JSON schema. Strict mode: all properties in `required` (optional = nullable types), `additionalProperties: false` everywhere:
 
 ```python
 response_format = {
@@ -98,12 +98,12 @@ response_format = {
 }
 ```
 
-Notes on the schema:
-- **`secrets`** uses an array of `{key, value}` pairs instead of a freeform object (strict mode prohibits `additionalProperties` as a schema). `null` when no secrets.
-- **`args`** is a JSON string (the worker parses it). Strict mode doesn't allow dynamic-key objects, so skill args are serialized. `null` for non-skill tasks.
-- **Optional task fields** (`skill`, `args`, `expect`, `review`, `model`) are nullable — the planner sets them to `null` when not applicable.
+Schema notes:
+- **`secrets`**: array of `{key, value}` pairs (strict mode prohibits `additionalProperties` as a schema). `null` when no secrets.
+- **`args`**: JSON string (strict mode doesn't allow dynamic-key objects). `null` for non-skill tasks.
+- **Optional task fields** (`skill`, `args`, `expect`, `review`, `model`): nullable — `null` when not applicable.
 
-This guarantees valid JSON from the provider at the decoding level. **No parse retries needed.** If the provider does not support `response_format` with `json_schema`, the call fails with a clear error:
+Provider guarantees valid JSON at decoding level — no parse retries needed. If the provider doesn't support structured output, the call fails with a clear error:
 
 ```
 Provider "ollama" does not support structured output.
@@ -111,19 +111,19 @@ Planner and Reviewer require it. Route these roles to a compatible provider
 (e.g. models.planner = "openrouter:moonshotai/kimi-k2.5").
 ```
 
-No silent fallback, no manual JSON parsing. Structured output is a hard requirement for Planner and Reviewer. Worker and Summarizer produce free-form text and have no such constraint.
+Structured output is a hard requirement for Planner and Reviewer. Worker and Summarizer produce free-form text.
 
 ### Validation After Parsing
 
-The JSON is guaranteed valid by the provider, but kiso still validates the **semantics** before execution:
+JSON structure is guaranteed by the provider, but kiso validates **semantics** before execution:
 
 1. Every task with `review: true` must have a non-null `expect`
-2. The last task must be `type: "msg"` (the user always gets a final response)
-3. Every `skill` reference must exist in the installed skills list
-4. Every `skill` task's `args` must be valid JSON and match the skill's schema from `kiso.toml`
-5. No empty `tasks` list
+2. Last task must be `type: "msg"` (user always gets a final response)
+3. Every `skill` reference must exist in installed skills
+4. Every `skill` task's `args` must be valid JSON matching the skill's schema from `kiso.toml`
+5. `tasks` list must not be empty
 
-If validation fails, kiso sends the plan back to the planner with the specific error, up to `max_validation_retries` times (default 3). Example:
+On failure, kiso sends the plan back with specific errors, up to `max_validation_retries` (default 3):
 
 ```
 Your plan has errors:
@@ -132,7 +132,7 @@ Your plan has errors:
 Fix these and return the corrected plan.
 ```
 
-If all retries are exhausted: fail the message, notify the user. No silent fallback.
+If exhausted: fail the message, notify user. No silent fallback.
 
 ### Prompt Design
 
@@ -206,32 +206,14 @@ All fields are always present in the JSON output (strict mode requires it). The 
 | `args` | `type` is `skill` | Skill arguments as a JSON string. Kiso parses and validates against `kiso.toml` schema. |
 | `review` | optional | `true` to have the reviewer evaluate this task's output. `null` or `false` means no review. |
 
-### Example Output
+### Output Fields
+
+- `goal`: high-level objective for the entire process. The reviewer uses it to evaluate individual tasks in context.
+- `secrets`: always present. `null` when no credentials; array of `{key, value}` pairs when the user mentioned them. Example with non-null secrets:
 
 ```json
-{
-  "goal": "Add JWT authentication with login endpoint, middleware, and tests",
-  "secrets": [{"key": "github_token", "value": "ghp_abc123"}],
-  "tasks": [
-    {"type": "msg",   "detail": "Tell the user: starting work on JWT authentication.",
-     "skill": null, "args": null, "expect": null, "review": null, "model": null},
-    {"type": "skill", "detail": "Add JWT auth module",
-     "skill": "aider", "args": "{\"message\": \"create JWT auth module with /login and /logout endpoints\"}",
-     "expect": "auth module created with login endpoint and JWT middleware",
-     "review": true, "model": null},
-    {"type": "exec",  "detail": "python -m pytest tests/test_auth.py",
-     "skill": null, "args": null,
-     "expect": "all tests pass, exit code 0",
-     "review": true, "model": null},
-    {"type": "msg",   "detail": "The user asked for JWT auth. We created auth module with /login, /logout, and jwt_required middleware. All 3 tests pass. Summarize this for the user.",
-     "skill": null, "args": null, "expect": null, "review": null, "model": null}
-  ]
-}
+"secrets": [{"key": "github_token", "value": "ghp_abc123"}]
 ```
-
-`goal` is the high-level objective for the entire process. The reviewer uses it to evaluate individual tasks in context.
-
-`secrets` is always present in the output. `null` when the user did not mention credentials; an array of `{key, value}` pairs when they did.
 
 ---
 
@@ -245,7 +227,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 ### Structured Output (required)
 
-Same as the planner — the reviewer call uses `response_format` with a strict JSON schema:
+Same mechanism as the planner (`response_format` with strict JSON schema):
 
 ```python
 response_format = {
@@ -274,59 +256,29 @@ response_format = {
 | `"ok"` | Task output meets expectations | Proceed to next task |
 | `"replan"` | Output is wrong, strategy needs revision | Notify user, discard remaining tasks, call planner with full context |
 
-There is no "local fix" status. When something fails, the planner replans with full context — it decides whether the new plan is a small correction or a complete rework. One recovery mechanism, one depth counter.
+No "local fix" status — the planner replans with full context and decides whether to make a small correction or complete rework. One recovery mechanism, one depth counter.
 
-**Example — everything fine:**
+### Fields
 
-```json
-{
-  "status": "ok",
-  "reason": null,
-  "learn": null
-}
-```
+- `learn`: optional free-form string. Stored as new entry in `store.facts` (global, all sessions).
+- `reason`: expected when `status: "replan"`. Explains why the task failed. Included in user notification and replanner context. Schema makes it nullable — kiso validates non-null on `replan` and retries reviewer if missing (up to `max_validation_retries`).
+- **Max replan depth**: after `max_replan_depth` cycles for the same message, worker stops replanning, notifies user, moves on.
 
-**Example — replan needed:**
+### Examples
 
 ```json
-{
-  "status": "replan",
-  "reason": "The project uses Flask, not FastAPI. The entire approach to adding middleware needs to change.",
-  "learn": "Project framework is Flask, not FastAPI"
-}
+{"status": "ok", "reason": null, "learn": null}
 
+{"status": "replan",
+ "reason": "The project uses Flask, not FastAPI. The entire approach to adding middleware needs to change.",
+ "learn": "Project framework is Flask, not FastAPI"}
+
+{"status": "ok", "reason": null, "learn": "Project uses pytest for testing"}
 ```
-
-**Example — ok with a learning:**
-
-```json
-{
-  "status": "ok",
-  "reason": null,
-  "learn": "Project uses pytest for testing"
-}
-```
-
-- `learn`: free-form string, optional. Stored as a new entry in `store.facts` (global). Persists across all sessions.
-- `reason`: expected when status is `"replan"`. Explains why the task failed. Included in the notification to the user and in the replanner context. The schema makes it nullable (not conditionally required) — kiso validates that `replan` responses include a non-null `reason` before proceeding. If missing, kiso retries the reviewer call (up to `max_validation_retries`).
-- **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
 
 ### Replan Flow
 
-When the reviewer returns `"replan"`:
-
-1. **Notify the user** — the worker sends an automatic `msg` to the webhook explaining that a replan is happening and why (using `reason`).
-
-2. **Call the planner** with enriched context:
-   - Everything the planner normally receives (facts, summary, messages, skills, role, original message)
-   - `completed`: list of tasks already executed with their outputs
-   - `remaining`: list of tasks that were planned but not yet executed
-   - `failure`: the failed task, its output, and the reviewer's `reason`
-   - `replan_history`: list of previous replan attempts for this message (each with its goal, failure reason, and what was tried) — so the planner doesn't repeat the same mistakes
-
-3. The planner produces a new `goal` and `tasks` list, replacing the old remaining tasks.
-
-4. Execution continues with the new task list.
+See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) for the full replan sequence (notify user → call planner with completed/remaining/failure/replan_history → new plan → continue execution).
 
 ---
 
@@ -340,17 +292,14 @@ When the reviewer returns `"replan"`:
 
 ### Why the Worker Doesn't See the Conversation
 
-This is a deliberate design choice, not a limitation:
+Deliberate design choice:
 
-1. **Focus.** The worker generates text based on clear instructions. It doesn't need to interpret raw conversation — the planner already did that. Each task has a self-contained `detail` with everything needed.
+1. **Focus.** The planner already interpreted the conversation. Each task has a self-contained `detail` — the worker doesn't need to re-interpret raw messages.
+2. **Cost.** The planner pays the conversation-tokens cost once. The worker (called multiple times per plan) stays cheap.
+3. **Separation.** Planner reasons about *what* to do; worker does it. Mixing both would degrade each — the worker would second-guess the plan, the planner's instructions would compete with raw messages.
+4. **Predictability.** Behavior depends only on (facts + summary + detail). No hidden context, easier to debug.
 
-2. **Cost.** Conversation history is tokens. The planner pays that cost once and distills it into focused task details. The worker (potentially called multiple times per plan) stays cheap.
-
-3. **Separation of concerns.** The planner reasons about *what* to do. The worker does it. Mixing the two would make both worse — the worker would second-guess the plan, the planner's instructions would compete with raw messages.
-
-4. **Predictability.** The worker's behavior depends only on (facts + summary + detail). No hidden context, no surprises from earlier messages. Easier to debug, easier to review.
-
-If the planner fails to include enough context in `detail`, the result will be poor — and the reviewer will catch it and trigger a replan. The validation step (see Planner section) also checks that `detail` is non-empty.
+If `detail` lacks context, the reviewer catches it and triggers a replan.
 
 ---
 

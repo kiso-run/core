@@ -79,27 +79,15 @@ No tokens, no secrets. Those come from env vars declared in `kiso.toml`.
 2. Listens for messages
 3. POSTs to kiso's `/msg` endpoint:
    - `session`: mapped from platform context (e.g. Discord channel → session name via `channel_map`)
-   - `user`: the platform identity (e.g. `"Marco#1234"`) — kiso resolves it to a Linux username via aliases (see [security.md](security.md))
+   - `user`: the platform identity as-is (e.g. `"Marco#1234"`) — kiso resolves it to a Linux username via `aliases.{token_name}` in `config.toml` (see [security.md — Connector Aliases](security.md#connector-aliases))
    - `content`: message text
    - `webhook`: callback URL the connector exposes to receive responses
 4. Receives webhook callbacks from kiso
 5. Sends responses back to the platform
 
-The connector does **not** need to know about Linux usernames. It sends the platform identity as-is. Kiso resolves it using the `aliases.{token_name}` field in `config.toml`, where the token name is determined by the bearer token the connector uses.
-
 ## deps.sh
 
-Optional. Installs system-level dependencies. Must be **idempotent** — safe to run on both first install and updates.
-
-```bash
-#!/bin/bash
-set -e
-
-apt-get update -qq
-apt-get install -y --no-install-recommends opus-tools libffi-dev
-```
-
-Runs inside the Docker container. If it fails, kiso warns the user and suggests asking the bot to fix it.
+Same as skills: optional, idempotent, installs system-level deps inside the container. See [skills.md — deps.sh](skills.md#depssh).
 
 ## Installation
 
@@ -124,20 +112,7 @@ kiso connector install git@github.com:someone/my-connector.git --name custom
 
 ### Unofficial Repo Warning
 
-When installing from a non-official source (not `kiso-run` org), kiso warns:
-
-```
-⚠ This is an unofficial package from github.com:someone/my-connector.
-  deps.sh will be executed and may install system packages.
-  Review the repo before proceeding.
-  Continue? [y/N]
-```
-
-Use `--no-deps` to skip `deps.sh` execution:
-
-```bash
-kiso connector install git@github.com:someone/my-connector.git --no-deps
-```
+Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#5-unofficial-package-warning) for the full warning text.
 
 ### Naming Convention
 
@@ -164,25 +139,9 @@ kiso connector install git@github.com:someone/my-connector.git --no-deps
 
 ### Via the Agent (manual install)
 
-A user can ask the running agent to install a connector. The planner generates exec tasks that replicate the CLI install flow:
+A user can ask the agent to install a connector. The planner generates exec tasks replicating the CLI install flow (git clone → uv sync → deps.sh → copy config.example.toml) with a final `msg` listing next steps (set env vars, edit config, add aliases, run).
 
-```
-User: "install the Discord connector"
-
-Planner generates:
-1. exec: git clone git@github.com:kiso-run/connector-discord.git ~/.kiso/connectors/discord/
-2. exec: cd ~/.kiso/connectors/discord && uv sync
-3. exec: test -f ~/.kiso/connectors/discord/deps.sh && bash ~/.kiso/connectors/discord/deps.sh
-4. exec: test -f ~/.kiso/connectors/discord/config.example.toml && cp ~/.kiso/connectors/discord/config.example.toml ~/.kiso/connectors/discord/config.toml
-   (review: true, expect: "connector directory set up with venv and config")
-5. msg: "Discord connector installed. Next steps:
-        1. Set KISO_CONNECTOR_DISCORD_BOT_TOKEN in the container environment
-        2. Edit ~/.kiso/connectors/discord/config.toml with your channel mapping
-        3. Add aliases.discord to your users in config.toml
-        4. Run: kiso connector discord run"
-```
-
-The agent cannot start the connector or set env vars (those require container restart or host-level access). It installs the files and tells the user what to do next.
+The agent cannot start the connector or set env vars (those require container restart or host-level access).
 
 ### Update / Remove / Search
 
@@ -205,31 +164,12 @@ kiso connector discord stop            # stop the daemon
 kiso connector discord status          # check if running
 ```
 
-Kiso spawns the connector as a background process, tracks its PID, and manages restarts automatically. Logs go to `~/.kiso/connectors/{name}/connector.log`.
+Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/connectors/{name}/connector.log`.
 
-Under the hood (simplified — the actual implementation includes a management loop that monitors the PID and respawns with backoff):
-
-```bash
-# start
-.venv/bin/python ~/.kiso/connectors/discord/run.py &
-
-# stop
-kill <pid>
-```
+Under the hood: `.venv/bin/python ~/.kiso/connectors/{name}/run.py &` with a management loop that monitors the PID and respawns with backoff.
 
 ### Restart Policy
 
-Exponential backoff on crash:
+Exponential backoff on crash: 1s → 2s → 4s → 8s → ... (doubles, capped at 60s). Resets to 0 if the connector stays up for 60s. After 10 consecutive crashes, kiso stops the connector and logs: `connector {name} failed 10 times, stopped — run 'kiso connector {name} run' to retry`.
 
-| Crash # | Wait before restart |
-|---|---|
-| 1 | 1s |
-| 2 | 2s |
-| 3 | 4s |
-| 4 | 8s |
-| ... | doubles each time |
-| cap | 60s max |
-
-- If the connector stays up for **60s without crashing**, the backoff counter resets to 0.
-- After **10 consecutive crashes**, kiso stops the connector and logs: `connector {name} failed 10 times, stopped — run 'kiso connector {name} run' to retry`.
-- These values are hardcoded. If you need custom restart policies, run the connector externally (systemd, supervisord, or a separate Docker container) and point it at kiso's API.
+Hardcoded values. For custom restart policies, run the connector externally (systemd, supervisord, separate container) and point it at kiso's API.

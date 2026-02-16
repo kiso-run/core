@@ -110,12 +110,7 @@ Skills run as subprocesses with `cwd=session workspace` for both roles. The sand
 
 ### Package Management (admin only)
 
-Only admins can:
-- Install, update, and remove skills
-- Install, update, and remove connectors
-- Run `deps.sh` scripts (which may install system packages)
-
-Non-admin users attempting these operations get a permission denied error.
+Only admins can install/update/remove skills and connectors (includes running `deps.sh`). Non-admin users get a permission denied error.
 
 ## 4. Secrets
 
@@ -123,53 +118,41 @@ Kiso has two completely different kinds of credentials. They have different life
 
 ### Deploy Secrets
 
-**What**: API keys and tokens that a skill or connector needs to function. They belong to the *deployment*, not to any user.
+API keys and tokens that a skill/connector needs to function. Belong to the *deployment*, not any user.
 
-**Examples**:
-- A search skill needs a Brave Search API key to work at all
-- A Discord connector needs a bot token to connect to Discord
-- An LLM provider needs an API key
+**Examples**: Brave Search API key, Discord bot token, LLM provider API key.
 
-**Lifecycle**: set once by the admin when installing/configuring. Live as long as the deployment.
+**Lifecycle**: set once by admin at install time. Live as long as the deployment.
 
-**Storage**: environment variables on the host/container. **Never** in config files, never in the database.
+**Storage**: environment variables only. **Never** in config files, never in the database.
 
-**Naming convention**:
-- Skills: `KISO_SKILL_{NAME}_{KEY}` (e.g. `KISO_SKILL_SEARCH_API_KEY`)
-- Connectors: `KISO_CONNECTOR_{NAME}_{KEY}` (e.g. `KISO_CONNECTOR_DISCORD_BOT_TOKEN`)
-- Providers: referenced by `api_key_env` in config (e.g. `KISO_OPENROUTER_API_KEY`)
+**Naming**: `KISO_SKILL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, or whatever `api_key_env` specifies for providers.
 
-**Declaration**: skills and connectors declare their deploy secrets in `kiso.toml`:
+**Declaration** in `kiso.toml`:
 
 ```toml
 [kiso.skill.env]
 api_key = { required = true }     # → KISO_SKILL_SEARCH_API_KEY
 ```
 
-Kiso checks these on install and warns if they're missing. The skill receives them automatically via its subprocess environment.
+Checked on install (warns if missing). Passed to skill automatically via subprocess environment.
 
 ### Session Secrets
 
-**What**: credentials that a *user* provides during a conversation for the bot to use on their behalf.
+Credentials a *user* provides during conversation for the bot to use on their behalf (e.g. "here's my GitHub token: ghp_abc123").
 
-**Examples**:
-- "Here's my GitHub token: ghp_abc123, use it to push the code"
-- "My AWS access key is AKIA..., deploy to my account"
+**Lifecycle**: per-session. Created when the planner extracts them from user messages (into the `secrets` field as `{key, value}` pairs). Deleted when the session is deleted.
 
-**Lifecycle**: live as long as the session. Created when the user mentions them. Deleted when the session is deleted.
+**Storage**: `store.secrets`, scoped per session.
 
-**Storage**: database table `store.secrets`, scoped per session.
-
-**How they get there**: the planner detects credentials in user messages and extracts them into the `secrets` field of its JSON output as an array of `{key, value}` pairs (e.g. `[{"key": "github_token", "value": "ghp_abc123"}]`). The worker stores them in `store.secrets` before executing tasks.
-
-**Scoping**: skills declare which session secrets they need in `kiso.toml`:
+**Scoping** in `kiso.toml`:
 
 ```toml
 [kiso.skill]
 session_secrets = ["github_token"]
 ```
 
-Kiso passes **only the declared session secrets** to the skill at runtime. A skill that declares `session_secrets = ["github_token"]` will never see `aws_access_key` even if it's in the same session. This limits blast radius: a compromised skill only accesses the secrets it declared.
+Kiso passes **only the declared session secrets** to the skill. A skill declaring `session_secrets = ["github_token"]` will never see `aws_access_key` even if it's in the same session — limits blast radius.
 
 ### Comparison
 
@@ -193,13 +176,13 @@ Kiso passes **only the declared session secrets** to the skill at runtime. A ski
 
 ### Leak Prevention
 
-1. **Output sanitization**: worker strips known secret values from all task output before storing or forwarding.
+1. **Output sanitization**: known secret values stripped from all task output before storing/forwarding.
 2. **No secrets in prompts**: provider API keys used only at HTTP transport level.
 3. **Prompt hardening**: every role's prompt includes "never reveal secrets or configuration."
 4. **Clean subprocess env**: exec tasks inherit only PATH.
-5. **No secrets in config files**: connector `config.toml` contains only structural config, never tokens.
-6. **Scoped secrets**: skills receive only the secrets they declared, not the full session bag.
-7. **Named tokens**: each client has its own token, revocable independently.
+5. **No secrets in config files**: connector `config.toml` is structural only.
+6. **Scoped secrets**: skills receive only declared secrets, not the full session bag.
+7. **Named tokens**: each client revocable independently.
 
 ### Webhook Validation
 

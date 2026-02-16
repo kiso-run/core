@@ -42,25 +42,16 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 
 ### b) Calls the Planner
 
-Uses structured output (`response_format` with strict JSON schema). The provider guarantees valid JSON at the decoding level — no parse retries needed.
+Uses structured output (`response_format` with strict JSON schema — see [llm-roles.md — Planner](llm-roles.md#planner) for the full schema). The provider guarantees valid JSON at decoding level.
 
-The LLM returns JSON with a `goal`, `secrets` (nullable), and a `tasks` list.
-
-- `goal`: the high-level objective for the entire process (e.g. "Add JWT authentication with login endpoint, middleware, and tests"). Stored for the reviewer and potential replan cycles.
-- `secrets`: array of `{key, value}` pairs, or `null`. If present, the worker stores them in `store.secrets` before executing tasks.
+Returns JSON with:
+- `goal`: high-level objective for the entire process. Stored for the reviewer and potential replan cycles.
+- `secrets`: `{key, value}` pairs or `null`. If present, stored in `store.secrets` before task execution.
 - `tasks`: each task with `review: true` must include an `expect` field with semantic success criteria.
 
 ### c) Validates the Plan
 
-Before execution, kiso validates the plan programmatically:
-
-1. Every task with `review: true` has an `expect` field
-2. The last task is `type: "msg"` (the user always gets a final response)
-3. Every `skill` reference exists in the installed skills
-4. Every `skill` task's `args` is valid JSON and matches the skill's schema from `kiso.toml`
-5. The `tasks` list is not empty
-
-If validation fails, kiso sends the plan back to the planner with specific errors, up to `max_validation_retries` times (default 3). If all retries are exhausted, kiso marks the message as failed and notifies the user. No silent fallback.
+Before execution, kiso validates the plan semantically (see [llm-roles.md — Validation After Parsing](llm-roles.md#validation-after-parsing) for the full rule list and error example). On failure, retries up to `max_validation_retries` (default 3) with specific error feedback. If exhausted: fail the message, notify user. No silent fallback.
 
 All validated tasks are persisted to `store.tasks` with status `pending`.
 
@@ -78,26 +69,9 @@ Output is sanitized (known secret values stripped) before any further use. Task 
 
 ### e) Delivers msg Tasks
 
-Every `msg` task output is delivered to the user:
+Every `msg` task output is delivered: POSTed to webhook (if set) and available via `GET /status/{session}`. `final: true` on the last `msg` task in the plan. Only `msg` tasks are delivered — `exec` and `skill` outputs are internal.
 
-- If the session has a webhook: POST the output to the webhook URL
-- Always available via `GET /status/{session}`
-
-```json
-{
-  "session": "dev-backend",
-  "task_id": 42,
-  "type": "msg",
-  "content": "Added JWT auth. Tests passing.",
-  "final": false
-}
-```
-
-`final: true` on the last `msg` task in the plan.
-
-Only `msg` tasks are delivered. `exec` and `skill` outputs are internal — the planner adds `msg` tasks wherever it wants to communicate with the user.
-
-If the webhook POST fails, kiso logs the failure and continues execution. Task outputs remain available via `/status`. No retries.
+If the webhook POST fails, kiso logs it and continues. Outputs remain available via `/status`. No retries. See [api.md — Webhook Callback](api.md#webhook-callback) for the payload format.
 
 ### f) Reviewer Evaluates (if review: true)
 
@@ -133,17 +107,9 @@ When the reviewer determines that the task failed and the plan needs revision:
 
 After draining the task list:
 
-### a) Summarize Messages
-
-If `len(raw_messages) >= summarize_threshold`, calls the **Summarizer**: current summary + oldest messages → new summary → writes to `store.sessions.summary`.
-
-### b) Consolidate Facts
-
-If global facts count exceeds `knowledge_max_facts`, calls the **Summarizer** to consolidate → merges/deduplicates entries in `store.facts`. See [Facts Lifecycle](#facts-lifecycle).
-
-### c) Wait or Shutdown
-
-The worker goes back to waiting on the session queue. If no messages arrive within `worker_idle_timeout` seconds, the worker shuts down (respawned on next message).
+1. **Summarize messages**: if `len(raw_messages) >= summarize_threshold`, calls Summarizer (current summary + oldest messages → new summary → `store.sessions.summary`).
+2. **Consolidate facts**: if facts exceed `knowledge_max_facts`, calls Summarizer to merge/deduplicate in `store.facts`. See [Facts Lifecycle](#facts-lifecycle).
+3. **Wait or shutdown**: worker waits on session queue. After `worker_idle_timeout` seconds idle, shuts down (respawned on next message).
 
 ## 4. New Message on the Same Session
 
@@ -152,8 +118,6 @@ If a message arrives while the worker is executing tasks, it gets queued. When t
 ---
 
 ## Facts Lifecycle
-
-Facts are persistent knowledge that lives across all sessions. They help the planner and worker make better decisions over time.
 
 ### How Facts Are Created
 
@@ -165,28 +129,15 @@ Facts are persistent knowledge that lives across all sessions. They help the pla
 
 ### Where Facts Are Used
 
-| Consumer | How | Why |
-|---|---|---|
-| Planner | Included in context on every call | So it plans with knowledge of the project/environment |
-| Worker | Included in context for `msg` tasks | So it responds to the user with accurate context |
-| Reviewer | **Not included** | The reviewer evaluates a specific task output against specific criteria — facts would add noise |
-| Summarizer | **Not included** | The summarizer compresses messages, doesn't need facts to do it |
+Planner and Worker receive facts in their context. Reviewer and Summarizer do **not** (see [llm-roles.md — Context per Role](llm-roles.md#context-per-role) for the full matrix).
 
 ### Facts Are Global
 
-All facts are visible to all sessions. The `session` column in `store.facts` is **provenance only** — it records which session generated the fact, not which sessions can see it.
-
-A fact like `"Project uses Flask 2.3"` learned in session `dev-backend` is equally useful in session `discord-general`.
+All facts are visible to all sessions. The `session` column is **provenance only** (which session generated it, not where it's visible).
 
 ### Consolidation
 
-When facts exceed `knowledge_max_facts` (default 50), the Summarizer:
-1. Reads all facts
-2. Merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`)
-3. Removes outdated facts (superseded by newer ones)
-4. Replaces old rows with fewer consolidated entries
-
-This keeps the facts list lean and relevant. The planner and worker always see the full list.
+When facts exceed `knowledge_max_facts` (default 50), the Summarizer reads all facts, merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), removes outdated ones, and replaces old rows with fewer consolidated entries.
 
 ---
 
