@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Seven tables.
+Single SQLite file: `~/.kiso/store.db`. Six tables.
 
 ## Tables
 
@@ -37,7 +37,7 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_session ON messages(session, id);
 ```
 
-`user` is an opaque alias (e.g. "marco", "anna"). In multi-user sessions (Discord channel), tracks who said what.
+`user` is the resolved Linux username (not the platform alias). In multi-user sessions (Discord channel), tracks who said what.
 
 ### tasks
 
@@ -57,7 +57,6 @@ CREATE TABLE tasks (
     status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     output     TEXT,                -- stdout / generated text
     stderr     TEXT,                -- stderr (exec/skill only)
-    notify     BOOLEAN DEFAULT 0,
     review     BOOLEAN DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -72,19 +71,23 @@ On startup, any tasks left in `running` status are marked as `failed` (container
 
 The `/status/{session}` endpoint reads from this table.
 
+**Delivery rule**: all `msg` task outputs are delivered to the user (via webhook and/or polling). `exec` and `skill` outputs are internal — the planner adds `msg` tasks wherever it wants to communicate. See [flow.md](flow.md).
+
 ### facts
 
-Persistent knowledge learned across sessions. Individual entries, not a blob.
+Persistent knowledge learned across all sessions. Individual entries, not a blob.
 
 ```sql
 CREATE TABLE facts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     content    TEXT NOT NULL,
     source     TEXT NOT NULL,       -- "reviewer" | "summarizer" | "manual"
-    session    TEXT,                -- which session generated this fact (null for manual)
+    session    TEXT,                -- provenance: which session generated this (null for manual)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+**Facts are global.** All facts are visible to all sessions regardless of the `session` column. The `session` column is **provenance only** — it records where the fact came from, not where it's visible.
 
 - **Reviewer** adds entries via the `learn` field in review output.
 - **Summarizer** consolidates when entries exceed `knowledge_max_facts`: merges duplicates and removes outdated entries, replacing old rows with fewer consolidated ones.
@@ -92,14 +95,18 @@ CREATE TABLE facts (
 
 Example entries:
 ```
-id=1  content="Project uses FastAPI + SQLite"             source="reviewer"  session="dev-backend"
-id=2  content="Team: marco (backend), anna (frontend)"    source="reviewer"  session="dev-backend"
-id=3  content="Conventions: snake_case, type hints"       source="manual"    session=NULL
+id=1  content="Project uses Flask 2.3"                  source="reviewer"    session="dev-backend"
+id=2  content="Team: marco (backend), anna (frontend)"  source="reviewer"    session="discord-general"
+id=3  content="Conventions: snake_case, type hints"      source="manual"      session=NULL
 ```
+
+All three are visible in every session. Fact #1, learned in `dev-backend`, helps the planner in `discord-general` too.
+
+See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle) for creation, usage, and consolidation flows.
 
 ### secrets
 
-Per-session credentials provided by the user for the bot to use.
+Per-session credentials provided by the user for the bot to use. These are **session secrets** — not to be confused with deploy secrets (env vars). See [security.md](security.md).
 
 ```sql
 CREATE TABLE secrets (
@@ -112,22 +119,6 @@ CREATE TABLE secrets (
 );
 CREATE INDEX idx_secrets_session ON secrets(session);
 ```
-
-See [security.md](security.md).
-
-### meta
-
-Global key-value store for miscellaneous persistent data.
-
-```sql
-CREATE TABLE meta (
-    key        TEXT PRIMARY KEY,
-    value      TEXT NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-General purpose. Not used for facts (which have their own table).
 
 ### published
 

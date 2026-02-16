@@ -1,10 +1,12 @@
 # API Endpoints
 
-All endpoints except `/pub` require authentication via bearer token (see [security.md](security.md)).
+All endpoints except `/pub` and `/health` require authentication via bearer token (see [security.md](security.md)).
 
 ```
-Authorization: Bearer <api_token>
+Authorization: Bearer <token>
 ```
+
+Tokens are defined as named entries in `config.toml`. Kiso matches the token to its name, logs which client made the call, and uses the token name for alias resolution. See [config.md](config.md).
 
 ## POST /msg
 
@@ -24,9 +26,9 @@ Receives a message and queues it for processing.
 | Field | Required | Description |
 |---|---|---|
 | `session` | yes | Session identifier |
-| `user` | yes | User alias (Linux username). Role resolved from `config.admins` |
+| `user` | yes | User identity: Linux username (direct API) or platform identity (connectors — resolved via aliases) |
 | `content` | yes | Message content |
-| `webhook` | no | URL to receive results. If empty, results available only via `/status` |
+| `webhook` | no | URL to receive `msg` task outputs. If empty, results available only via `/status` |
 
 **Response** `202 Accepted`:
 
@@ -61,6 +63,26 @@ For polling. Used by the CLI and clients without a webhook.
 }
 ```
 
+Returns all tasks (for monitoring and debugging). Clients that only want user-facing messages filter by `type: "msg"`.
+
+## Webhook Callback
+
+Every `msg` task output is POSTed to the session's webhook:
+
+```json
+{
+  "session": "dev-backend",
+  "task_id": 42,
+  "type": "msg",
+  "content": "Added JWT auth. Tests passing.",
+  "final": false
+}
+```
+
+`final: true` on the last `msg` task in the current plan.
+
+Only `msg` tasks trigger webhooks. `exec` and `skill` outputs are internal — the planner adds `msg` tasks wherever it wants to communicate with the user. See [flow.md](flow.md).
+
 ## GET /pub/{id}
 
 Serves a published file. **No authentication required** — anyone with the link can download.
@@ -73,22 +95,6 @@ The `id` is a random string that maps to a file in `~/.kiso/sessions/{session}/p
 
 Files are published by exec or skill tasks that write to the session's `pub/` directory and register the file via the store.
 
-## Webhook Callback
-
-When a task has `notify: true`, the worker POSTs to the session's webhook:
-
-```json
-{
-  "session": "dev-backend",
-  "task_id": 42,
-  "type": "msg",
-  "content": "Added JWT auth. Tests passing.",
-  "final": false
-}
-```
-
-`final: true` on the last notifying task in the queue.
-
 ## GET /health
 
 Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and monitoring tools.
@@ -100,3 +106,20 @@ Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and m
   "status": "ok"
 }
 ```
+
+## Future: GET /stream/{session} (SSE)
+
+Not yet implemented. Server-Sent Events endpoint for real-time task progress:
+
+```
+event: task_start
+data: {"task_id": 2, "type": "skill", "skill": "aider"}
+
+event: task_done
+data: {"task_id": 2, "status": "done"}
+
+event: msg
+data: {"task_id": 5, "content": "JWT auth added. Tests pass."}
+```
+
+The current architecture (worker loop emitting events per task) supports adding this without structural changes. The webhook + polling model covers all current use cases.

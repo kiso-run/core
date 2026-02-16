@@ -21,14 +21,14 @@ kiso/                               # installable python package
 ├── llm.py                          # LLM client, routes calls to configured providers
 ├── brain.py                        # planner + reviewer
 ├── worker.py                       # consumes tasks from queue, one per session
-├── store.py                        # SQLite: sessions, messages, tasks, facts, secrets, meta, published
+├── store.py                        # SQLite: sessions, messages, tasks, facts, secrets, published
 ├── skills.py                       # skill discovery and loading
 ├── config.py                       # loads and validates ~/.kiso/config.toml
 └── cli.py                          # interactive client + management commands
 
 ~/.kiso/                            # user data (outside the repo)
 ├── config.toml                     # providers, tokens, models, settings
-├── store.db                        # SQLite database (7 tables)
+├── store.db                        # SQLite database (6 tables)
 ├── server.log                      # server-level log
 ├── roles/                          # system prompt for each LLM role
 │   ├── planner.md
@@ -60,7 +60,7 @@ kiso/                               # installable python package
 
 ## Packages
 
-Skills and connectors share the same package structure. Each has a `kiso.toml` manifest that declares its type, dependencies, and metadata. See [skills.md](docs/skills.md) and [connectors.md](docs/connectors.md).
+Skills and connectors share the same base packaging format: `kiso.toml` manifest + `pyproject.toml` + `run.py` + optional `deps.sh`. Each `kiso.toml` declares its type, dependencies, and metadata. See [skills.md](docs/skills.md) and [connectors.md](docs/connectors.md).
 
 Official packages live in the `kiso-run` GitHub org:
 - Skills: `kiso-run/skill-{name}` (topic: `kiso-skill`)
@@ -74,31 +74,139 @@ Kiso runs in Docker by default. The container comes with Python, `uv`, and commo
 
 See [docker.md](docs/docker.md).
 
-## Minimal Setup
+## Installation
 
-Create `~/.kiso/config.toml` with at least a token and a provider:
+### 1. Clone and build
+
+```bash
+git clone git@github.com:kiso-run/core.git
+cd core
+docker compose build
+```
+
+### 2. Create config
+
+```bash
+mkdir -p ~/.kiso
+```
+
+Create `~/.kiso/config.toml`:
 
 ```toml
 [tokens]
-cli = "your-secret-token"
+cli = "your-secret-token"          # generate with: openssl rand -hex 32
 
 [providers.openrouter]
 api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
+
+[users.marco]                      # your Linux username ($(whoami))
+role = "admin"
 ```
 
-Set your API key:
+Only whitelisted users get responses. Messages from unknown users are saved but ignored. See [config.md](docs/config.md) for user roles and skill permissions.
+
+### 3. Set up secrets
+
+Kiso never stores API keys in config files. Keys go in environment variables.
+
+Create a `.env` file in the project root (gitignored):
 
 ```bash
-export KISO_OPENROUTER_API_KEY="sk-or-..."
+# Provider API keys (required — at least one provider)
+KISO_OPENROUTER_API_KEY=sk-or-v1-...
+
+# Skill env vars (only if you install skills that need them)
+# KISO_SKILL_SEARCH_API_KEY=...
+
+# Connector env vars (only if you install connectors)
+# KISO_CONNECTOR_DISCORD_BOT_TOKEN=...
 ```
 
-See [config.md](docs/config.md) for full reference.
+The naming convention:
+- **Provider keys**: whatever you put in `api_key_env` in config.toml
+- **Skill keys**: `KISO_SKILL_{SKILLNAME}_{KEY}` — declared in each skill's `kiso.toml`
+- **Connector keys**: `KISO_CONNECTOR_{NAME}_{KEY}` — declared in each connector's `kiso.toml`
+
+### 4. Create role prompts
+
+```bash
+mkdir -p ~/.kiso/roles
+```
+
+Create one `.md` file per LLM role in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`. These are the system prompts for each role. See [llm-roles.md](docs/llm-roles.md) for what each role does.
+
+### 5. Start
+
+```bash
+docker compose up -d
+```
+
+Kiso starts on port `8333`. Check it's running:
+
+```bash
+curl http://localhost:8333/health
+```
+
+## Quickstart
+
+Once kiso is running:
+
+```bash
+# Send a message via curl
+curl -X POST http://localhost:8333/msg \
+  -H "Authorization: Bearer your-secret-token" \
+  -H "Content-Type: application/json" \
+  -d '{"session": "test", "user": "'"$(whoami)"'", "content": "hello"}'
+
+# Check status
+curl -H "Authorization: Bearer your-secret-token" \
+  http://localhost:8333/status/test
+```
+
+### Install a skill (admin only)
+
+```bash
+# Enter the container
+docker exec -it kiso bash
+
+# Install an official skill
+kiso skill install search
+
+# Set the skill's env var (add to .env, restart container)
+# KISO_SKILL_SEARCH_API_KEY=...
+```
+
+### Install a connector (admin only)
+
+```bash
+docker exec -it kiso bash
+
+# Install and configure
+kiso connector install discord
+# Edit ~/.kiso/connectors/discord/config.toml with your settings
+# Set KISO_CONNECTOR_DISCORD_BOT_TOKEN in .env, restart container
+
+# Start the connector
+kiso connector discord run
+```
+
+### Adding secrets at runtime
+
+Users can give the bot credentials during conversation (e.g. "here's my GitHub token: ghp_abc123"). The planner extracts these and stores them per-session in the database. Skills that declare `session_secrets` in their `kiso.toml` receive only the secrets they declared — nothing more.
+
+These **session secrets** are different from **deploy secrets**:
+- Deploy secrets = env vars, set once by the admin, for the skill's own API keys
+- Session secrets = runtime, provided by users in chat, for user-specific credentials
+
+See [security.md](docs/security.md) for the full picture.
+
+See [config.md](docs/config.md) for full configuration reference.
 
 ## Design Documents
 
 - [config.md](docs/config.md) - Configuration, providers, tokens
-- [database.md](docs/database.md) - Database schema (7 tables)
+- [database.md](docs/database.md) - Database schema (6 tables)
 - [llm-roles.md](docs/llm-roles.md) - The 4 LLM roles, their prompts, and what context each receives
 - [flow.md](docs/flow.md) - Full message lifecycle
 - [skills.md](docs/skills.md) - Skill system (subprocess, isolated venv)

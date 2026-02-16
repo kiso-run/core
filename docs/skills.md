@@ -22,7 +22,7 @@ All three are required. No fallbacks — if any is missing, install fails.
 
 ## kiso.toml
 
-The single source of truth. Declares what this skill is, what arguments it takes, what secrets it needs, and what system deps it requires.
+The single source of truth. Declares what this skill is, what arguments it takes, what it needs, and what system deps it requires.
 
 ```toml
 [kiso]
@@ -33,7 +33,7 @@ description = "Web search using Brave Search API"
 
 [kiso.skill]
 summary = "Web search using Brave Search API"    # one-liner for the planner
-secrets = ["api_key"]                             # which session secrets this skill receives
+session_secrets = ["api_key"]                     # user-provided credentials from the session
 
 [kiso.skill.args]
 query = { type = "string", required = true, description = "search query" }
@@ -46,6 +46,21 @@ api_key = { required = true }     # → KISO_SKILL_SEARCH_API_KEY
 python = ">=3.11"
 bin = ["curl"]                    # checked with `which` after install
 ```
+
+### Two Kinds of Secrets
+
+Skills can receive two kinds of credentials. See [security.md](security.md) for the full picture.
+
+| | Deploy Secrets (`[kiso.skill.env]`) | Session Secrets (`session_secrets`) |
+|---|---|---|
+| **What** | The skill's own API keys | Credentials the user gave the bot |
+| **When** | Deploy-time, set once | Runtime, per-session |
+| **Storage** | Container env var (`KISO_SKILL_SEARCH_API_KEY`) | DB `store.secrets`, extracted by planner |
+| **Example** | Brave Search API key | Marco's GitHub token |
+| **Who sets it** | Admin installing the skill | User chatting with the bot |
+| **Passed via** | Subprocess environment (automatic) | Input JSON (`session_secrets` field) |
+
+`session_secrets` lists which user-provided credentials this skill receives at runtime. Kiso passes **only those** — not the entire session bag. If omitted, the skill receives no session secrets. This limits blast radius.
 
 ### What the Planner Sees
 
@@ -71,11 +86,9 @@ Env vars follow the convention `KISO_SKILL_{NAME}_{KEY}`, built automatically:
 
 Name and key are uppercased, `-` becomes `_`.
 
-### Secret Scoping
+### Version
 
-`secrets` lists which session secrets this skill receives at runtime. Kiso passes **only those** — not the entire session secrets bag. If omitted, the skill receives no session secrets.
-
-This limits blast radius: a compromised skill can only leak the secrets it declared.
+Display metadata. Shown in `kiso skill list` output. Kiso does not enforce version compatibility — updates are always `git pull` to latest.
 
 ## run.py
 
@@ -90,7 +103,7 @@ import sys
 def run(args, context):
     """
     args:    arguments passed by the planner (dict)
-    context: {"session", "workspace", "secrets"} (dict)
+    context: {"session", "workspace", "session_secrets"} (dict)
     return:  result text (str)
     """
     # skill logic here
@@ -112,11 +125,11 @@ No async, no imports from kiso, no shared state. JSON in, text out.
   "args": {"query": "python async patterns", "max_results": 5},
   "session": "dev-backend",
   "workspace": "/home/user/.kiso/sessions/dev-backend",
-  "secrets": {"api_key": "sk-abc123"}
+  "session_secrets": {"api_key": "sk-abc123"}
 }
 ```
 
-`secrets` contains **only** the keys declared in `kiso.toml`, not the full session secrets.
+`session_secrets` contains **only** the keys declared in `kiso.toml`, not the full session credentials.
 
 ### Output (stdout)
 
@@ -213,6 +226,12 @@ kiso skill remove search
 kiso skill list                   # list installed skills
 ```
 
+```
+$ kiso skill list
+  search  0.1.0  — Web search using Brave Search API
+  aider   0.3.2  — Code editing tool using LLM
+```
+
 ### Search
 
 ```bash
@@ -225,7 +244,7 @@ kiso skill search [query]
 When the worker encounters `{"type": "skill", "skill": "search", "args": {...}}`:
 
 1. Validates args against the schema in `kiso.toml`
-2. Builds input JSON (args + session + workspace path + scoped secrets)
+2. Builds input JSON (args + session + workspace path + scoped session secrets)
 3. Runs: `.venv/bin/python ~/.kiso/skills/search/run.py < input.json` with `cwd=~/.kiso/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values)
