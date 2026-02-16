@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Eight tables.
+Single SQLite file: `~/.kiso/store.db`. Eight tables. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
 
 ## Tables
 
@@ -158,7 +158,7 @@ CREATE TABLE published (
 );
 ```
 
-`id` is a random string. `path` is the file's location on disk (inside `~/.kiso/sessions/{session}/pub/`). The URL `GET /pub/{id}` resolves to this file without exposing the session ID.
+`id` is a UUID4 (128-bit random, non-enumerable). `path` is the file's location on disk (inside `~/.kiso/sessions/{session}/pub/`). The URL `GET /pub/{id}` resolves to this file without exposing the session ID.
 
 ## What's NOT in the database
 

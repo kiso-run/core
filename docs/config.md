@@ -85,6 +85,7 @@ exec_timeout = 120
 worker_idle_timeout = 300
 host = "0.0.0.0"
 port = 8333
+# webhook_allow_list = ["127.0.0.1", "::1"]  # IPs exempt from SSRF validation
 ```
 
 ### Required Fields
@@ -118,6 +119,7 @@ port = 8333
 | `settings.worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
 | `settings.host` | `0.0.0.0` | Server bind address |
 | `settings.port` | `8333` | Server port |
+| `settings.webhook_allow_list` | `[]` | IPs exempt from webhook SSRF validation (e.g. `["127.0.0.1"]` for local connectors). See [security.md — Webhook Validation](security.md#7-webhook-validation). |
 
 ## Tokens
 

@@ -116,6 +116,29 @@ The planner receives the user's allowed skill list and only sees those skills in
 
 Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
+### Exec Command Validation
+
+Before executing any `exec` task, kiso validates the command against a **deny list** of destructive patterns:
+
+```
+rm -rf /          dd if=          mkfs          :(){ :|:;&
+chmod -R 777 /    chown -R        shutdown      reboot
+```
+
+If matched, the task is marked `failed` immediately with an explanation. The planner can still use these commands in non-destructive forms (e.g. `rm -rf ./build/` is allowed — only bare `/`, `~`, and `$HOME` targets are blocked).
+
+Additionally, the user's **role is re-verified** from `config.toml` before each exec/skill task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
+
+### Runtime Permission Re-validation
+
+Before executing any task, kiso re-reads the user's role and allowed skills from `config.toml`:
+
+- If the user was removed from config → task fails, remaining tasks cancelled
+- If the user's role was downgraded (admin → user) → exec tasks run sandboxed
+- If a skill was removed from the user's allowed list → skill task fails
+
+This prevents stale permissions from being exploited between message ingestion and task execution.
+
 ### Package Management (admin only)
 
 Only admins can install/update/remove skills and connectors (includes running `deps.sh`).
@@ -217,7 +240,9 @@ Prompt:
 
 ### Layer 2: Random Boundary Fencing
 
-All external content is wrapped in delimiters with per-request random tokens before inclusion in any LLM prompt. The random token changes per LLM call — an attacker cannot guess or pre-craft a matching boundary.
+All external content is wrapped in delimiters with per-request random tokens before inclusion in any LLM prompt. Tokens are generated with `secrets.token_hex(16)` (128-bit cryptographic randomness). The token changes per LLM call — an attacker cannot guess or pre-craft a matching boundary.
+
+Before fencing, any occurrence of the pattern `<<<.*>>>` in the content is escaped (replaced with `«««...»»»`) to prevent an attacker from pre-crafting a matching delimiter.
 
 **Untrusted messages** (paraphrased, in planner context):
 
@@ -270,19 +295,99 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 
 These layers reduce risk significantly but cannot guarantee absolute protection against all prompt injection techniques. In security-sensitive environments, disable untrusted message inclusion entirely (config setting) or restrict shared sessions to whitelisted users only.
 
+### Skill Trust Model
+
+Skills run as subprocesses with **unrestricted network access**. A compromised or malicious skill can exfiltrate data (including ephemeral secrets passed via input JSON) via HTTP calls to external servers. Kiso does not sandbox skill network access.
+
+Mitigations are organizational, not technical:
+- **Official skills** (from `kiso-run` org) are reviewed and trusted
+- **Unofficial skills** trigger a warning on install (see [section 8](#8-unofficial-package-warning))
+- **Secret scoping** limits which ephemeral secrets each skill receives (declared in `kiso.toml`)
+- **Output sanitization** strips known secret values from skill output before storage
+
+**Admin responsibility**: only install skills you trust. Review `run.py` and dependencies before installing unofficial packages.
+
 ## 7. Webhook Validation
 
-Webhook URLs are set by connectors via `POST /sessions` (trusted code). If the API is exposed to untrusted callers, validate webhook URLs against private/internal IPs (SSRF prevention).
+Webhook URLs are set by connectors via `POST /sessions`. Before accepting a webhook URL, kiso validates it:
+
+1. **Reject private/internal IPs**: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1`, `169.254.0.0/16` (link-local), `fc00::/7` (unique local)
+2. **DNS resolution check**: resolve the hostname and reject if it resolves to a private IP (prevents DNS rebinding)
+3. **Reject non-HTTP(S) schemes**: only `http://` and `https://` are allowed
+
+This prevents SSRF attacks where a compromised connector or attacker with a valid token registers a webhook pointing to internal services (Redis, databases, admin panels).
+
+For deployments where connectors and kiso run on the same host (e.g. `localhost:9001`), add trusted IPs to a `webhook_allow_list` in `config.toml`:
+
+```toml
+[settings]
+webhook_allow_list = ["127.0.0.1", "::1"]
+```
+
+Without this allowlist, `localhost` webhook URLs are rejected by default.
 
 ## 8. Unofficial Package Warning
 
-When installing a skill or connector from a source outside the `kiso-run` GitHub org, kiso warns:
+When installing a skill or connector from a source outside the `kiso-run` GitHub org, kiso warns and **displays the contents of `deps.sh`** (if present) before asking for confirmation:
 
 ```
 ⚠ This is an unofficial package from github.com:someone/my-skill.
-  deps.sh will be executed and may install system packages.
-  Review the repo before proceeding.
-  Continue? [y/N]
+
+deps.sh contents (will run as root in container):
+────────────────────────────────────────
+#!/bin/bash
+set -e
+apt-get update -qq
+apt-get install -y --no-install-recommends ffmpeg curl
+────────────────────────────────────────
+
+Review the script above before proceeding.
+Continue? [y/N]
 ```
 
-Use `--no-deps` to skip `deps.sh` execution for untrusted repos.
+If `deps.sh` is not present, the warning omits the script display.
+
+Use `--no-deps` to skip `deps.sh` execution entirely. Use `--show-deps` to display `deps.sh` content without installing.
+
+## 9. Implementation Notes
+
+Hardening measures to implement for production deployments.
+
+### Input Validation
+
+- **Session IDs**: must match `^[a-zA-Z0-9_@.-]{1,255}$`. Reject on `POST /sessions` and `POST /msg`.
+- **User names**: must match Linux username constraints (`^[a-z_][a-z0-9_-]{0,31}$`).
+- **Token names** in config: same constraints as user names.
+- **Alias values**: case-sensitive, no Unicode normalization. Duplicate aliases across users are rejected at config load time.
+- **Skill args JSON**: max 64KB. Nesting depth max 5 levels. Validated before passing to subprocess.
+
+### Rate Limiting
+
+- Per-token: max requests per minute on `/msg` and `/sessions`
+- Per-user: max concurrent messages in processing
+- Per-session: max queued messages before rejecting new ones
+
+### Replan Cost Control
+
+Each replan cycle costs an LLM call. Beyond `max_replan_depth`, track replan rate per user and alert if excessive. Consider reducing `max_replan_depth` to 1-2 in cost-sensitive deployments.
+
+### Output Size Limits
+
+Exec and skill output is capped at a configurable max size (default: 1MB). Output exceeding the limit is truncated and the task is marked `done` with a truncation warning. Prevents memory exhaustion from malicious or runaway skills.
+
+### Audit Log Integrity
+
+Audit logs (`~/.kiso/audit/`) are plain JSONL without tamper protection. For environments requiring tamper evidence:
+- Forward logs to a remote syslog server
+- Implement log signing (HMAC per entry)
+- Set up log rotation to prevent disk exhaustion
+
+### Webhook Delivery
+
+- Enforce HTTPS for webhook URLs in production (reject plain HTTP)
+- Add HMAC-SHA256 signature to webhook payloads (`X-Kiso-Signature` header) so connectors can verify authenticity
+- Cap webhook payload size
+
+### Published File Security
+
+Published file IDs are UUID4 (128-bit random). Enumeration is computationally infeasible. For additional security, consider requiring authentication on `GET /pub/{id}` via a configurable setting.

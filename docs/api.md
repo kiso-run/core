@@ -24,7 +24,7 @@ Creates or updates a session. Used by connectors to register sessions with metad
 
 | Field | Required | Description |
 |---|---|---|
-| `session` | yes | Session identifier (chosen by the connector, opaque string) |
+| `session` | yes | Session identifier (chosen by the connector, opaque string). Must match `^[a-zA-Z0-9_@.-]{1,255}$`. |
 | `webhook` | no | Connector callback URL for `msg` task deliveries |
 | `description` | no | Human-readable label for the session |
 
@@ -55,7 +55,7 @@ Receives a message and queues it for processing.
 
 | Field | Required | Description |
 |---|---|---|
-| `session` | yes | Session identifier |
+| `session` | yes | Session identifier. Must match `^[a-zA-Z0-9_@.-]{1,255}$`. |
 | `user` | yes | User identity: Linux username (direct API) or platform identity (connectors — resolved via aliases) |
 | `content` | yes | Message content |
 
@@ -170,7 +170,7 @@ Every `msg` task output is POSTed to the session's webhook URL (set via `POST /s
 
 Serves a published file. **No authentication required** — anyone with the link can download.
 
-The `id` is a random string that maps to a file in `~/.kiso/sessions/{session}/pub/`. The session ID is never exposed in the URL.
+The `id` is a UUID4 (128-bit random, non-enumerable) that maps to a file in `~/.kiso/sessions/{session}/pub/`. The session ID is never exposed in the URL.
 
 **Response**: the file with appropriate `Content-Type` and `Content-Disposition` headers.
 

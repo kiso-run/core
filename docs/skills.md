@@ -163,7 +163,7 @@ kiso skill install git@github.com:someone/my-skill.git --name custom
 
 ### Unofficial Repo Warning
 
-Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#8-unofficial-package-warning) for the full warning text.
+Unofficial repos trigger a confirmation prompt before install. If `deps.sh` is present, its contents are displayed for review before asking confirmation. Use `--no-deps` to skip `deps.sh`. Use `--show-deps` to display `deps.sh` without installing. See [security.md — Unofficial Package Warning](security.md#8-unofficial-package-warning) for the full warning text.
 
 ### Naming Convention
 

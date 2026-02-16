@@ -83,7 +83,7 @@ All validated tasks are persisted to `store.tasks` with status `pending`.
 
 ### e) Executes Tasks One by One
 
-For each task (status updated to `running` in DB):
+For each task, kiso first **re-validates the user's role and permissions** from `config.toml` (see [security.md — Runtime Permission Re-validation](security.md#runtime-permission-re-validation)). For `exec` tasks, the command is checked against the destructive command deny list (see [security.md — Exec Command Validation](security.md#exec-command-validation)). Then (status updated to `running` in DB):
 
 | Type | Execution |
 |---|---|
