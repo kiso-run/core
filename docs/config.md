@@ -4,12 +4,14 @@
 
 **TOML** for static stuff you edit by hand: providers, models, tokens, users, settings.
 
-**SQLite** for everything dynamic: sessions, messages, tasks, facts, secrets, published files.
+**SQLite** for everything dynamic: sessions, messages, tasks, facts, learnings, pending items, published files.
 
 ```
 ~/.kiso/
 ├── config.toml          # static, human-readable, versionable
-└── store.db             # dynamic, machine-managed
+├── .env                 # deploy secrets (managed via `kiso env`)
+├── store.db             # dynamic, machine-managed
+└── audit/               # LLM call logs, task execution logs
 ```
 
 ## Minimal config.toml
@@ -69,6 +71,7 @@ skills = ["search", "aider"]
 [models]
 planner = "moonshotai/kimi-k2.5"
 reviewer = "moonshotai/kimi-k2.5"
+curator = "moonshotai/kimi-k2.5"
 worker = "deepseek/deepseek-v3.2"
 summarizer = "deepseek/deepseek-v3.2"
 
@@ -103,8 +106,9 @@ port = 8333
 | `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform username. See [security.md](security.md). |
 | `models.planner` | `moonshotai/kimi-k2.5` | Requires structured output (`response_format` with `json_schema`). |
 | `models.reviewer` | `moonshotai/kimi-k2.5` | Requires structured output. |
+| `models.curator` | `moonshotai/kimi-k2.5` | Requires structured output. |
 | `models.worker` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
-| `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
+| `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text, also used by paraphraser. |
 | `settings.context_messages` | `5` | Number of recent raw messages sent to the planner (see [llm-roles.md](llm-roles.md#planner)). |
 | `settings.summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value |
 | `settings.knowledge_max_facts` | `50` | Max global facts before consolidation |
@@ -126,7 +130,7 @@ discord = "tok-def456"
 telegram = "tok-ghi789"
 ```
 
-The token name identifies the connector for alias resolution and is logged on each call. Generate tokens however you want (`openssl rand -hex 32`, `uuidgen`, etc.). See [security.md — API Authentication](security.md#1-api-authentication) for details.
+The token name identifies the connector for alias resolution and is logged on each call. Generate tokens however you want (`openssl rand -hex 32`, `uuidgen`, etc.). See [security.md — API Authentication](security.md#2-api-authentication) for details.
 
 ## Providers
 
@@ -144,7 +148,7 @@ base_url = "http://localhost:11434/v1"
 - `api_key_env`: env var name for the API key. Read from env at startup — **never** stored in config. Optional for local providers (e.g. Ollama).
 - `base_url`: **required**. No implicit default.
 
-**Structured output requirement**: Planner and Reviewer require `response_format` with strict `json_schema`. If the provider doesn't support it, the call fails with a clear error — no fallback. Worker and Summarizer produce free-form text and work with any provider.
+**Structured output requirement**: Planner, Reviewer, and Curator require `response_format` with strict `json_schema`. If the provider doesn't support it, the call fails with a clear error — no fallback. Worker, Summarizer, and Paraphraser produce free-form text and work with any provider.
 
 ## Model Routing
 
@@ -160,7 +164,7 @@ ollama:llama3                    → provider "ollama", model "llama3"
 
 ## Users
 
-Whitelist-based. Only users in `[users]` get responses. Unknown users' messages are saved for audit but not processed.
+Whitelist-based. Only users in `[users]` trigger processing. Unknown users' messages are saved with `trusted=0` for context and audit but not processed.
 
 ```toml
 [users.marco]
@@ -182,4 +186,4 @@ skills = ["search", "aider"]
 - **`skills`**: which skills the planner can use for this user. `"*"` = all, or a list. Admins always have all skills regardless of this field.
 - **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform username.
 
-User identifiers are Linux usernames. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#2-user-identity) for the full resolution flow.
+User identifiers are Linux usernames. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.

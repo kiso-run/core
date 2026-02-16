@@ -1,6 +1,6 @@
 # Skills
 
-A skill is a git-cloned package in `~/.kiso/skills/{name}/` with a standard structure. Skills run as subprocesses, each in its own isolated environment managed by `uv`.
+A skill is a git-cloned package in `~/.kiso/skills/{name}/`. Runs as a subprocess in a `uv`-managed venv.
 
 ## Structure
 
@@ -18,7 +18,7 @@ A skill is a git-cloned package in `~/.kiso/skills/{name}/` with a standard stru
 
 A directory is a valid skill if it contains `kiso.toml` (with `type = "skill"`), `pyproject.toml`, and `run.py`.
 
-All three are required. No fallbacks — if any is missing, install fails.
+All three are required — install fails if any is missing.
 
 ## kiso.toml
 
@@ -49,10 +49,10 @@ bin = ["curl"]                    # checked with `which` after install
 
 ### Two Kinds of Secrets
 
-- `[kiso.skill.env]` → **deploy secrets** (env vars, set once by admin, passed via subprocess environment)
-- `session_secrets` → **session secrets** (user-provided at runtime, passed via input JSON — only declared ones, not the full session bag)
+- `[kiso.skill.env]` → **deploy secrets** (env vars, set by admin via `kiso env`, passed via subprocess environment)
+- `session_secrets` → **ephemeral secrets** (user-provided at runtime, in worker memory only — never persisted. Passed via input JSON — only declared ones)
 
-See [security.md — Secrets](security.md#4-secrets) for the full comparison and scoping rules.
+See [security.md — Secrets](security.md#5-secrets) for the full comparison and scoping rules.
 
 ### What the Planner Sees
 
@@ -163,7 +163,7 @@ kiso skill install git@github.com:someone/my-skill.git --name custom
 
 ### Unofficial Repo Warning
 
-Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#5-unofficial-package-warning) for the full warning text.
+Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#8-unofficial-package-warning) for the full warning text.
 
 ### Naming Convention
 
@@ -189,15 +189,18 @@ https://gitlab.com/team/cool-skill.git        → gitlab-com_team_cool-skill
 ### Install Flow
 
 ```
-1. git clone → ~/.kiso/skills/{name}/
-2. Validate kiso.toml (exists? type=skill? has name? has [kiso.skill.args]?)
-3. Validate run.py and pyproject.toml exist — fail if any missing
-4. If deps.sh exists → run it (with warning/confirmation for unofficial repos)
+1. touch ~/.kiso/skills/{name}/.installing (prevents discovery during install)
+2. git clone → ~/.kiso/skills/{name}/
+3. Validate kiso.toml (exists? type=skill? has name? has [kiso.skill.args]?)
+4. Validate run.py and pyproject.toml exist — fail if missing
+5. If unofficial repo → warn user, ask confirmation (see security.md)
+6. If deps.sh exists → run it (skipped with --no-deps)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"
-5. uv sync (pyproject.toml → .venv)
-6. Check [kiso.deps].bin (verify with `which`)
-7. Check [kiso.skill.env] vars
+7. uv sync (pyproject.toml → .venv)
+8. Check [kiso.deps].bin (verify with `which`)
+9. Check [kiso.skill.env] vars
    ⚠ KISO_SKILL_SEARCH_API_KEY not set (warn, don't block)
+10. rm ~/.kiso/skills/{name}/.installing
 ```
 
 ### Update / Remove
@@ -227,16 +230,16 @@ kiso skill search [query]
 When the worker encounters a `skill` task:
 
 1. Parses `args` from JSON string, validates against the schema in `kiso.toml`
-2. Builds input JSON (parsed args as object + session + workspace path + scoped session secrets as dict)
+2. Builds input JSON (parsed args as object + session + workspace path + scoped ephemeral secrets as dict)
 3. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/search/run.py` with `cwd=~/.kiso/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
-5. Sanitizes output (strips known secret values)
+5. Sanitizes output (strips known secret values — plaintext, base64, URL-encoded)
 6. Stores task result in DB (status, output)
-7. If `review: true`, passes to the reviewer
+7. Passes to the reviewer (all exec/skill tasks are always reviewed)
 
 ## Discovery
 
-Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each directory. No restart needed. The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
+Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). No restart needed. The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
 
 ## Why Subprocesses
 

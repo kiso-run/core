@@ -21,7 +21,7 @@ The username comes from the Linux user (`whoami`). Example: `laptop@marco`
 1. Generates session ID (default or from `--session`)
 2. Shows interactive prompt
 3. On each user input:
-   - POSTs to `/msg` on localhost (or `--api`) with `user` = Linux username, empty webhook
+   - POSTs to `/msg` on localhost (or `--api`) with `user` = Linux username
    - Polls `GET /status/{session}?after={last_task_id}`
    - Prints results as they arrive
 4. Loops until `Ctrl+C` or `exit`
@@ -77,17 +77,7 @@ $ kiso skill search web
 
 ### Install Flow
 
-```
-1. git clone → ~/.kiso/skills/{name}/
-2. Validate kiso.toml (exists? type=skill?)
-3. Validate run.py and pyproject.toml exist — fail if missing
-4. If unofficial repo → warn user, ask confirmation
-5. If deps.sh exists → run it (skipped with --no-deps)
-   ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"
-6. uv sync (pyproject.toml → .venv)
-7. Check [kiso.deps].bin
-8. Check env vars from [kiso.skill.env]
-```
+See [skills.md — Install Flow](skills.md#install-flow) for the full 10-step sequence (includes `.installing` marker to prevent discovery during install).
 
 ### Naming
 
@@ -125,9 +115,45 @@ kiso connector discord stop                    # stop the daemon
 kiso connector discord status                  # check if running
 ```
 
+## Session Management
+
+```bash
+kiso sessions                                  # list sessions you participate in
+kiso sessions --all                            # list all sessions (admin only)
+```
+
+Output:
+
+```
+$ kiso sessions
+  laptop@marco    — last activity: 2m ago
+  dev-backend     — last activity: 1h ago
+
+$ kiso sessions --all
+  laptop@marco    — last activity: 2m ago
+  dev-backend     — last activity: 1h ago
+  discord_dev     — connector: discord, last activity: 5m ago
+  discord_general — connector: discord, last activity: 30m ago
+```
+
+Non-admins see only sessions they have participated in. Admins with `--all` see every session including connector-managed ones. See [api.md — GET /sessions](api.md#get-sessions).
+
+## Deploy Secret Management
+
+Only admins can manage deploy secrets.
+
+```bash
+kiso env set KISO_SKILL_SEARCH_API_KEY sk-...  # set a deploy secret
+kiso env get KISO_SKILL_SEARCH_API_KEY         # show value
+kiso env list                                  # list all deploy secrets (names only)
+kiso env delete KISO_SKILL_SEARCH_API_KEY      # remove a deploy secret
+kiso env reload                                # hot-reload .env without restart
+```
+
+Secrets are stored in `~/.kiso/.env` and loaded into the process environment. `kiso env reload` calls `POST /admin/reload-env` to hot-reload without restarting the server. See [security.md — Deploy Secrets](security.md#deploy-secrets).
+
 ## Notes
 
 - `kiso serve` starts the HTTP server (used in Docker CMD, not typically run directly).
 - Chat mode is a thin HTTP wrapper — all intelligence lives in the server.
 - Works against a remote server (`--api`) — useful for running kiso on a VPS.
-- Session logs: `tail -f ~/.kiso/sessions/{session}/session.log`

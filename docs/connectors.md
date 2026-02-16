@@ -2,8 +2,6 @@
 
 A connector bridges an external platform (Discord, Telegram, Slack, email, etc.) and kiso's API. Lives in `~/.kiso/connectors/{name}/`.
 
-Connectors are long-running daemon processes managed by kiso inside the same container/environment.
-
 ## Structure
 
 ```
@@ -71,19 +69,20 @@ general = "discord-general"
 dev = "discord-dev"
 ```
 
-No tokens, no secrets. Those come from env vars declared in `kiso.toml`.
+No secrets. Deploy secrets come from env vars declared in `kiso.toml`.
 
 ## What a Connector Does
 
-1. Connects to the platform (Discord WebSocket, Telegram polling, etc.)
-2. Listens for messages
-3. POSTs to kiso's `/msg` endpoint:
+1. **On startup**: registers sessions via `POST /sessions` with its webhook URL and description. Session IDs are chosen by the connector (opaque strings, e.g. `discord_dev`, `discord_dm_anna`). The connector decides the naming convention.
+2. Connects to the platform (Discord WebSocket, Telegram polling, etc.)
+3. Listens for messages
+4. POSTs to kiso's `/msg` endpoint:
    - `session`: mapped from platform context (e.g. Discord channel → session name via `channel_map`)
    - `user`: the platform identity as-is (e.g. `"Marco#1234"`) — kiso resolves it to a Linux username via `aliases.{token_name}` in `config.toml` (see [security.md — Connector Aliases](security.md#connector-aliases))
    - `content`: message text
-   - `webhook`: callback URL the connector exposes to receive responses
-4. Receives webhook callbacks from kiso
-5. Sends responses back to the platform
+5. Receives webhook callbacks from kiso (at the URL set in `POST /sessions`)
+6. Sends responses back to the platform
+7. **Polling fallback**: if no webhook callback arrives within a reasonable timeout after sending a message, polls `GET /status/{session}?after={last_task_id}` to recover missed responses. This is a **protocol requirement** — connectors must implement it for reliability.
 
 ## deps.sh
 
@@ -112,7 +111,7 @@ kiso connector install git@github.com:someone/my-connector.git --name custom
 
 ### Unofficial Repo Warning
 
-Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#5-unofficial-package-warning) for the full warning text.
+Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#8-unofficial-package-warning) for the full warning text.
 
 ### Naming Convention
 
@@ -128,7 +127,7 @@ Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` t
 1. git clone → ~/.kiso/connectors/{name}/
 2. Validate kiso.toml (exists? type=connector? has name?)
 3. Validate run.py and pyproject.toml exist
-4. If deps.sh exists → run it (with warning for unofficial repos)
+4. If deps.sh exists → run it (with warning/confirmation for unofficial repos)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for connector {name}"
 5. uv sync (pyproject.toml → .venv)
 6. Check [kiso.deps].bin (verify with `which`)
@@ -141,7 +140,7 @@ Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` t
 
 A user can ask the agent to install a connector. The planner generates exec tasks replicating the CLI install flow (git clone → uv sync → deps.sh → copy config.example.toml) with a final `msg` listing next steps (set env vars, edit config, add aliases, run).
 
-The agent cannot start the connector or set env vars (those require container restart or host-level access).
+The agent cannot start the connector but can set env vars via exec tasks (`kiso env set ... && kiso env reload`) if the user is an admin.
 
 ### Update / Remove / Search
 
@@ -156,7 +155,7 @@ kiso connector search [query]
 
 ## Running
 
-Kiso manages connectors as daemon subprocesses:
+Connectors run as daemon subprocesses managed by kiso:
 
 ```bash
 kiso connector discord run             # start as daemon

@@ -9,8 +9,10 @@ One volume, mounted at `~/.kiso/`:
 ```
 ~/.kiso/                    # single volume
 ├── config.toml
+├── .env                    # deploy secrets (managed via `kiso env`)
 ├── store.db
 ├── server.log
+├── audit/                  # LLM call logs, task execution logs (see audit.md)
 ├── roles/
 ├── skills/
 ├── connectors/
@@ -124,31 +126,18 @@ services:
 
 ## Environment Variables
 
-Pass all required env vars through docker-compose or `docker run -e`:
+Two ways to provide deploy secrets:
+
+**1. Docker env vars** (docker-compose `environment` or `docker run -e`): passed directly to the container process.
+
+**2. `kiso env`** (recommended): manages `~/.kiso/.env` inside the volume. Secrets persist across container restarts and can be hot-reloaded without restart via `kiso env reload`. See [cli.md — Deploy Secret Management](cli.md#deploy-secret-management).
 
 ```bash
-docker run -d \
-  -v kiso-data:/root/.kiso \
-  -p 8333:8333 \
-  -e KISO_OPENROUTER_API_KEY=sk-or-... \
-  -e KISO_CONNECTOR_DISCORD_BOT_TOKEN=... \
-  kiso-run/core
+docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-or-...
+docker exec -it kiso kiso env reload
 ```
 
-Or use an `.env` file:
-
-```bash
-# .env
-KISO_OPENROUTER_API_KEY=sk-or-...
-KISO_CONNECTOR_DISCORD_BOT_TOKEN=...
-KISO_SKILL_SEARCH_API_KEY=...
-```
-
-```yaml
-services:
-  kiso:
-    env_file: .env
-```
+Both methods work. Docker env vars are applied at container start; `kiso env` manages secrets at runtime. If the same variable is set in both, the Docker env var takes precedence (standard behavior).
 
 ## deps.sh and System Packages
 
@@ -158,4 +147,4 @@ services:
 
 ## Task Persistence
 
-Tasks in `store.db` (volume) survive container crashes. In-flight tasks marked `failed` on next startup.
+Tasks in `store.db` (volume) survive container crashes. In-flight tasks marked `failed` on next startup. Unprocessed messages (`processed=0`) are re-enqueued on startup — see [flow.md — Message Recovery on Startup](flow.md#message-recovery-on-startup).

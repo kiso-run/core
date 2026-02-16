@@ -8,6 +8,37 @@ Authorization: Bearer <token>
 
 Tokens are defined as named entries in `config.toml`. Kiso matches the token to its name, logs which client made the call, and uses the token name for alias resolution. See [config.md](config.md).
 
+## POST /sessions
+
+Creates or updates a session. Used by connectors to register sessions with metadata before sending messages. The CLI does not call this — sessions are created implicitly on first `POST /msg`.
+
+**Request:**
+
+```json
+{
+  "session": "discord_dev",
+  "webhook": "http://localhost:9001/callback",
+  "description": "Discord #dev channel"
+}
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `session` | yes | Session identifier (chosen by the connector, opaque string) |
+| `webhook` | no | Connector callback URL for `msg` task deliveries |
+| `description` | no | Human-readable label for the session |
+
+**Response** `201 Created` (new session) or `200 OK` (updated):
+
+```json
+{
+  "session": "discord_dev",
+  "created": true
+}
+```
+
+The `connector` field is set automatically from the token name (e.g. token `discord` → `connector = "discord"`).
+
 ## POST /msg
 
 Receives a message and queues it for processing.
@@ -18,8 +49,7 @@ Receives a message and queues it for processing.
 {
   "session": "dev-backend",
   "user": "marco",
-  "content": "add /health endpoint",
-  "webhook": "https://example.com/hook"
+  "content": "add /health endpoint"
 }
 ```
 
@@ -28,7 +58,8 @@ Receives a message and queues it for processing.
 | `session` | yes | Session identifier |
 | `user` | yes | User identity: Linux username (direct API) or platform identity (connectors — resolved via aliases) |
 | `content` | yes | Message content |
-| `webhook` | no | URL to receive `msg` task outputs. If empty, results available only via `/status` |
+
+If the session does not exist, it is created implicitly (with no webhook, no connector metadata). This is the normal path for CLI usage.
 
 **Response** `202 Accepted`:
 
@@ -45,6 +76,27 @@ Receives a message and queues it for processing.
 |---|---|
 | `401 Unauthorized` | Bearer token does not match any entry in `config.toml` |
 | `202 Accepted` | Unknown user — message saved for audit but not processed (same response as success, by design) |
+
+## GET /sessions
+
+Lists sessions the authenticated user participates in.
+
+**Query params:**
+
+| Param | Required | Description |
+|---|---|---|
+| `all` | no | If `true`, return all sessions (admin only). Non-admins: ignored. |
+
+The user is resolved from the bearer token + `user` param (same as `POST /msg`). Returns sessions where the user has at least one message in `store.messages`.
+
+**Response:**
+
+```json
+[
+  {"session": "discord_dev", "connector": "discord", "description": "Discord #dev", "updated_at": "..."},
+  {"session": "laptop@marco", "connector": null, "description": null, "updated_at": "..."}
+]
+```
 
 ## GET /status/{session}
 
@@ -80,9 +132,24 @@ For polling. Used by the CLI and clients without a webhook.
 
 Returns all tasks (for monitoring and debugging). Clients that only want user-facing messages filter by `type: "msg"`.
 
+## POST /admin/reload-env
+
+Hot-reloads deploy secrets from `~/.kiso/.env` without restarting the server. Admin only.
+
+**Response** `200 OK`:
+
+```json
+{
+  "reloaded": true,
+  "keys_loaded": 5
+}
+```
+
+**`403 Forbidden`** if the token does not belong to an admin user.
+
 ## Webhook Callback
 
-Every `msg` task output is POSTed to the session's webhook:
+Every `msg` task output is POSTed to the session's webhook URL (set via `POST /sessions`):
 
 ```json
 {
@@ -94,7 +161,10 @@ Every `msg` task output is POSTed to the session's webhook:
 }
 ```
 
-`final: true` on the last `msg` task in the current plan. Only `msg` tasks trigger webhooks — `exec` and `skill` outputs are internal. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
+- `final: true` on the last `msg` task in the current plan, sent only after the entire plan completes successfully (no pending reviews).
+- Only `msg` tasks trigger webhooks — `exec` and `skill` outputs are internal. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
+- **Retry**: 3 attempts with backoff (1s, 3s, 9s). If all fail, kiso logs the failure and continues. Outputs remain available via `/status`.
+- **Connector requirement**: connectors must implement a polling fallback — if no webhook callback arrives within a reasonable timeout, poll `GET /status/{session}?after={last_task_id}` to recover missed responses.
 
 ## GET /pub/{id}
 

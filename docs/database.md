@@ -1,29 +1,32 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Six tables.
+Single SQLite file: `~/.kiso/store.db`. Eight tables.
 
 ## Tables
 
 ### sessions
 
-Active sessions with webhook URL and rolling conversation summary.
+Active sessions with metadata and rolling conversation summary.
 
 ```sql
 CREATE TABLE sessions (
-    session    TEXT PRIMARY KEY,
-    webhook    TEXT,
-    summary    TEXT DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    session     TEXT PRIMARY KEY,
+    connector   TEXT,                -- token name of the connector that created it (null for CLI)
+    webhook     TEXT,                -- connector callback URL (null for CLI)
+    description TEXT,                -- human-readable label (e.g. "Discord #dev channel")
+    summary     TEXT DEFAULT '',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-- Created or updated on every `POST /msg`. Webhook URL can change between calls (latest wins).
+- Created explicitly via `POST /sessions` (connectors) or implicitly on first `POST /msg` (CLI).
+- `webhook` is set at session creation and used for all msg task deliveries. Not updated per-message.
 - `summary` is a rolling text blob maintained by the summarizer. Overwritten each time.
 
 ### messages
 
-All messages across all sessions.
+All messages across all sessions, including from non-whitelisted users.
 
 ```sql
 CREATE TABLE messages (
@@ -32,12 +35,17 @@ CREATE TABLE messages (
     user      TEXT,
     role      TEXT NOT NULL,       -- user | assistant | system
     content   TEXT NOT NULL,
+    trusted   BOOLEAN DEFAULT 1,   -- 0 for non-whitelisted users
+    processed BOOLEAN DEFAULT 0,   -- 1 after worker picks it up
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_messages_session ON messages(session, id);
+CREATE INDEX idx_messages_unprocessed ON messages(processed) WHERE processed = 0;
 ```
 
-`user` is the resolved Linux username (not the platform alias). In multi-user sessions (Discord channel), tracks who said what.
+- `user` is the resolved Linux username (not the platform alias). In multi-user sessions, tracks who said what.
+- `trusted=0` messages are from non-whitelisted users: saved for context and audit, never trigger planning. Paraphrased before inclusion in planner context (see [security.md — Prompt Injection Defense](security.md#prompt-injection-defense)).
+- `processed=0` messages are recovered on startup — re-enqueued for processing. Prevents silent message loss on crash.
 
 ### tasks
 
@@ -53,11 +61,11 @@ CREATE TABLE tasks (
     detail     TEXT NOT NULL,       -- what to do
     skill      TEXT,                -- skill name (if type=skill)
     args       TEXT,                -- JSON string of skill args (parsed before execution)
-    expect     TEXT,                -- success criteria (required if review=1)
+    expect     TEXT,                -- success criteria (required for exec and skill tasks)
     status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     output     TEXT,                -- stdout / generated text
     stderr     TEXT,                -- stderr (exec/skill only)
-    review     BOOLEAN DEFAULT 0,
+    model      TEXT,                -- role name for model override (msg tasks only)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -65,56 +73,76 @@ CREATE INDEX idx_tasks_session ON tasks(session, id);
 CREATE INDEX idx_tasks_status ON tasks(session, status);
 ```
 
-Status lifecycle: `pending` → `running` → `done` | `failed`.
-
-On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
-
-The `/status/{session}` endpoint reads from this table.
-
-Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
+- `exec` and `skill` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
+- Status lifecycle: `pending` → `running` → `done` | `failed`.
+- On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
+- The `/status/{session}` endpoint reads from this table.
+- Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#e-delivers-msg-tasks).
 
 ### facts
 
-Persistent knowledge learned across all sessions. Individual entries, not a blob.
+Global persistent knowledge — confirmed truths promoted by the curator. Individual entries, not a blob.
 
 ```sql
 CREATE TABLE facts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     content    TEXT NOT NULL,
-    source     TEXT NOT NULL,       -- "reviewer" | "summarizer" | "manual"
-    session    TEXT,                -- provenance: which session generated this (null for manual)
+    source     TEXT NOT NULL,       -- "curator" | "summarizer" | "manual"
+    session    TEXT,                -- provenance: which session originated this (null for manual)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-**Facts are global.** All facts are visible to all sessions. The `session` column is **provenance only** — it records where the fact came from, not where it's visible.
+**Facts are global** — visible to all sessions. The `session` column is provenance only (which session generated it, not where it's visible).
+
+Facts are **certain truths** that have passed evaluation by the curator. They are not created directly by the reviewer — the reviewer produces learnings (see below), and the curator promotes confirmed learnings to facts. See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle).
 
 Example entries:
 ```
-id=1  content="Project uses Flask 2.3"                  source="reviewer"    session="dev-backend"
-id=2  content="Team: marco (backend), anna (frontend)"  source="reviewer"    session="discord-general"
+id=1  content="Project uses Flask 2.3"                  source="curator"     session="dev-backend"
+id=2  content="Team: marco (backend), anna (frontend)"  source="curator"     session="discord-general"
 id=3  content="Conventions: snake_case, type hints"      source="manual"      session=NULL
 ```
 
-All three are visible in every session. Fact #1, learned in `dev-backend`, helps the planner in `discord-general` too.
+All three are visible in every session.
 
-See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle) for how facts are created (reviewer `learn` field), used (planner + worker), and consolidated (summarizer, when count exceeds `knowledge_max_facts`).
+### learnings
 
-### secrets
-
-Per-session credentials provided by the user for the bot to use. These are **session secrets** — not to be confused with deploy secrets (env vars). See [security.md](security.md).
+Candidate facts produced by the reviewer. Pending evaluation by the curator before potential promotion to facts.
 
 ```sql
-CREATE TABLE secrets (
+CREATE TABLE learnings (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session    TEXT NOT NULL,
-    key        TEXT NOT NULL,
-    value      TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(session, key)
+    content    TEXT NOT NULL,
+    session    TEXT NOT NULL,       -- where it was learned
+    user       TEXT,                -- who was interacting
+    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | promoted | discarded
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_secrets_session ON secrets(session);
+CREATE INDEX idx_learnings_status ON learnings(status) WHERE status = 'pending';
 ```
+
+- Created by the reviewer's `learn` field after task review.
+- The curator evaluates pending learnings and either promotes them to facts, asks the user for confirmation, or discards them.
+
+### pending
+
+Open questions and unresolved issues. Visible to the planner, which can act on them.
+
+```sql
+CREATE TABLE pending (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT NOT NULL,
+    scope      TEXT NOT NULL,       -- "global" or a session ID
+    source     TEXT NOT NULL,       -- "curator" | "planner" | "reviewer"
+    status     TEXT NOT NULL DEFAULT 'open',  -- open | resolved
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_pending_scope ON pending(scope, status);
+```
+
+- Global pending items are visible to all sessions. Session-scoped ones only to that session.
+- Resolved pending items may become facts (via curator) or get absorbed into the session summary.
 
 ### published
 
@@ -135,3 +163,6 @@ CREATE TABLE published (
 ## What's NOT in the database
 
 - **Logs**: plain text files in `sessions/{id}/session.log` and `~/.kiso/server.log`.
+- **Audit trail**: JSONL files in `~/.kiso/audit/`. See [audit.md](audit.md).
+- **Ephemeral secrets**: user-provided credentials live in worker memory only, never persisted. See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
+- **Deploy secrets**: environment variables, managed via `kiso env`. See [security.md — Deploy Secrets](security.md#deploy-secrets).

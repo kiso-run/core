@@ -19,22 +19,25 @@ KISO (基礎) = foundation in Japanese.
 kiso/                               # installable python package
 ├── main.py                         # FastAPI, /msg, /status, /pub, /health
 ├── llm.py                          # LLM client, routes calls to configured providers
-├── brain.py                        # planner + reviewer
+├── brain.py                        # planner + reviewer + curator
 ├── worker.py                       # consumes tasks from queue, one per session
-├── store.py                        # SQLite: sessions, messages, tasks, facts, secrets, published
+├── store.py                        # SQLite: sessions, messages, tasks, facts, learnings, pending, published
 ├── skills.py                       # skill discovery and loading
 ├── config.py                       # loads and validates ~/.kiso/config.toml
 └── cli.py                          # interactive client + management commands
 
 ~/.kiso/                            # user data (outside the repo)
 ├── config.toml                     # providers, tokens, models, settings
-├── store.db                        # SQLite database (6 tables)
+├── .env                            # deploy secrets (managed via `kiso env`)
+├── store.db                        # SQLite database (8 tables)
 ├── server.log                      # server-level log
+├── audit/                          # LLM call logs, task execution logs
 ├── roles/                          # system prompt for each LLM role
 │   ├── planner.md
 │   ├── reviewer.md
 │   ├── worker.md
-│   └── summarizer.md
+│   ├── summarizer.md
+│   └── curator.md
 ├── skills/                         # bot capabilities (git clone)
 │   └── {name}/
 │       ├── kiso.toml               # manifest: identity, args schema, deps
@@ -104,7 +107,7 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 ```
 
-Only whitelisted users get responses (unknown users' messages are saved for audit but not processed). See [config.md](docs/config.md) for user roles and skill permissions.
+Only whitelisted users trigger processing. Unknown users' messages are saved with `trusted=0` for context and audit but not processed. See [config.md](docs/config.md) for user roles and skill permissions.
 
 ### 3. Set up secrets
 
@@ -131,7 +134,7 @@ Naming: providers use whatever `api_key_env` says; skills use `KISO_SKILL_{NAME}
 mkdir -p ~/.kiso/roles
 ```
 
-Create one `.md` file per LLM role in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`. These are the system prompts for each role. See [llm-roles.md](docs/llm-roles.md) for what each role does.
+Create one `.md` file per LLM role in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`, `curator.md`. These are the system prompts for each role. See [llm-roles.md](docs/llm-roles.md) for what each role does.
 
 ### 5. Start
 
@@ -170,8 +173,9 @@ docker exec -it kiso bash
 # Install an official skill
 kiso skill install search
 
-# Set the skill's env var (add to .env, restart container)
-# KISO_SKILL_SEARCH_API_KEY=...
+# Set the skill's env var
+kiso env set KISO_SKILL_SEARCH_API_KEY sk-...
+kiso env reload
 ```
 
 ### Install a connector (admin only)
@@ -182,30 +186,37 @@ docker exec -it kiso bash
 # Install and configure
 kiso connector install discord
 # Edit ~/.kiso/connectors/discord/config.toml with your settings
-# Set KISO_CONNECTOR_DISCORD_BOT_TOKEN in .env, restart container
+kiso env set KISO_CONNECTOR_DISCORD_BOT_TOKEN ...
+kiso env reload
 
 # Start the connector
 kiso connector discord run
 ```
 
-### Adding secrets at runtime
+### Managing deploy secrets at runtime
 
-Users can give the bot credentials during conversation (e.g. "here's my GitHub token: ghp_abc123"). The planner extracts these and stores them per-session in the database. Skills that declare `session_secrets` in their `kiso.toml` receive only the secrets they declared — nothing more.
+```bash
+docker exec -it kiso kiso env set KISO_SKILL_SEARCH_API_KEY sk-...
+docker exec -it kiso kiso env reload
+```
 
-These **session secrets** are different from **deploy secrets** (env vars, set once by admin). See [security.md — Secrets](docs/security.md#4-secrets) for the full comparison.
+Users can also share credentials during conversation (e.g. "here's my token: tok_abc123"). The planner extracts these as **ephemeral secrets** — stored in worker memory only, never in DB, lost on worker shutdown. Skills that declare `session_secrets` in their `kiso.toml` receive only the secrets they declared.
+
+See [security.md — Secrets](docs/security.md#5-secrets) for the full comparison between deploy and ephemeral secrets.
 
 See [config.md](docs/config.md) for full configuration reference.
 
 ## Design Documents
 
-- [config.md](docs/config.md) - Configuration, providers, tokens
-- [database.md](docs/database.md) - Database schema (6 tables)
-- [llm-roles.md](docs/llm-roles.md) - The 4 LLM roles, their prompts, and what context each receives
-- [flow.md](docs/flow.md) - Full message lifecycle
-- [skills.md](docs/skills.md) - Skill system (subprocess, isolated venv)
-- [connectors.md](docs/connectors.md) - Platform bridges
-- [api.md](docs/api.md) - API endpoints
-- [cli.md](docs/cli.md) - Terminal client and management commands
-- [security.md](docs/security.md) - Authentication, permissions, secrets
-- [docker.md](docs/docker.md) - Docker setup, volumes, pre-installing packages
-- [logging.md](docs/logging.md) - Logs
+- [config.md](docs/config.md) — Configuration, providers, tokens
+- [database.md](docs/database.md) — Database schema (8 tables)
+- [llm-roles.md](docs/llm-roles.md) — The 6 LLM roles, their prompts, and what context each receives
+- [flow.md](docs/flow.md) — Full message lifecycle
+- [skills.md](docs/skills.md) — Skill system (subprocess, isolated venv)
+- [connectors.md](docs/connectors.md) — Platform bridges
+- [api.md](docs/api.md) — API endpoints
+- [cli.md](docs/cli.md) — Terminal client and management commands
+- [security.md](docs/security.md) — Authentication, permissions, secrets, prompt injection defense
+- [docker.md](docs/docker.md) — Docker setup, volumes, pre-installing packages
+- [audit.md](docs/audit.md) — Audit trail (JSONL logs, secret masking)
+- [logging.md](docs/logging.md) — Logs
