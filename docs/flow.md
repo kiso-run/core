@@ -172,86 +172,48 @@ When facts exceed `knowledge_max_facts` (default 50), the Summarizer reads all f
 ## Diagram
 
 ```
-                            ┌─────────────────────────────────────────────┐
-                            │            SESSION CREATION                  │
-                            │                                              │
-                            │  Connector: POST /sessions (explicit)        │
-                            │  CLI: implicit on first POST /msg            │
-                            └──────────────────┬──────────────────────────┘
-                                               │
-POST /msg ──> auth (token) ──> whitelist? ──no──> save msg (trusted=0, audit+context)
-                                    │
-                                   yes
-                                    │
-                              resolve role ──> save msg (processed=0)
-                                               ──> queue(session)
-                                                          │
-                                                          ▼
-                                                   worker(session)
-                                                          │
-                                              ┌───────────┤
-                                              ▼           │
-                                       paraphrase         │
-                                       untrusted msgs     │
-                                       (if any)           │
-                                              │           │
-                                              ▼           │
-                                       build planner ctx  │
-                                       (facts, pending,   │
-                                        summary,          │
-                                        last N msgs,      │
-                                        paraphrased,      │
-                                        msg outputs,      │
-                                        skills, role,     │
-                                        new msg)          │
-                                              │           │
-                                              ▼           │
-                                          planner         │
-                                      (structured output) │
-                                         │    │  secrets? │
-                                      goal  tasks  memory │
-                                         │    │     only  │
-                                         ▼    ▼           │
-                                      validate plan       │
-                                      (semantic checks)   │
-                                         │  ╳ fail?       │
-                                         │  → retry       │
-                                         │  (max 3)       │
-                                         ▼                │
-                                      persist tasks       │
-                                      (pending)           │
-                                         │                │
-                                ┌────────┼────────┐      │
-                                ▼        ▼        ▼      │
-                              exec     msg      skill    │
-                             (shell)  (llm)   (subproc)  │
-                                │      │         │       │
-                                │      │         │       │
-                                └──┬───┘─────────┘      │
-                                   │ sanitize output     │
-                                   │ persist to DB       │
-                                   │ audit log           │
-                                   ▼                     │
-                            exec/skill? ──yes──> review  │
-                                   │           │    │    │
-                                   │        ok─┘  replan │
-                                   │        │      │     │
-                                   │    learn?   notify  │
-                                   │      │     + replan │
-                                   │      ▼      (back   │
-                                   │   learning  to      │
-                                   │   (pending) planner)│
-                                   │                     │
-                              msg? ──yes──> deliver      │
-                                   │       (webhook      │
-                                   │        + store)     │
-                                   ▼                     │
-                                more tasks?              │
-                                  │     │                │
-                                 yes    no               │
-                                  │     │                │
-                                  ▼     ├──> curator     │
-                             next task  ├──> summarize?  │
-                                        ├──> consolidate?│
-                                        └──> wait/shut ──┘
+POST /msg
+  │
+  auth (token) ───── 401 if invalid
+  │
+  whitelist? ──no──▶ save (trusted=0), stop
+  │ yes
+  resolve role, save (processed=0), queue
+  │
+  ▼
+WORKER (per session)
+  │
+  paraphrase untrusted msgs (if any)
+  │
+  build context ──▶ planner (structured output)
+  │                    ├─ goal
+  │                    ├─ tasks
+  │                    └─ secrets? → memory only
+  │
+  validate plan ──fail?──▶ retry (max 3) or fail msg
+  │
+  persist tasks (pending)
+  │
+  ┌─── FOR EACH TASK ───┐
+  │                      │
+  │  exec / msg / skill  │
+  │         │            │
+  │  sanitize + persist  │
+  │         │            │
+  │  exec/skill ──▶ review
+  │                 │    │
+  │              ok │  replan ──▶ notify + re-plan
+  │                 │
+  │          learn? ──▶ store learning
+  │                 │
+  │  msg ──▶ deliver (webhook + /status)
+  │         │
+  │  next task ◀────┘
+  └──────────────────┘
+  │
+POST-EXECUTION
+  ├─ curator (if learnings)
+  ├─ summarize (if threshold)
+  ├─ consolidate facts (if limit)
+  └─ wait / shutdown
 ```
