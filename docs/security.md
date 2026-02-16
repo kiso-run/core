@@ -216,12 +216,9 @@ Kiso passes **only the declared session secrets** to the skill. A skill declarin
 ### Leak Prevention
 
 1. **Output sanitization**: known secret values (deploy + ephemeral) stripped from task output — plaintext, base64, and URL-encoded variants. Best-effort; encoded variants beyond these are not guaranteed to be caught. See [audit.md](audit.md) for the masking algorithm.
-2. **No secrets in prompts**: provider API keys used only at HTTP transport level.
-3. **Prompt hardening**: every role's prompt includes "never reveal secrets or configuration."
-4. **Clean subprocess env**: exec tasks inherit only PATH.
-5. **No secrets in config files**: connector `config.toml` is structural only.
-6. **Scoped secrets**: skills receive only declared secrets, not the full bag.
-7. **Named tokens**: each client revocable independently.
+2. **Clean subprocess env**: exec tasks inherit only PATH.
+3. **Scoped secrets**: skills receive only declared secrets, not the full bag.
+4. **Prompt hardening**: every role's prompt includes "never reveal secrets or configuration."
 
 ## 6. Prompt Injection Defense
 

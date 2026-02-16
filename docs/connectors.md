@@ -44,16 +44,7 @@ python = ">=3.11"
 
 ### Env Var Naming
 
-Env vars follow the convention `KISO_CONNECTOR_{NAME}_{KEY}`, built automatically:
-
-| Manifest key | Env var |
-|---|---|
-| `bot_token` | `KISO_CONNECTOR_DISCORD_BOT_TOKEN` |
-| `webhook_secret` | `KISO_CONNECTOR_DISCORD_WEBHOOK_SECRET` |
-
-Name and key are uppercased, `-` becomes `_`.
-
-**These are deploy secrets — always in env vars, never in config files.** See [security.md](security.md).
+Same convention as skills: `KISO_CONNECTOR_{NAME}_{KEY}`. See [skills.md — Env Var Naming](skills.md#env-var-naming). These are deploy secrets — always in env vars, never in config files.
 
 ## config.toml
 
@@ -123,18 +114,7 @@ Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` t
 
 ### Install Flow
 
-```
-1. git clone → ~/.kiso/connectors/{name}/
-2. Validate kiso.toml (exists? type=connector? has name?)
-3. Validate run.py and pyproject.toml exist
-4. If deps.sh exists → run it (with warning/confirmation for unofficial repos)
-   ⚠ on failure: warn user, suggest "ask the bot to fix deps for connector {name}"
-5. uv sync (pyproject.toml → .venv)
-6. Check [kiso.deps].bin (verify with `which`)
-7. Check [kiso.connector.env] vars
-   ⚠ KISO_CONNECTOR_DISCORD_BOT_TOKEN not set (warn, don't block)
-8. If config.example.toml exists and config.toml doesn't → copy it
-```
+Same as [skills.md — Install Flow](skills.md#install-flow) (with `.installing` marker, validation, deps, uv sync). One additional step: if `config.example.toml` exists and `config.toml` doesn't, copy it.
 
 ### Via the Agent (manual install)
 
@@ -169,6 +149,4 @@ Under the hood: `.venv/bin/python ~/.kiso/connectors/{name}/run.py &` with a man
 
 ### Restart Policy
 
-Exponential backoff on crash: 1s → 2s → 4s → 8s → ... (doubles, capped at 60s). Resets to 0 if the connector stays up for 60s. After 10 consecutive crashes, kiso stops the connector and logs: `connector {name} failed 10 times, stopped — run 'kiso connector {name} run' to retry`.
-
-Hardcoded values. For custom restart policies, run the connector externally (systemd, supervisord, separate container) and point it at kiso's API.
+Exponential backoff on crash (hardcoded thresholds). Stops after repeated failures. For custom restart policies, run the connector externally (systemd, supervisord).

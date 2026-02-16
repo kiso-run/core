@@ -65,7 +65,6 @@ CREATE TABLE tasks (
     status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     output     TEXT,                -- stdout / generated text
     stderr     TEXT,                -- stderr (exec/skill only)
-    model      TEXT,                -- role name for model override (msg tasks only)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -162,7 +161,5 @@ CREATE TABLE published (
 
 ## What's NOT in the database
 
-- **Logs**: plain text files in `sessions/{id}/session.log` and `~/.kiso/server.log`.
-- **Audit trail**: JSONL files in `~/.kiso/audit/`. See [audit.md](audit.md).
-- **Ephemeral secrets**: user-provided credentials live in worker memory only, never persisted. See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
-- **Deploy secrets**: environment variables, managed via `kiso env`. See [security.md — Deploy Secrets](security.md#deploy-secrets).
+- **Logs & audit**: plain text files (`session.log`, `server.log`) and JSONL (`audit/`). See [audit.md](audit.md).
+- **Secrets**: ephemeral (worker memory only) and deploy (env vars via `kiso env`) — never in DB. See [security.md](security.md#5-secrets).

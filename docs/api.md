@@ -113,22 +113,15 @@ For polling. Used by the CLI and clients without a webhook.
 ```json
 {
   "session": "dev-backend",
-  "tasks": [
+  "tasks": [                   // all tasks since `after` (each: id, type, status, output)
     {"id": 5, "type": "exec", "status": "done", "output": "OK"},
     {"id": 6, "type": "msg", "status": "done", "output": "Done!"}
   ],
-  "queue_length": 0,
-  "active_task": null,
-  "worker_running": true
+  "queue_length": 0,           // pending messages in session queue
+  "active_task": null,         // currently running task or null
+  "worker_running": true       // whether session worker is alive
 }
 ```
-
-| Field | Description |
-|---|---|
-| `tasks` | All tasks since `after` (or all if `after` not specified). Each has `id`, `type`, `status`, `output`. |
-| `queue_length` | Number of pending messages waiting in the session queue. |
-| `active_task` | Currently running task (`{"id": 5, "type": "exec", "status": "running"}`) or `null` if idle. |
-| `worker_running` | Whether the session's worker is alive. `false` if idle-timed-out or never started. |
 
 Returns all tasks (for monitoring and debugging). Clients that only want user-facing messages filter by `type: "msg"`.
 

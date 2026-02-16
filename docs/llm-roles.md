@@ -36,14 +36,7 @@ Key principle: the planner must put everything the worker needs into the task `d
 
 **When**: a new message arrives on a session.
 
-**Input**: facts + pending items (global + session) + session summary + last `context_messages` raw messages (default 5) + paraphrased untrusted messages + recent msg outputs (all `msg` task outputs since last summary) + new message + allowed skill summaries and args schemas (filtered by user's `skills` config) + caller role.
-
-The planner sees three layers of history:
-1. **Session summary** — compressed history of everything before the recent window
-2. **Recent msg outputs** — what the bot communicated to the user (msg task outputs since last summarization)
-3. **Last N raw messages** — the most recent user messages (default 5, configurable)
-
-This keeps the prompt lean while giving the planner both the immediate conversation and a record of recent actions.
+**Input**: see [Context per Role](#context-per-role) table. The planner sees three layers of history: session summary (compressed past), recent msg outputs (what the bot communicated), and last N raw messages (immediate conversation).
 
 **Output**: JSON with a `goal`, `secrets` (nullable), and a `tasks` list.
 
@@ -82,10 +75,9 @@ response_format = {
                             "detail": {"type": "string"},
                             "skill": {"type": ["string", "null"]},
                             "args": {"type": ["string", "null"]},
-                            "expect": {"type": ["string", "null"]},
-                            "model": {"type": ["string", "null"]}
+                            "expect": {"type": ["string", "null"]}
                         },
-                        "required": ["type", "detail", "skill", "args", "expect", "model"],
+                        "required": ["type", "detail", "skill", "args", "expect"],
                         "additionalProperties": False
                     }
                 }
@@ -100,7 +92,7 @@ response_format = {
 Schema notes:
 - **`secrets`**: array of `{key, value}` pairs — ephemeral credentials extracted from user messages. Stored in worker memory only, never in DB. `null` when no secrets. Example: `[{"key": "api_token", "value": "tok_abc123"}]`
 - **`args`**: JSON string (strict mode doesn't allow dynamic-key objects). `null` for non-skill tasks.
-- **Optional task fields** (`skill`, `args`, `expect`, `model`): nullable — `null` when not applicable.
+- **Optional task fields** (`skill`, `args`, `expect`): nullable — `null` when not applicable.
 - **`review` field removed**: `exec` and `skill` tasks are always reviewed. `msg` tasks are never reviewed. The task type determines behavior.
 
 Provider guarantees valid JSON at decoding level — no parse retries needed. If the provider doesn't support structured output, the call fails with a clear error:
@@ -149,15 +141,15 @@ User: "add JWT authentication"
   "secrets": null,
   "tasks": [
     {"type": "msg", "detail": "Tell the user: starting work on JWT authentication.",
-     "skill": null, "args": null, "expect": null, "model": null},
+     "skill": null, "args": null, "expect": null},
     {"type": "skill", "detail": "Add JWT auth module",
      "skill": "aider", "args": "{\"message\": \"create JWT auth module with /login and /logout endpoints\"}",
-     "expect": "auth module created with login endpoint and JWT middleware", "model": null},
+     "expect": "auth module created with login endpoint and JWT middleware"},
     {"type": "exec", "detail": "python -m pytest tests/",
      "skill": null, "args": null,
-     "expect": "all tests pass", "model": null},
+     "expect": "all tests pass"},
     {"type": "msg", "detail": "We added JWT auth with /login, /logout, and jwt_required middleware. Tests pass. Summarize for the user.",
-     "skill": null, "args": null, "expect": null, "model": null}
+     "skill": null, "args": null, "expect": null}
   ]
 }
 
@@ -169,9 +161,9 @@ User: "find out how to deploy on fly.io"
   "tasks": [
     {"type": "skill", "detail": "Search for fly.io deployment guides",
      "skill": "search", "args": "{\"query\": \"fly.io python deployment guide\"}",
-     "expect": "relevant search results about fly.io deployment", "model": null},
+     "expect": "relevant search results about fly.io deployment"},
     {"type": "msg", "detail": "The user wants to deploy on fly.io. Based on the search results: [search output will be here]. Write a clear summary of the deployment steps.",
-     "skill": null, "args": null, "expect": null, "model": null}
+     "skill": null, "args": null, "expect": null}
   ]
 }
 ```
@@ -206,7 +198,6 @@ All fields are always present in the JSON output (strict mode requires it). The 
 | `type` | always | `exec`, `msg`, `skill` |
 | `detail` | always | What to do. For `msg` tasks, must include all context the worker needs. For `exec` tasks, the shell command. |
 | `expect` | `type` is `exec` or `skill` | Semantic success criteria (e.g. "tests pass", not exact output). Required — all exec/skill tasks are reviewed. |
-| `model` | optional | Role name to use that role's configured model for `msg` tasks (e.g. `"reviewer"` for a stronger model). Ignored on `exec` and `skill` tasks. Valid values: `planner`, `reviewer`, `worker`, `summarizer`. |
 | `skill` | `type` is `skill` | Skill name. |
 | `args` | `type` is `skill` | Skill arguments as a JSON string. Kiso parses and validates against `kiso.toml` schema. |
 
@@ -221,7 +212,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 **When**: after execution of every `exec` and `skill` task (always — no opt-out).
 
-**Input**: process goal + task detail + task expect + task output (fenced — see [security.md](security.md#layer-2-random-boundary-fencing)) + original user message.
+**Input**: see [Context per Role](#context-per-role) table. Task output is fenced (see [security.md](security.md#layer-2-random-boundary-fencing)).
 
 **Output**: JSON (via structured output, same as planner) with `status`, optional `reason`, and optional `learn`.
 
@@ -286,9 +277,9 @@ See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) 
 
 **When**: executing `msg` type tasks (text generation).
 
-**Input**: facts (global) + session summary + task detail.
+**Input**: see [Context per Role](#context-per-role) table.
 
-**Output**: free-form text. No structured output required.
+**Output**: free-form text.
 
 ### Why the Worker Doesn't See the Conversation
 
@@ -306,13 +297,11 @@ If `detail` lacks context, the reviewer catches it and triggers a replan.
 
 **When**: after queue completion, if raw messages >= `summarize_threshold`. Also when facts exceed `knowledge_max_facts`.
 
-**For messages**: takes current session summary + oldest messages + **msg task outputs associated with those messages** → updated summary (overwrites `sessions.summary`). Including bot responses ensures the summary captures what was communicated, not just what was asked.
+Two tasks (see [Context per Role](#context-per-role) table):
+- **Messages**: current summary + oldest messages + their msg task outputs → updated summary. Includes bot responses so the summary captures what was communicated, not just what was asked.
+- **Facts**: all fact entries → consolidated into fewer entries (merges duplicates, removes outdated).
 
-**For facts**: takes all fact entries → consolidates into fewer entries (merges duplicates, removes outdated). Replaces old rows in `store.facts`.
-
-**Output**: free-form text. No structured output required.
-
-**Prompt** (`roles/summarizer.md`): preserve facts, decisions, technical context, and what the bot communicated. Discard noise and redundancy.
+**Output**: free-form text. **Prompt** (`roles/summarizer.md`): preserve facts, decisions, technical context. Discard noise and redundancy.
 
 ---
 
@@ -320,7 +309,7 @@ If `detail` lacks context, the reviewer catches it and triggers a replan.
 
 **When**: after any execution cycle that produced learnings (reviewer `learn` fields). Runs after the worker finishes processing a message, if there are pending learnings.
 
-**Input**: pending learnings + existing facts + session summary of the session where the learning originated.
+**Input**: see [Context per Role](#context-per-role) table.
 
 **Output**: JSON (via structured output) evaluating each learning.
 
@@ -388,13 +377,9 @@ When the curator returns `verdict: "ask"`, the question is stored as a pending i
 
 **When**: before the planner call, if there are untrusted messages (from non-whitelisted users) in the context window.
 
-**Input**: batch of raw untrusted messages.
+**Input**: see [Context per Role](#context-per-role) table. **Output**: free-form text — third-person factual summaries.
 
-**Output**: free-form text — third-person factual summaries of each message.
-
-Uses the summarizer model (cheap, fast). Not a separate model config — reuses `models.summarizer`.
-
-See [security.md — Prompt Injection Defense](security.md#6-prompt-injection-defense) for the full defense layers (paraphrasing, random boundary fencing, prompt hierarchy, structured output).
+Reuses `models.summarizer`. See [security.md — Prompt Injection Defense](security.md#6-prompt-injection-defense) for the full defense layers.
 
 ---
 

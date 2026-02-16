@@ -79,21 +79,14 @@ See [docker.md](docs/docker.md).
 
 ## Installation
 
-### 1. Clone and build
-
 ```bash
 git clone git@github.com:kiso-run/core.git
 cd core
 docker compose build
+mkdir -p ~/.kiso ~/.kiso/roles
 ```
 
-### 2. Create config
-
-```bash
-mkdir -p ~/.kiso
-```
-
-Create `~/.kiso/config.toml`:
+Create `~/.kiso/config.toml` (minimal — see [config.md](docs/config.md) for all options):
 
 ```toml
 [tokens]
@@ -107,53 +100,22 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 ```
 
-Only whitelisted users trigger processing. Unknown users' messages are saved with `trusted=0` for context and audit but not processed. See [config.md](docs/config.md) for user roles and skill permissions.
-
-### 3. Set up secrets
-
-Kiso never stores API keys in config files. Keys go in environment variables.
-
-Create a `.env` file in the project root (gitignored):
-
-```bash
-# Provider API keys (required — at least one provider)
-KISO_OPENROUTER_API_KEY=sk-or-v1-...
-
-# Skill env vars (only if you install skills that need them)
-# KISO_SKILL_SEARCH_API_KEY=...
-
-# Connector env vars (only if you install connectors)
-# KISO_CONNECTOR_DISCORD_BOT_TOKEN=...
-```
-
-Naming: providers use whatever `api_key_env` says; skills use `KISO_SKILL_{NAME}_{KEY}`; connectors use `KISO_CONNECTOR_{NAME}_{KEY}`. All declared in their respective `kiso.toml`.
-
-### 4. Create role prompts
-
-```bash
-mkdir -p ~/.kiso/roles
-```
-
-Create one `.md` file per LLM role in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`, `curator.md`. The paraphraser reuses the summarizer model and prompt — no separate file needed. See [llm-roles.md](docs/llm-roles.md) for what each role does.
-
-### 5. Start
+Set deploy secrets (never in config files — see [security.md — Deploy Secrets](docs/security.md#deploy-secrets)):
 
 ```bash
 docker compose up -d
+docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-or-v1-...
+docker exec -it kiso kiso env reload
 ```
 
-Kiso starts on port `8333`. Check it's running:
+Create role prompts in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`, `curator.md`. The paraphraser reuses the summarizer — no separate file. See [llm-roles.md](docs/llm-roles.md).
 
-```bash
-curl http://localhost:8333/health
-```
+Verify: `curl http://localhost:8333/health`
 
 ## Quickstart
 
-Once kiso is running:
-
 ```bash
-# Send a message via curl
+# Send a message
 curl -X POST http://localhost:8333/msg \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
@@ -164,47 +126,15 @@ curl -H "Authorization: Bearer your-secret-token" \
   http://localhost:8333/status/test
 ```
 
-### Install a skill (admin only)
+Install skills and connectors via CLI (admin only — see [cli.md](docs/cli.md)):
 
 ```bash
-# Enter the container
-docker exec -it kiso bash
-
-# Install an official skill
-kiso skill install search
-
-# Set the skill's env var
-kiso env set KISO_SKILL_SEARCH_API_KEY sk-...
-kiso env reload
-```
-
-### Install a connector (admin only)
-
-```bash
-docker exec -it kiso bash
-
-# Install and configure
-kiso connector install discord
-# Edit ~/.kiso/connectors/discord/config.toml with your settings
-kiso env set KISO_CONNECTOR_DISCORD_BOT_TOKEN ...
-kiso env reload
-
-# Start the connector
-kiso connector discord run
-```
-
-### Managing deploy secrets at runtime
-
-```bash
+docker exec -it kiso kiso skill install search
 docker exec -it kiso kiso env set KISO_SKILL_SEARCH_API_KEY sk-...
 docker exec -it kiso kiso env reload
 ```
 
-Users can also share credentials during conversation (e.g. "here's my token: tok_abc123"). The planner extracts these as **ephemeral secrets** — stored in worker memory only, never in DB, lost on worker shutdown. Skills that declare `session_secrets` in their `kiso.toml` receive only the secrets they declared.
-
-See [security.md — Secrets](docs/security.md#5-secrets) for the full comparison between deploy and ephemeral secrets.
-
-See [config.md](docs/config.md) for full configuration reference.
+Users can share credentials during conversation — the planner extracts them as **ephemeral secrets** (in-memory only, lost on worker shutdown). See [security.md — Secrets](docs/security.md#5-secrets).
 
 ## Design Documents
 

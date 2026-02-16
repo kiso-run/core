@@ -73,39 +73,20 @@ volumes:
 
 ## Pre-installing Skills and Connectors
 
-Skills and connectors can be installed in two ways:
-
-### At build time (in Dockerfile)
-
-Baked into the image. Reproducible, immutable.
+**Build time** (in Dockerfile): baked into image, immutable, updates require rebuild.
 
 ```dockerfile
-FROM your-registry/kiso:latest    # your own built image
-
-# Pre-install official skills
-RUN kiso skill install search
-RUN kiso skill install aider
-
-# Pre-install connector
-RUN kiso connector install discord
+FROM your-registry/kiso:latest
+RUN kiso skill install search && kiso connector install discord
 ```
 
-Build a base image first (`docker compose build`), then extend it. These become part of the image. Updates require a rebuild.
-
-### At runtime (in volume)
-
-Installed via CLI into the mounted volume. Mutable, manageable without rebuild.
+**Runtime** (in volume): mutable, updatable without rebuild.
 
 ```bash
 docker exec -it kiso kiso skill install search
-docker exec -it kiso kiso skill update search
 ```
 
-These persist in the volume. Updates are immediate.
-
-### Both
-
-Build-time installs provide a base. Runtime installs add or override. Since both write to `~/.kiso/`, volume contents take precedence over image contents (Docker mount behavior).
+Both can coexist — volume contents take precedence (Docker mount behavior).
 
 ## Ports
 

@@ -37,36 +37,25 @@ If `[tokens]`, `[providers]`, or `[users]` are missing, kiso refuses to start an
 All fields:
 
 ```toml
-# --- Required ---
-
 [tokens]
-cli = "your-secret-token"              # used by the CLI
-# discord = "another-token"            # used by the discord connector
-# telegram = "yet-another-token"       # each client gets its own token
+cli = "your-secret-token"
 
 [providers.openrouter]
 api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
-# [providers.ollama]
-# base_url = "http://localhost:11434/v1"
-
 [users.marco]
-role = "admin"                          # full access, package management
-aliases.discord = "Marco#1234"          # platform identity on Discord
-aliases.telegram = "marco_tg"           # platform identity on Telegram
-aliases.email = "marco@example.com"     # platform identity on email
+role = "admin"
+aliases.discord = "Marco#1234"
+aliases.telegram = "marco_tg"
 
 [users.anna]
-role = "user"                           # sandboxed exec, all skills
+role = "user"
 skills = "*"
-aliases.discord = "anna_dev"
 
 [users.luca]
-role = "user"                           # sandboxed exec, specific skills only
+role = "user"
 skills = ["search", "aider"]
-
-# --- Optional (defaults shown) ---
 
 [models]
 planner = "moonshotai/kimi-k2.5"
@@ -85,7 +74,7 @@ exec_timeout = 120
 worker_idle_timeout = 300
 host = "0.0.0.0"
 port = 8333
-# webhook_allow_list = ["127.0.0.1", "::1"]  # IPs exempt from SSRF validation
+# webhook_allow_list = ["127.0.0.1", "::1"]
 ```
 
 ### Required Fields
