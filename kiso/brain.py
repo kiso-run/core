@@ -61,8 +61,37 @@ PLAN_SCHEMA: dict = {
 }
 
 
+REVIEW_SCHEMA: dict = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "review",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["ok", "replan"],
+                },
+                "reason": {"type": ["string", "null"]},
+                "learn": {"type": ["string", "null"]},
+            },
+            "required": ["status", "reason", "learn"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+class ReviewError(Exception):
+    """Review validation or generation failure."""
+
+
 class PlanError(Exception):
     """Plan validation or generation failure."""
+
+
+_DEFAULT_PROMPTS: dict[str, callable] = {}
 
 
 def _load_system_prompt(role: str) -> str:
@@ -70,6 +99,13 @@ def _load_system_prompt(role: str) -> str:
     path = KISO_DIR / "roles" / f"{role}.md"
     if path.exists():
         return path.read_text()
+    defaults = {
+        "planner": _default_planner_prompt,
+        "reviewer": _default_reviewer_prompt,
+    }
+    factory = defaults.get(role)
+    if factory:
+        return factory()
     return _default_planner_prompt()
 
 
@@ -217,4 +253,113 @@ async def run_planner(
 
     raise PlanError(
         f"Plan validation failed after {max_retries} attempts: {last_errors}"
+    )
+
+
+def _default_reviewer_prompt() -> str:
+    return """\
+You are a task reviewer. Given a task and its output, determine if the task succeeded.
+
+You receive:
+- The plan goal
+- The task detail (what was requested)
+- The task expect (success criteria)
+- The task output (what actually happened)
+- The original user message
+
+Return a JSON object:
+- status: "ok" if the task succeeded, "replan" if it failed and needs a new plan
+- reason: if replan, explain why (required). If ok, null.
+- learn: if you learned something useful about the system/project/user, state it concisely. Otherwise null.
+
+Rules:
+- Be strict: if the output doesn't match the expect criteria, mark as replan.
+- Be concise in your reason — the planner will use it to create a better plan.
+- Only learn genuinely useful facts (e.g. "project uses Python 3.12", "database is PostgreSQL").
+  Do not learn transient facts (e.g. "command failed", "file not found").
+"""
+
+
+def validate_review(review: dict) -> list[str]:
+    """Validate review semantics. Returns list of error strings."""
+    errors: list[str] = []
+    status = review.get("status")
+    if status not in ("ok", "replan"):
+        errors.append(f"status must be 'ok' or 'replan', got {status!r}")
+        return errors
+    if status == "replan" and not review.get("reason"):
+        errors.append("replan status requires a non-null, non-empty reason")
+    return errors
+
+
+async def build_reviewer_messages(
+    goal: str,
+    detail: str,
+    expect: str,
+    output: str,
+    user_message: str,
+) -> list[dict]:
+    """Build the message list for the reviewer LLM call."""
+    system_prompt = _load_system_prompt("reviewer")
+
+    context = (
+        f"## Plan Goal\n{goal}\n\n"
+        f"## Task Detail\n{detail}\n\n"
+        f"## Expected Outcome\n{expect}\n\n"
+        f"## Actual Output\n```\n{output}\n```\n\n"
+        f"## Original User Message\n{user_message}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": context},
+    ]
+
+
+async def run_reviewer(
+    config: Config,
+    goal: str,
+    detail: str,
+    expect: str,
+    output: str,
+    user_message: str,
+) -> dict:
+    """Run the reviewer on a task output.
+
+    Returns dict with keys: status ("ok" | "replan"), reason, learn.
+    Raises ReviewError if all retries exhausted.
+    """
+    max_retries = int(config.settings.get("max_validation_retries", 3))
+    messages = await build_reviewer_messages(goal, detail, expect, output, user_message)
+    last_errors: list[str] = []
+
+    for attempt in range(1, max_retries + 1):
+        if last_errors:
+            error_feedback = "Your review has errors:\n" + "\n".join(
+                f"- {e}" for e in last_errors
+            ) + "\nFix these and return the corrected review."
+            messages.append({"role": "user", "content": error_feedback})
+
+        try:
+            raw = await call_llm(config, "reviewer", messages, response_format=REVIEW_SCHEMA)
+        except LLMError as e:
+            raise ReviewError(f"LLM call failed: {e}")
+
+        try:
+            review = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ReviewError(f"Reviewer returned invalid JSON: {e}")
+
+        errors = validate_review(review)
+        if not errors:
+            log.info("Review accepted (attempt %d): status=%s", attempt, review["status"])
+            return review
+
+        log.warning("Review validation failed (attempt %d/%d): %s",
+                    attempt, max_retries, errors)
+        last_errors = errors
+        messages.append({"role": "assistant", "content": raw})
+
+    raise ReviewError(
+        f"Review validation failed after {max_retries} attempts: {last_errors}"
     )

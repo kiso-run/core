@@ -291,6 +291,21 @@ async def get_tasks_for_plan(db: aiosqlite.Connection, plan_id: int) -> list[dic
     )
     return [dict(r) for r in await cur.fetchall()]
 
+async def save_learning(
+    db: aiosqlite.Connection,
+    content: str,
+    session: str,
+    user: str | None = None,
+) -> int:
+    """Insert a learning row. Returns learning id."""
+    cur = await db.execute(
+        "INSERT INTO learnings (content, session, user) VALUES (?, ?, ?)",
+        (content, session, user),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
+
+
 async def create_task(
     db: aiosqlite.Connection,
     plan_id: int,
