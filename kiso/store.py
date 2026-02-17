@@ -133,6 +133,35 @@ async def create_session(
     return (await get_session(db, session))  # type: ignore[return-value]
 
 
+async def upsert_session(
+    db: aiosqlite.Connection,
+    session: str,
+    connector: str | None = None,
+    webhook: str | None = None,
+    description: str | None = None,
+) -> tuple[dict, bool]:
+    """Create or update a session. Returns (session_dict, created).
+
+    If session exists: update connector, webhook, description, updated_at.
+    If not: insert new row.
+    """
+    existing = await get_session(db, session)
+    if existing:
+        await db.execute(
+            "UPDATE sessions SET connector = ?, webhook = ?, description = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE session = ?",
+            (connector, webhook, description, session),
+        )
+        await db.commit()
+        return (await get_session(db, session)), False  # type: ignore[return-value]
+    await db.execute(
+        "INSERT INTO sessions (session, connector, webhook, description) VALUES (?, ?, ?, ?)",
+        (session, connector, webhook, description),
+    )
+    await db.commit()
+    return (await get_session(db, session)), True  # type: ignore[return-value]
+
+
 async def save_message(
     db: aiosqlite.Connection,
     session: str,

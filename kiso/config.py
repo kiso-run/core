@@ -24,6 +24,9 @@ SETTINGS_DEFAULTS: dict[str, int | str | list[str]] = {
     "host": "0.0.0.0",
     "port": 8333,
     "webhook_allow_list": [],
+    "webhook_require_https": True,
+    "webhook_secret": "",
+    "webhook_max_payload": 1048576,
 }
 
 MODEL_DEFAULTS: dict[str, str] = {

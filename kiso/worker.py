@@ -20,6 +20,7 @@ from kiso.skills import (
     discover_skills,
     validate_skill_args,
 )
+from kiso.webhook import deliver_webhook
 from kiso.store import (
     create_plan,
     create_task,
@@ -338,6 +339,13 @@ async def _execute_plan(
                     "output": text,
                     "status": "done",
                 })
+
+                # Webhook delivery
+                sess = await get_session(db, session)
+                webhook_url = sess.get("webhook") if sess else None
+                if webhook_url:
+                    is_final = i == len(tasks) - 1
+                    await deliver_webhook(webhook_url, session, task_id, text, is_final)
 
                 completed.append(task_row)
             except LLMError as e:

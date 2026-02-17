@@ -273,16 +273,16 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 Connectors can register sessions and receive responses via webhook.
 
-- [ ] Implement `POST /sessions`
-  - [ ] Create/update session with connector name (from token), webhook URL, description
-  - [ ] Webhook URL validation: reject private IPs, DNS rebinding check, non-HTTP schemes
-  - [ ] `webhook_allow_list` exception from config
-- [ ] Implement webhook delivery in worker
-  - [ ] After each msg task: POST to session webhook (if set)
-  - [ ] Payload: `{session, task_id, type, content, final}`
-  - [ ] `final: true` only on last msg task after all reviews pass
-  - [ ] Retry: 3 attempts, backoff 1s/3s/9s
-  - [ ] On all failures: log, continue (output stays in /status)
+- [x] Implement `POST /sessions`
+  - [x] Create/update session with connector name (from token), webhook URL, description
+  - [x] Webhook URL validation: reject private IPs, DNS rebinding check, non-HTTP schemes
+  - [x] `webhook_allow_list` exception from config
+- [x] Implement webhook delivery in worker
+  - [x] After each msg task: POST to session webhook (if set)
+  - [x] Payload: `{session, task_id, type, content, final}`
+  - [x] `final: true` only on last msg task after all reviews pass
+  - [x] Retry: 3 attempts, backoff 1s/3s/9s
+  - [x] On all failures: log, continue (output stays in /status)
 
 **Verify:**
 ```bash
@@ -368,6 +368,10 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [ ] Known values: deploy + ephemeral secrets
   - [ ] Strip: plaintext, base64, URL-encoded variants
   - [ ] Apply to all task output before storage and LLM inclusion
+- [ ] Webhook hardening (see `docs/security.md` §9)
+  - [ ] HTTPS enforcement: `webhook_require_https` setting (default `true`), reject plain `http://` URLs in `validate_webhook_url` when enabled
+  - [ ] HMAC-SHA256 signatures: `webhook_secret` setting, compute `X-Kiso-Signature: sha256=<hex>` header over raw JSON body in `deliver_webhook`
+  - [ ] Payload size cap: `webhook_max_payload` setting (default 1MB), truncate `content` field before POST
 
 **Verify:**
 ```bash
@@ -382,6 +386,14 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 # Sandbox: send exec as user role → verify it can't read outside workspace
 
 # Fencing: check LLM prompts in audit log → untrusted content wrapped with random tokens
+
+# Webhook hardening
+# Register session with plain http:// webhook → rejected (webhook_require_https=true)
+# Register with https:// → accepted
+# Set webhook_require_https=false → http:// accepted (dev mode)
+# Send message → check webhook POST has X-Kiso-Signature header
+# Verify signature: echo -n '<body>' | openssl dgst -sha256 -hmac '<secret>'
+# Send message with huge response → webhook payload content truncated to webhook_max_payload
 ```
 
 ---

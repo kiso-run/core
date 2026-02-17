@@ -371,9 +371,44 @@ Audit logs (`~/.kiso/audit/`) are plain JSONL without tamper protection. For env
 
 ### Webhook Delivery
 
-- Enforce HTTPS for webhook URLs in production (reject plain HTTP)
-- Add HMAC-SHA256 signature to webhook payloads (`X-Kiso-Signature` header) so connectors can verify authenticity
-- Cap webhook payload size
+Recommended for production deployments. All three are configurable in `config.toml` under `[settings]`:
+
+**HTTPS enforcement** — reject plain `http://` webhook URLs:
+
+```toml
+[settings]
+webhook_require_https = true   # default: true
+```
+
+Set to `false` for local development (e.g. `http://localhost:9001/callback`). In production, always leave enabled.
+
+**HMAC-SHA256 payload signing** — connectors verify webhook authenticity via `X-Kiso-Signature` header:
+
+```toml
+[settings]
+webhook_secret = "your-random-secret-here"
+```
+
+When set, every webhook POST includes `X-Kiso-Signature: sha256=<hex>` computed over the raw JSON body. Connectors should verify this signature to reject forged webhook calls. If unset, no signature is sent (acceptable only in trusted networks).
+
+Connector verification example (Python):
+
+```python
+import hashlib, hmac
+
+def verify_signature(body: bytes, header: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+```
+
+**Payload size cap** — truncate webhook content to prevent oversized payloads:
+
+```toml
+[settings]
+webhook_max_payload = 1048576   # bytes, default: 1MB
+```
+
+If `content` exceeds this limit, it is truncated with a `[truncated]` suffix before delivery.
 
 ### Published File Security
 

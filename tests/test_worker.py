@@ -1776,3 +1776,128 @@ class TestExecutePlanSkill:
         assert success is False
         assert reason == "Task failed"
         assert len(remaining) == 1  # msg task remaining
+
+
+# --- M8: Webhook delivery in _execute_plan ---
+
+
+class TestWebhookDelivery:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_msg_triggers_webhook(self, db, tmp_path):
+        """msg task triggers webhook delivery when session has webhook."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=True) as mock_wh, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        mock_wh.assert_called_once()
+        call_args = mock_wh.call_args
+        assert call_args[0][0] == "https://example.com/hook"
+        assert call_args[0][1] == "sess1"
+        assert call_args[0][3] == "Hi"  # content
+        assert call_args[0][4] is True  # final (only task)
+
+    async def test_no_webhook_no_delivery(self, db, tmp_path):
+        """No webhook → no delivery attempted."""
+        config = _make_config()
+        await create_session(db, "sess1")  # no webhook
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock) as mock_wh, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        mock_wh.assert_not_called()
+
+    async def test_final_true_on_last_msg(self, db, tmp_path):
+        """final: true on last msg task in the plan."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="report")
+
+        webhook_calls = []
+
+        async def _capture_wh(url, session, task_id, content, final):
+            webhook_calls.append({"final": final, "content": content})
+            return True
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Done"), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.deliver_webhook", side_effect=_capture_wh), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(webhook_calls) == 1
+        assert webhook_calls[0]["final"] is True
+
+    async def test_final_false_on_non_last_msg(self, db, tmp_path):
+        """final: false on non-last msg task."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="first msg")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="second msg")
+
+        webhook_calls = []
+
+        async def _capture_wh(url, session, task_id, content, final):
+            webhook_calls.append({"final": final})
+            return True
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="text"), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.deliver_webhook", side_effect=_capture_wh), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(webhook_calls) == 2
+        assert webhook_calls[0]["final"] is False
+        assert webhook_calls[1]["final"] is True
+
+    async def test_webhook_failure_doesnt_break_plan(self, db, tmp_path):
+        """Webhook failure doesn't break plan execution."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=False), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(completed) == 1

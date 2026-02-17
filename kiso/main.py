@@ -21,7 +21,9 @@ from kiso.store import (
     get_tasks_for_session,
     init_db,
     save_message,
+    upsert_session,
 )
+from kiso.webhook import validate_webhook_url
 from kiso.worker import run_worker
 
 log = logging.getLogger(__name__)
@@ -30,6 +32,12 @@ SESSION_RE = re.compile(r"^[a-zA-Z0-9_@.\-]{1,255}$")
 
 # Per-session workers: session → (queue, asyncio.Task)
 _workers: dict[str, tuple[asyncio.Queue, asyncio.Task]] = {}
+
+
+class SessionRequest(BaseModel):
+    session: str
+    webhook: str | None = None
+    description: str | None = None
 
 
 class MsgRequest(BaseModel):
@@ -80,6 +88,37 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/sessions")
+async def post_sessions(
+    body: SessionRequest,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if not SESSION_RE.match(body.session):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+
+    config = request.app.state.config
+
+    if body.webhook:
+        try:
+            validate_webhook_url(body.webhook, config.settings.get("webhook_allow_list"))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    db = request.app.state.db
+    session_row, created = await upsert_session(
+        db, body.session, connector=auth.token_name,
+        webhook=body.webhook, description=body.description,
+    )
+
+    status_code = 201 if created else 200
+    from starlette.responses import JSONResponse
+    return JSONResponse(
+        content={"session": body.session, "created": created},
+        status_code=status_code,
+    )
 
 
 @app.post("/msg", status_code=202)
