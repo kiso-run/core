@@ -592,6 +592,13 @@ class TestRunWorker:
         assert len(plans) == 1
         assert plans[0]["status"] == "failed"
 
+        # User should be notified that replan failed
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        system_msgs = [r[0] for r in await cur.fetchall()]
+        assert any("Replan failed" in m for m in system_msgs)
+
     async def test_replan_marks_remaining_tasks_superseded(self, db, tmp_path):
         """On replan, remaining pending tasks from old plan are marked failed."""
         config = _make_config()
@@ -849,8 +856,9 @@ class TestBuildReplanContext:
         long_output = "x" * 1000
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
         ctx = _build_replan_context(completed, [], "broke", [])
-        # Output should be truncated to 500 chars
-        assert len(ctx) < 1000 + 200  # some overhead for labels
+        # The 1000-char output should be truncated to exactly 500 chars
+        assert "x" * 500 in ctx
+        assert "x" * 501 not in ctx
 
     def test_history_without_what_was_tried(self):
         """Handles legacy history entries without what_was_tried."""

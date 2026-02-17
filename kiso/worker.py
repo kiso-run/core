@@ -480,6 +480,11 @@ async def run_worker(
                 )
             except PlanError as e:
                 log.error("Replan failed: %s", e)
+                await save_message(
+                    db, session, None, "system",
+                    f"Replan failed: {e}",
+                    trusted=True, processed=True,
+                )
                 break
 
             # Create new plan with parent_id
