@@ -86,8 +86,9 @@ Lists sessions the authenticated user participates in.
 | Param | Required | Description |
 |---|---|---|
 | `all` | no | If `true`, return all sessions (admin only). Non-admins: ignored. |
+| `user` | yes | Linux username or platform identity. Resolved the same way as `POST /msg`. |
 
-The user is resolved from the bearer token + `user` param (same as `POST /msg`). Returns sessions where the user has at least one message in `store.messages`.
+Returns sessions where the resolved user has at least one message in `store.messages`.
 
 **Response:**
 
