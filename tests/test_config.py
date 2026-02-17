@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, load_config
+from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -253,3 +253,36 @@ aliases = "bad"
     with pytest.raises(SystemExit):
         load_config(_write(tmp_path, text))
     assert "aliases" in _die_msg(capsys)
+
+
+# --- reload_config ---
+
+
+def test_reload_config_success(tmp_path: Path):
+    cfg = reload_config(_write(tmp_path, VALID))
+    assert cfg.tokens == {"cli": "tok"}
+    assert "openrouter" in cfg.providers
+    assert cfg.users["marco"].role == "admin"
+
+
+def test_reload_config_raises_on_error(tmp_path: Path):
+    text = """\
+[providers.x]
+base_url = "http://x"
+[users.a]
+role = "admin"
+"""
+    with pytest.raises(ConfigError, match=r"\[tokens\]"):
+        reload_config(_write(tmp_path, text))
+
+
+def test_reload_config_missing_file(tmp_path: Path):
+    with pytest.raises(ConfigError, match="not found"):
+        reload_config(tmp_path / "nonexistent.toml")
+
+
+def test_sandbox_settings_defaults():
+    assert "sandbox_enabled" in SETTINGS_DEFAULTS
+    assert SETTINGS_DEFAULTS["sandbox_enabled"] is False
+    assert "sandbox_user" in SETTINGS_DEFAULTS
+    assert SETTINGS_DEFAULTS["sandbox_user"] == "kiso-sandbox"

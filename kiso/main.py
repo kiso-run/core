@@ -153,6 +153,7 @@ async def post_msg(
             "content": body.content,
             "user_role": user_role,
             "user_skills": user_skills,
+            "username": resolved.username,
         })
         return {"queued": True, "session": body.session, "message_id": msg_id}
     else:

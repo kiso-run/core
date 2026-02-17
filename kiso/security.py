@@ -1,4 +1,4 @@
-"""Security utilities — exec deny list, secret sanitization, fencing."""
+"""Security utilities — exec deny list, secret sanitization, fencing, permissions."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import base64
 import os
 import re
 import secrets
+from dataclasses import dataclass
 from urllib.parse import quote
+
+from kiso.config import Config
 
 
 def escape_fence_delimiters(content: str) -> str:
@@ -95,3 +98,43 @@ def collect_deploy_secrets(config=None) -> dict[str, str]:
                 if val:
                     secrets[prov.api_key_env] = val
     return secrets
+
+
+# --- Permission re-validation ---
+
+
+@dataclass
+class PermissionResult:
+    allowed: bool
+    reason: str = ""
+    role: str = ""
+    skills: str | list[str] | None = None
+
+
+def revalidate_permissions(
+    config: Config,
+    username: str | None,
+    task_type: str,
+    skill_name: str | None = None,
+) -> PermissionResult:
+    """Re-check user permissions against current config."""
+    if username is None:
+        # System/anonymous — allow (trusted at entry)
+        return PermissionResult(allowed=True, role="admin")
+
+    user = config.users.get(username)
+    if user is None:
+        return PermissionResult(
+            allowed=False,
+            reason=f"User '{username}' no longer exists in config",
+        )
+
+    if task_type == "skill" and skill_name and user.role == "user":
+        if user.skills != "*":
+            if skill_name not in (user.skills or []):
+                return PermissionResult(
+                    allowed=False,
+                    reason=f"Skill '{skill_name}' not in user's allowed skills",
+                )
+
+    return PermissionResult(allowed=True, role=user.role, skills=user.skills)

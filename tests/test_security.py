@@ -8,13 +8,15 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.config import Config, Provider
+from kiso.config import Config, Provider, User
 from kiso.security import (
+    PermissionResult,
     build_secret_variants,
     check_command_deny_list,
     collect_deploy_secrets,
     escape_fence_delimiters,
     fence_content,
+    revalidate_permissions,
     sanitize_output,
 )
 
@@ -94,6 +96,20 @@ class TestBuildSecretVariants:
 
     def test_empty_skipped(self):
         assert build_secret_variants("") == []
+
+    def test_exactly_four_chars_included(self):
+        """4-char boundary: len < 4 skipped, len == 4 included."""
+        variants = build_secret_variants("abcd")
+        assert len(variants) >= 1
+        assert "abcd" in variants
+
+    def test_plain_ascii_no_url_variant(self):
+        """Plain ASCII: URL-encoding produces same string, no extra variant."""
+        variants = build_secret_variants("mysecret")
+        # Should have plaintext + base64 only (URL-encoded == plaintext)
+        assert "mysecret" in variants
+        # URL-encoded form is identical, so not duplicated
+        assert len(variants) == 2
 
 
 class TestSanitizeOutput:
@@ -210,6 +226,23 @@ class TestFenceContent:
         assert escape_fence_delimiters("normal text") == "normal text"
         assert escape_fence_delimiters("<<<a>>> and <<<b>>>") == "«««a»»» and «««b»»»"
 
+    def test_fence_empty_content(self):
+        """Empty string content is fenced correctly."""
+        result = fence_content("", "LABEL")
+        assert result.startswith("<<<LABEL_")
+        assert "<<<END_LABEL_" in result
+        # Content area between markers is just the newlines
+        lines = result.split("\n")
+        assert lines[1] == ""  # empty content line
+
+    def test_fence_token_length(self):
+        """Token is 32 hex chars (16 bytes)."""
+        result = fence_content("x", "T")
+        # Extract token: <<<T_{token}>>>
+        marker = result.split(">>>")[0].replace("<<<T_", "")
+        assert len(marker) == 32
+        assert all(c in "0123456789abcdef" for c in marker)
+
     def test_fence_escapes_before_wrapping(self):
         """Pre-crafted delimiters in content are escaped before fencing."""
         result = fence_content("<<<FAKE_TOKEN>>>", "REAL")
@@ -218,3 +251,85 @@ class TestFenceContent:
         # But the outer fence should use real delimiters
         assert result.startswith("<<<REAL_")
         assert result.endswith(">>>")
+
+
+# --- Permission re-validation ---
+
+
+def _perm_config(**user_overrides) -> Config:
+    users = {
+        "alice": User(role="admin"),
+        "bob": User(role="user", skills=["search", "deploy"]),
+        "charlie": User(role="user", skills="*"),
+    }
+    users.update(user_overrides)
+    return Config(
+        tokens={}, providers={}, users=users,
+        models={}, settings={}, raw={},
+    )
+
+
+class TestRevalidatePermissions:
+    def test_revalidate_user_exists(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "alice", "exec")
+        assert result.allowed is True
+        assert result.role == "admin"
+
+    def test_revalidate_user_removed(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "unknown", "exec")
+        assert result.allowed is False
+        assert "no longer exists" in result.reason
+
+    def test_revalidate_skill_allowed(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "bob", "skill", skill_name="search")
+        assert result.allowed is True
+
+    def test_revalidate_skill_denied(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "bob", "skill", skill_name="forbidden")
+        assert result.allowed is False
+        assert "not in user's allowed skills" in result.reason
+
+    def test_revalidate_admin_all_skills(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "alice", "skill", skill_name="anything")
+        assert result.allowed is True
+
+    def test_revalidate_no_username(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, None, "exec")
+        assert result.allowed is True
+        assert result.role == "admin"
+
+    def test_revalidate_wildcard_skills(self):
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "charlie", "skill", skill_name="anything")
+        assert result.allowed is True
+
+    def test_revalidate_exec_allowed_for_user_role(self):
+        """exec tasks allowed for user role (skill check only triggers for skill tasks)."""
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "bob", "exec")
+        assert result.allowed is True
+        assert result.role == "user"
+
+    def test_revalidate_skill_name_none_skips_check(self):
+        """skill_name=None with task_type='skill' skips skill-level check."""
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "bob", "skill", skill_name=None)
+        assert result.allowed is True
+
+    def test_revalidate_returns_skills_field(self):
+        """PermissionResult.skills populated from user config."""
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "bob", "exec")
+        assert result.skills == ["search", "deploy"]
+
+    def test_revalidate_msg_allowed_for_user_role(self):
+        """msg tasks allowed for user role."""
+        cfg = _perm_config()
+        result = revalidate_permissions(cfg, "bob", "msg")
+        assert result.allowed is True

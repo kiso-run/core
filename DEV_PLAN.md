@@ -347,15 +347,15 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [x] Check command against destructive patterns before execution
   - [x] Block: `rm -rf /`, `dd if=`, `mkfs`, `chmod -R 777 /`, `chown -R`, `shutdown`, `reboot`, fork bomb
   - [x] Only bare `/`, `~`, `$HOME` targets are blocked — `rm -rf ./build/` is allowed
-- [ ] Implement runtime permission re-validation
-  - [ ] Before each task: re-read user role and skills from config
-  - [ ] If user removed → fail task, cancel remaining
-  - [ ] If role downgraded → enforce sandbox
-  - [ ] If skill removed → fail skill task
-- [ ] Implement exec sandbox for user role
-  - [ ] Create dedicated Linux user per session
-  - [ ] Set workspace ownership + `chmod 700`
-  - [ ] Run exec as restricted user via subprocess `user=` parameter
+- [x] Implement runtime permission re-validation
+  - [x] Before each task: re-read user role and skills from config
+  - [x] If user removed → fail task, cancel remaining
+  - [x] If role downgraded → enforce sandbox
+  - [x] If skill removed → fail skill task
+- [x] Implement exec sandbox for user role
+  - [x] Create dedicated Linux user per session
+  - [x] Set workspace ownership + `chmod 700`
+  - [x] Run exec as restricted user via subprocess `user=` parameter
 - [x] Implement paraphraser
   - [x] Reuse summarizer model
   - [x] Batch rewrite untrusted messages in third person

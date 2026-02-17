@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kiso.brain import CuratorError, ParaphraserError, PlanError, ReviewError, SummarizerError
-from kiso.config import Config, Provider, KISO_DIR
+from kiso.config import Config, ConfigError, Provider, User, KISO_DIR
 from kiso.llm import LLMError
 from kiso.store import (
     create_plan,
@@ -30,6 +30,7 @@ from kiso.store import (
 from kiso.worker import (
     _apply_curator_result,
     _exec_task, _msg_task, _skill_task, _load_worker_prompt, _session_workspace,
+    _resolve_sandbox_uid,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
@@ -2494,3 +2495,294 @@ class TestFencingInWorker:
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": ""}]
         ctx = _build_replan_context(completed, [], "broke", [])
         assert "(no output)" in ctx
+
+
+# --- M10 Batch 3: Permission re-validation + exec sandbox ---
+
+
+class TestPermissionRevalidation:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_permission_revalidation_blocks_removed_user(self, db, tmp_path):
+        """Config reload returns config without user → task fails."""
+        config = _make_config(users={"alice": User(role="admin")})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        # Reload returns config without alice
+        config_without_alice = _make_config(users={"bob": User(role="admin")})
+
+        with patch("kiso.worker.reload_config", return_value=config_without_alice), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username="alice",
+            )
+
+        assert success is False
+        assert len(completed) == 0
+        assert len(remaining) == 1  # msg task
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert "no longer exists" in tasks[0]["output"]
+
+    async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
+        """Skill removed from user's allowed list → fails."""
+        config = _make_config(users={"bob": User(role="user", skills=["search"])})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="deploy",
+                          skill="deploy", args="{}", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        # Reload returns config where bob only has "search"
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username="bob",
+            )
+
+        assert success is False
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert "not in user's allowed skills" in tasks[0]["output"]
+
+    async def test_config_reload_failure_uses_cached(self, db, tmp_path):
+        """ConfigError → falls back to cached config, execution continues."""
+        config = _make_config(users={"alice": User(role="admin")})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.reload_config", side_effect=ConfigError("bad toml")), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username="alice",
+            )
+
+        assert success is True
+        assert len(completed) == 1
+
+
+class TestSandboxUid:
+    def test_sandbox_disabled_by_default(self):
+        config = _make_config()
+        assert _resolve_sandbox_uid(config) is None
+
+    def test_sandbox_uid_resolved_for_user_role(self):
+        config = _make_config(settings={
+            "worker_idle_timeout": 1, "exec_timeout": 5,
+            "max_validation_retries": 1, "context_messages": 5,
+            "max_replan_depth": 3, "sandbox_enabled": True,
+            "sandbox_user": "kiso-sandbox",
+        })
+        import struct
+        mock_pw = struct.Struct  # just need an object with pw_uid
+        with patch("kiso.worker.pwd") as mock_pwd:
+            mock_pwd.getpwnam.return_value = type("pw", (), {"pw_uid": 65534})()
+            uid = _resolve_sandbox_uid(config)
+        assert uid == 65534
+
+    def test_sandbox_user_not_found(self):
+        config = _make_config(settings={
+            "worker_idle_timeout": 1, "exec_timeout": 5,
+            "max_validation_retries": 1, "context_messages": 5,
+            "max_replan_depth": 3, "sandbox_enabled": True,
+            "sandbox_user": "nonexistent-user",
+        })
+        with patch("kiso.worker.pwd") as mock_pwd:
+            mock_pwd.getpwnam.side_effect = KeyError("nonexistent-user")
+            uid = _resolve_sandbox_uid(config)
+        assert uid is None
+
+    async def test_sandbox_uid_passed_to_exec_subprocess(self, tmp_path):
+        """When sandbox_uid is set, it's passed to create_subprocess_shell."""
+        captured_kwargs = {}
+
+        async def _mock_subprocess(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = AsyncMock()
+            proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
+            proc.returncode = 0
+            return proc
+
+        with patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+            await _exec_task("sess1", "echo ok", 5, sandbox_uid=1234)
+
+        assert captured_kwargs.get("user") == 1234
+
+    async def test_no_sandbox_uid_no_user_kwarg(self, tmp_path):
+        """When sandbox_uid is None, 'user' kwarg is NOT passed."""
+        captured_kwargs = {}
+
+        async def _mock_subprocess(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = AsyncMock()
+            proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
+            proc.returncode = 0
+            return proc
+
+        with patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+            await _exec_task("sess1", "echo ok", 5, sandbox_uid=None)
+
+        assert "user" not in captured_kwargs
+
+    async def test_sandbox_uid_passed_to_skill_subprocess(self, tmp_path):
+        """When sandbox_uid is set, it's passed to create_subprocess_exec."""
+        captured_kwargs = {}
+
+        async def _mock_subprocess(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = AsyncMock()
+            proc.communicate = AsyncMock(return_value=(b'{"ok":true}\n', b""))
+            proc.returncode = 0
+            return proc
+
+        skill = _create_echo_skill(tmp_path)
+        with patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
+            await _skill_task("sess1", skill, {"text": "hi"}, None, None, 5, sandbox_uid=9999)
+
+        assert captured_kwargs.get("user") == 9999
+
+    async def test_skill_no_sandbox_uid_no_user_kwarg(self, tmp_path):
+        """When sandbox_uid is None, 'user' kwarg is NOT passed to skill subprocess."""
+        captured_kwargs = {}
+
+        async def _mock_subprocess(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = AsyncMock()
+            proc.communicate = AsyncMock(return_value=(b'{"ok":true}\n', b""))
+            proc.returncode = 0
+            return proc
+
+        skill = _create_echo_skill(tmp_path)
+        with patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
+            await _skill_task("sess1", skill, {"text": "hi"}, None, None, 5, sandbox_uid=None)
+
+        assert "user" not in captured_kwargs
+
+
+class TestPermissionRevalidationEdgeCases:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_exec_allowed_for_user_role(self, db, tmp_path):
+        """User role can run exec tasks (permission check only blocks removed users/skills)."""
+        config = _make_config(users={"bob": User(role="user", skills=["search"])})
+
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username="bob",
+            )
+
+        assert success is True
+        assert len(completed) == 2
+
+    async def test_permission_checked_per_task(self, db, tmp_path):
+        """Permissions are re-checked before EACH task, not once per plan."""
+        config_with_alice = _make_config(users={"alice": User(role="admin")})
+        config_without_alice = _make_config(users={"bob": User(role="admin")})
+
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo second", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        reload_calls = [0]
+
+        def _reload_side_effect(*args, **kwargs):
+            reload_calls[0] += 1
+            # First task: alice exists. Second task: alice removed.
+            if reload_calls[0] <= 1:
+                return config_with_alice
+            return config_without_alice
+
+        with patch("kiso.worker.reload_config", side_effect=_reload_side_effect), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, remaining = await _execute_plan(
+                db, config_with_alice, "sess1", plan_id, "Test", "msg", 5,
+                username="alice",
+            )
+
+        assert success is False
+        assert len(completed) == 1  # first exec succeeded
+        assert len(remaining) == 1  # msg task
+        # Second task should have failed due to permission
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert "no longer exists" in tasks[1]["output"]
+
+    async def test_admin_skips_sandbox_in_execute_plan(self, db, tmp_path):
+        """Admin user does NOT get sandboxed even when sandbox_enabled=True."""
+        config = _make_config(
+            users={"alice": User(role="admin")},
+            settings={
+                "worker_idle_timeout": 1, "exec_timeout": 5,
+                "max_validation_retries": 1, "context_messages": 5,
+                "max_replan_depth": 3, "sandbox_enabled": True,
+                "sandbox_user": "kiso-sandbox",
+            },
+        )
+
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        captured_kwargs = {}
+
+        async def _mock_subprocess(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = AsyncMock()
+            proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
+            proc.returncode = 0
+            return proc
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username="alice",
+            )
+
+        assert success is True
+        assert "user" not in captured_kwargs  # no sandbox for admin
+
+    async def test_no_username_skips_permission_check(self, db, tmp_path):
+        """username=None (system/anonymous) always passes permission check."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username=None,
+            )
+
+        assert success is True

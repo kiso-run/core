@@ -6,11 +6,19 @@ import asyncio
 import json
 import logging
 import os
+import pwd
 from pathlib import Path
 
 import aiosqlite
 
-from kiso.security import check_command_deny_list, collect_deploy_secrets, fence_content, sanitize_output
+from kiso.config import ConfigError, reload_config
+from kiso.security import (
+    check_command_deny_list,
+    collect_deploy_secrets,
+    fence_content,
+    revalidate_permissions,
+    sanitize_output,
+)
 from kiso.brain import (
     CuratorError,
     ParaphraserError,
@@ -99,8 +107,20 @@ def _cleanup_plan_outputs(session: str) -> None:
         outputs_file.unlink()
 
 
+def _resolve_sandbox_uid(config: Config) -> int | None:
+    """Resolve sandbox user UID. Returns None if disabled or user not found."""
+    if not config.settings.get("sandbox_enabled", False):
+        return None
+    sandbox_user = str(config.settings.get("sandbox_user", "kiso-sandbox"))
+    try:
+        return pwd.getpwnam(sandbox_user).pw_uid
+    except KeyError:
+        log.warning("Sandbox user '%s' not found, sandbox disabled", sandbox_user)
+        return None
+
+
 async def _exec_task(
-    session: str, detail: str, timeout: int
+    session: str, detail: str, timeout: int, sandbox_uid: int | None = None,
 ) -> tuple[str, str, bool]:
     """Run a shell command. Returns (stdout, stderr, success)."""
     denial = check_command_deny_list(detail)
@@ -111,13 +131,15 @@ async def _exec_task(
     clean_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
 
     try:
-        proc = await asyncio.create_subprocess_shell(
-            detail,
+        kwargs: dict = dict(
             cwd=str(workspace),
             env=clean_env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        if sandbox_uid is not None:
+            kwargs["user"] = sandbox_uid
+        proc = await asyncio.create_subprocess_shell(detail, **kwargs)
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             proc.communicate(), timeout=timeout
         )
@@ -137,6 +159,7 @@ async def _skill_task(
     plan_outputs: list[dict] | None,
     session_secrets: dict[str, str] | None,
     timeout: int,
+    sandbox_uid: int | None = None,
 ) -> tuple[str, str, bool]:
     """Run a skill subprocess. Returns (stdout, stderr, success)."""
     workspace = _session_workspace(session)
@@ -159,13 +182,17 @@ async def _skill_task(
     run_py = skill_path / "run.py"
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            str(venv_python), str(run_py),
+        skill_kwargs: dict = dict(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(workspace),
             env=env,
+        )
+        if sandbox_uid is not None:
+            skill_kwargs["user"] = sandbox_uid
+        proc = await asyncio.create_subprocess_exec(
+            str(venv_python), str(run_py), **skill_kwargs,
         )
         input_bytes = json.dumps(input_data).encode()
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -288,6 +315,7 @@ async def _execute_plan(
     user_message: str,
     exec_timeout: int,
     session_secrets: dict[str, str] | None = None,
+    username: str | None = None,
 ) -> tuple[bool, str | None, list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining).
 
@@ -306,13 +334,34 @@ async def _execute_plan(
         task_type = task_row["type"]
         detail = task_row["detail"]
 
+        # --- Permission re-validation ---
+        try:
+            fresh_config = reload_config()
+        except ConfigError as e:
+            log.warning("Config reload failed: %s — using cached config", e)
+            fresh_config = config
+
+        perm = revalidate_permissions(
+            fresh_config, username, task_type,
+            skill_name=task_row.get("skill"),
+        )
+        if not perm.allowed:
+            await update_task(db, task_id, "failed", output=perm.reason)
+            remaining = [dict(t) for t in tasks[i + 1:]]
+            _cleanup_plan_outputs(session)
+            return False, None, completed, remaining
+
+        sandbox_uid = _resolve_sandbox_uid(fresh_config) if perm.role == "user" else None
+
         await update_task(db, task_id, "running")
 
         if task_type == "exec":
             # Write plan_outputs.json before execution
             _write_plan_outputs(session, plan_outputs)
 
-            stdout, stderr, success = await _exec_task(session, detail, exec_timeout)
+            stdout, stderr, success = await _exec_task(
+                session, detail, exec_timeout, sandbox_uid=sandbox_uid,
+            )
             stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
             stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
             status = "done" if success else "failed"
@@ -422,6 +471,7 @@ async def _execute_plan(
                         stdout, stderr, success = await _skill_task(
                             session, skill_info, args, plan_outputs,
                             session_secrets, exec_timeout,
+                            sandbox_uid=sandbox_uid,
                         )
                         stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
                         stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
@@ -541,6 +591,7 @@ async def run_worker(
         content: str = msg["content"]
         user_role: str = msg["user_role"]
         user_skills: str | list[str] | None = msg.get("user_skills")
+        username: str | None = msg.get("username")
 
         await mark_message_processed(db, msg_id)
 
@@ -585,6 +636,7 @@ async def run_worker(
             success, replan_reason, completed, remaining = await _execute_plan(
                 db, config, session, current_plan_id, current_goal,
                 content, exec_timeout, session_secrets=session_secrets,
+                username=username,
             )
 
             if success:
