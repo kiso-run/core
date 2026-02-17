@@ -16,8 +16,6 @@
 
 ## Minimal config.toml
 
-**Required on first run:**
-
 ```toml
 [tokens]
 cli = "your-secret-token"
@@ -112,16 +110,7 @@ port = 8333
 
 ## Tokens
 
-Each client (CLI, connector, external service) gets its own named token. Revoking a client = removing its token and restarting.
-
-```toml
-[tokens]
-cli = "tok-abc123"
-discord = "tok-def456"
-telegram = "tok-ghi789"
-```
-
-The token name identifies the connector for alias resolution and is logged on each call. Generate tokens however you want (`openssl rand -hex 32`, `uuidgen`, etc.). See [security.md — API Authentication](security.md#2-api-authentication) for details.
+Each client gets its own named token. The token name identifies the connector for alias resolution and is logged on each call. Revoking = remove from config, restart. Generate with `openssl rand -hex 32` or similar. See [security.md — API Authentication](security.md#2-api-authentication).
 
 ## Providers
 

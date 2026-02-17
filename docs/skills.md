@@ -84,7 +84,7 @@ Display metadata. Shown in `kiso skill list` output. Kiso does not enforce versi
 
 ## run.py
 
-Standalone script. Reads JSON from stdin, writes result to stdout.
+Reads JSON from stdin, writes result to stdout.
 
 ```python
 import json

@@ -47,7 +47,7 @@ On startup, kiso queries `SELECT * FROM messages WHERE processed=0 AND trusted=1
 
 ## 3. Worker Picks Up the Message
 
-The worker is an asyncio loop per session. When it finds a message, it marks it `processed=1` in the DB, then:
+When the worker picks up a message, it marks it `processed=1` and proceeds:
 
 ### a) Paraphrases Untrusted Messages
 

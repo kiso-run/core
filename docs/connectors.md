@@ -106,11 +106,7 @@ Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` t
 
 ### Naming Convention
 
-| Source | Name |
-|---|---|
-| Official (`kiso connector install discord`) | `discord` |
-| Unofficial URL | `{domain}_{namespace}_{repo}` |
-| Explicit `--name` | whatever you pass |
+Same as skills. See [skills.md — Naming Convention](skills.md#naming-convention).
 
 ### Install Flow
 

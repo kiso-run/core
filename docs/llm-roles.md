@@ -132,42 +132,7 @@ If exhausted: fail the message, notify user. No silent fallback.
 
 **System prompt** (`roles/planner.md`) includes:
 
-**1. Few-shot examples.** Two complete plan examples. All task fields are always present (strict mode); nullable fields are `null` when not applicable.
-
-```
-Example 1 — coding task:
-User: "add JWT authentication"
-{
-  "goal": "Add JWT auth with login endpoint, middleware, and tests",
-  "secrets": null,
-  "tasks": [
-    {"type": "msg", "detail": "Tell the user: starting work on JWT authentication.",
-     "skill": null, "args": null, "expect": null},
-    {"type": "skill", "detail": "Add JWT auth module",
-     "skill": "aider", "args": "{\"message\": \"create JWT auth module with /login and /logout endpoints\"}",
-     "expect": "auth module created with login endpoint and JWT middleware"},
-    {"type": "exec", "detail": "python -m pytest tests/",
-     "skill": null, "args": null,
-     "expect": "all tests pass"},
-    {"type": "msg", "detail": "We added JWT auth with /login, /logout, and jwt_required middleware. Tests pass. Summarize for the user.",
-     "skill": null, "args": null, "expect": null}
-  ]
-}
-
-Example 2 — research task:
-User: "find out how to deploy on fly.io"
-{
-  "goal": "Research fly.io deployment and summarize for the user",
-  "secrets": null,
-  "tasks": [
-    {"type": "skill", "detail": "Search for fly.io deployment guides",
-     "skill": "search", "args": "{\"query\": \"fly.io python deployment guide\"}",
-     "expect": "relevant search results about fly.io deployment"},
-    {"type": "msg", "detail": "The user wants to deploy on fly.io. Based on the search results: [search output will be here]. Write a clear summary of the deployment steps.",
-     "skill": null, "args": null, "expect": null}
-  ]
-}
-```
+**1. Few-shot examples.** Complete plan examples in `roles/planner.md`. Cover: coding task (msg → skill → exec → msg), research task (skill → msg). All task fields always present (strict mode); nullable fields are `null`.
 
 **2. Task templates** as reference patterns (not forced, just suggested):
 

@@ -204,20 +204,3 @@ Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and m
   "status": "ok"
 }
 ```
-
-## GET /stream/{session} (SSE) — not yet implemented
-
-Server-Sent Events endpoint for real-time task progress. **Status: planned, not yet implemented.**
-
-```
-event: task_start
-data: {"task_id": 2, "type": "skill", "skill": "aider"}
-
-event: task_done
-data: {"task_id": 2, "status": "done"}
-
-event: msg
-data: {"task_id": 5, "content": "JWT auth added. Tests pass."}
-```
-
-The webhook + polling model covers all current use cases. The worker loop architecture supports adding SSE without structural changes.
