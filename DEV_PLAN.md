@@ -106,27 +106,27 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 Send a message, get a plan back. No execution yet — just prove the LLM integration works.
 
-- [ ] Create `kiso/llm.py`
-  - [ ] `get_provider(model_string)` → resolve provider from config (split on `:`)
-  - [ ] Resolve API key from env var
-  - [ ] `call_llm(role, messages, response_format=None)` → generic OpenAI-compatible call
-  - [ ] Structured output support: pass `response_format` with JSON schema
-  - [ ] Error handling: provider not found, API key missing, HTTP errors, timeouts
-  - [ ] Clear error if provider doesn't support structured output
-- [ ] Create `kiso/brain.py` (planner only for now)
-  - [ ] Build planner context: facts (empty), pending (empty), summary (empty), last N messages, recent msg outputs (all msg task outputs since last summarization), skills (empty), role, new message
-  - [ ] Read system prompt from `~/.kiso/roles/planner.md`
-  - [ ] Call planner with structured output schema
-  - [ ] Semantic validation — all 6 rules:
+- [x] Create `kiso/llm.py`
+  - [x] `get_provider(model_string)` → resolve provider from config (split on `:`)
+  - [x] Resolve API key from env var
+  - [x] `call_llm(role, messages, response_format=None)` → generic OpenAI-compatible call
+  - [x] Structured output support: pass `response_format` with JSON schema
+  - [x] Error handling: provider not found, API key missing, HTTP errors, timeouts
+  - [x] Clear error if provider doesn't support structured output
+- [x] Create `kiso/brain.py` (planner only for now)
+  - [x] Build planner context: facts (empty), pending (empty), summary (empty), last N messages, recent msg outputs (all msg task outputs since last summarization), skills (empty), role, new message
+  - [x] Read system prompt from `~/.kiso/roles/planner.md`
+  - [x] Call planner with structured output schema
+  - [x] Semantic validation — all 6 rules:
     1. `exec` and `skill` tasks must have non-null `expect`
     2. `msg` tasks must have `expect = null`
     3. Last task must be `type: "msg"`
-    4. Every `skill` reference must exist in installed skills
-    5. Every `skill` task's `args` must validate against skill's `kiso.toml` schema
+    4. Every `skill` reference must exist in installed skills (deferred to M7)
+    5. Every `skill` task's `args` must validate against skill's `kiso.toml` schema (deferred to M7)
     6. `tasks` list must not be empty
-  - [ ] Retry on validation failure with specific error feedback (up to `max_validation_retries`)
-- [ ] Create `~/.kiso/roles/planner.md` (initial system prompt with few-shot examples, rules, task templates)
-- [ ] Wire into `POST /msg`: after saving message, call planner, log the plan (don't execute)
+  - [x] Retry on validation failure with specific error feedback (up to `max_validation_retries`)
+- [x] Create `~/.kiso/roles/planner.md` (initial system prompt with few-shot examples, rules, task templates) — default embedded in brain.py, overridable from file
+- [x] Wire into `POST /msg`: after saving message, call planner, log the plan (don't execute)
 
 > **Deferred**: paraphraser (rewrites untrusted messages before planner context) — implemented in M10. Until then, untrusted messages are excluded from planner context entirely.
 
@@ -145,28 +145,28 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 The worker loop runs, executes tasks, stores output. First time we see actual results.
 
-- [ ] Create `kiso/worker.py`
-  - [ ] Per-session asyncio worker: loop draining an in-memory queue
-  - [ ] Atomic check-and-spawn in `main.py` (no await between checking workers dict and creating task)
-  - [ ] On message: mark processed, call planner (via brain.py)
-  - [ ] Create plan in DB, persist tasks
-  - [ ] Execute tasks one by one
-- [ ] Implement exec task execution
-  - [ ] `asyncio.create_subprocess_shell` with `cwd=~/.kiso/sessions/{session}/`
-  - [ ] Clean env (only PATH)
-  - [ ] Capture stdout + stderr
-  - [ ] Timeout from config (`exec_timeout`)
-  - [ ] Update task status + output in DB
-- [ ] Implement msg task execution
-  - [ ] Create `~/.kiso/roles/worker.md` (system prompt)
-  - [ ] Call worker LLM with: facts + summary + task detail (worker does NOT see the conversation — all context must be in the planner's `detail` field)
-  - [ ] Store generated text as task output
-- [ ] Create session workspace directory on first use (`~/.kiso/sessions/{session}/`)
-- [ ] Update `GET /status` to return real tasks and plan info
-- [ ] Implement plan status lifecycle: running → done | failed
-- [ ] Implement worker idle timeout (`worker_idle_timeout`, default 300s)
-  - [ ] After draining queue: wait on queue with timeout
-  - [ ] On timeout: shut down worker (ephemeral secrets lost)
+- [x] Create `kiso/worker.py`
+  - [x] Per-session asyncio worker: loop draining an in-memory queue
+  - [x] Atomic check-and-spawn in `main.py` (no await between checking workers dict and creating task)
+  - [x] On message: mark processed, call planner (via brain.py)
+  - [x] Create plan in DB, persist tasks
+  - [x] Execute tasks one by one
+- [x] Implement exec task execution
+  - [x] `asyncio.create_subprocess_shell` with `cwd=~/.kiso/sessions/{session}/`
+  - [x] Clean env (only PATH)
+  - [x] Capture stdout + stderr
+  - [x] Timeout from config (`exec_timeout`)
+  - [x] Update task status + output in DB
+- [x] Implement msg task execution
+  - [x] Create `~/.kiso/roles/worker.md` (system prompt) — default embedded, overridable from file
+  - [x] Call worker LLM with: facts + summary + task detail (worker does NOT see the conversation — all context must be in the planner's `detail` field)
+  - [x] Store generated text as task output
+- [x] Create session workspace directory on first use (`~/.kiso/sessions/{session}/`)
+- [x] Update `GET /status` to return real tasks and plan info (queue_length, worker_running now live)
+- [x] Implement plan status lifecycle: running → done | failed
+- [x] Implement worker idle timeout (`worker_idle_timeout`, default 300s)
+  - [x] After draining queue: wait on queue with timeout
+  - [x] On timeout: shut down worker (ephemeral secrets lost)
 
 > **Deferred**: task output sanitization (strip secrets from output) — implemented in M10. Until then, output is stored raw. Also deferred: plan_outputs chaining (M6), review (M5).
 

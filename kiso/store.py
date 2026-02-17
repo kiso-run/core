@@ -210,3 +210,102 @@ async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> dict |
     )
     row = await cur.fetchone()
     return dict(row) if row else None
+
+
+async def get_recent_messages(
+    db: aiosqlite.Connection, session: str, limit: int = 5
+) -> list[dict]:
+    """Return the most recent messages for a session (trusted only), oldest first."""
+    cur = await db.execute(
+        "SELECT * FROM messages WHERE session = ? AND trusted = 1 "
+        "ORDER BY id DESC LIMIT ?",
+        (session, limit),
+    )
+    rows = [dict(r) for r in await cur.fetchall()]
+    rows.reverse()
+    return rows
+
+
+async def get_facts(db: aiosqlite.Connection) -> list[dict]:
+    """Return all facts (global)."""
+    cur = await db.execute("SELECT * FROM facts ORDER BY id")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_pending_items(db: aiosqlite.Connection, session: str) -> list[dict]:
+    """Return open pending items (global + session-scoped)."""
+    cur = await db.execute(
+        "SELECT * FROM pending WHERE status = 'open' "
+        "AND (scope = 'global' OR scope = ?) ORDER BY id",
+        (session,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def create_plan(
+    db: aiosqlite.Connection,
+    session: str,
+    message_id: int,
+    goal: str,
+    parent_id: int | None = None,
+) -> int:
+    """Insert a plan row. Returns plan id."""
+    cur = await db.execute(
+        "INSERT INTO plans (session, message_id, goal, parent_id) VALUES (?, ?, ?, ?)",
+        (session, message_id, goal, parent_id),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+async def update_task(
+    db: aiosqlite.Connection,
+    task_id: int,
+    status: str,
+    output: str | None = None,
+    stderr: str | None = None,
+) -> None:
+    """Update task status, output, stderr, and updated_at."""
+    await db.execute(
+        "UPDATE tasks SET status = ?, output = ?, stderr = ?, "
+        "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, output, stderr, task_id),
+    )
+    await db.commit()
+
+
+async def update_plan_status(
+    db: aiosqlite.Connection, plan_id: int, status: str
+) -> None:
+    """Update plan status."""
+    await db.execute(
+        "UPDATE plans SET status = ? WHERE id = ?", (status, plan_id)
+    )
+    await db.commit()
+
+
+async def get_tasks_for_plan(db: aiosqlite.Connection, plan_id: int) -> list[dict]:
+    """Return all tasks for a plan, ordered by id."""
+    cur = await db.execute(
+        "SELECT * FROM tasks WHERE plan_id = ? ORDER BY id", (plan_id,)
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+async def create_task(
+    db: aiosqlite.Connection,
+    plan_id: int,
+    session: str,
+    type: str,
+    detail: str,
+    skill: str | None = None,
+    args: str | None = None,
+    expect: str | None = None,
+) -> int:
+    """Insert a task row. Returns task id."""
+    cur = await db.execute(
+        "INSERT INTO tasks (plan_id, session, type, detail, skill, args, expect) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (plan_id, session, type, detail, skill, args, expect),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
