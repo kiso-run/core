@@ -352,10 +352,14 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [x] If user removed → fail task, cancel remaining
   - [x] If role downgraded → enforce sandbox
   - [x] If skill removed → fail skill task
-- [x] Implement exec sandbox for user role
-  - [x] Create dedicated Linux user per session
-  - [x] Set workspace ownership + `chmod 700`
-  - [x] Run exec as restricted user via subprocess `user=` parameter
+- [ ] Implement exec sandbox for user role (per-session — requires Docker testing)
+  - [x] Temporary scaffolding: `_resolve_sandbox_uid` with configurable global sandbox user
+  - [ ] Create/reuse per-session Linux user at workspace creation time
+  - [ ] `chown {session_user}:{session_user} ~/.kiso/sessions/{session}`
+  - [ ] `chmod 700 ~/.kiso/sessions/{session}`
+  - [ ] Pass per-session UID to subprocess `user=` (replace current global `_resolve_sandbox_uid`)
+  - [ ] Docker integration test: user-role exec cannot read outside workspace
+  - [ ] Replace `sandbox_enabled`/`sandbox_user` settings with per-session logic
 - [x] Implement paraphraser
   - [x] Reuse summarizer model
   - [x] Batch rewrite untrusted messages in third person
@@ -402,16 +406,16 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 Users can abort running plans.
 
-- [ ] Implement `POST /sessions/{session}/cancel` in main.py
-  - [ ] Set cancel flag on worker (in-memory)
-  - [ ] Return `{cancelled: true, plan_id}` or `{cancelled: false}`
-- [ ] Implement cancel check in worker loop
-  - [ ] Check flag between tasks (not mid-task)
-  - [ ] Mark remaining tasks as `cancelled`
-  - [ ] Mark plan as `cancelled`
-  - [ ] Generate cancel summary msg (automatic, not from planner)
-  - [ ] Include: completed tasks, skipped tasks, suggestions for next steps
-  - [ ] Deliver via webhook + /status with `final: true`
+- [x] Implement `POST /sessions/{session}/cancel` in main.py
+  - [x] Set cancel flag on worker (in-memory)
+  - [x] Return `{cancelled: true, plan_id}` or `{cancelled: false}`
+- [x] Implement cancel check in worker loop
+  - [x] Check flag between tasks (not mid-task)
+  - [x] Mark remaining tasks as `cancelled`
+  - [x] Mark plan as `cancelled`
+  - [x] Generate cancel summary msg (automatic, not from planner)
+  - [x] Include: completed tasks, skipped tasks, suggestions for next steps
+  - [x] Deliver via webhook + /status with `final: true`
 
 **Verify:**
 ```bash
@@ -435,10 +439,10 @@ User-provided credentials during conversation.
 - [x] Pass scoped secrets to skills
   - [x] Read `session_secrets` declaration from `kiso.toml`
   - [x] Include only declared keys in skill input JSON `session_secrets` field
-- [ ] Implement deploy secret management
-  - [ ] `POST /admin/reload-env`: read `~/.kiso/.env`, update process env
-  - [ ] Enforce admin-only: resolve user from token → check role → `403 Forbidden` if not admin
-  - [ ] Response: `{"reloaded": true, "keys_loaded": N}`
+- [x] Implement deploy secret management
+  - [x] `POST /admin/reload-env`: read `~/.kiso/.env`, update process env
+  - [x] Enforce admin-only: resolve user from token → check role → `403 Forbidden` if not admin
+  - [x] Response: `{"reloaded": true, "keys_loaded": N}`
 
 **Verify:**
 ```bash

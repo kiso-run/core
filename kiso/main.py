@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import HTTPException
@@ -30,8 +32,8 @@ log = logging.getLogger(__name__)
 
 SESSION_RE = re.compile(r"^[a-zA-Z0-9_@.\-]{1,255}$")
 
-# Per-session workers: session → (queue, asyncio.Task)
-_workers: dict[str, tuple[asyncio.Queue, asyncio.Task]] = {}
+# Per-session workers: session → (queue, asyncio.Task, cancel_event)
+_workers: dict[str, tuple[asyncio.Queue, asyncio.Task, asyncio.Event]] = {}
 
 
 class SessionRequest(BaseModel):
@@ -55,14 +57,40 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     if entry and not entry[1].done():
         return entry[0]
     queue: asyncio.Queue = asyncio.Queue()
-    task = asyncio.create_task(run_worker(db, config, session, queue))
+    cancel_event = asyncio.Event()
+    task = asyncio.create_task(
+        run_worker(db, config, session, queue, cancel_event=cancel_event)
+    )
 
     def _cleanup(t, s=session):
         _workers.pop(s, None)
 
     task.add_done_callback(_cleanup)
-    _workers[session] = (queue, task)
+    _workers[session] = (queue, task, cancel_event)
     return queue
+
+
+def _load_env_file(path: Path) -> dict[str, str]:
+    """Parse a .env file into a dict. Skip comments and blank lines."""
+    if not path.is_file():
+        return {}
+    result: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and (
+            (value[0] == '"' and value[-1] == '"')
+            or (value[0] == "'" and value[-1] == "'")
+        ):
+            value = value[1:-1]
+        result[key] = value
+    return result
 
 
 @asynccontextmanager
@@ -71,9 +99,9 @@ async def lifespan(app: FastAPI):
     app.state.db = await init_db(KISO_DIR / "store.db")
     yield
     # Cancel all workers on shutdown
-    for session, (queue, task) in _workers.items():
+    for session, (queue, task, _cancel) in _workers.items():
         task.cancel()
-    for session, (queue, task) in list(_workers.items()):
+    for session, (queue, task, _cancel) in list(_workers.items()):
         try:
             await task
         except asyncio.CancelledError:
@@ -177,7 +205,7 @@ async def get_status(
 
     entry = _workers.get(session)
     worker_running = entry is not None and not entry[1].done()
-    queue_length = entry[0].qsize() if entry else 0
+    queue_length = entry[0].qsize() if entry and not entry[1].done() else 0
 
     return {
         "tasks": tasks,
@@ -204,3 +232,46 @@ async def get_sessions(
     else:
         sessions = await get_sessions_for_user(db, resolved.username)
     return sessions
+
+
+@app.post("/sessions/{session}/cancel")
+async def post_cancel(
+    session: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if not SESSION_RE.match(session):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+
+    db = request.app.state.db
+
+    entry = _workers.get(session)
+    if entry is None or entry[1].done():
+        return {"cancelled": False}
+
+    plan = await get_plan_for_session(db, session)
+    if plan is None or plan["status"] != "running":
+        return {"cancelled": False}
+
+    cancel_event = entry[2]
+    cancel_event.set()
+    return {"cancelled": True, "plan_id": plan["id"]}
+
+
+@app.post("/admin/reload-env")
+async def post_reload_env(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    user: str = Query(...),
+):
+    config = request.app.state.config
+    resolved = resolve_user(config, user, auth.token_name)
+
+    if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    env_vars = _load_env_file(KISO_DIR / ".env")
+    for key, value in env_vars.items():
+        os.environ[key] = value
+
+    return {"reloaded": True, "keys_loaded": len(env_vars)}
