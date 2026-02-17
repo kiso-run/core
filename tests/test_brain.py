@@ -100,6 +100,41 @@ class TestValidatePlan:
         ]}
         assert validate_plan(plan) == []
 
+    # --- M7: skill validation in validate_plan ---
+
+    def test_skill_name_required(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "do thing", "expect": "ok", "skill": None, "args": "{}"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("skill task must have a non-null skill name" in e for e in errors)
+
+    def test_skill_not_installed(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "search", "expect": "ok", "skill": "search", "args": "{}"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["echo"])
+        assert any("skill 'search' is not installed" in e for e in errors)
+
+    def test_skill_installed_passes(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "search", "expect": "ok", "skill": "search", "args": "{}"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["search"])
+        assert errors == []
+
+    def test_skill_no_installed_list_skips_check(self):
+        """When installed_skills is None, skip skill-not-installed check."""
+        plan = {"tasks": [
+            {"type": "skill", "detail": "search", "expect": "ok", "skill": "search", "args": "{}"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=None)
+        assert errors == []
+
 
 # --- _load_system_prompt ---
 
@@ -211,6 +246,45 @@ class TestBuildPlannerMessages:
         """Building context for a nonexistent session should not crash."""
         msgs = await build_planner_messages(db, config, "nonexistent", "admin", "hello")
         assert len(msgs) == 2
+
+    # --- M7: skills in planner context ---
+
+    async def test_includes_skills_when_present(self, db, config):
+        await create_session(db, "sess1")
+        fake_skills = [
+            {"name": "search", "summary": "Web search", "args_schema": {
+                "query": {"type": "string", "required": True, "description": "search query"},
+            }, "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
+        ]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs = await build_planner_messages(db, config, "sess1", "admin", "search for X")
+        content = msgs[1]["content"]
+        assert "## Skills" in content
+        assert "search — Web search" in content
+        assert "query (string, required): search query" in content
+
+    async def test_no_skills_section_when_empty(self, db, config):
+        await create_session(db, "sess1")
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "## Skills" not in content
+
+    async def test_user_skills_filtered(self, db, config):
+        await create_session(db, "sess1")
+        fake_skills = [
+            {"name": "search", "summary": "Search", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
+            {"name": "aider", "summary": "Code edit", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake2", "version": "0.1.0", "description": ""},
+        ]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs = await build_planner_messages(
+                db, config, "sess1", "user", "hello", user_skills=["search"],
+            )
+        content = msgs[1]["content"]
+        assert "search" in content
+        assert "aider" not in content
 
 
 # --- run_planner ---

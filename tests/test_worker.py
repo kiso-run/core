@@ -24,7 +24,7 @@ from kiso.store import (
     save_message,
 )
 from kiso.worker import (
-    _exec_task, _msg_task, _load_worker_prompt, _session_workspace,
+    _exec_task, _msg_task, _skill_task, _load_worker_prompt, _session_workspace,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
@@ -248,6 +248,29 @@ class TestRunWorker:
         assert tasks[1]["type"] == "msg"
         assert tasks[1]["status"] == "done"
 
+    async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
+        """Secrets from the plan are extracted and available for skill execution."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "use token", processed=False)
+
+        plan_with_secrets = {
+            "goal": "Use token",
+            "secrets": [{"key": "api_token", "value": "tok_abc"}],
+            "tasks": [{"type": "msg", "detail": "Done", "skill": None, "args": None, "expect": None}],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "use token", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=plan_with_secrets), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="ok"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
     async def test_exec_failure_review_replan(self, db, tmp_path):
         """Exec fails, reviewer says replan, but max_replan_depth=0 → immediate failure."""
         config = _make_config(settings={
@@ -344,7 +367,7 @@ class TestRunWorker:
         tasks = await get_tasks_for_session(db, "sess1")
         skill_tasks = [t for t in tasks if t["type"] == "skill"]
         assert all(t["status"] == "failed" for t in skill_tasks)
-        assert any("not yet implemented" in (t["output"] or "") for t in skill_tasks)
+        assert any("not installed" in (t["output"] or "") for t in skill_tasks)
 
     async def test_planning_error_continues(self, db, tmp_path):
         """If planning fails, the worker should continue to the next message."""
@@ -359,7 +382,7 @@ class TestRunWorker:
 
         call_count = 0
 
-        async def _planner_side_effect(db, config, session, role, content):
+        async def _planner_side_effect(db, config, session, role, content, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -461,7 +484,7 @@ class TestRunWorker:
 
         planner_calls = []
 
-        async def _planner(db, config, session, role, content):
+        async def _planner(db, config, session, role, content, **kwargs):
             planner_calls.append(content)
             if len(planner_calls) == 1:
                 return fail_plan
@@ -571,7 +594,7 @@ class TestRunWorker:
 
         planner_calls = []
 
-        async def _planner(db, config, session, role, content):
+        async def _planner(db, config, session, role, content, **kwargs):
             planner_calls.append(content)
             if len(planner_calls) == 1:
                 return fail_plan
@@ -623,7 +646,7 @@ class TestRunWorker:
 
         planner_calls = []
 
-        async def _planner(db, config, session, role, content):
+        async def _planner(db, config, session, role, content, **kwargs):
             planner_calls.append(1)
             if len(planner_calls) == 1:
                 return fail_plan
@@ -673,7 +696,7 @@ class TestRunWorker:
 
         planner_calls = []
 
-        async def _planner(db, config, session, role, content):
+        async def _planner(db, config, session, role, content, **kwargs):
             planner_calls.append(1)
             if len(planner_calls) == 1:
                 return fail_plan
@@ -1411,4 +1434,345 @@ class TestExecutePlanOutputChaining:
         assert success is False
         # Skill accumulated in plan_outputs before cleanup — verify via DB task output
         tasks = await get_tasks_for_plan(db, plan_id)
-        assert tasks[0]["output"] == "Skills not yet implemented"
+        assert "not installed" in tasks[0]["output"]
+
+
+# --- M7: _skill_task ---
+
+def _create_echo_skill(tmp_path: Path) -> dict:
+    """Create a minimal echo skill for testing and return its info dict."""
+    skill_dir = tmp_path / "skills" / "echo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "run.py").write_text(
+        "import json, sys\n"
+        "data = json.load(sys.stdin)\n"
+        "print(json.dumps(data['args']))\n"
+    )
+    (skill_dir / "kiso.toml").write_text(
+        '[kiso]\ntype = "skill"\nname = "echo"\n'
+        '[kiso.skill]\nsummary = "Echo"\n'
+        '[kiso.skill.args]\ntext = { type = "string", required = true }\n'
+    )
+    (skill_dir / "pyproject.toml").write_text('[project]\nname = "echo"\nversion = "0.1.0"')
+    return {
+        "name": "echo",
+        "summary": "Echo",
+        "args_schema": {"text": {"type": "string", "required": True}},
+        "env": {},
+        "session_secrets": [],
+        "path": str(skill_dir),
+        "version": "0.1.0",
+        "description": "",
+    }
+
+
+class TestSkillTask:
+    async def test_successful_skill(self, tmp_path):
+        skill = _create_echo_skill(tmp_path)
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _skill_task(
+                "sess1", skill, {"text": "hello"}, None, None, 5,
+            )
+        assert success is True
+        result = json.loads(stdout)
+        assert result["text"] == "hello"
+
+    async def test_skill_receives_plan_outputs(self, tmp_path):
+        # Create skill that dumps full input
+        skill_dir = tmp_path / "skills" / "dump"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text(
+            "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data))\n"
+        )
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "dump"\n'
+            '[kiso.skill]\nsummary = "Dump"\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "dump"\nversion = "0.1.0"')
+        skill = {
+            "name": "dump", "summary": "Dump", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+
+        plan_outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "files", "status": "done"}]
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, _, success = await _skill_task(
+                "sess1", skill, {}, plan_outputs, None, 5,
+            )
+        assert success is True
+        data = json.loads(stdout)
+        assert len(data["plan_outputs"]) == 1
+        assert data["plan_outputs"][0]["output"] == "files"
+
+    async def test_skill_scoped_secrets(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "sec"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text(
+            "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
+        )
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "sec"\n'
+            '[kiso.skill]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
+        skill = {
+            "name": "sec", "summary": "Sec", "args_schema": {}, "env": {},
+            "session_secrets": ["api_token"], "path": str(skill_dir),
+            "version": "0.1.0", "description": "",
+        }
+
+        secrets = {"api_token": "tok_123", "other": "should_not_appear"}
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, _, success = await _skill_task(
+                "sess1", skill, {}, None, secrets, 5,
+            )
+        assert success is True
+        result = json.loads(stdout)
+        assert result == {"api_token": "tok_123"}
+
+    async def test_skill_timeout(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "slow"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text("import time; time.sleep(10)")
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "slow"\n'
+            '[kiso.skill]\nsummary = "Slow"\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "slow"\nversion = "0.1.0"')
+        skill = {
+            "name": "slow", "summary": "Slow", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _skill_task(
+                "sess1", skill, {}, None, None, 1,
+            )
+        assert success is False
+        assert "Timed out" in stderr
+
+    async def test_skill_failing_script(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "fail"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text("import sys; print('err msg', file=sys.stderr); sys.exit(1)")
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "fail"\n'
+            '[kiso.skill]\nsummary = "Fail"\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "fail"\nversion = "0.1.0"')
+        skill = {
+            "name": "fail", "summary": "Fail", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _skill_task(
+                "sess1", skill, {}, None, None, 5,
+            )
+        assert success is False
+        assert "err msg" in stderr
+
+    async def test_skill_executable_not_found(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "broken"
+        skill_dir.mkdir(parents=True)
+        # Point run.py to a nonexistent path
+        (skill_dir / "run.py").write_text("pass")
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "broken"\n'
+            '[kiso.skill]\nsummary = "Broken"\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "broken"\nversion = "0.1.0"')
+        # Create a venv with a python "file" that is actually a directory
+        # This will trigger FileNotFoundError from create_subprocess_exec
+        venv_python = skill_dir / ".venv" / "bin" / "python"
+        venv_python.mkdir(parents=True)  # directory, not file
+        skill = {
+            "name": "broken", "summary": "Broken", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _skill_task(
+                "sess1", skill, {}, None, None, 5,
+            )
+        assert success is False
+        # Might be PermissionError or similar — just check it failed
+        assert stderr != ""
+
+    async def test_skill_runs_in_workspace(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "pwd"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text("import os; print(os.getcwd())")
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "pwd"\n'
+            '[kiso.skill]\nsummary = "Pwd"\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "pwd"\nversion = "0.1.0"')
+        skill = {
+            "name": "pwd", "summary": "Pwd", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, _, success = await _skill_task(
+                "sess1", skill, {}, None, None, 5,
+            )
+        assert success is True
+        expected = str(tmp_path / "sessions" / "sess1")
+        assert stdout.strip() == expected
+
+
+# --- M7: _execute_plan with real skill ---
+
+class TestExecutePlanSkill:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_skill_not_installed(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="search",
+                          skill="nonexistent", args='{"q":"test"}', expect="results")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert "not installed" in tasks[0]["output"]
+
+    async def test_skill_invalid_args_json(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args="not json", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        # Create a real skill so lookup succeeds
+        skill = _create_echo_skill(tmp_path)
+        skills_dir = tmp_path / "skills"
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert "Invalid skill args JSON" in tasks[0]["output"]
+
+    async def test_skill_args_validation_error(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        # Missing required arg 'text'
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert "validation failed" in tasks[0]["output"]
+        assert "missing required arg: text" in tasks[0]["output"]
+
+    async def test_skill_executes_successfully(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{"text":"hello"}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(completed) == 2
+        # First task is skill with output
+        skill_task = completed[0]
+        assert skill_task["status"] == "done"
+        result = json.loads(skill_task["output"])
+        assert result["text"] == "hello"
+
+    async def test_skill_passes_session_secrets(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="sec",
+                          skill="sec", args='{}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        # Create skill that outputs session_secrets
+        skill_dir = tmp_path / "skills" / "sec"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text(
+            "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
+        )
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "sec"\n'
+            '[kiso.skill]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
+        skill = {
+            "name": "sec", "summary": "Sec", "args_schema": {},
+            "env": {}, "session_secrets": ["api_token"],
+            "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+
+        secrets = {"api_token": "tok_xyz", "other": "hidden"}
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                session_secrets=secrets,
+            )
+
+        assert success is True
+        result = json.loads(completed[0]["output"])
+        assert result == {"api_token": "tok_xyz"}
+
+    async def test_skill_review_replan(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{"text":"hi"}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, _, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Task failed"
+        assert len(remaining) == 1  # msg task remaining

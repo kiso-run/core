@@ -103,11 +103,13 @@ async def post_msg(
             trusted=True, processed=False,
         )
         user_role = resolved.user.role if resolved.user else "user"
+        user_skills = resolved.user.skills if resolved.user else None
         queue = _ensure_worker(body.session, db, config)
         await queue.put({
             "id": msg_id,
             "content": body.content,
             "user_role": user_role,
+            "user_skills": user_skills,
         })
         return {"queued": True, "session": body.session, "message_id": msg_id}
     else:

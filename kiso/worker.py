@@ -13,6 +13,13 @@ import aiosqlite
 from kiso.brain import PlanError, ReviewError, run_planner, run_reviewer
 from kiso.config import Config, KISO_DIR
 from kiso.llm import LLMError, call_llm
+from kiso.skills import (
+    SkillError,
+    build_skill_env,
+    build_skill_input,
+    discover_skills,
+    validate_skill_args,
+)
 from kiso.store import (
     create_plan,
     create_task,
@@ -89,6 +96,58 @@ async def _exec_task(
         )
     except asyncio.TimeoutError:
         return "", "Timed out", False
+
+    stdout = stdout_bytes.decode(errors="replace")
+    stderr = stderr_bytes.decode(errors="replace")
+    success = proc.returncode == 0
+    return stdout, stderr, success
+
+
+async def _skill_task(
+    session: str,
+    skill: dict,
+    args: dict,
+    plan_outputs: list[dict] | None,
+    session_secrets: dict[str, str] | None,
+    timeout: int,
+) -> tuple[str, str, bool]:
+    """Run a skill subprocess. Returns (stdout, stderr, success)."""
+    workspace = _session_workspace(session)
+
+    # Build input and env
+    input_data = build_skill_input(
+        skill, args, session, str(workspace),
+        session_secrets=session_secrets,
+        plan_outputs=plan_outputs,
+    )
+    env = build_skill_env(skill)
+
+    # Find the python executable in the skill's venv
+    skill_path = Path(skill["path"])
+    venv_python = skill_path / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        # Fall back to system python if no venv
+        venv_python = Path("python3")
+
+    run_py = skill_path / "run.py"
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(venv_python), str(run_py),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(workspace),
+            env=env,
+        )
+        input_bytes = json.dumps(input_data).encode()
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(input=input_bytes), timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        return "", "Timed out", False
+    except OSError as e:
+        return "", f"Skill executable not found: {e}", False
 
     stdout = stdout_bytes.decode(errors="replace")
     stderr = stderr_bytes.decode(errors="replace")
@@ -201,6 +260,7 @@ async def _execute_plan(
     goal: str,
     user_message: str,
     exec_timeout: int,
+    session_secrets: dict[str, str] | None = None,
 ) -> tuple[bool, str | None, list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining).
 
@@ -288,18 +348,51 @@ async def _execute_plan(
                 return False, None, completed, remaining
 
         elif task_type == "skill":
-            # Skills not implemented until M7
-            # TODO M7: pass plan_outputs in skill input JSON
-            await update_task(db, task_id, "failed", output="Skills not yet implemented")
-            task_row = {**task_row, "output": "Skills not yet implemented", "status": "failed"}
+            skill_name = task_row.get("skill")
+            args_raw = task_row.get("args") or "{}"
+
+            # Look up the skill
+            installed = discover_skills()
+            skill_info = next((s for s in installed if s["name"] == skill_name), None)
+
+            if skill_info is None:
+                error_msg = f"Skill '{skill_name}' not installed"
+                await update_task(db, task_id, "failed", output=error_msg)
+                task_row = {**task_row, "output": error_msg, "status": "failed"}
+            else:
+                # Parse and validate args
+                try:
+                    args = json.loads(args_raw)
+                except json.JSONDecodeError as e:
+                    error_msg = f"Invalid skill args JSON: {e}"
+                    await update_task(db, task_id, "failed", output=error_msg)
+                    task_row = {**task_row, "output": error_msg, "status": "failed"}
+                    args = None
+                else:
+                    validation_errors = validate_skill_args(args, skill_info["args_schema"])
+                    if validation_errors:
+                        error_msg = "Skill args validation failed: " + "; ".join(validation_errors)
+                        await update_task(db, task_id, "failed", output=error_msg)
+                        task_row = {**task_row, "output": error_msg, "status": "failed"}
+                    else:
+                        # Write plan_outputs.json before skill execution
+                        _write_plan_outputs(session, plan_outputs)
+
+                        stdout, stderr, success = await _skill_task(
+                            session, skill_info, args, plan_outputs,
+                            session_secrets, exec_timeout,
+                        )
+                        status = "done" if success else "failed"
+                        await update_task(db, task_id, status, output=stdout, stderr=stderr)
+                        task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
 
             # Accumulate plan output
             plan_outputs.append({
                 "index": i + 1,
                 "type": "skill",
                 "detail": detail,
-                "output": "Skills not yet implemented",
-                "status": "failed",
+                "output": task_row.get("output") or "",
+                "status": task_row["status"],
             })
 
             # Review skill tasks
@@ -319,10 +412,12 @@ async def _execute_plan(
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
-            # Even if reviewer says ok (unlikely), skill still failed
-            remaining = [dict(t) for t in tasks[i + 1:]]
-            _cleanup_plan_outputs(session)
-            return False, None, completed, remaining
+            if task_row["status"] == "failed":
+                remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
+                return False, None, completed, remaining
+
+            completed.append(task_row)
 
     _cleanup_plan_outputs(session)
     return True, None, completed, []
@@ -384,15 +479,25 @@ async def run_worker(
         msg_id: int = msg["id"]
         content: str = msg["content"]
         user_role: str = msg["user_role"]
+        user_skills: str | list[str] | None = msg.get("user_skills")
 
         await mark_message_processed(db, msg_id)
 
         # Plan
         try:
-            plan = await run_planner(db, config, session, user_role, content)
+            plan = await run_planner(
+                db, config, session, user_role, content,
+                user_skills=user_skills,
+            )
         except PlanError as e:
             log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
             continue
+
+        # Extract ephemeral secrets from plan
+        session_secrets: dict[str, str] = {}
+        if plan.get("secrets"):
+            for s in plan["secrets"]:
+                session_secrets[s["key"]] = s["value"]
 
         plan_id = await create_plan(db, session, msg_id, plan["goal"])
         await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
@@ -407,7 +512,7 @@ async def run_worker(
         while True:
             success, replan_reason, completed, remaining = await _execute_plan(
                 db, config, session, current_plan_id, current_goal,
-                content, exec_timeout,
+                content, exec_timeout, session_secrets=session_secrets,
             )
 
             if success:
@@ -477,6 +582,7 @@ async def run_worker(
             try:
                 new_plan = await run_planner(
                     db, config, session, user_role, enriched_message,
+                    user_skills=user_skills,
                 )
             except PlanError as e:
                 log.error("Replan failed: %s", e)

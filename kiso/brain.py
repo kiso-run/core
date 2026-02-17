@@ -10,6 +10,7 @@ import aiosqlite
 
 from kiso.config import Config, KISO_DIR
 from kiso.llm import LLMError, call_llm
+from kiso.skills import discover_skills, build_planner_skill_list
 from kiso.store import get_facts, get_pending_items, get_recent_messages, get_session
 
 log = logging.getLogger(__name__)
@@ -131,8 +132,11 @@ Rules:
 """
 
 
-def validate_plan(plan: dict) -> list[str]:
-    """Validate plan semantics. Returns list of error strings (empty = valid)."""
+def validate_plan(plan: dict, installed_skills: list[str] | None = None) -> list[str]:
+    """Validate plan semantics. Returns list of error strings (empty = valid).
+
+    If installed_skills is provided, skill tasks are validated against it.
+    """
     errors: list[str] = []
     tasks = plan.get("tasks", [])
 
@@ -146,7 +150,12 @@ def validate_plan(plan: dict) -> list[str]:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
         if t == "msg" and task.get("expect") is not None:
             errors.append(f"Task {i}: msg task must have expect = null")
-        # Skill validation (M7): skip for now, no skills installed
+        if t == "skill":
+            skill_name = task.get("skill")
+            if not skill_name:
+                errors.append(f"Task {i}: skill task must have a non-null skill name")
+            elif installed_skills is not None and skill_name not in installed_skills:
+                errors.append(f"Task {i}: skill '{skill_name}' is not installed")
 
     last = tasks[-1]
     if last.get("type") != "msg":
@@ -161,6 +170,7 @@ async def build_planner_messages(
     session: str,
     user_role: str,
     new_message: str,
+    user_skills: str | list[str] | None = None,
 ) -> list[dict]:
     """Build the message list for the planner LLM call."""
     system_prompt = _load_system_prompt("planner")
@@ -194,7 +204,12 @@ async def build_planner_messages(
         )
         context_parts.append(f"## Recent Messages\n{msgs_text}")
 
-    # Skills: empty for now (M7)
+    # Skill discovery — rescan on each planner call
+    installed = discover_skills()
+    skill_list = build_planner_skill_list(installed, user_role, user_skills)
+    if skill_list:
+        context_parts.append(f"## Skills\n{skill_list}")
+
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{new_message}")
 
@@ -212,6 +227,7 @@ async def run_planner(
     session: str,
     user_role: str,
     new_message: str,
+    user_skills: str | list[str] | None = None,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -219,7 +235,14 @@ async def run_planner(
     Raises PlanError if all retries exhausted.
     """
     max_retries = int(config.settings.get("max_validation_retries", 3))
-    messages = await build_planner_messages(db, config, session, user_role, new_message)
+    messages = await build_planner_messages(
+        db, config, session, user_role, new_message, user_skills=user_skills,
+    )
+
+    # Get installed skill names for plan validation
+    installed = discover_skills()
+    installed_names = [s["name"] for s in installed]
+
     last_errors: list[str] = []
 
     for attempt in range(1, max_retries + 1):
@@ -239,7 +262,7 @@ async def run_planner(
         except json.JSONDecodeError as e:
             raise PlanError(f"Planner returned invalid JSON: {e}")
 
-        errors = validate_plan(plan)
+        errors = validate_plan(plan, installed_skills=installed_names)
         if not errors:
             log.info("Plan accepted (attempt %d): goal=%r, %d tasks",
                      attempt, plan["goal"], len(plan["tasks"]))
