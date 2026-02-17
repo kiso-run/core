@@ -15,6 +15,7 @@ Working document. Tracks what to build, in what order, and how to verify each st
 - **Agile**: smallest testable increment first, then layer on
 - **No dead code**: every line written is immediately reachable and testable
 - **Fail loud**: missing config, broken provider, invalid input → clear error, never silent fallback
+- **Tested**: every milestone adds tests for its code. `uv run pytest` must pass before moving on.
 
 ---
 
@@ -22,25 +23,37 @@ Working document. Tracks what to build, in what order, and how to verify each st
 
 Get a running server that responds to `/health`. Proves the project structure, config loading, and FastAPI setup work.
 
-- [ ] Create `pyproject.toml` with dependencies: `fastapi`, `uvicorn`, `tomli` (or `tomllib` on 3.11+), `aiosqlite`
-- [ ] Create `kiso/config.py`
-  - [ ] Load `~/.kiso/config.toml` with TOML parser
-  - [ ] Validate required sections: `[tokens]`, `[providers]`, `[users]`
-  - [ ] Validate each user has `role` (admin/user), users with role=user have `skills`
-  - [ ] Validate token names and usernames match `^[a-z_][a-z0-9_-]{0,31}$`
-  - [ ] Detect duplicate aliases across users → error
-  - [ ] Load `[settings]` with defaults
-  - [ ] Exit with clear error if anything is missing/invalid
-- [ ] Create `kiso/main.py`
-  - [ ] FastAPI app
-  - [ ] Load config at startup
-  - [ ] `GET /health` → `{"status": "ok"}`
-- [ ] Create test config file for development
+- [x] Create `pyproject.toml` with dependencies: `fastapi`, `uvicorn`, `tomli` (or `tomllib` on 3.11+), `aiosqlite`
+- [x] Create `kiso/config.py`
+  - [x] Load `~/.kiso/config.toml` with TOML parser
+  - [x] Validate required sections: `[tokens]`, `[providers]`, `[users]`
+  - [x] Validate each user has `role` (admin/user), users with role=user have `skills`
+  - [x] Validate token names and usernames match `^[a-z_][a-z0-9_-]{0,31}$`
+  - [x] Detect duplicate aliases across users → error
+  - [x] Load `[settings]` with defaults
+  - [x] Exit with clear error if anything is missing/invalid
+- [x] Create `kiso/main.py`
+  - [x] FastAPI app
+  - [x] Load config at startup
+  - [x] `GET /health` → `{"status": "ok"}`
+- [x] Create test config file for development
+- [x] Set up dev container
+  - [x] Create `Dockerfile` (python:3.12-slim + git + curl + uv, workdir `/opt/kiso`)
+  - [x] Create `docker-compose.yml` with source bind-mount and `sleep infinity`
+  - [x] Create `.dockerignore`
+- [x] Set up test infrastructure
+  - [x] Add test dependencies to `pyproject.toml`: `pytest`, `pytest-asyncio`, `httpx`, `pytest-cov`
+  - [x] Create `tests/conftest.py` with shared fixtures (test config, async client)
+  - [x] Write `tests/test_config.py`: valid load, missing sections, invalid names, duplicate aliases, user role validation
+  - [x] Write `tests/test_health.py`: GET /health → 200 + {"status": "ok"}
 
 **Verify:**
 ```bash
-uv run kiso serve
-curl http://localhost:8333/health   # → {"status": "ok"}
+docker compose up -d
+docker compose exec dev uv sync --group dev
+docker compose exec dev uv run pytest --cov=kiso -q   # all tests pass, coverage reported
+docker compose exec dev uv run kiso serve &
+curl http://localhost:8333/health                      # → {"status": "ok"}
 # Remove [tokens] from config → server refuses to start with clear error
 ```
 

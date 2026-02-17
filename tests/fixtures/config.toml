@@ -1,0 +1,21 @@
+[tokens]
+cli = "test-token-abc123"
+
+[providers.openrouter]
+api_key_env = "KISO_OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[providers.ollama]
+base_url = "http://localhost:11434/v1"
+
+[users.marco]
+role = "admin"
+
+[users.anna]
+role = "user"
+skills = "*"
+aliases.discord = "anna_dev"
+
+[users.luca]
+role = "user"
+skills = ["search", "aider"]

@@ -1,0 +1,8 @@
+services:
+  dev:
+    build: .
+    volumes:
+      - .:/opt/kiso
+      - /opt/kiso/.venv    # isolate container venv from host
+    working_dir: /opt/kiso
+    command: sleep infinity

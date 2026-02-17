@@ -146,6 +146,7 @@ Users can share credentials during conversation — the planner extracts them as
 - [connectors.md](docs/connectors.md) — Platform bridges
 - [api.md](docs/api.md) — API endpoints
 - [cli.md](docs/cli.md) — Terminal client and management commands
+- [testing.md](docs/testing.md) — Testing strategy, fixtures, coverage
 - [security.md](docs/security.md) — Authentication, permissions, secrets, prompt injection defense
 - [docker.md](docs/docker.md) — Docker setup, volumes, pre-installing packages
 - [audit.md](docs/audit.md) — Audit trail (JSONL logs, secret masking)
