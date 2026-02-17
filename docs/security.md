@@ -1,6 +1,6 @@
 # Security
 
-Five layers: API authentication, user identity and permissions, secrets management, prompt injection defense, and package trust.
+Six layers: bot identity, API authentication, user identity, role-based permissions, secrets management, and prompt injection defense. Plus operational hardening: webhook validation, package trust, and implementation notes.
 
 ## 1. Bot Identity
 

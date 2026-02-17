@@ -44,7 +44,7 @@ CREATE INDEX idx_messages_unprocessed ON messages(processed) WHERE processed = 0
 ```
 
 - `user` is the resolved Linux username (not the platform alias). In multi-user sessions, tracks who said what.
-- `trusted=0` messages are from non-whitelisted users: saved for context and audit, never trigger planning. Paraphrased before inclusion in planner context (see [security.md — Prompt Injection Defense](security.md#prompt-injection-defense)).
+- `trusted=0` messages are from non-whitelisted users: saved for context and audit, never trigger planning. Paraphrased before inclusion in planner context (see [security.md — Prompt Injection Defense](security.md#6-prompt-injection-defense)).
 - `processed=0` messages are recovered on startup — re-enqueued for processing. Prevents silent message loss on crash.
 
 ### plans
