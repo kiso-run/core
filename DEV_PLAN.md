@@ -369,7 +369,7 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [ ] Strip: plaintext, base64, URL-encoded variants
   - [ ] Apply to all task output before storage and LLM inclusion
 - [ ] Webhook hardening (see `docs/security.md` §9)
-  - [ ] HTTPS enforcement: `webhook_require_https` setting (default `true`), reject plain `http://` URLs in `validate_webhook_url` when enabled
+  - [x] HTTPS enforcement: `webhook_require_https` setting (default `true`), reject plain `http://` URLs in `validate_webhook_url` when enabled — **implemented in M8**
   - [ ] HMAC-SHA256 signatures: `webhook_secret` setting, compute `X-Kiso-Signature: sha256=<hex>` header over raw JSON body in `deliver_webhook`
   - [ ] Payload size cap: `webhook_max_payload` setting (default 1MB), truncate `content` field before POST
 

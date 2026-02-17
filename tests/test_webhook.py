@@ -21,61 +21,70 @@ class TestValidateWebhookUrl:
         ]):
             validate_webhook_url("https://example.com/callback")
 
-    def test_valid_http(self):
+    def test_http_rejected_by_default(self):
+        """require_https defaults to True, so http:// is rejected."""
+        with pytest.raises(ValueError, match="must use https"):
+            validate_webhook_url("http://example.com/callback")
+
+    def test_http_allowed_when_require_https_false(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("93.184.216.34", 0)),
         ]):
-            validate_webhook_url("http://example.com/callback")
+            validate_webhook_url("http://example.com/callback", require_https=False)
 
     def test_reject_ftp_scheme(self):
         with pytest.raises(ValueError, match="scheme must be http or https"):
-            validate_webhook_url("ftp://example.com/file")
+            validate_webhook_url("ftp://example.com/file", require_https=False)
 
     def test_reject_no_scheme(self):
         with pytest.raises(ValueError, match="scheme must be http or https"):
-            validate_webhook_url("example.com/callback")
+            validate_webhook_url("example.com/callback", require_https=False)
+
+    def test_ftp_rejected_when_require_https_true(self):
+        with pytest.raises(ValueError, match="must use https"):
+            validate_webhook_url("ftp://example.com/file")
 
     def test_reject_loopback_127(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("127.0.0.1", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://localhost/callback")
+                validate_webhook_url("https://localhost/callback")
 
     def test_reject_private_10(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("10.0.0.1", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://internal.corp/callback")
+                validate_webhook_url("https://internal.corp/callback")
 
     def test_reject_private_172_16(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("172.16.0.1", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://internal.corp/callback")
+                validate_webhook_url("https://internal.corp/callback")
 
     def test_reject_private_192_168(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("192.168.1.1", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://internal.corp/callback")
+                validate_webhook_url("https://internal.corp/callback")
 
     def test_reject_ipv6_loopback(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (10, 1, 6, "", ("::1", 0, 0, 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://[::1]/callback")
+                validate_webhook_url("https://[::1]/callback")
 
     def test_reject_link_local(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("169.254.1.1", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://link-local.example/callback")
+                validate_webhook_url("https://link-local.example/callback")
 
     def test_dns_resolving_to_private(self):
         """Hostname that resolves to a private IP should be rejected."""
@@ -83,7 +92,7 @@ class TestValidateWebhookUrl:
             (2, 1, 6, "", ("10.0.0.5", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://looks-public.example.com/hook")
+                validate_webhook_url("https://looks-public.example.com/hook")
 
     def test_allow_list_bypass(self):
         """IPs in allow_list should be accepted even if private."""
@@ -93,6 +102,7 @@ class TestValidateWebhookUrl:
             validate_webhook_url(
                 "http://localhost:9001/callback",
                 allow_list=["127.0.0.1"],
+                require_https=False,
             )
 
     def test_allow_list_ipv6(self):
@@ -102,17 +112,18 @@ class TestValidateWebhookUrl:
             validate_webhook_url(
                 "http://[::1]:9001/callback",
                 allow_list=["::1"],
+                require_https=False,
             )
 
     def test_dns_resolution_failure(self):
         import socket as sock_mod
         with patch("kiso.webhook.socket.getaddrinfo", side_effect=sock_mod.gaierror("no such host")):
             with pytest.raises(ValueError, match="Cannot resolve"):
-                validate_webhook_url("http://nonexistent.invalid/hook")
+                validate_webhook_url("https://nonexistent.invalid/hook")
 
     def test_no_hostname(self):
         with pytest.raises(ValueError, match="no hostname"):
-            validate_webhook_url("http:///path")
+            validate_webhook_url("http:///path", require_https=False)
 
     def test_multiple_ips_one_private_rejected(self):
         """If any resolved IP is private and not in allow_list, reject."""
@@ -121,14 +132,14 @@ class TestValidateWebhookUrl:
             (2, 1, 6, "", ("10.0.0.1", 0)),
         ]):
             with pytest.raises(ValueError, match="private/reserved"):
-                validate_webhook_url("http://dual.example.com/hook")
+                validate_webhook_url("https://dual.example.com/hook")
 
     def test_multiple_ips_all_public(self):
         with patch("kiso.webhook.socket.getaddrinfo", return_value=[
             (2, 1, 6, "", ("93.184.216.34", 0)),
             (2, 1, 6, "", ("93.184.216.35", 0)),
         ]):
-            validate_webhook_url("http://multi.example.com/hook")
+            validate_webhook_url("https://multi.example.com/hook")
 
 
 # --- deliver_webhook ---

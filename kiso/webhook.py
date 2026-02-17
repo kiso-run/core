@@ -13,17 +13,27 @@ import httpx
 log = logging.getLogger(__name__)
 
 
-def validate_webhook_url(url: str, allow_list: list[str] | None = None) -> None:
+def validate_webhook_url(
+    url: str,
+    allow_list: list[str] | None = None,
+    require_https: bool = True,
+) -> None:
     """Validate a webhook URL. Raises ValueError on rejection.
 
     Checks:
-    - Scheme must be http or https
+    - Scheme must be https (or http if require_https is False)
     - Hostname must resolve to a non-private IP (unless in allow_list)
     """
     allow_list = allow_list or []
 
     parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
+    if require_https:
+        if parsed.scheme != "https":
+            raise ValueError(
+                f"Webhook URL must use https (got '{parsed.scheme}'). "
+                "Set webhook_require_https = false in config to allow http."
+            )
+    elif parsed.scheme not in ("http", "https"):
         raise ValueError(f"Webhook URL scheme must be http or https, got '{parsed.scheme}'")
 
     hostname = parsed.hostname

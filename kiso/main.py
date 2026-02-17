@@ -103,7 +103,11 @@ async def post_sessions(
 
     if body.webhook:
         try:
-            validate_webhook_url(body.webhook, config.settings.get("webhook_allow_list"))
+            validate_webhook_url(
+                body.webhook,
+                config.settings.get("webhook_allow_list"),
+                require_https=bool(config.settings.get("webhook_require_https", True)),
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

@@ -298,11 +298,24 @@ Mitigations are organizational, not technical:
 
 Webhook URLs are set by connectors via `POST /sessions`. Before accepting a webhook URL, kiso validates it:
 
-1. **Reject private/internal IPs**: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1`, `169.254.0.0/16` (link-local), `fc00::/7` (unique local)
-2. **DNS resolution check**: resolve the hostname and reject if it resolves to a private IP (prevents DNS rebinding)
-3. **Reject non-HTTP(S) schemes**: only `http://` and `https://` are allowed
+1. **Require HTTPS**: by default, only `https://` webhook URLs are accepted. Plain `http://` is rejected.
+2. **Reject private/internal IPs**: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1`, `169.254.0.0/16` (link-local), `fc00::/7` (unique local)
+3. **DNS resolution check**: resolve the hostname and reject if it resolves to a private IP (prevents DNS rebinding)
 
 This prevents SSRF attacks where a compromised connector or attacker with a valid token registers a webhook pointing to internal services (Redis, databases, admin panels).
+
+### HTTPS enforcement
+
+HTTPS is required by default. For local development where connectors use plain HTTP (e.g. `http://localhost:9001/callback`), disable it explicitly:
+
+```toml
+[settings]
+webhook_require_https = false
+```
+
+In production, always leave this at the default (`true`).
+
+### Private IP allowlist
 
 For deployments where connectors and kiso run on the same host (e.g. `localhost:9001`), add trusted IPs to a `webhook_allow_list` in `config.toml`:
 
