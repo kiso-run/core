@@ -1,0 +1,212 @@
+"""SQLite storage layer — module-level async functions."""
+
+from __future__ import annotations
+
+import aiosqlite
+from pathlib import Path
+
+SCHEMA = """\
+CREATE TABLE IF NOT EXISTS sessions (
+    session     TEXT PRIMARY KEY,
+    connector   TEXT,
+    webhook     TEXT,
+    description TEXT,
+    summary     TEXT DEFAULT '',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    session   TEXT NOT NULL,
+    user      TEXT,
+    role      TEXT NOT NULL,
+    content   TEXT NOT NULL,
+    trusted   BOOLEAN DEFAULT 1,
+    processed BOOLEAN DEFAULT 0,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session, id);
+CREATE INDEX IF NOT EXISTS idx_messages_unprocessed ON messages(processed) WHERE processed = 0;
+
+CREATE TABLE IF NOT EXISTS plans (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session    TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    parent_id  INTEGER,
+    goal       TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'running',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session, id);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id    INTEGER NOT NULL,
+    session    TEXT NOT NULL,
+    type       TEXT NOT NULL,
+    detail     TEXT NOT NULL,
+    skill      TEXT,
+    args       TEXT,
+    expect     TEXT,
+    status     TEXT NOT NULL DEFAULT 'pending',
+    output     TEXT,
+    stderr     TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_plan ON tasks(plan_id, id);
+CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session, id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(session, status);
+
+CREATE TABLE IF NOT EXISTS facts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    session    TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS learnings (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT NOT NULL,
+    session    TEXT NOT NULL,
+    user       TEXT,
+    status     TEXT NOT NULL DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_learnings_status ON learnings(status) WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS pending (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT NOT NULL,
+    scope      TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'open',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pending_scope ON pending(scope, status);
+
+CREATE TABLE IF NOT EXISTS published (
+    id         TEXT PRIMARY KEY,
+    session    TEXT NOT NULL,
+    filename   TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+
+async def init_db(db_path: Path) -> aiosqlite.Connection:
+    """Create tables, enable WAL, set row_factory, return connection."""
+    db = await aiosqlite.connect(db_path)
+    await db.execute("PRAGMA journal_mode=WAL")
+    db.row_factory = aiosqlite.Row
+    await db.executescript(SCHEMA)
+    await db.commit()
+    return db
+
+
+async def get_session(db: aiosqlite.Connection, session: str) -> dict | None:
+    """Return session row as dict, or None."""
+    cur = await db.execute("SELECT * FROM sessions WHERE session = ?", (session,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def create_session(
+    db: aiosqlite.Connection,
+    session: str,
+    connector: str | None = None,
+    webhook: str | None = None,
+    description: str | None = None,
+) -> dict:
+    """Create a session if it doesn't exist (idempotent). Return session dict."""
+    existing = await get_session(db, session)
+    if existing:
+        return existing
+    await db.execute(
+        "INSERT INTO sessions (session, connector, webhook, description) VALUES (?, ?, ?, ?)",
+        (session, connector, webhook, description),
+    )
+    await db.commit()
+    return (await get_session(db, session))  # type: ignore[return-value]
+
+
+async def save_message(
+    db: aiosqlite.Connection,
+    session: str,
+    user: str | None,
+    role: str,
+    content: str,
+    trusted: bool = True,
+    processed: bool = False,
+) -> int:
+    """Insert a message row. Bumps session updated_at. Returns message id."""
+    cur = await db.execute(
+        "INSERT INTO messages (session, user, role, content, trusted, processed) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (session, user, role, content, trusted, processed),
+    )
+    msg_id = cur.lastrowid
+    await db.execute(
+        "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE session = ?",
+        (session,),
+    )
+    await db.commit()
+    return msg_id  # type: ignore[return-value]
+
+
+async def mark_message_processed(db: aiosqlite.Connection, msg_id: int) -> None:
+    """Set processed=1 for a message."""
+    await db.execute("UPDATE messages SET processed = 1 WHERE id = ?", (msg_id,))
+    await db.commit()
+
+
+async def get_unprocessed_messages(db: aiosqlite.Connection) -> list[dict]:
+    """Return all unprocessed messages (processed=0)."""
+    cur = await db.execute(
+        "SELECT * FROM messages WHERE processed = 0 ORDER BY id"
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list[dict]:
+    """Return sessions where user has sent messages."""
+    cur = await db.execute(
+        "SELECT DISTINCT s.session, s.connector, s.description, s.updated_at "
+        "FROM sessions s JOIN messages m ON s.session = m.session "
+        "WHERE m.user = ? ORDER BY s.updated_at DESC",
+        (username,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_all_sessions(db: aiosqlite.Connection) -> list[dict]:
+    """Return all sessions."""
+    cur = await db.execute(
+        "SELECT session, connector, description, updated_at "
+        "FROM sessions ORDER BY updated_at DESC"
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_tasks_for_session(
+    db: aiosqlite.Connection, session: str, after: int = 0
+) -> list[dict]:
+    """Return tasks for a session, optionally after a given id."""
+    cur = await db.execute(
+        "SELECT * FROM tasks WHERE session = ? AND id > ? ORDER BY id",
+        (session, after),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> dict | None:
+    """Return the latest plan for a session, or None."""
+    cur = await db.execute(
+        "SELECT * FROM plans WHERE session = ? ORDER BY id DESC LIMIT 1",
+        (session,),
+    )
+    row = await cur.fetchone()
+    return dict(row) if row else None

@@ -63,30 +63,30 @@ curl http://localhost:8333/health                      # → {"status": "ok"}
 
 Messages go in, get stored, can be retrieved via `/status`.
 
-- [ ] Create `kiso/store.py`
-  - [ ] Initialize SQLite at `~/.kiso/store.db`
-  - [ ] Create all 8 tables (sessions, messages, plans, tasks, facts, learnings, pending, published) with indexes
-  - [ ] Parameterized queries only — never string concatenation
-  - [ ] Messages table: include `role` column (`user` | `assistant` | `system`)
-  - [ ] Tasks table: include `stderr` column (exec/skill only)
-  - [ ] Core functions: `save_message`, `get_session`, `create_session`, `mark_message_processed`, `get_unprocessed_messages`
-- [ ] Add auth middleware to `main.py`
-  - [ ] Extract `Authorization: Bearer <token>` header
-  - [ ] Match against `config.tokens` → token name or 401
-  - [ ] Apply to all endpoints except `/health` and `/pub/{id}`
-- [ ] Implement `POST /msg`
-  - [ ] Validate session ID: `^[a-zA-Z0-9_@.-]{1,255}$`
-  - [ ] Resolve user: direct username match → alias match via token name → untrusted
-  - [ ] If not whitelisted: save with `trusted=0`, respond 202, stop
-  - [ ] If whitelisted: save with `processed=0`, enqueue `{message, role, allowed_skills}`, respond `202 {"queued": true, "session": "..."}`
-  - [ ] If session doesn't exist: create implicitly
-- [ ] Implement `GET /status/{session}`
-  - [ ] Return: tasks, queue_length, plan, worker_running, active_task (currently running or null)
-  - [ ] Support `?after={id}` parameter: return only tasks with id > after (for polling)
-- [ ] Implement `GET /sessions?user=...`
-  - [ ] Resolve user from `user` query param + token name (same logic as POST /msg)
-  - [ ] Return objects: `{session, connector, description, updated_at}`
-  - [ ] Filter: only sessions where user has messages; admin + `?all=true` → all
+- [x] Create `kiso/store.py`
+  - [x] Initialize SQLite at `~/.kiso/store.db`
+  - [x] Create all 8 tables (sessions, messages, plans, tasks, facts, learnings, pending, published) with indexes
+  - [x] Parameterized queries only — never string concatenation
+  - [x] Messages table: include `role` column (`user` | `assistant` | `system`)
+  - [x] Tasks table: include `stderr` column (exec/skill only)
+  - [x] Core functions: `save_message`, `get_session`, `create_session`, `mark_message_processed`, `get_unprocessed_messages`
+- [x] Add auth as FastAPI `Depends()` dependency in `kiso/auth.py`
+  - [x] Extract `Authorization: Bearer <token>` header
+  - [x] Match against `config.tokens` → token name or 401
+  - [x] Apply to all endpoints except `/health` and `/pub/{id}`
+- [x] Implement `POST /msg`
+  - [x] Validate session ID: `^[a-zA-Z0-9_@.-]{1,255}$`
+  - [x] Resolve user: direct username match → alias match via token name → untrusted
+  - [x] If not whitelisted: save with `trusted=0`, respond 202, stop
+  - [x] If whitelisted: save with `processed=0`, enqueue `{message, role, allowed_skills}`, respond `202 {"queued": true, "session": "..."}`
+  - [x] If session doesn't exist: create implicitly
+- [x] Implement `GET /status/{session}`
+  - [x] Return: tasks, queue_length, plan, worker_running, active_task (currently running or null)
+  - [x] Support `?after={id}` parameter: return only tasks with id > after (for polling)
+- [x] Implement `GET /sessions?user=...`
+  - [x] Resolve user from `user` query param + token name (same logic as POST /msg)
+  - [x] Return objects: `{session, connector, description, updated_at}`
+  - [x] Filter: only sessions where user has messages; admin + `?all=true` → all
 
 **Verify:**
 ```bash
