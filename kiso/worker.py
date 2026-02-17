@@ -272,7 +272,8 @@ def _build_replan_context(
     if replan_history:
         items = []
         for h in replan_history:
-            items.append(f"- Goal: {h['goal']}, Failure: {h['failure']}")
+            tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
+            items.append(f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}")
         parts.append(
             "## Previous Replan Attempts (DO NOT repeat these approaches)\n"
             + "\n".join(items)
@@ -369,9 +370,13 @@ async def run_worker(
                                       output="Superseded by replan")
 
             # Build replan history
+            tried = [
+                f"[{t['type']}] {t['detail']}" for t in completed
+            ]
             replan_history.append({
                 "goal": current_goal,
                 "failure": replan_reason,
+                "what_was_tried": tried,
             })
 
             # Notify user about replan

@@ -831,16 +831,18 @@ class TestBuildReplanContext:
 
     def test_with_replan_history(self):
         history = [
-            {"goal": "First try", "failure": "File not found"},
-            {"goal": "Second try", "failure": "Permission denied"},
+            {"goal": "First try", "failure": "File not found", "what_was_tried": ["[exec] ls /bad"]},
+            {"goal": "Second try", "failure": "Permission denied", "what_was_tried": ["[exec] cat /etc/shadow"]},
         ]
         ctx = _build_replan_context([], [], "Third failure", history)
         assert "## Previous Replan Attempts" in ctx
         assert "DO NOT repeat" in ctx
         assert "First try" in ctx
         assert "File not found" in ctx
+        assert "[exec] ls /bad" in ctx
         assert "Second try" in ctx
         assert "Permission denied" in ctx
+        assert "[exec] cat /etc/shadow" in ctx
 
     def test_output_truncated_to_500(self):
         long_output = "x" * 1000
@@ -849,10 +851,16 @@ class TestBuildReplanContext:
         # Output should be truncated to 500 chars
         assert len(ctx) < 1000 + 200  # some overhead for labels
 
+    def test_history_without_what_was_tried(self):
+        """Handles legacy history entries without what_was_tried."""
+        history = [{"goal": "old", "failure": "reason"}]
+        ctx = _build_replan_context([], [], "fail", history)
+        assert "Tried: nothing" in ctx
+
     def test_all_sections(self):
         completed = [{"type": "exec", "detail": "ls", "status": "done", "output": "files"}]
         remaining = [{"type": "msg", "detail": "tell user"}]
-        history = [{"goal": "old", "failure": "old reason"}]
+        history = [{"goal": "old", "failure": "old reason", "what_was_tried": ["[exec] ls"]}]
         ctx = _build_replan_context(completed, remaining, "new failure", history)
         assert "## Completed Tasks" in ctx
         assert "## Remaining Tasks" in ctx
