@@ -1,6 +1,6 @@
 # LLM Roles
 
-Kiso makes 6 distinct types of LLM calls. Each type has its own model (from `config.toml`), its own system prompt (from `~/.kiso/roles/{role}.md`), and receives **only the context it needs**.
+Each LLM call has its own role. Each role has its own model (from `config.toml`), its own system prompt (from `~/.kiso/roles/{role}.md`), and receives **only the context it needs**.
 
 ## Context per Role
 

@@ -32,7 +32,7 @@ Every entry has a `timestamp`, `type`, `session`, and type-specific fields.
 }
 ```
 
-Logged for all 6 roles: planner, reviewer, worker, summarizer, curator, paraphraser.
+Logged for all roles: planner, reviewer, worker, summarizer, curator, paraphraser.
 
 ### Task Executions
 

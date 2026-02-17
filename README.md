@@ -29,7 +29,7 @@ kiso/                               # installable python package
 ~/.kiso/                            # user data (outside the repo)
 ├── config.toml                     # providers, tokens, models, settings
 ├── .env                            # deploy secrets (managed via `kiso env`)
-├── store.db                        # SQLite database (8 tables)
+├── store.db                        # SQLite database
 ├── server.log                      # server-level log
 ├── audit/                          # LLM call logs, task execution logs
 ├── roles/                          # system prompt for each LLM role
@@ -139,8 +139,8 @@ Users can share credentials during conversation — the planner extracts them as
 ## Design Documents
 
 - [config.md](docs/config.md) — Configuration, providers, tokens
-- [database.md](docs/database.md) — Database schema (8 tables)
-- [llm-roles.md](docs/llm-roles.md) — The 6 LLM roles, their prompts, and what context each receives
+- [database.md](docs/database.md) — Database schema
+- [llm-roles.md](docs/llm-roles.md) — LLM roles, their prompts, and what context each receives
 - [flow.md](docs/flow.md) — Full message lifecycle
 - [skills.md](docs/skills.md) — Skill system (subprocess, isolated venv)
 - [connectors.md](docs/connectors.md) — Platform bridges
