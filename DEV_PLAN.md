@@ -54,6 +54,7 @@ Messages go in, get stored, can be retrieved via `/status`.
   - [ ] Initialize SQLite at `~/.kiso/store.db`
   - [ ] Create all 8 tables (sessions, messages, plans, tasks, facts, learnings, pending, published) with indexes
   - [ ] Parameterized queries only — never string concatenation
+  - [ ] Messages table must include `role` column (`user` | `assistant` | `system`) and `stderr` on tasks
   - [ ] Core functions: `save_message`, `get_session`, `create_session`, `mark_message_processed`, `get_unprocessed_messages`
 - [ ] Add auth middleware to `main.py`
   - [ ] Extract `Authorization: Bearer <token>` header
@@ -63,13 +64,14 @@ Messages go in, get stored, can be retrieved via `/status`.
   - [ ] Validate session ID: `^[a-zA-Z0-9_@.-]{1,255}$`
   - [ ] Resolve user: direct username match → alias match via token name → untrusted
   - [ ] If not whitelisted: save with `trusted=0`, respond 202, stop
-  - [ ] If whitelisted: save with `processed=0`, respond 202
+  - [ ] If whitelisted: save with `processed=0`, enqueue `{message, role, allowed_skills}`, respond `202 {"queued": true, "session": "..."}`
   - [ ] If session doesn't exist: create implicitly
 - [ ] Implement `GET /status/{session}`
-  - [ ] Return tasks (empty for now), queue_length, plan (null), worker_running (false)
+  - [ ] Return: tasks, queue_length, plan, worker_running, active_task (currently running or null)
+  - [ ] Support `?after={id}` parameter: return only tasks with id > after (for polling)
 - [ ] Implement `GET /sessions`
-  - [ ] Return sessions where user has messages
-  - [ ] Admin + `?all=true` → all sessions
+  - [ ] Return objects: `{session, connector, description, updated_at}`
+  - [ ] Filter: only sessions where user has messages; admin + `?all=true` → all
 
 **Verify:**
 ```bash
@@ -97,7 +99,7 @@ Send a message, get a plan back. No execution yet — just prove the LLM integra
   - [ ] Error handling: provider not found, API key missing, HTTP errors, timeouts
   - [ ] Clear error if provider doesn't support structured output
 - [ ] Create `kiso/brain.py` (planner only for now)
-  - [ ] Build planner context: facts (empty), pending (empty), summary (empty), last N messages, skills (empty), role, new message
+  - [ ] Build planner context: facts (empty), pending (empty), summary (empty), last N messages, recent msg outputs (all msg task outputs since last summarization), skills (empty), role, new message
   - [ ] Read system prompt from `~/.kiso/roles/planner.md`
   - [ ] Call planner with structured output schema
   - [ ] Semantic validation — all 6 rules:
@@ -147,6 +149,9 @@ The worker loop runs, executes tasks, stores output. First time we see actual re
 - [ ] Create session workspace directory on first use (`~/.kiso/sessions/{session}/`)
 - [ ] Update `GET /status` to return real tasks and plan info
 - [ ] Implement plan status lifecycle: running → done | failed
+- [ ] Implement worker idle timeout (`worker_idle_timeout`, default 300s)
+  - [ ] After draining queue: wait on queue with timeout
+  - [ ] On timeout: shut down worker (ephemeral secrets lost)
 
 > **Deferred**: task output sanitization (strip secrets from output) — implemented in M10. Until then, output is stored raw. Also deferred: plan_outputs chaining (M6), review (M5).
 
@@ -170,6 +175,7 @@ Failed tasks get caught, plans get revised. The agent becomes self-correcting.
 
 - [ ] Implement reviewer in `brain.py`
   - [ ] Structured output schema: `{status, reason, learn}`
+  - [ ] Reviewer receives: process goal + task detail + task expect + task output (fenced) + original user message
   - [ ] Create `~/.kiso/roles/reviewer.md`
   - [ ] Call after every exec and skill task (never for msg)
   - [ ] Validate: if replan, reason must be non-null
@@ -225,7 +231,8 @@ Third-party capabilities via subprocess.
 
 - [ ] Create `kiso/skills.py`
   - [ ] Discover skills: scan `~/.kiso/skills/`, skip `.installing` markers
-  - [ ] Parse `kiso.toml`: validate type, name, summary, args schema, env declarations, session_secrets
+  - [ ] Parse `kiso.toml`: validate type, name, summary, args schema, env declarations, session_secrets, `[kiso.deps]` (python version, bin list)
+  - [ ] Check `[kiso.deps].bin` entries with `which` (warn if missing)
   - [ ] Build planner skill list (one-liner + args schema per skill)
   - [ ] Validate skill task args against schema (type checking, required/optional, max 64KB, max depth 5)
 - [ ] Implement skill execution in worker
@@ -377,7 +384,7 @@ Users can abort running plans.
   - [ ] Mark plan as `cancelled`
   - [ ] Generate cancel summary msg (automatic, not from planner)
   - [ ] Include: completed tasks, skipped tasks, suggestions for next steps
-  - [ ] Deliver via webhook + /status
+  - [ ] Deliver via webhook + /status with `final: true`
 
 **Verify:**
 ```bash
@@ -402,8 +409,9 @@ User-provided credentials during conversation.
   - [ ] Read `session_secrets` declaration from `kiso.toml`
   - [ ] Include only declared keys in skill input JSON `session_secrets` field
 - [ ] Implement deploy secret management
-  - [ ] `POST /admin/reload-env`: read `~/.kiso/.env`, update process env, admin only
-  - [ ] Verify admin role from token
+  - [ ] `POST /admin/reload-env`: read `~/.kiso/.env`, update process env
+  - [ ] Enforce admin-only: resolve user from token → check role → `403 Forbidden` if not admin
+  - [ ] Response: `{"reloaded": true, "keys_loaded": N}`
 
 **Verify:**
 ```bash
@@ -443,7 +451,9 @@ Structured logging for all LLM calls, task executions, reviews, webhooks.
 Interactive client and management commands.
 
 - [ ] Create `kiso/cli.py` with argument parser
-- [ ] Chat mode: `kiso [--session SESSION]`
+- [ ] Chat mode: `kiso [--session SESSION] [--api URL]`
+  - [ ] Always uses the token named `cli` from config
+  - [ ] `--api`: connect to remote kiso instance (default: `http://localhost:8333`)
   - [ ] Default session: `{hostname}@{whoami}`
   - [ ] REPL: prompt → POST /msg → poll /status → display results
   - [ ] Show progress: task type, status, output
@@ -458,7 +468,9 @@ Interactive client and management commands.
   - [ ] `skill search`: query GitHub API (`org:kiso-run+topic:kiso-skill`)
   - [ ] `skill update all`: update all installed skills
 - [ ] `kiso connector install` / `update` / `remove` / `list` / `search`
-  - [ ] Same flow as skills + copy config.example.toml
+  - [ ] Same flow as skills but validate `type = "connector"` and `[kiso.connector]` section in `kiso.toml`
+  - [ ] If `config.example.toml` exists and `config.toml` doesn't → copy it
+  - [ ] `connector search`: query GitHub API (`org:kiso-run+topic:kiso-connector`)
 - [ ] `kiso connector {name} run` / `stop` / `status`
   - [ ] Daemon subprocess management with PID tracking
   - [ ] Exponential backoff restart on crash
