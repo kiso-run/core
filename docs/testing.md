@@ -13,11 +13,12 @@
 
 ```
 tests/
-├── conftest.py          # shared fixtures (test config, async client)
-├── fixtures/            # static test data (sample configs, etc.)
-├── test_config.py       # config loading and validation
-├── test_health.py       # GET /health endpoint
-└── ...                  # test_{module}.py per source module
+├── conftest.py              # shared fixtures (test config, async client)
+├── fixtures/                # static test data (sample configs, etc.)
+├── test_config.py           # config loading and validation
+├── test_health.py           # GET /health endpoint
+├── test_sandbox_docker.py   # sandbox integration tests (Docker-only, requires root)
+└── ...                      # test_{module}.py per source module
 ```
 
 ## Running Tests
@@ -43,6 +44,7 @@ uv run pytest --cov=kiso --cov-fail-under=80 -q
 
 - **Unit** — config parsing, validation, pure functions. No I/O, no server.
 - **Integration** — endpoints via httpx `ASGITransport`. Exercises the full FastAPI app without a real server process.
+- **Sandbox (Docker-only)** — per-session Linux user creation, workspace isolation. Requires root (i.e. the dev container). Skipped automatically on the host. See below.
 - **LLM** — always mocked. Never make real LLM calls in tests or CI. Mock at the `httpx` / `call_llm` boundary.
 
 ## Fixtures
@@ -62,6 +64,34 @@ All fixtures use `tmp_path` — tests never touch `~/.kiso/`.
 - Error tests verify the message, not just that `SystemExit` was raised (use `capsys`)
 - Config fixtures write to `tmp_path` — never read or mutate real `~/.kiso/`
 - No sleeps, no network calls, no flaky tests
+
+## Sandbox Tests (Docker-only)
+
+`tests/test_sandbox_docker.py` tests real per-session sandbox isolation: creating Linux users, `chown`/`chmod` on workspaces, and verifying that a sandboxed user cannot escape their workspace. These tests require root because they call `useradd` and `os.chown`.
+
+**On the host** (`uv run pytest`), these tests are automatically skipped via `@pytest.mark.skipif(os.getuid() != 0)`. The unit tests in `test_worker.py` (`TestPerSessionSandbox`) mock the syscalls and cover the same logic paths without root.
+
+**Inside the container**, all tests run including sandbox:
+
+```bash
+# Full suite (includes sandbox tests)
+docker compose exec dev uv run pytest --cov=kiso -q
+
+# Sandbox tests only
+docker compose exec dev uv run pytest tests/test_sandbox_docker.py -v
+```
+
+The dev container runs as root by default (`python:3.12-slim`, no `USER` directive), so no extra configuration is needed.
+
+## Host vs Docker
+
+| | Host (`uv run pytest`) | Docker (`docker compose exec dev ...`) |
+|---|---|---|
+| Unit + integration tests | Yes | Yes |
+| Sandbox tests | Skipped (no root) | Yes |
+| Coverage target | 99% (sandbox line missed) | 99%+ (full coverage) |
+
+Always run the full suite inside Docker before pushing. Host-only runs are fine during development for fast feedback.
 
 ## CI
 
