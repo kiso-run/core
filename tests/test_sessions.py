@@ -1,8 +1,9 @@
-"""Tests for GET /sessions and POST /sessions endpoints."""
+"""Tests for GET /sessions, POST /sessions, and POST /sessions/{session}/cancel endpoints."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
@@ -162,3 +163,80 @@ async def test_post_sessions_no_auth(client: httpx.AsyncClient):
         "session": "no-auth",
     })
     assert resp.status_code == 401
+
+
+# --- POST /sessions/{session}/cancel ---
+
+
+async def test_post_cancel_with_active_plan(client: httpx.AsyncClient):
+    """Cancel returns true when worker has a running plan."""
+    import kiso.main as main_mod
+    from kiso.store import create_plan, create_session
+
+    db = client._transport.app.state.db  # type: ignore[attr-defined]
+    await create_session(db, "cancel-sess")
+    plan_id = await create_plan(db, "cancel-sess", 1, "Test goal")
+
+    # Inject a fake worker entry
+    cancel_event = asyncio.Event()
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()
+    main_mod._workers["cancel-sess"] = (fake_queue, fake_task, cancel_event)
+
+    try:
+        resp = await client.post(
+            "/sessions/cancel-sess/cancel", headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cancelled"] is True
+        assert data["plan_id"] == plan_id
+        assert cancel_event.is_set()
+    finally:
+        main_mod._workers.pop("cancel-sess", None)
+
+
+async def test_post_cancel_no_worker(client: httpx.AsyncClient):
+    """Cancel returns false when no worker exists for session."""
+    resp = await client.post(
+        "/sessions/no-worker-sess/cancel", headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["cancelled"] is False
+
+
+async def test_post_cancel_no_running_plan(client: httpx.AsyncClient):
+    """Worker exists but no running plan → cancelled: false."""
+    import kiso.main as main_mod
+    from kiso.store import create_plan, create_session, update_plan_status
+
+    db = client._transport.app.state.db  # type: ignore[attr-defined]
+    await create_session(db, "done-plan-sess")
+    plan_id = await create_plan(db, "done-plan-sess", 1, "Done goal")
+    await update_plan_status(db, plan_id, "done")
+
+    cancel_event = asyncio.Event()
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()
+    main_mod._workers["done-plan-sess"] = (fake_queue, fake_task, cancel_event)
+
+    try:
+        resp = await client.post(
+            "/sessions/done-plan-sess/cancel", headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["cancelled"] is False
+        assert not cancel_event.is_set()
+    finally:
+        main_mod._workers.pop("done-plan-sess", None)
+
+
+async def test_post_cancel_invalid_session(client: httpx.AsyncClient):
+    """Invalid session ID → 400."""
+    resp = await client.post(
+        "/sessions/bad session!!!/cancel", headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 400
+    assert "Invalid session ID" in resp.json()["detail"]

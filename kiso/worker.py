@@ -7,10 +7,12 @@ import json
 import logging
 import os
 import pwd
+import time
 from pathlib import Path
 
 import aiosqlite
 
+from kiso import audit
 from kiso.config import ConfigError, reload_config
 from kiso.security import (
     check_command_deny_list,
@@ -269,7 +271,7 @@ async def _msg_task(
         {"role": "user", "content": "\n\n".join(context_parts)},
     ]
 
-    return await call_llm(config, "worker", messages)
+    return await call_llm(config, "worker", messages, session=session)
 
 
 async def _persist_plan_tasks(
@@ -312,12 +314,16 @@ async def _review_task(
         expect=task_row["expect"] or "",
         output=full_output,
         user_message=user_message,
+        session=session,
     )
 
     # Store learning if present
-    if review.get("learn"):
+    has_learning = bool(review.get("learn"))
+    if has_learning:
         await save_learning(db, review["learn"], session)
         log.info("Learning saved: %s", review["learn"][:100])
+
+    audit.log_review(session, task_row.get("id", 0), review["status"], has_learning)
 
     return review
 
@@ -385,13 +391,21 @@ async def _execute_plan(
             # Write plan_outputs.json before execution
             _write_plan_outputs(session, plan_outputs)
 
+            t0 = time.perf_counter()
             stdout, stderr, success = await _exec_task(
                 session, detail, exec_timeout, sandbox_uid=sandbox_uid,
             )
+            task_duration_ms = int((time.perf_counter() - t0) * 1000)
             stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
             stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
             status = "done" if success else "failed"
             await update_task(db, task_id, status, output=stdout, stderr=stderr)
+
+            audit.log_task(
+                session, task_id, "exec", detail, status, task_duration_ms,
+                len(stdout), deploy_secrets=deploy_secrets,
+                session_secrets=session_secrets or {},
+            )
 
             # Refresh task_row with output
             task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
@@ -428,12 +442,19 @@ async def _execute_plan(
 
         elif task_type == "msg":
             try:
+                t0 = time.perf_counter()
                 text = await _msg_task(
                     config, db, session, detail,
                     plan_outputs=plan_outputs,
                 )
+                task_duration_ms = int((time.perf_counter() - t0) * 1000)
                 await update_task(db, task_id, "done", output=text)
                 task_row = {**task_row, "output": text, "status": "done"}
+
+                audit.log_task(
+                    session, task_id, "msg", detail, "done", task_duration_ms,
+                    len(text),
+                )
 
                 # Accumulate plan output
                 plan_outputs.append({
@@ -449,11 +470,12 @@ async def _execute_plan(
                 webhook_url = sess.get("webhook") if sess else None
                 if webhook_url:
                     is_final = i == len(tasks) - 1
-                    await deliver_webhook(
+                    wh_success, wh_status, wh_attempts = await deliver_webhook(
                         webhook_url, session, task_id, text, is_final,
                         secret=str(config.settings.get("webhook_secret", "")),
                         max_payload=int(config.settings.get("webhook_max_payload", 0)),
                     )
+                    audit.log_webhook(session, task_id, webhook_url, wh_status, wh_attempts)
 
                 completed.append(task_row)
             except LLMError as e:
@@ -470,6 +492,8 @@ async def _execute_plan(
             # Look up the skill
             installed = discover_skills()
             skill_info = next((s for s in installed if s["name"] == skill_name), None)
+
+            t0 = time.perf_counter()
 
             if skill_info is None:
                 error_msg = f"Skill '{skill_name}' not installed"
@@ -504,6 +528,14 @@ async def _execute_plan(
                         status = "done" if success else "failed"
                         await update_task(db, task_id, status, output=stdout, stderr=stderr)
                         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+
+            task_duration_ms = int((time.perf_counter() - t0) * 1000)
+            audit.log_task(
+                session, task_id, "skill", detail, task_row["status"],
+                task_duration_ms, len(task_row.get("output") or ""),
+                deploy_secrets=deploy_secrets,
+                session_secrets=session_secrets or {},
+            )
 
             # Accumulate plan output
             plan_outputs.append({
@@ -650,7 +682,7 @@ async def run_worker(
         untrusted = await get_untrusted_messages(db, session)
         if untrusted:
             try:
-                paraphrased_context = await run_paraphraser(config, untrusted)
+                paraphrased_context = await run_paraphraser(config, untrusted, session=session)
             except ParaphraserError as e:
                 log.warning("Paraphraser failed: %s", e)
                 paraphrased_context = None
@@ -671,6 +703,7 @@ async def run_worker(
         if plan.get("secrets"):
             for s in plan["secrets"]:
                 session_secrets[s["key"]] = s["value"]
+            log.info("%d secrets extracted", len(session_secrets))
 
         plan_id = await create_plan(db, session, msg_id, plan["goal"])
         await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
@@ -714,13 +747,14 @@ async def run_worker(
                 sess = await get_session(db, session)
                 webhook_url = sess.get("webhook") if sess else None
                 if webhook_url:
-                    await deliver_webhook(
+                    wh_success, wh_status, wh_attempts = await deliver_webhook(
                         webhook_url, session, 0, cancel_text, True,
                         secret=str(config.settings.get("webhook_secret", "")),
                         max_payload=int(
                             config.settings.get("webhook_max_payload", 0)
                         ),
                     )
+                    audit.log_webhook(session, 0, webhook_url, wh_status, wh_attempts)
                 cancel_event.clear()  # reset for next message
                 break
 
@@ -816,7 +850,7 @@ async def run_worker(
         learnings = await get_pending_learnings(db)
         if learnings:
             try:
-                curator_result = await run_curator(config, learnings)
+                curator_result = await run_curator(config, learnings, session=session)
                 await _apply_curator_result(db, session, curator_result)
             except CuratorError as e:
                 log.error("Curator failed: %s", e)
@@ -828,7 +862,7 @@ async def run_worker(
                 sess = await get_session(db, session)
                 current_summary = sess["summary"] if sess else ""
                 oldest = await get_oldest_messages(db, session, limit=msg_count)
-                new_summary = await run_summarizer(config, current_summary, oldest)
+                new_summary = await run_summarizer(config, current_summary, oldest, session=session)
                 await update_summary(db, session, new_summary)
             except SummarizerError as e:
                 log.error("Summarizer failed: %s", e)
@@ -838,7 +872,7 @@ async def run_worker(
         all_facts = await get_facts(db)
         if len(all_facts) > max_facts:
             try:
-                consolidated = await run_fact_consolidation(config, all_facts)
+                consolidated = await run_fact_consolidation(config, all_facts, session=session)
                 if consolidated:
                     await delete_facts(db, [f["id"] for f in all_facts])
                     for text in consolidated:

@@ -458,15 +458,15 @@ User-provided credentials during conversation.
 
 Structured logging for all LLM calls, task executions, reviews, webhooks.
 
-- [ ] Create `kiso/audit.py`
-  - [ ] Write JSONL to `~/.kiso/audit/{YYYY-MM-DD}.jsonl`
-  - [ ] Entry types: `llm`, `task`, `review`, `webhook`
-  - [ ] Secret masking: strip known values (plaintext, base64, URL-encoded) from all entries
-- [ ] Wire audit logging into:
-  - [ ] `llm.py`: log every LLM call (role, model, tokens, duration, status)
-  - [ ] `worker.py`: log every task execution (type, status, duration, output_length)
-  - [ ] `worker.py`: log every review (verdict, has_learning)
-  - [ ] `worker.py`: log every webhook delivery (url, status, attempts)
+- [x] Create `kiso/audit.py`
+  - [x] Write JSONL to `~/.kiso/audit/{YYYY-MM-DD}.jsonl`
+  - [x] Entry types: `llm`, `task`, `review`, `webhook`
+  - [x] Secret masking: strip known values (plaintext, base64, URL-encoded) from all entries
+- [x] Wire audit logging into:
+  - [x] `llm.py`: log every LLM call (role, model, tokens, duration, status)
+  - [x] `worker.py`: log every task execution (type, status, duration, output_length)
+  - [x] `worker.py`: log every review (verdict, has_learning)
+  - [x] `worker.py`: log every webhook delivery (url, status, attempts)
 
 **Verify:**
 ```bash

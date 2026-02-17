@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import httpx
 
+from kiso import audit
 from kiso.config import Config, Provider
 
 # Roles that require structured output (response_format with json_schema).
@@ -52,6 +54,7 @@ async def call_llm(
     role: str,
     messages: list[dict],
     response_format: dict | None = None,
+    session: str = "",
 ) -> str:
     """Call an LLM. Returns the response content string.
 
@@ -83,15 +86,27 @@ async def call_llm(
 
     url = provider.base_url.rstrip("/") + "/chat/completions"
 
+    # Resolve provider name for audit
+    provider_name = model_string.split(":", 1)[0] if ":" in model_string else next(iter(config.providers))
+
+    t0 = time.perf_counter()
+
     async with httpx.AsyncClient(timeout=120) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
         except httpx.TimeoutException:
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             raise LLMError(f"LLM call timed out ({role}, {model_name})")
         except httpx.RequestError as e:
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             raise LLMError(f"LLM request failed: {e}")
 
+    duration_ms = int((time.perf_counter() - t0) * 1000)
+
     if resp.status_code != 200:
+        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(
             f"LLM returned {resp.status_code}: {resp.text[:500]}"
         )
@@ -100,6 +115,14 @@ async def call_llm(
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, json.JSONDecodeError) as e:
+        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(f"Unexpected LLM response format: {e}")
+
+    # Extract token usage
+    usage = data.get("usage") or {}
+    input_tokens = usage.get("prompt_tokens", 0)
+    output_tokens = usage.get("completion_tokens", 0)
+
+    audit.log_llm_call(session, role, model_name, provider_name, input_tokens, output_tokens, duration_ms, "ok")
 
     return content

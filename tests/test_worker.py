@@ -158,7 +158,7 @@ class TestMsgTask:
 
         captured_messages = []
 
-        async def _capture(cfg, role, messages):
+        async def _capture(cfg, role, messages, **kwargs):
             captured_messages.extend(messages)
             return "ok"
 
@@ -175,7 +175,7 @@ class TestMsgTask:
 
         captured_messages = []
 
-        async def _capture(cfg, role, messages):
+        async def _capture(cfg, role, messages, **kwargs):
             captured_messages.extend(messages)
             return "ok"
 
@@ -823,7 +823,7 @@ class TestReviewTask:
         task_row = {"detail": "ls", "expect": "files", "output": "out", "stderr": "warn"}
         captured_output = []
 
-        async def _mock_reviewer(cfg, goal, detail, expect, output, user_message):
+        async def _mock_reviewer(cfg, goal, detail, expect, output, user_message, **kwargs):
             captured_output.append(output)
             return REVIEW_OK
 
@@ -838,7 +838,7 @@ class TestReviewTask:
         task_row = {"detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         captured_output = []
 
-        async def _mock_reviewer(cfg, goal, detail, expect, output, user_message):
+        async def _mock_reviewer(cfg, goal, detail, expect, output, user_message, **kwargs):
             captured_output.append(output)
             return REVIEW_OK
 
@@ -1066,7 +1066,7 @@ class TestExecutePlan:
 
         review_calls = []
 
-        async def _review_side_effect(cfg, goal, detail, expect, output, user_message):
+        async def _review_side_effect(cfg, goal, detail, expect, output, user_message, **kwargs):
             review_calls.append(detail)
             if "first" in detail:
                 return REVIEW_REPLAN
@@ -1081,6 +1081,135 @@ class TestExecutePlan:
         assert success is False
         assert len(remaining) == 2  # second exec + msg
         assert len(review_calls) == 1  # only first exec reviewed
+
+
+# --- Audit integration in _execute_plan ---
+
+
+class TestExecutePlanAudit:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_audit_log_task_called_for_exec(self, db, tmp_path):
+        """audit.log_task called for exec task execution."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        # log_task called for exec and msg
+        assert mock_audit.log_task.call_count == 2
+        exec_call = mock_audit.log_task.call_args_list[0]
+        assert exec_call[0][0] == "sess1"  # session
+        assert exec_call[0][2] == "exec"  # task_type
+        assert exec_call[0][3] == "echo ok"  # detail
+        assert exec_call[0][4] == "done"  # status
+        assert isinstance(exec_call[0][5], int)  # duration_ms
+
+        msg_call = mock_audit.log_task.call_args_list[1]
+        assert msg_call[0][2] == "msg"
+
+    async def test_audit_log_review_called(self, db, tmp_path):
+        """audit.log_review called after review."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        mock_audit.log_review.assert_called_once()
+        args = mock_audit.log_review.call_args[0]
+        assert args[0] == "sess1"  # session
+        assert args[2] == "ok"  # verdict
+        assert args[3] is False  # has_learning (no learn in REVIEW_OK)
+
+    async def test_audit_log_review_with_learning(self, db, tmp_path):
+        """audit.log_review records has_learning=True when learn is present."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        review_with_learn = {"status": "ok", "reason": None, "learn": "Uses Flask"}
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        args = mock_audit.log_review.call_args[0]
+        assert args[3] is True  # has_learning
+
+    async def test_audit_log_webhook_called(self, db, tmp_path):
+        """audit.log_webhook called after webhook delivery."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=(True, 200, 1)), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        mock_audit.log_webhook.assert_called_once()
+        args = mock_audit.log_webhook.call_args[0]
+        assert args[0] == "sess1"  # session
+        assert args[2] == "https://example.com/hook"  # url
+        assert args[3] == 200  # status
+        assert args[4] == 1  # attempts
+
+    async def test_audit_log_webhook_on_failure(self, db, tmp_path):
+        """audit.log_webhook records failed delivery."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=(False, 500, 3)), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        args = mock_audit.log_webhook.call_args[0]
+        assert args[3] == 500  # status
+        assert args[4] == 3  # attempts
+
+    async def test_audit_log_task_for_msg_only(self, db, tmp_path):
+        """audit.log_task called for msg-only plan."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        mock_audit.log_task.assert_called_once()
+        args = mock_audit.log_task.call_args[0]
+        assert args[2] == "msg"
+        assert args[4] == "done"
 
 
 # --- _persist_plan_tasks ---
@@ -1267,7 +1396,7 @@ class TestMsgTaskWithPlanOutputs:
         ]
         captured_messages = []
 
-        async def _capture(cfg, role, messages):
+        async def _capture(cfg, role, messages, **kwargs):
             captured_messages.extend(messages)
             return "ok"
 
@@ -1282,7 +1411,7 @@ class TestMsgTaskWithPlanOutputs:
         config = _make_config()
         captured_messages = []
 
-        async def _capture(cfg, role, messages):
+        async def _capture(cfg, role, messages, **kwargs):
             captured_messages.extend(messages)
             return "ok"
 
@@ -1296,7 +1425,7 @@ class TestMsgTaskWithPlanOutputs:
         config = _make_config()
         captured_messages = []
 
-        async def _capture(cfg, role, messages):
+        async def _capture(cfg, role, messages, **kwargs):
             captured_messages.extend(messages)
             return "ok"
 
@@ -1430,7 +1559,7 @@ class TestExecutePlanOutputChaining:
 
         captured_messages = []
 
-        async def _capture_llm(cfg, role, messages):
+        async def _capture_llm(cfg, role, messages, **kwargs):
             captured_messages.extend(messages)
             return "Report done"
 
@@ -1457,7 +1586,7 @@ class TestExecutePlanOutputChaining:
 
         msg_calls = []
 
-        async def _capture_llm(cfg, role, messages):
+        async def _capture_llm(cfg, role, messages, **kwargs):
             msg_calls.append(messages)
             return "Step 1 report"
 
@@ -1853,7 +1982,7 @@ class TestWebhookDelivery:
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
         with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
-             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=True) as mock_wh, \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=(True, 200, 1)) as mock_wh, \
              patch("kiso.worker.KISO_DIR", tmp_path):
             success, _, _, _ = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -1897,7 +2026,7 @@ class TestWebhookDelivery:
 
         async def _capture_wh(url, session, task_id, content, final, **kwargs):
             webhook_calls.append({"final": final, "content": content})
-            return True
+            return (True, 200, 1)
 
         with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Done"), \
              patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
@@ -1925,7 +2054,7 @@ class TestWebhookDelivery:
 
         async def _capture_wh(url, session, task_id, content, final, **kwargs):
             webhook_calls.append({"final": final})
-            return True
+            return (True, 200, 1)
 
         with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="text"), \
              patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
@@ -1949,7 +2078,7 @@ class TestWebhookDelivery:
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
         with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
-             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=False), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=(False, 500, 3)), \
              patch("kiso.worker.KISO_DIR", tmp_path):
             success, _, completed, _ = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -2331,13 +2460,13 @@ class TestKnowledgeProcessing:
 
         call_order = []
 
-        async def _mock_curator(config, learnings):
+        async def _mock_curator(config, learnings, **kwargs):
             call_order.append("curator")
             return {"evaluations": [
                 {"learning_id": 1, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
             ]}
 
-        async def _mock_summarizer(config, summary, messages):
+        async def _mock_summarizer(config, summary, messages, **kwargs):
             call_order.append("summarizer")
             return "New summary"
 
@@ -2988,7 +3117,7 @@ class TestCancelMechanism:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
 
-        mock_webhook = AsyncMock()
+        mock_webhook = AsyncMock(return_value=(True, 200, 1))
 
         with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=cancel_plan), \
              patch("kiso.worker.run_reviewer", new_callable=AsyncMock,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -89,10 +89,13 @@ class TestGetApiKey:
 
 # --- call_llm ---
 
-def _ok_response(content: str = "hello") -> httpx.Response:
+def _ok_response(content: str = "hello", usage: dict | None = None) -> httpx.Response:
+    body: dict = {"choices": [{"message": {"content": content}}]}
+    if usage is not None:
+        body["usage"] = usage
     return httpx.Response(
         200,
-        json={"choices": [{"message": {"content": content}}]},
+        json=body,
         request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
     )
 
@@ -263,3 +266,130 @@ class TestCallLlm:
             url = mock_client.post.call_args[0][0]
             assert url == "http://localhost:11434/v1/chat/completions"
             assert "//" not in url.split("://")[1]
+
+
+# --- Audit logging ---
+
+
+class TestCallLlmAudit:
+    @pytest.mark.asyncio
+    async def test_audit_logged_on_success(self):
+        config = _make_config()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok", usage=usage)
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="sess1")
+
+                mock_audit.assert_called_once()
+                args = mock_audit.call_args[0]
+                assert args[0] == "sess1"  # session
+                assert args[1] == "worker"  # role
+                assert args[2] == "gpt-3.5"  # model
+                assert args[3] == "openrouter"  # provider
+                assert args[4] == 100  # input_tokens
+                assert args[5] == 50  # output_tokens
+                assert isinstance(args[6], int)  # duration_ms
+                assert args[7] == "ok"  # status
+
+    @pytest.mark.asyncio
+    async def test_audit_logged_on_error(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = httpx.TimeoutException("timeout")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
+
+                mock_audit.assert_called_once()
+                args = mock_audit.call_args[0]
+                assert args[7] == "error"
+
+    @pytest.mark.asyncio
+    async def test_audit_logged_on_non_200(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = httpx.Response(
+                    500, text="error",
+                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                mock_audit.assert_called_once()
+                args = mock_audit.call_args[0]
+                assert args[7] == "error"
+
+    @pytest.mark.asyncio
+    async def test_audit_logged_on_request_error(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = httpx.ConnectError("refused")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
+
+                mock_audit.assert_called_once()
+                args = mock_audit.call_args[0]
+                assert args[0] == "s1"  # session
+                assert args[7] == "error"
+
+    @pytest.mark.asyncio
+    async def test_audit_logged_on_malformed_response(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = httpx.Response(
+                    200, json={"choices": []},
+                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
+
+                mock_audit.assert_called_once()
+                args = mock_audit.call_args[0]
+                assert args[7] == "error"
+
+    @pytest.mark.asyncio
+    async def test_audit_defaults_tokens_to_zero(self):
+        """When no usage in response, tokens default to 0."""
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok")  # no usage
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                args = mock_audit.call_args[0]
+                assert args[4] == 0  # input_tokens
+                assert args[5] == 0  # output_tokens

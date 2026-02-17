@@ -166,11 +166,13 @@ class TestDeliverWebhook:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
-            result = await deliver_webhook(
+            success, status_code, attempts = await deliver_webhook(
                 "https://example.com/hook", "sess1", 42, "Hello!", True,
             )
 
-        assert result is True
+        assert success is True
+        assert status_code == 200
+        assert attempts == 1
         assert captured["url"] == "https://example.com/hook"
         body = json.loads(captured["kwargs"]["content"])
         assert body == {
@@ -203,11 +205,13 @@ class TestDeliverWebhook:
 
         with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client), \
              patch("kiso.webhook.asyncio.sleep", new_callable=AsyncMock):
-            result = await deliver_webhook(
+            success, status_code, attempts = await deliver_webhook(
                 "https://example.com/hook", "sess1", 1, "text", False,
             )
 
-        assert result is True
+        assert success is True
+        assert status_code == 200
+        assert attempts == 2
         assert call_count == 2
 
     async def test_all_retries_fail(self):
@@ -221,11 +225,13 @@ class TestDeliverWebhook:
 
         with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client), \
              patch("kiso.webhook.asyncio.sleep", new_callable=AsyncMock):
-            result = await deliver_webhook(
+            success, status_code, attempts = await deliver_webhook(
                 "https://example.com/hook", "sess1", 1, "text", False,
             )
 
-        assert result is False
+        assert success is False
+        assert status_code == 500
+        assert attempts == 3
         assert mock_client.post.call_count == 3
 
     async def test_timeout_handling(self):
@@ -236,11 +242,13 @@ class TestDeliverWebhook:
 
         with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client), \
              patch("kiso.webhook.asyncio.sleep", new_callable=AsyncMock):
-            result = await deliver_webhook(
+            success, status_code, attempts = await deliver_webhook(
                 "https://example.com/hook", "sess1", 1, "text", False,
             )
 
-        assert result is False
+        assert success is False
+        assert status_code == 0
+        assert attempts == 3
 
     async def test_correct_payload_format(self):
         """Verify the exact payload structure."""
@@ -302,11 +310,12 @@ class TestDeliverWebhook:
 
         with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client), \
              patch("kiso.webhook.asyncio.sleep", new_callable=AsyncMock):
-            result = await deliver_webhook(
+            success, status_code, attempts = await deliver_webhook(
                 "https://example.com/hook", "sess1", 1, "text", False,
             )
 
-        assert result is False
+        assert success is False
+        assert attempts == 3
 
 
 # --- HMAC signatures ---

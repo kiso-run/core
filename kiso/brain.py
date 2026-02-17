@@ -266,7 +266,7 @@ async def run_planner(
             messages.append({"role": "user", "content": error_feedback})
 
         try:
-            raw = await call_llm(config, "planner", messages, response_format=PLAN_SCHEMA)
+            raw = await call_llm(config, "planner", messages, response_format=PLAN_SCHEMA, session=session)
         except LLMError as e:
             raise PlanError(f"LLM call failed: {e}")
 
@@ -359,6 +359,7 @@ async def run_reviewer(
     expect: str,
     output: str,
     user_message: str,
+    session: str = "",
 ) -> dict:
     """Run the reviewer on a task output.
 
@@ -377,7 +378,7 @@ async def run_reviewer(
             messages.append({"role": "user", "content": error_feedback})
 
         try:
-            raw = await call_llm(config, "reviewer", messages, response_format=REVIEW_SCHEMA)
+            raw = await call_llm(config, "reviewer", messages, response_format=REVIEW_SCHEMA, session=session)
         except LLMError as e:
             raise ReviewError(f"LLM call failed: {e}")
 
@@ -497,7 +498,7 @@ def build_curator_messages(learnings: list[dict]) -> list[dict]:
     ]
 
 
-async def run_curator(config: Config, learnings: list[dict]) -> dict:
+async def run_curator(config: Config, learnings: list[dict], session: str = "") -> dict:
     """Run the curator on pending learnings.
 
     Returns dict with key "evaluations".
@@ -515,7 +516,7 @@ async def run_curator(config: Config, learnings: list[dict]) -> dict:
             messages.append({"role": "user", "content": error_feedback})
 
         try:
-            raw = await call_llm(config, "curator", messages, response_format=CURATOR_SCHEMA)
+            raw = await call_llm(config, "curator", messages, response_format=CURATOR_SCHEMA, session=session)
         except LLMError as e:
             raise CuratorError(f"LLM call failed: {e}")
 
@@ -578,7 +579,7 @@ def build_summarizer_messages(
 
 
 async def run_summarizer(
-    config: Config, current_summary: str, messages: list[dict]
+    config: Config, current_summary: str, messages: list[dict], session: str = "",
 ) -> str:
     """Run the summarizer. Returns the new summary string.
 
@@ -586,7 +587,7 @@ async def run_summarizer(
     """
     msgs = build_summarizer_messages(current_summary, messages)
     try:
-        return await call_llm(config, "summarizer", msgs)
+        return await call_llm(config, "summarizer", msgs, session=session)
     except LLMError as e:
         raise SummarizerError(f"LLM call failed: {e}")
 
@@ -630,14 +631,14 @@ def build_paraphraser_messages(messages: list[dict]) -> list[dict]:
     ]
 
 
-async def run_paraphraser(config: Config, messages: list[dict]) -> str:
+async def run_paraphraser(config: Config, messages: list[dict], session: str = "") -> str:
     """Run the paraphraser on untrusted messages. Returns paraphrased text.
 
     Raises ParaphraserError on failure.
     """
     msgs = build_paraphraser_messages(messages)
     try:
-        return await call_llm(config, "paraphraser", msgs)
+        return await call_llm(config, "paraphraser", msgs, session=session)
     except LLMError as e:
         raise ParaphraserError(f"LLM call failed: {e}")
 
@@ -647,7 +648,7 @@ async def run_paraphraser(config: Config, messages: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 async def run_fact_consolidation(
-    config: Config, facts: list[dict]
+    config: Config, facts: list[dict], session: str = "",
 ) -> list[str]:
     """Consolidate/deduplicate facts via LLM. Returns list of consolidated fact strings.
 
@@ -664,7 +665,7 @@ async def run_fact_consolidation(
         {"role": "user", "content": f"## Facts\n{facts_text}"},
     ]
     try:
-        raw = await call_llm(config, "summarizer", messages)
+        raw = await call_llm(config, "summarizer", messages, session=session)
     except LLMError as e:
         raise SummarizerError(f"LLM call failed: {e}")
     try:

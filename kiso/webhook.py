@@ -71,10 +71,11 @@ async def deliver_webhook(
     final: bool,
     secret: str = "",
     max_payload: int = 0,
-) -> bool:
-    """POST webhook payload. Retries 3 times with backoff. Returns True on success.
+) -> tuple[bool, int, int]:
+    """POST webhook payload. Retries 3 times with backoff.
 
-    Never raises — logs warning on all failures and returns False.
+    Returns (success, last_status_code, attempts).
+    Never raises — logs warning on all failures and returns (False, ...).
     """
     # Truncate content if needed
     if max_payload > 0 and len(content.encode()) > max_payload:
@@ -95,13 +96,15 @@ async def deliver_webhook(
         headers["X-Kiso-Signature"] = f"sha256={sig}"
 
     backoff = [1, 3, 9]
+    last_status = 0
 
     for attempt, delay in enumerate(backoff):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, content=raw_body, headers=headers)
+            last_status = resp.status_code
             if resp.status_code < 400:
-                return True
+                return True, resp.status_code, attempt + 1
             log.warning(
                 "Webhook attempt %d/%d to %s returned %d",
                 attempt + 1, len(backoff), url, resp.status_code,
@@ -116,4 +119,4 @@ async def deliver_webhook(
             await asyncio.sleep(delay)
 
     log.warning("All webhook delivery attempts failed for %s", url)
-    return False
+    return False, last_status, len(backoff)
