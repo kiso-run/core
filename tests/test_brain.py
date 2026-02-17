@@ -650,6 +650,21 @@ class TestValidateCurator:
         ]}
         assert validate_curator(result) == []
 
+    def test_validate_curator_wrong_count(self):
+        """Returns error when evaluation count doesn't match expected."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Fact", "question": None, "reason": "Good"},
+        ]}
+        errors = validate_curator(result, expected_count=3)
+        assert any("Expected 3 evaluations, got 1" in e for e in errors)
+
+    def test_validate_curator_no_count_check(self):
+        """No error when expected_count is None (backwards compat)."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Fact", "question": None, "reason": "Good"},
+        ]}
+        assert validate_curator(result, expected_count=None) == []
+
 
 # --- M9: build_curator_messages ---
 

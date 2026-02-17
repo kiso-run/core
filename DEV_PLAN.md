@@ -244,18 +244,18 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 Third-party capabilities via subprocess.
 
-- [ ] Create `kiso/skills.py`
-  - [ ] Discover skills: scan `~/.kiso/skills/`, skip `.installing` markers
-  - [ ] Parse `kiso.toml`: validate type, name, summary, args schema, env declarations, session_secrets, `[kiso.deps]` (python version, bin list)
-  - [ ] Check `[kiso.deps].bin` entries with `which` (warn if missing)
-  - [ ] Build planner skill list (one-liner + args schema per skill)
-  - [ ] Validate skill task args against schema (type checking, required/optional, max 64KB, max depth 5)
-- [ ] Implement skill execution in worker
-  - [ ] Build input JSON: args + session + workspace + scoped session_secrets + plan_outputs
-  - [ ] Run: `.venv/bin/python ~/.kiso/skills/{name}/run.py` via subprocess, pipe stdin, capture stdout/stderr, `cwd=~/.kiso/sessions/{session}`
-  - [ ] Timeout from config
-- [ ] Create a test skill for development (e.g. echo skill that returns its input)
-- [ ] Wire skill discovery into planner context (rescan on each planner call)
+- [x] Create `kiso/skills.py`
+  - [x] Discover skills: scan `~/.kiso/skills/`, skip `.installing` markers
+  - [x] Parse `kiso.toml`: validate type, name, summary, args schema, env declarations, session_secrets, `[kiso.deps]` (python version, bin list)
+  - [x] Check `[kiso.deps].bin` entries with `which` (warn if missing)
+  - [x] Build planner skill list (one-liner + args schema per skill)
+  - [x] Validate skill task args against schema (type checking, required/optional, max 64KB, max depth 5)
+- [x] Implement skill execution in worker
+  - [x] Build input JSON: args + session + workspace + scoped session_secrets + plan_outputs
+  - [x] Run: `.venv/bin/python ~/.kiso/skills/{name}/run.py` via subprocess, pipe stdin, capture stdout/stderr, `cwd=~/.kiso/sessions/{session}`
+  - [x] Timeout from config
+- [x] Create a test skill for development (e.g. echo skill that returns its input)
+- [x] Wire skill discovery into planner context (rescan on each planner call)
 
 **Verify:**
 ```bash
@@ -428,13 +428,13 @@ curl -X POST localhost:8333/sessions/test/cancel -H "Authorization: Bearer $TOKE
 
 User-provided credentials during conversation.
 
-- [ ] Implement secret extraction from planner output
-  - [ ] Planner returns `secrets: [{key, value}]`
-  - [ ] Store in worker memory (dict), never in DB
-  - [ ] Log: "N secrets extracted" (no values)
-- [ ] Pass scoped secrets to skills
-  - [ ] Read `session_secrets` declaration from `kiso.toml`
-  - [ ] Include only declared keys in skill input JSON `session_secrets` field
+- [x] Implement secret extraction from planner output
+  - [x] Planner returns `secrets: [{key, value}]`
+  - [x] Store in worker memory (dict), never in DB
+  - [x] Log: "N secrets extracted" (no values)
+- [x] Pass scoped secrets to skills
+  - [x] Read `session_secrets` declaration from `kiso.toml`
+  - [x] Include only declared keys in skill input JSON `session_secrets` field
 - [ ] Implement deploy secret management
   - [ ] `POST /admin/reload-env`: read `~/.kiso/.env`, update process env
   - [ ] Enforce admin-only: resolve user from token → check role → `403 Forbidden` if not admin

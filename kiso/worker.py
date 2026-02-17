@@ -492,7 +492,7 @@ async def _apply_curator_result(
         lid = ev["learning_id"]
         verdict = ev["verdict"]
         if verdict == "promote":
-            await save_fact(db, ev["fact"], source="curator")
+            await save_fact(db, ev["fact"], source="curator", session=session)
             await update_learning(db, lid, "promoted")
         elif verdict == "ask":
             await save_pending_item(db, ev["question"], scope=session, source="curator")
@@ -678,8 +678,9 @@ async def run_worker(
         if len(all_facts) > max_facts:
             try:
                 consolidated = await run_fact_consolidation(config, all_facts)
-                await delete_facts(db, [f["id"] for f in all_facts])
-                for text in consolidated:
-                    await save_fact(db, text, source="consolidation")
+                if consolidated:
+                    await delete_facts(db, [f["id"] for f in all_facts])
+                    for text in consolidated:
+                        await save_fact(db, text, source="consolidation")
             except SummarizerError as e:
                 log.error("Fact consolidation failed: %s", e)

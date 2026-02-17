@@ -456,10 +456,13 @@ Rules:
 """
 
 
-def validate_curator(result: dict) -> list[str]:
+def validate_curator(result: dict, expected_count: int | None = None) -> list[str]:
     """Validate curator result semantics. Returns list of error strings."""
     errors: list[str] = []
-    for i, ev in enumerate(result.get("evaluations", []), 1):
+    evals = result.get("evaluations", [])
+    if expected_count is not None and len(evals) != expected_count:
+        errors.append(f"Expected {expected_count} evaluations, got {len(evals)}")
+    for i, ev in enumerate(evals, 1):
         verdict = ev.get("verdict")
         if not ev.get("reason"):
             errors.append(f"Evaluation {i}: reason is required")
@@ -510,7 +513,7 @@ async def run_curator(config: Config, learnings: list[dict]) -> dict:
         except json.JSONDecodeError as e:
             raise CuratorError(f"Curator returned invalid JSON: {e}")
 
-        errors = validate_curator(result)
+        errors = validate_curator(result, expected_count=len(learnings))
         if not errors:
             log.info("Curator accepted (attempt %d): %d evaluations",
                      attempt, len(result["evaluations"]))

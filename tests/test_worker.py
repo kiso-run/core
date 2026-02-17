@@ -2132,3 +2132,204 @@ class TestKnowledgeProcessing:
         assert len(facts) == 1
         assert facts[0]["content"] == "Consolidated fact"
         assert facts[0]["source"] == "consolidation"
+
+    async def test_consolidation_empty_result_preserves_facts(self, db, tmp_path):
+        """Empty LLM consolidation result → facts NOT deleted."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 2,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_fact(db, "Fact 1", "curator")
+        await save_fact(db, "Fact 2", "curator")
+        await save_fact(db, "Fact 3", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_fact_consolidation", new_callable=AsyncMock,
+                   return_value=[]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # All 3 original facts should be preserved
+        facts = await get_facts(db)
+        assert len(facts) == 3
+
+    async def test_consolidation_skipped_under_max(self, db, tmp_path):
+        """Facts <= max → no consolidation call."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 50,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_fact(db, "Fact 1", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_fact_consolidation", new_callable=AsyncMock) as mock_consol, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        mock_consol.assert_not_called()
+
+    async def test_curator_nonexistent_learning_id(self, db, tmp_path):
+        """Curator references nonexistent learning ID → silently handles without crash."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_learning(db, "Something", "sess1")
+
+        # Curator returns evaluation with nonexistent learning_id
+        curator_result = {"evaluations": [
+            {"learning_id": 9999, "verdict": "discard", "fact": None, "question": None, "reason": "Bad"},
+        ]}
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_curator", new_callable=AsyncMock, return_value=curator_result), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            # Should not crash
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
+    async def test_summarizer_threshold_exact_boundary(self, db, tmp_path):
+        """count == threshold triggers summarizer."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "summarize_threshold": 2,
+        })
+        await create_session(db, "sess1")
+        # Add exactly 1 message, then the processed msg makes 2 = threshold
+        await save_message(db, "sess1", "alice", "user", "msg1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "msg2", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "msg2", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_summarizer", new_callable=AsyncMock, return_value="Summary") as mock_summ, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        mock_summ.assert_called_once()
+
+    async def test_multi_session_fact_visibility(self, db, tmp_path):
+        """Fact created in session A is visible in session B planner context."""
+        config = _make_config()
+        await create_session(db, "sessA")
+        await create_session(db, "sessB")
+        await save_fact(db, "Python 3.12", "curator", session="sessA")
+
+        # Build planner messages for session B — facts are global
+        from kiso.brain import build_planner_messages
+        msgs = await build_planner_messages(db, config, "sessB", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "Python 3.12" in content
+
+    async def test_apply_curator_promote_saves_session(self, db, tmp_path):
+        """Promoted fact has correct session attribution."""
+        await create_session(db, "sess1")
+        lid = await save_learning(db, "Uses Flask", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Uses Flask", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        facts = await get_facts(db)
+        assert len(facts) == 1
+        assert facts[0]["session"] == "sess1"
+
+    async def test_knowledge_processing_order(self, db, tmp_path):
+        """Curator runs before summarizer (order verified via side effects)."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "summarize_threshold": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_learning(db, "A fact", "sess1")
+
+        call_order = []
+
+        async def _mock_curator(config, learnings):
+            call_order.append("curator")
+            return {"evaluations": [
+                {"learning_id": 1, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
+            ]}
+
+        async def _mock_summarizer(config, summary, messages):
+            call_order.append("summarizer")
+            return "New summary"
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_curator", side_effect=_mock_curator), \
+             patch("kiso.worker.run_summarizer", side_effect=_mock_summarizer), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        assert call_order == ["curator", "summarizer"]
+
+    async def test_fact_consolidation_failure_doesnt_break_worker(self, db, tmp_path):
+        """SummarizerError in consolidation is caught, worker continues."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 2,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_fact(db, "Fact 1", "curator")
+        await save_fact(db, "Fact 2", "curator")
+        await save_fact(db, "Fact 3", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_fact_consolidation", new_callable=AsyncMock,
+                   side_effect=SummarizerError("LLM down")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # Worker completed, facts preserved (consolidation failed)
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+        facts = await get_facts(db)
+        assert len(facts) == 3
