@@ -463,16 +463,58 @@ Structured logging for all LLM calls, task executions, reviews, webhooks.
 
 ## Milestone 14: CLI
 
-Interactive client and management commands.
+Interactive chat client and management commands. Full spec: [docs/cli.md](docs/cli.md).
 
-- [ ] Create `kiso/cli.py` with argument parser
+### 14a. Core CLI + argument parsing
+
+- [ ] Create `kiso/cli.py` with argument parser (argparse)
+  - [ ] Subcommands: `serve`, `skill`, `connector`, `sessions`, `env`
+  - [ ] No subcommand → chat mode (default)
 - [ ] `kiso serve`: start HTTP server (wraps uvicorn)
-- [ ] Chat mode: `kiso [--session SESSION] [--api URL]`
+
+### 14b. Chat mode REPL
+
+- [ ] Chat mode: `kiso [--session SESSION] [--api URL] [--quiet]`
   - [ ] Always uses the token named `cli` from config
   - [ ] `--api`: connect to remote kiso instance (default: `http://localhost:8333`)
+  - [ ] `--quiet` / `-q`: only show `msg` task content (hide decision flow)
   - [ ] Default session: `{hostname}@{whoami}`
-  - [ ] REPL: prompt → POST /msg → poll /status → display results
-  - [ ] Show progress: task type, status, output
+  - [ ] REPL loop: prompt → POST /msg → poll /status → render → repeat
+  - [ ] Exit on `Ctrl+C` at prompt or `exit` command
+  - [ ] `Ctrl+C` during execution → `POST /sessions/{session}/cancel`
+
+### 14c. Display renderer (`kiso/render.py`)
+
+The renderer shows the full decision flow by default — every planning step, task execution, review verdict, and replan is visible. See [docs/cli.md — Display Rendering](docs/cli.md#display-rendering).
+
+- [ ] Create `kiso/render.py` — stateless renderer that maps `/status` events to terminal output
+- [ ] Terminal capability detection at startup
+  - [ ] Color: `TERM` contains `256color` or `COLORTERM` set → 256-color; else no color
+  - [ ] Unicode: `LC_ALL` / `LANG` contains `UTF-8` → Unicode icons; else ASCII fallback
+  - [ ] Width: `os.get_terminal_size()`, fallback 80
+  - [ ] TTY: `sys.stdout.isatty()` → if not TTY: no spinner, no truncation, no color (pipe-friendly)
+- [ ] Plan rendering
+  - [ ] `◆ Plan: {goal} ({N} tasks)` — bold cyan
+  - [ ] On replan: `↻ Replan: {new goal} ({N} tasks)` with reviewer reason in red
+  - [ ] On max replan depth: `⊘ Max replans reached ({N}). Giving up.` in bold red
+- [ ] Task rendering (per task, real-time as `/status` polling delivers updates)
+  - [ ] Header: icon + `[{i}/{total}] {type}: {detail}` — yellow for exec/skill, green for msg
+  - [ ] Icons: `▶` exec, `⚡` skill, `💬` msg (ASCII fallback: `>`, `!`, `"`)
+  - [ ] Spinner on active task: braille animation (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`), 80ms cycle, replaces with final icon
+  - [ ] Output lines: indented with `┊`, dim color
+  - [ ] Output truncation: first 20 lines shown (10 if terminal < 40 rows), rest collapsed behind `... (N more lines, press Enter to expand)`. Expansion is inline, no scrollback modification.
+  - [ ] `msg` task output never truncated — it's the bot's response
+- [ ] Review rendering
+  - [ ] `✓ review: ok` — green (ASCII: `ok`)
+  - [ ] `✗ review: replan — "{reason}"` — bold red (ASCII: `FAIL`)
+  - [ ] `📝 learning: "{content}"` — magenta (ASCII: `+ learning: ...`)
+- [ ] Cancel rendering
+  - [ ] `⊘ Cancelling...` on Ctrl+C
+  - [ ] `⊘ Cancelled. {N} of {M} tasks completed.` with done/skipped summary
+- [ ] Non-TTY output: plain text, no ANSI codes, no spinner, no truncation (pipe-friendly)
+
+### 14d. Skill management
+
 - [ ] `kiso skill install {name|url}` / `update` / `remove` / `list` / `search`
   - [ ] Install flow: git clone → validate kiso.toml → deps.sh → uv sync → check env vars
   - [ ] Official repos: `git@github.com:kiso-run/skill-{name}.git`
@@ -484,6 +526,9 @@ Interactive client and management commands.
   - [ ] `--show-deps` flag: display deps.sh without installing
   - [ ] `skill search`: query GitHub API (`org:kiso-run+topic:kiso-skill`)
   - [ ] `skill update all`: update all installed skills
+
+### 14e. Connector management
+
 - [ ] `kiso connector install` / `update` / `remove` / `list` / `search`
   - [ ] Same flow as skills but validate `type = "connector"` and `[kiso.connector]` section
   - [ ] Official repos: `git@github.com:kiso-run/connector-{name}.git`
@@ -493,6 +538,9 @@ Interactive client and management commands.
   - [ ] Daemon subprocess management with PID tracking
   - [ ] Logs: `~/.kiso/connectors/{name}/connector.log`
   - [ ] Exponential backoff restart on crash, stop after repeated failures
+
+### 14f. Session + env management
+
 - [ ] `kiso sessions [--all]`
 - [ ] `kiso env set` / `get` / `list` / `delete` / `reload`
   - [ ] Manage `~/.kiso/.env`
@@ -500,14 +548,38 @@ Interactive client and management commands.
 
 **Verify:**
 ```bash
+# --- Chat mode (default, verbose) ---
 kiso --session test
-# You: hello
-# [1/2] msg: "Hi! How can I help?"  → delivered
-# You: list files
-# [1/3] exec: ls → (output) → review: ok
-# [2/3] msg: "Here are the files: ..." → delivered
+# You: list files in the current directory
+# ◆ Plan: List files and report (2 tasks)
+# ▶ [1/2] exec: ls -la ⠋
+#   ┊ total 24
+#   ┊ drwxr-xr-x 3 user user 4096 ...
+#   ✓ review: ok
+# 💬 [2/2] msg
+# Bot: Here are the files in the current directory: ...
 # Ctrl+C to exit
 
+# --- Quiet mode ---
+kiso --session test --quiet
+# You: list files
+# Bot: Here are the files: ...
+
+# --- Replan visible in verbose mode ---
+kiso --session test
+# You: run the tests in /nonexistent
+# ◆ Plan: Run tests (2 tasks)
+# ▶ [1/2] exec: cd /nonexistent && pytest
+#   ┊ bash: cd: /nonexistent: No such file or directory
+#   ✗ review: replan — "Directory does not exist"
+# ↻ Replan: Inform user about missing directory (1 task)
+# 💬 [1/1] msg
+# Bot: The directory /nonexistent doesn't exist. ...
+
+# --- Pipe-friendly output (no colors, no spinner) ---
+echo "hello" | kiso --session test > output.txt
+
+# --- Management ---
 kiso skill list   # → lists installed skills
 kiso sessions     # → lists sessions
 kiso env list     # → lists KISO_* keys
