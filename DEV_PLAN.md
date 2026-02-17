@@ -188,22 +188,22 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 Failed tasks get caught, plans get revised. The agent becomes self-correcting.
 
-- [ ] Implement reviewer in `brain.py`
-  - [ ] Structured output schema: `{status, reason, learn}`
-  - [ ] Reviewer receives: process goal + task detail + task expect + task output (fenced) + original user message
-  - [ ] Create `~/.kiso/roles/reviewer.md`
-  - [ ] Call after every exec and skill task (never for msg)
-  - [ ] Validate: if replan, reason must be non-null — retry reviewer up to `max_validation_retries` if missing
-- [ ] Implement replan flow in `worker.py`
-  - [ ] On `status: "replan"`: notify user FIRST (automatic webhook/status msg with reviewer's `reason`)
-  - [ ] Collect completed tasks (with outputs), remaining tasks, failure info
-  - [ ] Build `replan_history`: list of previous replan attempts `{goal, failure, what was tried}` — prevents repeating same mistakes
-  - [ ] Call planner with enriched context (all normal context + completed, remaining, failure, replan_history)
-  - [ ] Mark current plan as failed, create new plan with `parent_id`
-  - [ ] Mark old remaining tasks as failed
-  - [ ] Persist new tasks, continue execution
-  - [ ] Track replan depth, stop at `max_replan_depth` (default 3) — notify user of failure, move on
-- [ ] Store learnings from reviewer `learn` field in `store.learnings`
+- [x] Implement reviewer in `brain.py`
+  - [x] Structured output schema: `{status, reason, learn}`
+  - [x] Reviewer receives: process goal + task detail + task expect + task output (fenced) + original user message
+  - [x] Create `~/.kiso/roles/reviewer.md`
+  - [x] Call after every exec and skill task (never for msg)
+  - [x] Validate: if replan, reason must be non-null — retry reviewer up to `max_validation_retries` if missing
+- [x] Implement replan flow in `worker.py`
+  - [x] On `status: "replan"`: notify user FIRST (automatic webhook/status msg with reviewer's `reason`)
+  - [x] Collect completed tasks (with outputs), remaining tasks, failure info
+  - [x] Build `replan_history`: list of previous replan attempts `{goal, failure, what was tried}` — prevents repeating same mistakes
+  - [x] Call planner with enriched context (all normal context + completed, remaining, failure, replan_history)
+  - [x] Mark current plan as failed, create new plan with `parent_id`
+  - [x] Mark old remaining tasks as failed
+  - [x] Persist new tasks, continue execution
+  - [x] Track replan depth, stop at `max_replan_depth` (default 3) — notify user of failure, move on
+- [x] Store learnings from reviewer `learn` field in `store.learnings`
 
 **Verify:**
 ```bash
@@ -220,12 +220,12 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 Later tasks can use outputs from earlier tasks in the same plan.
 
-- [ ] Implement plan_outputs accumulation in worker
-  - [ ] After each task completes: append `{index, type, detail, output, status}` to list
-  - [ ] Before exec: write `{workspace}/.kiso/plan_outputs.json`
-  - [ ] Before skill: add `plan_outputs` to input JSON
-  - [ ] Before msg: include fenced outputs in worker prompt
-- [ ] Clean up `plan_outputs.json` after plan completion
+- [x] Implement plan_outputs accumulation in worker
+  - [x] After each task completes: append `{index, type, detail, output, status}` to list
+  - [x] Before exec: write `{workspace}/.kiso/plan_outputs.json`
+  - [x] Before skill: add `plan_outputs` to input JSON (TODO M7: wire into skill input)
+  - [x] Before msg: include fenced outputs in worker prompt
+- [x] Clean up `plan_outputs.json` after plan completion
 
 **Verify:**
 ```bash

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
@@ -50,6 +51,24 @@ def _session_workspace(session: str) -> Path:
     return workspace
 
 
+def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
+    """Write plan_outputs.json to the session workspace's .kiso/ directory."""
+    workspace = _session_workspace(session)
+    kiso_dir = workspace / ".kiso"
+    kiso_dir.mkdir(exist_ok=True)
+    (kiso_dir / "plan_outputs.json").write_text(
+        json.dumps(plan_outputs, indent=2, ensure_ascii=False)
+    )
+
+
+def _cleanup_plan_outputs(session: str) -> None:
+    """Remove plan_outputs.json after plan completion."""
+    workspace = _session_workspace(session)
+    outputs_file = workspace / ".kiso" / "plan_outputs.json"
+    if outputs_file.exists():
+        outputs_file.unlink()
+
+
 async def _exec_task(
     session: str, detail: str, timeout: int
 ) -> tuple[str, str, bool]:
@@ -77,13 +96,30 @@ async def _exec_task(
     return stdout, stderr, success
 
 
+def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
+    """Format plan_outputs as readable text for the worker LLM prompt."""
+    if not plan_outputs:
+        return ""
+    parts: list[str] = []
+    for entry in plan_outputs:
+        header = f"[{entry['index']}] {entry['type']}: {entry['detail']}"
+        output = entry.get("output") or "(no output)"
+        status = entry["status"]
+        parts.append(f"{header}\nStatus: {status}\n```\n{output}\n```")
+    return "\n\n".join(parts)
+
+
 async def _msg_task(
-    config: Config, db: aiosqlite.Connection, session: str, detail: str
+    config: Config,
+    db: aiosqlite.Connection,
+    session: str,
+    detail: str,
+    plan_outputs: list[dict] | None = None,
 ) -> str:
     """Generate a message via worker LLM. Returns the generated text."""
     system_prompt = _load_worker_prompt()
 
-    # Build worker context: facts + summary + detail
+    # Build worker context: facts + summary + preceding outputs + detail
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
     facts = await get_facts(db)
@@ -94,6 +130,9 @@ async def _msg_task(
     if facts:
         facts_text = "\n".join(f"- {f['content']}" for f in facts)
         context_parts.append(f"## Known Facts\n{facts_text}")
+    if plan_outputs:
+        formatted = _format_plan_outputs_for_msg(plan_outputs)
+        context_parts.append(f"## Preceding Task Outputs\n{formatted}")
     context_parts.append(f"## Task\n{detail}")
 
     messages = [
@@ -172,7 +211,7 @@ async def _execute_plan(
     """
     tasks = await get_tasks_for_plan(db, plan_id)
     completed: list[dict] = []
-    replan_reason: str | None = None
+    plan_outputs: list[dict] = []
 
     for i, task_row in enumerate(tasks):
         task_id = task_row["id"]
@@ -182,12 +221,24 @@ async def _execute_plan(
         await update_task(db, task_id, "running")
 
         if task_type == "exec":
+            # Write plan_outputs.json before execution
+            _write_plan_outputs(session, plan_outputs)
+
             stdout, stderr, success = await _exec_task(session, detail, exec_timeout)
             status = "done" if success else "failed"
             await update_task(db, task_id, status, output=stdout, stderr=stderr)
 
             # Refresh task_row with output
             task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+
+            # Accumulate plan output
+            plan_outputs.append({
+                "index": i + 1,
+                "type": "exec",
+                "detail": detail,
+                "output": stdout,
+                "status": status,
+            })
 
             # Review exec tasks
             try:
@@ -196,36 +247,62 @@ async def _execute_plan(
                 )
             except ReviewError as e:
                 log.error("Review failed for task %d: %s", task_id, e)
-                # Treat review failure as plan failure
                 await update_task(db, task_id, "failed")
                 remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
                 return False, None, completed, remaining
 
             if review["status"] == "replan":
                 replan_reason = review["reason"]
                 log.info("Reviewer requests replan: %s", replan_reason)
                 remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
             completed.append(task_row)
 
         elif task_type == "msg":
             try:
-                text = await _msg_task(config, db, session, detail)
+                text = await _msg_task(
+                    config, db, session, detail,
+                    plan_outputs=plan_outputs,
+                )
                 await update_task(db, task_id, "done", output=text)
                 task_row = {**task_row, "output": text, "status": "done"}
+
+                # Accumulate plan output
+                plan_outputs.append({
+                    "index": i + 1,
+                    "type": "msg",
+                    "detail": detail,
+                    "output": text,
+                    "status": "done",
+                })
+
                 completed.append(task_row)
             except LLMError as e:
                 log.error("Msg task %d LLM error: %s", task_id, e)
                 await update_task(db, task_id, "failed", output=str(e))
                 remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
                 return False, None, completed, remaining
 
         elif task_type == "skill":
             # Skills not implemented until M7
+            # TODO M7: pass plan_outputs in skill input JSON
             await update_task(db, task_id, "failed", output="Skills not yet implemented")
-            # Review skill tasks too
             task_row = {**task_row, "output": "Skills not yet implemented", "status": "failed"}
+
+            # Accumulate plan output
+            plan_outputs.append({
+                "index": i + 1,
+                "type": "skill",
+                "detail": detail,
+                "output": "Skills not yet implemented",
+                "status": "failed",
+            })
+
+            # Review skill tasks
             try:
                 review = await _review_task(
                     config, db, session, goal, task_row, user_message,
@@ -233,17 +310,21 @@ async def _execute_plan(
             except ReviewError as e:
                 log.error("Review failed for skill task %d: %s", task_id, e)
                 remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
                 return False, None, completed, remaining
 
             if review["status"] == "replan":
                 replan_reason = review["reason"]
                 remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
             # Even if reviewer says ok (unlikely), skill still failed
             remaining = [dict(t) for t in tasks[i + 1:]]
+            _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
+    _cleanup_plan_outputs(session)
     return True, None, completed, []
 
 

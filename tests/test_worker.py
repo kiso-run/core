@@ -26,6 +26,7 @@ from kiso.store import (
 from kiso.worker import (
     _exec_task, _msg_task, _load_worker_prompt, _session_workspace,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
+    _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
 )
 
@@ -1106,3 +1107,300 @@ class TestSaveLearning:
         cur = await db.execute("SELECT COUNT(*) FROM learnings WHERE session = 'sess1'")
         count = (await cur.fetchone())[0]
         assert count == 2
+
+
+# --- M6: Task output chaining ---
+
+# --- _write_plan_outputs ---
+
+class TestWritePlanOutputs:
+    def test_writes_json_file(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            outputs = [
+                {"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"},
+            ]
+            _write_plan_outputs("sess1", outputs)
+
+        path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        assert path.exists()
+        data = json.loads(path.read_text())
+        assert len(data) == 1
+        assert data[0]["output"] == "hi\n"
+
+    def test_overwrites_previous(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "1", "status": "done"}])
+            _write_plan_outputs("sess1", [
+                {"index": 1, "type": "exec", "detail": "a", "output": "1", "status": "done"},
+                {"index": 2, "type": "exec", "detail": "b", "output": "2", "status": "done"},
+            ])
+
+        path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        data = json.loads(path.read_text())
+        assert len(data) == 2
+
+    def test_empty_outputs(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            _write_plan_outputs("sess1", [])
+
+        path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        assert path.exists()
+        assert json.loads(path.read_text()) == []
+
+
+# --- _cleanup_plan_outputs ---
+
+class TestCleanupPlanOutputs:
+    def test_removes_file(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "x", "status": "done"}])
+            path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+            assert path.exists()
+            _cleanup_plan_outputs("sess1")
+            assert not path.exists()
+
+    def test_no_error_if_missing(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            # Ensure workspace exists but no file
+            _session_workspace("sess1")
+            _cleanup_plan_outputs("sess1")  # should not raise
+
+
+# --- _format_plan_outputs_for_msg ---
+
+class TestFormatPlanOutputsForMsg:
+    def test_empty_returns_empty_string(self):
+        assert _format_plan_outputs_for_msg([]) == ""
+
+    def test_single_entry(self):
+        outputs = [{"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "[1] exec: echo hi" in result
+        assert "Status: done" in result
+        assert "hi\n" in result
+
+    def test_multiple_entries(self):
+        outputs = [
+            {"index": 1, "type": "exec", "detail": "echo a", "output": "a", "status": "done"},
+            {"index": 2, "type": "msg", "detail": "report", "output": "report text", "status": "done"},
+        ]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "[1] exec: echo a" in result
+        assert "[2] msg: report" in result
+
+    def test_no_output_placeholder(self):
+        outputs = [{"index": 1, "type": "exec", "detail": "cmd", "output": None, "status": "failed"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "(no output)" in result
+
+    def test_fenced_in_backticks(self):
+        outputs = [{"index": 1, "type": "exec", "detail": "cmd", "output": "data", "status": "done"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "```" in result
+
+
+# --- _msg_task with plan_outputs ---
+
+class TestMsgTaskWithPlanOutputs:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_includes_plan_outputs_in_context(self, db):
+        config = _make_config()
+        plan_outputs = [
+            {"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"},
+        ]
+        captured_messages = []
+
+        async def _capture(cfg, role, messages):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.worker.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "Report results", plan_outputs=plan_outputs)
+
+        user_content = captured_messages[1]["content"]
+        assert "## Preceding Task Outputs" in user_content
+        assert "[1] exec: echo hi" in user_content
+
+    async def test_no_plan_outputs_section_when_none(self, db):
+        config = _make_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.worker.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "Report results")
+
+        user_content = captured_messages[1]["content"]
+        assert "Preceding Task Outputs" not in user_content
+
+    async def test_no_plan_outputs_section_when_empty(self, db):
+        config = _make_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.worker.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "Report results", plan_outputs=[])
+
+        user_content = captured_messages[1]["content"]
+        assert "Preceding Task Outputs" not in user_content
+
+
+# --- _execute_plan: plan_outputs chaining ---
+
+class TestExecutePlanOutputChaining:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_plan_outputs_json_written_before_exec(self, db, tmp_path):
+        """plan_outputs.json should exist in workspace before exec runs."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
+        await create_task(db, plan_id, "sess1", type="exec", detail="cat .kiso/plan_outputs.json", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # Second exec read plan_outputs.json which should contain first exec output
+        second_exec = completed[1]
+        data = json.loads(second_exec["output"])
+        assert len(data) == 1
+        assert data[0]["detail"] == "echo first"
+        assert "first" in data[0]["output"]
+
+    async def test_plan_outputs_cleaned_up_on_success(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="ok"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        outputs_file = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        assert not outputs_file.exists()
+
+    async def test_plan_outputs_cleaned_up_on_replan(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="exit 1", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        outputs_file = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        assert not outputs_file.exists()
+
+    async def test_plan_outputs_cleaned_up_on_llm_error(self, db, tmp_path):
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, side_effect=LLMError("down")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        outputs_file = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        assert not outputs_file.exists()
+
+    async def test_msg_receives_exec_outputs(self, db, tmp_path):
+        """msg task should receive preceding exec outputs via plan_outputs."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo hello", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="Report what happened")
+
+        captured_messages = []
+
+        async def _capture_llm(cfg, role, messages):
+            captured_messages.extend(messages)
+            return "Report done"
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", side_effect=_capture_llm), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # The msg task's LLM call should include preceding outputs
+        user_content = captured_messages[1]["content"]
+        assert "## Preceding Task Outputs" in user_content
+        assert "echo hello" in user_content
+        assert "hello" in user_content
+
+    async def test_plan_outputs_accumulates_all_types(self, db, tmp_path):
+        """plan_outputs should accumulate entries for exec, msg, and skill tasks."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo step1", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="Report step1")
+
+        msg_calls = []
+
+        async def _capture_llm(cfg, role, messages):
+            msg_calls.append(messages)
+            return "Step 1 report"
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", side_effect=_capture_llm), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, _, completed, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(completed) == 2
+        # msg task had 1 preceding exec output
+        assert "## Preceding Task Outputs" in msg_calls[0][1]["content"]
+
+    async def test_skill_output_in_plan_outputs(self, db, tmp_path):
+        """Skill task output should be accumulated in plan_outputs."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="search",
+                          skill="search", args="{}", expect="results")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        # Skill accumulated in plan_outputs before cleanup — verify via DB task output
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert tasks[0]["output"] == "Skills not yet implemented"
