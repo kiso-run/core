@@ -24,9 +24,17 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture()
 def sandbox_session(tmp_path, monkeypatch):
     """Create a per-session sandbox user and locked workspace."""
+    from pathlib import Path
     import kiso.worker
 
     monkeypatch.setattr(kiso.worker, "KISO_DIR", tmp_path)
+
+    # pytest creates tmp_path with 700 (root-only). Make parent dirs
+    # traversable so the sandbox user can reach the workspace.
+    path = tmp_path
+    while path != Path("/tmp") and path != path.parent:
+        os.chmod(path, os.stat(path).st_mode | 0o011)
+        path = path.parent
 
     session = "integration-sandbox-test"
     uid = _ensure_sandbox_user(session)
