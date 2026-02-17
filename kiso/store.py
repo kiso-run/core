@@ -335,6 +335,99 @@ async def save_learning(
     return cur.lastrowid  # type: ignore[return-value]
 
 
+async def get_pending_learnings(
+    db: aiosqlite.Connection, limit: int = 50
+) -> list[dict]:
+    """Return pending learnings, oldest first."""
+    cur = await db.execute(
+        "SELECT * FROM learnings WHERE status = 'pending' ORDER BY id LIMIT ?",
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def update_learning(
+    db: aiosqlite.Connection, learning_id: int, status: str
+) -> None:
+    """Set learning status (promoted or discarded)."""
+    await db.execute(
+        "UPDATE learnings SET status = ? WHERE id = ?", (status, learning_id)
+    )
+    await db.commit()
+
+
+async def save_fact(
+    db: aiosqlite.Connection,
+    content: str,
+    source: str,
+    session: str | None = None,
+) -> int:
+    """Insert a fact row. Returns fact id."""
+    cur = await db.execute(
+        "INSERT INTO facts (content, source, session) VALUES (?, ?, ?)",
+        (content, source, session),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+async def save_pending_item(
+    db: aiosqlite.Connection,
+    content: str,
+    scope: str,
+    source: str,
+) -> int:
+    """Insert a pending item row. Returns pending id."""
+    cur = await db.execute(
+        "INSERT INTO pending (content, scope, source) VALUES (?, ?, ?)",
+        (content, scope, source),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+async def update_summary(
+    db: aiosqlite.Connection, session: str, summary: str
+) -> None:
+    """Update session summary."""
+    await db.execute(
+        "UPDATE sessions SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE session = ?",
+        (summary, session),
+    )
+    await db.commit()
+
+
+async def count_messages(db: aiosqlite.Connection, session: str) -> int:
+    """Count trusted messages for a session."""
+    cur = await db.execute(
+        "SELECT COUNT(*) FROM messages WHERE session = ? AND trusted = 1",
+        (session,),
+    )
+    row = await cur.fetchone()
+    return row[0]
+
+
+async def get_oldest_messages(
+    db: aiosqlite.Connection, session: str, limit: int
+) -> list[dict]:
+    """Return oldest trusted messages for a session."""
+    cur = await db.execute(
+        "SELECT * FROM messages WHERE session = ? AND trusted = 1 "
+        "ORDER BY id ASC LIMIT ?",
+        (session, limit),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def delete_facts(db: aiosqlite.Connection, fact_ids: list[int]) -> None:
+    """Delete facts by id."""
+    if not fact_ids:
+        return
+    placeholders = ",".join("?" for _ in fact_ids)
+    await db.execute(f"DELETE FROM facts WHERE id IN ({placeholders})", fact_ids)
+    await db.commit()
+
+
 async def create_task(
     db: aiosqlite.Connection,
     plan_id: int,

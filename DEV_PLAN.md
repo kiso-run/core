@@ -304,28 +304,28 @@ curl -X POST localhost:8333/msg -H "Authorization: Bearer $TOKEN" \
 
 The bot learns and remembers across sessions.
 
-- [ ] Implement curator in `brain.py`
-  - [ ] Create `~/.kiso/roles/curator.md`
-  - [ ] Structured output schema: `{evaluations: [{learning_id, verdict, fact, question, reason}]}`
-  - [ ] Run after worker finishes processing a message, only if pending learnings exist
-  - [ ] Must run before summarizer (learnings evaluated first)
-  - [ ] For each evaluation:
+- [x] Implement curator in `brain.py`
+  - [x] Create `~/.kiso/roles/curator.md`
+  - [x] Structured output schema: `{evaluations: [{learning_id, verdict, fact, question, reason}]}`
+  - [x] Run after worker finishes processing a message, only if pending learnings exist
+  - [x] Must run before summarizer (learnings evaluated first)
+  - [x] For each evaluation:
     - `promote`: save `fact` to `store.facts` (source="curator"), mark learning "promoted"
     - `ask`: save `question` to `store.pending` (scope=session, source="curator"), mark learning "promoted"
     - `discard`: mark learning "discarded" with reason
-- [ ] Implement summarizer in `brain.py`
-  - [ ] Create `~/.kiso/roles/summarizer.md`
-  - [ ] Message summarization: current summary + oldest messages + their msg task outputs → new summary
-  - [ ] Trigger when raw messages >= `summarize_threshold`
-  - [ ] Update `store.sessions.summary`
-- [ ] Implement fact consolidation
-  - [ ] Trigger when facts > `knowledge_max_facts`
-  - [ ] Call summarizer to merge/deduplicate
-  - [ ] Replace old fact entries with consolidated ones
-- [ ] Wire facts + pending + summary into planner context
-  - [ ] Facts are global (visible to all sessions)
-  - [ ] Pending items: global + session-scoped (planner sees both)
-- [ ] Wire facts + summary into worker context
+- [x] Implement summarizer in `brain.py`
+  - [x] Create `~/.kiso/roles/summarizer.md`
+  - [x] Message summarization: current summary + oldest messages + their msg task outputs → new summary
+  - [x] Trigger when raw messages >= `summarize_threshold`
+  - [x] Update `store.sessions.summary`
+- [x] Implement fact consolidation
+  - [x] Trigger when facts > `knowledge_max_facts`
+  - [x] Call summarizer to merge/deduplicate
+  - [x] Replace old fact entries with consolidated ones
+- [x] Wire facts + pending + summary into planner context
+  - [x] Facts are global (visible to all sessions)
+  - [x] Pending items: global + session-scoped (planner sees both)
+- [x] Wire facts + summary into worker context
 
 **Verify:**
 ```bash

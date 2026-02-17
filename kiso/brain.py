@@ -103,6 +103,8 @@ def _load_system_prompt(role: str) -> str:
     defaults = {
         "planner": _default_planner_prompt,
         "reviewer": _default_reviewer_prompt,
+        "curator": _default_curator_prompt,
+        "summarizer": _default_summarizer_prompt,
     }
     factory = defaults.get(role)
     if factory:
@@ -386,3 +388,224 @@ async def run_reviewer(
     raise ReviewError(
         f"Review validation failed after {max_retries} attempts: {last_errors}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Curator
+# ---------------------------------------------------------------------------
+
+CURATOR_SCHEMA: dict = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "curator",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "evaluations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "learning_id": {"type": "integer"},
+                            "verdict": {
+                                "type": "string",
+                                "enum": ["promote", "ask", "discard"],
+                            },
+                            "fact": {"type": ["string", "null"]},
+                            "question": {"type": ["string", "null"]},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["learning_id", "verdict", "fact", "question", "reason"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["evaluations"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+class CuratorError(Exception):
+    """Curator validation or generation failure."""
+
+
+class SummarizerError(Exception):
+    """Summarizer generation failure."""
+
+
+def _default_curator_prompt() -> str:
+    return """\
+You are a knowledge curator. Given a list of learnings from task reviews,
+evaluate each one and decide:
+
+- "promote": This is a durable, useful fact about the project/system/user.
+  Provide the fact as a concise statement in the "fact" field.
+- "ask": This learning raises an important question that should be clarified.
+  Provide the question in the "question" field.
+- "discard": This is transient, obvious, or not useful. Discard it.
+
+Rules:
+- Good facts: technology choices, project structure, user preferences, API details.
+- Bad facts (discard): "command succeeded", "file was created", temporary states.
+- Every evaluation MUST have a non-empty "reason" explaining your decision.
+- "promote" MUST have a non-null, non-empty "fact".
+- "ask" MUST have a non-null, non-empty "question".
+"""
+
+
+def validate_curator(result: dict) -> list[str]:
+    """Validate curator result semantics. Returns list of error strings."""
+    errors: list[str] = []
+    for i, ev in enumerate(result.get("evaluations", []), 1):
+        verdict = ev.get("verdict")
+        if not ev.get("reason"):
+            errors.append(f"Evaluation {i}: reason is required")
+        if verdict == "promote" and not ev.get("fact"):
+            errors.append(f"Evaluation {i}: promote verdict requires a non-empty fact")
+        if verdict == "ask" and not ev.get("question"):
+            errors.append(f"Evaluation {i}: ask verdict requires a non-empty question")
+    return errors
+
+
+def build_curator_messages(learnings: list[dict]) -> list[dict]:
+    """Build the message list for the curator LLM call."""
+    system_prompt = _load_system_prompt("curator")
+    items = "\n".join(
+        f"{i}. [id={l['id']}] {l['content']}"
+        for i, l in enumerate(learnings, 1)
+    )
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"## Learnings\n{items}"},
+    ]
+
+
+async def run_curator(config: Config, learnings: list[dict]) -> dict:
+    """Run the curator on pending learnings.
+
+    Returns dict with key "evaluations".
+    Raises CuratorError if all retries exhausted.
+    """
+    max_retries = int(config.settings.get("max_validation_retries", 3))
+    messages = build_curator_messages(learnings)
+    last_errors: list[str] = []
+
+    for attempt in range(1, max_retries + 1):
+        if last_errors:
+            error_feedback = "Your evaluations have errors:\n" + "\n".join(
+                f"- {e}" for e in last_errors
+            ) + "\nFix these and return the corrected evaluations."
+            messages.append({"role": "user", "content": error_feedback})
+
+        try:
+            raw = await call_llm(config, "curator", messages, response_format=CURATOR_SCHEMA)
+        except LLMError as e:
+            raise CuratorError(f"LLM call failed: {e}")
+
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise CuratorError(f"Curator returned invalid JSON: {e}")
+
+        errors = validate_curator(result)
+        if not errors:
+            log.info("Curator accepted (attempt %d): %d evaluations",
+                     attempt, len(result["evaluations"]))
+            return result
+
+        log.warning("Curator validation failed (attempt %d/%d): %s",
+                    attempt, max_retries, errors)
+        last_errors = errors
+        messages.append({"role": "assistant", "content": raw})
+
+    raise CuratorError(
+        f"Curator validation failed after {max_retries} attempts: {last_errors}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Summarizer
+# ---------------------------------------------------------------------------
+
+def _default_summarizer_prompt() -> str:
+    return """\
+You are a session summarizer. Given the current session summary (may be empty)
+and a list of messages, produce an updated summary that captures the key
+information, decisions, and context from the conversation.
+
+Rules:
+- Be concise but comprehensive — capture what matters for future context.
+- Merge new information with the existing summary, don't just append.
+- Focus on: user goals, decisions made, important facts discovered, current state.
+- Return ONLY the updated summary text, no JSON or extra formatting.
+"""
+
+
+def build_summarizer_messages(
+    current_summary: str, messages: list[dict]
+) -> list[dict]:
+    """Build the message list for the summarizer LLM call."""
+    system_prompt = _load_system_prompt("summarizer")
+    msgs_text = "\n".join(
+        f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
+        for m in messages
+    )
+    parts: list[str] = []
+    if current_summary:
+        parts.append(f"## Current Summary\n{current_summary}")
+    parts.append(f"## Messages\n{msgs_text}")
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "\n\n".join(parts)},
+    ]
+
+
+async def run_summarizer(
+    config: Config, current_summary: str, messages: list[dict]
+) -> str:
+    """Run the summarizer. Returns the new summary string.
+
+    Raises SummarizerError on failure.
+    """
+    msgs = build_summarizer_messages(current_summary, messages)
+    try:
+        return await call_llm(config, "summarizer", msgs)
+    except LLMError as e:
+        raise SummarizerError(f"LLM call failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Fact consolidation
+# ---------------------------------------------------------------------------
+
+async def run_fact_consolidation(
+    config: Config, facts: list[dict]
+) -> list[str]:
+    """Consolidate/deduplicate facts via LLM. Returns list of consolidated fact strings.
+
+    Raises SummarizerError on failure.
+    """
+    system_prompt = (
+        "You are a fact consolidator. Given a list of facts, merge duplicates, "
+        "remove outdated or contradictory items, and return a clean consolidated list.\n\n"
+        "Return ONLY a JSON array of strings, each string being one consolidated fact."
+    )
+    facts_text = "\n".join(f"- {f['content']}" for f in facts)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"## Facts\n{facts_text}"},
+    ]
+    try:
+        raw = await call_llm(config, "summarizer", messages)
+    except LLMError as e:
+        raise SummarizerError(f"LLM call failed: {e}")
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise SummarizerError(f"Consolidation returned invalid JSON: {e}")
+    if not isinstance(result, list):
+        raise SummarizerError("Consolidation must return a JSON array")
+    return result

@@ -10,7 +10,17 @@ from pathlib import Path
 
 import aiosqlite
 
-from kiso.brain import PlanError, ReviewError, run_planner, run_reviewer
+from kiso.brain import (
+    CuratorError,
+    PlanError,
+    ReviewError,
+    SummarizerError,
+    run_curator,
+    run_fact_consolidation,
+    run_planner,
+    run_reviewer,
+    run_summarizer,
+)
 from kiso.config import Config, KISO_DIR
 from kiso.llm import LLMError, call_llm
 from kiso.skills import (
@@ -22,15 +32,23 @@ from kiso.skills import (
 )
 from kiso.webhook import deliver_webhook
 from kiso.store import (
+    count_messages,
     create_plan,
     create_task,
+    delete_facts,
     get_facts,
+    get_oldest_messages,
+    get_pending_learnings,
     get_session,
     get_tasks_for_plan,
     mark_message_processed,
+    save_fact,
     save_learning,
     save_message,
+    save_pending_item,
+    update_learning,
     update_plan_status,
+    update_summary,
     update_task,
 )
 
@@ -466,6 +484,23 @@ def _build_replan_context(
     return "\n\n".join(parts)
 
 
+async def _apply_curator_result(
+    db: aiosqlite.Connection, session: str, result: dict
+) -> None:
+    """Apply curator evaluations: promote facts, create pending questions, discard."""
+    for ev in result.get("evaluations", []):
+        lid = ev["learning_id"]
+        verdict = ev["verdict"]
+        if verdict == "promote":
+            await save_fact(db, ev["fact"], source="curator")
+            await update_learning(db, lid, "promoted")
+        elif verdict == "ask":
+            await save_pending_item(db, ev["question"], scope=session, source="curator")
+            await update_learning(db, lid, "promoted")
+        elif verdict == "discard":
+            await update_learning(db, lid, "discarded")
+
+
 async def run_worker(
     db: aiosqlite.Connection,
     config: Config,
@@ -613,3 +648,38 @@ async def run_worker(
 
             current_plan_id = new_plan_id
             current_goal = new_plan["goal"]
+
+        # --- Post-plan knowledge processing ---
+
+        # 1. Curator — process pending learnings
+        learnings = await get_pending_learnings(db)
+        if learnings:
+            try:
+                curator_result = await run_curator(config, learnings)
+                await _apply_curator_result(db, session, curator_result)
+            except CuratorError as e:
+                log.error("Curator failed: %s", e)
+
+        # 2. Summarizer — compress when threshold reached
+        msg_count = await count_messages(db, session)
+        if msg_count >= int(config.settings.get("summarize_threshold", 30)):
+            try:
+                sess = await get_session(db, session)
+                current_summary = sess["summary"] if sess else ""
+                oldest = await get_oldest_messages(db, session, limit=msg_count)
+                new_summary = await run_summarizer(config, current_summary, oldest)
+                await update_summary(db, session, new_summary)
+            except SummarizerError as e:
+                log.error("Summarizer failed: %s", e)
+
+        # 3. Fact consolidation
+        max_facts = int(config.settings.get("knowledge_max_facts", 50))
+        all_facts = await get_facts(db)
+        if len(all_facts) > max_facts:
+            try:
+                consolidated = await run_fact_consolidation(config, all_facts)
+                await delete_facts(db, [f["id"] for f in all_facts])
+                for text in consolidated:
+                    await save_fact(db, text, source="consolidation")
+            except SummarizerError as e:
+                log.error("Fact consolidation failed: %s", e)

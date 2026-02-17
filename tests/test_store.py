@@ -5,12 +5,16 @@ from __future__ import annotations
 import aiosqlite
 
 from kiso.store import (
+    count_messages,
     create_plan,
     create_session,
     create_task,
+    delete_facts,
     get_all_sessions,
     get_facts,
+    get_oldest_messages,
     get_pending_items,
+    get_pending_learnings,
     get_plan_for_session,
     get_recent_messages,
     get_session,
@@ -19,8 +23,12 @@ from kiso.store import (
     get_tasks_for_session,
     get_unprocessed_messages,
     mark_message_processed,
+    save_fact,
     save_message,
+    save_pending_item,
+    update_learning,
     update_plan_status,
+    update_summary,
     update_task,
 )
 
@@ -330,3 +338,164 @@ async def test_get_tasks_for_plan_ordered(db: aiosqlite.Connection):
 async def test_get_tasks_for_plan_empty(db: aiosqlite.Connection):
     tasks = await get_tasks_for_plan(db, 999)
     assert tasks == []
+
+
+# --- M9: get_pending_learnings ---
+
+async def test_pending_learnings_empty(db: aiosqlite.Connection):
+    result = await get_pending_learnings(db)
+    assert result == []
+
+
+async def test_pending_learnings_with_data(db: aiosqlite.Connection):
+    from kiso.store import save_learning
+    await create_session(db, "sess1")
+    await save_learning(db, "Fact A", "sess1")
+    await save_learning(db, "Fact B", "sess1")
+    result = await get_pending_learnings(db)
+    assert len(result) == 2
+    assert result[0]["content"] == "Fact A"
+    assert result[1]["content"] == "Fact B"
+
+
+async def test_pending_learnings_respects_limit(db: aiosqlite.Connection):
+    from kiso.store import save_learning
+    await create_session(db, "sess1")
+    for i in range(5):
+        await save_learning(db, f"Fact {i}", "sess1")
+    result = await get_pending_learnings(db, limit=2)
+    assert len(result) == 2
+
+
+async def test_pending_learnings_only_pending(db: aiosqlite.Connection):
+    from kiso.store import save_learning
+    await create_session(db, "sess1")
+    lid = await save_learning(db, "Promoted", "sess1")
+    await update_learning(db, lid, "promoted")
+    await save_learning(db, "Still pending", "sess1")
+    result = await get_pending_learnings(db)
+    assert len(result) == 1
+    assert result[0]["content"] == "Still pending"
+
+
+# --- M9: update_learning ---
+
+async def test_update_learning_promoted(db: aiosqlite.Connection):
+    from kiso.store import save_learning
+    await create_session(db, "sess1")
+    lid = await save_learning(db, "A fact", "sess1")
+    await update_learning(db, lid, "promoted")
+    cur = await db.execute("SELECT status FROM learnings WHERE id = ?", (lid,))
+    row = await cur.fetchone()
+    assert row[0] == "promoted"
+
+
+async def test_update_learning_discarded(db: aiosqlite.Connection):
+    from kiso.store import save_learning
+    await create_session(db, "sess1")
+    lid = await save_learning(db, "Noise", "sess1")
+    await update_learning(db, lid, "discarded")
+    cur = await db.execute("SELECT status FROM learnings WHERE id = ?", (lid,))
+    row = await cur.fetchone()
+    assert row[0] == "discarded"
+
+
+# --- M9: save_fact ---
+
+async def test_save_fact_returns_id(db: aiosqlite.Connection):
+    fid = await save_fact(db, "Python 3.12", "curator")
+    assert isinstance(fid, int)
+    assert fid > 0
+
+
+async def test_save_fact_retrievable(db: aiosqlite.Connection):
+    await save_fact(db, "Uses pytest", "curator", session="sess1")
+    facts = await get_facts(db)
+    assert len(facts) == 1
+    assert facts[0]["content"] == "Uses pytest"
+    assert facts[0]["source"] == "curator"
+    assert facts[0]["session"] == "sess1"
+
+
+# --- M9: save_pending_item ---
+
+async def test_save_pending_item_returns_id(db: aiosqlite.Connection):
+    pid = await save_pending_item(db, "Which DB?", "sess1", "curator")
+    assert isinstance(pid, int)
+    assert pid > 0
+
+
+async def test_save_pending_item_retrievable(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    await save_pending_item(db, "Which DB?", "sess1", "curator")
+    items = await get_pending_items(db, "sess1")
+    assert len(items) == 1
+    assert items[0]["content"] == "Which DB?"
+    assert items[0]["source"] == "curator"
+
+
+# --- M9: update_summary ---
+
+async def test_update_summary(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    await update_summary(db, "sess1", "New summary text")
+    sess = await get_session(db, "sess1")
+    assert sess["summary"] == "New summary text"
+
+
+# --- M9: count_messages ---
+
+async def test_count_messages_only_trusted(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    await save_message(db, "sess1", "alice", "user", "trusted1", trusted=True)
+    await save_message(db, "sess1", "alice", "user", "trusted2", trusted=True)
+    await save_message(db, "sess1", "stranger", "user", "untrusted", trusted=False, processed=True)
+    count = await count_messages(db, "sess1")
+    assert count == 2
+
+
+async def test_count_messages_empty(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    count = await count_messages(db, "sess1")
+    assert count == 0
+
+
+# --- M9: get_oldest_messages ---
+
+async def test_get_oldest_messages_order(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    await save_message(db, "sess1", "alice", "user", "first")
+    await save_message(db, "sess1", "alice", "user", "second")
+    await save_message(db, "sess1", "alice", "user", "third")
+    oldest = await get_oldest_messages(db, "sess1", limit=2)
+    assert len(oldest) == 2
+    assert oldest[0]["content"] == "first"
+    assert oldest[1]["content"] == "second"
+
+
+async def test_get_oldest_messages_limit(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    for i in range(5):
+        await save_message(db, "sess1", "alice", "user", f"msg-{i}")
+    oldest = await get_oldest_messages(db, "sess1", limit=3)
+    assert len(oldest) == 3
+    assert oldest[0]["content"] == "msg-0"
+
+
+# --- M9: delete_facts ---
+
+async def test_delete_facts(db: aiosqlite.Connection):
+    fid1 = await save_fact(db, "Fact 1", "curator")
+    fid2 = await save_fact(db, "Fact 2", "curator")
+    fid3 = await save_fact(db, "Fact 3", "curator")
+    await delete_facts(db, [fid1, fid3])
+    facts = await get_facts(db)
+    assert len(facts) == 1
+    assert facts[0]["id"] == fid2
+
+
+async def test_delete_facts_empty_list(db: aiosqlite.Connection):
+    await save_fact(db, "Fact 1", "curator")
+    await delete_facts(db, [])
+    facts = await get_facts(db)
+    assert len(facts) == 1

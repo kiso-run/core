@@ -9,15 +9,23 @@ import pytest
 
 import aiosqlite
 from kiso.brain import (
+    CuratorError,
     PlanError,
     ReviewError,
+    SummarizerError,
     _default_planner_prompt,
     _default_reviewer_prompt,
     _load_system_prompt,
+    build_curator_messages,
     build_planner_messages,
     build_reviewer_messages,
+    build_summarizer_messages,
+    run_curator,
+    run_fact_consolidation,
     run_planner,
     run_reviewer,
+    run_summarizer,
+    validate_curator,
     validate_plan,
     validate_review,
 )
@@ -590,3 +598,244 @@ class TestRunReviewer:
             await run_reviewer(config, "goal", "detail", "expect", "output", "msg")
 
         assert captured_kwargs["response_format"] == REVIEW_SCHEMA
+
+
+# --- M9: validate_curator ---
+
+class TestValidateCurator:
+    def test_promote_valid(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "question": None, "reason": "Good fact"},
+        ]}
+        assert validate_curator(result) == []
+
+    def test_ask_valid(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "ask", "fact": None, "question": "Which DB?", "reason": "Need clarity"},
+        ]}
+        assert validate_curator(result) == []
+
+    def test_discard_valid(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "discard", "fact": None, "question": None, "reason": "Transient"},
+        ]}
+        assert validate_curator(result) == []
+
+    def test_promote_missing_fact(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": None, "question": None, "reason": "Good"},
+        ]}
+        errors = validate_curator(result)
+        assert any("promote verdict requires a non-empty fact" in e for e in errors)
+
+    def test_ask_missing_question(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "ask", "fact": None, "question": None, "reason": "Need info"},
+        ]}
+        errors = validate_curator(result)
+        assert any("ask verdict requires a non-empty question" in e for e in errors)
+
+    def test_missing_reason(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "discard", "fact": None, "question": None, "reason": ""},
+        ]}
+        errors = validate_curator(result)
+        assert any("reason is required" in e for e in errors)
+
+    def test_multiple_evaluations(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Fact A", "question": None, "reason": "Good"},
+            {"learning_id": 2, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
+            {"learning_id": 3, "verdict": "ask", "fact": None, "question": "What DB?", "reason": "Unclear"},
+        ]}
+        assert validate_curator(result) == []
+
+
+# --- M9: build_curator_messages ---
+
+class TestBuildCuratorMessages:
+    def test_formats_learnings(self):
+        learnings = [
+            {"id": 1, "content": "Uses Flask"},
+            {"id": 2, "content": "Database is PostgreSQL"},
+        ]
+        msgs = build_curator_messages(learnings)
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+        assert "[id=1] Uses Flask" in msgs[1]["content"]
+        assert "[id=2] Database is PostgreSQL" in msgs[1]["content"]
+
+    def test_uses_curator_system_prompt(self):
+        msgs = build_curator_messages([{"id": 1, "content": "test"}])
+        assert "knowledge curator" in msgs[0]["content"]
+
+
+# --- M9: run_curator ---
+
+VALID_CURATOR = json.dumps({"evaluations": [
+    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "question": None, "reason": "Good"},
+]})
+
+INVALID_CURATOR = json.dumps({"evaluations": [
+    {"learning_id": 1, "verdict": "promote", "fact": None, "question": None, "reason": "Good"},
+]})
+
+
+class TestRunCurator:
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"curator": "gpt-4"},
+            settings={"max_validation_retries": 3},
+            raw={},
+        )
+
+    async def test_success(self, config):
+        learnings = [{"id": 1, "content": "Uses Python"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_CURATOR):
+            result = await run_curator(config, learnings)
+        assert len(result["evaluations"]) == 1
+        assert result["evaluations"][0]["verdict"] == "promote"
+
+    async def test_validation_retry(self, config):
+        learnings = [{"id": 1, "content": "Uses Python"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=[INVALID_CURATOR, VALID_CURATOR]):
+            result = await run_curator(config, learnings)
+        assert result["evaluations"][0]["fact"] == "Uses Python"
+
+    async def test_llm_error_raises_curator_error(self, config):
+        learnings = [{"id": 1, "content": "test"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("API down")):
+            with pytest.raises(CuratorError, match="LLM call failed"):
+                await run_curator(config, learnings)
+
+    async def test_all_retries_exhausted(self, config):
+        learnings = [{"id": 1, "content": "test"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=INVALID_CURATOR):
+            with pytest.raises(CuratorError, match="validation failed after 3"):
+                await run_curator(config, learnings)
+
+    async def test_invalid_json_raises_curator_error(self, config):
+        learnings = [{"id": 1, "content": "test"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value="not json"):
+            with pytest.raises(CuratorError, match="invalid JSON"):
+                await run_curator(config, learnings)
+
+
+# --- M9: build_summarizer_messages ---
+
+class TestBuildSummarizerMessages:
+    def test_includes_summary_and_messages(self):
+        messages = [
+            {"role": "user", "user": "alice", "content": "Hello"},
+            {"role": "system", "content": "Hi there"},
+        ]
+        msgs = build_summarizer_messages("Previous summary", messages)
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert "## Current Summary" in msgs[1]["content"]
+        assert "Previous summary" in msgs[1]["content"]
+        assert "## Messages" in msgs[1]["content"]
+        assert "Hello" in msgs[1]["content"]
+
+    def test_no_summary_omits_section(self):
+        messages = [{"role": "user", "user": "alice", "content": "Hello"}]
+        msgs = build_summarizer_messages("", messages)
+        assert "## Current Summary" not in msgs[1]["content"]
+        assert "## Messages" in msgs[1]["content"]
+
+
+# --- M9: run_summarizer ---
+
+class TestRunSummarizer:
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"summarizer": "gpt-4"},
+            settings={},
+            raw={},
+        )
+
+    async def test_success(self, config):
+        messages = [{"role": "user", "user": "alice", "content": "Hello"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="Updated summary"):
+            result = await run_summarizer(config, "Old summary", messages)
+        assert result == "Updated summary"
+
+    async def test_llm_error_raises_summarizer_error(self, config):
+        messages = [{"role": "user", "user": "alice", "content": "Hello"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("API down")):
+            with pytest.raises(SummarizerError, match="LLM call failed"):
+                await run_summarizer(config, "", messages)
+
+
+# --- M9: run_fact_consolidation ---
+
+class TestRunFactConsolidation:
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"summarizer": "gpt-4"},
+            settings={},
+            raw={},
+        )
+
+    async def test_returns_list_of_strings(self, config):
+        facts = [
+            {"id": 1, "content": "Uses Python"},
+            {"id": 2, "content": "Uses Python 3.12"},
+        ]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value='["Uses Python 3.12"]'):
+            result = await run_fact_consolidation(config, facts)
+        assert result == ["Uses Python 3.12"]
+
+    async def test_llm_error_raises_summarizer_error(self, config):
+        facts = [{"id": 1, "content": "test"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("down")):
+            with pytest.raises(SummarizerError, match="LLM call failed"):
+                await run_fact_consolidation(config, facts)
+
+    async def test_invalid_json_raises_error(self, config):
+        facts = [{"id": 1, "content": "test"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value="not json"):
+            with pytest.raises(SummarizerError, match="invalid JSON"):
+                await run_fact_consolidation(config, facts)
+
+    async def test_non_array_raises_error(self, config):
+        facts = [{"id": 1, "content": "test"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value='{"not": "array"}'):
+            with pytest.raises(SummarizerError, match="must return a JSON array"):
+                await run_fact_consolidation(config, facts)
+
+
+# --- M9: _load_system_prompt for curator/summarizer ---
+
+class TestLoadSystemPromptCuratorSummarizer:
+    def test_curator_default(self):
+        with patch.object(type(KISO_DIR / "roles" / "curator.md"), "exists", return_value=False):
+            prompt = _load_system_prompt("curator")
+        assert "knowledge curator" in prompt
+
+    def test_summarizer_default(self):
+        with patch.object(type(KISO_DIR / "roles" / "summarizer.md"), "exists", return_value=False):
+            prompt = _load_system_prompt("summarizer")
+        assert "session summarizer" in prompt
