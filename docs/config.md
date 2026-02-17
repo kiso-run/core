@@ -73,6 +73,9 @@ worker_idle_timeout = 300
 host = "0.0.0.0"
 port = 8333
 # webhook_allow_list = ["127.0.0.1", "::1"]
+# webhook_require_https = true
+# webhook_secret = ""
+# webhook_max_payload = 1048576
 ```
 
 ### Required Fields
@@ -107,6 +110,9 @@ port = 8333
 | `settings.host` | `0.0.0.0` | Server bind address |
 | `settings.port` | `8333` | Server port |
 | `settings.webhook_allow_list` | `[]` | IPs exempt from webhook SSRF validation (e.g. `["127.0.0.1"]` for local connectors). See [security.md — Webhook Validation](security.md#7-webhook-validation). |
+| `settings.webhook_require_https` | `true` | Reject plain `http://` webhook URLs. Set to `false` for local development. |
+| `settings.webhook_secret` | `""` | HMAC-SHA256 secret for webhook signatures. Empty = no signature. |
+| `settings.webhook_max_payload` | `1048576` | Max webhook payload bytes before content truncation. |
 
 ## Tokens
 

@@ -27,8 +27,6 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
     "webhook_require_https": True,
     "webhook_secret": "",
     "webhook_max_payload": 1048576,
-    "sandbox_enabled": False,
-    "sandbox_user": "kiso-sandbox",
 }
 
 MODEL_DEFAULTS: dict[str, str] = {

@@ -281,8 +281,7 @@ def test_reload_config_missing_file(tmp_path: Path):
         reload_config(tmp_path / "nonexistent.toml")
 
 
-def test_sandbox_settings_defaults():
-    assert "sandbox_enabled" in SETTINGS_DEFAULTS
-    assert SETTINGS_DEFAULTS["sandbox_enabled"] is False
-    assert "sandbox_user" in SETTINGS_DEFAULTS
-    assert SETTINGS_DEFAULTS["sandbox_user"] == "kiso-sandbox"
+def test_sandbox_settings_removed():
+    """Per-session sandbox replaced global sandbox_enabled/sandbox_user settings."""
+    assert "sandbox_enabled" not in SETTINGS_DEFAULTS
+    assert "sandbox_user" not in SETTINGS_DEFAULTS

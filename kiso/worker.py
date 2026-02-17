@@ -82,10 +82,13 @@ def _load_worker_prompt() -> str:
     return _default_worker_prompt()
 
 
-def _session_workspace(session: str) -> Path:
+def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
     """Return and ensure the session workspace directory exists."""
     workspace = KISO_DIR / "sessions" / session
     workspace.mkdir(parents=True, exist_ok=True)
+    if sandbox_uid is not None:
+        os.chown(workspace, sandbox_uid, sandbox_uid)
+        os.chmod(workspace, 0o700)
     return workspace
 
 
@@ -107,15 +110,28 @@ def _cleanup_plan_outputs(session: str) -> None:
         outputs_file.unlink()
 
 
-def _resolve_sandbox_uid(config: Config) -> int | None:
-    """Resolve sandbox user UID. Returns None if disabled or user not found."""
-    if not config.settings.get("sandbox_enabled", False):
-        return None
-    sandbox_user = str(config.settings.get("sandbox_user", "kiso-sandbox"))
+def _ensure_sandbox_user(session: str) -> int | None:
+    """Create or reuse a per-session Linux user. Returns UID or None on failure."""
+    import hashlib
+    import subprocess
+
+    # Deterministic username from session (max 32 chars for Linux)
+    h = hashlib.sha256(session.encode()).hexdigest()[:12]
+    username = f"kiso-s-{h}"
     try:
-        return pwd.getpwnam(sandbox_user).pw_uid
+        return pwd.getpwnam(username).pw_uid
     except KeyError:
-        log.warning("Sandbox user '%s' not found, sandbox disabled", sandbox_user)
+        pass
+    # Create user — requires root
+    try:
+        subprocess.run(
+            ["useradd", "--system", "--no-create-home",
+             "--shell", "/usr/sbin/nologin", username],
+            check=True, capture_output=True,
+        )
+        return pwd.getpwnam(username).pw_uid
+    except (subprocess.CalledProcessError, KeyError, FileNotFoundError) as exc:
+        log.warning("Cannot create sandbox user '%s': %s", username, exc)
         return None
 
 
@@ -316,6 +332,7 @@ async def _execute_plan(
     exec_timeout: int,
     session_secrets: dict[str, str] | None = None,
     username: str | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> tuple[bool, str | None, list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining).
 
@@ -330,6 +347,13 @@ async def _execute_plan(
     deploy_secrets = collect_deploy_secrets(config)
 
     for i, task_row in enumerate(tasks):
+        # --- Cancel check ---
+        if cancel_event is not None and cancel_event.is_set():
+            for t in tasks[i:]:
+                await update_task(db, t["id"], "cancelled")
+            _cleanup_plan_outputs(session)
+            return False, "cancelled", completed, [dict(t) for t in tasks[i:]]
+
         task_id = task_row["id"]
         task_type = task_row["type"]
         detail = task_row["detail"]
@@ -351,7 +375,9 @@ async def _execute_plan(
             _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
-        sandbox_uid = _resolve_sandbox_uid(fresh_config) if perm.role == "user" else None
+        sandbox_uid = _ensure_sandbox_user(session) if perm.role == "user" else None
+        if sandbox_uid is not None:
+            _session_workspace(session, sandbox_uid=sandbox_uid)
 
         await update_task(db, task_id, "running")
 
@@ -552,6 +578,29 @@ def _build_replan_context(
     return "\n\n".join(parts)
 
 
+def _build_cancel_summary(
+    completed: list[dict], remaining: list[dict], goal: str,
+) -> str:
+    """Build a detail string for the worker LLM summarising a cancel."""
+    parts: list[str] = [f"The user cancelled the plan: {goal}"]
+
+    if completed:
+        items = [f"- [{t['type']}] {t['detail']}" for t in completed]
+        parts.append(f"Completed ({len(completed)}):\n" + "\n".join(items))
+    else:
+        parts.append("No tasks were completed.")
+
+    if remaining:
+        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
+        parts.append(f"Skipped ({len(remaining)}):\n" + "\n".join(items))
+
+    parts.append(
+        "Generate a brief message: what was done, what wasn't, "
+        "and suggest next steps."
+    )
+    return "\n\n".join(parts)
+
+
 async def _apply_curator_result(
     db: aiosqlite.Connection, session: str, result: dict
 ) -> None:
@@ -574,6 +623,7 @@ async def run_worker(
     config: Config,
     session: str,
     queue: asyncio.Queue,
+    cancel_event: asyncio.Event | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = int(config.settings.get("worker_idle_timeout", 300))
@@ -636,12 +686,42 @@ async def run_worker(
             success, replan_reason, completed, remaining = await _execute_plan(
                 db, config, session, current_plan_id, current_goal,
                 content, exec_timeout, session_secrets=session_secrets,
-                username=username,
+                username=username, cancel_event=cancel_event,
             )
 
             if success:
                 await update_plan_status(db, current_plan_id, "done")
                 log.info("Plan %d done", current_plan_id)
+                break
+
+            # --- Cancel handling ---
+            if replan_reason == "cancelled":
+                await update_plan_status(db, current_plan_id, "cancelled")
+                cancel_detail = _build_cancel_summary(
+                    completed, remaining, current_goal,
+                )
+                try:
+                    cancel_text = await _msg_task(
+                        config, db, session, cancel_detail,
+                    )
+                except LLMError:
+                    cancel_text = cancel_detail  # fallback to raw summary
+                await save_message(
+                    db, session, None, "system", cancel_text,
+                    trusted=True, processed=True,
+                )
+                # Webhook
+                sess = await get_session(db, session)
+                webhook_url = sess.get("webhook") if sess else None
+                if webhook_url:
+                    await deliver_webhook(
+                        webhook_url, session, 0, cancel_text, True,
+                        secret=str(config.settings.get("webhook_secret", "")),
+                        max_payload=int(
+                            config.settings.get("webhook_max_payload", 0)
+                        ),
+                    )
+                cancel_event.clear()  # reset for next message
                 break
 
             if replan_reason is None:

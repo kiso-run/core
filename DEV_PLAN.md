@@ -352,14 +352,14 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [x] If user removed → fail task, cancel remaining
   - [x] If role downgraded → enforce sandbox
   - [x] If skill removed → fail skill task
-- [ ] Implement exec sandbox for user role (per-session — requires Docker testing)
+- [x] Implement exec sandbox for user role (per-session — requires Docker testing)
   - [x] Temporary scaffolding: `_resolve_sandbox_uid` with configurable global sandbox user
-  - [ ] Create/reuse per-session Linux user at workspace creation time
-  - [ ] `chown {session_user}:{session_user} ~/.kiso/sessions/{session}`
-  - [ ] `chmod 700 ~/.kiso/sessions/{session}`
-  - [ ] Pass per-session UID to subprocess `user=` (replace current global `_resolve_sandbox_uid`)
-  - [ ] Docker integration test: user-role exec cannot read outside workspace
-  - [ ] Replace `sandbox_enabled`/`sandbox_user` settings with per-session logic
+  - [x] Create/reuse per-session Linux user at workspace creation time
+  - [x] `chown {session_user}:{session_user} ~/.kiso/sessions/{session}`
+  - [x] `chmod 700 ~/.kiso/sessions/{session}`
+  - [x] Pass per-session UID to subprocess `user=` (replace current global `_resolve_sandbox_uid`)
+  - [x] Docker integration test: user-role exec cannot read outside workspace
+  - [x] Replace `sandbox_enabled`/`sandbox_user` settings with per-session logic
 - [x] Implement paraphraser
   - [x] Reuse summarizer model
   - [x] Batch rewrite untrusted messages in third person
@@ -372,7 +372,7 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [x] Known values: deploy + ephemeral secrets
   - [x] Strip: plaintext, base64, URL-encoded variants
   - [x] Apply to all task output before storage and LLM inclusion
-- [ ] Webhook hardening (see `docs/security.md` §9)
+- [x] Webhook hardening (see `docs/security.md` §9)
   - [x] HTTPS enforcement: `webhook_require_https` setting (default `true`), reject plain `http://` URLs in `validate_webhook_url` when enabled — **implemented in M8**
   - [x] HMAC-SHA256 signatures: `webhook_secret` setting, compute `X-Kiso-Signature: sha256=<hex>` header over raw JSON body in `deliver_webhook`
   - [x] Payload size cap: `webhook_max_payload` setting (default 1MB), truncate `content` field before POST

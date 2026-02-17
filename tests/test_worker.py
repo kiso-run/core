@@ -29,8 +29,9 @@ from kiso.store import (
 )
 from kiso.worker import (
     _apply_curator_result,
+    _build_cancel_summary,
     _exec_task, _msg_task, _skill_task, _load_worker_prompt, _session_workspace,
-    _resolve_sandbox_uid,
+    _ensure_sandbox_user,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
@@ -2569,36 +2570,66 @@ class TestPermissionRevalidation:
         assert len(completed) == 1
 
 
-class TestSandboxUid:
-    def test_sandbox_disabled_by_default(self):
-        config = _make_config()
-        assert _resolve_sandbox_uid(config) is None
+class TestPerSessionSandbox:
+    def test_ensure_sandbox_user_creates_user(self):
+        """When user doesn't exist, useradd is called and UID returned."""
+        call_count = [0]
 
-    def test_sandbox_uid_resolved_for_user_role(self):
-        config = _make_config(settings={
-            "worker_idle_timeout": 1, "exec_timeout": 5,
-            "max_validation_retries": 1, "context_messages": 5,
-            "max_replan_depth": 3, "sandbox_enabled": True,
-            "sandbox_user": "kiso-sandbox",
-        })
-        import struct
-        mock_pw = struct.Struct  # just need an object with pw_uid
-        with patch("kiso.worker.pwd") as mock_pwd:
-            mock_pwd.getpwnam.return_value = type("pw", (), {"pw_uid": 65534})()
-            uid = _resolve_sandbox_uid(config)
-        assert uid == 65534
+        def _getpwnam_side_effect(name):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise KeyError(name)  # first call: user doesn't exist
+            return type("pw", (), {"pw_uid": 50001})()  # second call: user created
 
-    def test_sandbox_user_not_found(self):
-        config = _make_config(settings={
-            "worker_idle_timeout": 1, "exec_timeout": 5,
-            "max_validation_retries": 1, "context_messages": 5,
-            "max_replan_depth": 3, "sandbox_enabled": True,
-            "sandbox_user": "nonexistent-user",
-        })
-        with patch("kiso.worker.pwd") as mock_pwd:
-            mock_pwd.getpwnam.side_effect = KeyError("nonexistent-user")
-            uid = _resolve_sandbox_uid(config)
+        with patch("kiso.worker.pwd") as mock_pwd, \
+             patch("subprocess.run") as mock_run:
+            mock_pwd.getpwnam.side_effect = _getpwnam_side_effect
+            uid = _ensure_sandbox_user("test-session")
+
+        assert uid == 50001
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        assert "useradd" in args[0][0]
+
+    def test_ensure_sandbox_user_reuses_existing(self):
+        """When user already exists, no useradd call is made."""
+        with patch("kiso.worker.pwd") as mock_pwd, \
+             patch("subprocess.run") as mock_run:
+            mock_pwd.getpwnam.return_value = type("pw", (), {"pw_uid": 50001})()
+            uid = _ensure_sandbox_user("test-session")
+
+        assert uid == 50001
+        mock_run.assert_not_called()
+
+    def test_ensure_sandbox_user_creation_fails(self):
+        """When useradd fails, returns None."""
+        import subprocess
+        with patch("kiso.worker.pwd") as mock_pwd, \
+             patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "useradd")):
+            mock_pwd.getpwnam.side_effect = KeyError("no-user")
+            uid = _ensure_sandbox_user("test-session")
+
         assert uid is None
+
+    def test_workspace_chown_chmod(self, tmp_path):
+        """_session_workspace applies chown/chmod when sandbox_uid is given."""
+        with patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("os.chown") as mock_chown, \
+             patch("os.chmod") as mock_chmod:
+            ws = _session_workspace("sess1", sandbox_uid=1234)
+
+        mock_chown.assert_called_once_with(ws, 1234, 1234)
+        mock_chmod.assert_called_once_with(ws, 0o700)
+
+    def test_workspace_no_chown_without_sandbox_uid(self, tmp_path):
+        """_session_workspace skips chown/chmod when sandbox_uid is None."""
+        with patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("os.chown") as mock_chown, \
+             patch("os.chmod") as mock_chmod:
+            _session_workspace("sess1")
+
+        mock_chown.assert_not_called()
+        mock_chmod.assert_not_called()
 
     async def test_sandbox_uid_passed_to_exec_subprocess(self, tmp_path):
         """When sandbox_uid is set, it's passed to create_subprocess_shell."""
@@ -2734,15 +2765,9 @@ class TestPermissionRevalidationEdgeCases:
         assert "no longer exists" in tasks[1]["output"]
 
     async def test_admin_skips_sandbox_in_execute_plan(self, db, tmp_path):
-        """Admin user does NOT get sandboxed even when sandbox_enabled=True."""
+        """Admin user does NOT get sandboxed — _ensure_sandbox_user never called."""
         config = _make_config(
             users={"alice": User(role="admin")},
-            settings={
-                "worker_idle_timeout": 1, "exec_timeout": 5,
-                "max_validation_retries": 1, "context_messages": 5,
-                "max_replan_depth": 3, "sandbox_enabled": True,
-                "sandbox_user": "kiso-sandbox",
-            },
         )
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -2786,3 +2811,286 @@ class TestPermissionRevalidationEdgeCases:
             )
 
         assert success is True
+
+
+# --- Cancel mechanism ---
+
+
+class TestBuildCancelSummary:
+    def test_with_completed_and_remaining(self):
+        completed = [
+            {"type": "exec", "detail": "echo hello"},
+            {"type": "exec", "detail": "echo world"},
+        ]
+        remaining = [{"type": "msg", "detail": "Report results"}]
+        result = _build_cancel_summary(completed, remaining, "Run tests")
+        assert "The user cancelled the plan: Run tests" in result
+        assert "Completed (2):" in result
+        assert "[exec] echo hello" in result
+        assert "Skipped (1):" in result
+        assert "[msg] Report results" in result
+        assert "suggest next steps" in result
+
+    def test_no_completed(self):
+        remaining = [{"type": "msg", "detail": "done"}]
+        result = _build_cancel_summary([], remaining, "Goal")
+        assert "No tasks were completed" in result
+        assert "Skipped (1):" in result
+
+    def test_no_remaining(self):
+        completed = [{"type": "exec", "detail": "echo ok"}]
+        result = _build_cancel_summary(completed, [], "Goal")
+        assert "Completed (1):" in result
+        assert "Skipped" not in result
+
+
+class TestCancelMechanism:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_cancel_before_first_task(self, db, tmp_path):
+        """cancel_event set before execution → all tasks cancelled, plan cancelled."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        cancel_event = asyncio.Event()
+        cancel_event.set()  # already cancelled
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                cancel_event=cancel_event,
+            )
+
+        assert success is False
+        assert reason == "cancelled"
+        assert len(completed) == 0
+        assert len(remaining) == 2
+
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert all(t["status"] == "cancelled" for t in tasks)
+
+    async def test_cancel_mid_plan(self, db, tmp_path):
+        """Set event after first task starts → first completes normally, rest cancelled."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo second", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        cancel_event = asyncio.Event()
+        review_calls = [0]
+
+        async def _review_then_cancel(*args, **kwargs):
+            review_calls[0] += 1
+            # After reviewing first task, set cancel
+            cancel_event.set()
+            return REVIEW_OK
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_then_cancel), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                cancel_event=cancel_event,
+            )
+
+        assert success is False
+        assert reason == "cancelled"
+        assert len(completed) == 1  # first exec completed
+        assert len(remaining) == 2  # second exec + msg cancelled
+
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert tasks[0]["status"] == "done"
+        assert tasks[1]["status"] == "cancelled"
+        assert tasks[2]["status"] == "cancelled"
+
+    async def test_cancel_generates_summary(self, db, tmp_path):
+        """System message saved to DB with cancel summary."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
+
+        cancel_plan = {
+            "goal": "Do stuff",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        cancel_event = asyncio.Event()
+
+        # Set cancel after first task review
+        async def _review_then_cancel(*args, **kwargs):
+            cancel_event.set()
+            return REVIEW_OK
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=cancel_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_then_cancel), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock,
+                   return_value="Plan was cancelled. 1 task done, 1 skipped."), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
+                timeout=5,
+            )
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan is not None
+        assert plan["status"] == "cancelled"
+
+        # Check system message was saved
+        from kiso.store import get_oldest_messages
+        msgs = await get_oldest_messages(db, "sess1", limit=100)
+        system_msgs = [m for m in msgs if m["role"] == "system"]
+        assert len(system_msgs) == 1
+        assert "cancelled" in system_msgs[0]["content"].lower()
+
+    async def test_cancel_delivers_webhook(self, db, tmp_path):
+        """Webhook called with final=True for cancel summary."""
+        config = _make_config()
+        await create_session(db, "sess1")
+
+        # Register webhook on session
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+
+        msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
+
+        cancel_plan = {
+            "goal": "Do stuff",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        cancel_event = asyncio.Event()
+
+        async def _review_then_cancel(*args, **kwargs):
+            cancel_event.set()
+            return REVIEW_OK
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
+
+        mock_webhook = AsyncMock()
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=cancel_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_then_cancel), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Cancelled."), \
+             patch("kiso.worker.deliver_webhook", mock_webhook), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
+                timeout=5,
+            )
+
+        mock_webhook.assert_called_once()
+        call_kwargs = mock_webhook.call_args
+        # final=True is the 5th positional arg
+        assert call_kwargs[0][4] is True  # final=True
+
+    async def test_cancel_clears_flag(self, db, tmp_path):
+        """After cancel handling, event is cleared (next message can process)."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg1 = await save_message(db, "sess1", "alice", "user", "first", processed=False)
+        msg2 = await save_message(db, "sess1", "alice", "user", "second", processed=False)
+
+        cancel_plan = {
+            "goal": "First",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        cancel_event = asyncio.Event()
+        planner_calls = [0]
+
+        async def _planner_side_effect(db, cfg, sess, role, content, **kwargs):
+            planner_calls[0] += 1
+            if planner_calls[0] == 1:
+                # Cancel after first plan starts
+                cancel_event.set()
+            return cancel_plan
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg1, "content": "first", "user_role": "admin"})
+        await queue.put({"id": msg2, "content": "second", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner_side_effect), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="ok"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
+                timeout=5,
+            )
+
+        # cancel_event should be cleared so second message was processed
+        assert not cancel_event.is_set()
+        # Should have been called twice (once per message)
+        assert planner_calls[0] == 2
+
+    async def test_cancel_llm_failure_uses_raw_summary(self, db, tmp_path):
+        """LLMError in cancel summary → fallback to raw text."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
+
+        cancel_plan = {
+            "goal": "Do stuff",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        cancel_event = asyncio.Event()
+
+        async def _review_then_cancel(*args, **kwargs):
+            cancel_event.set()
+            return REVIEW_OK
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=cancel_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_then_cancel), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock,
+                   side_effect=LLMError("API down")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
+                timeout=5,
+            )
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "cancelled"
+
+        # Raw summary should be saved as system message
+        from kiso.store import get_oldest_messages
+        msgs = await get_oldest_messages(db, "sess1", limit=100)
+        system_msgs = [m for m in msgs if m["role"] == "system"]
+        assert len(system_msgs) == 1
+        assert "The user cancelled the plan" in system_msgs[0]["content"]
