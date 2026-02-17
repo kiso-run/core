@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac as hmac_mod
 import ipaddress
+import json
 import logging
 import socket
 from urllib.parse import urlparse
@@ -66,11 +69,17 @@ async def deliver_webhook(
     task_id: int,
     content: str,
     final: bool,
+    secret: str = "",
+    max_payload: int = 0,
 ) -> bool:
     """POST webhook payload. Retries 3 times with backoff. Returns True on success.
 
     Never raises — logs warning on all failures and returns False.
     """
+    # Truncate content if needed
+    if max_payload > 0 and len(content.encode()) > max_payload:
+        content = content.encode()[:max_payload].decode(errors="ignore") + " [truncated]"
+
     payload = {
         "session": session,
         "task_id": task_id,
@@ -78,12 +87,19 @@ async def deliver_webhook(
         "content": content,
         "final": final,
     }
+    raw_body = json.dumps(payload).encode()
+
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        sig = hmac_mod.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+        headers["X-Kiso-Signature"] = f"sha256={sig}"
+
     backoff = [1, 3, 9]
 
     for attempt, delay in enumerate(backoff):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, content=raw_body, headers=headers)
             if resp.status_code < 400:
                 return True
             log.warning(

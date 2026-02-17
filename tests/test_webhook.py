@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac as hmac_mod
+import json
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import httpx
@@ -150,8 +153,15 @@ class TestDeliverWebhook:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
+        captured = {}
+
+        async def _post(url, **kwargs):
+            captured["url"] = url
+            captured["kwargs"] = kwargs
+            return mock_resp
+
         mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.post = _post
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
@@ -161,16 +171,15 @@ class TestDeliverWebhook:
             )
 
         assert result is True
-        mock_client.post.assert_called_once_with(
-            "https://example.com/hook",
-            json={
-                "session": "sess1",
-                "task_id": 42,
-                "type": "msg",
-                "content": "Hello!",
-                "final": True,
-            },
-        )
+        assert captured["url"] == "https://example.com/hook"
+        body = json.loads(captured["kwargs"]["content"])
+        assert body == {
+            "session": "sess1",
+            "task_id": 42,
+            "type": "msg",
+            "content": "Hello!",
+            "final": True,
+        }
 
     async def test_retry_on_500(self):
         mock_resp_500 = MagicMock()
@@ -235,12 +244,12 @@ class TestDeliverWebhook:
 
     async def test_correct_payload_format(self):
         """Verify the exact payload structure."""
-        captured_payload = {}
+        captured = {}
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        async def _post(url, json=None):
-            captured_payload.update(json)
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
             return mock_resp
 
         mock_client = AsyncMock()
@@ -253,7 +262,8 @@ class TestDeliverWebhook:
                 "https://example.com/hook", "my-session", 99, "Response text", False,
             )
 
-        assert captured_payload == {
+        body = json.loads(captured["content"])
+        assert body == {
             "session": "my-session",
             "task_id": 99,
             "type": "msg",
@@ -262,12 +272,12 @@ class TestDeliverWebhook:
         }
 
     async def test_final_flag_true(self):
-        captured_payload = {}
+        captured = {}
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        async def _post(url, json=None):
-            captured_payload.update(json)
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
             return mock_resp
 
         mock_client = AsyncMock()
@@ -280,7 +290,8 @@ class TestDeliverWebhook:
                 "https://example.com/hook", "sess1", 1, "Done", True,
             )
 
-        assert captured_payload["final"] is True
+        body = json.loads(captured["content"])
+        assert body["final"] is True
 
     async def test_never_raises(self):
         """deliver_webhook should never raise, even on unexpected errors."""
@@ -296,3 +307,159 @@ class TestDeliverWebhook:
             )
 
         assert result is False
+
+
+# --- HMAC signatures ---
+
+
+class TestDeliverWebhookHMAC:
+    async def test_hmac_signature_present(self):
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, "text", False,
+                secret="test-secret",
+            )
+
+        headers = captured["headers"]
+        assert "X-Kiso-Signature" in headers
+        assert headers["X-Kiso-Signature"].startswith("sha256=")
+
+    async def test_hmac_signature_correct(self):
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        secret = "my-webhook-secret"
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, "hello", False,
+                secret=secret,
+            )
+
+        raw_body = captured["content"]
+        expected_sig = hmac_mod.new(
+            secret.encode(), raw_body, hashlib.sha256,
+        ).hexdigest()
+        assert captured["headers"]["X-Kiso-Signature"] == f"sha256={expected_sig}"
+
+    async def test_no_signature_without_secret(self):
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, "text", False,
+            )
+
+        assert "X-Kiso-Signature" not in captured["headers"]
+
+
+# --- Payload cap ---
+
+
+class TestDeliverWebhookPayloadCap:
+    async def test_content_truncated_over_max(self):
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        long_content = "A" * 1000
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, long_content, False,
+                max_payload=100,
+            )
+
+        body = json.loads(captured["content"])
+        assert body["content"].endswith("[truncated]")
+        assert len(body["content"]) < len(long_content)
+
+    async def test_content_intact_under_max(self):
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, "short", False,
+                max_payload=1000,
+            )
+
+        body = json.loads(captured["content"])
+        assert body["content"] == "short"
+
+    async def test_no_truncation_when_zero(self):
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        long_content = "B" * 5000
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, long_content, False,
+                max_payload=0,
+            )
+
+        body = json.loads(captured["content"])
+        assert body["content"] == long_content

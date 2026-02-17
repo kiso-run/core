@@ -10,13 +10,16 @@ from pathlib import Path
 
 import aiosqlite
 
+from kiso.security import check_command_deny_list, collect_deploy_secrets, fence_content, sanitize_output
 from kiso.brain import (
     CuratorError,
+    ParaphraserError,
     PlanError,
     ReviewError,
     SummarizerError,
     run_curator,
     run_fact_consolidation,
+    run_paraphraser,
     run_planner,
     run_reviewer,
     run_summarizer,
@@ -41,6 +44,7 @@ from kiso.store import (
     get_pending_learnings,
     get_session,
     get_tasks_for_plan,
+    get_untrusted_messages,
     mark_message_processed,
     save_fact,
     save_learning,
@@ -99,6 +103,10 @@ async def _exec_task(
     session: str, detail: str, timeout: int
 ) -> tuple[str, str, bool]:
     """Run a shell command. Returns (stdout, stderr, success)."""
+    denial = check_command_deny_list(detail)
+    if denial:
+        return "", denial, False
+
     workspace = _session_workspace(session)
     clean_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
 
@@ -183,7 +191,7 @@ def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
         header = f"[{entry['index']}] {entry['type']}: {entry['detail']}"
         output = entry.get("output") or "(no output)"
         status = entry["status"]
-        parts.append(f"{header}\nStatus: {status}\n```\n{output}\n```")
+        parts.append(f"{header}\nStatus: {status}\n{fence_content(output, 'TASK_OUTPUT')}")
     return "\n\n".join(parts)
 
 
@@ -291,6 +299,7 @@ async def _execute_plan(
     tasks = await get_tasks_for_plan(db, plan_id)
     completed: list[dict] = []
     plan_outputs: list[dict] = []
+    deploy_secrets = collect_deploy_secrets(config)
 
     for i, task_row in enumerate(tasks):
         task_id = task_row["id"]
@@ -304,6 +313,8 @@ async def _execute_plan(
             _write_plan_outputs(session, plan_outputs)
 
             stdout, stderr, success = await _exec_task(session, detail, exec_timeout)
+            stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
+            stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
             status = "done" if success else "failed"
             await update_task(db, task_id, status, output=stdout, stderr=stderr)
 
@@ -363,7 +374,11 @@ async def _execute_plan(
                 webhook_url = sess.get("webhook") if sess else None
                 if webhook_url:
                     is_final = i == len(tasks) - 1
-                    await deliver_webhook(webhook_url, session, task_id, text, is_final)
+                    await deliver_webhook(
+                        webhook_url, session, task_id, text, is_final,
+                        secret=str(config.settings.get("webhook_secret", "")),
+                        max_payload=int(config.settings.get("webhook_max_payload", 0)),
+                    )
 
                 completed.append(task_row)
             except LLMError as e:
@@ -408,6 +423,8 @@ async def _execute_plan(
                             session, skill_info, args, plan_outputs,
                             session_secrets, exec_timeout,
                         )
+                        stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
+                        stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
                         status = "done" if success else "failed"
                         await update_task(db, task_id, status, output=stdout, stderr=stderr)
                         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
@@ -462,7 +479,8 @@ def _build_replan_context(
         items = []
         for t in completed:
             out = (t.get("output") or "")[:500]
-            items.append(f"- [{t['type']}] {t['detail']}: {t['status']} → {out}")
+            out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
+            items.append(f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}")
         parts.append("## Completed Tasks\n" + "\n".join(items))
 
     if remaining:
@@ -526,11 +544,22 @@ async def run_worker(
 
         await mark_message_processed(db, msg_id)
 
+        # Paraphraser — fetch untrusted messages, paraphrase if any
+        paraphrased_context: str | None = None
+        untrusted = await get_untrusted_messages(db, session)
+        if untrusted:
+            try:
+                paraphrased_context = await run_paraphraser(config, untrusted)
+            except ParaphraserError as e:
+                log.warning("Paraphraser failed: %s", e)
+                paraphrased_context = None
+
         # Plan
         try:
             plan = await run_planner(
                 db, config, session, user_role, content,
                 user_skills=user_skills,
+                paraphrased_context=paraphrased_context,
             )
         except PlanError as e:
             log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)

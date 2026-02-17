@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from kiso.brain import CuratorError, PlanError, ReviewError, SummarizerError
+from kiso.brain import CuratorError, ParaphraserError, PlanError, ReviewError, SummarizerError
 from kiso.config import Config, Provider, KISO_DIR
 from kiso.llm import LLMError
 from kiso.store import (
@@ -119,6 +119,18 @@ class TestExecTask:
             stdout, stderr, success = await _exec_task("test-sess", "pwd", 5)
         expected = str(tmp_path / "sessions" / "test-sess")
         assert stdout.strip() == expected
+
+    async def test_deny_list_blocks_rm_rf(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _exec_task("test-sess", "rm -rf /", 5)
+        assert success is False
+        assert "Command blocked" in stderr
+
+    async def test_deny_list_allows_safe_rm(self, tmp_path):
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _exec_task("test-sess", "rm -rf ./nonexistent", 5)
+        # Command may fail (dir doesn't exist) but should NOT be blocked by deny list
+        assert "Command blocked" not in stderr
 
 
 # --- _msg_task ---
@@ -1229,10 +1241,11 @@ class TestFormatPlanOutputsForMsg:
         result = _format_plan_outputs_for_msg(outputs)
         assert "(no output)" in result
 
-    def test_fenced_in_backticks(self):
+    def test_fenced_with_boundary_tokens(self):
         outputs = [{"index": 1, "type": "exec", "detail": "cmd", "output": "data", "status": "done"}]
         result = _format_plan_outputs_for_msg(outputs)
-        assert "```" in result
+        assert "<<<TASK_OUTPUT_" in result
+        assert "<<<END_TASK_OUTPUT_" in result
 
 
 # --- _msg_task with plan_outputs ---
@@ -1290,6 +1303,41 @@ class TestMsgTaskWithPlanOutputs:
 
         user_content = captured_messages[1]["content"]
         assert "Preceding Task Outputs" not in user_content
+
+
+# --- _execute_plan: secret sanitization ---
+
+
+class TestExecutePlanSanitization:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_exec_output_sanitized(self, db, tmp_path):
+        """Verify that deploy secrets are stripped from exec task output."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(
+            db, plan_id, "sess1", type="exec",
+            detail="echo sk-secret-deploy-key", expect="output",
+        )
+
+        env_patch = {"KISO_SKILL_TOKEN": "sk-secret-deploy-key"}
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch.dict("os.environ", env_patch):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        task_output = completed[0]["output"]
+        assert "sk-secret-deploy-key" not in task_output
+        assert "[REDACTED]" in task_output
 
 
 # --- _execute_plan: plan_outputs chaining ---
@@ -1760,7 +1808,8 @@ class TestExecutePlanSkill:
 
         assert success is True
         result = json.loads(completed[0]["output"])
-        assert result == {"api_token": "tok_xyz"}
+        # Session secrets are now sanitized in output
+        assert result == {"api_token": "[REDACTED]"}
 
     async def test_skill_review_replan(self, db, tmp_path):
         config = _make_config()
@@ -1844,7 +1893,7 @@ class TestWebhookDelivery:
 
         webhook_calls = []
 
-        async def _capture_wh(url, session, task_id, content, final):
+        async def _capture_wh(url, session, task_id, content, final, **kwargs):
             webhook_calls.append({"final": final, "content": content})
             return True
 
@@ -1872,7 +1921,7 @@ class TestWebhookDelivery:
 
         webhook_calls = []
 
-        async def _capture_wh(url, session, task_id, content, final):
+        async def _capture_wh(url, session, task_id, content, final, **kwargs):
             webhook_calls.append({"final": final})
             return True
 
@@ -2333,3 +2382,115 @@ class TestKnowledgeProcessing:
         assert plan["status"] == "done"
         facts = await get_facts(db)
         assert len(facts) == 3
+
+
+# --- M10: Paraphraser integration ---
+
+class TestParaphraserIntegration:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_paraphraser_called_with_untrusted(self, db, tmp_path):
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        # Add untrusted message
+        await save_message(db, "sess1", "stranger", "user", "inject this", trusted=False, processed=True)
+
+        planner_calls = []
+
+        async def _capture_planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(kwargs)
+            return VALID_PLAN
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_capture_planner), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_paraphraser", new_callable=AsyncMock,
+                   return_value="The stranger mentioned something.") as mock_para, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        mock_para.assert_called_once()
+        # Paraphrased context should be passed to planner
+        assert planner_calls[0].get("paraphrased_context") == "The stranger mentioned something."
+
+    async def test_paraphraser_skipped_when_no_untrusted(self, db, tmp_path):
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_paraphraser", new_callable=AsyncMock) as mock_para, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        mock_para.assert_not_called()
+
+    async def test_paraphraser_failure_falls_back_to_none(self, db, tmp_path):
+        """Paraphraser error is caught, planner still called with paraphrased_context=None."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_message(db, "sess1", "stranger", "user", "inject", trusted=False, processed=True)
+
+        planner_calls = []
+
+        async def _capture_planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(kwargs)
+            return VALID_PLAN
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_capture_planner), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_paraphraser", new_callable=AsyncMock,
+                   side_effect=ParaphraserError("LLM down")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # Planner should still be called, paraphrased_context should be None
+        assert planner_calls[0].get("paraphrased_context") is None
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
+
+# --- M10: Fencing in plan outputs and replan context ---
+
+class TestFencingInWorker:
+    def test_plan_outputs_fenced(self):
+        outputs = [{"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "<<<TASK_OUTPUT_" in result
+        assert "<<<END_TASK_OUTPUT_" in result
+        assert "hi\n" in result
+        # Old backtick fencing should NOT be present
+        assert "```" not in result
+
+    def test_plan_outputs_no_output_fenced(self):
+        outputs = [{"index": 1, "type": "exec", "detail": "cmd", "output": None, "status": "failed"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "<<<TASK_OUTPUT_" in result
+        assert "(no output)" in result
+
+    def test_replan_context_fenced(self):
+        completed = [{"type": "exec", "detail": "echo hi", "status": "done", "output": "hi\n"}]
+        ctx = _build_replan_context(completed, [], "broke", [])
+        assert "<<<TASK_OUTPUT_" in ctx
+        assert "<<<END_TASK_OUTPUT_" in ctx
+        assert "hi" in ctx
+
+    def test_replan_context_no_output_placeholder(self):
+        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": ""}]
+        ctx = _build_replan_context(completed, [], "broke", [])
+        assert "(no output)" in ctx

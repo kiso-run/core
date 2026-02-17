@@ -343,10 +343,10 @@ The bot learns and remembers across sessions.
 
 Lock down permissions, sandboxing, prompt injection defense. Paraphraser and secret sanitization (deferred from M3/M4) land here.
 
-- [ ] Implement exec command deny list
-  - [ ] Check command against destructive patterns before execution
-  - [ ] Block: `rm -rf /`, `dd if=`, `mkfs`, `chmod -R 777 /`, `chown -R`, `shutdown`, `reboot`, fork bomb
-  - [ ] Only bare `/`, `~`, `$HOME` targets are blocked — `rm -rf ./build/` is allowed
+- [x] Implement exec command deny list
+  - [x] Check command against destructive patterns before execution
+  - [x] Block: `rm -rf /`, `dd if=`, `mkfs`, `chmod -R 777 /`, `chown -R`, `shutdown`, `reboot`, fork bomb
+  - [x] Only bare `/`, `~`, `$HOME` targets are blocked — `rm -rf ./build/` is allowed
 - [ ] Implement runtime permission re-validation
   - [ ] Before each task: re-read user role and skills from config
   - [ ] If user removed → fail task, cancel remaining
@@ -356,22 +356,22 @@ Lock down permissions, sandboxing, prompt injection defense. Paraphraser and sec
   - [ ] Create dedicated Linux user per session
   - [ ] Set workspace ownership + `chmod 700`
   - [ ] Run exec as restricted user via subprocess `user=` parameter
-- [ ] Implement paraphraser
-  - [ ] Reuse summarizer model
-  - [ ] Batch rewrite untrusted messages in third person
-  - [ ] Strip literal commands and instructions
-- [ ] Implement random boundary fencing
-  - [ ] `secrets.token_hex(16)` per LLM call (128-bit)
-  - [ ] Escape `<<<.*>>>` → `«««...»»»` before fencing
-  - [ ] Fence: untrusted messages in planner, task output in reviewer/worker/replan
-- [ ] Implement secret sanitization
-  - [ ] Known values: deploy + ephemeral secrets
-  - [ ] Strip: plaintext, base64, URL-encoded variants
-  - [ ] Apply to all task output before storage and LLM inclusion
+- [x] Implement paraphraser
+  - [x] Reuse summarizer model
+  - [x] Batch rewrite untrusted messages in third person
+  - [x] Strip literal commands and instructions
+- [x] Implement random boundary fencing
+  - [x] `secrets.token_hex(16)` per LLM call (128-bit)
+  - [x] Escape `<<<.*>>>` → `«««...»»»` before fencing
+  - [x] Fence: untrusted messages in planner, task output in reviewer/worker/replan
+- [x] Implement secret sanitization
+  - [x] Known values: deploy + ephemeral secrets
+  - [x] Strip: plaintext, base64, URL-encoded variants
+  - [x] Apply to all task output before storage and LLM inclusion
 - [ ] Webhook hardening (see `docs/security.md` §9)
   - [x] HTTPS enforcement: `webhook_require_https` setting (default `true`), reject plain `http://` URLs in `validate_webhook_url` when enabled — **implemented in M8**
-  - [ ] HMAC-SHA256 signatures: `webhook_secret` setting, compute `X-Kiso-Signature: sha256=<hex>` header over raw JSON body in `deliver_webhook`
-  - [ ] Payload size cap: `webhook_max_payload` setting (default 1MB), truncate `content` field before POST
+  - [x] HMAC-SHA256 signatures: `webhook_secret` setting, compute `X-Kiso-Signature: sha256=<hex>` header over raw JSON body in `deliver_webhook`
+  - [x] Payload size cap: `webhook_max_payload` setting (default 1MB), truncate `content` field before POST
 
 **Verify:**
 ```bash

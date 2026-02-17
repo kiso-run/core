@@ -10,6 +10,7 @@ import pytest
 import aiosqlite
 from kiso.brain import (
     CuratorError,
+    ParaphraserError,
     PlanError,
     ReviewError,
     SummarizerError,
@@ -17,11 +18,13 @@ from kiso.brain import (
     _default_reviewer_prompt,
     _load_system_prompt,
     build_curator_messages,
+    build_paraphraser_messages,
     build_planner_messages,
     build_reviewer_messages,
     build_summarizer_messages,
     run_curator,
     run_fact_consolidation,
+    run_paraphraser,
     run_planner,
     run_reviewer,
     run_summarizer,
@@ -189,7 +192,9 @@ class TestBuildPlannerMessages:
         assert msgs[0]["role"] == "system"
         assert msgs[1]["role"] == "user"
         assert "## Caller Role\nadmin" in msgs[1]["content"]
-        assert "## New Message\nhello" in msgs[1]["content"]
+        assert "## New Message" in msgs[1]["content"]
+        assert "hello" in msgs[1]["content"]
+        assert "<<<USER_MSG_" in msgs[1]["content"]
 
     async def test_includes_summary(self, db, config):
         await create_session(db, "sess1")
@@ -484,7 +489,8 @@ class TestBuildReviewerMessages:
             user_message="msg",
         )
         content = msgs[1]["content"]
-        assert "```\nsome output\n```" in content
+        assert "<<<TASK_OUTPUT_" in content
+        assert "some output" in content
 
     async def test_uses_reviewer_system_prompt(self):
         msgs = await build_reviewer_messages(
@@ -854,3 +860,136 @@ class TestLoadSystemPromptCuratorSummarizer:
         with patch.object(type(KISO_DIR / "roles" / "summarizer.md"), "exists", return_value=False):
             prompt = _load_system_prompt("summarizer")
         assert "session summarizer" in prompt
+
+    def test_paraphraser_default(self):
+        with patch.object(type(KISO_DIR / "roles" / "paraphraser.md"), "exists", return_value=False):
+            prompt = _load_system_prompt("paraphraser")
+        assert "paraphraser" in prompt
+
+
+# --- M10: Paraphraser ---
+
+class TestBuildParaphraserMessages:
+    def test_formats_messages(self):
+        messages = [
+            {"user": "alice", "content": "Hello there"},
+            {"user": "bob", "content": "How are you?"},
+        ]
+        msgs = build_paraphraser_messages(messages)
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+        assert "[alice]: Hello there" in msgs[1]["content"]
+        assert "[bob]: How are you?" in msgs[1]["content"]
+
+    def test_missing_user_defaults_unknown(self):
+        messages = [{"content": "test message"}]
+        msgs = build_paraphraser_messages(messages)
+        assert "[unknown]: test message" in msgs[1]["content"]
+
+
+class TestRunParaphraser:
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"paraphraser": "gpt-4"},
+            settings={},
+            raw={},
+        )
+
+    async def test_run_paraphraser_success(self, config):
+        messages = [{"user": "alice", "content": "Hello"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value="The user greeted the assistant."):
+            result = await run_paraphraser(config, messages)
+        assert result == "The user greeted the assistant."
+
+    async def test_run_paraphraser_error(self, config):
+        messages = [{"user": "alice", "content": "Hello"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("API down")):
+            with pytest.raises(ParaphraserError, match="LLM call failed"):
+                await run_paraphraser(config, messages)
+
+
+# --- M10: Fencing in planner messages ---
+
+class TestPlannerMessagesFencing:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"planner": "gpt-4"},
+            settings={"context_messages": 3},
+            raw={},
+        )
+
+    async def test_planner_messages_fence_recent(self, db, config):
+        await create_session(db, "sess1")
+        await save_message(db, "sess1", "alice", "user", "hello world")
+        msgs = await build_planner_messages(db, config, "sess1", "admin", "new msg")
+        content = msgs[1]["content"]
+        assert "<<<MESSAGES_" in content
+        assert "<<<END_MESSAGES_" in content
+
+    async def test_planner_messages_fence_new_message(self, db, config):
+        await create_session(db, "sess1")
+        msgs = await build_planner_messages(db, config, "sess1", "admin", "test input")
+        content = msgs[1]["content"]
+        assert "<<<USER_MSG_" in content
+        assert "<<<END_USER_MSG_" in content
+        assert "test input" in content
+
+    async def test_planner_messages_include_paraphrased(self, db, config):
+        await create_session(db, "sess1")
+        msgs = await build_planner_messages(
+            db, config, "sess1", "admin", "hello",
+            paraphrased_context="The external user asked about the weather.",
+        )
+        content = msgs[1]["content"]
+        assert "## Paraphrased External Messages (untrusted)" in content
+        assert "<<<PARAPHRASED_" in content
+        assert "The external user asked about the weather." in content
+
+    async def test_planner_messages_no_paraphrased_when_none(self, db, config):
+        await create_session(db, "sess1")
+        msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "Paraphrased" not in content
+
+
+# --- M10: Fencing in reviewer messages ---
+
+class TestReviewerMessagesFencing:
+    async def test_reviewer_messages_fence_output(self):
+        msgs = await build_reviewer_messages(
+            goal="g", detail="d", expect="e",
+            output="some task output",
+            user_message="user msg",
+        )
+        content = msgs[1]["content"]
+        assert "<<<TASK_OUTPUT_" in content
+        assert "<<<END_TASK_OUTPUT_" in content
+        assert "some task output" in content
+
+    async def test_reviewer_messages_fence_user_message(self):
+        msgs = await build_reviewer_messages(
+            goal="g", detail="d", expect="e",
+            output="output",
+            user_message="the original user message",
+        )
+        content = msgs[1]["content"]
+        assert "<<<USER_MSG_" in content
+        assert "<<<END_USER_MSG_" in content
+        assert "the original user message" in content

@@ -428,6 +428,18 @@ async def delete_facts(db: aiosqlite.Connection, fact_ids: list[int]) -> None:
     await db.commit()
 
 
+async def get_untrusted_messages(
+    db: aiosqlite.Connection, session: str, limit: int = 20
+) -> list[dict]:
+    """Return untrusted messages for a session, oldest first."""
+    cur = await db.execute(
+        "SELECT * FROM messages WHERE session = ? AND trusted = 0 "
+        "ORDER BY id ASC LIMIT ?",
+        (session, limit),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
 async def create_task(
     db: aiosqlite.Connection,
     plan_id: int,

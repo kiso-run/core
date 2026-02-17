@@ -35,6 +35,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "curator": "moonshotai/kimi-k2.5",
     "worker": "deepseek/deepseek-v3.2",
     "summarizer": "deepseek/deepseek-v3.2",
+    "paraphraser": "deepseek/deepseek-v3.2",
 }
 
 

@@ -22,6 +22,7 @@ from kiso.store import (
     get_tasks_for_plan,
     get_tasks_for_session,
     get_unprocessed_messages,
+    get_untrusted_messages,
     mark_message_processed,
     save_fact,
     save_message,
@@ -499,3 +500,33 @@ async def test_delete_facts_empty_list(db: aiosqlite.Connection):
     await delete_facts(db, [])
     facts = await get_facts(db)
     assert len(facts) == 1
+
+
+# --- M10: get_untrusted_messages ---
+
+async def test_get_untrusted_messages(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    await save_message(db, "sess1", "alice", "user", "trusted msg", trusted=True)
+    await save_message(db, "sess1", "stranger", "user", "untrusted 1", trusted=False, processed=True)
+    await save_message(db, "sess1", "stranger2", "user", "untrusted 2", trusted=False, processed=True)
+    untrusted = await get_untrusted_messages(db, "sess1")
+    assert len(untrusted) == 2
+    assert untrusted[0]["content"] == "untrusted 1"
+    assert untrusted[1]["content"] == "untrusted 2"
+
+
+async def test_get_untrusted_messages_empty(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    await save_message(db, "sess1", "alice", "user", "trusted msg", trusted=True)
+    untrusted = await get_untrusted_messages(db, "sess1")
+    assert untrusted == []
+
+
+async def test_get_untrusted_messages_respects_limit(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    for i in range(5):
+        await save_message(db, "sess1", "stranger", "user", f"untrusted-{i}", trusted=False, processed=True)
+    untrusted = await get_untrusted_messages(db, "sess1", limit=2)
+    assert len(untrusted) == 2
+    assert untrusted[0]["content"] == "untrusted-0"
+    assert untrusted[1]["content"] == "untrusted-1"
