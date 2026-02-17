@@ -75,23 +75,25 @@ Returns JSON with:
 - `secrets`: `{key, value}` pairs or `null`. If present, stored in **worker memory** (ephemeral, never in DB). See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
 - `tasks`: `exec` and `skill` tasks must include an `expect` field with semantic success criteria (they are always reviewed).
 
-### d) Validates the Plan
+### d) Validates and Persists the Plan
 
 Before execution, kiso validates the plan semantically (see [llm-roles.md — Validation After Parsing](llm-roles.md#validation-after-parsing) for the full rule list and error example). On failure, retries up to `max_validation_retries` (default 3) with specific error feedback. If exhausted: fail the message, notify user. No silent fallback.
 
-All validated tasks are persisted to `store.tasks` with status `pending`.
+After validation, kiso creates a **plan** entity in `store.plans` (with `goal`, `message_id`, and `status=running`) and persists all tasks to `store.tasks` linked to that plan via `plan_id`. See [database.md — plans](database.md#plans).
 
 ### e) Executes Tasks One by One
 
-For each task, kiso first **re-validates the user's role and permissions** from `config.toml` (see [security.md — Runtime Permission Re-validation](security.md#runtime-permission-re-validation)). For `exec` tasks, the command is checked against the destructive command deny list (see [security.md — Exec Command Validation](security.md#exec-command-validation)). Then (status updated to `running` in DB):
+For each task, kiso first checks the **cancel flag** — if set, remaining tasks are marked `cancelled`, a cancel summary is delivered to the user, and execution stops (see [Cancel](#cancel)). Then kiso **re-validates the user's role and permissions** from `config.toml` (see [security.md — Runtime Permission Re-validation](security.md#runtime-permission-re-validation)). For `exec` tasks, the command is checked against the destructive command deny list (see [security.md — Exec Command Validation](security.md#exec-command-validation)). Then (status updated to `running` in DB):
 
 | Type | Execution |
 |---|---|
-| `exec` | `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Captures stdout+stderr. |
-| `msg` | Calls LLM with `worker` role. Context: facts + session summary + task detail. The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
-| `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets (only those declared in `kiso.toml`). Output: stdout. |
+| `exec` | `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
+| `msg` | Calls LLM with `worker` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
+| `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
-Output is sanitized (known secret values stripped — plaintext, base64, URL-encoded) before any further use. Task output is fenced with random boundary tokens before inclusion in any LLM prompt (reviewer, replan planner) — see [security.md — Random Boundary Fencing](security.md#layer-2-random-boundary-fencing). Task status and output are persisted to `store.tasks` (`done` or `failed`).
+**Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
+
+Output is sanitized (known secret values stripped — plaintext, base64, URL-encoded) before any further use. Task output is fenced with random boundary tokens before inclusion in any LLM prompt (reviewer, replan planner, worker) — see [security.md — Random Boundary Fencing](security.md#layer-2-random-boundary-fencing). Task status and output are persisted to `store.tasks` (`done` or `failed`).
 
 All LLM calls, task executions, and webhook deliveries are logged to the audit trail. See [audit.md](audit.md).
 
@@ -122,11 +124,60 @@ When the reviewer determines that the task failed and the plan needs revision:
    - **failure**: the failed task, its output, and the reviewer's `reason`
    - **replan_history**: previous replan attempts for this message (goal, failure, what was tried) — so the planner doesn't repeat the same mistakes
 
-3. The planner produces a new `goal` and `tasks` list. The old remaining tasks are marked `failed` in DB. New tasks go through validation (step d) again.
+3. The planner produces a new `goal` and `tasks` list. The current plan is marked `failed`. A new plan is created with `parent_id` pointing to the previous plan. Remaining tasks from the old plan are marked `failed`. New tasks go through validation (step d) again.
 
 4. Execution continues with the new task list. Even on replan, the planner must produce at least one task (typically a `msg` task summarizing the situation).
 
 **Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
+
+### Task Output Chaining
+
+The worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The structure is an array of entries:
+
+```json
+[
+  {
+    "index": 1,
+    "type": "skill",
+    "detail": "Search for fly.io deployment guides",
+    "output": "1. fly.io/docs/python - Deploy Python apps...",
+    "status": "done"
+  },
+  {
+    "index": 2,
+    "type": "exec",
+    "detail": "cat requirements.txt",
+    "output": "flask==3.1\ngunicorn==21.2",
+    "status": "done"
+  }
+]
+```
+
+Fields: `index` (1-based position in the plan), `type`, `detail` (what was requested), `output` (stdout for exec/skill, generated text for msg), `status` (`done` or `failed` — so the consumer knows if the output is a result or an error).
+
+How each task type receives preceding outputs:
+
+| Task type | Mechanism | Details |
+|---|---|---|
+| `exec` | File `{workspace}/.kiso/plan_outputs.json` | Written before each execution. Empty array (`[]`) if first task. The planner writes commands that reference it, e.g. `jq -r '.[-1].output' .kiso/plan_outputs.json`. |
+| `skill` | `plan_outputs` field in input JSON | Same structure, added alongside `args`, `session`, `workspace`, `session_secrets` in the stdin JSON. |
+| `msg` | Fenced section in worker LLM prompt | Formatted as readable text inside boundary fencing (external content). The worker uses it naturally when writing responses. |
+
+The worker always provides preceding outputs — no conditional logic. The planner writes task details that reference them when needed. The file is cleaned up after plan completion.
+
+### Cancel
+
+A plan in execution can be cancelled via `POST /sessions/{session}/cancel` (see [api.md](api.md#post-sessionssessioncancel)).
+
+When the worker detects a cancel flag (checked between tasks, not mid-task):
+1. Current task (if running) completes normally
+2. Remaining `pending` tasks are marked `cancelled`
+3. The plan is marked `cancelled`
+4. The worker delivers a `msg` to the user with: completed tasks and their outcomes, tasks that were not executed, and suggestions for next steps (e.g. cleanup actions, how to retry)
+
+This message is generated by the worker (not planned by the planner) — it's an automatic cancel summary.
+
+Queued messages on the same session are processed normally after cancellation.
 
 ## 4. Post-Execution
 
@@ -192,24 +243,29 @@ WORKER (per session)
   │
   validate plan ──fail?──▶ retry (max 3) or fail msg
   │
-  persist tasks (pending)
+  create plan (running) + persist tasks (pending)
   │
-  ┌─── FOR EACH TASK ───┐
-  │                      │
-  │  exec / msg / skill  │
-  │         │            │
-  │  sanitize + persist  │
-  │         │            │
-  │  exec/skill ──▶ review
-  │                 │    │
-  │              ok │  replan ──▶ notify + re-plan
-  │                 │
-  │          learn? ──▶ store learning
-  │                 │
-  │  msg ──▶ deliver (webhook + /status)
-  │         │
-  │  next task ◀────┘
-  └──────────────────┘
+  ┌─── FOR EACH TASK ────────┐
+  │                           │
+  │  cancel? ──▶ cancel plan  │
+  │  │                        │
+  │  pass plan_outputs        │
+  │  │                        │
+  │  exec / msg / skill       │
+  │         │                 │
+  │  sanitize + accumulate    │
+  │         │                 │
+  │  exec/skill ──▶ review    │
+  │                 │    │    │
+  │              ok │  replan ──▶ new plan (parent_id)
+  │                 │         │
+  │          learn? ──▶ store │
+  │                 │         │
+  │  msg ──▶ deliver          │
+  │         │                 │
+  │  next task ◀──────────────┘
+  │
+  plan → done
   │
 POST-EXECUTION
   ├─ curator (if learnings)

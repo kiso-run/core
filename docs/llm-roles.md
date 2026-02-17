@@ -16,6 +16,7 @@ Kiso makes 6 distinct types of LLM calls. Each type has its own model (from `con
 | Allowed skill summaries + args schemas | yes | - | - | - | - | - |
 | Caller role (admin/user) | yes | - | - | - | - | - |
 | Process goal | generates | yes | - | - | - | - |
+| Preceding plan outputs (fenced) | - | - | yes | - | - | - |
 | Current task detail | - | yes | yes | - | - | - |
 | Current task expect | - | yes | - | - | - | - |
 | Current task output (fenced) | - | yes | - | - | - | - |
@@ -187,6 +188,7 @@ Common patterns:
 - **Asking the user**: if the planner needs information it doesn't have, it ends the plan with a `msg` task asking the question. The next message cycle will have the user's answer in context (recent messages + msg outputs). Two cases:
   - Request is ambiguous or missing critical info **upfront** → produce a single `msg` task asking for clarification, do not guess
   - Planner realizes **mid-planning** that a later step depends on unknown user input → stop planning at that point, end with a `msg` asking the question. Do not plan tasks that depend on answers you don't have yet
+- **Task output chaining**: outputs from earlier tasks are available to later tasks in the same plan. For `exec`: read `.kiso/plan_outputs.json` in the workspace. For `skill` and `msg`: provided automatically. Plan commands that use previous results accordingly
 - If a user (non-admin) shares credentials, extract them into `secrets` (ephemeral, not persisted) and inform the user they are temporary
 - If a user asks to permanently configure a credential, respond with a `msg` task telling them to ask an admin to set it as a deploy secret via `kiso env set`
 - If an admin asks to configure a credential, generate exec tasks: `kiso env set ... && kiso env reload`
@@ -205,8 +207,10 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 ### Output Fields
 
-- `goal`: high-level objective for the entire process. The reviewer uses it to evaluate individual tasks in context.
+- `goal`: high-level objective for the entire process. Persisted in `store.plans` (not on individual tasks). The reviewer uses it to evaluate individual tasks in context.
 - `secrets`: always present. `null` when no credentials; array of `{key, value}` pairs when the user mentioned them. Ephemeral — stored in worker memory only, never in DB. See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
+
+After validation, the planner output becomes a **plan** entity — see [database.md — plans](database.md#plans).
 
 ---
 
@@ -279,7 +283,7 @@ See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) 
 
 **When**: executing `msg` type tasks (text generation).
 
-**Input**: see [Context per Role](#context-per-role) table.
+**Input**: see [Context per Role](#context-per-role) table. Includes preceding plan outputs (fenced) — outputs from earlier tasks in the same plan, so the worker can reference results when writing responses.
 
 **Output**: free-form text.
 

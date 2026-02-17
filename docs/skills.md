@@ -116,11 +116,15 @@ No async, no imports from kiso, no shared state. JSON in, text out.
   "args": {"query": "python async patterns", "max_results": 5},
   "session": "dev-backend",
   "workspace": "/home/user/.kiso/sessions/dev-backend",
-  "session_secrets": {"github_token": "ghp_abc123"}
+  "session_secrets": {"github_token": "ghp_abc123"},
+  "plan_outputs": [
+    {"index": 1, "type": "exec", "detail": "ls src/", "output": "main.py\nutils.py", "status": "done"}
+  ]
 }
 ```
 
-`session_secrets` contains **only** the keys declared in `kiso.toml`, not the full session credentials.
+- `session_secrets`: **only** the keys declared in `kiso.toml`, not the full session credentials.
+- `plan_outputs`: outputs from preceding tasks in the same plan. See [flow.md — Task Output Chaining](flow.md#task-output-chaining). Empty array if this is the first task. Skills can use it or ignore it.
 
 ### Output (stdout)
 
@@ -230,7 +234,7 @@ kiso skill search [query]
 When the worker encounters a `skill` task:
 
 1. Parses `args` from JSON string, validates against the schema in `kiso.toml`
-2. Builds input JSON (parsed args as object + session + workspace path + scoped ephemeral secrets as dict)
+2. Builds input JSON (parsed args as object + session + workspace path + scoped ephemeral secrets as dict + plan outputs from preceding tasks)
 3. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/search/run.py` with `cwd=~/.kiso/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values — plaintext, base64, URL-encoded)

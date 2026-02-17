@@ -113,6 +113,11 @@ For polling. Used by the CLI and clients without a webhook.
 ```json
 {
   "session": "dev-backend",
+  "plan": {                    // current or most recent plan (null if none)
+    "id": 3,
+    "goal": "Add JWT auth with tests",
+    "status": "running"
+  },
   "tasks": [                   // all tasks since `after` (each: id, type, status, output)
     {"id": 5, "type": "exec", "status": "done", "output": "OK"},
     {"id": 6, "type": "msg", "status": "done", "output": "Done!"}
@@ -124,6 +129,23 @@ For polling. Used by the CLI and clients without a webhook.
 ```
 
 Returns all tasks (for monitoring and debugging). Clients that only want user-facing messages filter by `type: "msg"`.
+
+## POST /sessions/{session}/cancel
+
+Cancels the currently executing plan on a session. The worker finishes the current task, marks remaining tasks as `cancelled`, marks the plan as `cancelled`, and delivers a cancel summary to the user.
+
+**Response** `200 OK`:
+
+```json
+{
+  "cancelled": true,
+  "plan_id": 3
+}
+```
+
+If no plan is currently executing: `200 OK` with `"cancelled": false`. Idempotent — calling twice has no additional effect.
+
+Queued messages on the session are not affected — they are processed normally after cancellation. See [flow.md — Cancel](flow.md#cancel).
 
 ## POST /admin/reload-env
 
@@ -154,7 +176,7 @@ Every `msg` task output is POSTed to the session's webhook URL (set via `POST /s
 }
 ```
 
-- `final: true` on the last `msg` task in the current plan, sent only after the entire plan completes successfully (no pending reviews).
+- `final: true` on the last `msg` task in the current plan, sent only after the entire plan completes successfully (no pending reviews). Also `true` on the cancel summary message.
 - Only `msg` tasks trigger webhooks — `exec` and `skill` outputs are internal. See [flow.md — Delivers msg Tasks](flow.md#f-reviews-and-delivers).
 - **Retry**: 3 attempts with backoff (1s, 3s, 9s). If all fail, kiso logs the failure and continues. Outputs remain available via `/status`.
 - **Connector requirement**: connectors must implement a polling fallback — if no webhook callback arrives within a reasonable timeout, poll `GET /status/{session}?after={last_task_id}` to recover missed responses.

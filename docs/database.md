@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. Seven tables. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
+Single SQLite file: `~/.kiso/store.db`. Eight tables. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
 
 ## Tables
 
@@ -47,34 +47,58 @@ CREATE INDEX idx_messages_unprocessed ON messages(processed) WHERE processed = 0
 - `trusted=0` messages are from non-whitelisted users: saved for context and audit, never trigger planning. Paraphrased before inclusion in planner context (see [security.md — Prompt Injection Defense](security.md#prompt-injection-defense)).
 - `processed=0` messages are recovered on startup — re-enqueued for processing. Prevents silent message loss on crash.
 
+### plans
+
+A plan is the planner's output for a single message: a goal and a list of tasks. First-class entity that groups tasks and tracks plan-level state.
+
+```sql
+CREATE TABLE plans (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session    TEXT NOT NULL,
+    message_id INTEGER NOT NULL,    -- which message triggered this plan
+    parent_id  INTEGER,             -- previous plan if this is a replan (null for first plan)
+    goal       TEXT NOT NULL,       -- from planner output
+    status     TEXT NOT NULL DEFAULT 'running',  -- running | done | failed | cancelled
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_plans_session ON plans(session, id);
+```
+
+- Created after the planner returns and validation passes.
+- `parent_id` links replan chains: replan creates a new plan pointing to the previous one.
+- Status lifecycle: `running` → `done` | `failed` | `cancelled`.
+- On startup, any plans left in `running` status are marked as `failed`.
+
 ### tasks
 
-All tasks across all sessions. Persisted to survive container restarts.
+All tasks across all sessions. Each task belongs to a plan.
 
 ```sql
 CREATE TABLE tasks (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id    INTEGER NOT NULL,    -- which plan this task belongs to
     session    TEXT NOT NULL,
-    message_id INTEGER NOT NULL,   -- which message triggered this task
-    goal       TEXT NOT NULL,       -- process-level goal from the planner
     type       TEXT NOT NULL,       -- exec | msg | skill
     detail     TEXT NOT NULL,       -- what to do
     skill      TEXT,                -- skill name (if type=skill)
     args       TEXT,                -- JSON string of skill args (parsed before execution)
     expect     TEXT,                -- success criteria (required for exec and skill tasks)
-    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
+    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
     output     TEXT,                -- stdout / generated text
     stderr     TEXT,                -- stderr (exec/skill only)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX idx_tasks_plan ON tasks(plan_id, id);
 CREATE INDEX idx_tasks_session ON tasks(session, id);
 CREATE INDEX idx_tasks_status ON tasks(session, status);
 ```
 
+- `plan_id` replaces the old `message_id` + `goal` — the plan owns the goal, tasks reference the plan.
 - `exec` and `skill` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
-- Status lifecycle: `pending` → `running` → `done` | `failed`.
+- Status lifecycle: `pending` → `running` → `done` | `failed` | `cancelled`.
 - On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
+- On cancel, remaining `pending` tasks are marked `cancelled`.
 - The `/status/{session}` endpoint reads from this table.
 - Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#f-reviews-and-delivers).
 

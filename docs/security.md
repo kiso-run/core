@@ -283,7 +283,7 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 | Content | Fenced | Where |
 |---|---|---|
 | Untrusted messages (paraphrased) | yes | Planner context |
-| Exec/skill task output | yes | Reviewer context, replan planner context |
+| Exec/skill task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
 | Facts, summary, pending items | no | Generated internally by kiso LLM calls |
 | Trusted user messages | no | From whitelisted users |
 | Task detail, expect | no | Written by the planner |
