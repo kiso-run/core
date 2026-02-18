@@ -477,18 +477,51 @@ Structured logging for all LLM calls, task executions, reviews, webhooks.
 
 ---
 
-## Milestone 14: CLI
+## Milestone 14: Startup recovery + production hardening
+
+Crash-proof the system.
+
+- [x] Message recovery on startup
+  - [x] Query `processed=0 AND trusted=1` messages
+  - [x] Re-enqueue to session queues, spawn workers
+- [x] Plan/task recovery on startup
+  - [x] Mark `running` plans as `failed`
+  - [x] Mark `running` tasks as `failed`
+- [x] Input validation (all endpoints)
+  - [x] Session IDs: `^[a-zA-Z0-9_@.-]{1,255}$`
+  - [x] Usernames: `^[a-z_][a-z0-9_-]{0,31}$`
+  - [x] Skill args: max 64KB, max depth 5
+- [x] Output size limits
+  - [x] Exec/skill output: max 1MB, truncate with warning
+- [x] Rate limiting
+  - [x] Per-token: max requests/minute on `/msg` and `/sessions`
+  - [x] Per-user: max concurrent messages in processing
+  - [x] Per-session: max queued messages before rejecting
+- [x] Graceful shutdown
+  - [x] SIGTERM: finish current task, cancel remaining, close DB
+
+**Verify:**
+```bash
+# Send message, kill server mid-execution
+# Restart → unprocessed messages re-enqueued, running tasks marked failed
+# Send message with invalid session ID → 400
+# Send exec that produces huge output → truncated with warning
+```
+
+---
+
+## Milestone 15: CLI
 
 Interactive chat client and management commands. Full spec: [docs/cli.md](docs/cli.md).
 
-### 14a. Core CLI + argument parsing
+### 15a. Core CLI + argument parsing
 
 - [ ] Create `kiso/cli.py` with argument parser (argparse)
   - [ ] Subcommands: `serve`, `skill`, `connector`, `sessions`, `env`
   - [ ] No subcommand → chat mode (default)
 - [ ] `kiso serve`: start HTTP server (wraps uvicorn)
 
-### 14b. Chat mode REPL
+### 15b. Chat mode REPL
 
 - [ ] Chat mode: `kiso [--session SESSION] [--api URL] [--quiet]`
   - [ ] Always uses the token named `cli` from config
@@ -499,7 +532,7 @@ Interactive chat client and management commands. Full spec: [docs/cli.md](docs/c
   - [ ] Exit on `Ctrl+C` at prompt or `exit` command
   - [ ] `Ctrl+C` during execution → `POST /sessions/{session}/cancel`
 
-### 14c. Display renderer (`kiso/render.py`)
+### 15c. Display renderer (`kiso/render.py`)
 
 The renderer shows the full decision flow by default — every planning step, task execution, review verdict, and replan is visible. See [docs/cli.md — Display Rendering](docs/cli.md#display-rendering).
 
@@ -529,7 +562,7 @@ The renderer shows the full decision flow by default — every planning step, ta
   - [ ] `⊘ Cancelled. {N} of {M} tasks completed.` with done/skipped summary
 - [ ] Non-TTY output: plain text, no ANSI codes, no spinner, no truncation (pipe-friendly)
 
-### 14d. Skill management
+### 15d. Skill management
 
 - [ ] `kiso skill install {name|url}` / `update` / `remove` / `list` / `search`
   - [ ] Install flow: git clone → validate kiso.toml → deps.sh → uv sync → check env vars
@@ -543,7 +576,7 @@ The renderer shows the full decision flow by default — every planning step, ta
   - [ ] `skill search`: query GitHub API (`org:kiso-run+topic:kiso-skill`)
   - [ ] `skill update all`: update all installed skills
 
-### 14e. Connector management
+### 15e. Connector management
 
 - [ ] `kiso connector install` / `update` / `remove` / `list` / `search`
   - [ ] Same flow as skills but validate `type = "connector"` and `[kiso.connector]` section
@@ -555,7 +588,7 @@ The renderer shows the full decision flow by default — every planning step, ta
   - [ ] Logs: `~/.kiso/connectors/{name}/connector.log`
   - [ ] Exponential backoff restart on crash, stop after repeated failures
 
-### 14f. Session + env management
+### 15f. Session + env management
 
 - [ ] `kiso sessions [--all]`
 - [ ] `kiso env set` / `get` / `list` / `delete` / `reload`
@@ -603,7 +636,7 @@ kiso env list     # → lists KISO_* keys
 
 ---
 
-## Milestone 15: Docker
+## Milestone 16: Docker
 
 Package everything for production.
 
@@ -630,39 +663,6 @@ docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-...
 docker exec -it kiso kiso env reload
 # Send a message via curl → get response
 # docker compose down && docker compose up → message recovery works
-```
-
----
-
-## Milestone 16: Startup recovery + production hardening
-
-Crash-proof the system.
-
-- [ ] Message recovery on startup
-  - [ ] Query `processed=0 AND trusted=1` messages
-  - [ ] Re-enqueue to session queues, spawn workers
-- [ ] Plan/task recovery on startup
-  - [ ] Mark `running` plans as `failed`
-  - [ ] Mark `running` tasks as `failed`
-- [ ] Input validation (all endpoints)
-  - [ ] Session IDs: `^[a-zA-Z0-9_@.-]{1,255}$`
-  - [ ] Usernames: `^[a-z_][a-z0-9_-]{0,31}$`
-  - [ ] Skill args: max 64KB, max depth 5
-- [ ] Output size limits
-  - [ ] Exec/skill output: max 1MB, truncate with warning
-- [ ] Rate limiting
-  - [ ] Per-token: max requests/minute on `/msg` and `/sessions`
-  - [ ] Per-user: max concurrent messages in processing
-  - [ ] Per-session: max queued messages before rejecting
-- [ ] Graceful shutdown
-  - [ ] SIGTERM: finish current task, cancel remaining, close DB
-
-**Verify:**
-```bash
-# Send message, kill server mid-execution
-# Restart → unprocessed messages re-enqueued, running tasks marked failed
-# Send message with invalid session ID → 400
-# Send exec that produces huge output → truncated with warning
 ```
 
 ---

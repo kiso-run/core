@@ -26,7 +26,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["kiso"]
-omit = ["kiso/cli.py"]  # TODO: remove when CLI gets tests (M14)
+omit = ["kiso/cli.py"]  # TODO: remove when CLI gets tests (M15)
 
 [build-system]
 requires = ["hatchling"]
