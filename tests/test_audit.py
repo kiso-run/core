@@ -124,6 +124,56 @@ class TestWriteEntry:
         assert entry["count"] == 42
         assert entry["active"] is True
 
+    def test_caller_dict_not_mutated(self, tmp_path):
+        """_write_entry must not mutate the caller's dict."""
+        original = {"type": "test", "detail": "echo sk-secret-key-123"}
+        snapshot = dict(original)
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry(original, deploy_secrets={"KEY": "sk-secret-key-123"})
+        assert original == snapshot  # no timestamp, no redaction
+
+    def test_type_field_not_masked(self, tmp_path):
+        """The 'type' field must never be masked even if it matches a secret."""
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry(
+                {"type": "task", "detail": "task"},
+                deploy_secrets={"KEY": "task"},
+            )
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        entry = json.loads(files[0].read_text().strip())
+        assert entry["type"] == "task"
+        assert "[REDACTED]" in entry["detail"]
+
+    def test_single_datetime_for_timestamp_and_filename(self, tmp_path):
+        """Timestamp in entry and filename date must come from the same instant."""
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry({"type": "test"})
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        filename_date = files[0].stem  # e.g. "2026-02-18"
+        entry = json.loads(files[0].read_text().strip())
+        ts_date = entry["timestamp"][:10]  # e.g. "2026-02-18"
+        assert ts_date == filename_date
+
+    def test_audit_dir_permissions(self, tmp_path):
+        """Audit directory should have 0o700 permissions."""
+        import stat
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry({"type": "test"})
+        audit_dir = tmp_path / "audit"
+        mode = stat.S_IMODE(audit_dir.stat().st_mode)
+        assert mode == 0o700
+
+    def test_audit_file_permissions(self, tmp_path):
+        """Audit files should have 0o600 permissions."""
+        import stat
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry({"type": "test"})
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        mode = stat.S_IMODE(files[0].stat().st_mode)
+        assert mode == 0o600
+
 
 # --- log_llm_call ---
 
@@ -270,6 +320,21 @@ class TestLogWebhook:
         entry = json.loads(files[0].read_text().strip())
         assert entry["status"] == 0
         assert entry["attempts"] == 3
+
+    def test_webhook_url_secret_masking(self, tmp_path):
+        """Webhook URL should be sanitized when secrets are provided."""
+        token = "xoxb-super-secret-token"
+        url = f"https://hooks.slack.com/services/{token}"
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            log_webhook(
+                "sess1", 42, url, 200, 1,
+                deploy_secrets={"SLACK_TOKEN": token},
+            )
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        entry = json.loads(files[0].read_text().strip())
+        assert token not in entry["url"]
+        assert "[REDACTED]" in entry["url"]
 
 
 # --- Concurrent writes ---

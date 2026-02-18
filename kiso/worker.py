@@ -375,6 +375,12 @@ async def _execute_plan(
         if cancel_event is not None and cancel_event.is_set():
             for t in tasks[i:]:
                 await update_task(db, t["id"], "cancelled")
+                audit.log_task(
+                    session, t["id"], t["type"], t["detail"],
+                    "cancelled", 0, 0,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
+                )
             _cleanup_plan_outputs(session)
             return False, "cancelled", completed, [dict(t) for t in tasks[i:]]
 
@@ -395,6 +401,11 @@ async def _execute_plan(
         )
         if not perm.allowed:
             await update_task(db, task_id, "failed", output=perm.reason)
+            audit.log_task(
+                session, task_id, task_type, detail, "failed", 0, 0,
+                deploy_secrets=deploy_secrets,
+                session_secrets=session_secrets or {},
+            )
             remaining = [dict(t) for t in tasks[i + 1:]]
             _cleanup_plan_outputs(session)
             return False, None, completed, remaining
@@ -472,7 +483,8 @@ async def _execute_plan(
 
                 audit.log_task(
                     session, task_id, "msg", detail, "done", task_duration_ms,
-                    len(text),
+                    len(text), deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
                 )
 
                 # Accumulate plan output
@@ -494,12 +506,23 @@ async def _execute_plan(
                         secret=str(config.settings.get("webhook_secret", "")),
                         max_payload=int(config.settings.get("webhook_max_payload", 0)),
                     )
-                    audit.log_webhook(session, task_id, webhook_url, wh_status, wh_attempts)
+                    audit.log_webhook(
+                        session, task_id, webhook_url, wh_status, wh_attempts,
+                        deploy_secrets=deploy_secrets,
+                        session_secrets=session_secrets or {},
+                    )
 
                 completed.append(task_row)
             except LLMError as e:
+                task_duration_ms = int((time.perf_counter() - t0) * 1000)
                 log.error("Msg task %d LLM error: %s", task_id, e)
                 await update_task(db, task_id, "failed", output=str(e))
+                audit.log_task(
+                    session, task_id, "msg", detail, "failed",
+                    task_duration_ms, 0,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
+                )
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, None, completed, remaining
@@ -798,7 +821,11 @@ async def _process_message(
                         config.settings.get("webhook_max_payload", 0)
                     ),
                 )
-                audit.log_webhook(session, 0, webhook_url, wh_status, wh_attempts)
+                audit.log_webhook(
+                    session, 0, webhook_url, wh_status, wh_attempts,
+                    deploy_secrets=collect_deploy_secrets(config),
+                    session_secrets=session_secrets or {},
+                )
             if cancel_event is not None:
                 cancel_event.clear()  # reset for next message
             break

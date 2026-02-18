@@ -1211,6 +1211,106 @@ class TestExecutePlanAudit:
         assert args[2] == "msg"
         assert args[4] == "done"
 
+    async def test_audit_log_task_msg_passes_secrets(self, db, tmp_path):
+        """audit.log_task for msg tasks passes deploy_secrets and session_secrets."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        secrets = {"TOK": "secret123"}
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                session_secrets=secrets,
+            )
+
+        mock_audit.log_task.assert_called_once()
+        kwargs = mock_audit.log_task.call_args[1]
+        assert "deploy_secrets" in kwargs
+        assert kwargs["session_secrets"] == secrets
+
+    async def test_audit_log_task_on_permission_denied(self, db, tmp_path):
+        """audit.log_task called with status 'failed' when permission is denied."""
+        config = _make_config(users={"bob": User(role="admin")})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="ok")
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                username="alice",
+            )
+
+        mock_audit.log_task.assert_called_once()
+        args = mock_audit.log_task.call_args[0]
+        assert args[2] == "exec"
+        assert args[4] == "failed"
+
+    async def test_audit_log_task_on_cancel(self, db, tmp_path):
+        """audit.log_task called for each cancelled task."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo a", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        cancel_event = asyncio.Event()
+        cancel_event.set()
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                cancel_event=cancel_event,
+            )
+
+        assert mock_audit.log_task.call_count == 2
+        for call in mock_audit.log_task.call_args_list:
+            assert call[0][4] == "cancelled"
+
+    async def test_audit_log_task_on_msg_llm_error(self, db, tmp_path):
+        """audit.log_task called with status 'failed' on msg LLMError."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, side_effect=LLMError("down")), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "msg", 5)
+
+        mock_audit.log_task.assert_called_once()
+        args = mock_audit.log_task.call_args[0]
+        assert args[2] == "msg"
+        assert args[4] == "failed"
+
+    async def test_audit_log_webhook_passes_secrets(self, db, tmp_path):
+        """audit.log_webhook passes deploy_secrets and session_secrets."""
+        config = _make_config()
+        from kiso.store import upsert_session
+        await upsert_session(db, "sess1", webhook="https://example.com/hook")
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        secrets = {"TOK": "secret123"}
+        with patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock, return_value=(True, 200, 1)), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("kiso.worker.audit") as mock_audit:
+            await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+                session_secrets=secrets,
+            )
+
+        mock_audit.log_webhook.assert_called_once()
+        kwargs = mock_audit.log_webhook.call_args[1]
+        assert "deploy_secrets" in kwargs
+        assert kwargs["session_secrets"] == secrets
+
 
 # --- _persist_plan_tasks ---
 

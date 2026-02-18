@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from kiso.config import KISO_DIR
 from kiso.security import sanitize_output
 
 log = logging.getLogger(__name__)
+
+# Fields exempt from secret masking (structural, never user-supplied).
+_MASK_EXEMPT = frozenset({"timestamp", "type"})
 
 
 def _write_entry(
@@ -27,21 +31,24 @@ def _write_entry(
     - Never raises — audit failures are logged and swallowed
     """
     try:
-        entry["timestamp"] = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        entry = {**entry, "timestamp": now.isoformat()}
 
         if deploy_secrets or session_secrets:
             ds = deploy_secrets or {}
             ss = session_secrets or {}
             for key, value in entry.items():
-                if isinstance(value, str) and key != "timestamp":
+                if isinstance(value, str) and key not in _MASK_EXEMPT:
                     entry[key] = sanitize_output(value, ds, ss)
 
         audit_dir = KISO_DIR / "audit"
         audit_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(audit_dir, 0o700)
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = now.strftime("%Y-%m-%d")
         path = audit_dir / f"{today}.jsonl"
-        with open(path, "a") as f:
+        opener = lambda p, flags: os.open(p, flags, 0o600)
+        with open(path, "a", opener=opener) as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -126,13 +133,19 @@ def log_webhook(
     url: str,
     status: int,
     attempts: int,
+    deploy_secrets: dict[str, str] | None = None,
+    session_secrets: dict[str, str] | None = None,
 ) -> None:
-    """Log a webhook delivery."""
-    _write_entry({
-        "type": "webhook",
-        "session": session,
-        "task_id": task_id,
-        "url": url,
-        "status": status,
-        "attempts": attempts,
-    })
+    """Log a webhook delivery. URL is sanitized against known secrets."""
+    _write_entry(
+        {
+            "type": "webhook",
+            "session": session,
+            "task_id": task_id,
+            "url": url,
+            "status": status,
+            "attempts": attempts,
+        },
+        deploy_secrets=deploy_secrets,
+        session_secrets=session_secrets,
+    )
