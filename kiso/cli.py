@@ -2,22 +2,287 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="kiso", description="Kiso agent bot")
+
+    # Chat-mode flags (top-level, not on a subcommand)
+    parser.add_argument(
+        "--session",
+        default=None,
+        help="session name (default: {hostname}@{username})",
+    )
+    parser.add_argument(
+        "--api",
+        default="http://localhost:8333",
+        help="kiso server URL (default: http://localhost:8333)",
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true", help="only show msg task content"
+    )
+
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("serve", help="start the HTTP server")
+    skill_parser = sub.add_parser("skill", help="manage skills")
+    skill_sub = skill_parser.add_subparsers(dest="skill_command")
+
+    skill_sub.add_parser("list", help="list installed skills")
+
+    search_p = skill_sub.add_parser("search", help="search official skills on GitHub")
+    search_p.add_argument("query", nargs="?", default="", help="search filter")
+
+    install_p = skill_sub.add_parser("install", help="install a skill")
+    install_p.add_argument("target", help="skill name or git URL")
+    install_p.add_argument("--name", default=None, help="custom install name")
+    install_p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
+    install_p.add_argument(
+        "--show-deps", action="store_true", help="show deps.sh without installing"
+    )
+
+    update_p = skill_sub.add_parser("update", help="update a skill")
+    update_p.add_argument("target", help="skill name or 'all'")
+
+    remove_p = skill_sub.add_parser("remove", help="remove a skill")
+    remove_p.add_argument("name", help="skill name")
+
+    sub.add_parser("connector", help="manage connectors")
+    sub.add_parser("sessions", help="manage sessions")
+    sub.add_parser("env", help="show environment info")
+
+    return parser
+
+
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("usage: kiso <command>")
-        print("commands: serve")
-        sys.exit(1)
+    parser = build_parser()
+    args = parser.parse_args()
 
-    cmd = sys.argv[1]
-
-    if cmd == "serve":
+    if args.command is None:
+        _chat(args)
+    elif args.command == "serve":
         _serve()
+    elif args.command == "skill":
+        from kiso.cli_skill import run_skill_command
+
+        run_skill_command(args)
     else:
-        print(f"unknown command: {cmd}")
+        print(f"kiso {args.command}: not yet implemented.")
         sys.exit(1)
+
+
+def _chat(args: argparse.Namespace) -> None:
+    import getpass
+    import socket
+
+    import httpx
+
+    from kiso.config import load_config
+    from kiso.render import detect_caps, render_cancel_start
+
+    cfg = load_config()
+    caps = detect_caps()
+    token = cfg.tokens.get("cli")
+    if not token:
+        print("error: no 'cli' token in config.toml")
+        sys.exit(1)
+
+    session = args.session or f"{socket.gethostname()}@{getpass.getuser()}"
+    user = getpass.getuser()
+    client = httpx.Client(
+        base_url=args.api,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30.0,
+    )
+
+    last_task_id = 0
+    try:
+        while True:
+            try:
+                text = input("You: ")
+            except (KeyboardInterrupt, EOFError):
+                print()
+                break
+            text = text.strip()
+            if not text:
+                continue
+            if text == "exit":
+                break
+
+            try:
+                resp = client.post(
+                    "/msg",
+                    json={"session": session, "user": user, "content": text},
+                )
+                resp.raise_for_status()
+            except httpx.ConnectError:
+                print(f"error: cannot connect to {args.api}")
+                continue
+            except httpx.HTTPStatusError as exc:
+                print(f"error: {exc.response.status_code} — {exc.response.text}")
+                continue
+
+            data = resp.json()
+            if data.get("untrusted"):
+                print("warning: message was not trusted by the server.")
+                continue
+
+            message_id = data["message_id"]
+
+            try:
+                last_task_id = _poll_status(
+                    client, session, message_id, last_task_id, args.quiet, caps,
+                )
+            except KeyboardInterrupt:
+                print(f"\n{render_cancel_start(caps)}")
+                try:
+                    client.post(f"/sessions/{session}/cancel")
+                except httpx.HTTPError:
+                    pass
+    finally:
+        client.close()
+
+
+_POLL_EVERY = 6  # poll API every 6 iterations (6 × 80ms ≈ 480ms)
+
+
+def _poll_status(
+    client: "httpx.Client",
+    session: str,
+    message_id: int,
+    base_task_id: int,
+    quiet: bool,
+    caps: "TermCaps",  # noqa: F821
+) -> int:
+    import time
+
+    from kiso.render import (
+        CLEAR_LINE,
+        render_msg_output,
+        render_plan,
+        render_task_header,
+        render_task_output,
+        spinner_frames,
+    )
+
+    seen: dict[int, str] = {}
+    shown_plan_id: int | None = None
+    max_task_id = base_task_id
+    counter = 0
+    frames = spinner_frames(caps)
+    active_spinner_task: dict | None = None
+    active_spinner_index: int = 0
+    active_spinner_total: int = 0
+
+    while True:
+        if counter % _POLL_EVERY == 0:
+            try:
+                resp = client.get(
+                    f"/status/{session}", params={"after": base_task_id}
+                )
+                resp.raise_for_status()
+            except Exception:
+                time.sleep(0.08)
+                counter += 1
+                continue
+
+            data = resp.json()
+            plan = data.get("plan")
+            tasks = data.get("tasks", [])
+
+            # Show plan goal / replan detection
+            if plan and not quiet:
+                pid = plan["id"]
+                task_count = len(tasks)
+                if shown_plan_id is None:
+                    # Clear spinner line before printing plan
+                    if active_spinner_task and caps.tty:
+                        sys.stdout.write(f"\r{CLEAR_LINE}")
+                        sys.stdout.flush()
+                        active_spinner_task = None
+                    print(f"\n{render_plan(plan['goal'], task_count, caps)}")
+                    shown_plan_id = pid
+                elif pid != shown_plan_id:
+                    if active_spinner_task and caps.tty:
+                        sys.stdout.write(f"\r{CLEAR_LINE}")
+                        sys.stdout.flush()
+                        active_spinner_task = None
+                    print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
+                    shown_plan_id = pid
+                    seen.clear()
+
+            total = len(tasks)
+
+            # Render tasks that changed status
+            for idx, task in enumerate(tasks, 1):
+                tid = task["id"]
+                status = task["status"]
+                if tid > max_task_id:
+                    max_task_id = tid
+                if seen.get(tid) == status:
+                    continue
+                seen[tid] = status
+                ttype = task.get("type", "")
+                output = task.get("output", "") or ""
+
+                # Clear spinner line before printing new content
+                if active_spinner_task and caps.tty:
+                    sys.stdout.write(f"\r{CLEAR_LINE}")
+                    sys.stdout.flush()
+                    active_spinner_task = None
+
+                if quiet:
+                    if ttype == "msg" and status == "done":
+                        print(render_msg_output(output, caps))
+                    continue
+
+                # Msg task done → show bot response
+                if ttype == "msg" and status == "done":
+                    print(render_msg_output(output, caps))
+                    continue
+
+                # Print header for non-msg tasks or running msg
+                print(render_task_header(task, idx, total, caps))
+
+                # Show output for completed/failed tasks
+                if status in ("done", "failed") and output:
+                    out = render_task_output(output, caps)
+                    if out:
+                        print(out)
+
+                # Track running task for spinner
+                if status == "running":
+                    active_spinner_task = task
+                    active_spinner_index = idx
+                    active_spinner_total = total
+
+            # Done condition: plan matches our message and is no longer running
+            if (
+                plan
+                and plan.get("message_id") == message_id
+                and plan.get("status") != "running"
+            ):
+                # Clear any remaining spinner
+                if active_spinner_task and caps.tty:
+                    sys.stdout.write(f"\r{CLEAR_LINE}")
+                    sys.stdout.flush()
+                break
+
+        # Animate spinner on TTY
+        if active_spinner_task and caps.tty:
+            frame = frames[counter % len(frames)]
+            line = render_task_header(
+                active_spinner_task, active_spinner_index,
+                active_spinner_total, caps, spinner_frame=frame,
+            )
+            sys.stdout.write(f"\r{CLEAR_LINE}{line}")
+            sys.stdout.flush()
+
+        time.sleep(0.08)
+        counter += 1
+
+    return max_task_id
 
 
 def _serve() -> None:

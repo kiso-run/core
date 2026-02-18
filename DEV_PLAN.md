@@ -516,65 +516,65 @@ Interactive chat client and management commands. Full spec: [docs/cli.md](docs/c
 
 ### 15a. Core CLI + argument parsing
 
-- [ ] Create `kiso/cli.py` with argument parser (argparse)
-  - [ ] Subcommands: `serve`, `skill`, `connector`, `sessions`, `env`
-  - [ ] No subcommand → chat mode (default)
-- [ ] `kiso serve`: start HTTP server (wraps uvicorn)
+- [x] Create `kiso/cli.py` with argument parser (argparse)
+  - [x] Subcommands: `serve`, `skill`, `connector`, `sessions`, `env`
+  - [x] No subcommand → chat mode (default)
+- [x] `kiso serve`: start HTTP server (wraps uvicorn)
 
 ### 15b. Chat mode REPL
 
-- [ ] Chat mode: `kiso [--session SESSION] [--api URL] [--quiet]`
-  - [ ] Always uses the token named `cli` from config
-  - [ ] `--api`: connect to remote kiso instance (default: `http://localhost:8333`)
-  - [ ] `--quiet` / `-q`: only show `msg` task content (hide decision flow)
-  - [ ] Default session: `{hostname}@{whoami}`
-  - [ ] REPL loop: prompt → POST /msg → poll /status → render → repeat
-  - [ ] Exit on `Ctrl+C` at prompt or `exit` command
-  - [ ] `Ctrl+C` during execution → `POST /sessions/{session}/cancel`
+- [x] Chat mode: `kiso [--session SESSION] [--api URL] [--quiet]`
+  - [x] Always uses the token named `cli` from config
+  - [x] `--api`: connect to remote kiso instance (default: `http://localhost:8333`)
+  - [x] `--quiet` / `-q`: only show `msg` task content (hide decision flow)
+  - [x] Default session: `{hostname}@{whoami}`
+  - [x] REPL loop: prompt → POST /msg → poll /status → render → repeat
+  - [x] Exit on `Ctrl+C` at prompt or `exit` command
+  - [x] `Ctrl+C` during execution → `POST /sessions/{session}/cancel`
 
 ### 15c. Display renderer (`kiso/render.py`)
 
 The renderer shows the full decision flow by default — every planning step, task execution, review verdict, and replan is visible. See [docs/cli.md — Display Rendering](docs/cli.md#display-rendering).
 
-- [ ] Create `kiso/render.py` — stateless renderer that maps `/status` events to terminal output
-- [ ] Terminal capability detection at startup
-  - [ ] Color: `TERM` contains `256color` or `COLORTERM` set → 256-color; else no color
-  - [ ] Unicode: `LC_ALL` / `LANG` contains `UTF-8` → Unicode icons; else ASCII fallback
-  - [ ] Width: `os.get_terminal_size()`, fallback 80
-  - [ ] TTY: `sys.stdout.isatty()` → if not TTY: no spinner, no truncation, no color (pipe-friendly)
-- [ ] Plan rendering
-  - [ ] `◆ Plan: {goal} ({N} tasks)` — bold cyan
-  - [ ] On replan: `↻ Replan: {new goal} ({N} tasks)` with reviewer reason in red
-  - [ ] On max replan depth: `⊘ Max replans reached ({N}). Giving up.` in bold red
-- [ ] Task rendering (per task, real-time as `/status` polling delivers updates)
-  - [ ] Header: icon + `[{i}/{total}] {type}: {detail}` — yellow for exec/skill, green for msg
-  - [ ] Icons: `▶` exec, `⚡` skill, `💬` msg (ASCII fallback: `>`, `!`, `"`)
-  - [ ] Spinner on active task: braille animation (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`), 80ms cycle, replaces with final icon
-  - [ ] Output lines: indented with `┊`, dim color
-  - [ ] Output truncation: first 20 lines shown (10 if terminal < 40 rows), rest collapsed behind `... (N more lines, press Enter to expand)`. Expansion is inline, no scrollback modification.
-  - [ ] `msg` task output never truncated — it's the bot's response
-- [ ] Review rendering
+- [x] Create `kiso/render.py` — stateless renderer that maps `/status` events to terminal output
+- [x] Terminal capability detection at startup
+  - [x] Color: `TERM` contains `256color` or `COLORTERM` set → 256-color; else no color
+  - [x] Unicode: `LC_ALL` / `LANG` contains `UTF-8` → Unicode icons; else ASCII fallback
+  - [x] Width: `os.get_terminal_size()`, fallback 80
+  - [x] TTY: `sys.stdout.isatty()` → if not TTY: no spinner, no truncation, no color (pipe-friendly)
+- [x] Plan rendering
+  - [x] `◆ Plan: {goal} ({N} tasks)` — bold cyan
+  - [x] On replan: `↻ Replan: {new goal} ({N} tasks)` with reviewer reason in red
+  - [x] On max replan depth: `⊘ Max replans reached ({N}). Giving up.` in bold red
+- [x] Task rendering (per task, real-time as `/status` polling delivers updates)
+  - [x] Header: icon + `[{i}/{total}] {type}: {detail}` — yellow for exec/skill, green for msg
+  - [x] Icons: `▶` exec, `⚡` skill, `💬` msg (ASCII fallback: `>`, `!`, `"`)
+  - [x] Spinner on active task: braille animation (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`), 80ms cycle, replaces with final icon
+  - [x] Output lines: indented with `┊`, dim color
+  - [x] Output truncation: first 20 lines shown (10 if terminal < 40 rows), rest collapsed behind `... (N more lines, press Enter to expand)`. Expansion is inline, no scrollback modification.
+  - [x] `msg` task output never truncated — it's the bot's response
+- [ ] Review rendering (deferred — /status API doesn't expose review verdicts)
   - [ ] `✓ review: ok` — green (ASCII: `ok`)
   - [ ] `✗ review: replan — "{reason}"` — bold red (ASCII: `FAIL`)
   - [ ] `📝 learning: "{content}"` — magenta (ASCII: `+ learning: ...`)
-- [ ] Cancel rendering
-  - [ ] `⊘ Cancelling...` on Ctrl+C
-  - [ ] `⊘ Cancelled. {N} of {M} tasks completed.` with done/skipped summary
-- [ ] Non-TTY output: plain text, no ANSI codes, no spinner, no truncation (pipe-friendly)
+- [x] Cancel rendering
+  - [x] `⊘ Cancelling...` on Ctrl+C
+  - [x] `⊘ Cancelled. {N} of {M} tasks completed.` with done/skipped summary
+- [x] Non-TTY output: plain text, no ANSI codes, no spinner, no truncation (pipe-friendly)
 
 ### 15d. Skill management
 
-- [ ] `kiso skill install {name|url}` / `update` / `remove` / `list` / `search`
-  - [ ] Install flow: git clone → validate kiso.toml → deps.sh → uv sync → check env vars
-  - [ ] Official repos: `git@github.com:kiso-run/skill-{name}.git`
-  - [ ] `.installing` marker during install (prevents discovery)
-  - [ ] Naming convention: official → name, unofficial URL → `{domain}_{ns}_{repo}`, `--name` override
-  - [ ] URL-to-name: strip `.git`, normalize SSH/HTTPS, lowercase, `.`→`-` in domain, `/`→`_`
-  - [ ] Unofficial repo warning + deps.sh display before confirmation
-  - [ ] `--no-deps` flag: skip deps.sh execution
-  - [ ] `--show-deps` flag: display deps.sh without installing
-  - [ ] `skill search`: query GitHub API (`org:kiso-run+topic:kiso-skill`)
-  - [ ] `skill update all`: update all installed skills
+- [x] `kiso skill install {name|url}` / `update` / `remove` / `list` / `search`
+  - [x] Install flow: git clone → validate kiso.toml → deps.sh → uv sync → check env vars
+  - [x] Official repos: `git@github.com:kiso-run/skill-{name}.git`
+  - [x] `.installing` marker during install (prevents discovery)
+  - [x] Naming convention: official → name, unofficial URL → `{domain}_{ns}_{repo}`, `--name` override
+  - [x] URL-to-name: strip `.git`, normalize SSH/HTTPS, lowercase, `.`→`-` in domain, `/`→`_`
+  - [x] Unofficial repo warning + deps.sh display before confirmation
+  - [x] `--no-deps` flag: skip deps.sh execution
+  - [x] `--show-deps` flag: display deps.sh without installing
+  - [x] `skill search`: query GitHub API (`org:kiso-run+topic:kiso-skill`)
+  - [x] `skill update all`: update all installed skills
 
 ### 15e. Connector management
 

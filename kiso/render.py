@@ -1,0 +1,233 @@
+"""Terminal renderer for CLI display."""
+
+from __future__ import annotations
+
+import os
+import sys
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class TermCaps:
+    """Terminal capabilities detected at startup."""
+
+    color: bool  # 256-color support
+    unicode: bool  # UTF-8 icons
+    width: int  # terminal columns
+    height: int  # terminal rows
+    tty: bool  # stdout is a TTY
+
+
+def detect_caps() -> TermCaps:
+    """Detect terminal capabilities from environment."""
+    tty = sys.stdout.isatty()
+    term = os.environ.get("TERM", "")
+    colorterm = os.environ.get("COLORTERM", "")
+    color = tty and ("256color" in term or bool(colorterm))
+    lang = os.environ.get("LC_ALL", "") or os.environ.get("LANG", "")
+    unicode = "utf-8" in lang.lower() or "utf8" in lang.lower()
+    try:
+        size = os.get_terminal_size()
+        width, height = size.columns, size.lines
+    except (ValueError, OSError):
+        width, height = 80, 24
+    return TermCaps(color=color, unicode=unicode, width=width, height=height, tty=tty)
+
+
+# ── ANSI helpers ─────────────────────────────────────────────
+
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_CYAN = "\033[36m"
+_YELLOW = "\033[33m"
+_GREEN = "\033[32m"
+_RED = "\033[31m"
+_MAGENTA = "\033[35m"
+CLEAR_LINE = "\033[2K"
+
+
+def _style(text: str, *codes: str, caps: TermCaps) -> str:
+    if not caps.color:
+        return text
+    return "".join(codes) + text + _RESET
+
+
+# ── Icons ────────────────────────────────────────────────────
+
+_ICONS_UNICODE = {
+    "plan": "◆",
+    "exec": "▶",
+    "skill": "⚡",
+    "msg": "💬",
+    "ok": "✓",
+    "fail": "✗",
+    "replan": "↻",
+    "cancel": "⊘",
+}
+
+_ICONS_ASCII = {
+    "plan": "*",
+    "exec": ">",
+    "skill": "!",
+    "msg": '"',
+    "ok": "ok",
+    "fail": "FAIL",
+    "replan": "~>",
+    "cancel": "X",
+}
+
+
+def _icon(name: str, caps: TermCaps) -> str:
+    table = _ICONS_UNICODE if caps.unicode else _ICONS_ASCII
+    return table.get(name, "?")
+
+
+# ── Spinner ──────────────────────────────────────────────────
+
+_BRAILLE_FRAMES = list("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+_ASCII_FRAMES = ["|", "/", "-", "\\"]
+
+
+def spinner_frames(caps: TermCaps) -> list[str]:
+    """Return spinner animation frames."""
+    return _BRAILLE_FRAMES if caps.unicode else _ASCII_FRAMES
+
+
+# ── Public render functions ──────────────────────────────────
+
+
+def render_plan(
+    goal: str, task_count: int, caps: TermCaps, *, replan: bool = False,
+) -> str:
+    """Render plan header line."""
+    icon = _icon("replan" if replan else "plan", caps)
+    label = "Replan" if replan else "Plan"
+    s = "s" if task_count != 1 else ""
+    text = f"{icon} {label}: {goal} ({task_count} task{s})"
+    return _style(text, _BOLD, _CYAN, caps=caps)
+
+
+def render_max_replan(depth: int, caps: TermCaps) -> str:
+    """Render max-replan-reached message."""
+    icon = _icon("cancel", caps)
+    text = f"{icon} Max replans reached ({depth}). Giving up."
+    return _style(text, _BOLD, _RED, caps=caps)
+
+
+def render_task_header(
+    task: dict,
+    index: int,
+    total: int,
+    caps: TermCaps,
+    *,
+    spinner_frame: str | None = None,
+) -> str:
+    """Render task header line (e.g. '▶ [1/3] exec: ls -la ⠋')."""
+    status = task.get("status", "")
+    ttype = task.get("type", "")
+    detail = task.get("detail", "")
+    skill_name = task.get("skill", "")
+
+    # Pick icon based on status
+    if status == "done":
+        icon = _icon("ok", caps)
+    elif status == "failed":
+        icon = _icon("fail", caps)
+    elif status == "cancelled":
+        icon = _icon("cancel", caps)
+    else:
+        # running or other → type icon
+        icon = _icon(ttype, caps)
+
+    # Label: skill:name for skill tasks with a skill field
+    label = f"skill:{skill_name}" if ttype == "skill" and skill_name else ttype
+
+    # Build detail part
+    detail_str = f": {detail}" if detail else ""
+    text = f"{icon} [{index}/{total}] {label}{detail_str}"
+
+    # Append spinner frame
+    if spinner_frame is not None:
+        spinner = _style(spinner_frame, _CYAN, caps=caps)
+        text = f"{text} {spinner}"
+
+    # Pick color based on type
+    if status == "done":
+        color = _GREEN
+    elif status == "failed":
+        color = _RED
+    elif ttype == "msg":
+        color = _GREEN
+    else:
+        color = _YELLOW
+
+    styled = _style(text, color, caps=caps)
+
+    # Truncate to width - 2 to avoid line-wrap artifacts with \r
+    if caps.tty and len(text) > caps.width - 2:
+        # Truncate the unstyled text, then re-style
+        truncated = text[: caps.width - 5] + "..."
+        styled = _style(truncated, color, caps=caps)
+
+    return styled
+
+
+def render_task_output(
+    output: str, caps: TermCaps, *, is_msg: bool = False,
+) -> str:
+    """Render indented task output with optional truncation."""
+    if not output:
+        return ""
+    indent_char = "┊" if caps.unicode else "|"
+    indent = f"  {indent_char} "
+    lines = output.splitlines()
+
+    # Determine truncation limit
+    if is_msg or not caps.tty:
+        # Never truncate msg output or non-TTY
+        max_lines = len(lines)
+    elif caps.height < 40:
+        max_lines = 10
+    else:
+        max_lines = 20
+
+    shown = lines[:max_lines]
+    result_lines = [_style(f"{indent}{line}", _DIM, caps=caps) for line in shown]
+
+    if len(lines) > max_lines:
+        remaining = len(lines) - max_lines
+        more = f"  ... ({remaining} more lines)"
+        result_lines.append(_style(more, _DIM, caps=caps))
+
+    return "\n".join(result_lines)
+
+
+def render_msg_output(output: str, caps: TermCaps) -> str:
+    """Render bot message output."""
+    return f"\nBot: {output}"
+
+
+def render_cancel_start(caps: TermCaps) -> str:
+    """Render cancel-in-progress message."""
+    icon = _icon("cancel", caps)
+    text = f"{icon} Cancelling..."
+    return _style(text, _BOLD, _RED, caps=caps)
+
+
+def render_cancel_done(
+    done: int,
+    total: int,
+    done_tasks: list[str],
+    skipped_tasks: list[str],
+    caps: TermCaps,
+) -> str:
+    """Render cancel summary."""
+    icon = _icon("cancel", caps)
+    header = f"{icon} Cancelled. {done} of {total} tasks completed."
+    parts = [_style(header, _BOLD, _RED, caps=caps)]
+    if done_tasks:
+        parts.append(_style("  Done: " + ", ".join(done_tasks), _DIM, caps=caps))
+    if skipped_tasks:
+        parts.append(_style("  Skipped: " + ", ".join(skipped_tasks), _DIM, caps=caps))
+    return "\n".join(parts)
