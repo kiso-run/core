@@ -285,3 +285,39 @@ def test_sandbox_settings_removed():
     """Per-session sandbox replaced global sandbox_enabled/sandbox_user settings."""
     assert "sandbox_enabled" not in SETTINGS_DEFAULTS
     assert "sandbox_user" not in SETTINGS_DEFAULTS
+
+
+# --- Malformed TOML / permission errors ---
+
+
+def test_malformed_toml_clear_error(tmp_path: Path, capsys):
+    """Malformed TOML on load_config gives a clear SystemExit message."""
+    p = tmp_path / "config.toml"
+    p.write_text("this is not [valid toml }{")
+    with pytest.raises(SystemExit):
+        load_config(p)
+    err = _die_msg(capsys)
+    assert "Malformed TOML" in err
+
+
+def test_malformed_toml_reload_raises(tmp_path: Path):
+    """Malformed TOML on reload_config raises ConfigError."""
+    p = tmp_path / "config.toml"
+    p.write_text("not valid [[ toml {{")
+    with pytest.raises(ConfigError, match="Malformed TOML"):
+        reload_config(p)
+
+
+def test_config_permission_error(tmp_path: Path, capsys):
+    """Unreadable config file gives a clear SystemExit message."""
+    import os
+    p = tmp_path / "config.toml"
+    p.write_text(VALID)
+    os.chmod(p, 0o000)
+    try:
+        with pytest.raises(SystemExit):
+            load_config(p)
+        err = _die_msg(capsys)
+        assert "Cannot read" in err
+    finally:
+        os.chmod(p, 0o644)

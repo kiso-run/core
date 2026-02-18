@@ -31,7 +31,7 @@ from kiso.worker import (
     _apply_curator_result,
     _build_cancel_summary,
     _exec_task, _msg_task, _skill_task, _load_worker_prompt, _session_workspace,
-    _ensure_sandbox_user,
+    _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
@@ -3223,3 +3223,336 @@ class TestCancelMechanism:
         system_msgs = [m for m in msgs if m["role"] == "system"]
         assert len(system_msgs) == 1
         assert "The user cancelled the plan" in system_msgs[0]["content"]
+
+
+# --- Output truncation ---
+
+
+class TestOutputTruncation:
+    async def test_exec_output_truncated_when_large(self, tmp_path):
+        """Command producing >max_output_size chars gets truncated."""
+        # echo 2000 chars, limit to 100
+        cmd = "python3 -c \"print('A' * 2000)\""
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _exec_task(
+                "test-sess", cmd, 5, max_output_size=100,
+            )
+        assert success is True
+        assert len(stdout) <= 100 + len("\n[truncated]")
+        assert stdout.endswith("[truncated]")
+
+    async def test_skill_output_truncated_when_large(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "big"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "run.py").write_text("print('B' * 2000)")
+        (skill_dir / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "big"\n'
+            '[kiso.skill]\nsummary = "Big"\n'
+        )
+        (skill_dir / "pyproject.toml").write_text('[project]\nname = "big"\nversion = "0.1.0"')
+        skill = {
+            "name": "big", "summary": "Big", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
+        }
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            stdout, stderr, success = await _skill_task(
+                "sess1", skill, {}, None, None, 5, max_output_size=100,
+            )
+        assert success is True
+        assert stdout.endswith("[truncated]")
+        assert len(stdout) <= 100 + len("\n[truncated]")
+
+
+# --- Curator/summarizer timeout ---
+
+
+class TestPostPlanTimeouts:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_curator_timeout_does_not_crash(self, db, tmp_path):
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 1,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_learning(db, "Something", "sess1")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        async def _slow_curator(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_curator", side_effect=_slow_curator), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        # Worker should still complete — plan is done
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
+    async def test_summarizer_timeout_does_not_crash(self, db, tmp_path):
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 1,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "summarize_threshold": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        async def _slow_summarizer(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_summarizer", side_effect=_slow_summarizer), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
+
+# --- Cancel during replan window ---
+
+
+class TestCancelDuringReplanWindow:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_cancel_during_replan_window(self, db, tmp_path):
+        """Set cancel_event after _execute_plan returns replan, before run_planner.
+        Verify plan is cancelled and replan planner is never called."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
+
+        fail_plan = {
+            "goal": "Fail",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        cancel_event = asyncio.Event()
+        planner_calls = [0]
+
+        async def _planner_side_effect(db, config, session, role, content, **kwargs):
+            planner_calls[0] += 1
+            if planner_calls[0] == 1:
+                return fail_plan
+            # Should not be called for replan since cancel_event is set
+            raise AssertionError("run_planner called for replan after cancel")
+
+        # Set cancel after the first reviewer call (triggers replan path)
+        async def _review_and_cancel(*args, **kwargs):
+            cancel_event.set()
+            return REVIEW_REPLAN
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "fail", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner_side_effect), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_and_cancel), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue,
+                                              cancel_event=cancel_event), timeout=5)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "cancelled"
+        assert planner_calls[0] == 1  # only initial plan, no replan call
+
+
+# --- Worker crash recovery ---
+
+
+class TestWorkerCrashRecovery:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_worker_crash_recovery_continues(self, db, tmp_path):
+        """Mock run_planner to raise RuntimeError on first message, then succeed on second.
+        Verify worker processes both."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg1 = await save_message(db, "sess1", "alice", "user", "crash", processed=False)
+        msg2 = await save_message(db, "sess1", "alice", "user", "ok", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg1, "content": "crash", "user_role": "admin"})
+        await queue.put({"id": msg2, "content": "ok", "user_role": "admin"})
+
+        call_count = [0]
+
+        async def _planner_side_effect(db, config, session, role, content, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("Unexpected DB corruption")
+            return VALID_PLAN
+
+        with patch("kiso.worker.run_planner", side_effect=_planner_side_effect), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="ok"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        # Second message should have been processed successfully
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan is not None
+        assert plan["status"] == "done"
+        assert call_count[0] == 2
+
+    async def test_worker_crash_does_not_leave_running_tasks(self, db, tmp_path):
+        """Inject crash during plan execution, verify no tasks remain in 'running' status."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "crash", processed=False)
+
+        crash_plan = {
+            "goal": "Crash during exec",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "crash", "user_role": "admin"})
+
+        # Crash during review (after task set to running/done)
+        async def _review_crash(*args, **kwargs):
+            raise RuntimeError("Unexpected crash during review")
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=crash_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_crash), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        # Verify no tasks are stuck in "running"
+        tasks = await get_tasks_for_session(db, "sess1")
+        running = [t for t in tasks if t["status"] == "running"]
+        assert len(running) == 0
+
+
+# --- cancel_event null-safety ---
+
+
+class TestCancelEventNullSafety:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_cancel_event_none_no_crash(self, db, tmp_path):
+        """run_worker with cancel_event=None completes without error."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi!"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            # cancel_event=None is the default
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=None),
+                timeout=3,
+            )
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan is not None
+        assert plan["status"] == "done"
+
+
+# --- Malformed secrets handling ---
+
+
+class TestMalformedSecrets:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_malformed_secrets_handled_gracefully(self, db, tmp_path):
+        """Plan with malformed secrets (missing 'key'/'value') doesn't crash."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+
+        plan_with_bad_secrets = {
+            "goal": "Say hello",
+            "secrets": [{"k": "v"}],  # wrong keys
+            "tasks": [{"type": "msg", "detail": "Hello!", "skill": None, "args": None, "expect": None}],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=plan_with_bad_secrets), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi!"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan is not None
+        assert plan["status"] == "done"
+
+    async def test_non_dict_secrets_handled(self, db, tmp_path):
+        """Plan with non-dict secrets entries doesn't crash."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+
+        plan_with_string_secrets = {
+            "goal": "Say hello",
+            "secrets": ["not-a-dict"],
+            "tasks": [{"type": "msg", "detail": "Hello!", "skill": None, "args": None, "expect": None}],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=plan_with_string_secrets), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi!"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan is not None
+        assert plan["status"] == "done"

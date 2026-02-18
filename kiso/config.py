@@ -19,6 +19,10 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
     "knowledge_max_facts": 50,
     "max_replan_depth": 3,
     "max_validation_retries": 3,
+    "max_output_size": 1_048_576,
+    "max_message_size": 65536,
+    "max_queue_size": 50,
+    "max_plan_tasks": 20,
     "exec_timeout": 120,
     "worker_idle_timeout": 300,
     "host": "0.0.0.0",
@@ -72,7 +76,11 @@ def _die(msg: str) -> None:
 
 
 def _build_config(path: Path, on_error) -> Config:
-    """Core config builder. Calls on_error(msg) on validation failure."""
+    """Core config builder. Calls on_error(msg) on validation failure.
+
+    Handles malformed TOML (``TOMLDecodeError``) and file-system errors
+    (``PermissionError``, ``OSError``) with clear messages via *on_error*.
+    """
 
     def _check_name(name: str, kind: str) -> None:
         if not NAME_RE.match(name):
@@ -81,8 +89,13 @@ def _build_config(path: Path, on_error) -> Config:
     if not path.exists():
         on_error(f"{path} not found")
 
-    with open(path, "rb") as f:
-        raw = tomllib.load(f)
+    try:
+        with open(path, "rb") as f:
+            raw = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        on_error(f"Malformed TOML in {path}: {e}")
+    except (PermissionError, OSError) as e:
+        on_error(f"Cannot read {path}: {e}")
 
     # --- required sections ---
     for section in ("tokens", "providers", "users"):

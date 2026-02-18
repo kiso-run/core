@@ -91,7 +91,8 @@ async def call_llm(
 
     t0 = time.perf_counter()
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    llm_timeout = int(config.settings.get("exec_timeout", 120))
+    async with httpx.AsyncClient(timeout=llm_timeout) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
         except httpx.TimeoutException:
@@ -117,6 +118,10 @@ async def call_llm(
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(f"Unexpected LLM response format: {e}")
+
+    if not content:
+        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+        raise LLMError(f"Empty response from LLM ({role}, {model_name})")
 
     # Extract token usage
     usage = data.get("usage") or {}

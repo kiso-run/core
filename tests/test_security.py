@@ -68,6 +68,33 @@ class TestCheckCommandDenyList:
     def test_fork_bomb_blocked(self):
         assert check_command_deny_list(":(){ :|:& };:") is not None
 
+    def test_blocks_pipe_to_dangerous(self):
+        assert check_command_deny_list("echo hello | rm -rf /") is not None
+
+    def test_blocks_semicolon_dangerous(self):
+        assert check_command_deny_list("echo hello; rm -rf /") is not None
+
+    def test_blocks_and_dangerous(self):
+        assert check_command_deny_list("echo hello && rm -rf /") is not None
+
+    def test_blocks_or_dangerous(self):
+        assert check_command_deny_list("echo hello || rm -rf /") is not None
+
+    def test_blocks_newline_dangerous(self):
+        assert check_command_deny_list("echo hello\nrm -rf /") is not None
+
+    def test_blocks_command_substitution(self):
+        assert check_command_deny_list("echo $(rm -rf /)") is not None
+
+    def test_blocks_backtick_substitution(self):
+        assert check_command_deny_list("echo `rm -rf /`") is not None
+
+    def test_allows_safe_pipe(self):
+        assert check_command_deny_list("ls | grep foo") is None
+
+    def test_allows_safe_semicolon(self):
+        assert check_command_deny_list("echo a; echo b") is None
+
     def test_normal_commands_allowed(self):
         for cmd in ["ls -la", "echo hello", "git status", "python3 script.py"]:
             assert check_command_deny_list(cmd) is None, f"Should allow: {cmd}"
@@ -333,3 +360,19 @@ class TestRevalidatePermissions:
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "bob", "msg")
         assert result.allowed is True
+
+
+# --- Double masking proof ---
+
+
+class TestNoDoubleMasking:
+    def test_no_double_masking_redacted_secret(self):
+        """A secret value of '[REDACTED]' should produce a single [REDACTED], not nested."""
+        result = sanitize_output(
+            "value is [REDACTED]",
+            {"KEY": "[REDACTED]"},
+            {},
+        )
+        assert result == "value is [REDACTED]"
+        # Should NOT produce something like [[REDACTED]]
+        assert "[[REDACTED]]" not in result

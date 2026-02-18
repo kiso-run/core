@@ -146,6 +146,44 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=None)
         assert errors == []
 
+    def test_unknown_task_type_rejected(self):
+        """Plan with type='query' should produce an error."""
+        plan = {"tasks": [
+            {"type": "query", "detail": "search", "expect": "ok"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("unknown type" in e for e in errors)
+
+    def test_none_task_type_rejected(self):
+        """Plan with type=None should produce an error."""
+        plan = {"tasks": [
+            {"detail": "search", "expect": "ok"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("unknown type" in e for e in errors)
+
+    def test_plan_too_many_tasks_rejected(self):
+        """Plan with 25 tasks, max_tasks=20, should produce an error."""
+        tasks = [
+            {"type": "exec", "detail": f"cmd-{i}", "expect": "ok"}
+            for i in range(24)
+        ] + [{"type": "msg", "detail": "done", "expect": None}]
+        plan = {"tasks": tasks}
+        errors = validate_plan(plan, max_tasks=20)
+        assert any("max allowed is 20" in e for e in errors)
+
+    def test_plan_exactly_at_max_tasks_accepted(self):
+        """Plan with exactly max_tasks tasks should pass."""
+        tasks = [
+            {"type": "exec", "detail": f"cmd-{i}", "expect": "ok"}
+            for i in range(19)
+        ] + [{"type": "msg", "detail": "done", "expect": None}]
+        plan = {"tasks": tasks}
+        errors = validate_plan(plan, max_tasks=20)
+        assert not any("max allowed" in e for e in errors)
+
 
 # --- _load_system_prompt ---
 

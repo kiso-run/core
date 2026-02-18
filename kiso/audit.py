@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 from datetime import datetime, timezone
@@ -41,7 +42,12 @@ def _write_entry(
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         path = audit_dir / f"{today}.jsonl"
         with open(path, "a") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                f.flush()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
     except Exception:
         log.warning("Audit write failed", exc_info=True)
 

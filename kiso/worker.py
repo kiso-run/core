@@ -137,10 +137,22 @@ def _ensure_sandbox_user(session: str) -> int | None:
         return None
 
 
+def _truncate_output(text: str, limit: int) -> str:
+    """Truncate text to *limit* characters, appending a marker if truncated."""
+    if limit > 0 and len(text) > limit:
+        return text[:limit] + "\n[truncated]"
+    return text
+
+
 async def _exec_task(
     session: str, detail: str, timeout: int, sandbox_uid: int | None = None,
+    max_output_size: int = 0,
 ) -> tuple[str, str, bool]:
-    """Run a shell command. Returns (stdout, stderr, success)."""
+    """Run a shell command. Returns (stdout, stderr, success).
+
+    When *max_output_size* > 0, stdout and stderr are each truncated to
+    that many characters to prevent memory exhaustion from oversized output.
+    """
     denial = check_command_deny_list(detail)
     if denial:
         return "", denial, False
@@ -164,8 +176,8 @@ async def _exec_task(
     except asyncio.TimeoutError:
         return "", "Timed out", False
 
-    stdout = stdout_bytes.decode(errors="replace")
-    stderr = stderr_bytes.decode(errors="replace")
+    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
+    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
     success = proc.returncode == 0
     return stdout, stderr, success
 
@@ -178,8 +190,13 @@ async def _skill_task(
     session_secrets: dict[str, str] | None,
     timeout: int,
     sandbox_uid: int | None = None,
+    max_output_size: int = 0,
 ) -> tuple[str, str, bool]:
-    """Run a skill subprocess. Returns (stdout, stderr, success)."""
+    """Run a skill subprocess. Returns (stdout, stderr, success).
+
+    When *max_output_size* > 0, stdout and stderr are each truncated to
+    that many characters to prevent memory exhaustion from oversized output.
+    """
     workspace = _session_workspace(session)
 
     # Build input and env
@@ -221,8 +238,8 @@ async def _skill_task(
     except OSError as e:
         return "", f"Skill executable not found: {e}", False
 
-    stdout = stdout_bytes.decode(errors="replace")
-    stderr = stderr_bytes.decode(errors="replace")
+    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
+    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
     success = proc.returncode == 0
     return stdout, stderr, success
 
@@ -351,6 +368,7 @@ async def _execute_plan(
     completed: list[dict] = []
     plan_outputs: list[dict] = []
     deploy_secrets = collect_deploy_secrets(config)
+    max_output_size = int(config.settings.get("max_output_size", 0))
 
     for i, task_row in enumerate(tasks):
         # --- Cancel check ---
@@ -394,6 +412,7 @@ async def _execute_plan(
             t0 = time.perf_counter()
             stdout, stderr, success = await _exec_task(
                 session, detail, exec_timeout, sandbox_uid=sandbox_uid,
+                max_output_size=max_output_size,
             )
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
@@ -522,6 +541,7 @@ async def _execute_plan(
                             session, skill_info, args, plan_outputs,
                             session_secrets, exec_timeout,
                             sandbox_uid=sandbox_uid,
+                            max_output_size=max_output_size,
                         )
                         stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
                         stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
@@ -669,213 +689,258 @@ async def run_worker(
             log.info("Worker idle timeout for session=%s, shutting down", session)
             break
 
-        msg_id: int = msg["id"]
-        content: str = msg["content"]
-        user_role: str = msg["user_role"]
-        user_skills: str | list[str] | None = msg.get("user_skills")
-        username: str | None = msg.get("username")
-
-        await mark_message_processed(db, msg_id)
-
-        # Paraphraser — fetch untrusted messages, paraphrase if any
-        paraphrased_context: str | None = None
-        untrusted = await get_untrusted_messages(db, session)
-        if untrusted:
-            try:
-                paraphrased_context = await run_paraphraser(config, untrusted, session=session)
-            except ParaphraserError as e:
-                log.warning("Paraphraser failed: %s", e)
-                paraphrased_context = None
-
-        # Plan
         try:
-            plan = await run_planner(
-                db, config, session, user_role, content,
-                user_skills=user_skills,
-                paraphrased_context=paraphrased_context,
-            )
-        except PlanError as e:
-            log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
+            await _process_message(db, config, session, msg, queue, cancel_event,
+                                   idle_timeout, exec_timeout, max_replan_depth)
+        except Exception:
+            log.exception("Unexpected error processing message in session=%s", session)
             continue
 
-        # Extract ephemeral secrets from plan
-        session_secrets: dict[str, str] = {}
-        if plan.get("secrets"):
-            for s in plan["secrets"]:
+
+async def _process_message(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    msg: dict,
+    queue: asyncio.Queue,
+    cancel_event: asyncio.Event | None,
+    idle_timeout: int,
+    exec_timeout: int,
+    max_replan_depth: int,
+):
+    """Process a single message. Extracted for crash recovery wrapping."""
+    msg_id: int = msg["id"]
+    content: str = msg["content"]
+    user_role: str = msg["user_role"]
+    user_skills: str | list[str] | None = msg.get("user_skills")
+    username: str | None = msg.get("username")
+
+    await mark_message_processed(db, msg_id)
+
+    # Paraphraser — fetch untrusted messages, paraphrase if any
+    paraphrased_context: str | None = None
+    untrusted = await get_untrusted_messages(db, session)
+    if untrusted:
+        try:
+            paraphrased_context = await run_paraphraser(config, untrusted, session=session)
+        except ParaphraserError as e:
+            log.warning("Paraphraser failed: %s", e)
+            paraphrased_context = None
+
+    # Plan
+    try:
+        plan = await run_planner(
+            db, config, session, user_role, content,
+            user_skills=user_skills,
+            paraphrased_context=paraphrased_context,
+        )
+    except PlanError as e:
+        log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
+        return
+
+    # Extract ephemeral secrets from plan
+    session_secrets: dict[str, str] = {}
+    if plan.get("secrets"):
+        for s in plan["secrets"]:
+            try:
                 session_secrets[s["key"]] = s["value"]
+            except (KeyError, TypeError) as e:
+                log.warning("Malformed secret entry (skipped): %s", e)
+        if session_secrets:
             log.info("%d secrets extracted", len(session_secrets))
 
-        plan_id = await create_plan(db, session, msg_id, plan["goal"])
-        await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
-        log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan["tasks"]))
+    plan_id = await create_plan(db, session, msg_id, plan["goal"])
+    await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
+    log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan["tasks"]))
 
-        # Execute with replan loop
-        replan_history: list[dict] = []
-        current_plan_id = plan_id
-        current_goal = plan["goal"]
-        replan_depth = 0
+    # Execute with replan loop
+    replan_history: list[dict] = []
+    current_plan_id = plan_id
+    current_goal = plan["goal"]
+    replan_depth = 0
 
-        while True:
-            success, replan_reason, completed, remaining = await _execute_plan(
-                db, config, session, current_plan_id, current_goal,
-                content, exec_timeout, session_secrets=session_secrets,
-                username=username, cancel_event=cancel_event,
+    while True:
+        success, replan_reason, completed, remaining = await _execute_plan(
+            db, config, session, current_plan_id, current_goal,
+            content, exec_timeout, session_secrets=session_secrets,
+            username=username, cancel_event=cancel_event,
+        )
+
+        if success:
+            await update_plan_status(db, current_plan_id, "done")
+            log.info("Plan %d done", current_plan_id)
+            break
+
+        # --- Cancel handling ---
+        if replan_reason == "cancelled":
+            await update_plan_status(db, current_plan_id, "cancelled")
+            cancel_detail = _build_cancel_summary(
+                completed, remaining, current_goal,
             )
-
-            if success:
-                await update_plan_status(db, current_plan_id, "done")
-                log.info("Plan %d done", current_plan_id)
-                break
-
-            # --- Cancel handling ---
-            if replan_reason == "cancelled":
-                await update_plan_status(db, current_plan_id, "cancelled")
-                cancel_detail = _build_cancel_summary(
-                    completed, remaining, current_goal,
+            try:
+                cancel_text = await _msg_task(
+                    config, db, session, cancel_detail,
                 )
-                try:
-                    cancel_text = await _msg_task(
-                        config, db, session, cancel_detail,
-                    )
-                except LLMError:
-                    cancel_text = cancel_detail  # fallback to raw summary
-                await save_message(
-                    db, session, None, "system", cancel_text,
-                    trusted=True, processed=True,
-                )
-                # Webhook
-                sess = await get_session(db, session)
-                webhook_url = sess.get("webhook") if sess else None
-                if webhook_url:
-                    wh_success, wh_status, wh_attempts = await deliver_webhook(
-                        webhook_url, session, 0, cancel_text, True,
-                        secret=str(config.settings.get("webhook_secret", "")),
-                        max_payload=int(
-                            config.settings.get("webhook_max_payload", 0)
-                        ),
-                    )
-                    audit.log_webhook(session, 0, webhook_url, wh_status, wh_attempts)
-                cancel_event.clear()  # reset for next message
-                break
-
-            if replan_reason is None:
-                # Failed without replan request (LLM error, review error, etc.)
-                await update_plan_status(db, current_plan_id, "failed")
-                log.info("Plan %d failed (no replan)", current_plan_id)
-                break
-
-            # Replan requested
-            replan_depth += 1
-            if replan_depth > max_replan_depth:
-                await update_plan_status(db, current_plan_id, "failed")
-                # Mark remaining tasks as failed
-                remaining_tasks = await get_tasks_for_plan(db, current_plan_id)
-                for t in remaining_tasks:
-                    if t["status"] == "pending":
-                        await update_task(db, t["id"], "failed",
-                                          output="Max replan depth reached")
-                log.warning("Max replan depth (%d) reached for session=%s",
-                            max_replan_depth, session)
-                # Save a message notifying the user
-                await save_message(
-                    db, session, None, "system",
-                    f"Max replan depth ({max_replan_depth}) reached. "
-                    f"Last failure: {replan_reason}",
-                    trusted=True, processed=True,
-                )
-                break
-
-            # Mark current plan as failed and remaining tasks
-            await update_plan_status(db, current_plan_id, "failed")
-            current_tasks = await get_tasks_for_plan(db, current_plan_id)
-            for t in current_tasks:
-                if t["status"] == "pending":
-                    await update_task(db, t["id"], "failed",
-                                      output="Superseded by replan")
-
-            # Build replan history
-            tried = [
-                f"[{t['type']}] {t['detail']}" for t in completed
-            ]
-            replan_history.append({
-                "goal": current_goal,
-                "failure": replan_reason,
-                "what_was_tried": tried,
-            })
-
-            # Notify user about replan
+            except LLMError:
+                cancel_text = cancel_detail  # fallback to raw summary
             await save_message(
-                db, session, None, "system",
-                f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
-                f"{replan_reason}",
+                db, session, None, "system", cancel_text,
                 trusted=True, processed=True,
             )
-
-            # Call planner with enriched context
-            replan_context = _build_replan_context(
-                completed, remaining, replan_reason, replan_history,
-            )
-            enriched_message = f"{content}\n\n{replan_context}"
-
-            try:
-                new_plan = await run_planner(
-                    db, config, session, user_role, enriched_message,
-                    user_skills=user_skills,
+            # Webhook
+            sess = await get_session(db, session)
+            webhook_url = sess.get("webhook") if sess else None
+            if webhook_url:
+                wh_success, wh_status, wh_attempts = await deliver_webhook(
+                    webhook_url, session, 0, cancel_text, True,
+                    secret=str(config.settings.get("webhook_secret", "")),
+                    max_payload=int(
+                        config.settings.get("webhook_max_payload", 0)
+                    ),
                 )
-            except PlanError as e:
-                log.error("Replan failed: %s", e)
-                await save_message(
-                    db, session, None, "system",
-                    f"Replan failed: {e}",
-                    trusted=True, processed=True,
-                )
-                break
+                audit.log_webhook(session, 0, webhook_url, wh_status, wh_attempts)
+            if cancel_event is not None:
+                cancel_event.clear()  # reset for next message
+            break
 
-            # Create new plan with parent_id
-            new_plan_id = await create_plan(
-                db, session, msg_id, new_plan["goal"],
-                parent_id=current_plan_id,
+        if replan_reason is None:
+            # Failed without replan request (LLM error, review error, etc.)
+            await update_plan_status(db, current_plan_id, "failed")
+            log.info("Plan %d failed (no replan)", current_plan_id)
+            break
+
+        # Replan requested
+        replan_depth += 1
+        if replan_depth > max_replan_depth:
+            await update_plan_status(db, current_plan_id, "failed")
+            # Mark remaining tasks as failed
+            remaining_tasks = await get_tasks_for_plan(db, current_plan_id)
+            for t in remaining_tasks:
+                if t["status"] == "pending":
+                    await update_task(db, t["id"], "failed",
+                                      output="Max replan depth reached")
+            log.warning("Max replan depth (%d) reached for session=%s",
+                        max_replan_depth, session)
+            # Save a message notifying the user
+            await save_message(
+                db, session, None, "system",
+                f"Max replan depth ({max_replan_depth}) reached. "
+                f"Last failure: {replan_reason}",
+                trusted=True, processed=True,
             )
-            await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
-            log.info("Replan %d (parent=%d): goal=%r, %d tasks",
-                     new_plan_id, current_plan_id,
-                     new_plan["goal"], len(new_plan["tasks"]))
+            break
 
-            current_plan_id = new_plan_id
-            current_goal = new_plan["goal"]
+        # Mark current plan as failed and remaining tasks
+        await update_plan_status(db, current_plan_id, "failed")
+        current_tasks = await get_tasks_for_plan(db, current_plan_id)
+        for t in current_tasks:
+            if t["status"] == "pending":
+                await update_task(db, t["id"], "failed",
+                                  output="Superseded by replan")
 
-        # --- Post-plan knowledge processing ---
+        # Build replan history
+        tried = [
+            f"[{t['type']}] {t['detail']}" for t in completed
+        ]
+        replan_history.append({
+            "goal": current_goal,
+            "failure": replan_reason,
+            "what_was_tried": tried,
+        })
 
-        # 1. Curator — process pending learnings
-        learnings = await get_pending_learnings(db)
-        if learnings:
-            try:
-                curator_result = await run_curator(config, learnings, session=session)
-                await _apply_curator_result(db, session, curator_result)
-            except CuratorError as e:
-                log.error("Curator failed: %s", e)
+        # Notify user about replan
+        await save_message(
+            db, session, None, "system",
+            f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
+            f"{replan_reason}",
+            trusted=True, processed=True,
+        )
 
-        # 2. Summarizer — compress when threshold reached
-        msg_count = await count_messages(db, session)
-        if msg_count >= int(config.settings.get("summarize_threshold", 30)):
-            try:
-                sess = await get_session(db, session)
-                current_summary = sess["summary"] if sess else ""
-                oldest = await get_oldest_messages(db, session, limit=msg_count)
-                new_summary = await run_summarizer(config, current_summary, oldest, session=session)
-                await update_summary(db, session, new_summary)
-            except SummarizerError as e:
-                log.error("Summarizer failed: %s", e)
+        # --- Cancel check before replan ---
+        if cancel_event is not None and cancel_event.is_set():
+            await update_plan_status(db, current_plan_id, "cancelled")
+            break
 
-        # 3. Fact consolidation
-        max_facts = int(config.settings.get("knowledge_max_facts", 50))
-        all_facts = await get_facts(db)
-        if len(all_facts) > max_facts:
-            try:
-                consolidated = await run_fact_consolidation(config, all_facts, session=session)
-                if consolidated:
-                    await delete_facts(db, [f["id"] for f in all_facts])
-                    for text in consolidated:
-                        await save_fact(db, text, source="consolidation")
-            except SummarizerError as e:
-                log.error("Fact consolidation failed: %s", e)
+        # Call planner with enriched context
+        replan_context = _build_replan_context(
+            completed, remaining, replan_reason, replan_history,
+        )
+        enriched_message = f"{content}\n\n{replan_context}"
+
+        try:
+            new_plan = await run_planner(
+                db, config, session, user_role, enriched_message,
+                user_skills=user_skills,
+            )
+        except PlanError as e:
+            log.error("Replan failed: %s", e)
+            await save_message(
+                db, session, None, "system",
+                f"Replan failed: {e}",
+                trusted=True, processed=True,
+            )
+            break
+
+        # Create new plan with parent_id
+        new_plan_id = await create_plan(
+            db, session, msg_id, new_plan["goal"],
+            parent_id=current_plan_id,
+        )
+        await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
+        log.info("Replan %d (parent=%d): goal=%r, %d tasks",
+                 new_plan_id, current_plan_id,
+                 new_plan["goal"], len(new_plan["tasks"]))
+
+        current_plan_id = new_plan_id
+        current_goal = new_plan["goal"]
+
+    # --- Post-plan knowledge processing ---
+
+    # 1. Curator — process pending learnings
+    learnings = await get_pending_learnings(db)
+    if learnings:
+        try:
+            curator_result = await asyncio.wait_for(
+                run_curator(config, learnings, session=session),
+                timeout=exec_timeout,
+            )
+            await _apply_curator_result(db, session, curator_result)
+        except asyncio.TimeoutError:
+            log.warning("Curator timed out after %ds", exec_timeout)
+        except CuratorError as e:
+            log.error("Curator failed: %s", e)
+
+    # 2. Summarizer — compress when threshold reached
+    msg_count = await count_messages(db, session)
+    if msg_count >= int(config.settings.get("summarize_threshold", 30)):
+        try:
+            sess = await get_session(db, session)
+            current_summary = sess["summary"] if sess else ""
+            oldest = await get_oldest_messages(db, session, limit=msg_count)
+            new_summary = await asyncio.wait_for(
+                run_summarizer(config, current_summary, oldest, session=session),
+                timeout=exec_timeout,
+            )
+            await update_summary(db, session, new_summary)
+        except asyncio.TimeoutError:
+            log.warning("Summarizer timed out after %ds", exec_timeout)
+        except SummarizerError as e:
+            log.error("Summarizer failed: %s", e)
+
+    # 3. Fact consolidation
+    max_facts = int(config.settings.get("knowledge_max_facts", 50))
+    all_facts = await get_facts(db)
+    if len(all_facts) > max_facts:
+        try:
+            consolidated = await asyncio.wait_for(
+                run_fact_consolidation(config, all_facts, session=session),
+                timeout=exec_timeout,
+            )
+            if consolidated:
+                await delete_facts(db, [f["id"] for f in all_facts])
+                for text in consolidated:
+                    await save_fact(db, text, source="consolidation")
+        except asyncio.TimeoutError:
+            log.warning("Fact consolidation timed out after %ds", exec_timeout)
+        except SummarizerError as e:
+            log.error("Fact consolidation failed: %s", e)

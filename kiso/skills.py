@@ -103,6 +103,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
         return []
 
     skills: list[dict] = []
+    seen_names: set[str] = set()
     for entry in sorted(skills_dir.iterdir()):
         if not entry.is_dir():
             continue
@@ -130,6 +131,12 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
             continue
 
         kiso = manifest["kiso"]
+        name = kiso["name"]
+        if name in seen_names:
+            log.warning("Duplicate skill name '%s' in %s (skipped)", name, entry)
+            continue
+        seen_names.add(name)
+
         skill_section = kiso["skill"]
         args_schema = skill_section.get("args", {})
         env_decl = skill_section.get("env", {})

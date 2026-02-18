@@ -318,6 +318,18 @@ class TestDiscoverSkills:
         assert "query" in s["args_schema"]
         assert "max_results" in s["args_schema"]
 
+    def test_duplicate_skill_name_skipped(self, tmp_path):
+        """Two dirs with same kiso.name → only first returned."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "alpha-echo", MINIMAL_TOML)
+        _create_skill(skills_dir, "beta-echo", MINIMAL_TOML)
+        result = discover_skills(skills_dir)
+        assert len(result) == 1
+        assert result[0]["name"] == "echo"
+        # Should come from alpha-echo (sorted first)
+        assert "alpha-echo" in result[0]["path"]
+
 
 # --- check_deps ---
 

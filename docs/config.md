@@ -68,6 +68,7 @@ summarize_threshold = 30
 knowledge_max_facts = 50
 max_replan_depth = 3
 max_validation_retries = 3
+max_output_size = 1048576
 exec_timeout = 120
 worker_idle_timeout = 300
 host = "0.0.0.0"
@@ -105,7 +106,11 @@ port = 8333
 | `settings.knowledge_max_facts` | `50` | Max global facts before consolidation |
 | `settings.max_replan_depth` | `3` | Max replan cycles per original message |
 | `settings.max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation |
-| `settings.exec_timeout` | `120` | Seconds before exec or skill subprocess is killed |
+| `settings.max_output_size` | `1048576` | Max characters of stdout/stderr per exec or skill task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
+| `settings.max_message_size` | `65536` | Max bytes for POST /msg content. Requests exceeding this return 413. See [security.md — Input Validation](security.md#input-validation). |
+| `settings.max_queue_size` | `50` | Max queued messages per session before backpressure (429). See [security.md — Queue Backpressure](security.md#queue-backpressure). |
+| `settings.max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
+| `settings.exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used as timeout for post-plan LLM calls (curator, summarizer, fact consolidation), LLM HTTP calls, and graceful shutdown per worker. |
 | `settings.worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
 | `settings.host` | `0.0.0.0` | Server bind address |
 | `settings.port` | `8333` | Server port |

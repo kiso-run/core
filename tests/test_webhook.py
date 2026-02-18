@@ -145,6 +145,29 @@ class TestValidateWebhookUrl:
             validate_webhook_url("https://multi.example.com/hook")
 
 
+# --- No redirect ---
+
+
+class TestWebhookNoRedirect:
+    async def test_client_created_with_no_redirect(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client) as mock_cls:
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, "text", False,
+            )
+
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args[1]
+        assert kwargs["follow_redirects"] is False
+
+
 # --- deliver_webhook ---
 
 
@@ -472,3 +495,65 @@ class TestDeliverWebhookPayloadCap:
 
         body = json.loads(captured["content"])
         assert body["content"] == long_content
+
+
+# --- Truncation safety ---
+
+
+class TestTruncationSafety:
+    async def test_truncation_respects_utf8_boundary(self):
+        """Multi-byte content at cut point doesn't produce invalid UTF-8."""
+        # 3-byte UTF-8 chars: each is 3 bytes encoded
+        content = "\u4e16\u754c" * 100  # 600 bytes
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, content, False,
+                max_payload=50,
+            )
+
+        body = json.loads(captured["content"])
+        # Result should be valid UTF-8 and end with truncation marker
+        assert body["content"].endswith("[truncated]")
+        # Encoding the truncated content should not raise
+        body["content"].encode("utf-8")
+
+    async def test_truncation_marker_within_limit(self):
+        """Final encoded content <= max_payload bytes."""
+        content = "A" * 1000
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        async def _post(url, **kwargs):
+            captured.update(kwargs)
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = _post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        max_payload = 100
+
+        with patch("kiso.webhook.httpx.AsyncClient", return_value=mock_client):
+            await deliver_webhook(
+                "https://example.com/hook", "sess1", 1, content, False,
+                max_payload=max_payload,
+            )
+
+        body = json.loads(captured["content"])
+        # The content field (not the full JSON payload) should be within limit
+        assert len(body["content"].encode()) <= max_payload

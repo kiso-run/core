@@ -136,10 +136,15 @@ Rules:
 """
 
 
-def validate_plan(plan: dict, installed_skills: list[str] | None = None) -> list[str]:
+def validate_plan(
+    plan: dict,
+    installed_skills: list[str] | None = None,
+    max_tasks: int | None = None,
+) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
     If installed_skills is provided, skill tasks are validated against it.
+    If max_tasks is provided, plans with more tasks are rejected.
     """
     errors: list[str] = []
     tasks = plan.get("tasks", [])
@@ -148,8 +153,14 @@ def validate_plan(plan: dict, installed_skills: list[str] | None = None) -> list
         errors.append("tasks list must not be empty")
         return errors
 
+    if max_tasks and len(tasks) > max_tasks:
+        errors.append(f"Plan has {len(tasks)} tasks, max allowed is {max_tasks}")
+
     for i, task in enumerate(tasks, 1):
         t = task.get("type")
+        if t not in ("exec", "msg", "skill"):
+            errors.append(f"Task {i}: unknown type {t!r}")
+            continue
         if t in ("exec", "skill") and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
         if t == "msg" and task.get("expect") is not None:
@@ -275,7 +286,8 @@ async def run_planner(
         except json.JSONDecodeError as e:
             raise PlanError(f"Planner returned invalid JSON: {e}")
 
-        errors = validate_plan(plan, installed_skills=installed_names)
+        max_tasks = int(config.settings.get("max_plan_tasks", 20))
+        errors = validate_plan(plan, installed_skills=installed_names, max_tasks=max_tasks)
         if not errors:
             log.info("Plan accepted (attempt %d): goal=%r, %d tasks",
                      attempt, plan["goal"], len(plan["tasks"]))

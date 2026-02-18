@@ -22,7 +22,7 @@ cli = "tok-abc123"
 discord = "tok-def456"
 ```
 
-Kiso matches the token to its name, logs which client made the call. Revoking a client = removing its token from config and restarting.
+Kiso matches the token to its name, logs which client made the call. Revoking a client = removing its token from config and restarting. Token comparison uses `hmac.compare_digest` for constant-time evaluation, preventing timing side-channel attacks.
 
 If no matching token is found: `401 Unauthorized`.
 
@@ -126,6 +126,20 @@ chmod -R 777 /    chown -R        shutdown      reboot
 ```
 
 If matched, the task is marked `failed` immediately with an explanation. The planner can still use these commands in non-destructive forms (e.g. `rm -rf ./build/` is allowed — only bare `/`, `~`, and `$HOME` targets are blocked).
+
+#### Shell metacharacter splitting
+
+The deny list check is not limited to the raw command string. Kiso splits the command on shell metacharacters (`;`, `|`, `||`, `&&`, newlines) and also extracts contents of `$(...)` and backtick substitutions. Each segment is checked independently against the deny patterns. This prevents bypasses like:
+
+```
+echo hello | rm -rf /       # pipe to dangerous command
+echo hello; rm -rf /        # semicolon chaining
+echo hello && rm -rf /      # logical AND chaining
+echo $(rm -rf /)            # command substitution
+echo `rm -rf /`             # backtick substitution
+```
+
+The full command is also checked as-is to catch patterns that span metacharacters (e.g. fork bombs `:(){ :|:& };:`).
 
 Additionally, the user's **role is re-verified** from `config.toml` before each exec/skill task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
 
@@ -302,6 +316,8 @@ Webhook URLs are set by connectors via `POST /sessions`. Before accepting a webh
 2. **Reject private/internal IPs**: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1`, `169.254.0.0/16` (link-local), `fc00::/7` (unique local)
 3. **DNS resolution check**: resolve the hostname and reject if it resolves to a private IP (prevents DNS rebinding)
 
+Additionally, webhook HTTP requests are sent with **redirects disabled** (`follow_redirects=False`). This prevents a validated public URL from redirecting the request to a private/internal IP at delivery time, bypassing the DNS-based SSRF checks above.
+
 This prevents SSRF attacks where a compromised connector or attacker with a valid token registers a webhook pointing to internal services (Redis, databases, admin panels).
 
 ### HTTPS enforcement
@@ -371,9 +387,64 @@ Hardening measures to implement for production deployments.
 
 Each replan cycle costs an LLM call. Beyond `max_replan_depth`, track replan rate per user and alert if excessive. Consider reducing `max_replan_depth` to 1-2 in cost-sensitive deployments.
 
+### Message Body Size Limit
+
+POST `/msg` content is validated against `max_message_size` (default: 64 KB). Requests exceeding the limit receive HTTP 413. This prevents oversized messages from consuming memory and being fed to the worker/LLM pipeline.
+
+### Queue Backpressure
+
+Each session's message queue has a bounded size (`max_queue_size`, default: 50). When the queue is full, new messages receive HTTP 429 (Too Many Requests). This prevents unbounded memory growth from rapid-fire message submission.
+
+### Plan Task Limit
+
+Plans are validated against `max_plan_tasks` (default: 20). Plans with more tasks fail validation and trigger a retry. This prevents the LLM from generating extremely long plans that would take excessive time and resources to execute.
+
+### Worker Crash Recovery
+
+The worker's message-processing loop is wrapped in a try/except that catches unexpected exceptions (e.g. DB corruption, unhandled errors). On crash, the error is logged and the worker continues to the next message. This prevents a single bad message from killing the worker and leaving subsequent messages unprocessed.
+
+### Startup Recovery
+
+On startup, kiso recovers from unclean shutdowns:
+
+1. **Stale plans/tasks**: Any plans or tasks left in `running` status (from a previous crash) are marked `failed`. Tasks receive output `"Server restarted"`.
+2. **Unprocessed messages**: Trusted messages with `processed=0` are re-enqueued to their session workers. User roles and skills are re-resolved from the current config (not cached from ingestion time).
+3. **Graceful shutdown**: On shutdown, workers receive a cancel signal and are given `exec_timeout` seconds to finish. Workers that don't finish are force-cancelled.
+
+### Audit File Locking
+
+Audit JSONL writes use `fcntl.flock` (POSIX exclusive lock) to prevent concurrent worker sessions from interleaving lines. The lock is acquired before writing and released after flush. Lock failures are swallowed like other audit errors — audit never breaks the main workflow.
+
+### Empty LLM Response Handling
+
+After extracting content from an LLM response, kiso validates that the content is non-empty. An empty or null response raises `LLMError`, which is handled by the caller (e.g. planner retries, worker marks task as failed). This prevents cryptic downstream failures from empty content reaching JSON parsers or user-facing messages.
+
+### Plan Task Type Validation
+
+`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `skill`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
+
+### Cancel During Replan
+
+When a cancel event is set during the replan window (after a failed plan execution, before the replanning LLM call), the worker checks `cancel_event` and breaks out of the replan loop immediately. This prevents unnecessary LLM calls and task execution after the user has requested cancellation.
+
+### Skill Name Deduplication
+
+`discover_skills()` tracks seen skill names and skips duplicate entries when two skill directories declare the same `name` in `kiso.toml`. The first directory (sorted alphabetically) wins. Duplicates are logged as warnings.
+
 ### Output Size Limits
 
-Exec and skill output is capped at a configurable max size (default: 1MB). Output exceeding the limit is truncated and the task is marked `done` with a truncation warning. Prevents memory exhaustion from malicious or runaway skills.
+Exec and skill output is capped at a configurable max size (`max_output_size`, default: 1 MB). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/skills.
+
+### Post-Plan LLM Timeouts
+
+Post-plan knowledge processing calls (curator, summarizer, fact consolidation) are wrapped in `asyncio.wait_for` with the same `exec_timeout` used for subprocess tasks. If an LLM provider hangs, the call times out with a warning and the worker continues to the next step. This prevents a single hung LLM call from blocking the worker indefinitely.
+
+### Config File Error Handling
+
+Malformed TOML or file-system errors (permission denied, missing file) are caught and reported with clear messages instead of raw tracebacks:
+
+- **Startup** (`load_config`): prints `config error: Malformed TOML in ...` or `config error: Cannot read ...` to stderr and exits with code 1.
+- **Runtime reload** (`reload_config`): raises `ConfigError` with the same clear message. The worker catches this and falls back to the cached config.
 
 ### Audit Log Integrity
 

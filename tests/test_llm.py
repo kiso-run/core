@@ -393,3 +393,61 @@ class TestCallLlmAudit:
                 args = mock_audit.call_args[0]
                 assert args[4] == 0  # input_tokens
                 assert args[5] == 0  # output_tokens
+
+
+# --- Empty response ---
+
+
+class TestEmptyResponse:
+    @pytest.mark.asyncio
+    async def test_empty_content_raises_error(self):
+        """Mock LLM returning content: '', verify LLMError raised."""
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="Empty response"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_none_content_raises_error(self):
+        """Mock LLM returning content: None, verify LLMError raised."""
+        config = _make_config()
+        body = {"choices": [{"message": {"content": None}}]}
+        resp = httpx.Response(
+            200, json=body,
+            request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+        )
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = resp
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="Empty response"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+
+# --- Timeout uses config value ---
+
+
+class TestTimeoutConfig:
+    @pytest.mark.asyncio
+    async def test_timeout_uses_config_value(self):
+        """Verify httpx.AsyncClient receives timeout from exec_timeout config."""
+        config = _make_config(settings={"exec_timeout": 42})
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                mock_cls.assert_called_once_with(timeout=42)

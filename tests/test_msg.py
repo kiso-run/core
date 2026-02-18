@@ -104,3 +104,88 @@ async def test_empty_session_id_returns_400(client: httpx.AsyncClient):
         "content": "hello",
     }, headers=AUTH_HEADER)
     assert resp.status_code == 400
+
+
+async def test_msg_content_too_large_returns_413(client: httpx.AsyncClient):
+    """100KB content exceeds default max_message_size (64KB) → 413."""
+    large_content = "x" * 100_000
+    resp = await client.post("/msg", json={
+        "session": "test-sess",
+        "user": "testuser",
+        "content": large_content,
+    }, headers=AUTH_HEADER)
+    assert resp.status_code == 413
+    assert "too large" in resp.json()["detail"].lower()
+
+
+async def test_msg_content_at_limit_accepted(client: httpx.AsyncClient):
+    """Content exactly at max_message_size (64KB) is accepted."""
+    content = "x" * 65536
+    resp = await client.post("/msg", json={
+        "session": "test-sess",
+        "user": "testuser",
+        "content": content,
+    }, headers=AUTH_HEADER)
+    assert resp.status_code == 202
+
+
+async def test_msg_content_one_over_limit_rejected(client: httpx.AsyncClient):
+    """Content one byte over max_message_size is rejected."""
+    content = "x" * 65537
+    resp = await client.post("/msg", json={
+        "session": "test-sess",
+        "user": "testuser",
+        "content": content,
+    }, headers=AUTH_HEADER)
+    assert resp.status_code == 413
+
+
+async def test_msg_queue_full_returns_429(client: httpx.AsyncClient):
+    """Pre-fill queue to capacity, verify next message returns 429."""
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+    from kiso.main import _workers
+
+    # Set max_queue_size=1 so queue fills after one item
+    cfg = client._transport.app.state.config
+    client._transport.app.state.config = cfg.__class__(
+        tokens=cfg.tokens,
+        providers=cfg.providers,
+        users=cfg.users,
+        models=cfg.models,
+        settings={**cfg.settings, "max_queue_size": 1},
+        raw=cfg.raw,
+    )
+
+    # Block the worker so it never drains the queue
+    blocked = asyncio.Event()
+
+    async def _blocked_worker(*args, **kwargs):
+        await blocked.wait()
+
+    with patch("kiso.main.run_worker", _blocked_worker):
+        # First message — creates worker and fills the queue (size=1)
+        resp1 = await client.post("/msg", json={
+            "session": "queue-test",
+            "user": "testuser",
+            "content": "first",
+        }, headers=AUTH_HEADER)
+        assert resp1.status_code == 202
+
+        # Second message — queue is full → 429
+        resp2 = await client.post("/msg", json={
+            "session": "queue-test",
+            "user": "testuser",
+            "content": "second",
+        }, headers=AUTH_HEADER)
+        assert resp2.status_code == 429
+
+    # Clean up: unblock and cancel the worker task
+    blocked.set()
+    entry = _workers.pop("queue-test", None)
+    if entry:
+        entry[1].cancel()
+        try:
+            await entry[1]
+        except asyncio.CancelledError:
+            pass

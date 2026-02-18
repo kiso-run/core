@@ -76,10 +76,16 @@ async def deliver_webhook(
 
     Returns (success, last_status_code, attempts).
     Never raises — logs warning on all failures and returns (False, ...).
+
+    HTTP redirects are explicitly disabled (``follow_redirects=False``) to
+    prevent SSRF via redirect to private/internal IPs that would bypass the
+    URL validation performed by ``validate_webhook_url``.
     """
     # Truncate content if needed
     if max_payload > 0 and len(content.encode()) > max_payload:
-        content = content.encode()[:max_payload].decode(errors="ignore") + " [truncated]"
+        marker = " [truncated]"
+        cut_at = max(0, max_payload - len(marker.encode()))
+        content = content.encode()[:cut_at].decode(errors="ignore") + marker
 
     payload = {
         "session": session,
@@ -100,7 +106,7 @@ async def deliver_webhook(
 
     for attempt, delay in enumerate(backoff):
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                 resp = await client.post(url, content=raw_body, headers=headers)
             last_status = resp.status_code
             if resp.status_code < 400:

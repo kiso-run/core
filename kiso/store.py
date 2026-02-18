@@ -440,6 +440,32 @@ async def get_untrusted_messages(
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def recover_stale_running(db: aiosqlite.Connection) -> tuple[int, int]:
+    """Mark stale running plans/tasks as failed after server restart.
+
+    Returns (plans_count, tasks_count).
+    """
+    cur = await db.execute(
+        "UPDATE plans SET status = 'failed' WHERE status = 'running'"
+    )
+    plans_count = cur.rowcount
+    cur = await db.execute(
+        "UPDATE tasks SET status = 'failed', output = 'Server restarted' "
+        "WHERE status = 'running'"
+    )
+    tasks_count = cur.rowcount
+    await db.commit()
+    return plans_count, tasks_count
+
+
+async def get_unprocessed_trusted_messages(db: aiosqlite.Connection) -> list[dict]:
+    """Return unprocessed trusted messages, ordered by id."""
+    cur = await db.execute(
+        "SELECT * FROM messages WHERE processed = 0 AND trusted = 1 ORDER BY id"
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
 async def create_task(
     db: aiosqlite.Connection,
     plan_id: int,

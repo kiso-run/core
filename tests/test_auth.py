@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import httpx
+from unittest.mock import patch
 
 from kiso.auth import resolve_user
 from kiso.config import Config
@@ -48,3 +49,11 @@ async def test_require_auth_missing(client: httpx.AsyncClient):
 async def test_require_auth_invalid(client: httpx.AsyncClient):
     resp = await client.get("/status/test", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
+
+
+async def test_token_comparison_constant_time(client: httpx.AsyncClient):
+    """Verify hmac.compare_digest is used for token comparison."""
+    with patch("kiso.auth.hmac.compare_digest", return_value=True) as mock_cd:
+        resp = await client.get("/status/test", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    mock_cd.assert_called()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
 
 from fastapi import Request
@@ -25,14 +26,18 @@ class ResolvedUser:
 
 
 async def require_auth(request: Request) -> AuthInfo:
-    """FastAPI dependency: validate Bearer token, return AuthInfo or 401."""
+    """FastAPI dependency: validate Bearer token, return AuthInfo or 401.
+
+    Uses ``hmac.compare_digest`` for constant-time token comparison
+    to prevent timing side-channel attacks.
+    """
     auth = request.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token_value = auth[7:]
     config: Config = request.app.state.config
     for name, value in config.tokens.items():
-        if value == token_value:
+        if hmac.compare_digest(value, token_value):
             return AuthInfo(token_name=name)
     raise HTTPException(status_code=401, detail="Invalid token")
 

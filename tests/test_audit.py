@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import patch
 
@@ -269,3 +270,48 @@ class TestLogWebhook:
         entry = json.loads(files[0].read_text().strip())
         assert entry["status"] == 0
         assert entry["attempts"] == 3
+
+
+# --- Concurrent writes ---
+
+
+class TestConcurrentWrites:
+    def test_concurrent_writes_no_corruption(self, tmp_path):
+        """Use ThreadPoolExecutor to write 50 entries concurrently, verify all lines are valid JSON."""
+        def _write(i: int):
+            with patch("kiso.audit.KISO_DIR", tmp_path):
+                _write_entry({"type": "concurrent", "index": i})
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            list(pool.map(_write, range(50)))
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        assert len(files) == 1
+        lines = files[0].read_text().strip().split("\n")
+        assert len(lines) == 50
+        for line in lines:
+            entry = json.loads(line)
+            assert entry["type"] == "concurrent"
+            assert "index" in entry
+
+
+# --- Lock release on write error ---
+
+
+class TestLockRelease:
+    def test_lock_released_on_write_error(self, tmp_path):
+        """Simulate write error, verify next write succeeds (lock was released)."""
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            # First call: force json.dumps to raise after lock is acquired
+            with patch("kiso.audit.json.dumps", side_effect=ValueError("boom")):
+                _write_entry({"type": "fail"})  # should not raise
+
+            # Second call: should succeed — lock must have been released
+            _write_entry({"type": "success"})
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        assert len(files) == 1
+        lines = files[0].read_text().strip().split("\n")
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["type"] == "success"

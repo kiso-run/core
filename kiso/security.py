@@ -43,12 +43,30 @@ DENY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r":\(\)\s*\{.*\|.*&"), "fork bomb"),
 ]
 
+_SUBSHELL_RE = re.compile(r"\$\(([^)]+)\)|`([^`]+)`")
+
 
 def check_command_deny_list(command: str) -> str | None:
-    """Returns denial reason string if blocked, None if allowed."""
+    """Returns denial reason string if blocked, None if allowed.
+
+    Checks the full command first (for patterns that span metacharacters,
+    e.g. fork bombs), then splits on shell metacharacters (;, |, ||, &&,
+    newlines) and extracts $(...) / backtick contents to catch chained or
+    substituted dangerous commands like ``echo | rm -rf /``.
+    """
+    # Check the full command first (catches patterns spanning metacharacters, e.g. fork bombs)
     for pattern, description in DENY_PATTERNS:
         if pattern.search(command):
             return f"Command blocked: {description}"
+    # Split on shell metacharacters to catch piped/chained dangerous commands
+    segments = re.split(r"\s*(?:;|\|{1,2}|&&|\n)\s*", command)
+    # Also extract contents of $(...) and backtick substitutions
+    for m in _SUBSHELL_RE.finditer(command):
+        segments.append(m.group(1) or m.group(2))
+    for segment in segments:
+        for pattern, description in DENY_PATTERNS:
+            if pattern.search(segment):
+                return f"Command blocked: {description}"
     return None
 
 
