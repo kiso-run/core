@@ -590,10 +590,10 @@ The renderer shows the full decision flow by default — every planning step, ta
 
 ### 15f. Session + env management
 
-- [ ] `kiso sessions [--all]`
-- [ ] `kiso env set` / `get` / `list` / `delete` / `reload`
-  - [ ] Manage `~/.kiso/.env`
-  - [ ] `reload` calls `POST /admin/reload-env`
+- [x] `kiso sessions [--all]`
+- [x] `kiso env set` / `get` / `list` / `delete` / `reload`
+  - [x] Manage `~/.kiso/.env`
+  - [x] `reload` calls `POST /admin/reload-env`
 
 ### 15g. Planner system environment context
 

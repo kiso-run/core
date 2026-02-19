@@ -107,16 +107,70 @@ def test_serve_calls_uvicorn():
         )
 
 
-# ── stubs exit 1 ──────────────────────────────────────────────
+# ── sessions parsing ──────────────────────────────────────────
 
 
-@pytest.mark.parametrize("cmd", ["sessions", "env"])
-def test_stub_subcommands_exit_1(cmd: str, capsys):
-    with patch("sys.argv", ["kiso", cmd]), pytest.raises(SystemExit, match="1"):
-        main()
+def test_sessions_default():
+    parser = build_parser()
+    args = parser.parse_args(["sessions"])
+    assert args.command == "sessions"
+    assert args.show_all is False
 
-    out = capsys.readouterr().out
-    assert "not yet implemented" in out
+
+def test_sessions_all_flag():
+    parser = build_parser()
+    args = parser.parse_args(["sessions", "--all"])
+    assert args.show_all is True
+
+
+def test_sessions_short_flag():
+    parser = build_parser()
+    args = parser.parse_args(["sessions", "-a"])
+    assert args.show_all is True
+
+
+# ── env parsing ───────────────────────────────────────────────
+
+
+def test_env_no_subcommand():
+    parser = build_parser()
+    args = parser.parse_args(["env"])
+    assert args.command == "env"
+    assert args.env_command is None
+
+
+def test_env_set():
+    parser = build_parser()
+    args = parser.parse_args(["env", "set", "KEY", "VALUE"])
+    assert args.env_command == "set"
+    assert args.key == "KEY"
+    assert args.value == "VALUE"
+
+
+def test_env_get():
+    parser = build_parser()
+    args = parser.parse_args(["env", "get", "KEY"])
+    assert args.env_command == "get"
+    assert args.key == "KEY"
+
+
+def test_env_list():
+    parser = build_parser()
+    args = parser.parse_args(["env", "list"])
+    assert args.env_command == "list"
+
+
+def test_env_delete():
+    parser = build_parser()
+    args = parser.parse_args(["env", "delete", "KEY"])
+    assert args.env_command == "delete"
+    assert args.key == "KEY"
+
+
+def test_env_reload():
+    parser = build_parser()
+    args = parser.parse_args(["env", "reload"])
+    assert args.env_command == "reload"
 
 
 # ── _chat REPL ───────────────────────────────────────────────

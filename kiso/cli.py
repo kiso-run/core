@@ -79,8 +79,28 @@ def build_parser() -> argparse.ArgumentParser:
     cstatus_p = connector_sub.add_parser("status", help="check connector status")
     cstatus_p.add_argument("name", help="connector name")
 
-    sub.add_parser("sessions", help="manage sessions")
-    sub.add_parser("env", help="show environment info")
+    sessions_parser = sub.add_parser("sessions", help="list sessions")
+    sessions_parser.add_argument(
+        "--all", "-a", action="store_true", dest="show_all",
+        help="show all sessions (admin only)",
+    )
+
+    env_parser = sub.add_parser("env", help="manage deploy secrets")
+    env_sub = env_parser.add_subparsers(dest="env_command")
+
+    env_set_p = env_sub.add_parser("set", help="set a deploy secret")
+    env_set_p.add_argument("key", help="secret name")
+    env_set_p.add_argument("value", help="secret value")
+
+    env_get_p = env_sub.add_parser("get", help="get a deploy secret")
+    env_get_p.add_argument("key", help="secret name")
+
+    env_sub.add_parser("list", help="list deploy secret names")
+
+    env_del_p = env_sub.add_parser("delete", help="delete a deploy secret")
+    env_del_p.add_argument("key", help="secret name")
+
+    env_sub.add_parser("reload", help="hot-reload .env into the server")
 
     return parser
 
@@ -101,9 +121,14 @@ def main() -> None:
         from kiso.cli_connector import run_connector_command
 
         run_connector_command(args)
-    else:
-        print(f"kiso {args.command}: not yet implemented.")
-        sys.exit(1)
+    elif args.command == "sessions":
+        from kiso.cli_session import run_sessions_command
+
+        run_sessions_command(args)
+    elif args.command == "env":
+        from kiso.cli_env import run_env_command
+
+        run_env_command(args)
 
 
 def _chat(args: argparse.Namespace) -> None:
