@@ -17,6 +17,19 @@ from kiso.sysenv import get_system_env, build_system_env_section
 
 log = logging.getLogger(__name__)
 
+
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
+    s = text.strip()
+    if s.startswith("```"):
+        # Remove opening fence line
+        nl = s.find("\n")
+        if nl != -1:
+            s = s[nl + 1:]
+    if s.endswith("```"):
+        s = s[:-3]
+    return s.strip()
+
 PLAN_SCHEMA: dict = {
     "type": "json_schema",
     "json_schema": {
@@ -291,7 +304,7 @@ async def run_planner(
             raise PlanError(f"LLM call failed: {e}")
 
         try:
-            plan = json.loads(raw)
+            plan = json.loads(_strip_fences(raw))
         except json.JSONDecodeError as e:
             raise PlanError(f"Planner returned invalid JSON: {e}")
 
@@ -404,7 +417,7 @@ async def run_reviewer(
             raise ReviewError(f"LLM call failed: {e}")
 
         try:
-            review = json.loads(raw)
+            review = json.loads(_strip_fences(raw))
         except json.JSONDecodeError as e:
             raise ReviewError(f"Reviewer returned invalid JSON: {e}")
 
@@ -542,7 +555,7 @@ async def run_curator(config: Config, learnings: list[dict], session: str = "") 
             raise CuratorError(f"LLM call failed: {e}")
 
         try:
-            result = json.loads(raw)
+            result = json.loads(_strip_fences(raw))
         except json.JSONDecodeError as e:
             raise CuratorError(f"Curator returned invalid JSON: {e}")
 
@@ -690,7 +703,7 @@ async def run_fact_consolidation(
     except LLMError as e:
         raise SummarizerError(f"LLM call failed: {e}")
     try:
-        result = json.loads(raw)
+        result = json.loads(_strip_fences(raw))
     except json.JSONDecodeError as e:
         raise SummarizerError(f"Consolidation returned invalid JSON: {e}")
     if not isinstance(result, list):

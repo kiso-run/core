@@ -17,6 +17,7 @@ from kiso.brain import (
     _default_planner_prompt,
     _default_reviewer_prompt,
     _load_system_prompt,
+    _strip_fences,
     build_curator_messages,
     build_paraphraser_messages,
     build_planner_messages,
@@ -1086,3 +1087,30 @@ class TestReviewerMessagesFencing:
         assert "<<<USER_MSG_" in content
         assert "<<<END_USER_MSG_" in content
         assert "the original user message" in content
+
+
+# --- _strip_fences ---
+
+
+class TestStripFences:
+    def test_no_fences(self):
+        assert _strip_fences('{"key": "value"}') == '{"key": "value"}'
+
+    def test_json_fence(self):
+        assert _strip_fences('```json\n{"key": "value"}\n```') == '{"key": "value"}'
+
+    def test_plain_fence(self):
+        assert _strip_fences('```\n{"key": "value"}\n```') == '{"key": "value"}'
+
+    def test_leading_whitespace(self):
+        assert _strip_fences(' ```json\n{"key": "value"}\n```') == '{"key": "value"}'
+
+    def test_trailing_whitespace(self):
+        assert _strip_fences('```json\n{"key": "value"}\n``` ') == '{"key": "value"}'
+
+    def test_bare_json(self):
+        raw = '{"goal": "test", "secrets": null, "tasks": []}'
+        assert _strip_fences(raw) == raw
+
+    def test_empty_string(self):
+        assert _strip_fences('') == ''
