@@ -4,17 +4,20 @@ Tests that call real LLMs via OpenRouter to verify structured output, semantic c
 
 ## Setup
 
+The `.env` file in the project root is shared between Docker (for running kiso) and the host shell (for running live tests). Format is `KEY=VALUE` — compatible with both `docker compose` and bash.
+
 ```bash
 # 1. Copy the template
 cp .env.example .env
 
-# 2. Get an API key from https://openrouter.ai/keys and paste it in .env
-#    The file looks like:
-#    export KISO_OPENROUTER_API_KEY=sk-or-v1-...
+# 2. Get an API key from https://openrouter.ai/keys and paste it
+#    KISO_OPENROUTER_API_KEY=sk-or-v1-...
 
-# 3. Load it into your shell (once per terminal session)
-source .env
+# 3. Load into your shell (once per terminal session)
+set -a; source .env; set +a
 ```
+
+`set -a` tells bash to auto-export variables, so `KEY=VALUE` lines work without `export`.
 
 The `.env` file is gitignored and must never be committed.
 
@@ -22,7 +25,7 @@ The `.env` file is gitignored and must never be committed.
 
 ```bash
 # Load secrets (if not already done in this terminal)
-source .env
+set -a; source .env; set +a
 
 # Run all live tests (LLM + network)
 uv run pytest tests/live/ --llm-live --live-network -v
@@ -87,7 +90,7 @@ Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workfl
 ### All tests skipped
 - Without `--llm-live`: Expected. Pass the flag to enable LLM tests.
 - Without `--live-network`: Expected. Pass the flag to enable network tests.
-- With `--llm-live` but skipped: Check `source .env` was run and `KISO_OPENROUTER_API_KEY` is set (`echo $KISO_OPENROUTER_API_KEY`).
+- With `--llm-live` but skipped: Check `set -a; source .env; set +a` was run and `KISO_OPENROUTER_API_KEY` is set (`echo $KISO_OPENROUTER_API_KEY`).
 
 ### Timeouts
 - Default timeout is 60-120s per test. OpenRouter can be slow under load.
