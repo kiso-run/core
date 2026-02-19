@@ -1,0 +1,17 @@
+services:
+  test-unit:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: uv run pytest tests/ -q
+    profiles: [unit]
+
+  test-live:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: uv run pytest tests/live/ --llm-live --live-network -v
+    env_file:
+      - path: .env
+        required: true
+    profiles: [live]
