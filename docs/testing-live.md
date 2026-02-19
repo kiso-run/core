@@ -2,17 +2,30 @@
 
 Tests that call real LLMs via OpenRouter to verify structured output, semantic correctness, and end-to-end flows.
 
-## Prerequisites
+## Setup
 
-- `KISO_OPENROUTER_API_KEY` environment variable set with a valid API key (L1-L4)
-- Internet access to `openrouter.ai` (L1-L4) and `api.github.com` (L5)
-- `git` on PATH (L5 install test)
+```bash
+# 1. Copy the template
+cp .env.example .env
+
+# 2. Get an API key from https://openrouter.ai/keys and paste it in .env
+#    The file looks like:
+#    export KISO_OPENROUTER_API_KEY=sk-or-v1-...
+
+# 3. Load it into your shell (once per terminal session)
+source .env
+```
+
+The `.env` file is gitignored and must never be committed.
 
 ## Running
 
 ```bash
+# Load secrets (if not already done in this terminal)
+source .env
+
 # Run all live tests (LLM + network)
-KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/ --llm-live --live-network -v
+uv run pytest tests/live/ --llm-live --live-network -v
 
 # Run a specific level
 uv run pytest tests/live/test_roles.py --llm-live -v       # L1 only
@@ -49,6 +62,17 @@ A full run of all live tests makes roughly 30-50 LLM calls using the models in `
 | L4 | `test_practical.py` | 7 | Realistic user scenarios (exec chaining, full `_process_message`, multi-turn, replan, knowledge pipeline, skill execution) | 3-8 | `--llm-live` |
 | L5 | `test_cli_live.py` | 5 | CLI lifecycle (skill/connector search, install/remove) | 0 | `--live-network` |
 
+## CI (GitHub Actions)
+
+Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workflow:
+
+```yaml
+- name: Run live tests
+  env:
+    KISO_OPENROUTER_API_KEY: ${{ secrets.KISO_OPENROUTER_API_KEY }}
+  run: uv run pytest tests/live/ --llm-live --live-network -v
+```
+
 ## Design Principles
 
 - **Two-layer gating**: LLM tests require both `--llm-live` flag AND `KISO_OPENROUTER_API_KEY` env var. Network tests require `--live-network`. Missing either skips with a clear reason.
@@ -63,7 +87,7 @@ A full run of all live tests makes roughly 30-50 LLM calls using the models in `
 ### All tests skipped
 - Without `--llm-live`: Expected. Pass the flag to enable LLM tests.
 - Without `--live-network`: Expected. Pass the flag to enable network tests.
-- With `--llm-live` but skipped: Check that `KISO_OPENROUTER_API_KEY` is set in the environment.
+- With `--llm-live` but skipped: Check `source .env` was run and `KISO_OPENROUTER_API_KEY` is set (`echo $KISO_OPENROUTER_API_KEY`).
 
 ### Timeouts
 - Default timeout is 60-120s per test. OpenRouter can be slow under load.
@@ -78,5 +102,6 @@ A full run of all live tests makes roughly 30-50 LLM calls using the models in `
 - If a test fails on assertion, check the actual LLM output — the model may have phrased things differently.
 - Never add exact text matching; adjust assertions to be more permissive if needed.
 
-### L5 install test skipped
-- Requires `git` on PATH. Install git or skip this test.
+### L5 install tests skipped
+- `skill-search` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
+- Requires `git` on PATH.
