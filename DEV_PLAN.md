@@ -699,13 +699,13 @@ Human-readable logs for debugging and monitoring.
 
 Exec/skill tasks can publish downloadable files.
 
-- [ ] Implement `GET /pub/{id}` in main.py
-  - [ ] Look up UUID in `store.published`
-  - [ ] Serve file with Content-Type and Content-Disposition
-  - [ ] No authentication required
-- [ ] Implement file publishing in store.py
-  - [ ] `publish_file(session, filename, path)` → UUID4
-  - [ ] Files in `~/.kiso/sessions/{session}/pub/`
+- [x] Implement `GET /pub/{id}` in main.py
+  - [x] Look up UUID in `store.published`
+  - [x] Serve file with Content-Type and Content-Disposition
+  - [x] No authentication required
+- [x] Implement file publishing in store.py
+  - [x] `publish_file(session, filename, path)` → UUID4
+  - [x] Files in `~/.kiso/sessions/{session}/pub/`
 
 **Verify:**
 ```bash

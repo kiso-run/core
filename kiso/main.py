@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import os
 import re
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
@@ -21,6 +23,7 @@ from kiso.store import (
     create_session,
     get_all_sessions,
     get_plan_for_session,
+    get_published_file,
     get_sessions_for_user,
     get_tasks_for_session,
     get_unprocessed_trusted_messages,
@@ -190,6 +193,26 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/pub/{file_id}")
+async def get_pub(file_id: str, request: Request):
+    """Serve a published file. No authentication required."""
+    db = request.app.state.db
+    row = await get_published_file(db, file_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = Path(row["path"])
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    media_type = mimetypes.guess_type(row["filename"])[0] or "application/octet-stream"
+    return FileResponse(
+        path=file_path,
+        filename=row["filename"],
+        media_type=media_type,
+    )
 
 
 @app.post("/sessions")

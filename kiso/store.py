@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import aiosqlite
 from pathlib import Path
 
@@ -484,3 +486,26 @@ async def create_task(
     )
     await db.commit()
     return cur.lastrowid  # type: ignore[return-value]
+
+
+async def publish_file(
+    db: aiosqlite.Connection,
+    session: str,
+    filename: str,
+    path: str,
+) -> str:
+    """Insert a published file entry. Returns the UUID4 id."""
+    file_id = str(uuid.uuid4())
+    await db.execute(
+        "INSERT INTO published (id, session, filename, path) VALUES (?, ?, ?, ?)",
+        (file_id, session, filename, path),
+    )
+    await db.commit()
+    return file_id
+
+
+async def get_published_file(db: aiosqlite.Connection, file_id: str) -> dict | None:
+    """Look up a published file by UUID. Returns dict or None."""
+    cur = await db.execute("SELECT * FROM published WHERE id = ?", (file_id,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
