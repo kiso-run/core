@@ -158,7 +158,7 @@ def _skill_install(args) -> None:
         try:
             result = subprocess.run(
                 ["git", "clone", git_url, tmpdir],
-                capture_output=True, text=True,
+                capture_output=True, text=True, stdin=subprocess.DEVNULL,
             )
             if result.returncode != 0:
                 print(f"error: git clone failed: {result.stderr.strip()}")
@@ -185,7 +185,7 @@ def _skill_install(args) -> None:
 
         result = subprocess.run(
             ["git", "clone", git_url, str(skill_dir)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
             print(f"error: git clone failed: {result.stderr.strip()}")
@@ -298,7 +298,7 @@ def _skill_update(args) -> None:
         result = subprocess.run(
             ["git", "pull"],
             cwd=str(skill_dir),
-            capture_output=True, text=True,
+            capture_output=True, text=True, stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
             print(f"error: git pull failed for '{name}': {result.stderr.strip()}")
