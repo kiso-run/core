@@ -65,6 +65,7 @@ from kiso.store import (
     update_plan_status,
     update_summary,
     update_task,
+    update_task_review,
 )
 
 log = logging.getLogger(__name__)
@@ -342,6 +343,11 @@ async def _review_task(
         log.info("Learning saved: %s", review["learn"][:100])
 
     audit.log_review(session, task_row.get("id", 0), review["status"], has_learning)
+
+    await update_task_review(
+        db, task_row["id"], review["status"],
+        reason=review.get("reason"), learning=review.get("learn"),
+    )
 
     return review
 

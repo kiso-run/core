@@ -782,16 +782,23 @@ class TestReviewTask:
         yield conn
         await conn.close()
 
+    async def _make_task(self, db, detail="echo", expect="ok"):
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        task_id = await create_task(db, plan_id, "sess1", type="exec", detail=detail, expect=expect)
+        return task_id
+
     async def test_ok_review(self, db):
         config = _make_config()
-        task_row = {"detail": "echo hi", "expect": "prints hi", "output": "hi\n", "stderr": ""}
+        tid = await self._make_task(db, "echo hi", "prints hi")
+        task_row = {"id": tid, "detail": "echo hi", "expect": "prints hi", "output": "hi\n", "stderr": ""}
         with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
             review = await _review_task(config, db, "sess1", "goal", task_row, "user msg")
         assert review["status"] == "ok"
 
     async def test_replan_review(self, db):
         config = _make_config()
-        task_row = {"detail": "ls", "expect": "files", "output": "", "stderr": "not found"}
+        tid = await self._make_task(db, "ls", "files")
+        task_row = {"id": tid, "detail": "ls", "expect": "files", "output": "", "stderr": "not found"}
         with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN):
             review = await _review_task(config, db, "sess1", "goal", task_row, "msg")
         assert review["status"] == "replan"
@@ -799,7 +806,8 @@ class TestReviewTask:
     async def test_stores_learning(self, db):
         config = _make_config()
         review_with_learn = {"status": "ok", "reason": None, "learn": "Uses Flask"}
-        task_row = {"detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
             await _review_task(config, db, "sess1", "goal", task_row, "msg")
 
@@ -810,7 +818,8 @@ class TestReviewTask:
 
     async def test_no_learning_when_null(self, db):
         config = _make_config()
-        task_row = {"detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
             await _review_task(config, db, "sess1", "goal", task_row, "msg")
 
@@ -820,7 +829,8 @@ class TestReviewTask:
 
     async def test_includes_stderr_in_output(self, db):
         config = _make_config()
-        task_row = {"detail": "ls", "expect": "files", "output": "out", "stderr": "warn"}
+        tid = await self._make_task(db, "ls", "files")
+        task_row = {"id": tid, "detail": "ls", "expect": "files", "output": "out", "stderr": "warn"}
         captured_output = []
 
         async def _mock_reviewer(cfg, goal, detail, expect, output, user_message, **kwargs):
@@ -835,7 +845,8 @@ class TestReviewTask:
 
     async def test_no_stderr_section_when_empty(self, db):
         config = _make_config()
-        task_row = {"detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         captured_output = []
 
         async def _mock_reviewer(cfg, goal, detail, expect, output, user_message, **kwargs):
@@ -849,10 +860,42 @@ class TestReviewTask:
 
     async def test_none_output_handled(self, db):
         config = _make_config()
-        task_row = {"detail": "echo", "expect": "ok", "output": None, "stderr": None}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": None, "stderr": None}
         with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
             review = await _review_task(config, db, "sess1", "goal", task_row, "msg")
         assert review["status"] == "ok"
+
+    async def test_review_verdict_persisted_after_exec(self, db):
+        config = _make_config()
+        tid = await self._make_task(db, "echo ok", "ok")
+        task_row = {"id": tid, "detail": "echo ok", "expect": "ok", "output": "ok\n", "stderr": ""}
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute(
+            "SELECT review_verdict, review_reason, review_learning FROM tasks WHERE id=?", (tid,)
+        )
+        row = await cur.fetchone()
+        assert row[0] == "ok"
+        assert row[1] is None
+        assert row[2] is None
+
+    async def test_review_replan_fields_persisted(self, db):
+        config = _make_config()
+        replan_with_learn = {"status": "replan", "reason": "Bad output", "learn": "Needs retry"}
+        tid = await self._make_task(db, "bad cmd", "ok")
+        task_row = {"id": tid, "detail": "bad cmd", "expect": "ok", "output": "", "stderr": "err"}
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=replan_with_learn):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute(
+            "SELECT review_verdict, review_reason, review_learning FROM tasks WHERE id=?", (tid,)
+        )
+        row = await cur.fetchone()
+        assert row[0] == "replan"
+        assert row[1] == "Bad output"
+        assert row[2] == "Needs retry"
 
 
 # --- _build_replan_context ---

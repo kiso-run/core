@@ -31,6 +31,7 @@ from kiso.store import (
     update_plan_status,
     update_summary,
     update_task,
+    update_task_review,
 )
 
 
@@ -530,3 +531,49 @@ async def test_get_untrusted_messages_respects_limit(db: aiosqlite.Connection):
     assert len(untrusted) == 2
     assert untrusted[0]["content"] == "untrusted-0"
     assert untrusted[1]["content"] == "untrusted-1"
+
+
+# --- M19: update_task_review ---
+
+
+async def test_update_task_review_ok(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    await update_task_review(db, task_id, "ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["review_verdict"] == "ok"
+    assert tasks[0]["review_reason"] is None
+    assert tasks[0]["review_learning"] is None
+
+
+async def test_update_task_review_replan(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="bad", expect="ok")
+    await update_task_review(db, task_id, "replan", reason="Directory not found")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["review_verdict"] == "replan"
+    assert tasks[0]["review_reason"] == "Directory not found"
+    assert tasks[0]["review_learning"] is None
+
+
+async def test_update_task_review_with_learning(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    await update_task_review(db, task_id, "ok", learning="Uses pytest")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["review_verdict"] == "ok"
+    assert tasks[0]["review_reason"] is None
+    assert tasks[0]["review_learning"] == "Uses pytest"
+
+
+async def test_review_fields_null_by_default(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["review_verdict"] is None
+    assert tasks[0]["review_reason"] is None
+    assert tasks[0]["review_learning"] is None

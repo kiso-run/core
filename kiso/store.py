@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     status     TEXT NOT NULL DEFAULT 'pending',
     output     TEXT,
     stderr     TEXT,
+    review_verdict  TEXT,
+    review_reason   TEXT,
+    review_learning TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -301,6 +304,21 @@ async def update_task(
         "UPDATE tasks SET status = ?, output = ?, stderr = ?, "
         "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         (status, output, stderr, task_id),
+    )
+    await db.commit()
+
+
+async def update_task_review(
+    db: aiosqlite.Connection,
+    task_id: int,
+    verdict: str,
+    reason: str | None = None,
+    learning: str | None = None,
+) -> None:
+    """Persist review verdict on a task row."""
+    await db.execute(
+        "UPDATE tasks SET review_verdict=?, review_reason=?, review_learning=? WHERE id=?",
+        (verdict, reason, learning, task_id),
     )
     await db.commit()
 

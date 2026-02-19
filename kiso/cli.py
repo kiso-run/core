@@ -220,6 +220,7 @@ def _poll_status(
         CLEAR_LINE,
         render_msg_output,
         render_plan,
+        render_review,
         render_task_header,
         render_task_output,
         spinner_frames,
@@ -309,6 +310,11 @@ def _poll_status(
                     out = render_task_output(output, caps)
                     if out:
                         print(out)
+
+                # Show review verdict for completed exec/skill tasks
+                review_line = render_review(task, caps)
+                if review_line:
+                    print(review_line)
 
                 # Track running task for spinner
                 if status == "running":

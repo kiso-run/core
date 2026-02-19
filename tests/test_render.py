@@ -15,6 +15,7 @@ from kiso.render import (
     render_max_replan,
     render_msg_output,
     render_plan,
+    render_review,
     render_task_header,
     render_task_output,
     spinner_frames,
@@ -330,3 +331,73 @@ def test_color_present_when_enabled():
 def test_color_absent_when_disabled():
     result = render_plan("Goal", 2, _PLAIN)
     assert "\033[" not in result
+
+
+# ── render_review ────────────────────────────────────────────
+
+
+def test_render_review_ok_unicode():
+    task = {"review_verdict": "ok"}
+    result = render_review(task, _COLOR)
+    assert "✓" in result
+    assert "review: ok" in result
+    assert "\033[32m" in result  # green
+
+
+def test_render_review_ok_ascii():
+    task = {"review_verdict": "ok"}
+    result = render_review(task, _PLAIN)
+    assert "ok" in result
+    assert "review: ok" in result
+    assert "\033[" not in result
+
+
+def test_render_review_replan_unicode():
+    task = {"review_verdict": "replan", "review_reason": "Directory missing"}
+    result = render_review(task, _COLOR)
+    assert "✗" in result
+    assert "replan" in result
+    assert "Directory missing" in result
+    assert "\033[31m" in result  # red
+
+
+def test_render_review_replan_ascii():
+    task = {"review_verdict": "replan", "review_reason": "Directory missing"}
+    result = render_review(task, _PLAIN)
+    assert "FAIL" in result
+    assert "replan" in result
+    assert "Directory missing" in result
+    assert "\033[" not in result
+
+
+def test_render_review_with_learning_unicode():
+    task = {"review_verdict": "ok", "review_learning": "Uses pytest"}
+    result = render_review(task, _COLOR)
+    assert "📝" in result
+    assert "learning:" in result
+    assert "Uses pytest" in result
+    assert "\033[35m" in result  # magenta
+
+
+def test_render_review_learning_ascii():
+    task = {"review_verdict": "ok", "review_learning": "Uses pytest"}
+    result = render_review(task, _PLAIN)
+    assert "+ learning:" in result
+    assert "Uses pytest" in result
+    assert "\033[" not in result
+
+
+def test_render_review_no_verdict():
+    task = {"review_verdict": None}
+    assert render_review(task, _COLOR) == ""
+    assert render_review({}, _COLOR) == ""
+
+
+def test_render_review_ok_with_learning():
+    task = {"review_verdict": "ok", "review_learning": "Uses Flask"}
+    result = render_review(task, _COLOR)
+    lines = result.split("\n")
+    assert len(lines) == 2
+    assert "review: ok" in lines[0]
+    assert "learning:" in lines[1]
+    assert "Uses Flask" in lines[1]

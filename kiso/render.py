@@ -215,6 +215,27 @@ def render_cancel_start(caps: TermCaps) -> str:
     return _style(text, _BOLD, _RED, caps=caps)
 
 
+def render_review(task: dict, caps: TermCaps) -> str:
+    """Render review verdict and optional learning for a task."""
+    verdict = task.get("review_verdict")
+    if not verdict:
+        return ""
+    lines: list[str] = []
+    if verdict == "ok":
+        lines.append(_style(f"  {_icon('ok', caps)} review: ok", _GREEN, caps=caps))
+    elif verdict == "replan":
+        reason = task.get("review_reason") or ""
+        lines.append(_style(
+            f'  {_icon("fail", caps)} review: replan — "{reason}"',
+            _BOLD, _RED, caps=caps,
+        ))
+    learning = task.get("review_learning")
+    if learning:
+        prefix = "  📝 learning: " if caps.unicode else "  + learning: "
+        lines.append(_style(f'{prefix}"{learning}"', _MAGENTA, caps=caps))
+    return "\n".join(lines)
+
+
 def render_cancel_done(
     done: int,
     total: int,
