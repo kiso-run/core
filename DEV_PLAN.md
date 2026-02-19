@@ -553,10 +553,7 @@ The renderer shows the full decision flow by default — every planning step, ta
   - [x] Output lines: indented with `┊`, dim color
   - [x] Output truncation: first 20 lines shown (10 if terminal < 40 rows), rest collapsed behind `... (N more lines, press Enter to expand)`. Expansion is inline, no scrollback modification.
   - [x] `msg` task output never truncated — it's the bot's response
-- [ ] Review rendering (deferred — /status API doesn't expose review verdicts)
-  - [ ] `✓ review: ok` — green (ASCII: `ok`)
-  - [ ] `✗ review: replan — "{reason}"` — bold red (ASCII: `FAIL`)
-  - [ ] `📝 learning: "{content}"` — magenta (ASCII: `+ learning: ...`)
+- [x] ~~Review rendering~~ — moved to M19
 - [x] Cancel rendering
   - [x] `⊘ Cancelling...` on Ctrl+C
   - [x] `⊘ Cancelled. {N} of {M} tasks completed.` with done/skipped summary
@@ -712,6 +709,44 @@ Exec/skill tasks can publish downloadable files.
 # Manually insert a published file entry
 # curl localhost:8333/pub/{uuid} → downloads the file
 # Random UUID → 404
+```
+
+---
+
+## Milestone 19: Review rendering in CLI
+
+Expose review verdicts through the API and render them in the CLI. Completes the full decision-flow visibility promised in M15c.
+
+- [ ] Add `review_verdict` field to tasks table (`store.py`)
+  - [ ] New column: `review_verdict TEXT` (null for msg tasks, "ok"/"replan" for exec/skill)
+  - [ ] New column: `review_reason TEXT` (null unless replan)
+  - [ ] New column: `review_learning TEXT` (null unless reviewer produced a learning)
+- [ ] Persist review results in `worker.py`
+  - [ ] After `_review_task()`: update task row with verdict, reason, learning
+- [ ] Expose review fields in `GET /status/{session}` response
+- [ ] Implement review rendering in `kiso/render.py`
+  - [ ] `✓ review: ok` — green (ASCII: `ok`)
+  - [ ] `✗ review: replan — "{reason}"` — bold red (ASCII: `FAIL`)
+  - [ ] `📝 learning: "{content}"` — magenta (ASCII: `+ learning: ...`)
+- [ ] Non-TTY: plain text review lines (no ANSI codes)
+
+**Verify:**
+```bash
+kiso --session test
+# You: list files in the current directory
+# ◆ Plan: List files and report (2 tasks)
+# ▶ [1/2] exec: ls -la
+#   ┊ total 24 ...
+#   ✓ review: ok
+# 💬 [2/2] msg
+# Bot: Here are the files ...
+
+# Force a replan:
+# You: run tests in /nonexistent
+# ▶ [1/2] exec: cd /nonexistent && pytest
+#   ┊ No such file or directory
+#   ✗ review: replan — "Directory does not exist"
+# ↻ Replan: ...
 ```
 
 ---
