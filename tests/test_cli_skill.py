@@ -710,3 +710,285 @@ def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
 
     out = capsys.readouterr().out
     assert "not installed" in out
+
+
+# ── Edge cases: _skill_install ──────────────────────────
+
+
+def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
+    """show-deps when git clone fails."""
+    from kiso.cli_skill import _skill_install
+
+    def fail(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stderr="fatal: not found")
+
+    with (
+        patch("subprocess.run", side_effect=fail),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=True,
+        ))
+
+    assert "git clone failed" in capsys.readouterr().out
+
+
+def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
+    """show-deps when repo has no deps.sh."""
+    from kiso.cli_skill import _skill_install
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    with patch("subprocess.run", side_effect=fake_clone):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=True,
+        ))
+
+    assert "No deps.sh" in capsys.readouterr().out
+
+
+def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
+    """Clone succeeds but no kiso.toml — cleaned up."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=fake_clone),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    out = capsys.readouterr().out
+    assert "kiso.toml not found" in out
+    assert not (skills_dir / "search").exists()
+
+
+def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
+    """kiso.toml exists but fails validation — cleaned up."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        # Invalid manifest: wrong type
+        (dest / "kiso.toml").write_text('[kiso]\ntype = "connector"\nname = "x"\n')
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=fake_clone),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    out = capsys.readouterr().out
+    assert "error:" in out
+    assert not (skills_dir / "search").exists()
+
+
+def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
+    """deps.sh fails — warning printed but install continues."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "search"\n[kiso.skill]\nsummary = "s"\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
+        (dest / "deps.sh").write_text("#!/bin/bash\nexit 1\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    call_idx = [0]
+
+    def run_dispatch(cmd, **kwargs):
+        call_idx[0] += 1
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        if cmd[0] == "bash":
+            return subprocess.CompletedProcess(cmd, 1, stderr="apt failed")
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    out = capsys.readouterr().out
+    assert "warning: deps.sh failed" in out
+    assert "installed successfully" in out
+
+
+def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
+    """check_deps returns missing binaries — warning printed."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    clone_fn = _fake_clone_with_manifest("search", "Search")
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return clone_fn(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=["ffmpeg", "node"]),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    out = capsys.readouterr().out
+    assert "missing binaries: ffmpeg, node" in out
+    assert "installed successfully" in out
+
+
+def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
+    """Env vars declared in manifest but not in environment — warning printed."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "search"\n'
+            "[kiso.skill]\n"
+            'summary = "Search"\n'
+            "[kiso.skill.env]\n"
+            'api_key = "Required API key"\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch.dict("os.environ", {}, clear=False),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    out = capsys.readouterr().out
+    assert "KISO_SKILL_SEARCH_API_KEY not set" in out
+    assert "installed successfully" in out
+
+
+# ── Edge cases: _skill_update ───────────────────────────
+
+
+def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
+    """Update all when skills dir doesn't exist."""
+    from kiso.cli_skill import _skill_update
+
+    with patch("kiso.cli_skill.SKILLS_DIR", tmp_path / "nonexistent"):
+        _skill_update(argparse.Namespace(target="all"))
+
+    assert "No skills installed" in capsys.readouterr().out
+
+
+def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
+    """Update all when skills dir is empty."""
+    from kiso.cli_skill import _skill_update
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    with patch("kiso.cli_skill.SKILLS_DIR", skills_dir):
+        _skill_update(argparse.Namespace(target="all"))
+
+    assert "No skills installed" in capsys.readouterr().out
+
+
+def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
+    """deps.sh fails during update — warning printed but update continues."""
+    from kiso.cli_skill import _skill_update
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill_dir = skills_dir / "search"
+    skill_dir.mkdir()
+    (skill_dir / "deps.sh").write_text("#!/bin/bash\nexit 1\n")
+
+    call_idx = [0]
+
+    def run_dispatch(cmd, **kwargs):
+        call_idx[0] += 1
+        if cmd[0] == "git":
+            return _ok_run(cmd, **kwargs)
+        if cmd[0] == "bash":
+            return subprocess.CompletedProcess(cmd, 1, stderr="deps failed")
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+    ):
+        _skill_update(argparse.Namespace(target="search"))
+
+    out = capsys.readouterr().out
+    assert "warning: deps.sh failed" in out
+    assert "updated" in out
+
+
+def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
+    """check_deps returns missing binaries during update — warning printed."""
+    from kiso.cli_skill import _skill_update
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    (skills_dir / "search").mkdir()
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=_ok_run),
+        patch("kiso.cli_skill.check_deps", return_value=["docker"]),
+    ):
+        _skill_update(argparse.Namespace(target="search"))
+
+    out = capsys.readouterr().out
+    assert "missing binaries: docker" in out
+    assert "updated" in out

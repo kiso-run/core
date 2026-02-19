@@ -300,3 +300,23 @@ class TestBuildSystemEnvSection:
     def test_max_output_size_formatting(self, sample_env):
         section = build_system_env_section(sample_env)
         assert "Max output: 1MB" in section
+
+    def test_max_output_size_kb(self, sample_env):
+        sample_env["max_output_size"] = 512 * 1024  # 512KB
+        section = build_system_env_section(sample_env)
+        assert "Max output: 512KB" in section
+
+    def test_max_output_size_bytes(self, sample_env):
+        sample_env["max_output_size"] = 500  # 500B
+        section = build_system_env_section(sample_env)
+        assert "Max output: 500B" in section
+
+    def test_max_output_size_non_aligned_kb(self, sample_env):
+        sample_env["max_output_size"] = 1025  # not aligned to 1024
+        section = build_system_env_section(sample_env)
+        assert "Max output: 1025B" in section
+
+    def test_max_output_size_multi_mb(self, sample_env):
+        sample_env["max_output_size"] = 4 * 1_048_576  # 4MB
+        section = build_system_env_section(sample_env)
+        assert "Max output: 4MB" in section
