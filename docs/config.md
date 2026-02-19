@@ -57,8 +57,8 @@ skills = ["search", "aider"]
 
 [models]
 planner = "minimax/minimax-m2.5"
-reviewer = "minimax/minimax-m2.5"
-curator = "minimax/minimax-m2.5"
+reviewer = "deepseek/deepseek-v3.2"
+curator = "deepseek/deepseek-v3.2"
 worker = "deepseek/deepseek-v3.2"
 summarizer = "deepseek/deepseek-v3.2"
 
@@ -97,8 +97,8 @@ port = 8333
 |---|---|---|
 | `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform username. See [security.md](security.md). |
 | `models.planner` | `minimax/minimax-m2.5` | Requires structured output (`response_format` with `json_schema`). |
-| `models.reviewer` | `minimax/minimax-m2.5` | Requires structured output. |
-| `models.curator` | `minimax/minimax-m2.5` | Requires structured output. |
+| `models.reviewer` | `deepseek/deepseek-v3.2` | Requires structured output. |
+| `models.curator` | `deepseek/deepseek-v3.2` | Requires structured output. |
 | `models.worker` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
 | `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text, also used by paraphraser. |
 | `settings.context_messages` | `5` | Number of recent raw messages sent to the planner (see [llm-roles.md](llm-roles.md#planner)). |

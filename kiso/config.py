@@ -35,8 +35,8 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
 
 MODEL_DEFAULTS: dict[str, str] = {
     "planner": "minimax/minimax-m2.5",
-    "reviewer": "minimax/minimax-m2.5",
-    "curator": "minimax/minimax-m2.5",
+    "reviewer": "deepseek/deepseek-v3.2",
+    "curator": "deepseek/deepseek-v3.2",
     "worker": "deepseek/deepseek-v3.2",
     "summarizer": "deepseek/deepseek-v3.2",
     "paraphraser": "deepseek/deepseek-v3.2",
