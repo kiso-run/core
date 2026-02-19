@@ -261,6 +261,8 @@ def _skill_install(args) -> None:
             installing.unlink()
 
         print(f"Skill '{name}' installed successfully.")
+        from kiso.sysenv import invalidate_cache
+        invalidate_cache()
 
     except Exception:
         # Cleanup on failure
@@ -325,6 +327,8 @@ def _skill_update(args) -> None:
             print(f"warning: '{name}' missing binaries: {', '.join(missing)}")
 
         print(f"Skill '{name}' updated.")
+        from kiso.sysenv import invalidate_cache
+        invalidate_cache()
 
 
 def _skill_remove(args) -> None:
@@ -339,3 +343,5 @@ def _skill_remove(args) -> None:
 
     shutil.rmtree(skill_dir)
     print(f"Skill '{name}' removed.")
+    from kiso.sysenv import invalidate_cache
+    invalidate_cache()

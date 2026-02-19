@@ -13,6 +13,7 @@ from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
 from kiso.skills import discover_skills, build_planner_skill_list
 from kiso.store import get_facts, get_pending_items, get_recent_messages, get_session
+from kiso.sysenv import get_system_env, build_system_env_section
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +134,9 @@ Rules:
 - task detail must be self-contained (the worker won't see the conversation)
 - If the request is unclear, produce a single msg task asking for clarification
 - tasks list must not be empty
+- Use the System Environment to choose appropriate commands and available tools
+- Only use binaries listed as available; do not assume tools are installed
+- Respect blocked commands and plan limits from the System Environment
 """
 
 
@@ -208,6 +212,11 @@ async def build_planner_messages(
     if facts:
         facts_text = "\n".join(f"- {f['content']}" for f in facts)
         context_parts.append(f"## Known Facts\n{facts_text}")
+
+    # System environment — semi-static context about the execution environment
+    sys_env = get_system_env(config)
+    sys_env_text = build_system_env_section(sys_env)
+    context_parts.append(f"## System Environment\n{sys_env_text}")
 
     if pending:
         pending_text = "\n".join(f"- {p['content']}" for p in pending)

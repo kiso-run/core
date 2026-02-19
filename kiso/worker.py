@@ -921,6 +921,10 @@ async def _process_message(
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
 
+    # --- Invalidate system env cache (exec tasks may have changed the system) ---
+    from kiso.sysenv import invalidate_cache
+    invalidate_cache()
+
     # --- Post-plan knowledge processing ---
 
     # 1. Curator — process pending learnings

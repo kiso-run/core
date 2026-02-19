@@ -48,7 +48,37 @@ def build_parser() -> argparse.ArgumentParser:
     remove_p = skill_sub.add_parser("remove", help="remove a skill")
     remove_p.add_argument("name", help="skill name")
 
-    sub.add_parser("connector", help="manage connectors")
+    connector_parser = sub.add_parser("connector", help="manage connectors")
+    connector_sub = connector_parser.add_subparsers(dest="connector_command")
+
+    connector_sub.add_parser("list", help="list installed connectors")
+
+    csearch_p = connector_sub.add_parser("search", help="search official connectors on GitHub")
+    csearch_p.add_argument("query", nargs="?", default="", help="search filter")
+
+    cinstall_p = connector_sub.add_parser("install", help="install a connector")
+    cinstall_p.add_argument("target", help="connector name or git URL")
+    cinstall_p.add_argument("--name", default=None, help="custom install name")
+    cinstall_p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
+    cinstall_p.add_argument(
+        "--show-deps", action="store_true", help="show deps.sh without installing"
+    )
+
+    cupdate_p = connector_sub.add_parser("update", help="update a connector")
+    cupdate_p.add_argument("target", help="connector name or 'all'")
+
+    cremove_p = connector_sub.add_parser("remove", help="remove a connector")
+    cremove_p.add_argument("name", help="connector name")
+
+    crun_p = connector_sub.add_parser("run", help="start a connector daemon")
+    crun_p.add_argument("name", help="connector name")
+
+    cstop_p = connector_sub.add_parser("stop", help="stop a connector daemon")
+    cstop_p.add_argument("name", help="connector name")
+
+    cstatus_p = connector_sub.add_parser("status", help="check connector status")
+    cstatus_p.add_argument("name", help="connector name")
+
     sub.add_parser("sessions", help="manage sessions")
     sub.add_parser("env", help="show environment info")
 
@@ -67,6 +97,10 @@ def main() -> None:
         from kiso.cli_skill import run_skill_command
 
         run_skill_command(args)
+    elif args.command == "connector":
+        from kiso.cli_connector import run_connector_command
+
+        run_connector_command(args)
     else:
         print(f"kiso {args.command}: not yet implemented.")
         sys.exit(1)

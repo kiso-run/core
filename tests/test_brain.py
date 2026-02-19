@@ -314,6 +314,61 @@ class TestBuildPlannerMessages:
         assert "search — Web search" in content
         assert "query (string, required): search query" in content
 
+    # --- System environment in planner context ---
+
+    async def test_includes_system_environment(self, db, config):
+        """Planner context includes ## System Environment with OS and binaries."""
+        await create_session(db, "sess1")
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
+            "shell": "/bin/sh",
+            "exec_cwd": "~/.kiso/sessions/{session}/",
+            "exec_env": "PATH only (all other env vars stripped)",
+            "exec_timeout": 120,
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git", "python3"],
+            "missing_binaries": ["docker"],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+        }
+        with patch("kiso.brain.get_system_env", return_value=fake_env):
+            msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "## System Environment" in content
+        assert "Linux x86_64" in content
+        assert "git, python3" in content
+
+    async def test_system_env_after_facts_before_pending(self, db, config):
+        """System Environment section appears between Known Facts and Pending Questions."""
+        await create_session(db, "sess1")
+        await db.execute("INSERT INTO facts (content, source) VALUES (?, ?)", ("Python 3.12", "curator"))
+        await db.execute(
+            "INSERT INTO pending (content, scope, source) VALUES (?, ?, ?)",
+            ("Which DB?", "sess1", "curator"),
+        )
+        await db.commit()
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
+            "shell": "/bin/sh",
+            "exec_cwd": "~/.kiso/sessions/{session}/",
+            "exec_env": "PATH only (all other env vars stripped)",
+            "exec_timeout": 120,
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+        }
+        with patch("kiso.brain.get_system_env", return_value=fake_env):
+            msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        facts_pos = content.index("## Known Facts")
+        sysenv_pos = content.index("## System Environment")
+        pending_pos = content.index("## Pending Questions")
+        assert facts_pos < sysenv_pos < pending_pos
+
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
         with patch("kiso.brain.discover_skills", return_value=[]):

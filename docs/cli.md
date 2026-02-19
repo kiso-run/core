@@ -273,9 +273,9 @@ kiso connector list
 Kiso manages connectors as daemon processes:
 
 ```bash
-kiso connector discord run                     # start as daemon
-kiso connector discord stop                    # stop the daemon
-kiso connector discord status                  # check if running
+kiso connector run discord                     # start as daemon
+kiso connector stop discord                    # stop the daemon
+kiso connector status discord                  # check if running
 ```
 
 ## Session Management

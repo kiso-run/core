@@ -110,7 +110,7 @@ def test_serve_calls_uvicorn():
 # ── stubs exit 1 ──────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("cmd", ["connector", "sessions", "env"])
+@pytest.mark.parametrize("cmd", ["sessions", "env"])
 def test_stub_subcommands_exit_1(cmd: str, capsys):
     with patch("sys.argv", ["kiso", cmd]), pytest.raises(SystemExit, match="1"):
         main()

@@ -578,14 +578,14 @@ The renderer shows the full decision flow by default — every planning step, ta
 
 ### 15e. Connector management
 
-- [ ] `kiso connector install` / `update` / `remove` / `list` / `search`
-  - [ ] Same flow as skills but validate `type = "connector"` and `[kiso.connector]` section
-  - [ ] Official repos: `git@github.com:kiso-run/connector-{name}.git`
-  - [ ] If `config.example.toml` exists and `config.toml` doesn't → copy it
-  - [ ] `connector search`: query GitHub API (`org:kiso-run+topic:kiso-connector`)
-- [ ] `kiso connector {name} run` / `stop` / `status`
-  - [ ] Daemon subprocess management with PID tracking
-  - [ ] Logs: `~/.kiso/connectors/{name}/connector.log`
+- [x] `kiso connector install` / `update` / `remove` / `list` / `search`
+  - [x] Same flow as skills but validate `type = "connector"` and `[kiso.connector]` section
+  - [x] Official repos: `git@github.com:kiso-run/connector-{name}.git`
+  - [x] If `config.example.toml` exists and `config.toml` doesn't → copy it
+  - [x] `connector search`: query GitHub API (`org:kiso-run+topic:kiso-connector`)
+- [x] `kiso connector run` / `stop` / `status`
+  - [x] Daemon subprocess management with PID tracking
+  - [x] Logs: `~/.kiso/connectors/{name}/connector.log`
   - [ ] Exponential backoff restart on crash, stop after repeated failures
 
 ### 15f. Session + env management
@@ -594,6 +594,16 @@ The renderer shows the full decision flow by default — every planning step, ta
 - [ ] `kiso env set` / `get` / `list` / `delete` / `reload`
   - [ ] Manage `~/.kiso/.env`
   - [ ] `reload` calls `POST /admin/reload-env`
+
+### 15g. Planner system environment context
+
+- [x] `kiso/sysenv.py` — system environment collection, caching, formatting
+  - [x] OS info, available binaries, connector status, kiso CLI commands, constraints
+  - [x] In-memory cache with 300s TTL + explicit invalidation
+- [x] Inject `## System Environment` section into planner context (`brain.py`)
+- [x] Update default planner prompt with environment-aware rules
+- [x] Cache invalidation after skill/connector changes (`cli_skill.py`, `cli_connector.py`)
+- [x] Cache invalidation after plan completion (`worker.py`)
 
 **Verify:**
 ```bash

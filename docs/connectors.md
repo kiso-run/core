@@ -134,9 +134,9 @@ kiso connector search [query]
 Connectors run as daemon subprocesses managed by kiso:
 
 ```bash
-kiso connector discord run             # start as daemon
-kiso connector discord stop            # stop the daemon
-kiso connector discord status          # check if running
+kiso connector run discord             # start as daemon
+kiso connector stop discord            # stop the daemon
+kiso connector status discord          # check if running
 ```
 
 Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/connectors/{name}/connector.log`.
