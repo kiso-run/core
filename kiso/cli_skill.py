@@ -19,6 +19,9 @@ OFFICIAL_ORG = "kiso-run"
 OFFICIAL_PREFIX = "skill-"
 GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 
+# Prevent git from opening /dev/tty to prompt for credentials.
+_GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
 
 def url_to_name(url: str) -> str:
     """Convert a git URL to a skill install name.
@@ -158,7 +161,7 @@ def _skill_install(args) -> None:
         try:
             result = subprocess.run(
                 ["git", "clone", git_url, tmpdir],
-                capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, env=_GIT_ENV,
             )
             if result.returncode != 0:
                 print(f"error: git clone failed: {result.stderr.strip()}")
@@ -185,7 +188,7 @@ def _skill_install(args) -> None:
 
         result = subprocess.run(
             ["git", "clone", git_url, str(skill_dir)],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
             print(f"error: git clone failed: {result.stderr.strip()}")
@@ -298,7 +301,7 @@ def _skill_update(args) -> None:
         result = subprocess.run(
             ["git", "pull"],
             cwd=str(skill_dir),
-            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
             print(f"error: git pull failed for '{name}': {result.stderr.strip()}")

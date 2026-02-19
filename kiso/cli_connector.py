@@ -25,6 +25,9 @@ OFFICIAL_ORG = "kiso-run"
 OFFICIAL_PREFIX = "connector-"
 GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 
+# Prevent git from opening /dev/tty to prompt for credentials.
+_GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
 # Supervisor restart settings
 SUPERVISOR_MAX_FAILURES = 5
 SUPERVISOR_INITIAL_BACKOFF = 1.0  # seconds
@@ -323,7 +326,7 @@ def _connector_install(args) -> None:
         try:
             result = subprocess.run(
                 ["git", "clone", git_url, tmpdir],
-                capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, env=_GIT_ENV,
             )
             if result.returncode != 0:
                 print(f"error: git clone failed: {result.stderr.strip()}")
@@ -349,7 +352,7 @@ def _connector_install(args) -> None:
 
         result = subprocess.run(
             ["git", "clone", git_url, str(connector_dir)],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
             print(f"error: git clone failed: {result.stderr.strip()}")
@@ -461,7 +464,7 @@ def _connector_update(args) -> None:
         result = subprocess.run(
             ["git", "pull"],
             cwd=str(connector_dir),
-            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
             print(f"error: git pull failed for '{name}': {result.stderr.strip()}")
