@@ -80,7 +80,7 @@ Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workfl
 
 - **Two-layer gating**: LLM tests require both `--llm-live` flag AND `KISO_OPENROUTER_API_KEY` env var. Network tests require `--live-network`. Missing either skips with a clear reason.
 - **Structural + loose semantic assertions**: Validate JSON structure (required fields, validation passes) and loose semantics (goal mentions topic, answer present). Never exact text matching.
-- **Timeouts**: Every LLM call wrapped in `asyncio.wait_for(..., timeout=60-120)` to prevent hangs. L4 tests use 120s since they involve multi-LLM-call scenarios.
+- **Timeouts**: Every LLM call wrapped in `asyncio.wait_for(...)` to prevent hangs. L1/L2: 90s, L3: 120s, L4: 120s.
 - **Infrastructure isolation**: E2e and practical tests mock filesystem/security/webhook infrastructure (`mock_noop_infra` fixture) while letting real LLM calls flow through.
 - **Deterministic failure**: The replan test uses a manually-built failing plan (`ls /absolutely_nonexistent_dir_xyz`) rather than relying on the LLM to produce one.
 - **Temporary directories**: CLI install tests use `tmp_path` for `SKILLS_DIR` to avoid polluting `~/.kiso/skills/`.
@@ -92,8 +92,15 @@ Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workfl
 - Without `--live-network`: Expected. Pass the flag to enable network tests.
 - With `--llm-live` but skipped: Check `set -a; source .env; set +a` was run and `KISO_OPENROUTER_API_KEY` is set (`echo $KISO_OPENROUTER_API_KEY`).
 
+### Expected flakiness
+- Live LLM tests are inherently non-deterministic. Occasional failures (1-4 per run) are normal and caused by:
+  - **Network errors**: OpenRouter drops connections (`httpx.ReadError`) or times out under load.
+  - **Model output quality**: LLM occasionally returns empty/invalid JSON, or the reviewer rejects valid exec output.
+- A clean run is ~24-28 passing. If >5 tests fail consistently, investigate the LLM provider or test logic.
+- Re-running usually resolves transient failures.
+
 ### Timeouts
-- Default timeout is 60-120s per test. OpenRouter can be slow under load.
+- Default timeout is 90-120s per test (L1/L2: 90s, L3/L4: 120s). OpenRouter can be slow under load.
 - If tests frequently timeout, check OpenRouter status or increase `TIMEOUT` constants in test files.
 
 ### Rate limiting

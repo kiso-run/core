@@ -20,7 +20,7 @@ from kiso.worker import _execute_plan, _review_task
 
 pytestmark = pytest.mark.llm_live
 
-TIMEOUT = 90
+TIMEOUT = 120
 
 
 class TestSimpleQuestionE2E:

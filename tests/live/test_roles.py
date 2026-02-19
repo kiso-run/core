@@ -25,7 +25,7 @@ from kiso.worker import _msg_task
 
 pytestmark = pytest.mark.llm_live
 
-TIMEOUT = 60
+TIMEOUT = 90
 
 
 # ---------------------------------------------------------------------------
