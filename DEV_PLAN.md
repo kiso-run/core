@@ -586,7 +586,7 @@ The renderer shows the full decision flow by default — every planning step, ta
 - [x] `kiso connector run` / `stop` / `status`
   - [x] Daemon subprocess management with PID tracking
   - [x] Logs: `~/.kiso/connectors/{name}/connector.log`
-  - [ ] Exponential backoff restart on crash, stop after repeated failures
+  - [x] Exponential backoff restart on crash, stop after repeated failures
 
 ### 15f. Session + env management
 

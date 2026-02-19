@@ -652,7 +652,7 @@ def test_connector_run_start_ok(tmp_path, mock_admin, capsys):
 
     with (
         patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
-        patch("subprocess.Popen", return_value=mock_proc),
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
     ):
         _connector_run(argparse.Namespace(name="discord"))
 
@@ -660,6 +660,30 @@ def test_connector_run_start_ok(tmp_path, mock_admin, capsys):
     assert "started" in out
     assert "12345" in out
     assert (connector_dir / ".pid").read_text() == "12345"
+    # Verify supervisor is spawned (not run.py directly)
+    popen_args = mock_popen.call_args[0][0]
+    assert "_supervisor_main" in popen_args[2]
+
+
+def test_connector_run_clears_old_status(tmp_path, mock_admin, capsys):
+    from kiso.cli_connector import _connector_run
+
+    connectors_dir = tmp_path / "connectors"
+    connectors_dir.mkdir()
+    connector_dir = connectors_dir / "discord"
+    connector_dir.mkdir()
+    (connector_dir / ".status.json").write_text('{"gave_up": true}')
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+
+    with (
+        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("subprocess.Popen", return_value=mock_proc),
+    ):
+        _connector_run(argparse.Namespace(name="discord"))
+
+    assert not (connector_dir / ".status.json").exists()
 
 
 def test_connector_run_already_running(tmp_path, mock_admin, capsys):
@@ -791,6 +815,29 @@ def test_connector_status_running(tmp_path, capsys):
     assert "12345" in out
 
 
+def test_connector_status_running_with_restarts(tmp_path, capsys):
+    from kiso.cli_connector import _connector_status
+
+    connectors_dir = tmp_path / "connectors"
+    connectors_dir.mkdir()
+    connector_dir = connectors_dir / "discord"
+    connector_dir.mkdir()
+    (connector_dir / ".pid").write_text("12345")
+    (connector_dir / ".status.json").write_text(
+        '{"restarts": 3, "consecutive_failures": 1, "gave_up": false}'
+    )
+
+    with (
+        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("os.kill"),
+    ):
+        _connector_status(argparse.Namespace(name="discord"))
+
+    out = capsys.readouterr().out
+    assert "running" in out
+    assert "Restarts: 3" in out
+
+
 def test_connector_status_not_running(tmp_path, capsys):
     from kiso.cli_connector import _connector_status
 
@@ -826,3 +873,245 @@ def test_connector_status_stale_pid(tmp_path, capsys):
     assert "not running" in out
     assert "stale" in out
     assert not (connector_dir / ".pid").exists()
+
+
+def test_connector_status_gave_up(tmp_path, capsys):
+    from kiso.cli_connector import _connector_status
+
+    connectors_dir = tmp_path / "connectors"
+    connectors_dir.mkdir()
+    connector_dir = connectors_dir / "discord"
+    connector_dir.mkdir()
+    (connector_dir / ".pid").write_text("99999")
+    (connector_dir / ".status.json").write_text(
+        '{"restarts": 5, "consecutive_failures": 5, "gave_up": true, "last_exit_code": 1}'
+    )
+
+    with (
+        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("os.kill", side_effect=ProcessLookupError()),
+    ):
+        _connector_status(argparse.Namespace(name="discord"))
+
+    out = capsys.readouterr().out
+    assert "not running" in out
+    assert "gave up" in out.lower()
+    assert "5 restarts" in out
+
+
+# ── _supervisor_main ─────────────────────────────────────────
+
+import json
+import signal
+
+
+class _FakeClock:
+    """Auto-incrementing clock for supervisor tests.
+
+    ``monotonic()`` advances by ``step`` each call. ``sleep()`` jumps the clock
+    past any deadline so interruptible sleep loops exit after one iteration.
+    """
+
+    def __init__(self, step: float = 0.1):
+        self._time = 0.0
+        self._step = step
+
+    def monotonic(self) -> float:
+        self._time += self._step
+        return self._time
+
+    def sleep(self, seconds: float) -> None:
+        self._time += seconds + 100.0  # jump well past any deadline
+
+
+class TestSupervisorMain:
+    """Tests for the supervisor restart loop."""
+
+    def _make_connector_dir(self, tmp_path):
+        connectors_dir = tmp_path / "connectors"
+        connectors_dir.mkdir()
+        connector_dir = connectors_dir / "discord"
+        connector_dir.mkdir()
+        (connector_dir / "connector.log").touch()
+        return connectors_dir, connector_dir
+
+    def test_clean_exit_no_restart(self, tmp_path):
+        """Child exits with code 0 — supervisor exits, no restarts."""
+        from kiso.cli_connector import _supervisor_main
+
+        connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
+
+        mock_child = MagicMock()
+        mock_child.returncode = 0
+        mock_child.wait.return_value = 0
+
+        clock = _FakeClock()
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", return_value=mock_child),
+            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
+            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+        ):
+            _supervisor_main("discord")
+
+        assert not (connector_dir / ".pid").exists()
+        assert not (connector_dir / ".status.json").exists()
+
+    def test_crash_and_restart(self, tmp_path):
+        """Child crashes once, gets restarted, then exits clean."""
+        from kiso.cli_connector import _supervisor_main
+
+        connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
+
+        child1 = MagicMock()
+        child1.returncode = 1
+        child1.wait.return_value = 1
+
+        child2 = MagicMock()
+        child2.returncode = 0
+        child2.wait.return_value = 0
+
+        clock = _FakeClock()
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", side_effect=[child1, child2]),
+            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
+            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+        ):
+            _supervisor_main("discord")
+
+        status = json.loads((connector_dir / ".status.json").read_text())
+        assert status["restarts"] == 1
+        assert status["gave_up"] is False
+
+    def test_max_failures_gives_up(self, tmp_path):
+        """After SUPERVISOR_MAX_FAILURES consecutive quick crashes, supervisor gives up."""
+        from kiso.cli_connector import (
+            SUPERVISOR_MAX_FAILURES,
+            _supervisor_main,
+        )
+
+        connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
+
+        children = []
+        for _ in range(SUPERVISOR_MAX_FAILURES):
+            child = MagicMock()
+            child.returncode = 1
+            child.wait.return_value = 1
+            children.append(child)
+
+        clock = _FakeClock()  # step=0.1 → all crashes are "quick" (<60s elapsed)
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", side_effect=children),
+            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
+            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+        ):
+            _supervisor_main("discord")
+
+        status = json.loads((connector_dir / ".status.json").read_text())
+        assert status["gave_up"] is True
+        assert status["restarts"] == SUPERVISOR_MAX_FAILURES
+        assert status["consecutive_failures"] == SUPERVISOR_MAX_FAILURES
+
+    def test_stable_run_resets_failure_count(self, tmp_path):
+        """If child ran for >= STABLE_THRESHOLD before crashing, consecutive failures reset."""
+        from kiso.cli_connector import SUPERVISOR_STABLE_THRESHOLD, _supervisor_main
+
+        connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
+
+        clock = _FakeClock()
+
+        # child1: quick crash
+        child1 = MagicMock()
+        child1.returncode = 1
+        child1.wait.return_value = 1
+
+        # child2: stable crash — advance clock past STABLE_THRESHOLD during wait
+        child2 = MagicMock()
+        child2.returncode = 1
+        def _wait_stable():
+            clock._time += SUPERVISOR_STABLE_THRESHOLD + 10
+            return 1
+        child2.wait.side_effect = _wait_stable
+
+        # child3: clean exit
+        child3 = MagicMock()
+        child3.returncode = 0
+        child3.wait.return_value = 0
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", side_effect=[child1, child2, child3]),
+            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
+            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+        ):
+            _supervisor_main("discord")
+
+        status = json.loads((connector_dir / ".status.json").read_text())
+        assert status["restarts"] == 2
+        assert status["consecutive_failures"] == 1  # reset after stable run
+
+    def test_sigterm_stops_supervisor(self, tmp_path):
+        """SIGTERM forwarded to child, supervisor exits cleanly."""
+        from kiso.cli_connector import _supervisor_main
+
+        connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
+
+        mock_child = MagicMock()
+        mock_child.returncode = -15
+        mock_child.poll.return_value = None
+
+        sigterm_handler = None
+
+        def capture_signal(signum, handler):
+            nonlocal sigterm_handler
+            if signum == signal.SIGTERM:
+                sigterm_handler = handler
+
+        def wait_and_sigterm():
+            if sigterm_handler:
+                sigterm_handler(signal.SIGTERM, None)
+            return -15
+
+        mock_child.wait.side_effect = wait_and_sigterm
+
+        clock = _FakeClock()
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", return_value=mock_child),
+            patch("kiso.cli_connector.signal.signal", side_effect=capture_signal),
+            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
+            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+        ):
+            _supervisor_main("discord")
+
+        mock_child.terminate.assert_called_once()
+        assert not (connector_dir / ".pid").exists()
+
+    def test_pid_file_cleaned_on_exit(self, tmp_path):
+        """PID file is always removed when supervisor exits."""
+        from kiso.cli_connector import _supervisor_main
+
+        connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
+        (connector_dir / ".pid").write_text("12345")
+
+        mock_child = MagicMock()
+        mock_child.returncode = 0
+        mock_child.wait.return_value = 0
+
+        clock = _FakeClock()
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", return_value=mock_child),
+            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
+            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+        ):
+            _supervisor_main("discord")
+
+        assert not (connector_dir / ".pid").exists()

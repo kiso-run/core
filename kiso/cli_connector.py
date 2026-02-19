@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import getpass
+import json
+import logging
 import os
 import re
 import shutil
@@ -16,10 +18,19 @@ from pathlib import Path
 from kiso.cli_skill import _is_url, _require_admin, url_to_name
 from kiso.config import KISO_DIR
 
+log = logging.getLogger(__name__)
+
 CONNECTORS_DIR = KISO_DIR / "connectors"
 OFFICIAL_ORG = "kiso-run"
 OFFICIAL_PREFIX = "connector-"
 GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
+
+# Supervisor restart settings
+SUPERVISOR_MAX_FAILURES = 5
+SUPERVISOR_INITIAL_BACKOFF = 1.0  # seconds
+SUPERVISOR_MAX_BACKOFF = 60.0  # seconds
+SUPERVISOR_BACKOFF_MULTIPLIER = 2.0
+SUPERVISOR_STABLE_THRESHOLD = 60.0  # seconds — if child ran this long, reset failure count
 
 
 def _validate_connector_manifest(manifest: dict, connector_dir: Path) -> list[str]:
@@ -104,6 +115,117 @@ def discover_connectors(connectors_dir: Path | None = None) -> list[dict]:
         })
 
     return connectors
+
+
+def _write_status(connector_dir: Path, restarts: int, consecutive_failures: int,
+                   backoff: float, gave_up: bool, last_exit_code: int | None) -> None:
+    """Write supervisor status to .status.json."""
+    status = {
+        "restarts": restarts,
+        "consecutive_failures": consecutive_failures,
+        "backoff": backoff,
+        "gave_up": gave_up,
+        "last_exit_code": last_exit_code,
+        "timestamp": time.time(),
+    }
+    status_file = connector_dir / ".status.json"
+    status_file.write_text(json.dumps(status))
+
+
+def _supervisor_main(connector_name: str) -> None:
+    """Supervisor loop: run connector, restart with backoff on crash.
+
+    This function is invoked as a daemon process by ``_connector_run``.
+    It manages the connector child process lifecycle:
+
+    - Start the connector (``run.py``) as a child process
+    - On clean exit (code 0): exit the supervisor
+    - On crash: restart with exponential backoff
+    - If the child ran for >= STABLE_THRESHOLD before crashing, reset the
+      consecutive failure counter (it was a real run, not an immediate crash)
+    - After SUPERVISOR_MAX_FAILURES consecutive quick failures, give up
+    - Forward SIGTERM to child, then exit cleanly
+    """
+    connector_dir = CONNECTORS_DIR / connector_name
+    pid_file = connector_dir / ".pid"
+    log_file = connector_dir / "connector.log"
+
+    stop_requested = False
+    child_proc: subprocess.Popen | None = None
+
+    def _sigterm_handler(signum, frame):
+        nonlocal stop_requested
+        stop_requested = True
+        if child_proc is not None and child_proc.poll() is None:
+            child_proc.terminate()
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+
+    backoff = SUPERVISOR_INITIAL_BACKOFF
+    consecutive_failures = 0
+    total_restarts = 0
+
+    def _log(msg: str) -> None:
+        with open(log_file, "a") as f:
+            f.write(f"[supervisor] {msg}\n")
+
+    try:
+        while not stop_requested:
+            log_handle = open(log_file, "a")
+            child_proc = subprocess.Popen(
+                [".venv/bin/python", "run.py"],
+                cwd=str(connector_dir),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+            )
+            start_time = time.monotonic()
+            log_handle.close()
+
+            child_proc.wait()
+            exit_code = child_proc.returncode
+            elapsed = time.monotonic() - start_time
+            child_proc = None
+
+            if stop_requested:
+                _log(f"stopped by SIGTERM (child exit code {exit_code})")
+                break
+
+            if exit_code == 0:
+                _log("child exited cleanly (code 0)")
+                break
+
+            # Child crashed
+            total_restarts += 1
+
+            if elapsed >= SUPERVISOR_STABLE_THRESHOLD:
+                consecutive_failures = 1
+                backoff = SUPERVISOR_INITIAL_BACKOFF
+                _log(f"child crashed after {elapsed:.0f}s (code {exit_code}), "
+                     f"was stable — resetting backoff, restarting")
+            else:
+                consecutive_failures += 1
+                _log(f"child crashed after {elapsed:.1f}s (code {exit_code}), "
+                     f"failure {consecutive_failures}/{SUPERVISOR_MAX_FAILURES}")
+
+            _write_status(connector_dir, total_restarts, consecutive_failures,
+                          backoff, False, exit_code)
+
+            if consecutive_failures >= SUPERVISOR_MAX_FAILURES:
+                _log(f"giving up after {SUPERVISOR_MAX_FAILURES} consecutive failures")
+                _write_status(connector_dir, total_restarts, consecutive_failures,
+                              backoff, True, exit_code)
+                break
+
+            _log(f"waiting {backoff:.1f}s before restart")
+            # Interruptible sleep (check stop_requested every 0.1s)
+            deadline = time.monotonic() + backoff
+            while time.monotonic() < deadline and not stop_requested:
+                time.sleep(min(0.1, deadline - time.monotonic()))
+
+            backoff = min(backoff * SUPERVISOR_BACKOFF_MULTIPLIER, SUPERVISOR_MAX_BACKOFF)
+
+    finally:
+        pid_file.unlink(missing_ok=True)
 
 
 def run_connector_command(args) -> None:
@@ -410,12 +532,17 @@ def _connector_run(args) -> None:
             # Stale PID file
             pid_file.unlink()
 
+    # Clear any previous status
+    status_file = connector_dir / ".status.json"
+    status_file.unlink(missing_ok=True)
+
+    # Spawn supervisor as daemon — it manages the connector child process
     log_file = connector_dir / "connector.log"
     log_handle = open(log_file, "a")
 
     proc = subprocess.Popen(
-        [".venv/bin/python", "run.py"],
-        cwd=str(connector_dir),
+        [sys.executable, "-c",
+         f"from kiso.cli_connector import _supervisor_main; _supervisor_main({name!r})"],
         stdout=log_handle,
         stderr=subprocess.STDOUT,
         start_new_session=True,
@@ -499,7 +626,33 @@ def _connector_status(args) -> None:
 
     try:
         os.kill(pid, 0)
-        print(f"Connector '{name}' is running (PID {pid}).")
+        msg = f"Connector '{name}' is running (PID {pid})."
+        # Show restart info if available
+        status_file = connector_dir / ".status.json"
+        if status_file.exists():
+            try:
+                status = json.loads(status_file.read_text())
+                restarts = status.get("restarts", 0)
+                if restarts > 0:
+                    msg += f" Restarts: {restarts}."
+            except (json.JSONDecodeError, OSError):
+                pass
+        print(msg)
     except ProcessLookupError:
         pid_file.unlink()
-        print(f"Connector '{name}' is not running (stale PID file removed).")
+        # Check if supervisor gave up
+        status_file = connector_dir / ".status.json"
+        gave_up_msg = ""
+        if status_file.exists():
+            try:
+                status = json.loads(status_file.read_text())
+                if status.get("gave_up"):
+                    restarts = status.get("restarts", 0)
+                    exit_code = status.get("last_exit_code")
+                    gave_up_msg = (
+                        f" Supervisor gave up after {restarts} restarts "
+                        f"(last exit code: {exit_code})."
+                    )
+            except (json.JSONDecodeError, OSError):
+                pass
+        print(f"Connector '{name}' is not running (stale PID file removed).{gave_up_msg}")
