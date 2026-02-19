@@ -3656,3 +3656,104 @@ class TestMalformedSecrets:
         plan = await get_plan_for_session(db, "sess1")
         assert plan is not None
         assert plan["status"] == "done"
+
+
+# --- Edge cases: sandbox workspace + fact consolidation timeout ---
+
+
+class TestSandboxWorkspaceInExecutePlan:
+    """Cover: _session_workspace called with sandbox_uid when role=user."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_user_role_triggers_sandbox_workspace(self, db, tmp_path):
+        """When revalidate_permissions returns role='user' and sandbox UID is set,
+        _session_workspace is called with sandbox_uid."""
+        config = _make_config(
+            users={"bob": User(role="user", skills="*")},
+        )
+        plan_id = await create_plan(db, "sess1", 1, "Test sandbox")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+
+        workspace_calls = []
+
+        original_workspace = _session_workspace
+
+        def tracking_workspace(session, sandbox_uid=None):
+            workspace_calls.append(sandbox_uid)
+            return original_workspace(session)
+
+        async def _mock_subprocess(*args, **kwargs):
+            proc = AsyncMock()
+            proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
+            proc.returncode = 0
+            return proc
+
+        from kiso.security import PermissionResult
+
+        with patch("kiso.worker.reload_config", return_value=config), \
+             patch("kiso.worker.revalidate_permissions",
+                   return_value=PermissionResult(allowed=True, role="user")), \
+             patch("kiso.worker._ensure_sandbox_user", return_value=42), \
+             patch("kiso.worker._session_workspace", side_effect=tracking_workspace), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.KISO_DIR", tmp_path), \
+             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test sandbox", "msg", 5,
+                username="bob",
+            )
+
+        assert success is True
+        # _session_workspace was called with sandbox_uid=42
+        assert 42 in workspace_calls
+
+
+class TestFactConsolidationTimeout:
+    """Cover: fact consolidation asyncio.TimeoutError."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_fact_consolidation_timeout_doesnt_break_worker(self, db, tmp_path):
+        """asyncio.TimeoutError in fact consolidation is caught, worker continues."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 2,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        await save_fact(db, "Fact 1", "curator")
+        await save_fact(db, "Fact 2", "curator")
+        await save_fact(db, "Fact 3", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        # Make run_fact_consolidation hang so asyncio.wait_for raises TimeoutError
+        async def slow_consolidation(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_fact_consolidation", new_callable=AsyncMock,
+                   side_effect=slow_consolidation), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=8)
+
+        # Worker completed fine, facts preserved
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+        facts = await get_facts(db)
+        assert len(facts) == 3

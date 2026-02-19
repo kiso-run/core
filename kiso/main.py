@@ -16,6 +16,7 @@ from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.config import KISO_DIR, load_config
+from kiso.log import setup_logging
 from kiso.store import (
     create_session,
     get_all_sessions,
@@ -99,8 +100,12 @@ def _load_env_file(path: Path) -> dict[str, str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     config = load_config()
     app.state.config = config
+    log.info("Server starting — host=%s port=%s",
+             config.settings.get("host", "0.0.0.0"),
+             config.settings.get("port", 8333))
     db = await init_db(KISO_DIR / "store.db")
     app.state.db = db
 
@@ -176,6 +181,7 @@ async def lifespan(app: FastAPI):
             pass
     _workers.clear()
     await app.state.db.close()
+    log.info("Server shut down")
 
 
 app = FastAPI(lifespan=lifespan)

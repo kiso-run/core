@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hmac
+import logging
 from dataclasses import dataclass
 
 from fastapi import Request
 from fastapi.exceptions import HTTPException
 
 from kiso.config import Config
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,7 +41,9 @@ async def require_auth(request: Request) -> AuthInfo:
     config: Config = request.app.state.config
     for name, value in config.tokens.items():
         if hmac.compare_digest(value, token_value):
+            log.info("Auth OK: token=%s", name)
             return AuthInfo(token_name=name)
+    log.warning("Auth failed: invalid token")
     raise HTTPException(status_code=401, detail="Invalid token")
 
 

@@ -14,6 +14,7 @@ import aiosqlite
 
 from kiso import audit
 from kiso.config import ConfigError, reload_config
+from kiso.log import SessionLogger
 from kiso.security import (
     check_command_deny_list,
     collect_deploy_secrets,
@@ -356,6 +357,7 @@ async def _execute_plan(
     session_secrets: dict[str, str] | None = None,
     username: str | None = None,
     cancel_event: asyncio.Event | None = None,
+    slog: SessionLogger | None = None,
 ) -> tuple[bool, str | None, list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining).
 
@@ -415,6 +417,8 @@ async def _execute_plan(
             _session_workspace(session, sandbox_uid=sandbox_uid)
 
         await update_task(db, task_id, "running")
+        if slog:
+            slog.info("Task %d started: [%s] %s", task_id, task_type, detail[:120])
 
         if task_type == "exec":
             # Write plan_outputs.json before execution
@@ -436,6 +440,8 @@ async def _execute_plan(
                 len(stdout), deploy_secrets=deploy_secrets,
                 session_secrets=session_secrets or {},
             )
+            if slog:
+                slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
 
             # Refresh task_row with output
             task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
@@ -464,10 +470,14 @@ async def _execute_plan(
             if review["status"] == "replan":
                 replan_reason = review["reason"]
                 log.info("Reviewer requests replan: %s", replan_reason)
+                if slog:
+                    slog.info("Review → replan: %s", replan_reason)
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
+            if slog:
+                slog.info("Review → %s", review["status"])
             completed.append(task_row)
 
         elif task_type == "msg":
@@ -486,6 +496,8 @@ async def _execute_plan(
                     len(text), deploy_secrets=deploy_secrets,
                     session_secrets=session_secrets or {},
                 )
+                if slog:
+                    slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
 
                 # Accumulate plan output
                 plan_outputs.append({
@@ -579,6 +591,8 @@ async def _execute_plan(
                 deploy_secrets=deploy_secrets,
                 session_secrets=session_secrets or {},
             )
+            if slog:
+                slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
 
             # Accumulate plan output
             plan_outputs.append({
@@ -602,9 +616,14 @@ async def _execute_plan(
 
             if review["status"] == "replan":
                 replan_reason = review["reason"]
+                if slog:
+                    slog.info("Review → replan: %s", replan_reason)
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
+
+            if slog:
+                slog.info("Review → %s", review["status"])
 
             if task_row["status"] == "failed":
                 remaining = [dict(t) for t in tasks[i + 1:]]
@@ -704,20 +723,27 @@ async def run_worker(
     idle_timeout = int(config.settings.get("worker_idle_timeout", 300))
     exec_timeout = int(config.settings.get("exec_timeout", 120))
     max_replan_depth = int(config.settings.get("max_replan_depth", 3))
+    slog = SessionLogger(session)
 
-    while True:
-        try:
-            msg = await asyncio.wait_for(queue.get(), timeout=idle_timeout)
-        except asyncio.TimeoutError:
-            log.info("Worker idle timeout for session=%s, shutting down", session)
-            break
+    try:
+        while True:
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=idle_timeout)
+            except asyncio.TimeoutError:
+                log.info("Worker idle timeout for session=%s, shutting down", session)
+                slog.info("Worker idle — shutting down")
+                break
 
-        try:
-            await _process_message(db, config, session, msg, queue, cancel_event,
-                                   idle_timeout, exec_timeout, max_replan_depth)
-        except Exception:
-            log.exception("Unexpected error processing message in session=%s", session)
-            continue
+            try:
+                await _process_message(db, config, session, msg, queue, cancel_event,
+                                       idle_timeout, exec_timeout, max_replan_depth,
+                                       slog=slog)
+            except Exception:
+                log.exception("Unexpected error processing message in session=%s", session)
+                slog.error("Unexpected error processing message")
+                continue
+    finally:
+        slog.close()
 
 
 async def _process_message(
@@ -730,6 +756,7 @@ async def _process_message(
     idle_timeout: int,
     exec_timeout: int,
     max_replan_depth: int,
+    slog: SessionLogger | None = None,
 ):
     """Process a single message. Extracted for crash recovery wrapping."""
     msg_id: int = msg["id"]
@@ -737,6 +764,9 @@ async def _process_message(
     user_role: str = msg["user_role"]
     user_skills: str | list[str] | None = msg.get("user_skills")
     username: str | None = msg.get("username")
+
+    if slog:
+        slog.info("Message received: user=%s, %d chars", username or "?", len(content))
 
     await mark_message_processed(db, msg_id)
 
@@ -775,6 +805,8 @@ async def _process_message(
     plan_id = await create_plan(db, session, msg_id, plan["goal"])
     await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
     log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan["tasks"]))
+    if slog:
+        slog.info("Plan %d created: %s (%d tasks)", plan_id, plan["goal"], len(plan["tasks"]))
 
     # Execute with replan loop
     replan_history: list[dict] = []
@@ -786,12 +818,14 @@ async def _process_message(
         success, replan_reason, completed, remaining = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
             content, exec_timeout, session_secrets=session_secrets,
-            username=username, cancel_event=cancel_event,
+            username=username, cancel_event=cancel_event, slog=slog,
         )
 
         if success:
             await update_plan_status(db, current_plan_id, "done")
             log.info("Plan %d done", current_plan_id)
+            if slog:
+                slog.info("Plan %d done", current_plan_id)
             break
 
         # --- Cancel handling ---
@@ -834,6 +868,8 @@ async def _process_message(
             # Failed without replan request (LLM error, review error, etc.)
             await update_plan_status(db, current_plan_id, "failed")
             log.info("Plan %d failed (no replan)", current_plan_id)
+            if slog:
+                slog.info("Plan %d failed", current_plan_id)
             break
 
         # Replan requested
@@ -917,6 +953,10 @@ async def _process_message(
         log.info("Replan %d (parent=%d): goal=%r, %d tasks",
                  new_plan_id, current_plan_id,
                  new_plan["goal"], len(new_plan["tasks"]))
+        if slog:
+            slog.info("Replan %d: %s (%d tasks, attempt %d/%d)",
+                       new_plan_id, new_plan["goal"], len(new_plan["tasks"]),
+                       replan_depth, max_replan_depth)
 
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]

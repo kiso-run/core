@@ -681,10 +681,10 @@ docker exec -it kiso kiso env reload
 
 Human-readable logs for debugging and monitoring.
 
-- [ ] Server log: `~/.kiso/server.log`
-  - [ ] Startup, auth events, worker lifecycle, errors
-- [ ] Session log: `~/.kiso/sessions/{session}/session.log`
-  - [ ] Messages received, plans created, task execution + output, reviews, replans
+- [x] Server log: `~/.kiso/server.log`
+  - [x] Startup, auth events, worker lifecycle, errors
+- [x] Session log: `~/.kiso/sessions/{session}/session.log`
+  - [x] Messages received, plans created, task execution + output, reviews, replans
 
 **Verify:**
 ```bash
