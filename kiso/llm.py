@@ -23,7 +23,7 @@ def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
     """Resolve a model string to (provider, model_name).
 
     "ollama:llama3"       → provider "ollama", model "llama3"
-    "moonshotai/kimi-k2.5" → first provider, model "moonshotai/kimi-k2.5"
+    "minimax/minimax-m2.5" → first provider, model "minimax/minimax-m2.5"
     """
     if ":" in model_string:
         provider_name, model_name = model_string.split(":", 1)

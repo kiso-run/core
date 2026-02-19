@@ -101,7 +101,7 @@ Provider guarantees valid JSON at decoding level — no parse retries needed. If
 ```
 Provider "ollama" does not support structured output.
 Planner, Reviewer, and Curator require it. Route these roles to a compatible provider
-(e.g. models.planner = "openrouter:moonshotai/kimi-k2.5").
+(e.g. models.planner = "openrouter:minimax/minimax-m2.5").
 ```
 
 Structured output is a hard requirement for Planner, Reviewer, and Curator. Worker, Summarizer, and Paraphraser produce free-form text.

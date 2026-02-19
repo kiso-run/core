@@ -56,9 +56,9 @@ role = "user"
 skills = ["search", "aider"]
 
 [models]
-planner = "moonshotai/kimi-k2.5"
-reviewer = "moonshotai/kimi-k2.5"
-curator = "moonshotai/kimi-k2.5"
+planner = "minimax/minimax-m2.5"
+reviewer = "minimax/minimax-m2.5"
+curator = "minimax/minimax-m2.5"
 worker = "deepseek/deepseek-v3.2"
 summarizer = "deepseek/deepseek-v3.2"
 
@@ -96,9 +96,9 @@ port = 8333
 | Field | Default | Description |
 |---|---|---|
 | `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform username. See [security.md](security.md). |
-| `models.planner` | `moonshotai/kimi-k2.5` | Requires structured output (`response_format` with `json_schema`). |
-| `models.reviewer` | `moonshotai/kimi-k2.5` | Requires structured output. |
-| `models.curator` | `moonshotai/kimi-k2.5` | Requires structured output. |
+| `models.planner` | `minimax/minimax-m2.5` | Requires structured output (`response_format` with `json_schema`). |
+| `models.reviewer` | `minimax/minimax-m2.5` | Requires structured output. |
+| `models.curator` | `minimax/minimax-m2.5` | Requires structured output. |
 | `models.worker` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
 | `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text, also used by paraphraser. |
 | `settings.context_messages` | `5` | Number of recent raw messages sent to the planner (see [llm-roles.md](llm-roles.md#planner)). |
@@ -146,7 +146,7 @@ base_url = "http://localhost:11434/v1"
 Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-moonshotai/kimi-k2.5             → first provider, model "moonshotai/kimi-k2.5"
+minimax/minimax-m2.5             → first provider, model "minimax/minimax-m2.5"
 deepseek/deepseek-v3.2           → first provider, model "deepseek/deepseek-v3.2"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```

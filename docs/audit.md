@@ -23,7 +23,7 @@ Every entry has a `timestamp`, `type`, `session`, and type-specific fields.
   "type": "llm",
   "session": "dev-backend",
   "role": "planner",
-  "model": "moonshotai/kimi-k2.5",
+  "model": "minimax/minimax-m2.5",
   "provider": "openrouter",
   "input_tokens": 1200,
   "output_tokens": 350,

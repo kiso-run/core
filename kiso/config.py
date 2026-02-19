@@ -34,9 +34,9 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "planner": "moonshotai/kimi-k2.5",
-    "reviewer": "moonshotai/kimi-k2.5",
-    "curator": "moonshotai/kimi-k2.5",
+    "planner": "minimax/minimax-m2.5",
+    "reviewer": "minimax/minimax-m2.5",
+    "curator": "minimax/minimax-m2.5",
     "worker": "deepseek/deepseek-v3.2",
     "summarizer": "deepseek/deepseek-v3.2",
     "paraphraser": "deepseek/deepseek-v3.2",
