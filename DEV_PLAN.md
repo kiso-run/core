@@ -650,19 +650,19 @@ kiso env list     # → lists KISO_* keys
 
 Package everything for production.
 
-- [ ] Create `Dockerfile`
-  - [ ] Base: `python:3.12-slim`
-  - [ ] Install: git, curl, uv
-  - [ ] Copy project, `uv sync`
-  - [ ] Volume: `/root/.kiso`
-  - [ ] Expose 8333
-  - [ ] Healthcheck: `curl -f http://localhost:8333/health`
-  - [ ] CMD: `uv run kiso serve`
-- [ ] Create `docker-compose.yml`
-  - [ ] Service: kiso, port 8333, volume kiso-data
-  - [ ] Environment variables for deploy secrets
-  - [ ] `restart: unless-stopped`
-- [ ] Test pre-installing skills in Dockerfile
+- [x] Create `Dockerfile`
+  - [x] Base: `python:3.12-slim`
+  - [x] Install: git, curl, uv
+  - [x] Copy project, `uv sync`
+  - [x] Volume: `/root/.kiso`
+  - [x] Expose 8333
+  - [x] Healthcheck: `curl -f http://localhost:8333/health`
+  - [x] CMD: `uv run kiso serve`
+- [x] Create `docker-compose.yml`
+  - [x] Service: kiso, port 8333, volume kiso-data
+  - [x] Environment variables for deploy secrets
+  - [x] `restart: unless-stopped`
+- [x] Test pre-installing skills in Dockerfile
 
 **Verify:**
 ```bash

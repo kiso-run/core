@@ -1,8 +1,15 @@
 services:
-  dev:
+  kiso:
     build: .
+    container_name: kiso
+    ports:
+      - "8333:8333"
     volumes:
-      - .:/opt/kiso
-      - /opt/kiso/.venv    # isolate container venv from host
-    working_dir: /opt/kiso
-    command: sleep infinity
+      - kiso-data:/root/.kiso
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+
+volumes:
+  kiso-data:
