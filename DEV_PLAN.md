@@ -811,9 +811,15 @@ Practical acceptance tests (L4, real LLM) and CLI lifecycle tests (L5, real netw
   - [ ] Skill search (no query)
   - [ ] Skill search (with query)
   - [ ] Connector search
-  - [ ] Skill install + remove lifecycle
-  - [ ] Connector install + remove lifecycle
+  - [ ] Skill install + remove lifecycle *(currently skipped — `skill-search` repo not published yet)*
+  - [ ] Connector install + remove lifecycle *(currently skipped — `connector-discord` repo not published yet)*
 - [ ] Update `docs/testing-live.md` with L4/L5 docs
+
+**Deferred (unblock when repos are published):**
+- [ ] Remove `pytest.skip` fallback from L5 install tests once `skill-search` / `connector-discord` repos exist in `kiso-run` org
+- [ ] Add L5 test: install a non-existent skill (`kiso skill install nonexistent-xyz`) → must print a clear "skill not found" message, not raw git stderr
+- [ ] Add L5 test: install a non-existent connector (`kiso connector install nonexistent-xyz`) → same clean error
+- [ ] Production fix: `_skill_install` / `_connector_install` should detect "repo not found" from git clone stderr and print a user-friendly message (e.g. `error: skill 'foo' not found in kiso-run org`)
 
 **Verify:**
 ```bash

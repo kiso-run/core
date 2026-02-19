@@ -108,3 +108,5 @@ Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workfl
 ### L5 install tests skipped
 - `skill-search` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
 - Requires `git` on PATH.
+- **When repos are published**: remove the `pytest.skip` fallback and verify the full install → validate → remove lifecycle passes.
+- **TODO**: add a dedicated test for installing a skill/connector that doesn't exist (e.g. `kiso skill install nonexistent-xyz`). The CLI must give a clear "not found" message instead of dumping raw git stderr. See DEV_PLAN.md § Deferred.
