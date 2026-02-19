@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,43 @@ import pytest_asyncio
 from kiso.config import load_config
 from kiso.main import app
 from kiso.store import init_db
+
+
+# ---------------------------------------------------------------------------
+# Live LLM test gating
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--llm-live", action="store_true", default=False,
+        help="Run live LLM integration tests (requires KISO_OPENROUTER_API_KEY)",
+    )
+    parser.addoption(
+        "--live-network", action="store_true", default=False,
+        help="Run tests that call external services (GitHub, etc.)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    # --- llm_live gating ---
+    if config.getoption("--llm-live"):
+        if not os.environ.get("KISO_OPENROUTER_API_KEY"):
+            skip = pytest.mark.skip(reason="KISO_OPENROUTER_API_KEY not set")
+            for item in items:
+                if "llm_live" in item.keywords:
+                    item.add_marker(skip)
+    else:
+        skip = pytest.mark.skip(reason="Need --llm-live flag to run live LLM tests")
+        for item in items:
+            if "llm_live" in item.keywords:
+                item.add_marker(skip)
+
+    # --- live_network gating ---
+    if not config.getoption("--live-network"):
+        skip = pytest.mark.skip(reason="Need --live-network flag to run network tests")
+        for item in items:
+            if "live_network" in item.keywords:
+                item.add_marker(skip)
 
 VALID_CONFIG = """\
 [tokens]

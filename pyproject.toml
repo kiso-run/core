@@ -18,6 +18,10 @@ dev = ["pytest>=8", "pytest-asyncio>=0.25", "httpx>=0.28", "pytest-cov>=6"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "llm_live: tests that call real LLMs via OpenRouter (requires --llm-live and KISO_OPENROUTER_API_KEY)",
+    "live_network: tests that call external services (requires --live-network)",
+]
 filterwarnings = [
     # pytest-asyncio: subprocess transport.__del__ fires after event loop closes.
     # Harmless GC ordering issue — not a real error in our code.

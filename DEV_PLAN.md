@@ -717,18 +717,18 @@ Exec/skill tasks can publish downloadable files.
 
 Expose review verdicts through the API and render them in the CLI. Completes the full decision-flow visibility promised in M15c.
 
-- [ ] Add `review_verdict` field to tasks table (`store.py`)
-  - [ ] New column: `review_verdict TEXT` (null for msg tasks, "ok"/"replan" for exec/skill)
-  - [ ] New column: `review_reason TEXT` (null unless replan)
-  - [ ] New column: `review_learning TEXT` (null unless reviewer produced a learning)
-- [ ] Persist review results in `worker.py`
-  - [ ] After `_review_task()`: update task row with verdict, reason, learning
-- [ ] Expose review fields in `GET /status/{session}` response
-- [ ] Implement review rendering in `kiso/render.py`
-  - [ ] `✓ review: ok` — green (ASCII: `ok`)
-  - [ ] `✗ review: replan — "{reason}"` — bold red (ASCII: `FAIL`)
-  - [ ] `📝 learning: "{content}"` — magenta (ASCII: `+ learning: ...`)
-- [ ] Non-TTY: plain text review lines (no ANSI codes)
+- [x] Add `review_verdict` field to tasks table (`store.py`)
+  - [x] New column: `review_verdict TEXT` (null for msg tasks, "ok"/"replan" for exec/skill)
+  - [x] New column: `review_reason TEXT` (null unless replan)
+  - [x] New column: `review_learning TEXT` (null unless reviewer produced a learning)
+- [x] Persist review results in `worker.py`
+  - [x] After `_review_task()`: update task row with verdict, reason, learning
+- [x] Expose review fields in `GET /status/{session}` response
+- [x] Implement review rendering in `kiso/render.py`
+  - [x] `✓ review: ok` — green (ASCII: `ok`)
+  - [x] `✗ review: replan — "{reason}"` — bold red (ASCII: `FAIL`)
+  - [x] `📝 learning: "{content}"` — magenta (ASCII: `+ learning: ...`)
+- [x] Non-TTY: plain text review lines (no ANSI codes)
 
 **Verify:**
 ```bash
@@ -747,6 +747,87 @@ kiso --session test
 #   ┊ No such file or directory
 #   ✗ review: replan — "Directory does not exist"
 # ↻ Replan: ...
+```
+
+---
+
+## Milestone 20a: Live LLM Integration Tests
+
+Real LLM integration tests via OpenRouter. Three levels: role isolation, partial flows, end-to-end. Gated behind `--llm-live` flag + `KISO_OPENROUTER_API_KEY`. See [docs/testing-live.md](docs/testing-live.md).
+
+- [ ] Register `llm_live` marker in `pyproject.toml`
+- [ ] Add `--llm-live` CLI flag + auto-skip hook in `tests/conftest.py`
+- [ ] Create `tests/live/__init__.py`
+- [ ] Create `tests/live/conftest.py` — `live_config`, `live_db`, `live_session`, `seeded_db` fixtures
+- [ ] L1: `tests/live/test_roles.py` — role isolation (8 tests)
+  - [ ] Planner: simple question, exec request
+  - [ ] Reviewer: ok verdict, replan verdict
+  - [ ] Worker: msg task
+  - [ ] Curator: evaluates learning
+  - [ ] Summarizer: compresses messages
+  - [ ] Paraphraser: rewrites untrusted text
+- [ ] L2: `tests/live/test_flows.py` — partial flows (4 tests)
+  - [ ] Plan → msg execution
+  - [ ] Review ok on success
+  - [ ] Review replan on failure
+  - [ ] Validation retry
+- [ ] L3: `tests/live/test_e2e.py` — end-to-end (4 tests)
+  - [ ] Simple question flow
+  - [ ] Exec + review ok flow
+  - [ ] Replan after failed exec
+  - [ ] Review produces learning
+- [ ] Create `docs/testing-live.md`
+
+**Verify:**
+```bash
+# Live tests (requires API key)
+KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/ --llm-live -v
+
+# Regular tests unaffected (live tests skipped)
+uv run pytest tests/ -q
+
+# Without flag: all skipped with clear message
+uv run pytest tests/live/ -v
+```
+
+---
+
+## Milestone 20b: Practical Live Tests
+
+Practical acceptance tests (L4, real LLM) and CLI lifecycle tests (L5, real network). Exercises realistic user scenarios that L1-L3 don't cover: exec chaining, full `_process_message` pipeline, multi-turn context, and CLI operations against real GitHub. See [docs/testing-live.md](docs/testing-live.md).
+
+- [ ] Register `live_network` marker in `pyproject.toml`
+- [ ] Add `--live-network` flag + gating in `tests/conftest.py`
+- [ ] Add shared fixtures to `tests/live/conftest.py` (`mock_noop_infra`, `live_msg`)
+- [ ] L4: `tests/live/test_practical.py` — practical acceptance (7 tests)
+  - [ ] Exec chaining (create file + read back)
+  - [ ] Full `_process_message` — simple question
+  - [ ] Full `_process_message` — exec flow
+  - [ ] Multi-turn context propagation
+  - [ ] Replan recovery (full cycle)
+  - [ ] Knowledge pipeline (learning → curator → fact → planner sees it)
+  - [ ] Skill task execution (planner picks skill → subprocess → reviewer reviews)
+- [ ] L5: `tests/live/test_cli_live.py` — CLI lifecycle (5 tests)
+  - [ ] Skill search (no query)
+  - [ ] Skill search (with query)
+  - [ ] Connector search
+  - [ ] Skill install + remove lifecycle
+  - [ ] Connector install + remove lifecycle
+- [ ] Update `docs/testing-live.md` with L4/L5 docs
+
+**Verify:**
+```bash
+# All live tests
+KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/ --llm-live --live-network -v
+
+# Only practical acceptance (L4)
+KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/test_practical.py --llm-live -v
+
+# Only CLI lifecycle (L5, no API key needed)
+uv run pytest tests/live/test_cli_live.py --live-network -v
+
+# Regular tests unaffected
+uv run pytest tests/ -q
 ```
 
 ---
