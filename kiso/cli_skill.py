@@ -109,7 +109,7 @@ def _skill_search(args) -> None:
     query_parts = ["org:kiso-run", "topic:kiso-skill"]
     if args.query:
         query_parts.append(args.query)
-    q = "+".join(query_parts)
+    q = " ".join(query_parts)
 
     try:
         resp = httpx.get(GITHUB_SEARCH_URL, params={"q": q}, timeout=10.0)
@@ -180,11 +180,9 @@ def _skill_install(args) -> None:
         sys.exit(1)
 
     try:
-        # Create dir and marker
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        (skill_dir / ".installing").touch()
+        # Ensure parent dir exists, then clone (creates skill_dir)
+        SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Git clone
         result = subprocess.run(
             ["git", "clone", git_url, str(skill_dir)],
             capture_output=True, text=True,
@@ -192,6 +190,9 @@ def _skill_install(args) -> None:
         if result.returncode != 0:
             print(f"error: git clone failed: {result.stderr.strip()}")
             raise RuntimeError("git clone failed")
+
+        # Mark as installing (after clone succeeds)
+        (skill_dir / ".installing").touch()
 
         # Validate manifest
         toml_path = skill_dir / "kiso.toml"

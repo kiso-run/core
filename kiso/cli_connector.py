@@ -275,7 +275,7 @@ def _connector_search(args) -> None:
     query_parts = ["org:kiso-run", "topic:kiso-connector"]
     if args.query:
         query_parts.append(args.query)
-    q = "+".join(query_parts)
+    q = " ".join(query_parts)
 
     try:
         resp = httpx.get(GITHUB_SEARCH_URL, params={"q": q}, timeout=10.0)
@@ -344,8 +344,8 @@ def _connector_install(args) -> None:
         sys.exit(1)
 
     try:
-        connector_dir.mkdir(parents=True, exist_ok=True)
-        (connector_dir / ".installing").touch()
+        # Ensure parent dir exists, then clone (creates connector_dir)
+        CONNECTORS_DIR.mkdir(parents=True, exist_ok=True)
 
         result = subprocess.run(
             ["git", "clone", git_url, str(connector_dir)],
@@ -354,6 +354,9 @@ def _connector_install(args) -> None:
         if result.returncode != 0:
             print(f"error: git clone failed: {result.stderr.strip()}")
             raise RuntimeError("git clone failed")
+
+        # Mark as installing (after clone succeeds)
+        (connector_dir / ".installing").touch()
 
         # Validate manifest
         toml_path = connector_dir / "kiso.toml"
