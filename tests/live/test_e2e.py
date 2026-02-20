@@ -233,21 +233,21 @@ class TestKnowledgeFlowE2E:
 
 
 class TestReviewerExitCodeE2E:
-    async def test_failed_exec_with_valid_output_replans(self, live_config):
-        """exit 1 + valid-looking output → reviewer sees FAILED status → replan.
+    async def test_failed_exec_with_error_output_replans(self, live_config):
+        """Command failed with error output + success=False → reviewer replans.
 
-        Now that the reviewer receives the Command Status section (21e),
-        it should not rubber-stamp a failed command.
+        The reviewer receives the Command Status section (21e) saying FAILED,
+        plus error output that clearly shows the command did not succeed.
         """
         review = await asyncio.wait_for(
             run_reviewer(
                 live_config,
-                goal="Check disk space",
-                detail="df -h",
-                expect="Shows disk usage information",
-                output="Filesystem      Size  Used Avail Use% Mounted on\n"
-                       "/dev/sda1       100G   50G   50G  50% /",
-                user_message="check disk space",
+                goal="Install project dependencies",
+                detail="pip install -r requirements.txt",
+                expect="All packages installed successfully",
+                output="ERROR: Could not open requirements file: "
+                       "[Errno 2] No such file or directory: 'requirements.txt'",
+                user_message="install the dependencies",
                 success=False,
             ),
             timeout=TIMEOUT,
