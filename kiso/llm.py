@@ -157,8 +157,18 @@ async def call_llm(
                 detail = json.dumps(err_data, indent=None)[:500]
             except Exception:
                 detail = "(empty response body)"
+        # Add actionable hints for common HTTP errors
+        hint = ""
+        if resp.status_code == 401:
+            hint = " — check your API key in ~/.kiso/.env"
+        elif resp.status_code == 402:
+            hint = " — insufficient credits on your API account"
+        elif resp.status_code == 400:
+            hint = " — model may be unavailable or API key invalid"
+        elif resp.status_code == 429:
+            hint = " — rate limited, try again shortly"
         raise LLMError(
-            f"LLM returned {resp.status_code} for {role} ({model_name}): {detail}"
+            f"LLM returned {resp.status_code} for {role} ({model_name}): {detail}{hint}"
         )
 
     try:

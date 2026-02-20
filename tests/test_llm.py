@@ -189,7 +189,55 @@ class TestCallLlm:
                 mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-                with pytest.raises(LLMError, match="429"):
+                with pytest.raises(LLMError, match="429.*rate limited"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_400_error_hint(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = httpx.Response(
+                    400, text="",
+                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="400.*model may be unavailable"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_401_error_hint(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = httpx.Response(
+                    401, text="unauthorized",
+                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="401.*check your API key"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_402_error_hint(self):
+        config = _make_config()
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = httpx.Response(
+                    402, text="payment required",
+                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="402.*insufficient credits"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
