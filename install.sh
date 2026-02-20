@@ -176,12 +176,18 @@ else
     yellow "  $ENV_FILE not found — will ask for API key."
 fi
 
-# Stop existing container (docker compose up -d will recreate it)
+NEED_BUILD=true
+
 if docker inspect "$CONTAINER" &>/dev/null; then
     state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
     yellow "  Container '$CONTAINER' exists (state: $state)."
-    docker rm -f "$CONTAINER" &>/dev/null || true
-    green "  old container removed"
+    if confirm "  Rebuild and restart?" "y"; then
+        docker rm -f "$CONTAINER" &>/dev/null || true
+        green "  old container removed"
+    else
+        NEED_BUILD=false
+        green "  container kept"
+    fi
 fi
 
 # ── 4. Configure ─────────────────────────────────────────────────────────────
@@ -219,23 +225,22 @@ EOF
     green "  .env created"
 fi
 
-# ── 5. Build image ──────────────────────────────────────────────────────────
+# ── 5. Build and start ──────────────────────────────────────────────────────
 
-bold "Building Docker image..."
-docker compose -f "$REPO_COMPOSE" build
+if [[ "$NEED_BUILD" == true ]]; then
+    bold "Building Docker image..."
+    docker compose -f "$REPO_COMPOSE" build
 
-# Get the built image name (e.g. "core-kiso")
-IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json 2>/dev/null | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-if [[ -z "$IMAGE_NAME" ]]; then
-    IMAGE_NAME="$(basename "$REPO_DIR")-kiso"
-fi
-green "  image: $IMAGE_NAME"
+    # Get the built image name (e.g. "core-kiso")
+    IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json 2>/dev/null | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    if [[ -z "$IMAGE_NAME" ]]; then
+        IMAGE_NAME="$(basename "$REPO_DIR")-kiso"
+    fi
+    green "  image: $IMAGE_NAME"
 
-# ── 6. Write runtime compose file ───────────────────────────────────────────
-# Self-contained — no dependency on the repo directory after install.
-
-bold "Writing $RUNTIME_COMPOSE..."
-cat > "$RUNTIME_COMPOSE" <<EOF
+    # Write runtime compose (self-contained, no dependency on repo)
+    bold "Writing $RUNTIME_COMPOSE..."
+    cat > "$RUNTIME_COMPOSE" <<EOF
 services:
   kiso:
     image: $IMAGE_NAME
@@ -249,35 +254,34 @@ services:
         required: false
     restart: unless-stopped
 EOF
-green "  runtime compose created (image: $IMAGE_NAME)"
+    green "  runtime compose created"
 
-# ── 7. Start container ─────────────────────────────────────────────────────
+    bold "Starting container..."
+    docker compose -f "$RUNTIME_COMPOSE" up -d
 
-bold "Starting container..."
-docker compose -f "$RUNTIME_COMPOSE" up -d
+    bold "Waiting for healthcheck..."
+    elapsed=0
+    while [[ $elapsed -lt 30 ]]; do
+        if curl -sf http://localhost:8333/health &>/dev/null; then
+            echo
+            green "  healthy!"
+            break
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+        printf '.'
+    done
 
-# ── 8. Wait for healthcheck ─────────────────────────────────────────────────
-
-bold "Waiting for healthcheck..."
-elapsed=0
-while [[ $elapsed -lt 30 ]]; do
-    if curl -sf http://localhost:8333/health &>/dev/null; then
+    if [[ $elapsed -ge 30 ]]; then
         echo
-        green "  healthy!"
-        break
+        yellow "  Healthcheck timed out (30s). Container may still be starting."
+        yellow "  Check with: docker logs kiso"
     fi
-    sleep 2
-    elapsed=$((elapsed + 2))
-    printf '.'
-done
-
-if [[ $elapsed -ge 30 ]]; then
-    echo
-    yellow "  Healthcheck timed out (30s). Container may still be starting."
-    yellow "  Check with: docker logs kiso"
+else
+    green "  Skipping build (container kept)."
 fi
 
-# ── 9. Install wrapper ─────────────────────────────────────────────────────
+# ── 6. Install wrapper ─────────────────────────────────────────────────────
 
 bold "Installing kiso wrapper..."
 mkdir -p "$(dirname "$WRAPPER_DST")"
@@ -295,7 +299,7 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     yellow ""
 fi
 
-# ── 10. Summary ──────────────────────────────────────────────────────────────
+# ── 7. Summary ──────────────────────────────────────────────────────────────
 
 echo
 green "  kiso is running!"
