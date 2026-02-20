@@ -21,6 +21,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="kiso server URL (default: http://localhost:8333)",
     )
     parser.add_argument(
+        "--user",
+        default=None,
+        help="username to send as (default: system user)",
+    )
+    parser.add_argument(
         "--quiet", "-q", action="store_true", help="only show msg task content"
     )
 
@@ -147,8 +152,8 @@ def _chat(args: argparse.Namespace) -> None:
         print("error: no 'cli' token in config.toml")
         sys.exit(1)
 
-    session = args.session or f"{socket.gethostname()}@{getpass.getuser()}"
-    user = getpass.getuser()
+    user = args.user or getpass.getuser()
+    session = args.session or f"{socket.gethostname()}@{user}"
     client = httpx.Client(
         base_url=args.api,
         headers={"Authorization": f"Bearer {token}"},
