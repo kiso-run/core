@@ -17,6 +17,7 @@ RUNTIME_COMPOSE="$KISO_DIR/docker-compose.yml"
 WRAPPER_DST="$HOME/.local/bin/kiso"
 CONTAINER="kiso"
 CLEANUP_DIR=""
+USERNAME_RE='^[a-z_][a-z0-9_-]{0,31}$'
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -39,9 +40,14 @@ ARG_API_KEY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --user)     ARG_USER="$2";    shift 2 ;;
-        --api-key)  ARG_API_KEY="$2"; shift 2 ;;
-        *)          red "Unknown option: $1"; exit 1 ;;
+        --user)
+            if [[ $# -lt 2 ]]; then red "Error: --user requires a value"; exit 1; fi
+            ARG_USER="$2"; shift 2 ;;
+        --api-key)
+            if [[ $# -lt 2 ]]; then red "Error: --api-key requires a value"; exit 1; fi
+            ARG_API_KEY="$2"; shift 2 ;;
+        *)
+            red "Unknown option: $1"; exit 1 ;;
     esac
 done
 
@@ -67,6 +73,45 @@ generate_token() {
         red "Error: need openssl or python3 to generate token"
         exit 1
     fi
+}
+
+ask_username() {
+    local default_user kiso_user
+    default_user="$(whoami)"
+    if [[ -n "$ARG_USER" ]]; then
+        if [[ ! "$ARG_USER" =~ $USERNAME_RE ]]; then
+            red "Error: username '$ARG_USER' is invalid (must match $USERNAME_RE)"
+            exit 1
+        fi
+        echo "$ARG_USER"
+        return
+    fi
+    while true; do
+        read -rp "Username [$default_user]: " kiso_user
+        kiso_user="${kiso_user:-$default_user}"
+        if [[ "$kiso_user" =~ $USERNAME_RE ]]; then
+            echo "$kiso_user"
+            return
+        fi
+        red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
+    done
+}
+
+ask_api_key() {
+    if [[ -n "$ARG_API_KEY" ]]; then
+        echo "API key: (provided via --api-key)" >&2
+        echo "$ARG_API_KEY"
+        return
+    fi
+    while true; do
+        read -rsp "OpenRouter API key: " api_key
+        echo >&2
+        if [[ -n "$api_key" ]]; then
+            echo "$api_key"
+            return
+        fi
+        red "  API key cannot be empty. Try again."
+    done
 }
 
 # ── 1. Check prerequisites ───────────────────────────────────────────────────
@@ -131,28 +176,21 @@ else
     yellow "  $ENV_FILE not found — will ask for API key."
 fi
 
+# Stop existing container (docker compose up -d will recreate it)
 if docker inspect "$CONTAINER" &>/dev/null; then
     state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
     yellow "  Container '$CONTAINER' exists (state: $state)."
-    if confirm "  Recreate it?" "y"; then
-        docker compose -f "$REPO_COMPOSE" down 2>/dev/null || true
-    fi
+    docker rm -f "$CONTAINER" &>/dev/null || true
+    green "  old container removed"
 fi
 
 # ── 4. Configure ─────────────────────────────────────────────────────────────
 
 mkdir -p "$KISO_DIR"
 
-# config.toml: needs username + token
 if [[ "$NEED_CONFIG" == true ]]; then
-    default_user="$(whoami)"
-    if [[ -n "$ARG_USER" ]]; then
-        kiso_user="$ARG_USER"
-        echo "Username: $kiso_user"
-    else
-        read -rp "Username [$default_user]: " kiso_user
-        kiso_user="${kiso_user:-$default_user}"
-    fi
+    kiso_user="$(ask_username)"
+    echo "  username: $kiso_user"
 
     token="$(generate_token)"
 
@@ -171,20 +209,8 @@ EOF
     green "  config.toml created"
 fi
 
-# .env: needs API key
 if [[ "$NEED_ENV" == true ]]; then
-    if [[ -n "$ARG_API_KEY" ]]; then
-        api_key="$ARG_API_KEY"
-        echo "API key: (provided via --api-key)"
-    else
-        read -rsp "OpenRouter API key: " api_key
-        echo
-    fi
-
-    if [[ -z "$api_key" ]]; then
-        red "Error: API key cannot be empty."
-        exit 1
-    fi
+    api_key="$(ask_api_key)"
 
     bold "Creating $ENV_FILE..."
     cat > "$ENV_FILE" <<EOF
@@ -193,7 +219,7 @@ EOF
     green "  .env created"
 fi
 
-# ── 9. Build image ───────────────────────────────────────────────────────────
+# ── 5. Build image ──────────────────────────────────────────────────────────
 
 bold "Building Docker image..."
 docker compose -f "$REPO_COMPOSE" build
@@ -205,7 +231,7 @@ if [[ -z "$IMAGE_NAME" ]]; then
 fi
 green "  image: $IMAGE_NAME"
 
-# ── 10. Write runtime compose file ───────────────────────────────────────────
+# ── 6. Write runtime compose file ───────────────────────────────────────────
 # Self-contained — no dependency on the repo directory after install.
 
 bold "Writing $RUNTIME_COMPOSE..."
@@ -225,17 +251,18 @@ services:
 EOF
 green "  runtime compose created (image: $IMAGE_NAME)"
 
-# ── 11. Start container ─────────────────────────────────────────────────────
+# ── 7. Start container ─────────────────────────────────────────────────────
 
 bold "Starting container..."
 docker compose -f "$RUNTIME_COMPOSE" up -d
 
-# ── 12. Wait for healthcheck ─────────────────────────────────────────────────
+# ── 8. Wait for healthcheck ─────────────────────────────────────────────────
 
 bold "Waiting for healthcheck..."
 elapsed=0
 while [[ $elapsed -lt 30 ]]; do
     if curl -sf http://localhost:8333/health &>/dev/null; then
+        echo
         green "  healthy!"
         break
     fi
@@ -245,11 +272,12 @@ while [[ $elapsed -lt 30 ]]; do
 done
 
 if [[ $elapsed -ge 30 ]]; then
+    echo
     yellow "  Healthcheck timed out (30s). Container may still be starting."
     yellow "  Check with: docker logs kiso"
 fi
 
-# ── 13. Install wrapper ─────────────────────────────────────────────────────
+# ── 9. Install wrapper ─────────────────────────────────────────────────────
 
 bold "Installing kiso wrapper..."
 mkdir -p "$(dirname "$WRAPPER_DST")"
@@ -267,7 +295,7 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     yellow ""
 fi
 
-# ── 14. Summary ──────────────────────────────────────────────────────────────
+# ── 10. Summary ──────────────────────────────────────────────────────────────
 
 echo
 green "  kiso is running!"

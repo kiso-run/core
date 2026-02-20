@@ -16,6 +16,19 @@ compose_cmd() {
     docker compose -f "$COMPOSE_FILE" "$@"
 }
 
+require_running() {
+    if ! docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null | grep -q running; then
+        echo "Error: container '$CONTAINER' is not running. Try: kiso up" >&2
+        exit 1
+    fi
+}
+
+# TTY flags: only use -it when connected to a terminal
+TTY_FLAGS=""
+if [[ -t 0 && -t 1 ]]; then
+    TTY_FLAGS="-it"
+fi
+
 case "${1:-}" in
     logs)
         shift
@@ -31,7 +44,8 @@ case "${1:-}" in
         docker restart "$CONTAINER"
         ;;
     shell)
-        docker exec -it "$CONTAINER" bash
+        require_running
+        docker exec $TTY_FLAGS "$CONTAINER" bash
         ;;
     status)
         state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo "not found")
@@ -77,6 +91,7 @@ Run 'kiso help' inside the container for CLI commands:
 HELP
         ;;
     *)
-        docker exec -it -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" "$@"
+        require_running
+        docker exec $TTY_FLAGS -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" "$@"
         ;;
 esac
