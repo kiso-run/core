@@ -77,6 +77,6 @@ Run 'kiso help' inside the container for CLI commands:
 HELP
         ;;
     *)
-        docker exec -it "$CONTAINER" kiso "$@"
+        docker exec -it -w /opt/kiso "$CONTAINER" uv run kiso "$@"
         ;;
 esac
