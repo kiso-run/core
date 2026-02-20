@@ -83,7 +83,13 @@ See [docker.md](docs/docker.md).
 bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
 ```
 
-The installer clones the repo, builds the Docker image, creates `~/.kiso/` with your config, starts the container, and installs the `kiso` command in `~/.local/bin/`. The cloned repo is cleaned up automatically — everything lives in `~/.kiso/` after install.
+The installer will:
+- Ask for your username and OpenRouter API key
+- Generate a secure token
+- Build the Docker image (clones the repo to a temp dir, cleaned up after)
+- Create `~/.kiso/config.toml` and `~/.kiso/.env`
+- Start the container
+- Install the `kiso` command in `~/.local/bin/`
 
 Non-interactive mode:
 
