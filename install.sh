@@ -110,15 +110,26 @@ WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 
 # ── 3. Check existing state ─────────────────────────────────────────────────
 
-KEEP_CONFIG=false
+NEED_CONFIG=true
+NEED_ENV=true
 
 if [[ -f "$CONFIG" ]]; then
     yellow "  $CONFIG already exists."
-    if ! confirm "  Overwrite?"; then
-        KEEP_CONFIG=true
-        bold "Keeping existing config and .env."
+    if ! confirm "  Overwrite config.toml?"; then
+        NEED_CONFIG=false
+        green "  config.toml kept"
     else
         rm -f "$CONFIG"
+    fi
+fi
+
+if [[ -f "$ENV_FILE" ]]; then
+    yellow "  $ENV_FILE already exists."
+    if ! confirm "  Overwrite .env (API key)?"; then
+        NEED_ENV=false
+        green "  .env kept"
+    else
+        rm -f "$ENV_FILE"
     fi
 fi
 
@@ -130,12 +141,12 @@ if docker inspect "$CONTAINER" &>/dev/null; then
     fi
 fi
 
-# ── 4. Configure (skip if keeping existing config) ───────────────────────────
+# ── 4. Configure ─────────────────────────────────────────────────────────────
 
 mkdir -p "$KISO_DIR"
 
-if [[ "$KEEP_CONFIG" == false ]]; then
-    # Ask username
+# config.toml: needs username + token
+if [[ "$NEED_CONFIG" == true ]]; then
     default_user="$(whoami)"
     if [[ -n "$ARG_USER" ]]; then
         kiso_user="$ARG_USER"
@@ -145,24 +156,8 @@ if [[ "$KEEP_CONFIG" == false ]]; then
         kiso_user="${kiso_user:-$default_user}"
     fi
 
-    # Ask API key
-    if [[ -n "$ARG_API_KEY" ]]; then
-        api_key="$ARG_API_KEY"
-        echo "API key: (provided via --api-key)"
-    else
-        read -rsp "OpenRouter API key: " api_key
-        echo
-    fi
-
-    if [[ -z "$api_key" ]]; then
-        red "Error: API key cannot be empty."
-        exit 1
-    fi
-
-    # Generate token
     token="$(generate_token)"
 
-    # Write config.toml
     bold "Creating $CONFIG..."
     cat > "$CONFIG" <<EOF
 [tokens]
@@ -176,8 +171,23 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 EOF
     green "  config.toml created"
+fi
 
-    # Write .env
+# .env: needs API key
+if [[ "$NEED_ENV" == true ]]; then
+    if [[ -n "$ARG_API_KEY" ]]; then
+        api_key="$ARG_API_KEY"
+        echo "API key: (provided via --api-key)"
+    else
+        read -rsp "OpenRouter API key: " api_key
+        echo
+    fi
+
+    if [[ -z "$api_key" ]]; then
+        red "Error: API key cannot be empty."
+        exit 1
+    fi
+
     bold "Creating $ENV_FILE..."
     cat > "$ENV_FILE" <<EOF
 KISO_OPENROUTER_API_KEY=$api_key
