@@ -10,21 +10,25 @@ import pytest
 import aiosqlite
 from kiso.brain import (
     CuratorError,
+    MessengerError,
     ParaphraserError,
     PlanError,
     ReviewError,
     SummarizerError,
+    _default_messenger_prompt,
     _default_planner_prompt,
     _default_reviewer_prompt,
     _load_system_prompt,
     _strip_fences,
     build_curator_messages,
+    build_messenger_messages,
     build_paraphraser_messages,
     build_planner_messages,
     build_reviewer_messages,
     build_summarizer_messages,
     run_curator,
     run_fact_consolidation,
+    run_messenger,
     run_paraphraser,
     run_planner,
     run_reviewer,
@@ -1149,3 +1153,124 @@ class TestStripFences:
 
     def test_empty_string(self):
         assert _strip_fences('') == ''
+
+
+# --- Messenger ---
+
+def _make_brain_config(**overrides) -> Config:
+    defaults = dict(
+        tokens={"cli": "tok"},
+        providers={"local": Provider(base_url="http://localhost:11434/v1")},
+        users={},
+        models={"messenger": "gpt-4"},
+        settings={"bot_name": "Kiso"},
+        raw={},
+    )
+    defaults.update(overrides)
+    return Config(**defaults)
+
+
+class TestDefaultMessengerPrompt:
+    def test_contains_placeholder(self):
+        prompt = _default_messenger_prompt()
+        assert "{bot_name}" in prompt
+
+    def test_load_replaces_bot_name(self):
+        config = _make_brain_config(settings={"bot_name": "TestBot"})
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        system_prompt = msgs[0]["content"]
+        assert "TestBot" in system_prompt
+        assert "{bot_name}" not in system_prompt
+
+
+class TestBuildMessengerMessages:
+    def test_basic_structure(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+        assert "## Task\nsay hi" in msgs[1]["content"]
+
+    def test_includes_summary(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "User is working on Flask app", [], "say hi")
+        assert "Flask app" in msgs[1]["content"]
+
+    def test_includes_facts(self):
+        config = _make_brain_config()
+        facts = [{"content": "Uses Python 3.12"}]
+        msgs = build_messenger_messages(config, "", facts, "say hi")
+        assert "Python 3.12" in msgs[1]["content"]
+
+    def test_includes_plan_outputs(self):
+        config = _make_brain_config()
+        outputs_text = "[1] exec: echo hi\nStatus: done\nhi"
+        msgs = build_messenger_messages(config, "", [], "report", outputs_text)
+        assert "## Preceding Task Outputs" in msgs[1]["content"]
+        assert "echo hi" in msgs[1]["content"]
+
+    def test_no_outputs_section_when_empty(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi", "")
+        assert "Preceding Task Outputs" not in msgs[1]["content"]
+
+
+class TestRunMessenger:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_successful_call(self, db):
+        config = _make_brain_config()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="Ciao!"):
+            result = await run_messenger(db, config, "sess1", "Greet the user")
+        assert result == "Ciao!"
+
+    async def test_uses_messenger_role(self, db):
+        config = _make_brain_config()
+        captured = {}
+
+        async def _capture(cfg, role, messages, **kw):
+            captured["role"] = role
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_messenger(db, config, "sess1", "say hi")
+        assert captured["role"] == "messenger"
+
+    async def test_llm_error_raises_messenger_error(self, db):
+        config = _make_brain_config()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("API down")):
+            with pytest.raises(MessengerError, match="API down"):
+                await run_messenger(db, config, "sess1", "say hi")
+
+    async def test_loads_custom_role_file(self, db, tmp_path):
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        (roles_dir / "messenger.md").write_text("You are {bot_name}, a pirate assistant.")
+        config = _make_brain_config(settings={"bot_name": "Arrr"})
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture), \
+             patch("kiso.brain.KISO_DIR", tmp_path):
+            await run_messenger(db, config, "sess1", "say hi")
+
+        assert "Arrr" in captured_messages[0]["content"]
+        assert "pirate" in captured_messages[0]["content"]
+
+
+class TestLoadSystemPromptMessenger:
+    def test_default_messenger_prompt(self):
+        with patch.object(type(KISO_DIR / "roles" / "messenger.md"), "exists", return_value=False):
+            prompt = _load_system_prompt("messenger")
+        assert "{bot_name}" in prompt
+        assert "friendly" in prompt

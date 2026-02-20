@@ -418,7 +418,8 @@ def test_poll_status_renders_tasks(capsys, plain_caps):
     assert result == 4
     out = capsys.readouterr().out
     assert "exec: ls" in out
-    assert "Bot: Done." in out
+    assert "Bot:" in out
+    assert "Done." in out
 
 
 def test_poll_status_detects_replan(capsys, plain_caps):

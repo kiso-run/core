@@ -143,7 +143,7 @@ def _chat(args: argparse.Namespace) -> None:
     import httpx
 
     from kiso.config import load_config
-    from kiso.render import detect_caps, render_cancel_start
+    from kiso.render import detect_caps, render_cancel_start, render_user_prompt
 
     cfg = load_config()
     caps = detect_caps()
@@ -160,11 +160,13 @@ def _chat(args: argparse.Namespace) -> None:
         timeout=30.0,
     )
 
+    bot_name = cfg.settings.get("bot_name", "Kiso")
+    prompt = render_user_prompt(user, caps)
     last_task_id = 0
     try:
         while True:
             try:
-                text = input(f"{user}: ")
+                text = input(f"{prompt} ")
             except (KeyboardInterrupt, EOFError):
                 print()
                 break
@@ -196,7 +198,8 @@ def _chat(args: argparse.Namespace) -> None:
 
             try:
                 last_task_id = _poll_status(
-                    client, session, message_id, last_task_id, args.quiet, caps,
+                    client, session, message_id, last_task_id,
+                    args.quiet, caps, bot_name,
                 )
             except KeyboardInterrupt:
                 print(f"\n{render_cancel_start(caps)}")
@@ -218,6 +221,7 @@ def _poll_status(
     base_task_id: int,
     quiet: bool,
     caps: "TermCaps",  # noqa: F821
+    bot_name: str = "Bot",
 ) -> int:
     import time
 
@@ -306,14 +310,14 @@ def _poll_status(
 
                 if quiet:
                     if ttype == "msg" and status == "done":
-                        print(render_msg_output(output, caps))
+                        print(render_msg_output(output, caps, bot_name))
                         print(render_separator(caps))
                     continue
 
                 # Msg tasks: only show via render_msg_output when done
                 if ttype == "msg":
                     if status == "done":
-                        print(render_msg_output(output, caps))
+                        print(render_msg_output(output, caps, bot_name))
                         print(render_separator(caps))
                     continue
 

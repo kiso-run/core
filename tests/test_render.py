@@ -21,6 +21,7 @@ from kiso.render import (
     render_task_header,
     render_task_output,
     render_thinking,
+    render_user_prompt,
     spinner_frames,
 )
 
@@ -338,23 +339,43 @@ def test_render_separator_ascii():
 
 
 def test_render_msg_output_with_thinking():
-    result = render_msg_output("<think>hmm</think>Hello!", _COLOR)
-    assert "Bot:" in result
+    result = render_msg_output("<think>hmm</think>Hello!", _COLOR, "Kiso")
+    assert "Kiso:" in result
     assert "Hello!" in result
     assert "Thinking..." in result
     assert "hmm" in result
 
 
 def test_render_msg_output_no_thinking():
-    result = render_msg_output("Hello there!", _COLOR)
-    assert "Bot:" in result
+    result = render_msg_output("Hello there!", _COLOR, "Kiso")
+    assert "Kiso:" in result
     assert "Hello there!" in result
     assert "Thinking" not in result
+    assert "\033[35m" in result  # magenta
 
 
 def test_render_msg_output():
     result = render_msg_output("Hello there!", _PLAIN)
     assert "Bot: Hello there!" in result
+
+
+def test_render_msg_output_custom_name():
+    result = render_msg_output("Hi!", _PLAIN, "Jarvis")
+    assert "Jarvis: Hi!" in result
+
+
+# ── render_user_prompt ───────────────────────────────────────
+
+
+def test_render_user_prompt_color():
+    result = render_user_prompt("alice", _COLOR)
+    assert "alice:" in result
+    assert "\033[36m" in result  # cyan
+
+
+def test_render_user_prompt_plain():
+    result = render_user_prompt("alice", _PLAIN)
+    assert result == "alice:"
 
 
 # ── render_cancel_start / done ───────────────────────────────

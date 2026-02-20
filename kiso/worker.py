@@ -24,12 +24,14 @@ from kiso.security import (
 )
 from kiso.brain import (
     CuratorError,
+    MessengerError,
     ParaphraserError,
     PlanError,
     ReviewError,
     SummarizerError,
     run_curator,
     run_fact_consolidation,
+    run_messenger,
     run_paraphraser,
     run_planner,
     run_reviewer,
@@ -84,6 +86,7 @@ def _load_worker_prompt() -> str:
     if path.exists():
         return path.read_text()
     return _default_worker_prompt()
+
 
 
 def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
@@ -266,31 +269,9 @@ async def _msg_task(
     detail: str,
     plan_outputs: list[dict] | None = None,
 ) -> str:
-    """Generate a message via worker LLM. Returns the generated text."""
-    system_prompt = _load_worker_prompt()
-
-    # Build worker context: facts + summary + preceding outputs + detail
-    sess = await get_session(db, session)
-    summary = sess["summary"] if sess else ""
-    facts = await get_facts(db)
-
-    context_parts: list[str] = []
-    if summary:
-        context_parts.append(f"## Session Summary\n{summary}")
-    if facts:
-        facts_text = "\n".join(f"- {f['content']}" for f in facts)
-        context_parts.append(f"## Known Facts\n{facts_text}")
-    if plan_outputs:
-        formatted = _format_plan_outputs_for_msg(plan_outputs)
-        context_parts.append(f"## Preceding Task Outputs\n{formatted}")
-    context_parts.append(f"## Task\n{detail}")
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n\n".join(context_parts)},
-    ]
-
-    return await call_llm(config, "worker", messages, session=session)
+    """Generate a user-facing message via the messenger brain role."""
+    outputs_text = _format_plan_outputs_for_msg(plan_outputs) if plan_outputs else ""
+    return await run_messenger(db, config, session, detail, outputs_text)
 
 
 async def _persist_plan_tasks(
@@ -533,9 +514,9 @@ async def _execute_plan(
                     )
 
                 completed.append(task_row)
-            except LLMError as e:
+            except (LLMError, MessengerError) as e:
                 task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                log.error("Msg task %d LLM error: %s", task_id, e)
+                log.error("Msg task %d messenger error: %s", task_id, e)
                 await update_task(db, task_id, "failed", output=str(e))
                 audit.log_task(
                     session, task_id, "msg", detail, "failed",
@@ -870,7 +851,7 @@ async def _process_message(
                 cancel_text = await _msg_task(
                     config, db, session, cancel_detail,
                 )
-            except LLMError:
+            except (LLMError, MessengerError):
                 cancel_text = cancel_detail  # fallback to raw summary
             await save_message(
                 db, session, None, "system", cancel_text,

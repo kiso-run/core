@@ -31,6 +31,7 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
     "webhook_require_https": True,
     "webhook_secret": "",
     "webhook_max_payload": 1048576,
+    "bot_name": "Kiso",
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
@@ -40,6 +41,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "worker": "deepseek/deepseek-v3.2",
     "summarizer": "deepseek/deepseek-v3.2",
     "paraphraser": "deepseek/deepseek-v3.2",
+    "messenger": "deepseek/deepseek-v3.2",
 }
 
 

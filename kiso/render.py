@@ -246,16 +246,21 @@ def render_thinking(thinking: str, caps: TermCaps) -> str:
     return f"{header}\n{body}"
 
 
-def render_msg_output(output: str, caps: TermCaps) -> str:
+def render_msg_output(output: str, caps: TermCaps, bot_name: str = "Bot") -> str:
     """Render bot message output."""
     thinking, clean = extract_thinking(output)
     parts: list[str] = []
     if thinking:
         parts.append(render_thinking(thinking, caps))
         parts.append("")  # blank line
-    label = _style("Bot:", _BOLD, _GREEN, caps=caps)
+    label = _style(f"{bot_name}:", _BOLD, _MAGENTA, caps=caps)
     parts.append(f"{label} {clean}")
     return "\n".join(parts)
+
+
+def render_user_prompt(user: str, caps: TermCaps) -> str:
+    """Render colored user prompt for input()."""
+    return _style(f"{user}:", _BOLD, _CYAN, caps=caps)
 
 
 def render_cancel_start(caps: TermCaps) -> str:

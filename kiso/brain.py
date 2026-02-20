@@ -126,6 +126,7 @@ def _load_system_prompt(role: str) -> str:
         "curator": _default_curator_prompt,
         "summarizer": _default_summarizer_prompt,
         "paraphraser": _default_paraphraser_prompt,
+        "messenger": _default_messenger_prompt,
     }
     factory = defaults.get(role)
     if factory:
@@ -688,6 +689,88 @@ async def run_paraphraser(config: Config, messages: list[dict], session: str = "
         return await call_llm(config, "paraphraser", msgs, session=session)
     except LLMError as e:
         raise ParaphraserError(f"LLM call failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Messenger
+# ---------------------------------------------------------------------------
+
+
+class MessengerError(Exception):
+    """Messenger generation failure."""
+
+
+def _default_messenger_prompt() -> str:
+    return """\
+You are {bot_name}, a friendly and knowledgeable assistant.
+You speak directly to the user in a warm, concise, and natural tone.
+
+If preceding task outputs are provided, synthesize them into a clear
+response for the user. Do not invent information beyond what the
+task detail and context provide.
+"""
+
+
+def build_messenger_messages(
+    config: Config,
+    summary: str,
+    facts: list[dict],
+    detail: str,
+    plan_outputs_text: str = "",
+) -> list[dict]:
+    """Build the message list for the messenger LLM call.
+
+    Args:
+        config: Application config (reads bot_name from settings).
+        summary: Current session summary.
+        facts: Known facts from the knowledge base.
+        detail: The msg task detail (what to communicate).
+        plan_outputs_text: Pre-formatted preceding task outputs (from worker).
+    """
+    bot_name = config.settings.get("bot_name", "Kiso")
+    system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
+
+    context_parts: list[str] = []
+    if summary:
+        context_parts.append(f"## Session Summary\n{summary}")
+    if facts:
+        facts_text = "\n".join(f"- {f['content']}" for f in facts)
+        context_parts.append(f"## Known Facts\n{facts_text}")
+    if plan_outputs_text:
+        context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
+    context_parts.append(f"## Task\n{detail}")
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "\n\n".join(context_parts)},
+    ]
+
+
+async def run_messenger(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    detail: str,
+    plan_outputs_text: str = "",
+) -> str:
+    """Run the messenger: generate a user-facing response.
+
+    Loads session summary and facts, builds context, and calls the
+    messenger LLM to produce text for the user.
+
+    Returns the generated text.
+    Raises MessengerError on failure.
+    """
+    sess = await get_session(db, session)
+    summary = sess["summary"] if sess else ""
+    facts = await get_facts(db)
+    messages = build_messenger_messages(
+        config, summary, facts, detail, plan_outputs_text,
+    )
+    try:
+        return await call_llm(config, "messenger", messages, session=session)
+    except LLMError as e:
+        raise MessengerError(f"LLM call failed: {e}")
 
 
 # ---------------------------------------------------------------------------
