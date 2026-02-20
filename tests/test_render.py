@@ -560,6 +560,15 @@ def test_render_task_header_cancelled_status():
     assert "⊘" in result
 
 
+def test_render_task_header_multiline_detail_uses_first_line():
+    detail = "cat > file.md << 'EOF'\n# Title\nBody text\nEOF"
+    task = {"type": "exec", "detail": detail, "status": "running"}
+    result = render_task_header(task, 1, 2, _PLAIN)
+    assert "cat > file.md" in result
+    assert "# Title" not in result
+    assert "\n" not in result
+
+
 def test_render_task_header_empty_detail():
     task = {"type": "exec", "detail": "", "status": "running"}
     result = render_task_header(task, 1, 1, _PLAIN)

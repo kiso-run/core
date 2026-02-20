@@ -146,8 +146,12 @@ def render_task_header(
     # Label: skill:name for skill tasks with a skill field
     label = f"skill:{skill_name}" if ttype == "skill" and skill_name else ttype
 
-    # Build detail part
-    detail_str = f": {detail}" if detail else ""
+    # Build detail part — first line only, to keep the header on one line
+    if detail:
+        first_line = detail.split("\n", 1)[0].strip()
+        detail_str = f": {first_line}" if first_line else ""
+    else:
+        detail_str = ""
     text = f"{icon} [{index}/{total}] {label}{detail_str}"
 
     # Append spinner frame
