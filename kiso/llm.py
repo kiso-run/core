@@ -56,6 +56,26 @@ def get_usage_summary() -> dict:
     return {"input_tokens": total_in, "output_tokens": total_out, "model": model}
 
 
+def get_usage_index() -> int:
+    """Return current entry count (use as start_index for get_usage_since)."""
+    entries = _llm_usage_entries.get(None) or []
+    return len(entries)
+
+
+def get_usage_since(start_index: int) -> dict:
+    """Get usage accumulated since *start_index*.
+
+    Returns dict with keys: input_tokens, output_tokens, model.
+    """
+    entries = _llm_usage_entries.get(None) or []
+    subset = entries[start_index:]
+    return {
+        "input_tokens": sum(e["input_tokens"] for e in subset),
+        "output_tokens": sum(e["output_tokens"] for e in subset),
+        "model": subset[-1]["model"] if subset else None,
+    }
+
+
 def set_llm_budget(max_calls: int) -> None:
     """Set per-message LLM call budget. Resets the counter to 0."""
     _llm_budget_max.set(max_calls)

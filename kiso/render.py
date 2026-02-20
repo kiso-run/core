@@ -342,20 +342,39 @@ def render_cancel_start(caps: TermCaps) -> str:
     return _style(text, _BOLD, _RED, caps=caps)
 
 
+def render_step_usage(input_tokens: int, output_tokens: int, caps: TermCaps) -> str:
+    """Render compact per-step token usage (e.g. '⟨430→85⟩')."""
+    if not input_tokens and not output_tokens:
+        return ""
+    arrow = "→" if caps.unicode else "->"
+    lp = "⟨" if caps.unicode else "<"
+    rp = "⟩" if caps.unicode else ">"
+    text = f"{lp}{input_tokens:,}{arrow}{output_tokens:,}{rp}"
+    return _style(text, _DIM, caps=caps)
+
+
 def render_review(task: dict, caps: TermCaps) -> str:
-    """Render review verdict and optional learning for a task."""
+    """Render review verdict, optional learning, and per-step token usage."""
     verdict = task.get("review_verdict")
     if not verdict:
         return ""
     lines: list[str] = []
+    # Token usage suffix
+    in_tok = task.get("input_tokens", 0) or 0
+    out_tok = task.get("output_tokens", 0) or 0
+    usage_suffix = f"  {render_step_usage(in_tok, out_tok, caps)}" if in_tok or out_tok else ""
     if verdict == "ok":
-        lines.append(_style(f"  {_icon('ok', caps)} review: ok", _GREEN, caps=caps))
+        lines.append(
+            _style(f"  {_icon('ok', caps)} review: ok", _GREEN, caps=caps) + usage_suffix
+        )
     elif verdict == "replan":
         reason = task.get("review_reason") or ""
-        lines.append(_style(
-            f'  {_icon("fail", caps)} review: replan — "{reason}"',
-            _BOLD, _RED, caps=caps,
-        ))
+        lines.append(
+            _style(
+                f'  {_icon("fail", caps)} review: replan — "{reason}"',
+                _BOLD, _RED, caps=caps,
+            ) + usage_suffix
+        )
     learning = task.get("review_learning")
     if learning:
         prefix = "  📝 learning: " if caps.unicode else "  + learning: "

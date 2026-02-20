@@ -40,7 +40,7 @@ from kiso.brain import (
     run_summarizer,
 )
 from kiso.config import Config, KISO_DIR
-from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, get_usage_summary, reset_usage_tracking, set_llm_budget
+from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, get_usage_index, get_usage_since, get_usage_summary, reset_usage_tracking, set_llm_budget
 from kiso.skills import (
     SkillError,
     build_skill_env,
@@ -73,6 +73,7 @@ from kiso.store import (
     update_task,
     update_task_command,
     update_task_review,
+    update_task_usage,
 )
 
 log = logging.getLogger(__name__)
@@ -414,6 +415,8 @@ async def _execute_plan(
         if slog:
             slog.info("Task %d started: [%s] %s", task_id, task_type, detail[:120])
 
+        usage_idx_before = get_usage_index()
+
         if task_type == "exec":
             # Write plan_outputs.json before execution
             _write_plan_outputs(session, plan_outputs)
@@ -492,9 +495,16 @@ async def _execute_plan(
                 log.info("Reviewer requests replan: %s", replan_reason)
                 if slog:
                     slog.info("Review → replan: %s", replan_reason)
+                # Store per-step token usage even on replan
+                step_usage = get_usage_since(usage_idx_before)
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
+
+            # Store per-step token usage (translator + exec + reviewer)
+            step_usage = get_usage_since(usage_idx_before)
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
             if slog:
                 slog.info("Review → %s", review["status"])
@@ -543,6 +553,10 @@ async def _execute_plan(
                         deploy_secrets=deploy_secrets,
                         session_secrets=session_secrets or {},
                     )
+
+                # Store per-step token usage (messenger)
+                step_usage = get_usage_since(usage_idx_before)
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
                 completed.append(task_row)
             except (LLMError, MessengerError) as e:
@@ -638,9 +652,15 @@ async def _execute_plan(
                 replan_reason = review["reason"]
                 if slog:
                     slog.info("Review → replan: %s", replan_reason)
+                step_usage = get_usage_since(usage_idx_before)
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
+
+            # Store per-step token usage (skill + reviewer)
+            step_usage = get_usage_since(usage_idx_before)
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
             if slog:
                 slog.info("Review → %s", review["status"])

@@ -46,21 +46,23 @@ CREATE TABLE IF NOT EXISTS plans (
 CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session, id);
 
 CREATE TABLE IF NOT EXISTS tasks (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id    INTEGER NOT NULL,
-    session    TEXT NOT NULL,
-    type       TEXT NOT NULL,
-    detail     TEXT NOT NULL,
-    skill      TEXT,
-    args       TEXT,
-    expect     TEXT,
-    command    TEXT,
-    status     TEXT NOT NULL DEFAULT 'pending',
-    output     TEXT,
-    stderr     TEXT,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id      INTEGER NOT NULL,
+    session      TEXT NOT NULL,
+    type         TEXT NOT NULL,
+    detail       TEXT NOT NULL,
+    skill        TEXT,
+    args         TEXT,
+    expect       TEXT,
+    command      TEXT,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    output       TEXT,
+    stderr       TEXT,
     review_verdict  TEXT,
     review_reason   TEXT,
     review_learning TEXT,
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -124,6 +126,8 @@ async def _migrate(db: aiosqlite.Connection) -> None:
     """Add columns that may be missing from older schemas."""
     migrations = [
         ("tasks", "command", "ALTER TABLE tasks ADD COLUMN command TEXT"),
+        ("tasks", "input_tokens", "ALTER TABLE tasks ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0"),
+        ("tasks", "output_tokens", "ALTER TABLE tasks ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0"),
         ("plans", "total_input_tokens", "ALTER TABLE plans ADD COLUMN total_input_tokens INTEGER NOT NULL DEFAULT 0"),
         ("plans", "total_output_tokens", "ALTER TABLE plans ADD COLUMN total_output_tokens INTEGER NOT NULL DEFAULT 0"),
         ("plans", "model", "ALTER TABLE plans ADD COLUMN model TEXT"),
@@ -353,6 +357,17 @@ async def update_task_command(
     """Set the translated shell command on a task."""
     await db.execute(
         "UPDATE tasks SET command = ? WHERE id = ?", (command, task_id)
+    )
+    await db.commit()
+
+
+async def update_task_usage(
+    db: aiosqlite.Connection, task_id: int, input_tokens: int, output_tokens: int
+) -> None:
+    """Store per-step token usage on a task."""
+    await db.execute(
+        "UPDATE tasks SET input_tokens = ?, output_tokens = ? WHERE id = ?",
+        (input_tokens, output_tokens, task_id),
     )
     await db.commit()
 

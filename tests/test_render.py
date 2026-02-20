@@ -22,6 +22,7 @@ from kiso.render import (
     render_planner_spinner,
     render_review,
     render_separator,
+    render_step_usage,
     render_task_header,
     render_task_output,
     render_thinking,
@@ -754,3 +755,53 @@ def test_render_usage_no_model():
 def test_render_usage_missing_keys():
     plan = {}
     assert render_usage(plan, _COLOR) == ""
+
+
+# ── render_step_usage ────────────────────────────────────────
+
+
+def test_render_step_usage_unicode():
+    result = render_step_usage(430, 85, _COLOR)
+    assert "430" in result
+    assert "85" in result
+    assert "\u27E8" in result  # left angle bracket
+    assert "\u27E9" in result  # right angle bracket
+    assert "\u2192" in result  # right arrow
+
+
+def test_render_step_usage_ascii():
+    result = render_step_usage(430, 85, _PLAIN)
+    assert "430" in result
+    assert "85" in result
+    assert "<" in result
+    assert ">" in result
+    assert "->" in result
+    assert "\033[" not in result
+
+
+def test_render_step_usage_zero():
+    """Returns empty string when both input and output are 0."""
+    assert render_step_usage(0, 0, _COLOR) == ""
+    assert render_step_usage(0, 0, _PLAIN) == ""
+
+
+# ── render_review with token usage ──────────────────────────
+
+
+def test_render_review_with_tokens():
+    """Review line includes token usage suffix when tokens are present."""
+    task = {"review_verdict": "ok", "input_tokens": 430, "output_tokens": 85}
+    result = render_review(task, _COLOR)
+    assert "review: ok" in result
+    assert "430" in result
+    assert "85" in result
+
+
+def test_render_review_without_tokens():
+    """Review line has no token suffix when both tokens are 0."""
+    task = {"review_verdict": "ok", "input_tokens": 0, "output_tokens": 0}
+    result = render_review(task, _COLOR)
+    assert "review: ok" in result
+    # No usage brackets should appear
+    assert "\u27E8" not in result
+    assert "\u27E9" not in result

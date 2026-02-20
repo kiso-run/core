@@ -337,6 +337,7 @@ def _poll_status(
         render_planner_spinner,
         render_review,
         render_separator,
+        render_step_usage,
         render_task_header,
         render_task_output,
         render_usage,
@@ -450,6 +451,11 @@ def _poll_status(
                 if ttype == "msg":
                     if status == "done":
                         print(render_msg_output(output, caps, bot_name))
+                        # Per-step token usage for msg tasks
+                        msg_in = task.get("input_tokens", 0) or 0
+                        msg_out = task.get("output_tokens", 0) or 0
+                        if msg_in or msg_out:
+                            print(render_step_usage(msg_in, msg_out, caps))
                         print(render_separator(caps))
                     continue
 

@@ -109,18 +109,18 @@ You: deploy the app to fly.io
   ┊ Scanning source code... Detected a FastAPI app
   ┊ Creating app "dev-app" in organization "personal"
   ┊ Wrote config file fly.toml
-  ✓ review: ok
+  ✓ review: ok  ⟨430→85⟩
 
 ⚡ [2/3] skill:aider: Update fly.toml to add health check endpoint
   ┊ Edited fly.toml: added [[services.http_checks]] section
-  ✓ review: ok
+  ✓ review: ok  ⟨310→62⟩
 
 ▶ [3/3] exec: Deploy the app to fly.io
   $ fly deploy
   ┊ ==> Building image with Docker
   ┊ ...
   ┊ Error: failed to fetch an image or build from source: no such file: Dockerfile
-  ✗ review: replan — "No Dockerfile found. Need to create one first."
+  ✗ review: replan — "No Dockerfile found. Need to create one first."  ⟨520→95⟩
 
 ↻ Replan: Create Dockerfile then deploy (3 tasks)
 ────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ You: deploy the app to fly.io
 
 ▶ [1/3] exec: Create a Dockerfile
   $ cat > Dockerfile << 'EOF' ...
-  ✓ review: ok
+  ✓ review: ok  ⟨280→45⟩
 
 ▶ [2/3] exec: Deploy to fly.io
   $ fly deploy
@@ -139,12 +139,14 @@ You: deploy the app to fly.io
   ┊ ==> Pushing image
   ┊ ==> Monitoring deployment
   ┊ v0 deployed successfully
-  ✓ review: ok
+  ✓ review: ok  ⟨410→70⟩
 
 💬 [3/3] msg
 Bot: Deployed to fly.io. The app is live at https://dev-app.fly.dev.
      I had to create a Dockerfile first since one wasn't present.
      The health check is configured at /health.
+⟨620→150⟩
+────────────────────────────────────────────────────────────
 ⟨ 4,521 in → 1,203 out │ deepseek/deepseek-chat-v3 ⟩
 
 You: _
@@ -173,13 +175,15 @@ When a review triggers a replan, the CLI shows:
 If max replan depth is reached, the CLI shows an error:
 
 ```
-✗ review: replan — "Still can't connect to the database"
+✗ review: replan — "Still can't connect to the database"  ⟨380→72⟩
 ⊘ Max replans reached (3). Giving up.
 
 💬 msg
 Bot: I wasn't able to complete the task. After 3 attempts, the database
      connection keeps failing. Please check that PostgreSQL is running
      and the connection string is correct.
+⟨540→120⟩
+────────────────────────────────────────────────────────────
 ```
 
 #### Output Truncation
@@ -237,13 +241,31 @@ The `$` line shows the command produced by the exec translator. This makes it cl
 
 #### Token Usage
 
-After plan completion, the CLI shows a summary of LLM token usage:
+Token usage is tracked at two levels:
+
+**Per-step**: after each task completes, the CLI shows a compact token count:
 
 ```
-⟨ 1,234 in → 567 out │ deepseek/deepseek-chat-v3 ⟩
+  ✓ review: ok  ⟨430→85⟩
 ```
 
-Shows input tokens, output tokens, and the model used. Hidden in quiet mode. Uses ASCII fallback (`< ... >`) on non-Unicode terminals.
+For `msg` tasks (no review line), the count appears after the bot message:
+
+```
+Kiso: Deployed successfully.
+⟨620→150⟩
+────────────────────────────────────────────────────────────
+```
+
+The per-step count includes all LLM calls for that task (exec translator + reviewer for exec/skill tasks, messenger for msg tasks).
+
+**Grand total**: after plan completion, the CLI shows the full summary:
+
+```
+⟨ 2,410 in → 545 out │ deepseek/deepseek-v3.2 ⟩
+```
+
+Shows total input tokens, output tokens, and the model used. Includes planner, all task steps, and post-plan processing (curator, summarizer). Hidden in quiet mode. Uses ASCII fallback (`< ... >`) on non-Unicode terminals.
 
 #### Spinner
 

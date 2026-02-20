@@ -19,6 +19,7 @@ from kiso.brain import (
     _default_messenger_prompt,
     _default_planner_prompt,
     _default_reviewer_prompt,
+    _EXEC_TRANSLATOR_PROMPT,
     _load_system_prompt,
     _strip_fences,
     build_curator_messages,
@@ -1392,3 +1393,12 @@ class TestLoadSystemPromptExecTranslator:
         with patch("kiso.brain.KISO_DIR", tmp_path):
             prompt = _load_system_prompt("exec_translator")
         assert prompt == "Custom exec translator"
+
+
+# --- Exec translator prompt content ---
+
+
+class TestExecTranslatorPromptContent:
+    def test_exec_translator_prompt_mentions_preceding_outputs(self):
+        """The default exec translator prompt should mention Preceding Task Outputs."""
+        assert "Preceding Task Outputs" in _EXEC_TRANSLATOR_PROMPT

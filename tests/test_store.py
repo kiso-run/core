@@ -34,6 +34,7 @@ from kiso.store import (
     update_task,
     update_task_command,
     update_task_review,
+    update_task_usage,
 )
 
 
@@ -638,3 +639,35 @@ async def test_schema_has_token_columns(db: aiosqlite.Connection):
     assert "total_input_tokens" in columns
     assert "total_output_tokens" in columns
     assert "model" in columns
+
+
+# --- update_task_usage ---
+
+
+async def test_update_task_usage(db: aiosqlite.Connection):
+    """Stores and reads back per-step token counts."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    await update_task_usage(db, task_id, 430, 85)
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["input_tokens"] == 430
+    assert tasks[0]["output_tokens"] == 85
+
+
+async def test_task_usage_defaults_to_zero(db: aiosqlite.Connection):
+    """Newly created tasks have 0 input_tokens and 0 output_tokens."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["input_tokens"] == 0
+    assert tasks[0]["output_tokens"] == 0
+
+
+async def test_schema_has_task_token_columns(db: aiosqlite.Connection):
+    """Verify tasks table has input_tokens and output_tokens columns."""
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "input_tokens" in columns
+    assert "output_tokens" in columns

@@ -17,6 +17,8 @@ from kiso.llm import (
     clear_llm_budget,
     get_llm_call_count,
     get_provider,
+    get_usage_index,
+    get_usage_since,
     get_usage_summary,
     reset_usage_tracking,
     set_llm_budget,
@@ -642,3 +644,66 @@ class TestUsageTracking:
         assert summary["input_tokens"] == 0
         assert summary["output_tokens"] == 0
         assert summary["model"] is None
+
+    def test_get_usage_index_empty(self):
+        """Index is 0 immediately after reset (no entries yet)."""
+        reset_usage_tracking()
+        assert get_usage_index() == 0
+
+    @pytest.mark.asyncio
+    async def test_get_usage_index_after_entries(self):
+        """Index equals the number of accumulated entries."""
+        config = _make_config()
+        reset_usage_tracking()
+        usage1 = {"prompt_tokens": 10, "completion_tokens": 5}
+        usage2 = {"prompt_tokens": 20, "completion_tokens": 8}
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                mock_client.post.return_value = _ok_response("r1", usage=usage1)
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert get_usage_index() == 1
+
+                mock_client.post.return_value = _ok_response("r2", usage=usage2)
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert get_usage_index() == 2
+
+    @pytest.mark.asyncio
+    async def test_get_usage_since_subset(self):
+        """get_usage_since returns correct delta for a slice of entries."""
+        config = _make_config()
+        reset_usage_tracking()
+        usages = [
+            {"prompt_tokens": 100, "completion_tokens": 10},
+            {"prompt_tokens": 200, "completion_tokens": 20},
+            {"prompt_tokens": 300, "completion_tokens": 30},
+        ]
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                # First call
+                mock_client.post.return_value = _ok_response("r1", usage=usages[0])
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                # Snapshot index after first call
+                idx = get_usage_index()
+                assert idx == 1
+
+                # Two more calls
+                mock_client.post.return_value = _ok_response("r2", usage=usages[1])
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                mock_client.post.return_value = _ok_response("r3", usage=usages[2])
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        delta = get_usage_since(idx)
+        # Should only include entries 1 and 2 (200+300=500 in, 20+30=50 out)
+        assert delta["input_tokens"] == 500
+        assert delta["output_tokens"] == 50
+        assert delta["model"] == "gpt-3.5"

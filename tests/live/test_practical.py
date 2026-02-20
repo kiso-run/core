@@ -628,3 +628,104 @@ class TestFactPoisoning:
             f"Expected discard for transient learning, got: {evals[0]['verdict']} "
             f"(reason: {evals[0].get('reason', 'N/A')})"
         )
+
+
+# ---------------------------------------------------------------------------
+# L4.8 — Per-step token tracking
+# ---------------------------------------------------------------------------
+
+
+class TestPerStepTokenTracking:
+    async def test_exec_pipeline_records_per_step_tokens(
+        self, live_config, seeded_db, live_session, live_msg,
+        tmp_path, mock_noop_infra,
+    ):
+        """_process_message → each completed task has input_tokens/output_tokens > 0."""
+        msg = await live_msg("Run 'echo hello' and tell me the output")
+        queue = asyncio.Queue()
+        cancel_event = asyncio.Event()
+
+        with (
+            mock_noop_infra,
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.worker.SessionLogger"),
+        ):
+            await asyncio.wait_for(
+                _process_message(
+                    seeded_db, live_config, live_session, msg,
+                    queue, cancel_event,
+                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                ),
+                timeout=TIMEOUT,
+            )
+
+        plan = await get_plan_for_session(seeded_db, live_session)
+        assert plan is not None
+        assert plan["status"] == "done"
+
+        tasks = await get_tasks_for_plan(seeded_db, plan["id"])
+        done_tasks = [t for t in tasks if t["status"] == "done"]
+        assert done_tasks, "Expected at least one completed task"
+
+        for t in done_tasks:
+            assert t["input_tokens"] > 0, (
+                f"Task {t['id']} ({t['type']}) should have input_tokens > 0, "
+                f"got {t['input_tokens']}"
+            )
+            assert t["output_tokens"] > 0, (
+                f"Task {t['id']} ({t['type']}) should have output_tokens > 0, "
+                f"got {t['output_tokens']}"
+            )
+
+        # Grand total should also be recorded
+        assert plan["total_input_tokens"] > 0, (
+            f"Plan should have total_input_tokens > 0, got {plan['total_input_tokens']}"
+        )
+        assert plan["total_output_tokens"] > 0, (
+            f"Plan should have total_output_tokens > 0, got {plan['total_output_tokens']}"
+        )
+
+    async def test_exec_chaining_uses_preceding_output(
+        self, live_config, seeded_db, live_session, live_msg,
+        tmp_path, mock_noop_infra,
+    ):
+        """Two exec tasks where task 2 depends on task 1's output path.
+        Verifies the exec translator uses preceding task output to resolve paths."""
+        content = (
+            "First, create a file called /tmp/kiso_test_chain.txt containing 'chain-ok'. "
+            "Then show the contents of the file you just created."
+        )
+        msg = await live_msg(content)
+        queue = asyncio.Queue()
+        cancel_event = asyncio.Event()
+
+        with (
+            mock_noop_infra,
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.worker.SessionLogger"),
+        ):
+            await asyncio.wait_for(
+                _process_message(
+                    seeded_db, live_config, live_session, msg,
+                    queue, cancel_event,
+                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                ),
+                timeout=TIMEOUT,
+            )
+
+        plan = await get_plan_for_session(seeded_db, live_session)
+        assert plan is not None
+
+        tasks = await get_tasks_for_plan(seeded_db, plan["id"])
+        exec_tasks = [t for t in tasks if t["type"] == "exec" and t["status"] == "done"]
+        assert len(exec_tasks) >= 1, (
+            f"Expected at least 1 completed exec task, got {len(exec_tasks)}"
+        )
+
+        # At least one task output should contain the expected content
+        all_output = " ".join((t.get("output") or "") for t in tasks)
+        assert "chain-ok" in all_output, (
+            f"Expected 'chain-ok' in task output (exec chaining), got: {all_output[:300]}"
+        )

@@ -157,6 +157,10 @@ Rules:
 - Use the System Environment to choose appropriate commands and available tools
 - Only use binaries listed as available; do not assume tools are installed
 - Respect blocked commands and plan limits from the System Environment
+- Recent Messages are background context, NOT part of the current request. \
+Plan ONLY what the New Message asks for. Use context to resolve references \
+(e.g. "do it again", "change that") but do NOT carry over previous topics \
+unless the New Message explicitly continues them.
 """
 
 
@@ -794,6 +798,9 @@ comments.
 - Use only binaries listed as available in the system environment.
 - The command will be executed by /bin/sh in the working directory shown \
 in the system environment.
+- If Preceding Task Outputs are provided, USE them to inform your command. \
+For example, if a previous task found a file at /some/path, use that exact \
+path — do not guess or use relative paths.
 - If the task cannot be accomplished with a shell command, output exactly: \
 CANNOT_TRANSLATE
 """

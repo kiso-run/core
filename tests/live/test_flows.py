@@ -287,3 +287,73 @@ class TestExecTranslator:
         assert "```" not in command, (
             f"Translator output should not contain fences: {command}"
         )
+
+    async def test_uses_preceding_outputs_for_absolute_path(self, live_config):
+        """When preceding output shows a file at /some/path, translator uses
+        that exact path instead of guessing or using relative paths."""
+        sys_env = collect_system_env(live_config)
+        sys_env_text = build_system_env_section(sys_env)
+
+        preceding = (
+            "Task 1 (exec): Find the config file\n"
+            "Output: /etc/kiso/config.toml\n"
+        )
+
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "Show the contents of the config file found in the previous task",
+                sys_env_text,
+                plan_outputs_text=preceding,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        assert "/etc/kiso/config.toml" in command, (
+            f"Translator should use absolute path from preceding output, "
+            f"got: {command}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# L2.7 — Planner context handling (new message vs old context)
+# ---------------------------------------------------------------------------
+
+
+class TestPlannerContextHandling:
+    async def test_greeting_does_not_carry_over_old_topic(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """When old context discusses topic X and user says 'hello',
+        the planner should NOT create exec tasks about topic X."""
+        # Seed old context about a specific technical task
+        await save_message(
+            seeded_db, live_session, "testadmin", "user",
+            "Show me the contents of /etc/hostname and check disk usage",
+        )
+        await save_message(
+            seeded_db, live_session, "kiso", "bot",
+            "The hostname is dev-server. Disk usage is 45% on /.",
+        )
+
+        # New message is just a greeting
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+        ):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "ciao",
+                ),
+                timeout=TIMEOUT,
+            )
+        assert validate_plan(plan) == []
+
+        # The plan should be a simple greeting response, not exec tasks
+        # about hostname/disk from old context
+        exec_tasks = [t for t in plan["tasks"] if t["type"] == "exec"]
+        assert len(exec_tasks) == 0, (
+            f"Greeting should not produce exec tasks from old context. "
+            f"Got plan: {plan}"
+        )
