@@ -412,19 +412,21 @@ def _poll_status(
             )
 
             # Done condition: plan matches our message and is no longer running
+            worker_running = data.get("worker_running", False)
             if (
                 plan
                 and plan.get("message_id") == message_id
                 and plan.get("status") != "running"
             ):
-                # Clear any remaining spinner
-                if active_spinner_task and caps.tty:
-                    sys.stdout.write(f"\r{CLEAR_LINE}")
-                    sys.stdout.flush()
-                break
+                # Don't exit on "failed" if worker is still running (replan in progress)
+                if not (plan.get("status") == "failed" and worker_running):
+                    # Clear any remaining spinner
+                    if active_spinner_task and caps.tty:
+                        sys.stdout.write(f"\r{CLEAR_LINE}")
+                        sys.stdout.flush()
+                    break
 
             # Fallback: worker stopped without creating a plan for this message
-            worker_running = data.get("worker_running", False)
             has_matching_plan = plan and plan.get("message_id") == message_id
             if not worker_running and not has_matching_plan:
                 no_plan_since_worker_stopped += 1

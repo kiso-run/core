@@ -50,6 +50,12 @@ case "${1:-}" in
         require_running
         docker exec $TTY_FLAGS "${TERM_ENV[@]}" "$CONTAINER" bash
         ;;
+    explore)
+        require_running
+        SESSION="${2:-$(hostname)@$(whoami)}"
+        docker exec $TTY_FLAGS "${TERM_ENV[@]}" "$CONTAINER" \
+            bash -c "cd ~/.kiso/sessions/$SESSION 2>/dev/null && exec bash || { echo 'Session workspace not found: ~/.kiso/sessions/$SESSION'; exit 1; }"
+        ;;
     status)
         state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo "not found")
         printf 'Container: %s\n' "$state"
@@ -80,6 +86,7 @@ Container management:
   kiso health               hit the /health endpoint
   kiso logs                 follow container logs
   kiso shell                open a bash shell inside the container
+  kiso explore [session]    open a shell in the session workspace
 
 Config:
   ~/.kiso/config.toml       main configuration

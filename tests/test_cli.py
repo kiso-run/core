@@ -481,6 +481,90 @@ def test_poll_status_exits_on_failed_plan(capsys, plain_caps):
     assert "Planning failed" in out or "API key" in out
 
 
+def test_poll_waits_on_failed_plan_while_worker_running(capsys, plain_caps):
+    """Don't exit on failed plan if worker is still running (replan in progress)."""
+    mock_client = MagicMock()
+
+    # First poll: plan failed but worker still running (replan generating)
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 42, "goal": "First try", "status": "failed"},
+        "tasks": [],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: new plan created by replan, now done
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 2, "message_id": 42, "goal": "Second try", "status": "done"},
+        "tasks": [
+            {"id": 7, "plan_id": 2, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Replanned successfully"},
+        ],
+        "worker_running": False,
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+
+    assert result == 7
+    out = capsys.readouterr().out
+    assert "Replanned successfully" in out
+    # Should have polled at least twice (didn't exit on first failed plan)
+    assert mock_client.get.call_count >= 2
+
+
+def test_poll_exits_on_failed_plan_when_worker_idle(capsys, plain_caps):
+    """Exit on failed plan when worker is not running (no replan coming)."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 42, "goal": "Failed", "status": "failed"},
+        "tasks": [
+            {"id": 5, "plan_id": 1, "type": "msg", "detail": "error", "status": "done",
+             "output": "Something went wrong"},
+        ],
+        "worker_running": False,
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+
+    assert result == 5
+    # Should exit after first poll (worker idle, no replan coming)
+    assert mock_client.get.call_count == 1
+
+
+def test_poll_exits_on_done_plan_immediately(capsys, plain_caps):
+    """Plan with status=done exits immediately regardless of worker state."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 42, "goal": "Success", "status": "done"},
+        "tasks": [
+            {"id": 5, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "All good"},
+        ],
+        "worker_running": True,  # worker still running, but plan is done
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+
+    assert result == 5
+    # Should exit after first poll (plan done, exits immediately)
+    assert mock_client.get.call_count == 1
+    out = capsys.readouterr().out
+    assert "All good" in out
+
+
 def test_poll_status_exits_when_worker_stopped(capsys, plain_caps):
     """If worker stops and no plan exists, poll should exit with error."""
     mock_client = MagicMock()
