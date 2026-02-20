@@ -243,10 +243,10 @@ class TestReviewerExitCodeE2E:
             run_reviewer(
                 live_config,
                 goal="Install project dependencies",
-                detail="pip install -r requirements.txt",
+                detail="uv sync",
                 expect="All packages installed successfully",
-                output="ERROR: Could not open requirements file: "
-                       "[Errno 2] No such file or directory: 'requirements.txt'",
+                output="error: No `pyproject.toml` found in `/workspace` "
+                       "or any parent directory",
                 user_message="install the dependencies",
                 success=False,
             ),
