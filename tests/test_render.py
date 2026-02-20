@@ -11,6 +11,7 @@ from kiso.render import (
     _style,
     detect_caps,
     extract_thinking,
+    render_banner,
     render_cancel_done,
     render_cancel_start,
     render_max_replan,
@@ -378,6 +379,24 @@ def test_render_user_prompt_color():
 def test_render_user_prompt_plain():
     result = render_user_prompt("alice", _PLAIN)
     assert result == "alice:"
+
+
+# ── render_banner ────────────────────────────────────────────
+
+
+def test_render_banner_color():
+    result = render_banner("Kiso", "host@alice", _COLOR)
+    assert "Kiso" in result
+    assert "host@alice" in result
+    assert "exit" in result
+    assert "\033[35m" in result  # magenta for bot name
+
+
+def test_render_banner_plain():
+    result = render_banner("Kiso", "host@alice", _PLAIN)
+    assert "Kiso" in result
+    assert "host@alice" in result
+    assert "\033[" not in result
 
 
 # ── render_cancel_start / done ───────────────────────────────

@@ -143,7 +143,7 @@ def _chat(args: argparse.Namespace) -> None:
     import httpx
 
     from kiso.config import load_config
-    from kiso.render import detect_caps, render_cancel_start, render_user_prompt
+    from kiso.render import detect_caps, render_banner, render_cancel_start, render_user_prompt
 
     cfg = load_config()
     caps = detect_caps()
@@ -162,6 +162,7 @@ def _chat(args: argparse.Namespace) -> None:
 
     bot_name = cfg.settings.get("bot_name", "Kiso")
     prompt = render_user_prompt(user, caps)
+    print(render_banner(bot_name, session, caps))
     last_task_id = 0
     try:
         while True:
