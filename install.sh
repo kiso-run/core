@@ -131,6 +131,8 @@ if [[ -f "$ENV_FILE" ]]; then
     else
         rm -f "$ENV_FILE"
     fi
+else
+    yellow "  $ENV_FILE not found — will ask for API key."
 fi
 
 if docker inspect "$CONTAINER" &>/dev/null; then
