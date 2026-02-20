@@ -311,6 +311,8 @@ def test_render_thinking_basic():
     assert "🤔" in result
     assert "┊" in result
     assert "I should greet the user" in result
+    # Header is yellow, body is dim yellow
+    assert "\033[33m" in result  # yellow
 
 
 def test_render_thinking_truncation():

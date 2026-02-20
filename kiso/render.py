@@ -232,16 +232,16 @@ def extract_thinking(text: str) -> tuple[str, str]:
 def render_thinking(thinking: str, caps: TermCaps) -> str:
     """Render thinking block with header and indented body."""
     icon = "🤔" if caps.unicode else "?"
-    header = _style(f"{icon} Thinking...", _DIM, caps=caps)
+    header = _style(f"{icon} Thinking...", _YELLOW, caps=caps)
     indent_char = "┊" if caps.unicode else "|"
     lines = thinking.splitlines()
     max_lines = 10
     shown = lines[:max_lines]
     body = "\n".join(
-        _style(f"  {indent_char} {line}", _DIM, caps=caps) for line in shown
+        _style(f"  {indent_char} {line}", _DIM, _YELLOW, caps=caps) for line in shown
     )
     if len(lines) > max_lines:
-        more = _style(f"  ... ({len(lines) - max_lines} more lines)", _DIM, caps=caps)
+        more = _style(f"  ... ({len(lines) - max_lines} more lines)", _DIM, _YELLOW, caps=caps)
         body += "\n" + more
     return f"{header}\n{body}"
 
