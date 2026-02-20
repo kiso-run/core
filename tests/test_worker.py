@@ -11,7 +11,7 @@ import pytest
 
 from kiso.brain import CuratorError, ParaphraserError, PlanError, ReviewError, SummarizerError
 from kiso.config import Config, ConfigError, Provider, User, KISO_DIR
-from kiso.llm import LLMError
+from kiso.llm import LLMBudgetExceeded, LLMError
 from kiso.store import (
     create_plan,
     create_session,

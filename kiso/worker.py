@@ -36,7 +36,7 @@ from kiso.brain import (
     run_summarizer,
 )
 from kiso.config import Config, KISO_DIR
-from kiso.llm import LLMError, call_llm
+from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, set_llm_budget
 from kiso.skills import (
     SkillError,
     build_skill_env,
@@ -776,6 +776,10 @@ async def _process_message(
     if slog:
         slog.info("Message received: user=%s, %d chars", username or "?", len(content))
 
+    # Per-message LLM call budget
+    max_llm_calls = int(config.settings.get("max_llm_calls_per_message", 200))
+    set_llm_budget(max_llm_calls)
+
     await mark_message_processed(db, msg_id)
 
     # Paraphraser — fetch untrusted messages, paraphrase if any
@@ -1046,3 +1050,5 @@ async def _process_message(
             log.warning("Fact consolidation timed out after %ds", exec_timeout)
         except SummarizerError as e:
             log.error("Fact consolidation failed: %s", e)
+
+    clear_llm_budget()

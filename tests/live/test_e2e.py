@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.brain import run_planner, validate_plan, validate_review
+from kiso.brain import run_planner, run_reviewer, validate_plan, validate_review
 from kiso.store import (
     create_plan,
     create_task,
@@ -230,3 +230,30 @@ class TestKnowledgeFlowE2E:
         if review.get("learn"):
             assert isinstance(review["learn"], str)
             assert len(review["learn"]) > 0
+
+
+class TestReviewerExitCodeE2E:
+    async def test_failed_exec_with_valid_output_replans(self, live_config):
+        """exit 1 + valid-looking output → reviewer sees FAILED status → replan.
+
+        Now that the reviewer receives the Command Status section (21e),
+        it should not rubber-stamp a failed command.
+        """
+        review = await asyncio.wait_for(
+            run_reviewer(
+                live_config,
+                goal="Check disk space",
+                detail="df -h",
+                expect="Shows disk usage information",
+                output="Filesystem      Size  Used Avail Use% Mounted on\n"
+                       "/dev/sda1       100G   50G   50G  50% /",
+                user_message="check disk space",
+                success=False,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert validate_review(review) == []
+        assert review["status"] == "replan", (
+            f"Reviewer should replan on FAILED exec, got: {review['status']} "
+            f"(reason: {review.get('reason', 'N/A')})"
+        )

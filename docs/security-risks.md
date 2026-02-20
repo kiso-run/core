@@ -6,14 +6,14 @@ Analysis of logical flaws, LLM hallucination risks, and attack surfaces in the k
 
 | # | Risk | Severity | Current Mitigation | Status |
 |---|---|---|---|---|
-| 1 | Deny list bypass via encoding | HIGH | Regex patterns, sandbox for user role | Open — admin role unprotected |
+| 1 | Deny list bypass via encoding | HIGH | Regex patterns + bypass idioms, sandbox for user role | Mitigated (21a) |
 | 2 | Fact poisoning via reviewer learnings | HIGH | Curator evaluation | Open — no content filtering |
-| 3 | Fact consolidation destroys knowledge | HIGH | `if consolidated:` check | Open — no shrinkage guard |
-| 4 | Silent planning failure | MEDIUM-HIGH | Error logged | Open — user gets no feedback |
-| 5 | Reviewer rubber-stamps failed exec | MEDIUM | Reviewer sees output + expect | Open — no exit code context |
-| 6 | Replan cost amplification | MEDIUM | `max_replan_depth` cap | Partial — no per-message budget |
-| 7 | Paraphraser injection leakage | MEDIUM | Paraphraser + fencing | Open — no verification test |
-| 8 | Secrets in plan detail field | LOW-MEDIUM | `sanitize_output` on output | Open — detail not sanitized |
+| 3 | Fact consolidation destroys knowledge | HIGH | Shrinkage guard + short-entry filter | Mitigated (21c) |
+| 4 | Silent planning failure | MEDIUM-HIGH | Error message to user + webhook | Fixed (21d) |
+| 5 | Reviewer rubber-stamps failed exec | MEDIUM | Reviewer sees output + expect + exit code | Fixed (21e) |
+| 6 | Replan cost amplification | MEDIUM | `max_replan_depth` cap + per-message LLM budget | Mitigated |
+| 7 | Paraphraser injection leakage | MEDIUM | Paraphraser + fencing + live tests | Mitigated (21g) |
+| 8 | Secrets in plan detail field | LOW-MEDIUM | `sanitize_output` on detail + args before DB storage | Fixed (21h) |
 
 ---
 
@@ -129,9 +129,9 @@ The exec task runs and gets `returncode != 0` → status set to `"failed"`. The 
 
 With OpenRouter pricing, this could cost $5-15 per adversarial message depending on models.
 
-**Current mitigation:** `max_replan_depth` (default 3) caps replanning iterations. `max_plan_tasks` (default 20) caps tasks per plan.
+**Current mitigation:** `max_replan_depth` (default 3) caps replanning iterations. `max_plan_tasks` (default 20) caps tasks per plan. Per-message LLM call budget (`max_llm_calls_per_message`, default 200) enforced via `contextvars` — raises `LLMBudgetExceeded` when the ceiling is reached, preventing runaway cost.
 
-**Planned fix (M21f):** Per-message LLM call budget tracking.
+**Worst-case cost with budget:** At most 200 LLM calls per message (configurable). The budget is set at the start of `_process_message` and cleared at the end, covering all planner, reviewer, worker, curator, and summarizer calls within a single message processing cycle.
 
 ---
 

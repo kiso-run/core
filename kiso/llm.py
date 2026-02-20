@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import time
@@ -17,6 +18,36 @@ STRUCTURED_ROLES = {"planner", "reviewer", "curator"}
 
 class LLMError(Exception):
     """Any LLM call failure."""
+
+
+class LLMBudgetExceeded(LLMError):
+    """Raised when per-message LLM call budget is exhausted."""
+
+
+# Per-message LLM call budget tracking via contextvars.
+_llm_budget_max: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "_llm_budget_max", default=None,
+)
+_llm_budget_count: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "_llm_budget_count", default=0,
+)
+
+
+def set_llm_budget(max_calls: int) -> None:
+    """Set per-message LLM call budget. Resets the counter to 0."""
+    _llm_budget_max.set(max_calls)
+    _llm_budget_count.set(0)
+
+
+def clear_llm_budget() -> None:
+    """Clear the LLM budget (disable tracking)."""
+    _llm_budget_max.set(None)
+    _llm_budget_count.set(0)
+
+
+def get_llm_call_count() -> int:
+    """Return the current LLM call count for the active budget."""
+    return _llm_budget_count.get()
 
 
 def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
@@ -63,6 +94,16 @@ async def call_llm(
     - response_format: JSON schema dict for structured output (required for
       planner/reviewer/curator)
     """
+    # Budget enforcement
+    budget_max = _llm_budget_max.get(None)
+    if budget_max is not None:
+        count = _llm_budget_count.get(0)
+        if count >= budget_max:
+            raise LLMBudgetExceeded(
+                f"LLM call budget exhausted ({count}/{budget_max} calls used)"
+            )
+        _llm_budget_count.set(count + 1)
+
     model_string = config.models.get(role)
     if not model_string:
         raise LLMError(f"No model configured for role '{role}'")

@@ -10,7 +10,16 @@ import httpx
 import pytest
 
 from kiso.config import Config, Provider
-from kiso.llm import LLMError, call_llm, get_provider, _get_api_key
+from kiso.llm import (
+    LLMBudgetExceeded,
+    LLMError,
+    call_llm,
+    clear_llm_budget,
+    get_llm_call_count,
+    get_provider,
+    set_llm_budget,
+    _get_api_key,
+)
 
 
 # --- Minimal config fixtures ---
@@ -451,3 +460,91 @@ class TestTimeoutConfig:
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
                 mock_cls.assert_called_once_with(timeout=42)
+
+
+# --- LLM budget tracking ---
+
+
+class TestLLMBudget:
+    def test_set_and_get_budget(self):
+        set_llm_budget(10)
+        assert get_llm_call_count() == 0
+        clear_llm_budget()
+
+    def test_clear_resets_budget(self):
+        set_llm_budget(5)
+        clear_llm_budget()
+        # After clearing, no budget is active — calls should not raise
+        assert get_llm_call_count() == 0
+
+    @pytest.mark.asyncio
+    async def test_budget_increments_on_call(self):
+        config = _make_config()
+        set_llm_budget(10)
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert get_llm_call_count() == 1
+
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert get_llm_call_count() == 2
+        clear_llm_budget()
+
+    @pytest.mark.asyncio
+    async def test_budget_exceeded_raises(self):
+        config = _make_config()
+        set_llm_budget(1)
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                # First call succeeds (uses the 1 allowed call)
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                # Second call exceeds budget
+                with pytest.raises(LLMBudgetExceeded, match="budget exhausted"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+        clear_llm_budget()
+
+    @pytest.mark.asyncio
+    async def test_no_budget_allows_unlimited(self):
+        """When no budget is set, calls are unlimited."""
+        config = _make_config()
+        clear_llm_budget()  # Ensure no budget
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                # Should not raise even after many calls
+                for _ in range(5):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+        clear_llm_budget()
+
+    @pytest.mark.asyncio
+    async def test_budget_exceeded_before_http_call(self):
+        """Budget check happens before making any HTTP request."""
+        config = _make_config()
+        set_llm_budget(0)  # Zero budget — no calls allowed
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMBudgetExceeded):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                # HTTP client should NOT have been called
+                mock_client.post.assert_not_called()
+        clear_llm_budget()
