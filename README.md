@@ -82,57 +82,34 @@ See [docker.md](docs/docker.md).
 ```bash
 git clone git@github.com:kiso-run/core.git
 cd core
-docker compose build
-mkdir -p ~/.kiso
+./install.sh
 ```
 
-Create `~/.kiso/config.toml` (see [config.md](docs/config.md) for all options):
+The installer will:
+- Ask for your username and OpenRouter API key
+- Generate a secure token
+- Create `~/.kiso/config.toml` and `~/.kiso/.env`
+- Build and start the Docker container
+- Install the `kiso` command in `~/.local/bin/`
 
-```toml
-[tokens]
-cli = "your-secret-token"          # generate with: openssl rand -hex 32
+Non-interactive mode: `./install.sh --user marco --api-key sk-or-v1-...`
 
-[providers.openrouter]
-api_key_env = "KISO_OPENROUTER_API_KEY"
-base_url = "https://openrouter.ai/api/v1"
+See [config.md](docs/config.md) for all configuration options. Role prompts (`~/.kiso/roles/*.md`) are optional — sensible defaults are built in. See [llm-roles.md](docs/llm-roles.md) to customize them.
 
-[users.marco]                      # your Linux username ($(whoami))
-role = "admin"
-```
-
-Start kiso and set your API key:
+## Usage
 
 ```bash
-docker compose up -d
-docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-or-v1-...
-docker exec -it kiso kiso env reload
-docker restart kiso
-```
-
-Verify: `curl http://localhost:8333/health` → `{"status": "ok"}`
-
-The data directory (`~/.kiso/`) is bind-mounted from your host, so you can edit `config.toml` directly and restart. Role prompts (`~/.kiso/roles/*.md`) are optional — sensible defaults are built in. See [llm-roles.md](docs/llm-roles.md) to customize them.
-
-## Quickstart
-
-```bash
-# Send a message
-curl -X POST http://localhost:8333/msg \
-  -H "Authorization: Bearer your-secret-token" \
-  -H "Content-Type: application/json" \
-  -d '{"session": "test", "user": "'"$(whoami)"'", "content": "hello"}'
-
-# Check status
-curl -H "Authorization: Bearer your-secret-token" \
-  http://localhost:8333/status/test
-```
-
-Install skills and connectors via CLI (admin only — see [cli.md](docs/cli.md)):
-
-```bash
-docker exec -it kiso kiso skill install search
-docker exec -it kiso kiso env set KISO_SKILL_SEARCH_API_KEY sk-...
-docker exec -it kiso kiso env reload
+kiso                      # interactive chat
+kiso logs                 # follow container logs
+kiso status               # check if running + healthy
+kiso health               # hit /health endpoint
+kiso restart              # restart the container
+kiso down                 # stop
+kiso up                   # start
+kiso shell                # bash inside the container
+kiso skill install search # install a skill
+kiso env set KEY VALUE    # set a deploy secret
+kiso env reload           # hot-reload secrets
 ```
 
 Users can share credentials during conversation — the planner extracts them as **ephemeral secrets** (in-memory only, lost on worker shutdown). See [security.md — Secrets](docs/security.md#5-secrets).

@@ -502,6 +502,8 @@ evaluate each one and decide:
 Rules:
 - Good facts: technology choices, project structure, user preferences, API details.
 - Bad facts (discard): "command succeeded", "file was created", temporary states.
+- ALWAYS discard learnings that contain passwords, secrets, API keys, tokens, or
+  credentials. These are sensitive data, not knowledge — never promote them as facts.
 - Every evaluation MUST have a non-empty "reason" explaining your decision.
 - "promote" MUST have a non-null, non-empty "fact".
 - "ask" MUST have a non-null, non-empty "question".

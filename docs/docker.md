@@ -55,14 +55,36 @@ CMD ["uv", "run", "kiso", "serve"]
 services:
   kiso:
     build: .
+    container_name: kiso
     ports:
       - "8333:8333"
     volumes:
       - ${KISO_DATA:-~/.kiso}:/root/.kiso
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
 ```
 
 By default, `~/.kiso/` on the host is bind-mounted into the container. You can edit `config.toml` directly on the host and restart. Override with `KISO_DATA=/path/to/data docker compose up -d`.
+
+## CLI Wrapper
+
+`install.sh` installs a `kiso` wrapper in `~/.local/bin/` (source: `kiso-host.sh`). The wrapper intercepts Docker management commands and proxies everything else to `kiso` inside the container.
+
+| Command | Runs |
+|---|---|
+| `kiso` | `docker exec -it kiso kiso` (chat REPL) |
+| `kiso <args>` | `docker exec -it kiso kiso <args>` (skill, env, sessions, etc.) |
+| `kiso logs` | `docker logs -f kiso` |
+| `kiso up` | `docker compose up -d` |
+| `kiso down` | `docker compose down` |
+| `kiso restart` | `docker restart kiso` |
+| `kiso shell` | `docker exec -it kiso bash` |
+| `kiso status` | Container state + health check |
+| `kiso health` | `curl http://localhost:8333/health` |
+
+The wrapper reads the docker-compose.yml path from `~/.kiso/compose` (written by `install.sh`), so `kiso up` and `kiso down` work from any directory.
 
 ## Pre-installing Skills and Connectors
 
@@ -76,7 +98,7 @@ RUN kiso skill install search && kiso connector install discord
 **Runtime** (in volume): mutable, updatable without rebuild.
 
 ```bash
-docker exec -it kiso kiso skill install search
+kiso skill install search
 ```
 
 Both can coexist — volume contents take precedence (Docker mount behavior).
@@ -105,8 +127,8 @@ Two ways to provide deploy secrets:
 **1. `kiso env`** (recommended): manages `~/.kiso/.env` on the host (bind-mounted). Secrets persist across container restarts and can be hot-reloaded without restart via `kiso env reload`. See [cli.md — Deploy Secret Management](cli.md#deploy-secret-management).
 
 ```bash
-docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-or-...
-docker exec -it kiso kiso env reload
+kiso env set KISO_OPENROUTER_API_KEY sk-or-...
+kiso env reload
 ```
 
 **2. Docker env vars** (`docker run -e` or a `.env` file in the project directory): passed directly to the container process.
