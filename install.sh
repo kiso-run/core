@@ -232,9 +232,8 @@ if [[ "$NEED_ENV" == true ]]; then
     api_key="$(ask_api_key)"
 
     bold "Creating $ENV_FILE..."
-    cat > "$ENV_FILE" <<EOF
-KISO_OPENROUTER_API_KEY=$api_key
-EOF
+    # Use printf to avoid shell expansion of special chars in API key
+    printf 'KISO_OPENROUTER_API_KEY=%s\n' "$api_key" > "$ENV_FILE"
     green "  .env created"
 fi
 
