@@ -40,16 +40,21 @@ PLAN_SCHEMA: dict = {
             "properties": {
                 "goal": {"type": "string"},
                 "secrets": {
-                    "type": ["array", "null"],
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "key": {"type": "string"},
-                            "value": {"type": "string"},
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "key": {"type": "string"},
+                                    "value": {"type": "string"},
+                                },
+                                "required": ["key", "value"],
+                                "additionalProperties": False,
+                            },
                         },
-                        "required": ["key", "value"],
-                        "additionalProperties": False,
-                    },
+                        {"type": "null"},
+                    ],
                 },
                 "tasks": {
                     "type": "array",
@@ -61,9 +66,9 @@ PLAN_SCHEMA: dict = {
                                 "enum": ["exec", "msg", "skill"],
                             },
                             "detail": {"type": "string"},
-                            "skill": {"type": ["string", "null"]},
-                            "args": {"type": ["string", "null"]},
-                            "expect": {"type": ["string", "null"]},
+                            "skill": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "args": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                         },
                         "required": ["type", "detail", "skill", "args", "expect"],
                         "additionalProperties": False,
@@ -89,8 +94,8 @@ REVIEW_SCHEMA: dict = {
                     "type": "string",
                     "enum": ["ok", "replan"],
                 },
-                "reason": {"type": ["string", "null"]},
-                "learn": {"type": ["string", "null"]},
+                "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "learn": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             },
             "required": ["status", "reason", "learn"],
             "additionalProperties": False,
@@ -464,8 +469,8 @@ CURATOR_SCHEMA: dict = {
                                 "type": "string",
                                 "enum": ["promote", "ask", "discard"],
                             },
-                            "fact": {"type": ["string", "null"]},
-                            "question": {"type": ["string", "null"]},
+                            "fact": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                             "reason": {"type": "string"},
                         },
                         "required": ["learning_id", "verdict", "fact", "question", "reason"],

@@ -149,8 +149,16 @@ async def call_llm(
 
     if resp.status_code != 200:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+        # Try to extract error detail from JSON body (OpenRouter returns JSON errors)
+        detail = resp.text[:500] if resp.text else ""
+        if not detail:
+            try:
+                err_data = resp.json()
+                detail = json.dumps(err_data, indent=None)[:500]
+            except Exception:
+                detail = "(empty response body)"
         raise LLMError(
-            f"LLM returned {resp.status_code}: {resp.text[:500]}"
+            f"LLM returned {resp.status_code} for {role} ({model_name}): {detail}"
         )
 
     try:

@@ -118,8 +118,6 @@ if [[ -f "$CONFIG" ]]; then
     if ! confirm "  Overwrite config.toml?" "n"; then
         NEED_CONFIG=false
         green "  config.toml kept"
-    else
-        rm -f "$CONFIG"
     fi
 fi
 
@@ -128,8 +126,6 @@ if [[ -f "$ENV_FILE" ]]; then
     if ! confirm "  Overwrite .env (API key)?" "n"; then
         NEED_ENV=false
         green "  .env kept"
-    else
-        rm -f "$ENV_FILE"
     fi
 else
     yellow "  $ENV_FILE not found — will ask for API key."
