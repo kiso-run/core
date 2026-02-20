@@ -6,14 +6,14 @@ set -euo pipefail
 # to `kiso` inside the container via docker exec.
 
 CONTAINER="kiso"
-COMPOSE_PATH_FILE="$HOME/.kiso/compose"
+COMPOSE_FILE="$HOME/.kiso/docker-compose.yml"
 
 compose_cmd() {
-    if [[ ! -f "$COMPOSE_PATH_FILE" ]]; then
-        echo "Error: $COMPOSE_PATH_FILE not found. Run install.sh first." >&2
+    if [[ ! -f "$COMPOSE_FILE" ]]; then
+        echo "Error: $COMPOSE_FILE not found. Run install.sh first." >&2
         exit 1
     fi
-    docker compose -f "$(cat "$COMPOSE_PATH_FILE")" "$@"
+    docker compose -f "$COMPOSE_FILE" "$@"
 }
 
 case "${1:-}" in

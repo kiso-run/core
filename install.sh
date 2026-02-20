@@ -4,12 +4,13 @@ set -euo pipefail
 # ── Kiso installer ────────────────────────────────────────────────────────────
 # Automates: prereq check → config → docker build → healthcheck → wrapper install
 
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 KISO_DIR="$HOME/.kiso"
 CONFIG="$KISO_DIR/config.toml"
 ENV_FILE="$KISO_DIR/.env"
-COMPOSE_FILE="$(cd "$(dirname "$0")" && pwd)/docker-compose.yml"
-COMPOSE_PATH_FILE="$KISO_DIR/compose"
-WRAPPER_SRC="$(cd "$(dirname "$0")" && pwd)/kiso-host.sh"
+REPO_COMPOSE="$REPO_DIR/docker-compose.yml"
+RUNTIME_COMPOSE="$KISO_DIR/docker-compose.yml"
+WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 WRAPPER_DST="$HOME/.local/bin/kiso"
 CONTAINER="kiso"
 
@@ -88,7 +89,7 @@ if docker inspect "$CONTAINER" &>/dev/null; then
     state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
     yellow "  Container '$CONTAINER' exists (state: $state)."
     if confirm "  Recreate it?" "y"; then
-        docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+        docker compose -f "$REPO_COMPOSE" down 2>/dev/null || true
     fi
 fi
 
@@ -152,19 +153,41 @@ KISO_OPENROUTER_API_KEY=$api_key
 EOF
 green "  .env created"
 
-# ── 8. Save compose path ─────────────────────────────────────────────────────
-
-printf '%s' "$COMPOSE_FILE" > "$COMPOSE_PATH_FILE"
-
-# ── 9. Build and start ───────────────────────────────────────────────────────
+# ── 8. Build image ───────────────────────────────────────────────────────────
 
 bold "Building Docker image..."
-docker compose -f "$COMPOSE_FILE" build
+docker compose -f "$REPO_COMPOSE" build
+
+# Get the built image name (e.g. "core-kiso")
+IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4)
+if [[ -z "$IMAGE_NAME" ]]; then
+    # fallback: derive from compose project name
+    IMAGE_NAME="$(basename "$REPO_DIR")-kiso"
+fi
+
+# ── 9. Write runtime compose file ────────────────────────────────────────────
+# Self-contained — no dependency on the repo directory after install.
+
+bold "Writing $RUNTIME_COMPOSE..."
+cat > "$RUNTIME_COMPOSE" <<EOF
+services:
+  kiso:
+    image: $IMAGE_NAME
+    container_name: kiso
+    ports:
+      - "8333:8333"
+    volumes:
+      - ${KISO_DIR}:/root/.kiso
+    restart: unless-stopped
+EOF
+green "  runtime compose created (image: $IMAGE_NAME)"
+
+# ── 10. Start container ──────────────────────────────────────────────────────
 
 bold "Starting container..."
-docker compose -f "$COMPOSE_FILE" up -d
+docker compose -f "$RUNTIME_COMPOSE" up -d
 
-# ── 10. Wait for healthcheck ─────────────────────────────────────────────────
+# ── 11. Wait for healthcheck ─────────────────────────────────────────────────
 
 bold "Waiting for healthcheck..."
 elapsed=0
@@ -183,7 +206,7 @@ if [[ $elapsed -ge 30 ]]; then
     yellow "  Check with: docker logs kiso"
 fi
 
-# ── 11. Install wrapper ──────────────────────────────────────────────────────
+# ── 12. Install wrapper ──────────────────────────────────────────────────────
 
 bold "Installing kiso wrapper..."
 mkdir -p "$(dirname "$WRAPPER_DST")"
@@ -201,7 +224,7 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     yellow ""
 fi
 
-# ── 12. Summary ──────────────────────────────────────────────────────────────
+# ── 13. Summary ──────────────────────────────────────────────────────────────
 
 echo
 green "  kiso is running!"

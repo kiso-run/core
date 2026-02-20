@@ -84,7 +84,7 @@ By default, `~/.kiso/` on the host is bind-mounted into the container. You can e
 | `kiso status` | Container state + health check |
 | `kiso health` | `curl http://localhost:8333/health` |
 
-The wrapper reads the docker-compose.yml path from `~/.kiso/compose` (written by `install.sh`), so `kiso up` and `kiso down` work from any directory.
+`install.sh` writes a self-contained `~/.kiso/docker-compose.yml` (uses `image:` instead of `build:`) so `kiso up` and `kiso down` work from any directory — even if the repo is deleted after install.
 
 ## Pre-installing Skills and Connectors
 
