@@ -684,6 +684,33 @@ def _build_cancel_summary(
     return "\n\n".join(parts)
 
 
+def _build_failure_summary(
+    completed: list[dict], remaining: list[dict], goal: str,
+    reason: str | None = None,
+) -> str:
+    """Build a detail string for the messenger LLM summarising a plan failure."""
+    parts: list[str] = [f"The plan failed: {goal}"]
+
+    if reason:
+        parts.append(f"Failure reason: {reason}")
+
+    if completed:
+        items = [f"- [{t['type']}] {t['detail']}" for t in completed]
+        parts.append(f"Completed ({len(completed)}):\n" + "\n".join(items))
+    else:
+        parts.append("No tasks were completed.")
+
+    if remaining:
+        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
+        parts.append(f"Failed/Skipped ({len(remaining)}):\n" + "\n".join(items))
+
+    parts.append(
+        "Generate a brief message explaining what went wrong "
+        "and suggest next steps."
+    )
+    return "\n\n".join(parts)
+
+
 async def _apply_curator_result(
     db: aiosqlite.Connection, session: str, result: dict
 ) -> None:
@@ -853,6 +880,12 @@ async def _process_message(
                 )
             except (LLMError, MessengerError):
                 cancel_text = cancel_detail  # fallback to raw summary
+            cancel_task_id = await create_task(
+                db, current_plan_id, session, "msg", cancel_detail,
+            )
+            await update_task(
+                db, cancel_task_id, status="done", output=cancel_text,
+            )
             await save_message(
                 db, session, None, "system", cancel_text,
                 trusted=True, processed=True,
@@ -883,6 +916,32 @@ async def _process_message(
             log.info("Plan %d failed (no replan)", current_plan_id)
             if slog:
                 slog.info("Plan %d failed", current_plan_id)
+            # Recovery msg task so the user gets LLM-generated feedback
+            fail_detail = _build_failure_summary(
+                completed, remaining, current_goal,
+            )
+            try:
+                fail_text = await _msg_task(config, db, session, fail_detail)
+            except (LLMError, MessengerError):
+                fail_text = fail_detail
+            fail_task_id = await create_task(
+                db, current_plan_id, session, "msg", fail_detail,
+            )
+            await update_task(db, fail_task_id, status="done", output=fail_text)
+            await save_message(
+                db, session, None, "system", fail_text,
+                trusted=True, processed=True,
+            )
+            sess = await get_session(db, session)
+            webhook_url = sess.get("webhook") if sess else None
+            if webhook_url:
+                await deliver_webhook(
+                    webhook_url, session, 0, fail_text, True,
+                    secret=str(config.settings.get("webhook_secret", "")),
+                    max_payload=int(
+                        config.settings.get("webhook_max_payload", 0)
+                    ),
+                )
             break
 
         # Replan requested
@@ -897,13 +956,36 @@ async def _process_message(
                                       output="Max replan depth reached")
             log.warning("Max replan depth (%d) reached for session=%s",
                         max_replan_depth, session)
-            # Save a message notifying the user
+            # Recovery msg task so the user gets LLM-generated feedback
+            replan_detail = _build_failure_summary(
+                completed, remaining, current_goal,
+                reason=f"Max replan depth ({max_replan_depth}) reached. "
+                       f"Last failure: {replan_reason}",
+            )
+            try:
+                replan_text = await _msg_task(config, db, session, replan_detail)
+            except (LLMError, MessengerError):
+                replan_text = replan_detail
+            replan_task_id = await create_task(
+                db, current_plan_id, session, "msg", replan_detail,
+            )
+            await update_task(
+                db, replan_task_id, status="done", output=replan_text,
+            )
             await save_message(
-                db, session, None, "system",
-                f"Max replan depth ({max_replan_depth}) reached. "
-                f"Last failure: {replan_reason}",
+                db, session, None, "system", replan_text,
                 trusted=True, processed=True,
             )
+            sess = await get_session(db, session)
+            webhook_url = sess.get("webhook") if sess else None
+            if webhook_url:
+                await deliver_webhook(
+                    webhook_url, session, 0, replan_text, True,
+                    secret=str(config.settings.get("webhook_secret", "")),
+                    max_payload=int(
+                        config.settings.get("webhook_max_payload", 0)
+                    ),
+                )
             break
 
         # Mark current plan as failed and remaining tasks

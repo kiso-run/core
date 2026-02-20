@@ -31,7 +31,7 @@ from kiso.store import (
 )
 from kiso.worker import (
     _apply_curator_result,
-    _build_cancel_summary,
+    _build_cancel_summary, _build_failure_summary,
     _exec_task, _msg_task, _skill_task, _load_worker_prompt, _session_workspace,
     _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
@@ -567,7 +567,7 @@ class TestRunWorker:
         assert rows[0][0] == "Project uses pytest"
 
     async def test_max_replan_depth_notifies_user(self, db, tmp_path):
-        """When max replan depth is reached, a system message is saved."""
+        """When max replan depth is reached, a recovery msg task is created via LLM."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
             "exec_timeout": 5,
@@ -592,16 +592,27 @@ class TestRunWorker:
 
         with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=fail_plan), \
              patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock,
+                   return_value="Sorry, the plan failed after multiple retries."), \
              patch("kiso.worker.KISO_DIR", tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
-        # System message about max replan depth
+        # Recovery msg task created in the plan
+        plan = await get_plan_for_session(db, "sess1")
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        msg_tasks = [t for t in tasks if t["type"] == "msg"]
+        assert len(msg_tasks) >= 1
+        recovery = msg_tasks[-1]
+        assert recovery["status"] == "done"
+        assert "failed" in recovery["output"].lower()
+
+        # System message saved
         cur = await db.execute(
             "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
         )
         rows = await cur.fetchall()
         system_msgs = [r[0] for r in rows]
-        assert any("Max replan depth" in m for m in system_msgs)
+        assert any("failed" in m.lower() for m in system_msgs)
 
     async def test_replan_error_breaks_loop(self, db, tmp_path):
         """If replanning raises PlanError, worker breaks and moves on."""
@@ -3231,6 +3242,12 @@ class TestCancelMechanism:
         assert plan is not None
         assert plan["status"] == "cancelled"
 
+        # Check msg task created in the plan
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        msg_tasks = [t for t in tasks if t["type"] == "msg"]
+        assert any(t["status"] == "done" and "cancelled" in (t["output"] or "").lower()
+                   for t in msg_tasks)
+
         # Check system message was saved
         from kiso.store import get_oldest_messages
         msgs = await get_oldest_messages(db, "sess1", limit=100)
@@ -4026,3 +4043,160 @@ class TestSanitizeTaskDetail:
         skill_task = [t for t in tasks if t["type"] == "skill"][0]
         assert "tok-mysecret5678" not in (skill_task["args"] or "")
         assert "[REDACTED]" in (skill_task["args"] or "")
+
+
+class TestBuildFailureSummary:
+    def test_basic(self):
+        completed = [
+            {"type": "exec", "detail": "echo hello"},
+        ]
+        remaining = [{"type": "msg", "detail": "Report results"}]
+        result = _build_failure_summary(completed, remaining, "Run tests")
+        assert "The plan failed: Run tests" in result
+        assert "Completed (1):" in result
+        assert "[exec] echo hello" in result
+        assert "Failed/Skipped (1):" in result
+        assert "[msg] Report results" in result
+        assert "suggest next steps" in result
+
+    def test_with_reason(self):
+        result = _build_failure_summary([], [], "Goal", reason="LLM error")
+        assert "Failure reason: LLM error" in result
+
+    def test_no_completed(self):
+        remaining = [{"type": "msg", "detail": "done"}]
+        result = _build_failure_summary([], remaining, "Goal")
+        assert "No tasks were completed" in result
+        assert "Failed/Skipped (1):" in result
+
+    def test_no_remaining(self):
+        completed = [{"type": "exec", "detail": "echo ok"}]
+        result = _build_failure_summary(completed, [], "Goal")
+        assert "Completed (1):" in result
+        assert "Failed/Skipped" not in result
+
+
+class TestRecoveryMsgTask:
+    """Tests for recovery msg tasks created on plan failure paths."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_plan_failure_creates_recovery_msg(self, db, tmp_path):
+        """When plan fails without replan, a recovery msg task is created via LLM."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
+
+        fail_plan = {
+            "goal": "Do stuff",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
+
+        # Reviewer returns None replan_reason (replan_reason=None path)
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=fail_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=ReviewError("Review LLM broke")), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock,
+                   return_value="I'm sorry, something went wrong with the task."), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "failed"
+
+        # Recovery msg task created
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        msg_tasks = [t for t in tasks if t["type"] == "msg"]
+        recovery = [t for t in msg_tasks if t["status"] == "done" and "wrong" in (t["output"] or "").lower()]
+        assert len(recovery) == 1
+
+        # System message saved
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        rows = await cur.fetchall()
+        system_msgs = [r[0] for r in rows]
+        assert any("wrong" in m.lower() for m in system_msgs)
+
+    async def test_plan_failure_llm_fallback(self, db, tmp_path):
+        """When messenger also fails, raw failure detail is used as fallback."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
+
+        fail_plan = {
+            "goal": "Do stuff",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=fail_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=ReviewError("Review broke")), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock,
+                   side_effect=MessengerError("Messenger also broke")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        plan = await get_plan_for_session(db, "sess1")
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        msg_tasks = [t for t in tasks if t["type"] == "msg" and t["status"] == "done"]
+        # Fallback to raw failure summary
+        assert any("The plan failed" in (t["output"] or "") for t in msg_tasks)
+
+    async def test_cancel_creates_msg_task_in_db(self, db, tmp_path):
+        """Cancel handler creates a msg task record in the plan."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
+
+        cancel_plan = {
+            "goal": "Do stuff",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        cancel_event = asyncio.Event()
+
+        async def _review_then_cancel(*args, **kwargs):
+            cancel_event.set()
+            return REVIEW_OK
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do stuff", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=cancel_plan), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock,
+                   side_effect=_review_then_cancel), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock,
+                   return_value="The plan was cancelled."), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
+                timeout=5,
+            )
+
+        plan = await get_plan_for_session(db, "sess1")
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        msg_tasks = [t for t in tasks if t["type"] == "msg" and t["status"] == "done"]
+        assert any("cancelled" in (t["output"] or "").lower() for t in msg_tasks)

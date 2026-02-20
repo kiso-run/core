@@ -288,7 +288,6 @@ def _poll_status(
     active_spinner_total: int = 0
     planning_phase = False
     seen_any_task = False  # for blank-line spacing between tasks
-    shown_msg = False  # whether a bot msg was displayed
 
     while True:
         if counter % _POLL_EVERY == 0:
@@ -368,7 +367,6 @@ def _poll_status(
                     if ttype == "msg" and status == "done":
                         print(render_msg_output(output, caps, bot_name))
                         print(render_separator(caps))
-                        shown_msg = True
                     continue
 
                 # Msg tasks: only show via render_msg_output when done
@@ -376,7 +374,6 @@ def _poll_status(
                     if status == "done":
                         print(render_msg_output(output, caps, bot_name))
                         print(render_separator(caps))
-                        shown_msg = True
                     continue
 
                 # Print header for non-msg tasks (blank line between tasks)
@@ -466,22 +463,6 @@ def _poll_status(
 
         time.sleep(0.08)
         counter += 1
-
-    # Fallback: if no bot message was shown, notify the user
-    if not shown_msg and not quiet:
-        failed = [t for t in tasks if t.get("status") == "failed"]
-        if failed:
-            print(render_msg_output(
-                "Some tasks failed and no response was generated. "
-                "Check the errors above or try rephrasing your request.",
-                caps, bot_name,
-            ))
-        else:
-            print(render_msg_output(
-                "No response was generated. Try again.",
-                caps, bot_name,
-            ))
-        print(render_separator(caps))
 
     return max_task_id
 
