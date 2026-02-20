@@ -226,6 +226,7 @@ def _poll_status(
         render_msg_output,
         render_plan,
         render_review,
+        render_separator,
         render_task_header,
         render_task_output,
         spinner_frames,
@@ -271,6 +272,7 @@ def _poll_status(
                         sys.stdout.flush()
                         active_spinner_task = None
                     print(f"\n{render_plan(plan['goal'], task_count, caps)}")
+                    print(render_separator(caps))
                     shown_plan_id = pid
                 elif pid != shown_plan_id:
                     if active_spinner_task and caps.tty:
@@ -278,6 +280,7 @@ def _poll_status(
                         sys.stdout.flush()
                         active_spinner_task = None
                     print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
+                    print(render_separator(caps))
                     shown_plan_id = pid
                     seen.clear()
 
@@ -304,11 +307,13 @@ def _poll_status(
                 if quiet:
                     if ttype == "msg" and status == "done":
                         print(render_msg_output(output, caps))
+                        print(render_separator(caps))
                     continue
 
                 # Msg task done → show bot response
                 if ttype == "msg" and status == "done":
                     print(render_msg_output(output, caps))
+                    print(render_separator(caps))
                     continue
 
                 # Print header for non-msg tasks or running msg

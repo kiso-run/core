@@ -381,7 +381,10 @@ def test_poll_status_completes_on_plan_done(capsys, plain_caps):
     assert result == 5
     out = capsys.readouterr().out
     assert "Plan: Do stuff" in out
-    assert "Bot: Hello!" in out
+    assert "Bot:" in out
+    assert "Hello!" in out
+    # Separators present (ASCII dashes for plain_caps)
+    assert "----" in out
 
 
 def test_poll_status_renders_tasks(capsys, plain_caps):

@@ -10,14 +10,17 @@ from kiso.render import (
     _icon,
     _style,
     detect_caps,
+    extract_thinking,
     render_cancel_done,
     render_cancel_start,
     render_max_replan,
     render_msg_output,
     render_plan,
     render_review,
+    render_separator,
     render_task_header,
     render_task_output,
+    render_thinking,
     spinner_frames,
 )
 
@@ -267,13 +270,91 @@ def test_render_task_output_empty():
     assert result == ""
 
 
+# ── extract_thinking ─────────────────────────────────────────
+
+
+def test_extract_thinking_basic():
+    thinking, rest = extract_thinking("<think>hello</think>rest")
+    assert thinking == "hello"
+    assert rest == "rest"
+
+
+def test_extract_thinking_none():
+    text = "just plain text"
+    thinking, rest = extract_thinking(text)
+    assert thinking == ""
+    assert rest == text
+
+
+def test_extract_thinking_multiline():
+    text = "<think>line1\nline2\nline3</think>answer"
+    thinking, rest = extract_thinking(text)
+    assert "line1" in thinking
+    assert "line2" in thinking
+    assert "line3" in thinking
+    assert rest == "answer"
+
+
+def test_extract_thinking_alt_tag():
+    thinking, rest = extract_thinking("<thinking>deep thought</thinking>result")
+    assert thinking == "deep thought"
+    assert rest == "result"
+
+
+# ── render_thinking ──────────────────────────────────────────
+
+
+def test_render_thinking_basic():
+    result = render_thinking("I should greet the user", _COLOR)
+    assert "Thinking..." in result
+    assert "🤔" in result
+    assert "┊" in result
+    assert "I should greet the user" in result
+
+
+def test_render_thinking_truncation():
+    lines = "\n".join(f"thought {i}" for i in range(15))
+    result = render_thinking(lines, _COLOR)
+    assert "thought 9" in result
+    assert "thought 10" not in result
+    assert "5 more lines" in result
+
+
+# ── render_separator ─────────────────────────────────────────
+
+
+def test_render_separator_unicode():
+    result = render_separator(_COLOR)
+    assert "─" in result
+
+
+def test_render_separator_ascii():
+    result = render_separator(_PLAIN)
+    assert "-" in result
+    assert "\033[" not in result
+
+
 # ── render_msg_output ────────────────────────────────────────
 
 
-def test_render_msg_output():
+def test_render_msg_output_with_thinking():
+    result = render_msg_output("<think>hmm</think>Hello!", _COLOR)
+    assert "Bot:" in result
+    assert "Hello!" in result
+    assert "Thinking..." in result
+    assert "hmm" in result
+
+
+def test_render_msg_output_no_thinking():
     result = render_msg_output("Hello there!", _COLOR)
+    assert "Bot:" in result
+    assert "Hello there!" in result
+    assert "Thinking" not in result
+
+
+def test_render_msg_output():
+    result = render_msg_output("Hello there!", _PLAIN)
     assert "Bot: Hello there!" in result
-    assert result.startswith("\n")
 
 
 # ── render_cancel_start / done ───────────────────────────────

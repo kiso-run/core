@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass
 
@@ -64,6 +65,7 @@ _ICONS_UNICODE = {
     "fail": "✗",
     "replan": "↻",
     "cancel": "⊘",
+    "thinking": "🤔",
 }
 
 _ICONS_ASCII = {
@@ -75,6 +77,7 @@ _ICONS_ASCII = {
     "fail": "FAIL",
     "replan": "~>",
     "cancel": "X",
+    "thinking": "?",
 }
 
 
@@ -203,9 +206,56 @@ def render_task_output(
     return "\n".join(result_lines)
 
 
+def render_separator(caps: TermCaps) -> str:
+    """Render a horizontal separator line."""
+    char = "─" if caps.unicode else "-"
+    width = min(caps.width, 60)
+    line = char * width
+    return _style(line, _DIM, caps=caps)
+
+
+_THINK_RE = re.compile(
+    r"<think(?:ing)?>(.*?)</think(?:ing)?>",
+    re.DOTALL,
+)
+
+
+def extract_thinking(text: str) -> tuple[str, str]:
+    """Extract thinking blocks from text. Returns (thinking, clean_text)."""
+    blocks = []
+    for m in _THINK_RE.finditer(text):
+        blocks.append(m.group(1).strip())
+    clean = _THINK_RE.sub("", text).strip()
+    return "\n".join(blocks), clean
+
+
+def render_thinking(thinking: str, caps: TermCaps) -> str:
+    """Render thinking block with header and indented body."""
+    icon = "🤔" if caps.unicode else "?"
+    header = _style(f"{icon} Thinking...", _DIM, caps=caps)
+    indent_char = "┊" if caps.unicode else "|"
+    lines = thinking.splitlines()
+    max_lines = 10
+    shown = lines[:max_lines]
+    body = "\n".join(
+        _style(f"  {indent_char} {line}", _DIM, caps=caps) for line in shown
+    )
+    if len(lines) > max_lines:
+        more = _style(f"  ... ({len(lines) - max_lines} more lines)", _DIM, caps=caps)
+        body += "\n" + more
+    return f"{header}\n{body}"
+
+
 def render_msg_output(output: str, caps: TermCaps) -> str:
     """Render bot message output."""
-    return f"\nBot: {output}"
+    thinking, clean = extract_thinking(output)
+    parts: list[str] = []
+    if thinking:
+        parts.append(render_thinking(thinking, caps))
+        parts.append("")  # blank line
+    label = _style("Bot:", _BOLD, _GREEN, caps=caps)
+    parts.append(f"{label} {clean}")
+    return "\n".join(parts)
 
 
 def render_cancel_start(caps: TermCaps) -> str:
