@@ -419,10 +419,14 @@ class TestRunWorker:
         unprocessed = await get_unprocessed_messages(db)
         assert len(unprocessed) == 0
 
-        # One plan should exist (from the second message)
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan is not None
-        assert plan["status"] == "done"
+        # Two plans: first failed (PlanError), second done
+        cur = await db.execute(
+            "SELECT * FROM plans WHERE session = 'sess1' ORDER BY id"
+        )
+        plans = [dict(r) for r in await cur.fetchall()]
+        assert len(plans) == 2
+        assert plans[0]["status"] == "failed"
+        assert plans[1]["status"] == "done"
 
     async def test_marks_message_processed(self, db, tmp_path):
         config = _make_config()
@@ -3908,6 +3912,15 @@ class TestPlanErrorNotifiesUser:
         assert len(system_msgs) >= 1
         assert "Planning failed" in system_msgs[-1]["content"]
         assert "LLM call failed" in system_msgs[-1]["content"]
+
+        # Failed plan + msg task should exist for CLI visibility
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan is not None
+        assert plan["status"] == "failed"
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        assert len(tasks) == 1
+        assert tasks[0]["type"] == "msg"
+        assert "Planning failed" in tasks[0]["output"]
 
     async def test_plan_error_delivers_webhook(self, db, tmp_path):
         """PlanError + webhook → webhook called with error message."""

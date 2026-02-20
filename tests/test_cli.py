@@ -182,8 +182,8 @@ def _mock_config(has_cli_token: bool = True):
     return cfg
 
 
-def _make_args(session=None, api="http://localhost:8333", quiet=False):
-    return argparse.Namespace(session=session, api=api, quiet=quiet, command=None)
+def _make_args(session=None, api="http://localhost:8333", quiet=False, user=None):
+    return argparse.Namespace(session=session, api=api, quiet=quiet, user=user, command=None)
 
 
 def test_chat_exits_on_exit_command(capsys):
@@ -444,3 +444,45 @@ def test_poll_status_detects_replan(capsys, plain_caps):
     out = capsys.readouterr().out
     assert "Plan: First try" in out
     assert "Replan: Second try" in out
+
+
+def test_poll_status_exits_on_failed_plan(capsys, plain_caps):
+    """Plan with status=failed should exit the poll loop and show the error."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 42, "goal": "Failed", "status": "failed"},
+        "tasks": [
+            {"id": 5, "type": "msg", "detail": "error", "status": "done",
+             "output": "Planning failed: API key not set"},
+        ],
+        "worker_running": False,
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+
+    assert result == 5
+    out = capsys.readouterr().out
+    assert "Planning failed" in out or "API key" in out
+
+
+def test_poll_status_exits_when_worker_stopped(capsys, plain_caps):
+    """If worker stops and no plan exists, poll should exit with error."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": None,
+        "tasks": [],
+        "worker_running": False,
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 99, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "worker stopped" in out

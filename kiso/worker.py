@@ -801,7 +801,12 @@ async def _process_message(
         )
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
-        error_text = f"I wasn't able to process your request. Planning failed: {e}"
+        error_text = f"Planning failed: {e}"
+        # Create a failed plan + msg task so the CLI can detect the failure
+        fail_plan_id = await create_plan(db, session, msg_id, "Failed")
+        fail_task_id = await create_task(db, fail_plan_id, session, "msg", error_text)
+        await update_task(db, fail_task_id, status="done", output=error_text)
+        await update_plan_status(db, fail_plan_id, "failed")
         await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
         sess = await get_session(db, session)
         webhook_url = sess.get("webhook") if sess else None

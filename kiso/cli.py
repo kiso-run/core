@@ -231,10 +231,14 @@ def _poll_status(
         spinner_frames,
     )
 
+    _MAX_POLL_SECONDS = 300  # safety net: 5 min max
+
     seen: dict[int, str] = {}
     shown_plan_id: int | None = None
     max_task_id = base_task_id
     counter = 0
+    start_time = time.time()
+    no_plan_since_worker_stopped = 0  # consecutive polls with no plan and no worker
     frames = spinner_frames(caps)
     active_spinner_task: dict | None = None
     active_spinner_index: int = 0
@@ -337,6 +341,29 @@ def _poll_status(
                 if active_spinner_task and caps.tty:
                     sys.stdout.write(f"\r{CLEAR_LINE}")
                     sys.stdout.flush()
+                break
+
+            # Fallback: worker stopped without creating a plan for this message
+            worker_running = data.get("worker_running", False)
+            has_matching_plan = plan and plan.get("message_id") == message_id
+            if not worker_running and not has_matching_plan:
+                no_plan_since_worker_stopped += 1
+                # Wait a few polls to avoid race condition (worker just starting)
+                if no_plan_since_worker_stopped >= 3:
+                    if active_spinner_task and caps.tty:
+                        sys.stdout.write(f"\r{CLEAR_LINE}")
+                        sys.stdout.flush()
+                    print("error: worker stopped without producing a result")
+                    break
+            else:
+                no_plan_since_worker_stopped = 0
+
+            # Safety net: absolute timeout
+            if time.time() - start_time > _MAX_POLL_SECONDS:
+                if active_spinner_task and caps.tty:
+                    sys.stdout.write(f"\r{CLEAR_LINE}")
+                    sys.stdout.flush()
+                print("error: timed out waiting for response")
                 break
 
         # Animate spinner on TTY
