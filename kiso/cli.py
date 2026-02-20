@@ -164,7 +164,7 @@ def _chat(args: argparse.Namespace) -> None:
     try:
         while True:
             try:
-                text = input("You: ")
+                text = input(f"{user}: ")
             except (KeyboardInterrupt, EOFError):
                 print()
                 break
