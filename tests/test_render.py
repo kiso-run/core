@@ -386,7 +386,7 @@ def test_render_user_prompt_plain():
 
 def test_render_banner_color():
     result = render_banner("Kiso", "host@alice", _COLOR)
-    assert "基礎 Kiso" in result
+    assert "Kiso 基礎" in result
     assert "host@alice" in result
     assert "/help" in result
     assert "\033[35m" in result  # magenta for bot name

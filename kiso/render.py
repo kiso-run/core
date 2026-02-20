@@ -266,7 +266,7 @@ def render_user_prompt(user: str, caps: TermCaps) -> str:
 def render_banner(bot_name: str, session: str, caps: TermCaps) -> str:
     """Render welcome banner at chat startup."""
     sep = render_separator(caps)
-    display_name = f"  基礎 {bot_name}" if caps.unicode and bot_name == "Kiso" else f"  {bot_name}"
+    display_name = f"  {bot_name} 基礎" if caps.unicode and bot_name == "Kiso" else f"  {bot_name}"
     name_line = _style(display_name, _BOLD, _MAGENTA, caps=caps)
     session_line = _style(f"  session: {session}", _DIM, caps=caps)
     hint = _style("  Type a message. /help for commands.", _DIM, caps=caps)
