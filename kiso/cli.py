@@ -310,13 +310,14 @@ def _poll_status(
                         print(render_separator(caps))
                     continue
 
-                # Msg task done → show bot response
-                if ttype == "msg" and status == "done":
-                    print(render_msg_output(output, caps))
-                    print(render_separator(caps))
+                # Msg tasks: only show via render_msg_output when done
+                if ttype == "msg":
+                    if status == "done":
+                        print(render_msg_output(output, caps))
+                        print(render_separator(caps))
                     continue
 
-                # Print header for non-msg tasks or running msg
+                # Print header for non-msg tasks
                 print(render_task_header(task, idx, total, caps))
 
                 # Show output for completed/failed tasks
