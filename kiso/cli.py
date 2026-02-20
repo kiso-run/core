@@ -10,6 +10,28 @@ class _ExitRepl(Exception):
     """Raised by /exit or /quit to break out of the REPL loop."""
 
 
+_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/quit", "/sessions", "/status"]
+
+
+def _setup_readline() -> None:
+    """Configure tab-completion for slash commands."""
+    try:
+        import readline
+    except ImportError:
+        return
+
+    def completer(text: str, state: int) -> str | None:
+        if text.startswith("/"):
+            matches = [c for c in _SLASH_COMMANDS if c.startswith(text)]
+        else:
+            matches = []
+        return matches[state] if state < len(matches) else None
+
+    readline.set_completer(completer)
+    readline.set_completer_delims(" \t\n")
+    readline.parse_and_bind("tab: complete")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kiso", description="Kiso agent bot")
 
@@ -167,6 +189,10 @@ def _chat(args: argparse.Namespace) -> None:
     bot_name = cfg.settings.get("bot_name", "Kiso")
     prompt = render_user_prompt(user, caps)
     print(render_banner(bot_name, session, caps))
+
+    # Tab-completion for slash commands
+    _setup_readline()
+
     last_task_id = 0
     try:
         while True:
@@ -276,7 +302,18 @@ def _poll_status(
 
             data = resp.json()
             plan = data.get("plan")
-            tasks = data.get("tasks", [])
+            all_tasks = data.get("tasks", [])
+
+            # Only consider tasks belonging to the current plan
+            current_plan_id = (
+                plan["id"]
+                if plan and plan.get("message_id") == message_id
+                else None
+            )
+            tasks = [
+                t for t in all_tasks
+                if current_plan_id is not None and t.get("plan_id") == current_plan_id
+            ]
 
             # Show plan goal / replan detection (only for current message)
             if plan and not quiet and plan.get("message_id") == message_id:

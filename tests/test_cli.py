@@ -8,7 +8,15 @@ from unittest.mock import MagicMock, call, patch
 import httpx
 import pytest
 
-from kiso.cli import _ExitRepl, _handle_slash, _poll_status, build_parser, main
+from kiso.cli import (
+    _ExitRepl,
+    _SLASH_COMMANDS,
+    _handle_slash,
+    _poll_status,
+    _setup_readline,
+    build_parser,
+    main,
+)
 from kiso.render import TermCaps
 
 
@@ -368,7 +376,7 @@ def test_poll_status_completes_on_plan_done(capsys, plain_caps):
     status_resp.json.return_value = {
         "plan": {"id": 1, "message_id": 42, "goal": "Do stuff", "status": "done"},
         "tasks": [
-            {"id": 5, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 5, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Hello!"},
         ],
     }
@@ -394,7 +402,7 @@ def test_poll_status_renders_tasks(capsys, plain_caps):
     resp1.json.return_value = {
         "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
         "tasks": [
-            {"id": 3, "type": "exec", "detail": "ls", "status": "running", "output": ""},
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running", "output": ""},
         ],
     }
     resp1.raise_for_status = MagicMock()
@@ -403,9 +411,9 @@ def test_poll_status_renders_tasks(capsys, plain_caps):
     resp2.json.return_value = {
         "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "done"},
         "tasks": [
-            {"id": 3, "type": "exec", "detail": "ls", "status": "done",
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "done",
              "output": "file.txt"},
-            {"id": 4, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 4, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Done."},
         ],
     }
@@ -435,7 +443,7 @@ def test_poll_status_detects_replan(capsys, plain_caps):
     resp2.json.return_value = {
         "plan": {"id": 2, "message_id": 5, "goal": "Second try", "status": "done"},
         "tasks": [
-            {"id": 7, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 7, "plan_id": 2, "type": "msg", "detail": "respond", "status": "done",
              "output": "Ok"},
         ],
     }
@@ -457,7 +465,7 @@ def test_poll_status_exits_on_failed_plan(capsys, plain_caps):
     status_resp.json.return_value = {
         "plan": {"id": 1, "message_id": 42, "goal": "Failed", "status": "failed"},
         "tasks": [
-            {"id": 5, "type": "msg", "detail": "error", "status": "done",
+            {"id": 5, "plan_id": 1, "type": "msg", "detail": "error", "status": "done",
              "output": "Planning failed: API key not set"},
         ],
         "worker_running": False,
@@ -520,9 +528,9 @@ def test_poll_status_quiet_mode_only_shows_done_msg(capsys, plain_caps):
     status_resp.json.return_value = {
         "plan": {"id": 1, "message_id": 7, "goal": "Run ls", "status": "done"},
         "tasks": [
-            {"id": 1, "type": "exec", "detail": "ls -la", "status": "done",
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "ls -la", "status": "done",
              "output": "file1.txt"},
-            {"id": 2, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Here are your files."},
         ],
     }
@@ -549,7 +557,7 @@ def test_poll_status_quiet_mode_skips_running_msg(capsys, plain_caps):
     resp1.json.return_value = {
         "plan": {"id": 1, "message_id": 7, "goal": "Go", "status": "running"},
         "tasks": [
-            {"id": 1, "type": "msg", "detail": "respond", "status": "running",
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond", "status": "running",
              "output": ""},
         ],
     }
@@ -558,7 +566,7 @@ def test_poll_status_quiet_mode_skips_running_msg(capsys, plain_caps):
     resp2.json.return_value = {
         "plan": {"id": 1, "message_id": 7, "goal": "Go", "status": "done"},
         "tasks": [
-            {"id": 1, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Done!"},
         ],
     }
@@ -579,9 +587,9 @@ def test_poll_status_shows_output_for_failed_task(capsys, plain_caps):
     status_resp.json.return_value = {
         "plan": {"id": 1, "message_id": 5, "goal": "Run cmd", "status": "done"},
         "tasks": [
-            {"id": 1, "type": "exec", "detail": "bad-cmd", "status": "failed",
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "bad-cmd", "status": "failed",
              "output": "command not found: bad-cmd"},
-            {"id": 2, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "The command failed."},
         ],
     }
@@ -603,7 +611,7 @@ def test_poll_status_msg_task_not_shown_while_running(capsys, plain_caps):
     resp1.json.return_value = {
         "plan": {"id": 1, "message_id": 3, "goal": "Hi", "status": "running"},
         "tasks": [
-            {"id": 1, "type": "msg", "detail": "respond", "status": "running",
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond", "status": "running",
              "output": ""},
         ],
     }
@@ -612,7 +620,7 @@ def test_poll_status_msg_task_not_shown_while_running(capsys, plain_caps):
     resp2.json.return_value = {
         "plan": {"id": 1, "message_id": 3, "goal": "Hi", "status": "done"},
         "tasks": [
-            {"id": 1, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Hello!"},
         ],
     }
@@ -636,9 +644,9 @@ def test_poll_status_shows_review_verdict(capsys, plain_caps):
     status_resp.json.return_value = {
         "plan": {"id": 1, "message_id": 8, "goal": "Do stuff", "status": "done"},
         "tasks": [
-            {"id": 1, "type": "exec", "detail": "ls", "status": "done",
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "ls", "status": "done",
              "output": "ok", "review_verdict": "ok"},
-            {"id": 2, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Done."},
         ],
     }
@@ -725,7 +733,7 @@ def test_poll_status_shows_planner_spinner(capsys):
     resp2.json.return_value = {
         "plan": {"id": 1, "message_id": 10, "goal": "Do stuff", "status": "done"},
         "tasks": [
-            {"id": 1, "type": "msg", "detail": "respond", "status": "done",
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "Done."},
         ],
     }
@@ -1052,3 +1060,96 @@ def test_slash_clear_noop_without_tty(capsys):
 
     out = capsys.readouterr().out
     assert "\033[2J" not in out
+
+
+# ── readline tab-completion ──────────────────────────────────
+
+
+def test_setup_readline_registers_completer():
+    """_setup_readline should register a completer with readline."""
+    import readline
+
+    old = readline.get_completer()
+    try:
+        _setup_readline()
+        completer = readline.get_completer()
+        assert completer is not None
+
+        # Tab on "/" should suggest all commands
+        results = []
+        for i in range(10):
+            r = completer("/", i)
+            if r is None:
+                break
+            results.append(r)
+        assert set(results) == set(_SLASH_COMMANDS)
+
+        # Tab on "/he" should only suggest "/help"
+        assert completer("/he", 0) == "/help"
+        assert completer("/he", 1) is None
+
+        # Non-slash text returns nothing
+        assert completer("hello", 0) is None
+    finally:
+        readline.set_completer(old)
+
+
+# ── poll_status plan_id filtering ────────────────────────────
+
+
+def test_poll_status_ignores_tasks_from_old_plan(capsys, plain_caps):
+    """Tasks from a previous plan should not be displayed."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 2, "message_id": 50, "goal": "New goal", "status": "done"},
+        "tasks": [
+            # Old task from plan_id=1 — should be ignored
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls -la $HOME",
+             "status": "done", "output": "old stuff"},
+            # Current task from plan_id=2 — should be shown
+            {"id": 7, "plan_id": 2, "type": "msg", "detail": "respond",
+             "status": "done", "output": "New answer"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 50, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "New answer" in out
+    assert "old stuff" not in out
+    assert "ls -la" not in out
+    assert result == 7
+
+
+def test_poll_status_task_count_reflects_current_plan(capsys, plain_caps):
+    """Plan header task count should only count tasks from current plan."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 5, "message_id": 20, "goal": "Do it", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 4, "type": "exec", "detail": "old",
+             "status": "done", "output": "x"},
+            {"id": 2, "plan_id": 4, "type": "msg", "detail": "old msg",
+             "status": "done", "output": "x"},
+            {"id": 3, "plan_id": 5, "type": "exec", "detail": "new cmd",
+             "status": "done", "output": "y"},
+            {"id": 4, "plan_id": 5, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Done!"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 20, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # Should show "2 tasks" (from plan_id=5), not "4 tasks"
+    assert "2 tasks" in out
+    assert "Done!" in out
+    assert "old" not in out.lower().split("do it")[0]  # "old" shouldn't appear before plan header
