@@ -287,6 +287,7 @@ def _poll_status(
     active_spinner_index: int = 0
     active_spinner_total: int = 0
     planning_phase = False
+    seen_any_task = False  # for blank-line spacing between tasks
 
     while True:
         if counter % _POLL_EVERY == 0:
@@ -339,6 +340,7 @@ def _poll_status(
                     print(render_separator(caps))
                     shown_plan_id = pid
                     seen.clear()
+                    seen_any_task = False
 
             total = len(tasks)
 
@@ -374,12 +376,16 @@ def _poll_status(
                         print(render_separator(caps))
                     continue
 
-                # Print header for non-msg tasks
+                # Print header for non-msg tasks (blank line between tasks)
+                if seen_any_task:
+                    print()
+                seen_any_task = True
                 print(render_task_header(task, idx, total, caps))
 
                 # Show output for completed/failed tasks
-                if status in ("done", "failed") and output:
-                    out = render_task_output(output, caps)
+                display_output = output or (task.get("stderr", "") or "") if status in ("done", "failed") else ""
+                if display_output:
+                    out = render_task_output(display_output, caps)
                     if out:
                         print(out)
 

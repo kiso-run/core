@@ -604,6 +604,59 @@ def test_poll_status_shows_output_for_failed_task(capsys, plain_caps):
     assert "command not found" in out
 
 
+def test_poll_status_shows_stderr_for_failed_task(capsys, plain_caps):
+    """Failed tasks with no output should fall back to stderr."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 5, "goal": "Run cmd", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "ls /nope",
+             "status": "failed", "output": "", "stderr": "No such file or directory"},
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "It failed."},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "No such file or directory" in out
+    assert "exec: ls /nope" in out
+
+
+def test_poll_status_blank_line_between_tasks(capsys, plain_caps):
+    """Non-msg tasks should have a blank line between them."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 5, "goal": "Two cmds", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "ls", "status": "done",
+             "output": "file.txt"},
+            {"id": 2, "plan_id": 1, "type": "exec", "detail": "pwd", "status": "done",
+             "output": "/home"},
+            {"id": 3, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Done."},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # There should be a blank line between the two exec tasks
+    lines = out.splitlines()
+    # Find the line with "exec: pwd" and check there's a blank line before it
+    pwd_idx = next(i for i, l in enumerate(lines) if "exec: pwd" in l)
+    assert lines[pwd_idx - 1].strip() == "", f"Expected blank line before 'exec: pwd', got: {lines[pwd_idx - 1]!r}"
+
+
 def test_poll_status_msg_task_not_shown_while_running(capsys, plain_caps):
     """Msg tasks should NOT show a header when running, only render_msg_output when done."""
     mock_client = MagicMock()
