@@ -240,6 +240,7 @@ def _poll_status(
         CLEAR_LINE,
         render_msg_output,
         render_plan,
+        render_planner_spinner,
         render_review,
         render_separator,
         render_task_header,
@@ -259,6 +260,7 @@ def _poll_status(
     active_spinner_task: dict | None = None
     active_spinner_index: int = 0
     active_spinner_total: int = 0
+    planning_phase = False
 
     while True:
         if counter % _POLL_EVERY == 0:
@@ -282,18 +284,20 @@ def _poll_status(
                 task_count = len(tasks)
                 if shown_plan_id is None:
                     # Clear spinner line before printing plan
-                    if active_spinner_task and caps.tty:
+                    if (active_spinner_task or planning_phase) and caps.tty:
                         sys.stdout.write(f"\r{CLEAR_LINE}")
                         sys.stdout.flush()
                         active_spinner_task = None
+                        planning_phase = False
                     print(f"\n{render_plan(plan['goal'], task_count, caps)}")
                     print(render_separator(caps))
                     shown_plan_id = pid
                 elif pid != shown_plan_id:
-                    if active_spinner_task and caps.tty:
+                    if (active_spinner_task or planning_phase) and caps.tty:
                         sys.stdout.write(f"\r{CLEAR_LINE}")
                         sys.stdout.flush()
                         active_spinner_task = None
+                        planning_phase = False
                     print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
                     print(render_separator(caps))
                     shown_plan_id = pid
@@ -314,10 +318,11 @@ def _poll_status(
                 output = task.get("output", "") or ""
 
                 # Clear spinner line before printing new content
-                if active_spinner_task and caps.tty:
+                if (active_spinner_task or planning_phase) and caps.tty:
                     sys.stdout.write(f"\r{CLEAR_LINE}")
                     sys.stdout.flush()
                     active_spinner_task = None
+                    planning_phase = False
 
                 if quiet:
                     if ttype == "msg" and status == "done":
@@ -351,6 +356,17 @@ def _poll_status(
                     active_spinner_task = task
                     active_spinner_index = idx
                     active_spinner_total = total
+
+            # Detect planning phase: plan running, no task executing yet
+            has_matching_running_plan = (
+                plan
+                and plan.get("message_id") == message_id
+                and plan.get("status") == "running"
+            )
+            any_task_running = any(t.get("status") == "running" for t in tasks)
+            planning_phase = bool(
+                has_matching_running_plan and not any_task_running and not active_spinner_task
+            )
 
             # Done condition: plan matches our message and is no longer running
             if (
@@ -388,14 +404,19 @@ def _poll_status(
                 break
 
         # Animate spinner on TTY
-        if active_spinner_task and caps.tty:
+        if caps.tty:
             frame = frames[counter % len(frames)]
-            line = render_task_header(
-                active_spinner_task, active_spinner_index,
-                active_spinner_total, caps, spinner_frame=frame,
-            )
-            sys.stdout.write(f"\r{CLEAR_LINE}{line}")
-            sys.stdout.flush()
+            if active_spinner_task:
+                line = render_task_header(
+                    active_spinner_task, active_spinner_index,
+                    active_spinner_total, caps, spinner_frame=frame,
+                )
+                sys.stdout.write(f"\r{CLEAR_LINE}{line}")
+                sys.stdout.flush()
+            elif planning_phase:
+                line = render_planner_spinner(caps, frame)
+                sys.stdout.write(f"\r{CLEAR_LINE}{line}")
+                sys.stdout.flush()
 
         time.sleep(0.08)
         counter += 1

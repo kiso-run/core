@@ -277,6 +277,14 @@ def render_banner(bot_name: str, session: str, caps: TermCaps) -> str:
     return f"\n{sep}\n{name_line}\n{session_line}\n{hint}\n{sep}\n"
 
 
+def render_planner_spinner(caps: TermCaps, spinner_frame: str) -> str:
+    """Render planner phase spinner (e.g. '◆ Planning... ⠋')."""
+    icon = _icon("plan", caps)
+    frame = _style(spinner_frame, _CYAN, caps=caps)
+    text = f"{icon} Planning... {frame}"
+    return _style(text, _CYAN, caps=caps)
+
+
 def render_cancel_start(caps: TermCaps) -> str:
     """Render cancel-in-progress message."""
     icon = _icon("cancel", caps)

@@ -706,6 +706,39 @@ def test_poll_status_worker_grace_period(capsys, plain_caps):
     assert mock_client.get.call_count >= 3
 
 
+def test_poll_status_shows_planner_spinner(capsys):
+    """While plan is running with no tasks yet, show Planning... spinner."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    # First poll: plan running, no tasks (planner phase)
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Do stuff", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: plan done with a msg task
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Do stuff", "status": "done"},
+        "tasks": [
+            {"id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Done."},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=tty_caps)
+
+    out = capsys.readouterr().out
+    assert "Planning..." in out
+
+
 def test_chat_http_status_error_on_msg_post(capsys):
     """HTTPStatusError on /msg POST should print status code and continue."""
     from kiso.cli import _chat

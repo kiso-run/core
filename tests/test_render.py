@@ -17,6 +17,7 @@ from kiso.render import (
     render_max_replan,
     render_msg_output,
     render_plan,
+    render_planner_spinner,
     render_review,
     render_separator,
     render_task_header,
@@ -449,6 +450,23 @@ def test_spinner_frames_ascii():
     frames = spinner_frames(_caps(unicode=False))
     assert "|" in frames
     assert len(frames) == 4
+
+
+# ── render_planner_spinner ───────────────────────────────────
+
+
+def test_render_planner_spinner_unicode():
+    result = render_planner_spinner(_COLOR, "⠋")
+    assert "Planning..." in result
+    assert "◆" in result
+    assert "⠋" in result
+
+
+def test_render_planner_spinner_ascii():
+    result = render_planner_spinner(_PLAIN, "|")
+    assert "Planning..." in result
+    assert "*" in result
+    assert "\033[" not in result
 
 
 # ── Color assertions ─────────────────────────────────────────
