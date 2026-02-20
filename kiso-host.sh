@@ -29,6 +29,9 @@ if [[ -t 0 && -t 1 ]]; then
     TTY_FLAGS="-it"
 fi
 
+# Pass terminal capabilities into the container
+TERM_ENV=(-e "TERM=${TERM:-xterm}" -e "COLORTERM=${COLORTERM:-}" -e "LANG=${LANG:-C.UTF-8}")
+
 case "${1:-}" in
     logs)
         shift
@@ -45,7 +48,7 @@ case "${1:-}" in
         ;;
     shell)
         require_running
-        docker exec $TTY_FLAGS "$CONTAINER" bash
+        docker exec $TTY_FLAGS "${TERM_ENV[@]}" "$CONTAINER" bash
         ;;
     status)
         state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo "not found")
@@ -92,6 +95,6 @@ HELP
         ;;
     *)
         require_running
-        docker exec $TTY_FLAGS -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" "$@"
+        docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" "$@"
         ;;
 esac
