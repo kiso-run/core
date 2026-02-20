@@ -36,6 +36,7 @@ description = "Echo skill"
 
 [kiso.skill]
 summary = "Echoes input back"
+usage_guide = "Just pass any text."
 
 [kiso.skill.args]
 text = { type = "string", required = true, description = "text to echo" }
@@ -50,6 +51,7 @@ description = "Web search"
 
 [kiso.skill]
 summary = "Web search via API"
+usage_guide = "Use short queries. Prefer English keywords."
 session_secrets = ["api_token"]
 
 [kiso.skill.args]
@@ -211,6 +213,36 @@ class TestValidateManifest:
         errors = _validate_manifest(manifest, tmp_path / "bad")
         assert any("session_secrets must be a list" in e for e in errors)
 
+    def test_usage_guide_valid_string(self, tmp_path):
+        _create_skill(tmp_path, "ok", MINIMAL_TOML)
+        import tomllib
+        with open(tmp_path / "ok" / "kiso.toml", "rb") as f:
+            manifest = tomllib.load(f)
+        errors = _validate_manifest(manifest, tmp_path / "ok")
+        assert errors == []
+
+    def test_usage_guide_not_string(self, tmp_path):
+        toml = MINIMAL_TOML.replace(
+            'usage_guide = "Just pass any text."',
+            "usage_guide = 42",
+        )
+        _create_skill(tmp_path, "bad", toml)
+        import tomllib
+        with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
+            manifest = tomllib.load(f)
+        errors = _validate_manifest(manifest, tmp_path / "bad")
+        assert any("usage_guide is required" in e for e in errors)
+
+    def test_usage_guide_absent(self, tmp_path):
+        """usage_guide is required — absence causes an error."""
+        toml = MINIMAL_TOML.replace('usage_guide = "Just pass any text."\n', "")
+        _create_skill(tmp_path, "bad", toml)
+        import tomllib
+        with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
+            manifest = tomllib.load(f)
+        errors = _validate_manifest(manifest, tmp_path / "bad")
+        assert any("usage_guide is required" in e for e in errors)
+
 
 # --- _env_var_name ---
 
@@ -330,6 +362,23 @@ class TestDiscoverSkills:
         # Should come from alpha-echo (sorted first)
         assert "alpha-echo" in result[0]["path"]
 
+    def test_discover_usage_guide_from_toml(self, tmp_path):
+        """usage_guide from toml is returned when no local override."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "echo", MINIMAL_TOML)
+        result = discover_skills(skills_dir)
+        assert result[0]["usage_guide"] == "Just pass any text."
+
+    def test_discover_usage_guide_override_file(self, tmp_path):
+        """Local override file takes priority over toml default."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        skill_dir = _create_skill(skills_dir, "echo", MINIMAL_TOML)
+        (skill_dir / "usage_guide.local.md").write_text("My custom guide\n")
+        result = discover_skills(skills_dir)
+        assert result[0]["usage_guide"] == "My custom guide"
+
 
 # --- check_deps ---
 
@@ -430,6 +479,18 @@ class TestBuildPlannerSkillList:
         skills = [self._make_skill()]
         result = build_planner_skill_list(skills, "admin")
         assert result.startswith("Available skills:")
+
+    def test_planner_list_includes_guide(self):
+        skill = self._make_skill()
+        skill["usage_guide"] = "Use short queries"
+        result = build_planner_skill_list([skill], "admin")
+        assert "guide: Use short queries" in result
+
+    def test_planner_list_no_guide(self):
+        skill = self._make_skill()
+        skill["usage_guide"] = ""
+        result = build_planner_skill_list([skill], "admin")
+        assert "guide:" not in result
 
 
 # --- validate_skill_args ---

@@ -34,6 +34,7 @@ description = "Web search using Brave Search API"
 [kiso.skill]
 summary = "Web search using Brave Search API"    # one-liner for the planner
 # session_secrets = ["github_token"]             # user-provided credentials (not needed for this skill)
+# usage_guide = "Use short queries. Prefer English keywords."  # operational guidance for the planner
 
 [kiso.skill.args]
 query = { type = "string", required = true, description = "search query" }
@@ -54,15 +55,35 @@ bin = ["curl"]                    # checked with `which` after install
 
 See [security.md — Secrets](security.md#5-secrets) for the full comparison and scoping rules.
 
+### Usage Guide
+
+The `usage_guide` field in `[kiso.skill]` provides operational guidance visible
+to the planner. On install, this text is copied to `usage_guide.local.md` in
+the skill directory. Edit that file to customize how the agent uses the skill.
+
+The local file is git-ignored — `kiso skill update` won't overwrite your edits.
+
+Example:
+
+```toml
+[kiso.skill]
+summary = "Web search using Brave Search API"
+usage_guide = """\
+Use short, specific queries. Prefer English keywords.
+For code searches, include the language name.
+max_results=3 is usually enough."""
+```
+
 ### What the Planner Sees
 
-The planner receives the one-liner and the args schema:
+The planner receives the one-liner, the args schema, and the usage guide (if set):
 
 ```
 Available skills:
 - search — Web search using Brave Search API
   args: query (string, required): search query
         max_results (int, optional, default=5): number of results to return
+  guide: Use short, specific queries. Prefer English keywords.
 ```
 
 This is enough for the planner to generate correct invocations. No ambiguity.

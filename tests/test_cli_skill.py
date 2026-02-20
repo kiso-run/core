@@ -346,7 +346,7 @@ def test_skill_search_no_results(capsys):
 # ── _skill_install ───────────────────────────────────────────
 
 
-def _fake_clone_with_manifest(name="search", summary="Web search"):
+def _fake_clone_with_manifest(name="search", summary="Web search", usage_guide="Use default guidance."):
     """Return a fake_clone function that writes a valid skill repo."""
     def fake_clone(cmd, **kwargs):
         dest = Path(cmd[3])
@@ -355,6 +355,7 @@ def _fake_clone_with_manifest(name="search", summary="Web search"):
             f'[kiso]\ntype = "skill"\nname = "{name}"\n'
             f"[kiso.skill]\n"
             f'summary = "{summary}"\n'
+            f'usage_guide = "{usage_guide}"\n'
         )
         (dest / "run.py").write_text("pass\n")
         (dest / "pyproject.toml").write_text(f"[project]\nname = '{name}'\n")
@@ -500,6 +501,7 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
             '[kiso]\ntype = "skill"\nname = "search"\n'
             "[kiso.skill]\n"
             'summary = "Search"\n'
+            'usage_guide = "Use default guidance."\n'
         )
         (dest / "run.py").write_text("pass\n")
         (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
@@ -817,7 +819,7 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n[kiso.skill]\nsummary = "s"\n'
+            '[kiso]\ntype = "skill"\nname = "search"\n[kiso.skill]\nsummary = "s"\nusage_guide = "g"\n'
         )
         (dest / "run.py").write_text("pass\n")
         (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
@@ -889,6 +891,7 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
             '[kiso]\ntype = "skill"\nname = "search"\n'
             "[kiso.skill]\n"
             'summary = "Search"\n'
+            'usage_guide = "Use default guidance."\n'
             "[kiso.skill.env]\n"
             'api_key = "Required API key"\n'
         )
@@ -992,3 +995,173 @@ def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
     out = capsys.readouterr().out
     assert "missing binaries: docker" in out
     assert "updated" in out
+
+
+# ── _skill_install: usage_guide override ─────────────────
+
+
+def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
+    """Install creates usage_guide.local.md from toml default."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    guide_text = "Use short queries. Prefer English."
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "search"\n'
+            "[kiso.skill]\n"
+            'summary = "Search"\n'
+            f'usage_guide = "{guide_text}"\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
+        # Create .git/info/exclude like a real git clone would
+        (dest / ".git" / "info").mkdir(parents=True)
+        (dest / ".git" / "info" / "exclude").write_text("# git exclude\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    override_path = skills_dir / "search" / "usage_guide.local.md"
+    assert override_path.exists()
+    assert override_path.read_text() == guide_text + "\n"
+
+
+def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
+    """Install adds usage_guide.local.md to .git/info/exclude."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "search"\n'
+            "[kiso.skill]\n"
+            'summary = "Search"\n'
+            'usage_guide = "Some guide"\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
+        (dest / ".git" / "info").mkdir(parents=True)
+        (dest / ".git" / "info" / "exclude").write_text("# git exclude\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    exclude_path = skills_dir / "search" / ".git" / "info" / "exclude"
+    assert "usage_guide.local.md" in exclude_path.read_text()
+
+
+def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
+    """No usage_guide in toml → no override file created (skill won't validate
+    but we test the file-creation logic in isolation via a passing manifest
+    that has an empty usage_guide-like value)."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    # usage_guide present but empty string — file should not be created
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "search"\n'
+            "[kiso.skill]\n"
+            'summary = "Search"\n'
+            'usage_guide = "g"\n'  # minimal to pass validation
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    # File is created because usage_guide is non-empty
+    assert (skills_dir / "search" / "usage_guide.local.md").exists()
+
+
+def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
+    """Install does not overwrite an existing usage_guide.local.md."""
+    from kiso.cli_skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    custom_content = "My custom guide\n"
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "search"\n'
+            "[kiso.skill]\n"
+            'summary = "Search"\n'
+            'usage_guide = "Default guide"\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
+        # Simulate existing override file (e.g., restored from backup)
+        (dest / "usage_guide.local.md").write_text(custom_content)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("kiso.cli_skill.check_deps", return_value=[]),
+    ):
+        _skill_install(argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        ))
+
+    override_path = skills_dir / "search" / "usage_guide.local.md"
+    assert override_path.read_text() == custom_content

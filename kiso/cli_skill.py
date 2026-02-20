@@ -259,6 +259,20 @@ def _skill_install(args) -> None:
             if not os.environ.get(var_name):
                 print(f"warning: {var_name} not set")
 
+        # Create usage_guide.local.md from toml default
+        usage_guide = skill_section.get("usage_guide", "")
+        override_path = skill_dir / "usage_guide.local.md"
+        if usage_guide and not override_path.exists():
+            override_path.write_text(usage_guide + "\n")
+
+        # Add usage_guide.local.md to .git/info/exclude so git pull won't conflict
+        exclude_path = skill_dir / ".git" / "info" / "exclude"
+        if exclude_path.exists():
+            exclude_content = exclude_path.read_text()
+            if "usage_guide.local.md" not in exclude_content:
+                with open(exclude_path, "a") as f:
+                    f.write("\nusage_guide.local.md\n")
+
         # Remove installing marker
         installing = skill_dir / ".installing"
         if installing.exists():

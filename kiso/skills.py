@@ -74,6 +74,10 @@ def _validate_manifest(manifest: dict, skill_dir: Path) -> list[str]:
     if session_secrets is not None and not isinstance(session_secrets, list):
         errors.append("kiso.skill.session_secrets must be a list of strings")
 
+    # Validate usage_guide (required string)
+    if not skill_section.get("usage_guide") or not isinstance(skill_section.get("usage_guide"), str):
+        errors.append("kiso.skill.usage_guide is required and must be a string")
+
     # Check required files
     if not (skill_dir / "run.py").exists():
         errors.append("run.py is missing")
@@ -142,6 +146,14 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
         env_decl = skill_section.get("env", {})
         session_secrets = skill_section.get("session_secrets", [])
 
+        # usage_guide: local override file takes priority over toml default
+        usage_guide_default = skill_section.get("usage_guide", "")
+        override_path = entry / "usage_guide.local.md"
+        if override_path.is_file():
+            usage_guide = override_path.read_text().strip()
+        else:
+            usage_guide = usage_guide_default
+
         skills.append({
             "name": kiso["name"],
             "summary": skill_section["summary"],
@@ -151,6 +163,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
             "path": str(entry),
             "version": kiso.get("version", "0.0.0"),
             "description": kiso.get("description", ""),
+            "usage_guide": usage_guide,
         })
 
     return skills
@@ -214,6 +227,10 @@ def build_planner_skill_list(
                 parts[0] += f", default={default}"
             parts[0] += f"): {desc}"
             lines.append(parts[0])
+
+        guide = s.get("usage_guide", "")
+        if guide:
+            lines.append(f"  guide: {guide}")
 
     return "\n".join(lines)
 
