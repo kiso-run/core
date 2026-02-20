@@ -45,6 +45,37 @@ case "${1:-}" in
     health)
         curl -sf http://localhost:8333/health && echo || { echo '{"status": "unreachable"}'; exit 1; }
         ;;
+    help|--help|-h)
+        cat <<'HELP'
+kiso — host wrapper for the kiso container
+
+Usage: kiso [command]
+
+Chat:
+  kiso                      interactive chat (REPL)
+  kiso <args>               pass arguments to kiso inside the container
+
+Container management:
+  kiso up                   start the container
+  kiso down                 stop the container
+  kiso restart              restart the container
+  kiso status               show container state + health
+  kiso health               hit the /health endpoint
+  kiso logs                 follow container logs
+  kiso shell                open a bash shell inside the container
+
+Config:
+  ~/.kiso/config.toml       main configuration
+  ~/.kiso/.env              deploy secrets (API keys)
+  ~/.kiso/docker-compose.yml runtime compose file
+
+Run 'kiso help' inside the container for CLI commands:
+  kiso skill list           list installed skills
+  kiso skill search         search available skills
+  kiso env set KEY VALUE    set a deploy secret
+  kiso env reload           hot-reload secrets
+HELP
+        ;;
     *)
         docker exec -it "$CONTAINER" kiso "$@"
         ;;

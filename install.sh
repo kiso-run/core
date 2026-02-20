@@ -270,11 +270,16 @@ fi
 echo
 green "  kiso is running!"
 echo
-echo "  Chat:     kiso"
-echo "  API:      http://localhost:8333"
+echo "  Quick start:"
+echo "    kiso                    start chatting"
+echo "    kiso help               show all commands"
 echo
-echo "  Logs:     kiso logs"
-echo "  Stop:     kiso down"
-echo "  Restart:  kiso restart"
+echo "  Useful commands:"
+echo "    kiso status             check if running + healthy"
+echo "    kiso logs               follow container logs"
+echo "    kiso restart            restart the container"
+echo "    kiso down / kiso up     stop / start"
+echo
 echo "  Config:   $CONFIG"
+echo "  API:      http://localhost:8333"
 echo
