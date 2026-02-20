@@ -386,17 +386,25 @@ def test_render_user_prompt_plain():
 
 def test_render_banner_color():
     result = render_banner("Kiso", "host@alice", _COLOR)
-    assert "Kiso" in result
+    assert "基礎 Kiso" in result
     assert "host@alice" in result
-    assert "exit" in result
+    assert "/help" in result
     assert "\033[35m" in result  # magenta for bot name
 
 
 def test_render_banner_plain():
     result = render_banner("Kiso", "host@alice", _PLAIN)
     assert "Kiso" in result
+    assert "基礎" not in result
     assert "host@alice" in result
+    assert "/help" in result
     assert "\033[" not in result
+
+
+def test_render_banner_custom_name_no_kanji():
+    result = render_banner("Jarvis", "host@alice", _COLOR)
+    assert "Jarvis" in result
+    assert "基礎" not in result
 
 
 # ── render_cancel_start / done ───────────────────────────────
@@ -524,3 +532,98 @@ def test_render_review_ok_with_learning():
     assert "review: ok" in lines[0]
     assert "learning:" in lines[1]
     assert "Uses Flask" in lines[1]
+
+
+# ── render_task_header width truncation ─────────────────────
+
+
+def test_render_task_header_truncates_on_narrow_tty():
+    caps = _caps(width=40, tty=True)
+    task = {"type": "exec", "detail": "a" * 60, "status": "running"}
+    result = render_task_header(task, 1, 2, caps)
+    assert "..." in result
+    # Unstyled text should have been truncated before restyling
+    assert len(result.replace("\033[33m", "").replace("\033[0m", "")) <= 40
+
+
+def test_render_task_header_no_truncation_when_not_tty():
+    caps = _caps(width=40, tty=False)
+    task = {"type": "exec", "detail": "a" * 60, "status": "running"}
+    result = render_task_header(task, 1, 2, caps)
+    assert "..." not in result
+    assert "a" * 60 in result
+
+
+def test_render_task_header_cancelled_status():
+    task = {"type": "exec", "detail": "ls", "status": "cancelled"}
+    result = render_task_header(task, 1, 2, _COLOR)
+    assert "⊘" in result
+
+
+def test_render_task_header_empty_detail():
+    task = {"type": "exec", "detail": "", "status": "running"}
+    result = render_task_header(task, 1, 1, _PLAIN)
+    assert "[1/1]" in result
+    assert "exec" in result
+    # No trailing colon without detail
+    assert "exec:" not in result
+
+
+# ── render_thinking edge cases ──────────────────────────────
+
+
+def test_render_thinking_plain():
+    result = render_thinking("just a thought", _PLAIN)
+    assert "?" in result  # ASCII icon
+    assert "Thinking..." in result
+    assert "just a thought" in result
+    assert "\033[" not in result
+
+
+# ── render_msg_output edge cases ────────────────────────────
+
+
+def test_render_msg_output_empty_string():
+    result = render_msg_output("", _COLOR)
+    assert "Bot:" in result or ":" in result
+
+
+def test_render_msg_output_thinking_only():
+    result = render_msg_output("<think>pondering</think>", _COLOR)
+    assert "Thinking..." in result
+    assert "pondering" in result
+
+
+# ── extract_thinking edge cases ─────────────────────────────
+
+
+def test_extract_thinking_multiple_blocks():
+    text = "<think>first</think>middle<think>second</think>end"
+    thinking, rest = extract_thinking(text)
+    assert "first" in thinking
+    assert "second" in thinking
+    assert rest == "middleend"
+
+
+def test_extract_thinking_empty_tag():
+    thinking, rest = extract_thinking("<think></think>hello")
+    assert thinking == ""
+    assert rest == "hello"
+
+
+# ── render_separator edge cases ─────────────────────────────
+
+
+def test_render_separator_respects_max_width():
+    caps = _caps(width=200)
+    result = render_separator(caps)
+    # strip ANSI to count actual chars
+    plain = result.replace("\033[2m", "").replace("\033[0m", "")
+    assert len(plain) == 60  # capped at 60
+
+
+def test_render_separator_narrow_terminal():
+    caps = _caps(width=30)
+    result = render_separator(caps)
+    plain = result.replace("\033[2m", "").replace("\033[0m", "")
+    assert len(plain) == 30

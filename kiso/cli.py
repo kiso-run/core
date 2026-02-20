@@ -6,6 +6,10 @@ import argparse
 import sys
 
 
+class _ExitRepl(Exception):
+    """Raised by /exit or /quit to break out of the REPL loop."""
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kiso", description="Kiso agent bot")
 
@@ -174,7 +178,13 @@ def _chat(args: argparse.Namespace) -> None:
             text = text.strip()
             if not text:
                 continue
-            if text == "exit":
+            if text.startswith("/"):
+                try:
+                    _handle_slash(text, client, session, user, caps, bot_name)
+                except _ExitRepl:
+                    break
+                continue
+            if text in ("exit", "quit"):
                 break
 
             try:
@@ -266,8 +276,8 @@ def _poll_status(
             plan = data.get("plan")
             tasks = data.get("tasks", [])
 
-            # Show plan goal / replan detection
-            if plan and not quiet:
+            # Show plan goal / replan detection (only for current message)
+            if plan and not quiet and plan.get("message_id") == message_id:
                 pid = plan["id"]
                 task_count = len(tasks)
                 if shown_plan_id is None:
@@ -404,6 +414,127 @@ def _serve() -> None:
     port = cfg.settings.get("port", SETTINGS_DEFAULTS["port"])
 
     uvicorn.run("kiso.main:app", host=str(host), port=int(port))
+
+
+def _handle_slash(
+    text: str, client, session: str, user: str,
+    caps: "TermCaps", bot_name: str,  # noqa: F821
+) -> None:
+    """Handle a slash command. Raises _ExitRepl on /exit or /quit."""
+    parts = text.split(None, 1)
+    cmd = parts[0].lower()
+
+    if cmd in ("/exit", "/quit"):
+        raise _ExitRepl
+
+    elif cmd == "/help":
+        _slash_help(caps)
+
+    elif cmd == "/status":
+        _slash_status(client, session, caps)
+
+    elif cmd == "/sessions":
+        _slash_sessions(client, user, caps)
+
+    elif cmd == "/clear":
+        if caps.tty:
+            sys.stdout.write("\033[2J\033[H")
+            sys.stdout.flush()
+
+    else:
+        print(f"Unknown command: {cmd}. Type /help for available commands.")
+
+
+def _slash_help(caps: "TermCaps") -> None:  # noqa: F821
+    """Print available REPL slash commands."""
+    from kiso.render import render_separator
+
+    print(render_separator(caps))
+    print("  /help       — show this help")
+    print("  /status     — server health + session info")
+    print("  /sessions   — list your sessions")
+    print("  /clear      — clear the screen")
+    print("  /exit       — exit the REPL")
+    print(render_separator(caps))
+
+
+def _slash_status(client, session: str, caps: "TermCaps") -> None:  # noqa: F821
+    """Show server health, session message count, and worker state."""
+    import httpx
+
+    from kiso.render import render_separator
+
+    print(render_separator(caps))
+
+    # Health
+    try:
+        resp = client.get("/health")
+        resp.raise_for_status()
+        print(f"  Health: {resp.json().get('status', 'ok')}")
+    except (httpx.HTTPError, httpx.ConnectError):
+        print("  Health: unreachable")
+
+    # Session info (message count)
+    try:
+        resp = client.get(f"/sessions/{session}/info")
+        resp.raise_for_status()
+        info = resp.json()
+        print(f"  Session: {info['session']}")
+        print(f"  Messages: {info['message_count']}")
+    except (httpx.HTTPError, httpx.ConnectError):
+        print(f"  Session: {session} (info unavailable)")
+
+    # Worker status
+    try:
+        resp = client.get(f"/status/{session}")
+        resp.raise_for_status()
+        data = resp.json()
+        running = "running" if data.get("worker_running") else "idle"
+        print(f"  Worker: {running}")
+        print(f"  Queue: {data.get('queue_length', 0)}")
+    except (httpx.HTTPError, httpx.ConnectError):
+        print("  Worker: unknown")
+
+    print(render_separator(caps))
+
+
+def _slash_sessions(client, user: str, caps: "TermCaps") -> None:  # noqa: F821
+    """List sessions for the current user."""
+    import httpx
+
+    from kiso.cli_session import _relative_time
+    from kiso.render import render_separator
+
+    print(render_separator(caps))
+
+    try:
+        resp = client.get("/sessions", params={"user": user})
+        resp.raise_for_status()
+    except httpx.ConnectError:
+        print("  error: cannot connect to server")
+        print(render_separator(caps))
+        return
+    except httpx.HTTPError as exc:
+        print(f"  error: {exc}")
+        print(render_separator(caps))
+        return
+
+    sessions = resp.json()
+    if not sessions:
+        print("  No sessions found.")
+        print(render_separator(caps))
+        return
+
+    max_name = max(len(s["session"]) for s in sessions)
+    for s in sessions:
+        name = s["session"].ljust(max_name)
+        parts = []
+        if s.get("connector"):
+            parts.append(f"connector: {s['connector']}")
+        parts.append(f"last activity: {_relative_time(s.get('updated_at'))}")
+        print(f"  {name}  — {', '.join(parts)}")
+
+    print(render_separator(caps))
 
 
 if __name__ == "__main__":

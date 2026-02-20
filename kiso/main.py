@@ -20,10 +20,12 @@ from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.config import KISO_DIR, load_config
 from kiso.log import setup_logging
 from kiso.store import (
+    count_messages,
     create_session,
     get_all_sessions,
     get_plan_for_session,
     get_published_file,
+    get_session,
     get_sessions_for_user,
     get_tasks_for_session,
     get_unprocessed_trusted_messages,
@@ -316,6 +318,23 @@ async def get_status(
         "queue_length": queue_length,
         "worker_running": worker_running,
         "active_task": None,
+    }
+
+
+@app.get("/sessions/{session}/info")
+async def get_session_info(
+    session: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    """Return message count and summary snippet for a session."""
+    db = request.app.state.db
+    msg_count = await count_messages(db, session)
+    sess = await get_session(db, session)
+    return {
+        "session": session,
+        "message_count": msg_count,
+        "summary": (sess["summary"][:200] if sess and sess.get("summary") else None),
     }
 
 
