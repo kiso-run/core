@@ -95,6 +95,6 @@ HELP
         ;;
     *)
         require_running
-        docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" "$@"
+        docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" --session "$(hostname)@$(whoami)" "$@"
         ;;
 esac
