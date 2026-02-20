@@ -7,10 +7,10 @@ import sys
 
 
 class _ExitRepl(Exception):
-    """Raised by /exit or /quit to break out of the REPL loop."""
+    """Raised by /exit to break out of the REPL loop."""
 
 
-_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/quit", "/sessions", "/status"]
+_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/sessions", "/status"]
 
 
 def _setup_readline() -> None:
@@ -478,11 +478,11 @@ def _handle_slash(
     text: str, client, session: str, user: str,
     caps: "TermCaps", bot_name: str,  # noqa: F821
 ) -> None:
-    """Handle a slash command. Raises _ExitRepl on /exit or /quit."""
+    """Handle a slash command. Raises _ExitRepl on /exit."""
     parts = text.split(None, 1)
     cmd = parts[0].lower()
 
-    if cmd in ("/exit", "/quit"):
+    if cmd == "/exit":
         raise _ExitRepl
 
     elif cmd == "/help":

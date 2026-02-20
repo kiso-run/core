@@ -841,23 +841,15 @@ def test_slash_exit_breaks_repl(capsys):
     mock_client.close.assert_called_once()
 
 
-def test_slash_quit_breaks_repl(capsys):
-    """'/quit' exits the REPL without sending a POST."""
-    from kiso.cli import _chat
+def test_slash_quit_is_unknown(capsys):
+    """'/quit' is not a recognized command."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    client = MagicMock()
 
-    mock_client = MagicMock()
-    with (
-        patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
-        patch("httpx.Client", return_value=mock_client),
-        patch("builtins.input", side_effect=["/quit"]),
-        patch("getpass.getuser", return_value="alice"),
-        patch("socket.gethostname", return_value="h"),
-    ):
-        _chat(_make_args())
+    _handle_slash("/quit", client, "s", "alice", caps, "Bot")
 
-    mock_client.post.assert_not_called()
-    mock_client.close.assert_called_once()
+    out = capsys.readouterr().out
+    assert "Unknown command" in out
 
 
 def test_slash_help_prints_commands(capsys):
