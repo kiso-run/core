@@ -220,6 +220,9 @@ services:
       - "8333:8333"
     volumes:
       - ${KISO_DIR}:/root/.kiso
+    env_file:
+      - path: ${KISO_DIR}/.env
+        required: false
     restart: unless-stopped
 EOF
 green "  runtime compose created (image: $IMAGE_NAME)"
