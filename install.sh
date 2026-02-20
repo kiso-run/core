@@ -201,10 +201,11 @@ bold "Building Docker image..."
 docker compose -f "$REPO_COMPOSE" build
 
 # Get the built image name (e.g. "core-kiso")
-IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4)
+IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json 2>/dev/null | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
 if [[ -z "$IMAGE_NAME" ]]; then
     IMAGE_NAME="$(basename "$REPO_DIR")-kiso"
 fi
+green "  image: $IMAGE_NAME"
 
 # ── 10. Write runtime compose file ───────────────────────────────────────────
 # Self-contained — no dependency on the repo directory after install.
