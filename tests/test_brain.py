@@ -1267,6 +1267,25 @@ class TestRunMessenger:
         assert "Arrr" in captured_messages[0]["content"]
         assert "pirate" in captured_messages[0]["content"]
 
+    async def test_custom_role_without_placeholder(self, db, tmp_path):
+        """Custom messenger.md without {bot_name} should work fine."""
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        (roles_dir / "messenger.md").write_text("You are a helpful robot.")
+        config = _make_brain_config(settings={"bot_name": "Kiso"})
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture), \
+             patch("kiso.brain.KISO_DIR", tmp_path):
+            await run_messenger(db, config, "sess1", "say hi")
+
+        assert "helpful robot" in captured_messages[0]["content"]
+        assert "{bot_name}" not in captured_messages[0]["content"]
+
 
 class TestLoadSystemPromptMessenger:
     def test_default_messenger_prompt(self):
