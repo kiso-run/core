@@ -20,8 +20,6 @@ RUN uv sync --frozen --no-dev
 # COPY config.toml /root/.kiso/config.toml
 # RUN uv run kiso skill install search
 
-VOLUME /root/.kiso
-
 EXPOSE 8333
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
