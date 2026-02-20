@@ -97,6 +97,13 @@ ask_username() {
     done
 }
 
+ask_bot_name() {
+    local bot_name
+    read -rp "Bot name [Kiso]: " bot_name
+    bot_name="${bot_name:-Kiso}"
+    echo "$bot_name"
+}
+
 ask_api_key() {
     if [[ -n "$ARG_API_KEY" ]]; then
         echo "API key: (provided via --api-key)" >&2
@@ -198,6 +205,9 @@ if [[ "$NEED_CONFIG" == true ]]; then
     kiso_user="$(ask_username)"
     echo "  username: $kiso_user"
 
+    bot_name="$(ask_bot_name)"
+    echo "  bot name: $bot_name"
+
     token="$(generate_token)"
 
     bold "Creating $CONFIG..."
@@ -211,6 +221,9 @@ base_url = "https://openrouter.ai/api/v1"
 
 [users.$kiso_user]
 role = "admin"
+
+[settings]
+bot_name = "$bot_name"
 EOF
     green "  config.toml created"
 fi
