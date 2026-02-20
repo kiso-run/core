@@ -110,10 +110,13 @@ WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 
 # ── 3. Check existing state ─────────────────────────────────────────────────
 
+KEEP_CONFIG=false
+
 if [[ -f "$CONFIG" ]]; then
     yellow "  $CONFIG already exists."
     if ! confirm "  Overwrite?"; then
-        bold "Keeping existing config."
+        KEEP_CONFIG=true
+        bold "Keeping existing config and .env."
     else
         rm -f "$CONFIG"
     fi
@@ -127,41 +130,39 @@ if docker inspect "$CONTAINER" &>/dev/null; then
     fi
 fi
 
-# ── 4. Ask username ──────────────────────────────────────────────────────────
-
-default_user="$(whoami)"
-if [[ -n "$ARG_USER" ]]; then
-    kiso_user="$ARG_USER"
-    echo "Username: $kiso_user"
-else
-    read -rp "Username [$default_user]: " kiso_user
-    kiso_user="${kiso_user:-$default_user}"
-fi
-
-# ── 5. Ask API key ───────────────────────────────────────────────────────────
-
-if [[ -n "$ARG_API_KEY" ]]; then
-    api_key="$ARG_API_KEY"
-    echo "API key: (provided via --api-key)"
-else
-    read -rsp "OpenRouter API key: " api_key
-    echo
-fi
-
-if [[ -z "$api_key" ]]; then
-    red "Error: API key cannot be empty."
-    exit 1
-fi
-
-# ── 6. Generate token ────────────────────────────────────────────────────────
-
-token="$(generate_token)"
-
-# ── 7. Create config ─────────────────────────────────────────────────────────
+# ── 4. Configure (skip if keeping existing config) ───────────────────────────
 
 mkdir -p "$KISO_DIR"
 
-if [[ ! -f "$CONFIG" ]]; then
+if [[ "$KEEP_CONFIG" == false ]]; then
+    # Ask username
+    default_user="$(whoami)"
+    if [[ -n "$ARG_USER" ]]; then
+        kiso_user="$ARG_USER"
+        echo "Username: $kiso_user"
+    else
+        read -rp "Username [$default_user]: " kiso_user
+        kiso_user="${kiso_user:-$default_user}"
+    fi
+
+    # Ask API key
+    if [[ -n "$ARG_API_KEY" ]]; then
+        api_key="$ARG_API_KEY"
+        echo "API key: (provided via --api-key)"
+    else
+        read -rsp "OpenRouter API key: " api_key
+        echo
+    fi
+
+    if [[ -z "$api_key" ]]; then
+        red "Error: API key cannot be empty."
+        exit 1
+    fi
+
+    # Generate token
+    token="$(generate_token)"
+
+    # Write config.toml
     bold "Creating $CONFIG..."
     cat > "$CONFIG" <<EOF
 [tokens]
@@ -175,17 +176,14 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 EOF
     green "  config.toml created"
-else
-    green "  config.toml kept (existing)"
-fi
 
-# ── 8. Create .env ───────────────────────────────────────────────────────────
-
-bold "Creating $ENV_FILE..."
-cat > "$ENV_FILE" <<EOF
+    # Write .env
+    bold "Creating $ENV_FILE..."
+    cat > "$ENV_FILE" <<EOF
 KISO_OPENROUTER_API_KEY=$api_key
 EOF
-green "  .env created"
+    green "  .env created"
+fi
 
 # ── 9. Build image ───────────────────────────────────────────────────────────
 
