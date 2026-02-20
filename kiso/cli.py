@@ -57,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="start the HTTP server")
+    msg_parser = sub.add_parser("msg", help="send a message and print the response")
+    msg_parser.add_argument("message", help="message text")
     skill_parser = sub.add_parser("skill", help="manage skills")
     skill_sub = skill_parser.add_subparsers(dest="skill_command")
 
@@ -142,6 +144,8 @@ def main() -> None:
 
     if args.command is None:
         _chat(args)
+    elif args.command == "msg":
+        _msg_cmd(args)
     elif args.command == "serve":
         _serve()
     elif args.command == "skill":
@@ -160,6 +164,68 @@ def main() -> None:
         from kiso.cli_env import run_env_command
 
         run_env_command(args)
+
+
+def _msg_cmd(args: argparse.Namespace) -> None:
+    """Send a single message and print the response (non-interactive)."""
+    import getpass
+    import socket
+
+    import httpx
+
+    from kiso.config import load_config
+    from kiso.render import detect_caps
+
+    cfg = load_config()
+    caps = detect_caps()
+    token = cfg.tokens.get("cli")
+    if not token:
+        print("error: no 'cli' token in config.toml")
+        sys.exit(1)
+
+    user = args.user or getpass.getuser()
+    session = args.session or f"{socket.gethostname()}@{user}"
+    client = httpx.Client(
+        base_url=args.api,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30.0,
+    )
+
+    bot_name = cfg.settings.get("bot_name", "Kiso")
+    # Implicitly quiet when not a TTY
+    quiet = args.quiet or not caps.tty
+
+    try:
+        resp = client.post(
+            "/msg",
+            json={"session": session, "user": user, "content": args.message},
+        )
+        resp.raise_for_status()
+    except httpx.ConnectError:
+        print(f"error: cannot connect to {args.api}", file=sys.stderr)
+        sys.exit(1)
+    except httpx.HTTPStatusError as exc:
+        print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
+        sys.exit(1)
+
+    data = resp.json()
+    if data.get("untrusted"):
+        print("warning: message was not trusted by the server.", file=sys.stderr)
+        client.close()
+        sys.exit(1)
+
+    message_id = data["message_id"]
+
+    try:
+        _poll_status(client, session, message_id, 0, quiet, caps, bot_name)
+    except KeyboardInterrupt:
+        try:
+            client.post(f"/sessions/{session}/cancel")
+        except httpx.HTTPError:
+            pass
+        sys.exit(130)
+    finally:
+        client.close()
 
 
 def _chat(args: argparse.Namespace) -> None:
@@ -264,13 +330,16 @@ def _poll_status(
 
     from kiso.render import (
         CLEAR_LINE,
+        render_command,
         render_msg_output,
         render_plan,
+        render_plan_detail,
         render_planner_spinner,
         render_review,
         render_separator,
         render_task_header,
         render_task_output,
+        render_usage,
         spinner_frames,
     )
 
@@ -328,6 +397,10 @@ def _poll_status(
                         active_spinner_task = None
                         planning_phase = False
                     print(f"\n{render_plan(plan['goal'], task_count, caps)}")
+                    plan_detail = render_plan_detail(tasks, caps)
+                    if plan_detail:
+                        print(render_separator(caps))
+                        print(plan_detail)
                     print(render_separator(caps))
                     shown_plan_id = pid
                 elif pid != shown_plan_id:
@@ -337,6 +410,10 @@ def _poll_status(
                         active_spinner_task = None
                         planning_phase = False
                     print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
+                    plan_detail = render_plan_detail(tasks, caps)
+                    if plan_detail:
+                        print(render_separator(caps))
+                        print(plan_detail)
                     print(render_separator(caps))
                     shown_plan_id = pid
                     seen.clear()
@@ -382,6 +459,11 @@ def _poll_status(
                 seen_any_task = True
                 print(render_task_header(task, idx, total, caps))
 
+                # Show translated command for exec tasks
+                task_command = task.get("command")
+                if task_command:
+                    print(render_command(task_command, caps))
+
                 # Show output for completed/failed tasks
                 display_output = output or (task.get("stderr", "") or "") if status in ("done", "failed") else ""
                 if display_output:
@@ -424,6 +506,11 @@ def _poll_status(
                     if active_spinner_task and caps.tty:
                         sys.stdout.write(f"\r{CLEAR_LINE}")
                         sys.stdout.flush()
+                    # Show token usage
+                    if not quiet:
+                        usage_line = render_usage(plan, caps)
+                        if usage_line:
+                            print(usage_line)
                     break
 
             # Fallback: worker stopped without creating a plan for this message

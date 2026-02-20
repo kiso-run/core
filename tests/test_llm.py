@@ -17,6 +17,8 @@ from kiso.llm import (
     clear_llm_budget,
     get_llm_call_count,
     get_provider,
+    get_usage_summary,
+    reset_usage_tracking,
     set_llm_budget,
     _get_api_key,
 )
@@ -596,3 +598,47 @@ class TestLLMBudget:
                 # HTTP client should NOT have been called
                 mock_client.post.assert_not_called()
         clear_llm_budget()
+
+
+# --- Token usage tracking ---
+
+
+class TestUsageTracking:
+    def test_reset_clears_accumulator(self):
+        reset_usage_tracking()
+        summary = get_usage_summary()
+        assert summary["input_tokens"] == 0
+        assert summary["output_tokens"] == 0
+        assert summary["model"] is None
+
+    @pytest.mark.asyncio
+    async def test_usage_accumulates(self):
+        config = _make_config()
+        reset_usage_tracking()
+        usage1 = {"prompt_tokens": 100, "completion_tokens": 50}
+        usage2 = {"prompt_tokens": 200, "completion_tokens": 80}
+        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                mock_client.post.return_value = _ok_response("r1", usage=usage1)
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+                mock_client.post.return_value = _ok_response("r2", usage=usage2)
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        summary = get_usage_summary()
+        assert summary["input_tokens"] == 300
+        assert summary["output_tokens"] == 130
+        assert summary["model"] == "gpt-3.5"
+
+    def test_get_usage_summary_without_reset(self):
+        """When no tracking started, returns zeros."""
+        from kiso.llm import _llm_usage_entries
+        _llm_usage_entries.set(None)
+        summary = get_usage_summary()
+        assert summary["input_tokens"] == 0
+        assert summary["output_tokens"] == 0
+        assert summary["model"] is None

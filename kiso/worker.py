@@ -40,7 +40,7 @@ from kiso.brain import (
     run_summarizer,
 )
 from kiso.config import Config, KISO_DIR
-from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, set_llm_budget
+from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, get_usage_summary, reset_usage_tracking, set_llm_budget
 from kiso.skills import (
     SkillError,
     build_skill_env,
@@ -68,8 +68,10 @@ from kiso.store import (
     save_pending_item,
     update_learning,
     update_plan_status,
+    update_plan_usage,
     update_summary,
     update_task,
+    update_task_command,
     update_task_review,
 )
 
@@ -436,6 +438,8 @@ async def _execute_plan(
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, None, completed, remaining
+
+            await update_task_command(db, task_id, command)
 
             if slog:
                 slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
@@ -811,9 +815,10 @@ async def _process_message(
     if slog:
         slog.info("Message received: user=%s, %d chars", username or "?", len(content))
 
-    # Per-message LLM call budget
+    # Per-message LLM call budget and usage tracking
     max_llm_calls = int(config.settings.get("max_llm_calls_per_message", 200))
     set_llm_budget(max_llm_calls)
+    reset_usage_tracking()
 
     await mark_message_processed(db, msg_id)
 
@@ -1145,5 +1150,13 @@ async def _process_message(
             log.warning("Fact consolidation timed out after %ds", exec_timeout)
         except SummarizerError as e:
             log.error("Fact consolidation failed: %s", e)
+
+    # --- Store token usage on the plan ---
+    usage = get_usage_summary()
+    if current_plan_id and (usage["input_tokens"] or usage["output_tokens"]):
+        await update_plan_usage(
+            db, current_plan_id,
+            usage["input_tokens"], usage["output_tokens"], usage["model"],
+        )
 
     clear_llm_budget()

@@ -32,13 +32,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session, id);
 CREATE INDEX IF NOT EXISTS idx_messages_unprocessed ON messages(processed) WHERE processed = 0;
 
 CREATE TABLE IF NOT EXISTS plans (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session    TEXT NOT NULL,
-    message_id INTEGER NOT NULL,
-    parent_id  INTEGER,
-    goal       TEXT NOT NULL,
-    status     TEXT NOT NULL DEFAULT 'running',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session             TEXT NOT NULL,
+    message_id          INTEGER NOT NULL,
+    parent_id           INTEGER,
+    goal                TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'running',
+    total_input_tokens  INTEGER NOT NULL DEFAULT 0,
+    total_output_tokens INTEGER NOT NULL DEFAULT 0,
+    model               TEXT,
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session, id);
 
@@ -51,6 +54,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     skill      TEXT,
     args       TEXT,
     expect     TEXT,
+    command    TEXT,
     status     TEXT NOT NULL DEFAULT 'pending',
     output     TEXT,
     stderr     TEXT,
@@ -109,7 +113,27 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     db.row_factory = aiosqlite.Row
     await db.executescript(SCHEMA)
     await db.commit()
+
+    # --- Migrations for existing databases ---
+    await _migrate(db)
+
     return db
+
+
+async def _migrate(db: aiosqlite.Connection) -> None:
+    """Add columns that may be missing from older schemas."""
+    migrations = [
+        ("tasks", "command", "ALTER TABLE tasks ADD COLUMN command TEXT"),
+        ("plans", "total_input_tokens", "ALTER TABLE plans ADD COLUMN total_input_tokens INTEGER NOT NULL DEFAULT 0"),
+        ("plans", "total_output_tokens", "ALTER TABLE plans ADD COLUMN total_output_tokens INTEGER NOT NULL DEFAULT 0"),
+        ("plans", "model", "ALTER TABLE plans ADD COLUMN model TEXT"),
+    ]
+    for table, column, sql in migrations:
+        cur = await db.execute(f"PRAGMA table_info({table})")
+        columns = {row[1] for row in await cur.fetchall()}
+        if column not in columns:
+            await db.execute(sql)
+    await db.commit()
 
 
 async def get_session(db: aiosqlite.Connection, session: str) -> dict | None:
@@ -323,12 +347,38 @@ async def update_task_review(
     await db.commit()
 
 
+async def update_task_command(
+    db: aiosqlite.Connection, task_id: int, command: str
+) -> None:
+    """Set the translated shell command on a task."""
+    await db.execute(
+        "UPDATE tasks SET command = ? WHERE id = ?", (command, task_id)
+    )
+    await db.commit()
+
+
 async def update_plan_status(
     db: aiosqlite.Connection, plan_id: int, status: str
 ) -> None:
     """Update plan status."""
     await db.execute(
         "UPDATE plans SET status = ? WHERE id = ?", (status, plan_id)
+    )
+    await db.commit()
+
+
+async def update_plan_usage(
+    db: aiosqlite.Connection,
+    plan_id: int,
+    input_tokens: int,
+    output_tokens: int,
+    model: str | None = None,
+) -> None:
+    """Store accumulated token usage on a plan."""
+    await db.execute(
+        "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ? "
+        "WHERE id = ?",
+        (input_tokens, output_tokens, model, plan_id),
     )
     await db.commit()
 

@@ -76,6 +76,7 @@ Usage: kiso [command]
 
 Chat:
   kiso                      interactive chat (REPL)
+  kiso msg "text"           send a message, print the response, exit
   kiso <args>               pass arguments to kiso inside the container
 
 Container management:

@@ -116,6 +116,7 @@ See [config.md](docs/config.md) for all configuration options. Role prompts (`~/
 
 ```bash
 kiso                      # interactive chat
+kiso msg "hello"          # send a message, get a response, exit
 kiso help                 # show all commands
 kiso logs                 # follow container logs
 kiso status               # check if running + healthy

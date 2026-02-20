@@ -30,6 +30,8 @@ cleanup() {
     if [[ -n "$CLEANUP_DIR" && -d "$CLEANUP_DIR" ]]; then
         rm -rf "$CLEANUP_DIR"
     fi
+    [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP"
+    [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP"
 }
 trap cleanup EXIT
 
@@ -181,6 +183,7 @@ if [[ -f "$ENV_FILE" ]]; then
     fi
 else
     yellow "  $ENV_FILE not found — will ask for API key."
+    yellow "  (API key is stored in .env, separate from config.toml)"
 fi
 
 NEED_BUILD=true
@@ -195,6 +198,21 @@ if docker inspect "$CONTAINER" &>/dev/null; then
         NEED_BUILD=false
         green "  container kept"
     fi
+fi
+
+# ── 3b. Back up files that should survive ──────────────────────────────────
+
+# Belt-and-suspenders: back up .env and config.toml before Docker operations
+# so we can restore them if anything (stale VOLUME metadata, etc.) wipes them.
+ENV_BACKUP=""
+CONFIG_BACKUP=""
+if [[ "$NEED_ENV" == false && -f "$ENV_FILE" ]]; then
+    ENV_BACKUP="$(mktemp)"
+    cp "$ENV_FILE" "$ENV_BACKUP"
+fi
+if [[ "$NEED_CONFIG" == false && -f "$CONFIG" ]]; then
+    CONFIG_BACKUP="$(mktemp)"
+    cp "$CONFIG" "$CONFIG_BACKUP"
 fi
 
 # ── 4. Configure ─────────────────────────────────────────────────────────────
@@ -240,6 +258,9 @@ fi
 # ── 5. Build and start ──────────────────────────────────────────────────────
 
 if [[ "$NEED_BUILD" == true ]]; then
+    # Remove dangling images that may carry stale VOLUME metadata from old builds
+    docker image prune -f &>/dev/null || true
+
     bold "Building Docker image..."
     docker compose -f "$REPO_COMPOSE" build
 
@@ -293,6 +314,24 @@ else
     green "  Skipping build (container kept)."
 fi
 
+# ── 5b. Restore files if Docker wiped them ──────────────────────────────────
+
+# Old Docker images (before commit 4caab64) had a VOLUME directive that could
+# cause .env to disappear on rebuild.  Stale layers / anonymous volumes may
+# still trigger this.  Restore from backup if needed.
+if [[ -n "$ENV_BACKUP" && ! -f "$ENV_FILE" ]]; then
+    yellow "  .env was unexpectedly removed during build — restoring from backup"
+    cp "$ENV_BACKUP" "$ENV_FILE"
+    green "  .env restored"
+fi
+if [[ -n "$CONFIG_BACKUP" && ! -f "$CONFIG" ]]; then
+    yellow "  config.toml was unexpectedly removed during build — restoring from backup"
+    cp "$CONFIG_BACKUP" "$CONFIG"
+    green "  config.toml restored"
+fi
+[[ -n "$ENV_BACKUP" ]] && rm -f "$ENV_BACKUP"
+[[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP"
+
 # ── 6. Install wrapper ─────────────────────────────────────────────────────
 
 bold "Installing kiso wrapper..."
@@ -339,6 +378,7 @@ green "  kiso is running!"
 echo
 echo "  Quick start:"
 echo "    kiso                    start chatting"
+echo "    kiso msg \"hello\"        send a message, get a response"
 echo "    kiso help               show all commands"
 echo
 echo "  Useful commands:"

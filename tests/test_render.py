@@ -14,15 +14,18 @@ from kiso.render import (
     render_banner,
     render_cancel_done,
     render_cancel_start,
+    render_command,
     render_max_replan,
     render_msg_output,
     render_plan,
+    render_plan_detail,
     render_planner_spinner,
     render_review,
     render_separator,
     render_task_header,
     render_task_output,
     render_thinking,
+    render_usage,
     render_user_prompt,
     spinner_frames,
 )
@@ -654,3 +657,100 @@ def test_render_separator_narrow_terminal():
     result = render_separator(caps)
     plain = result.replace("\033[2m", "").replace("\033[0m", "")
     assert len(plain) == 30
+
+
+# ── render_plan_detail ──────────────────────────────────────
+
+
+def test_render_plan_detail_mixed_types():
+    tasks = [
+        {"type": "exec", "detail": "List files in the directory"},
+        {"type": "exec", "detail": "Run uv sync"},
+        {"type": "msg", "detail": "Summarize results"},
+    ]
+    result = render_plan_detail(tasks, _COLOR)
+    assert "1." in result
+    assert "2." in result
+    assert "3." in result
+    assert "[exec]" in result
+    assert "[msg]" in result
+    assert "List files" in result
+    assert "Summarize results" in result
+
+
+def test_render_plan_detail_empty():
+    assert render_plan_detail([], _COLOR) == ""
+
+
+def test_render_plan_detail_skill_type():
+    tasks = [
+        {"type": "skill", "detail": "Search the web"},
+        {"type": "msg", "detail": "Report findings"},
+    ]
+    result = render_plan_detail(tasks, _PLAIN)
+    assert "[skill]" in result
+    assert "[msg]" in result
+    assert "\033[" not in result
+
+
+def test_render_plan_detail_multiline_detail():
+    tasks = [{"type": "exec", "detail": "first line\nsecond line\nthird"}]
+    result = render_plan_detail(tasks, _PLAIN)
+    assert "first line" in result
+    assert "second line" not in result
+
+
+# ── render_command ──────────────────────────────────────────
+
+
+def test_render_command_basic():
+    result = render_command("ls -la", _COLOR)
+    assert "$ ls -la" in result
+    assert "\033[" in result
+
+
+def test_render_command_plain():
+    result = render_command("ls -la", _PLAIN)
+    assert "$ ls -la" in result
+    assert "\033[" not in result
+
+
+# ── render_usage ────────────────────────────────────────────
+
+
+def test_render_usage_with_model():
+    plan = {"total_input_tokens": 1234, "total_output_tokens": 567, "model": "deepseek/deepseek-v3.2"}
+    result = render_usage(plan, _COLOR)
+    assert "1,234" in result
+    assert "567" in result
+    assert "deepseek/deepseek-v3.2" in result
+    assert "⟨" in result
+    assert "⟩" in result
+
+
+def test_render_usage_ascii():
+    plan = {"total_input_tokens": 100, "total_output_tokens": 50, "model": "gpt-4"}
+    result = render_usage(plan, _PLAIN)
+    assert "100" in result
+    assert "50" in result
+    assert "gpt-4" in result
+    assert "<" in result
+    assert ">" in result
+    assert "\033[" not in result
+
+
+def test_render_usage_no_tokens():
+    plan = {"total_input_tokens": 0, "total_output_tokens": 0, "model": "gpt-4"}
+    assert render_usage(plan, _COLOR) == ""
+
+
+def test_render_usage_no_model():
+    plan = {"total_input_tokens": 100, "total_output_tokens": 50}
+    result = render_usage(plan, _COLOR)
+    assert "100" in result
+    assert "│" not in result
+
+
+def test_render_usage_missing_keys():
+    plan = {}
+    assert render_usage(plan, _COLOR) == ""

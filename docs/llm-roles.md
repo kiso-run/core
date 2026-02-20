@@ -251,7 +251,7 @@ See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) 
 
 **Input**: see [Context per Role](#context-per-role) table. Receives the task `detail` (natural language), the system environment (available binaries, shell, CWD), and preceding plan outputs.
 
-**Output**: free-form text — the exact shell command(s) to run.
+**Output**: free-form text — the exact shell command(s) to run. The translated command is stored in the task's `command` column in the database, so the CLI can display it alongside the task header (e.g. `$ ls -la`).
 
 ### How It Works
 
@@ -379,6 +379,12 @@ When the curator returns `verdict: "ask"`, the question is stored as a pending i
 **Input**: see [Context per Role](#context-per-role) table. **Output**: free-form text — third-person factual summaries.
 
 Reuses `models.summarizer`. See [security.md — Prompt Injection Defense](security.md#6-prompt-injection-defense) for the full defense layers.
+
+---
+
+## Token Usage Tracking
+
+Every `call_llm` invocation accumulates token usage (input and output tokens, model name) in a `contextvars`-based per-message accumulator. The worker calls `reset_usage_tracking()` at the start of each message and `get_usage_summary()` at the end, storing the totals in `plans.total_input_tokens`, `plans.total_output_tokens`, and `plans.model`. The CLI displays this summary at the end of plan execution (e.g. `⟨ 1,234 in → 567 out │ deepseek/deepseek-v3.2 ⟩`).
 
 ---
 

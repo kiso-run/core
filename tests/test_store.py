@@ -29,8 +29,10 @@ from kiso.store import (
     save_pending_item,
     update_learning,
     update_plan_status,
+    update_plan_usage,
     update_summary,
     update_task,
+    update_task_command,
     update_task_review,
 )
 
@@ -577,3 +579,62 @@ async def test_review_fields_null_by_default(db: aiosqlite.Connection):
     assert tasks[0]["review_verdict"] is None
     assert tasks[0]["review_reason"] is None
     assert tasks[0]["review_learning"] is None
+
+
+# --- update_task_command ---
+
+
+async def test_update_task_command(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="list files")
+    await update_task_command(db, task_id, "ls -la")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["command"] == "ls -la"
+
+
+async def test_task_command_null_by_default(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="list files")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["command"] is None
+
+
+# --- update_plan_usage ---
+
+
+async def test_update_plan_usage(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await update_plan_usage(db, plan_id, 1234, 567, "deepseek/deepseek-v3.2")
+    plan = await get_plan_for_session(db, "sess1")
+    assert plan["total_input_tokens"] == 1234
+    assert plan["total_output_tokens"] == 567
+    assert plan["model"] == "deepseek/deepseek-v3.2"
+
+
+async def test_plan_usage_defaults(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    plan = await get_plan_for_session(db, "sess1")
+    assert plan["total_input_tokens"] == 0
+    assert plan["total_output_tokens"] == 0
+    assert plan["model"] is None
+
+
+# --- Schema columns ---
+
+
+async def test_schema_has_command_column(db: aiosqlite.Connection):
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "command" in columns
+
+
+async def test_schema_has_token_columns(db: aiosqlite.Connection):
+    cur = await db.execute("PRAGMA table_info(plans)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "total_input_tokens" in columns
+    assert "total_output_tokens" in columns
+    assert "model" in columns

@@ -16,6 +16,16 @@ Authorization: Bearer <token>
 
 The CLI does not call this — sessions are created implicitly on first `POST /msg`. See [api.md — POST /sessions](api.md#post-sessions).
 
+### Alternative: `kiso msg`
+
+For non-interactive (single-shot) use:
+
+```
+kiso msg "what is 2+2?"
+```
+
+This sends a single message, polls for the response, prints it, and exits. Equivalent to the chat REPL but without the interactive loop. Implicitly quiet when stdout is not a TTY (e.g. piped).
+
 ## 2. Message Reception
 
 ```
@@ -87,7 +97,7 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 
 | Type | Execution |
 |---|---|
-| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
+| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `worker` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
 | `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
@@ -272,5 +282,19 @@ POST-EXECUTION
   ├─ curator (if learnings)
   ├─ summarize (if threshold)
   ├─ consolidate facts (if limit)
+  ├─ store token usage on plan
   └─ wait / shutdown
 ```
+
+## CLI Rendering
+
+When displaying a plan execution, the CLI shows:
+
+1. **Plan header** with goal and task count
+2. **Plan detail** — numbered list of all tasks with types and descriptions
+3. **Per-task display**:
+   - Task header with index, type, and detail
+   - For `exec` tasks: the translated shell command (e.g. `$ ls -la`)
+   - Task output (truncated on TTY)
+   - Review verdict (for exec/skill tasks)
+4. **Token usage summary** at the end (input/output tokens and model used)

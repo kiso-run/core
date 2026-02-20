@@ -12,6 +12,7 @@ from kiso.cli import (
     _ExitRepl,
     _SLASH_COMMANDS,
     _handle_slash,
+    _msg_cmd,
     _poll_status,
     _setup_readline,
     build_parser,
@@ -1282,5 +1283,136 @@ def test_poll_status_task_count_reflects_current_plan(capsys, plain_caps):
     assert "2 tasks" in out
     assert "Done!" in out
     assert "old" not in out.lower().split("do it")[0]  # "old" shouldn't appear before plan header
+
+
+# ── msg subcommand parsing ───────────────────────────────────
+
+
+def test_msg_subcommand_parsed():
+    parser = build_parser()
+    args = parser.parse_args(["msg", "hello world"])
+    assert args.command == "msg"
+    assert args.message == "hello world"
+
+
+# ── msg command routes to _msg_cmd ────────────────────────────
+
+
+def test_msg_command_routing():
+    with patch("kiso.cli._msg_cmd") as mock_msg:
+        with patch("sys.argv", ["kiso", "msg", "test message"]):
+            main()
+        mock_msg.assert_called_once()
+
+
+# ── _poll_status shows plan detail ───────────────────────────
+
+
+def test_poll_status_shows_plan_detail(capsys, plain_caps):
+    """Plan detail list should be shown when a plan first appears."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Check stuff", "status": "done",
+                 "total_input_tokens": 0, "total_output_tokens": 0, "model": None},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "list files",
+             "status": "done", "output": "a.txt", "command": None},
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "tell the user",
+             "status": "done", "output": "Here are the files"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "[exec]" in out
+    assert "[msg]" in out
+    assert "list files" in out
+    assert "tell the user" in out
+
+
+# ── _poll_status shows translated command ─────────────────────
+
+
+def test_poll_status_shows_command(capsys, plain_caps):
+    """Translated command should be shown after the task header."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "List", "status": "done",
+                 "total_input_tokens": 0, "total_output_tokens": 0, "model": None},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "list files",
+             "status": "done", "output": "a.txt", "command": "ls -la"},
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Done!"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "$ ls -la" in out
+
+
+# ── _poll_status shows token usage ────────────────────────────
+
+
+def test_poll_status_shows_usage(capsys, plain_caps):
+    """Token usage should be shown when plan is done."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Test", "status": "done",
+                 "total_input_tokens": 1234, "total_output_tokens": 567,
+                 "model": "gpt-4"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Hello!"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "1,234" in out
+    assert "567" in out
+    assert "gpt-4" in out
+
+
+# ── _poll_status quiet mode hides usage ───────────────────────
+
+
+def test_poll_status_quiet_hides_usage(capsys, plain_caps):
+    """Token usage should not be shown in quiet mode."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Test", "status": "done",
+                 "total_input_tokens": 1234, "total_output_tokens": 567,
+                 "model": "gpt-4"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Hello!"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=True, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "1,234" not in out
 
 

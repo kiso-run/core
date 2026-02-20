@@ -111,6 +111,56 @@ def render_plan(
     return _style(text, _BOLD, _CYAN, caps=caps)
 
 
+def render_plan_detail(tasks: list[dict], caps: TermCaps) -> str:
+    """Render the full task list under the plan header.
+
+    Example output:
+      1. [exec] Verify pyproject.toml exists
+      2. [exec] Run uv sync
+      3. [msg]  Summarize results
+    """
+    if not tasks:
+        return ""
+    lines: list[str] = []
+    for i, t in enumerate(tasks, 1):
+        ttype = t.get("type", "?")
+        detail = (t.get("detail") or "").split("\n", 1)[0].strip()
+        # Pad type label for alignment
+        label = f"[{ttype}]"
+        line = f"  {i}. {label:8s} {detail}" if detail else f"  {i}. {label}"
+        lines.append(_style(line, _DIM, caps=caps))
+    return "\n".join(lines)
+
+
+def render_command(command: str, caps: TermCaps) -> str:
+    """Render a translated shell command line (e.g. '  $ ls -la')."""
+    text = f"  $ {command}"
+    return _style(text, _DIM, _CYAN, caps=caps)
+
+
+def render_usage(plan: dict, caps: TermCaps) -> str:
+    """Render token usage summary.
+
+    Example: ⟨ 1,234 in → 567 out │ deepseek/deepseek-v3.2 ⟩
+    """
+    input_tokens = plan.get("total_input_tokens", 0) or 0
+    output_tokens = plan.get("total_output_tokens", 0) or 0
+    model = plan.get("model") or ""
+    if not input_tokens and not output_tokens:
+        return ""
+    in_str = f"{input_tokens:,}"
+    out_str = f"{output_tokens:,}"
+    if caps.unicode:
+        text = f"⟨ {in_str} in → {out_str} out"
+    else:
+        text = f"< {in_str} in -> {out_str} out"
+    if model:
+        sep = "│" if caps.unicode else "|"
+        text += f" {sep} {model}"
+    text += " ⟩" if caps.unicode else " >"
+    return _style(text, _DIM, caps=caps)
+
+
 def render_max_replan(depth: int, caps: TermCaps) -> str:
     """Render max-replan-reached message."""
     icon = _icon("cancel", caps)

@@ -19,6 +19,7 @@ _kiso() {
         'sessions:manage sessions'
         'env:manage deploy secrets'
         'completion:print shell completion script'
+        'msg:send a message and print the response'
     )
 
     skill_cmds=(
@@ -90,7 +91,7 @@ _kiso() {
             fi
             return
             ;;
-        up|down|restart|shell|explore|logs|status|health|help)
+        up|down|restart|shell|explore|logs|status|health|help|msg)
             return
             ;;
     esac

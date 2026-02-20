@@ -5,7 +5,7 @@ _kiso() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart shell explore logs status health help skill connector sessions env completion"
+    local commands="up down restart shell explore logs status health help skill connector sessions env completion msg"
     local global_flags="--session --api --quiet -q --user --help -h"
 
     local skill_cmds="list search install update remove"
@@ -52,7 +52,7 @@ _kiso() {
             fi
             return
             ;;
-        up|down|restart|shell|explore|logs|status|health|help)
+        up|down|restart|shell|explore|logs|status|health|help|msg)
             return
             ;;
     esac

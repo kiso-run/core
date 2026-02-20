@@ -11,6 +11,16 @@ kiso --api http://remote:8333                  # remote server
 kiso --quiet                                   # only show bot messages
 ```
 
+## Single-Shot Mode
+
+```bash
+kiso msg "what is 2+2?"                        # send one message, print response, exit
+kiso msg "list files" --quiet                  # quiet output
+kiso msg "hello" --session dev                 # specific session
+```
+
+`kiso msg` sends a single message, polls for the response, prints it, and exits. Implicitly quiet when stdout is not a TTY (e.g. piped to another command). Useful for scripting and one-off questions.
+
 ### Flags
 
 | Flag | Default | Description |
@@ -88,8 +98,14 @@ $ kiso --session dev
 You: deploy the app to fly.io
 
 ◆ Plan: Deploy application to fly.io (3 tasks)
+────────────────────────────────────────────────────────────
+  1. [exec]    Run fly launch to initialize the app
+  2. [skill]   Update fly.toml to add health check endpoint
+  3. [exec]    Deploy the app to fly.io
+────────────────────────────────────────────────────────────
 
-▶ [1/3] exec: fly launch --no-deploy --name dev-app
+▶ [1/3] exec: Run fly launch to initialize the app
+  $ fly launch --no-deploy --name dev-app
   ┊ Scanning source code... Detected a FastAPI app
   ┊ Creating app "dev-app" in organization "personal"
   ┊ Wrote config file fly.toml
@@ -99,18 +115,26 @@ You: deploy the app to fly.io
   ┊ Edited fly.toml: added [[services.http_checks]] section
   ✓ review: ok
 
-▶ [3/3] exec: fly deploy
+▶ [3/3] exec: Deploy the app to fly.io
+  $ fly deploy
   ┊ ==> Building image with Docker
   ┊ ...
   ┊ Error: failed to fetch an image or build from source: no such file: Dockerfile
   ✗ review: replan — "No Dockerfile found. Need to create one first."
 
 ↻ Replan: Create Dockerfile then deploy (3 tasks)
+────────────────────────────────────────────────────────────
+  1. [exec]    Create a Dockerfile
+  2. [exec]    Deploy to fly.io
+  3. [msg]     Report deployment results
+────────────────────────────────────────────────────────────
 
-▶ [1/3] exec: cat > Dockerfile << 'EOF' ...
+▶ [1/3] exec: Create a Dockerfile
+  $ cat > Dockerfile << 'EOF' ...
   ✓ review: ok
 
-▶ [2/3] exec: fly deploy
+▶ [2/3] exec: Deploy to fly.io
+  $ fly deploy
   ┊ ==> Building image
   ┊ ==> Pushing image
   ┊ ==> Monitoring deployment
@@ -121,6 +145,7 @@ You: deploy the app to fly.io
 Bot: Deployed to fly.io. The app is live at https://dev-app.fly.dev.
      I had to create a Dockerfile first since one wasn't present.
      The health check is configured at /health.
+⟨ 4,521 in → 1,203 out │ deepseek/deepseek-chat-v3 ⟩
 
 You: _
 ```
@@ -183,6 +208,42 @@ When the user presses `Ctrl+C` during execution (not at the prompt):
 ```
 
 `Ctrl+C` at the prompt (not during execution) exits the REPL.
+
+#### Plan Detail
+
+When a plan is created, the CLI shows a numbered list of all planned tasks before execution starts:
+
+```
+◆ Plan: Install dependencies (3 tasks)
+────────────────────────────────────────────────────────────
+  1. [exec]    Check if pyproject.toml exists
+  2. [exec]    Run uv sync
+  3. [msg]     Summarize results
+────────────────────────────────────────────────────────────
+```
+
+#### Translated Commands
+
+For `exec` tasks, the CLI shows the actual shell command translated from the natural-language description:
+
+```
+▶ [1/3] exec: List all Python files in the project
+  $ find . -name "*.py" -type f
+  ┊ ./main.py
+  ┊ ./utils.py
+```
+
+The `$` line shows the command produced by the exec translator. This makes it clear what shell command was actually run.
+
+#### Token Usage
+
+After plan completion, the CLI shows a summary of LLM token usage:
+
+```
+⟨ 1,234 in → 567 out │ deepseek/deepseek-chat-v3 ⟩
+```
+
+Shows input tokens, output tokens, and the model used. Hidden in quiet mode. Uses ASCII fallback (`< ... >`) on non-Unicode terminals.
 
 #### Spinner
 

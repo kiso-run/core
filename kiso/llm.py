@@ -33,6 +33,29 @@ _llm_budget_count: contextvars.ContextVar[int] = contextvars.ContextVar(
 )
 
 
+# Per-message token usage tracking via contextvars.
+_llm_usage_entries: contextvars.ContextVar[list] = contextvars.ContextVar(
+    "_llm_usage_entries", default=None,
+)
+
+
+def reset_usage_tracking() -> None:
+    """Start a new usage accumulator for the current message."""
+    _llm_usage_entries.set([])
+
+
+def get_usage_summary() -> dict:
+    """Return aggregated token usage from the current accumulator.
+
+    Returns dict with keys: input_tokens, output_tokens, model (last seen).
+    """
+    entries = _llm_usage_entries.get(None) or []
+    total_in = sum(e["input_tokens"] for e in entries)
+    total_out = sum(e["output_tokens"] for e in entries)
+    model = entries[-1]["model"] if entries else None
+    return {"input_tokens": total_in, "output_tokens": total_out, "model": model}
+
+
 def set_llm_budget(max_calls: int) -> None:
     """Set per-message LLM call budget. Resets the counter to 0."""
     _llm_budget_max.set(max_calls)
@@ -188,5 +211,15 @@ async def call_llm(
     output_tokens = usage.get("completion_tokens", 0)
 
     audit.log_llm_call(session, role, model_name, provider_name, input_tokens, output_tokens, duration_ms, "ok")
+
+    # Accumulate usage for per-message tracking
+    entries = _llm_usage_entries.get(None)
+    if entries is not None:
+        entries.append({
+            "role": role,
+            "model": model_name,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        })
 
     return content
