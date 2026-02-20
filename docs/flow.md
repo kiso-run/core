@@ -87,7 +87,7 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 
 | Type | Execution |
 |---|---|
-| `exec` | `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
+| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `worker` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
 | `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
@@ -251,7 +251,8 @@ WORKER (per session)
   │  │                        │
   │  pass plan_outputs        │
   │  │                        │
-  │  exec / msg / skill       │
+  │  exec → translate → run   │
+  │  msg / skill              │
   │         │                 │
   │  sanitize + accumulate    │
   │         │                 │

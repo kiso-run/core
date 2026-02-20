@@ -87,6 +87,7 @@ Container management:
   kiso logs                 follow container logs
   kiso shell                open a bash shell inside the container
   kiso explore [session]    open a shell in the session workspace
+  kiso completion [bash|zsh] print shell completion script
 
 Config:
   ~/.kiso/config.toml       main configuration
@@ -99,6 +100,13 @@ Run 'kiso help' inside the container for CLI commands:
   kiso env set KEY VALUE    set a deploy secret
   kiso env reload           hot-reload secrets
 HELP
+        ;;
+    completion)
+        case "${2:-bash}" in
+            bash) cat "$HOME/.local/share/bash-completion/completions/kiso" 2>/dev/null || echo "Completion not installed. Run install.sh." >&2 ;;
+            zsh)  cat "$HOME/.local/share/zsh/site-functions/_kiso" 2>/dev/null || echo "Completion not installed. Run install.sh." >&2 ;;
+            *)    echo "Usage: kiso completion [bash|zsh]" >&2 ;;
+        esac
         ;;
     *)
         require_running

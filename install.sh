@@ -301,6 +301,27 @@ cp "$WRAPPER_SRC" "$WRAPPER_DST"
 chmod +x "$WRAPPER_DST"
 green "  installed to $WRAPPER_DST"
 
+# ── 6b. Install completions ──────────────────────────────────────────────
+bold "Installing shell completions..."
+BASH_COMP_DIR="$HOME/.local/share/bash-completion/completions"
+ZSH_COMP_DIR="$HOME/.local/share/zsh/site-functions"
+
+mkdir -p "$BASH_COMP_DIR" "$ZSH_COMP_DIR"
+cp "$REPO_DIR/completions/kiso.bash" "$BASH_COMP_DIR/kiso"
+cp "$REPO_DIR/completions/kiso.zsh"  "$ZSH_COMP_DIR/_kiso"
+green "  completions installed"
+
+# Hint for zsh fpath
+if command -v zsh &>/dev/null; then
+    if ! zsh -c 'echo "$fpath"' 2>/dev/null | grep -q "$HOME/.local/share/zsh/site-functions"; then
+        yellow ""
+        yellow "  For zsh completion, add this BEFORE compinit in your ~/.zshrc:"
+        yellow ""
+        yellow "    fpath=(\$HOME/.local/share/zsh/site-functions \$fpath)"
+        yellow ""
+    fi
+fi
+
 # Check PATH
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     yellow ""

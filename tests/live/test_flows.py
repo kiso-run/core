@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from kiso.brain import (
+    run_exec_translator,
     run_paraphraser,
     run_planner,
     run_reviewer,
@@ -22,6 +23,7 @@ from kiso.store import (
     create_task,
     save_message,
 )
+from kiso.sysenv import collect_system_env, build_system_env_section
 from kiso.worker import _msg_task
 
 pytestmark = pytest.mark.llm_live
@@ -198,3 +200,90 @@ class TestParaphraserInjection:
             f"Paraphraser leaked base64|sh pattern: {result[:200]}"
         )
         assert len(result) > 10, "Paraphraser should produce a summary"
+
+
+# ---------------------------------------------------------------------------
+# L2.6 — Exec translator (architect/editor pattern)
+# ---------------------------------------------------------------------------
+
+
+class TestExecTranslator:
+    async def test_translates_ls_to_shell_command(self, live_config):
+        """Natural language 'list files' → valid shell command containing ls or similar."""
+        sys_env = collect_system_env(live_config)
+        sys_env_text = build_system_env_section(sys_env)
+
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "List all files and directories in the current directory",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        # Should produce something that looks like a shell command
+        assert command.strip()
+        assert "ls" in command.lower() or "find" in command.lower() or "dir" in command.lower(), (
+            f"Expected 'ls' or 'find' in translated command, got: {command}"
+        )
+
+    async def test_translates_echo_to_shell_command(self, live_config):
+        """Natural language 'print hello world' → echo hello world."""
+        sys_env = collect_system_env(live_config)
+        sys_env_text = build_system_env_section(sys_env)
+
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "Print the text 'hello world' to standard output",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        assert "echo" in command.lower() or "printf" in command.lower(), (
+            f"Expected echo/printf in translated command, got: {command}"
+        )
+        assert "hello" in command.lower()
+
+    async def test_translates_file_creation(self, live_config):
+        """Natural language 'create a file' → valid command with echo/touch/cat."""
+        sys_env = collect_system_env(live_config)
+        sys_env_text = build_system_env_section(sys_env)
+
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "Create a file called test.txt containing the text 'hello'",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        assert command.strip()
+        # Should reference the filename
+        assert "test.txt" in command, (
+            f"Expected 'test.txt' in translated command, got: {command}"
+        )
+
+    async def test_no_markdown_fences_in_output(self, live_config):
+        """Translator must NOT wrap the command in markdown code fences."""
+        sys_env = collect_system_env(live_config)
+        sys_env_text = build_system_env_section(sys_env)
+
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "Show the current working directory",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        assert not command.strip().startswith("```"), (
+            f"Translator output should not have markdown fences: {command}"
+        )
+        assert "```" not in command, (
+            f"Translator output should not contain fences: {command}"
+        )

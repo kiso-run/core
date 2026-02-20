@@ -24,12 +24,14 @@ from kiso.security import (
 )
 from kiso.brain import (
     CuratorError,
+    ExecTranslatorError,
     MessengerError,
     ParaphraserError,
     PlanError,
     ReviewError,
     SummarizerError,
     run_curator,
+    run_exec_translator,
     run_fact_consolidation,
     run_messenger,
     run_paraphraser,
@@ -46,6 +48,7 @@ from kiso.skills import (
     discover_skills,
     validate_skill_args,
 )
+from kiso.sysenv import get_system_env, build_system_env_section
 from kiso.webhook import deliver_webhook
 from kiso.store import (
     count_messages,
@@ -413,9 +416,33 @@ async def _execute_plan(
             # Write plan_outputs.json before execution
             _write_plan_outputs(session, plan_outputs)
 
+            # Translate natural-language detail → shell command
+            sys_env = get_system_env(config)
+            sys_env_text = build_system_env_section(sys_env)
+            outputs_text = _format_plan_outputs_for_msg(plan_outputs)
+            try:
+                command = await run_exec_translator(
+                    config, detail, sys_env_text,
+                    plan_outputs_text=outputs_text, session=session,
+                )
+            except ExecTranslatorError as e:
+                log.error("Exec translation failed for task %d: %s", task_id, e)
+                await update_task(db, task_id, "failed", output="", stderr=str(e))
+                audit.log_task(
+                    session, task_id, "exec", detail, "failed", 0, 0,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
+                )
+                remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
+                return False, None, completed, remaining
+
+            if slog:
+                slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
+
             t0 = time.perf_counter()
             stdout, stderr, success = await _exec_task(
-                session, detail, exec_timeout, sandbox_uid=sandbox_uid,
+                session, command, exec_timeout, sandbox_uid=sandbox_uid,
                 max_output_size=max_output_size,
             )
             task_duration_ms = int((time.perf_counter() - t0) * 1000)

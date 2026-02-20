@@ -127,6 +127,7 @@ def _load_system_prompt(role: str) -> str:
         "summarizer": _default_summarizer_prompt,
         "paraphraser": _default_paraphraser_prompt,
         "messenger": _default_messenger_prompt,
+        "exec_translator": lambda: _EXEC_TRANSLATOR_PROMPT,
     }
     factory = defaults.get(role)
     if factory:
@@ -142,7 +143,7 @@ You are a task planner. Given a user message, produce a JSON plan with:
 - tasks: array of tasks to accomplish the goal
 
 Task types:
-- exec: shell command. detail = the command. expect = success criteria (required).
+- exec: shell command. detail = what to accomplish (natural language). A separate worker will translate it into the actual shell command. expect = success criteria (required).
 - skill: call a skill. detail = what to do. skill = name. args = JSON string. expect = success criteria (required).
 - msg: message to user. detail = what to communicate. skill/args/expect = null.
 
@@ -696,6 +697,10 @@ async def run_paraphraser(config: Config, messages: list[dict], session: str = "
 # ---------------------------------------------------------------------------
 
 
+class ExecTranslatorError(Exception):
+    """Exec-to-shell translation failure."""
+
+
 class MessengerError(Exception):
     """Messenger generation failure."""
 
@@ -771,6 +776,75 @@ async def run_messenger(
         return await call_llm(config, "messenger", messages, session=session)
     except LLMError as e:
         raise MessengerError(f"LLM call failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Exec translator  (planner = architect, worker/translator = editor)
+# ---------------------------------------------------------------------------
+
+_EXEC_TRANSLATOR_PROMPT = """\
+You are a shell command translator. Given a task description in natural \
+language and a system environment context, produce the EXACT shell command \
+(or short script) to accomplish the task.
+
+Rules:
+- Output ONLY the shell command(s). No explanation, no markdown fences, no \
+comments.
+- If multiple commands are needed, join them with && or ;
+- Use only binaries listed as available in the system environment.
+- The command will be executed by /bin/sh in the working directory shown \
+in the system environment.
+- If the task cannot be accomplished with a shell command, output exactly: \
+CANNOT_TRANSLATE
+"""
+
+
+def build_exec_translator_messages(
+    config: Config,
+    detail: str,
+    sys_env_text: str,
+    plan_outputs_text: str = "",
+) -> list[dict]:
+    """Build the message list for the exec translator LLM call."""
+    system_prompt = _load_system_prompt("exec_translator")
+    context_parts: list[str] = []
+    context_parts.append(f"## System Environment\n{sys_env_text}")
+    if plan_outputs_text:
+        context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
+    context_parts.append(f"## Task\n{detail}")
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "\n\n".join(context_parts)},
+    ]
+
+
+async def run_exec_translator(
+    config: Config,
+    detail: str,
+    sys_env_text: str,
+    plan_outputs_text: str = "",
+    session: str = "",
+) -> str:
+    """Translate a natural-language exec task detail into a shell command.
+
+    Returns the shell command string.
+    Raises ExecTranslatorError on failure.
+    """
+    messages = build_exec_translator_messages(
+        config, detail, sys_env_text, plan_outputs_text,
+    )
+    try:
+        raw = await call_llm(config, "worker", messages, session=session)
+    except LLMError as e:
+        raise ExecTranslatorError(f"LLM call failed: {e}")
+
+    command = raw.strip()
+    if not command or command == "CANNOT_TRANSLATE":
+        raise ExecTranslatorError(
+            f"Cannot translate task to shell command: {detail}"
+        )
+    return command
 
 
 # ---------------------------------------------------------------------------

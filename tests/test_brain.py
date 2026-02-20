@@ -10,6 +10,7 @@ import pytest
 import aiosqlite
 from kiso.brain import (
     CuratorError,
+    ExecTranslatorError,
     MessengerError,
     ParaphraserError,
     PlanError,
@@ -21,12 +22,14 @@ from kiso.brain import (
     _load_system_prompt,
     _strip_fences,
     build_curator_messages,
+    build_exec_translator_messages,
     build_messenger_messages,
     build_paraphraser_messages,
     build_planner_messages,
     build_reviewer_messages,
     build_summarizer_messages,
     run_curator,
+    run_exec_translator,
     run_fact_consolidation,
     run_messenger,
     run_paraphraser,
@@ -1293,3 +1296,99 @@ class TestLoadSystemPromptMessenger:
             prompt = _load_system_prompt("messenger")
         assert "{bot_name}" in prompt
         assert "friendly" in prompt
+
+
+# --- Exec Translator ---
+
+class TestBuildExecTranslatorMessages:
+    def test_basic_structure(self):
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config, "List all Python files", "OS: Linux\nShell: /bin/sh",
+        )
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+        assert "## Task\nList all Python files" in msgs[1]["content"]
+        assert "## System Environment" in msgs[1]["content"]
+
+    def test_includes_plan_outputs(self):
+        config = _make_brain_config()
+        outputs_text = "[1] exec: list files\nStatus: done\nfoo.py"
+        msgs = build_exec_translator_messages(
+            config, "Count them", "OS: Linux", outputs_text,
+        )
+        assert "## Preceding Task Outputs" in msgs[1]["content"]
+        assert "foo.py" in msgs[1]["content"]
+
+    def test_no_outputs_section_when_empty(self):
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config, "List files", "OS: Linux", "",
+        )
+        assert "Preceding Task Outputs" not in msgs[1]["content"]
+
+
+class TestRunExecTranslator:
+    async def test_successful_translation(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="ls -la *.py"):
+            result = await run_exec_translator(
+                config, "List all Python files", "OS: Linux",
+            )
+        assert result == "ls -la *.py"
+
+    async def test_strips_whitespace(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  ls -la  \n"):
+            result = await run_exec_translator(
+                config, "List files", "OS: Linux",
+            )
+        assert result == "ls -la"
+
+    async def test_cannot_translate_raises(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CANNOT_TRANSLATE"):
+            with pytest.raises(ExecTranslatorError, match="Cannot translate"):
+                await run_exec_translator(config, "Do something impossible", "OS: Linux")
+
+    async def test_empty_result_raises(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="   "):
+            with pytest.raises(ExecTranslatorError, match="Cannot translate"):
+                await run_exec_translator(config, "Do something", "OS: Linux")
+
+    async def test_llm_error_raises_translator_error(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("API down")):
+            with pytest.raises(ExecTranslatorError, match="API down"):
+                await run_exec_translator(config, "List files", "OS: Linux")
+
+    async def test_uses_worker_role(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        captured = {}
+
+        async def _capture(cfg, role, messages, **kw):
+            captured["role"] = role
+            return "echo hello"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_exec_translator(config, "Say hello", "OS: Linux")
+        assert captured["role"] == "worker"
+
+
+class TestLoadSystemPromptExecTranslator:
+    def test_default_prompt(self):
+        with patch.object(type(KISO_DIR / "roles" / "exec_translator.md"), "exists", return_value=False):
+            prompt = _load_system_prompt("exec_translator")
+        assert "shell command translator" in prompt
+        assert "CANNOT_TRANSLATE" in prompt
+
+    def test_custom_prompt(self, tmp_path):
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        (roles_dir / "exec_translator.md").write_text("Custom exec translator")
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            prompt = _load_system_prompt("exec_translator")
+        assert prompt == "Custom exec translator"

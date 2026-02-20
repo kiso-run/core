@@ -4,32 +4,33 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 
 ## Context per Role
 
-| Context piece | Planner | Reviewer | Worker | Summarizer | Curator | Paraphraser |
-|---|---|---|---|---|---|---|
-| Session summary | yes | - | yes | yes (existing) | yes | - |
-| Last N raw messages | yes | - | - | - | - | - |
-| Recent msg outputs | yes | - | - | - | - | - |
-| Paraphrased untrusted messages | yes | - | - | - | - | generates |
-| New message | yes | - | - | - | - | - |
-| Facts (global) | yes | - | yes | - | yes | - |
-| Pending items (global + session) | yes | - | - | - | yes | - |
-| Allowed skill summaries + args schemas | yes | - | - | - | - | - |
-| Caller role (admin/user) | yes | - | - | - | - | - |
-| Process goal | generates | yes | - | - | - | - |
-| Preceding plan outputs (fenced) | - | - | yes | - | - | - |
-| Current task detail | - | yes | yes | - | - | - |
-| Current task expect | - | yes | - | - | - | - |
-| Current task output (fenced) | - | yes | - | - | - | - |
-| Original user request | - | yes | - | - | - | - |
-| Messages to compress + their msg outputs | - | - | - | yes | - | - |
-| Pending learnings | - | - | - | - | yes | - |
-| Completed tasks + outputs (fenced) | replan only | - | - | - | - | - |
-| Remaining tasks | replan only | - | - | - | - | - |
-| Failure reason | replan only | - | - | - | - | - |
-| Replan history | replan only | - | - | - | - | - |
-| Raw untrusted messages (batch) | - | - | - | - | - | yes |
+| Context piece | Planner | Reviewer | Exec Translator | Worker (msg) | Summarizer | Curator | Paraphraser |
+|---|---|---|---|---|---|---|---|
+| Session summary | yes | - | - | yes | yes (existing) | yes | - |
+| Last N raw messages | yes | - | - | - | - | - | - |
+| Recent msg outputs | yes | - | - | - | - | - | - |
+| Paraphrased untrusted messages | yes | - | - | - | - | - | generates |
+| New message | yes | - | - | - | - | - | - |
+| Facts (global) | yes | - | - | yes | - | yes | - |
+| Pending items (global + session) | yes | - | - | - | - | yes | - |
+| Allowed skill summaries + args schemas | yes | - | - | - | - | - | - |
+| Caller role (admin/user) | yes | - | - | - | - | - | - |
+| System environment | yes | - | yes | - | - | - | - |
+| Process goal | generates | yes | - | - | - | - | - |
+| Preceding plan outputs (fenced) | - | - | yes | yes | - | - | - |
+| Current task detail | - | yes | yes | yes | - | - | - |
+| Current task expect | - | yes | - | - | - | - | - |
+| Current task output (fenced) | - | yes | - | - | - | - | - |
+| Original user request | - | yes | - | - | - | - | - |
+| Messages to compress + their msg outputs | - | - | - | - | yes | - | - |
+| Pending learnings | - | - | - | - | - | yes | - |
+| Completed tasks + outputs (fenced) | replan only | - | - | - | - | - | - |
+| Remaining tasks | replan only | - | - | - | - | - | - |
+| Failure reason | replan only | - | - | - | - | - | - |
+| Replan history | replan only | - | - | - | - | - | - |
+| Raw untrusted messages (batch) | - | - | - | - | - | - | yes |
 
-Key principle: the planner must put everything the worker needs into the task `detail` — the worker won't see the conversation (see [Why the Worker Doesn't See the Conversation](#why-the-worker-doesnt-see-the-conversation)).
+Key principle: the planner must put everything the worker needs into the task `detail` — the worker won't see the conversation (see [Why the Worker Doesn't See the Conversation](#why-the-worker-doesnt-see-the-conversation)). For `exec` tasks, `detail` is a natural-language description; the **exec translator** (an LLM step) converts it to the actual shell command before execution (architect/editor pattern).
 
 ---
 
@@ -165,7 +166,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 | Field | Non-null when | Description |
 |---|---|---|
 | `type` | always | `exec`, `msg`, `skill` |
-| `detail` | always | What to do. For `msg` tasks, must include all context the worker needs. For `exec` tasks, the shell command. |
+| `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. |
 | `expect` | `type` is `exec` or `skill` | Semantic success criteria (e.g. "tests pass", not exact output). Required — all exec/skill tasks are reviewed. |
 | `skill` | `type` is `skill` | Skill name. |
 | `args` | `type` is `skill` | Skill arguments as a JSON string. Kiso parses and validates against `kiso.toml` schema. |
@@ -244,7 +245,34 @@ See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) 
 
 ---
 
-## Worker
+## Exec Translator
+
+**When**: before executing every `exec` task. Acts as the "editor" in the architect/editor pattern (planner = architect, exec translator = editor).
+
+**Input**: see [Context per Role](#context-per-role) table. Receives the task `detail` (natural language), the system environment (available binaries, shell, CWD), and preceding plan outputs.
+
+**Output**: free-form text — the exact shell command(s) to run.
+
+### How It Works
+
+The planner writes `exec` task details as natural-language descriptions (e.g., "List all Python files in the project directory"). The exec translator receives this description along with the system environment context (available binaries, OS, shell, working directory) and preceding task outputs, then produces the exact shell command (e.g., `find . -name "*.py" -type f`).
+
+Uses the `worker` model (same LLM as `msg` tasks). Custom prompt can be placed at `~/.kiso/roles/exec_translator.md`.
+
+### Rules in the Default Prompt
+
+- Output ONLY the shell command(s), no explanation, no markdown fences
+- If multiple commands are needed, join with `&&` or `;`
+- Use only binaries listed as available in the system environment
+- If the task cannot be accomplished, output `CANNOT_TRANSLATE` (triggers a failure, not a silent empty command)
+
+### Error Handling
+
+If translation fails (LLM error or `CANNOT_TRANSLATE`), the task is marked `failed` and the plan stops. The reviewer does not run — there is no output to review. The planner may replan with the failure context.
+
+---
+
+## Worker (Messenger)
 
 **When**: executing `msg` type tasks (text generation).
 

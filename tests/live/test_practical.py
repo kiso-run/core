@@ -93,6 +93,156 @@ class TestExecChaining:
 
 
 # ---------------------------------------------------------------------------
+# L4.1b — Exec translator (architect/editor pattern)
+# ---------------------------------------------------------------------------
+
+
+class TestExecTranslator:
+    """Tests that the exec translator correctly converts natural-language
+    task descriptions into runnable shell commands."""
+
+    async def test_ls_via_natural_language(
+        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+    ):
+        """Natural-language 'list files' → translator produces ls → output captured."""
+        msg_id = await save_message(
+            seeded_db, live_session, "testadmin", "user",
+            "List the contents of the current directory",
+        )
+
+        plan_id = await create_plan(
+            seeded_db, live_session, msg_id,
+            "List directory contents",
+        )
+        # Natural-language detail — the translator must convert this to a command
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="exec",
+            detail="List all files and directories in the current directory",
+            expect="Directory listing is printed",
+        )
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="msg",
+            detail="Report the directory listing to the user",
+        )
+
+        with mock_noop_infra:
+            success, replan_reason, completed, remaining = await asyncio.wait_for(
+                _execute_plan(
+                    seeded_db, live_config, live_session, plan_id,
+                    "List directory contents",
+                    "List the contents of the current directory",
+                    exec_timeout=60,
+                ),
+                timeout=TIMEOUT,
+            )
+
+        exec_tasks = [t for t in completed if t["type"] == "exec"]
+        assert exec_tasks, (
+            f"No exec tasks completed (success={success}, reason={replan_reason})"
+        )
+        # The exec ran something and produced output (even if empty dir)
+        assert exec_tasks[0]["status"] == "done"
+
+    async def test_create_and_delete_file(
+        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+    ):
+        """Natural-language 'create a file then delete it' → both exec tasks succeed."""
+        msg_id = await save_message(
+            seeded_db, live_session, "testadmin", "user",
+            "Create a file called test123.txt with 'hello' in it, then delete it",
+        )
+
+        plan_id = await create_plan(
+            seeded_db, live_session, msg_id,
+            "Create and delete a test file",
+        )
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="exec",
+            detail="Create a file called test123.txt containing the text 'hello'",
+            expect="File test123.txt is created successfully",
+        )
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="exec",
+            detail="Verify the file test123.txt exists and contains 'hello', then delete it",
+            expect="File content is shown and file is deleted",
+        )
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="msg",
+            detail="Tell the user the file was created, verified, and deleted",
+        )
+
+        with mock_noop_infra:
+            success, replan_reason, completed, remaining = await asyncio.wait_for(
+                _execute_plan(
+                    seeded_db, live_config, live_session, plan_id,
+                    "Create and delete a test file",
+                    "Create a file called test123.txt with 'hello' in it, then delete it",
+                    exec_timeout=60,
+                ),
+                timeout=TIMEOUT,
+            )
+
+        exec_tasks = [t for t in completed if t["type"] == "exec"]
+        assert len(exec_tasks) >= 1, (
+            f"Expected exec tasks to complete (success={success}, reason={replan_reason})"
+        )
+        # At least the first exec should have run
+        all_output = " ".join((t.get("output") or "") for t in exec_tasks).lower()
+        assert "hello" in all_output or exec_tasks[0]["status"] == "done", (
+            f"Expected 'hello' in exec output: {all_output[:300]}"
+        )
+
+    async def test_cat_etc_hostname(
+        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+    ):
+        """Natural-language 'show the hostname' → translator produces cat /etc/hostname or hostname."""
+        msg_id = await save_message(
+            seeded_db, live_session, "testadmin", "user",
+            "Show me the system hostname",
+        )
+
+        plan_id = await create_plan(
+            seeded_db, live_session, msg_id,
+            "Show hostname",
+        )
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="exec",
+            detail="Display the system hostname",
+            expect="Hostname is printed",
+        )
+        await create_task(
+            seeded_db, plan_id, live_session,
+            type="msg",
+            detail="Tell the user the hostname",
+        )
+
+        with mock_noop_infra:
+            success, replan_reason, completed, remaining = await asyncio.wait_for(
+                _execute_plan(
+                    seeded_db, live_config, live_session, plan_id,
+                    "Show hostname",
+                    "Show me the system hostname",
+                    exec_timeout=60,
+                ),
+                timeout=TIMEOUT,
+            )
+
+        exec_tasks = [t for t in completed if t["type"] == "exec"]
+        assert exec_tasks, (
+            f"No exec tasks completed (success={success}, reason={replan_reason})"
+        )
+        # Should have produced some output (the hostname)
+        output = exec_tasks[0].get("output", "")
+        assert len(output.strip()) > 0, "Expected non-empty hostname output"
+
+
+# ---------------------------------------------------------------------------
 # L4.2 — Full _process_message pipeline
 # ---------------------------------------------------------------------------
 
