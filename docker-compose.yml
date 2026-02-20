@@ -5,11 +5,8 @@ services:
     ports:
       - "8333:8333"
     volumes:
-      - kiso-data:/root/.kiso
+      - ${KISO_DATA:-~/.kiso}:/root/.kiso
     env_file:
       - path: .env
         required: false
     restart: unless-stopped
-
-volumes:
-  kiso-data:

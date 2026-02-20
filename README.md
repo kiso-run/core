@@ -83,10 +83,10 @@ See [docker.md](docs/docker.md).
 git clone git@github.com:kiso-run/core.git
 cd core
 docker compose build
-mkdir -p ~/.kiso ~/.kiso/roles
+mkdir -p ~/.kiso
 ```
 
-Create `~/.kiso/config.toml` (minimal — see [config.md](docs/config.md) for all options):
+Create `~/.kiso/config.toml` (see [config.md](docs/config.md) for all options):
 
 ```toml
 [tokens]
@@ -100,17 +100,18 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 ```
 
-Set deploy secrets (never in config files — see [security.md — Deploy Secrets](docs/security.md#deploy-secrets)):
+Start kiso and set your API key:
 
 ```bash
 docker compose up -d
 docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-or-v1-...
 docker exec -it kiso kiso env reload
+docker restart kiso
 ```
 
-Create role prompts in `~/.kiso/roles/`: `planner.md`, `reviewer.md`, `worker.md`, `summarizer.md`, `curator.md`. The paraphraser reuses the summarizer — no separate file. See [llm-roles.md](docs/llm-roles.md).
+Verify: `curl http://localhost:8333/health` → `{"status": "ok"}`
 
-Verify: `curl http://localhost:8333/health`
+The data directory (`~/.kiso/`) is bind-mounted from your host, so you can edit `config.toml` directly and restart. Role prompts (`~/.kiso/roles/*.md`) are optional — sensible defaults are built in. See [llm-roles.md](docs/llm-roles.md) to customize them.
 
 ## Quickstart
 

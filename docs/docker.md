@@ -58,18 +58,11 @@ services:
     ports:
       - "8333:8333"
     volumes:
-      - kiso-data:/root/.kiso
-    environment:
-      - KISO_OPENROUTER_API_KEY
-      # connector env vars
-      - KISO_CONNECTOR_DISCORD_BOT_TOKEN
-      # skill env vars
-      - KISO_SKILL_SEARCH_API_KEY
+      - ${KISO_DATA:-~/.kiso}:/root/.kiso
     restart: unless-stopped
-
-volumes:
-  kiso-data:
 ```
+
+By default, `~/.kiso/` on the host is bind-mounted into the container. You can edit `config.toml` directly on the host and restart. Override with `KISO_DATA=/path/to/data docker compose up -d`.
 
 ## Pre-installing Skills and Connectors
 
@@ -109,14 +102,14 @@ services:
 
 Two ways to provide deploy secrets:
 
-**1. Docker env vars** (docker-compose `environment` or `docker run -e`): passed directly to the container process.
-
-**2. `kiso env`** (recommended): manages `~/.kiso/.env` inside the volume. Secrets persist across container restarts and can be hot-reloaded without restart via `kiso env reload`. See [cli.md — Deploy Secret Management](cli.md#deploy-secret-management).
+**1. `kiso env`** (recommended): manages `~/.kiso/.env` on the host (bind-mounted). Secrets persist across container restarts and can be hot-reloaded without restart via `kiso env reload`. See [cli.md — Deploy Secret Management](cli.md#deploy-secret-management).
 
 ```bash
 docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-or-...
 docker exec -it kiso kiso env reload
 ```
+
+**2. Docker env vars** (`docker run -e` or a `.env` file in the project directory): passed directly to the container process.
 
 Both methods work. Docker env vars are applied at container start; `kiso env` manages secrets at runtime. If the same variable is set in both, the Docker env var takes precedence (standard behavior).
 
