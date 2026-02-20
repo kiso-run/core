@@ -602,6 +602,41 @@ class TestBuildReviewerMessages:
             )
         assert msgs[0]["content"] == "My custom reviewer"
 
+    # --- 21e: success param in reviewer context ---
+
+    async def test_success_true_shows_succeeded(self):
+        msgs = await build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=True,
+        )
+        content = msgs[1]["content"]
+        assert "## Command Status" in content
+        assert "succeeded (exit code 0)" in content
+
+    async def test_success_false_shows_failed(self):
+        msgs = await build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False,
+        )
+        content = msgs[1]["content"]
+        assert "## Command Status" in content
+        assert "FAILED (non-zero exit code)" in content
+
+    async def test_success_none_no_command_status(self):
+        msgs = await build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=None,
+        )
+        content = msgs[1]["content"]
+        assert "## Command Status" not in content
+
+    async def test_success_default_no_command_status(self):
+        msgs = await build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+        )
+        content = msgs[1]["content"]
+        assert "## Command Status" not in content
+
 
 # --- run_reviewer ---
 

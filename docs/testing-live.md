@@ -112,6 +112,22 @@ Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workfl
 - If a test fails on assertion, check the actual LLM output — the model may have phrased things differently.
 - Never add exact text matching; adjust assertions to be more permissive if needed.
 
+### Planned: Security & robustness tests (M21)
+
+Tests planned for M21 that verify security properties with real LLMs:
+
+| Test | Level | Verifies |
+|---|---|---|
+| Deny list bypass (base64, python -c, var indirection) | Unit | Encoded patterns caught or documented |
+| Fact poisoning resistance | L4 | Curator discards manipulative learnings |
+| Fact consolidation safety | L4 | Consolidated facts cover original topics, no catastrophic shrinkage |
+| Paraphraser injection resistance | L2 | Injection payloads stripped from output |
+| Reviewer catches failed exec | L3 | Exit code != 0 → reviewer says "replan" |
+| PlanError user notification | Unit | Planning failure → system message in DB |
+| Reviewer not promoting false facts | L2 | Crafted output → learn is null or generic |
+
+See [security-risks.md](security-risks.md) for full risk analysis and `DEV_PLAN.md` § M21 for implementation plan.
+
 ### L5 install tests skipped
 - `skill-search` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
 - Requires `git` on PATH.

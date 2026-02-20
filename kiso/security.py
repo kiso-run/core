@@ -41,6 +41,12 @@ DENY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bchown\s+.*-R\b"), "chown -R (recursive ownership change)"),
     (re.compile(r"\b(shutdown|reboot)\b"), "shutdown/reboot"),
     (re.compile(r":\(\)\s*\{.*\|.*&"), "fork bomb"),
+    (re.compile(r"base64.*\|\s*(sh|bash|zsh)"), "base64 decode piped to shell"),
+    (re.compile(r"\bpython[23]?\s+-c\b"), "python one-liner execution"),
+    (re.compile(r"\bperl\s+-e\b"), "perl one-liner execution"),
+    (re.compile(r"\bruby\s+-e\b"), "ruby one-liner execution"),
+    (re.compile(r"\beval\b"), "eval command (indirect execution)"),
+    (re.compile(r"\bnode\s+-e\b"), "node one-liner execution"),
 ]
 
 _SUBSHELL_RE = re.compile(r"\$\(([^)]+)\)|`([^`]+)`")

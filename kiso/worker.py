@@ -326,6 +326,7 @@ async def _review_task(
     if stderr:
         full_output += f"\n--- stderr ---\n{stderr}"
 
+    success = task_row.get("status") == "done"
     review = await run_reviewer(
         config,
         goal=goal,
@@ -334,6 +335,7 @@ async def _review_task(
         output=full_output,
         user_message=user_message,
         session=session,
+        success=success,
     )
 
     # Store learning if present
@@ -795,6 +797,14 @@ async def _process_message(
         )
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
+        error_text = f"I wasn't able to process your request. Planning failed: {e}"
+        await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
+        sess = await get_session(db, session)
+        webhook_url = sess.get("webhook") if sess else None
+        if webhook_url:
+            await deliver_webhook(webhook_url, session, 0, error_text, True,
+                                  secret=str(config.settings.get("webhook_secret", "")),
+                                  max_payload=int(config.settings.get("webhook_max_payload", 0)))
         return
 
     # Extract ephemeral secrets from plan
@@ -807,6 +817,13 @@ async def _process_message(
                 log.warning("Malformed secret entry (skipped): %s", e)
         if session_secrets:
             log.info("%d secrets extracted", len(session_secrets))
+
+    # Sanitize secrets from task detail/args before DB storage
+    deploy_secrets = collect_deploy_secrets(config)
+    for t in plan["tasks"]:
+        t["detail"] = sanitize_output(t["detail"], deploy_secrets, session_secrets)
+        if t.get("args"):
+            t["args"] = sanitize_output(t["args"], deploy_secrets, session_secrets)
 
     plan_id = await create_plan(db, session, msg_id, plan["goal"])
     await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
@@ -1014,9 +1031,17 @@ async def _process_message(
                 timeout=exec_timeout,
             )
             if consolidated:
-                await delete_facts(db, [f["id"] for f in all_facts])
-                for text in consolidated:
-                    await save_fact(db, text, source="consolidation")
+                if len(consolidated) < len(all_facts) * 0.3:
+                    log.warning("Fact consolidation shrank %d → %d (< 30%%), skipping",
+                                len(all_facts), len(consolidated))
+                else:
+                    consolidated = [f for f in consolidated if isinstance(f, str) and len(f.strip()) >= 10]
+                    if consolidated:
+                        await delete_facts(db, [f["id"] for f in all_facts])
+                        for text in consolidated:
+                            await save_fact(db, text, source="consolidation")
+                    else:
+                        log.warning("All consolidated facts filtered out, preserving originals")
         except asyncio.TimeoutError:
             log.warning("Fact consolidation timed out after %ds", exec_timeout)
         except SummarizerError as e:

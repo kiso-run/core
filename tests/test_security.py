@@ -95,6 +95,55 @@ class TestCheckCommandDenyList:
     def test_allows_safe_semicolon(self):
         assert check_command_deny_list("echo a; echo b") is None
 
+    # --- 21a: deny list bypass patterns ---
+
+    def test_base64_pipe_to_sh_blocked(self):
+        assert check_command_deny_list("echo cm0gLXJmIC8= | base64 -d | sh") is not None
+
+    def test_base64_pipe_to_bash_blocked(self):
+        assert check_command_deny_list("echo foo | base64 -d | bash") is not None
+
+    def test_base64_pipe_to_zsh_blocked(self):
+        assert check_command_deny_list("echo foo | base64 -d | zsh") is not None
+
+    def test_python_c_blocked(self):
+        assert check_command_deny_list('python3 -c "import os; os.system(\'rm -rf /\')"') is not None
+
+    def test_python2_c_blocked(self):
+        assert check_command_deny_list('python2 -c "print(1)"') is not None
+
+    def test_perl_e_blocked(self):
+        assert check_command_deny_list('perl -e "system(\'rm -rf /\')"') is not None
+
+    def test_ruby_e_blocked(self):
+        assert check_command_deny_list('ruby -e "system(\'rm -rf /\')"') is not None
+
+    def test_eval_blocked(self):
+        assert check_command_deny_list("eval $(printf '\\x72\\x6d -rf /')") is not None
+
+    def test_node_e_blocked(self):
+        assert check_command_deny_list('node -e "require(\'child_process\').exec(\'rm -rf /\')"') is not None
+
+    # --- 21a: safe uses NOT blocked ---
+
+    def test_python3_script_allowed(self):
+        assert check_command_deny_list("python3 script.py") is None
+
+    def test_node_app_allowed(self):
+        assert check_command_deny_list("node app.js") is None
+
+    def test_echo_base64_allowed(self):
+        assert check_command_deny_list("echo hello | base64") is None
+
+    def test_perl_script_allowed(self):
+        assert check_command_deny_list("perl script.pl") is None
+
+    def test_ruby_script_allowed(self):
+        assert check_command_deny_list("ruby script.rb") is None
+
+    def test_node_no_flag_allowed(self):
+        assert check_command_deny_list("node server.js --port 3000") is None
+
     def test_normal_commands_allowed(self):
         for cmd in ["ls -la", "echo hello", "git status", "python3 script.py"]:
             assert check_command_deny_list(cmd) is None, f"Should allow: {cmd}"

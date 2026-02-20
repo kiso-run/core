@@ -19,6 +19,8 @@ from kiso.store import (
     get_facts,
     get_pending_items,
     get_plan_for_session,
+    get_recent_messages,
+    get_session,
     get_tasks_for_plan,
     get_tasks_for_session,
     get_unprocessed_messages,
@@ -3374,8 +3376,8 @@ class TestCancelMechanism:
 class TestOutputTruncation:
     async def test_exec_output_truncated_when_large(self, tmp_path):
         """Command producing >max_output_size chars gets truncated."""
-        # echo 2000 chars, limit to 100
-        cmd = "python3 -c \"print('A' * 2000)\""
+        # printf 2000 chars, limit to 100
+        cmd = "printf '%02000d' 0"
         with patch("kiso.worker.KISO_DIR", tmp_path):
             stdout, stderr, success = await _exec_task(
                 "test-sess", cmd, 5, max_output_size=100,
@@ -3800,3 +3802,213 @@ class TestFactConsolidationTimeout:
         assert plan["status"] == "done"
         facts = await get_facts(db)
         assert len(facts) == 3
+
+
+# --- 21c: Fact consolidation safety guards ---
+
+
+class TestConsolidationSafetyGuards:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_consolidation_catastrophic_shrinkage_skipped(self, db, tmp_path):
+        """10 facts → consolidation returns 1 (< 30%) → originals preserved."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 5,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        for i in range(10):
+            await save_fact(db, f"Important fact number {i}", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_fact_consolidation", new_callable=AsyncMock,
+                   return_value=["Only one fact"]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # All 10 original facts preserved (1 < 10 * 0.3 = 3)
+        facts = await get_facts(db)
+        assert len(facts) == 10
+
+    async def test_consolidation_short_facts_filtered(self, db, tmp_path):
+        """Consolidation returns mix of valid and <10-char → short ones filtered."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 2,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        for i in range(5):
+            await save_fact(db, f"A somewhat long fact number {i}", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        # Mix of valid and short/empty facts
+        consolidated = ["This is a valid consolidated fact", "short", "", "Another valid fact here"]
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.run_fact_consolidation", new_callable=AsyncMock,
+                   return_value=consolidated), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # Only the 2 valid (>= 10 chars) facts should remain
+        facts = await get_facts(db)
+        assert len(facts) == 2
+        contents = [f["content"] for f in facts]
+        assert "This is a valid consolidated fact" in contents
+        assert "Another valid fact here" in contents
+
+
+# --- 21d: Planning failure notifies user ---
+
+
+class TestPlanErrorNotifiesUser:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_plan_error_saves_system_message(self, db, tmp_path):
+        """PlanError → system message saved to DB."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "bad request", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "bad request", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock,
+                   side_effect=PlanError("LLM call failed: timeout")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # System message should be saved
+        msgs = await get_recent_messages(db, "sess1", limit=10)
+        system_msgs = [m for m in msgs if m["role"] == "system"]
+        assert len(system_msgs) >= 1
+        assert "Planning failed" in system_msgs[-1]["content"]
+        assert "LLM call failed" in system_msgs[-1]["content"]
+
+    async def test_plan_error_delivers_webhook(self, db, tmp_path):
+        """PlanError + webhook → webhook called with error message."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        # Set webhook on session
+        await db.execute(
+            "UPDATE sessions SET webhook = ? WHERE session = ?",
+            ("https://example.com/hook", "sess1"),
+        )
+        await db.commit()
+
+        msg_id = await save_message(db, "sess1", "alice", "user", "bad", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "bad", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock,
+                   side_effect=PlanError("oops")), \
+             patch("kiso.worker.deliver_webhook", new_callable=AsyncMock,
+                   return_value=(True, 200, 1)) as mock_wh, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        mock_wh.assert_called_once()
+        call_args = mock_wh.call_args
+        assert "Planning failed" in call_args[0][3]  # content arg
+        assert call_args[0][4] is True  # final=True
+
+
+# --- 21h: Sanitize secrets in task detail ---
+
+
+class TestSanitizeTaskDetail:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_secret_in_exec_detail_redacted(self, db, tmp_path):
+        """Secret value in exec detail → [REDACTED] in DB."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "deploy", processed=False)
+
+        plan_with_secret = {
+            "goal": "Deploy",
+            "secrets": [{"key": "API_KEY", "value": "sk-secret-value-1234"}],
+            "tasks": [
+                {"type": "exec", "detail": "curl -H 'Authorization: Bearer sk-secret-value-1234' https://api.example.com",
+                 "skill": None, "args": None, "expect": "200 OK"},
+                {"type": "msg", "detail": "Done deploying", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "deploy", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=plan_with_secret), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Deployed"), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker._exec_task", new_callable=AsyncMock,
+                   return_value=("ok", "", True)), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        plan = await get_plan_for_session(db, "sess1")
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        exec_task = [t for t in tasks if t["type"] == "exec"][0]
+        assert "sk-secret-value-1234" not in exec_task["detail"]
+        assert "[REDACTED]" in exec_task["detail"]
+
+    async def test_secret_in_skill_args_redacted(self, db, tmp_path):
+        """Secret value in skill args → [REDACTED] in DB."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
+
+        plan_with_secret = {
+            "goal": "Search",
+            "secrets": [{"key": "TOKEN", "value": "tok-mysecret5678"}],
+            "tasks": [
+                {"type": "skill", "detail": "search the web",
+                 "skill": "search", "args": '{"query": "test", "token": "tok-mysecret5678"}',
+                 "expect": "results"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "search", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=plan_with_secret), \
+             patch("kiso.worker.call_llm", new_callable=AsyncMock, return_value="Results"), \
+             patch("kiso.worker.discover_skills", return_value=[]), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        plan = await get_plan_for_session(db, "sess1")
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        skill_task = [t for t in tasks if t["type"] == "skill"][0]
+        assert "tok-mysecret5678" not in (skill_task["args"] or "")
+        assert "[REDACTED]" in (skill_task["args"] or "")

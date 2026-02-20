@@ -368,6 +368,7 @@ async def build_reviewer_messages(
     expect: str,
     output: str,
     user_message: str,
+    success: bool | None = None,
 ) -> list[dict]:
     """Build the message list for the reviewer LLM call."""
     system_prompt = _load_system_prompt("reviewer")
@@ -379,6 +380,10 @@ async def build_reviewer_messages(
         f"## Actual Output\n{fence_content(output, 'TASK_OUTPUT')}\n\n"
         f"## Original User Message\n{fence_content(user_message, 'USER_MSG')}"
     )
+
+    if success is not None:
+        status_text = "succeeded (exit code 0)" if success else "FAILED (non-zero exit code)"
+        context += f"\n\n## Command Status\n{status_text}"
 
     return [
         {"role": "system", "content": system_prompt},
@@ -394,6 +399,7 @@ async def run_reviewer(
     output: str,
     user_message: str,
     session: str = "",
+    success: bool | None = None,
 ) -> dict:
     """Run the reviewer on a task output.
 
@@ -401,7 +407,7 @@ async def run_reviewer(
     Raises ReviewError if all retries exhausted.
     """
     max_retries = int(config.settings.get("max_validation_retries", 3))
-    messages = await build_reviewer_messages(goal, detail, expect, output, user_message)
+    messages = await build_reviewer_messages(goal, detail, expect, output, user_message, success=success)
     last_errors: list[str] = []
 
     for attempt in range(1, max_retries + 1):
