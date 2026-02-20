@@ -2,17 +2,21 @@
 set -euo pipefail
 
 # ── Kiso installer ────────────────────────────────────────────────────────────
-# Automates: prereq check → config → docker build → healthcheck → wrapper install
+# Works two ways:
+#   1. bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
+#   2. git clone ... && cd core && ./install.sh
+#
+# When run via curl, clones the repo to a temp dir, builds, cleans up.
+# When run from the repo, uses the repo directly.
 
-REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+KISO_REPO="https://github.com/kiso-run/core.git"
 KISO_DIR="$HOME/.kiso"
 CONFIG="$KISO_DIR/config.toml"
 ENV_FILE="$KISO_DIR/.env"
-REPO_COMPOSE="$REPO_DIR/docker-compose.yml"
 RUNTIME_COMPOSE="$KISO_DIR/docker-compose.yml"
-WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 WRAPPER_DST="$HOME/.local/bin/kiso"
 CONTAINER="kiso"
+CLEANUP_DIR=""
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +24,13 @@ red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 bold()   { printf '\033[1m%s\033[0m\n' "$*"; }
+
+cleanup() {
+    if [[ -n "$CLEANUP_DIR" && -d "$CLEANUP_DIR" ]]; then
+        rm -rf "$CLEANUP_DIR"
+    fi
+}
+trap cleanup EXIT
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -72,9 +83,32 @@ if ! docker compose version &>/dev/null; then
     exit 1
 fi
 
-green "  docker and docker compose found"
+if ! command -v git &>/dev/null; then
+    red "Error: git is not installed."
+    exit 1
+fi
 
-# ── 2. Check existing state ──────────────────────────────────────────────────
+green "  docker, docker compose, git found"
+
+# ── 2. Locate or clone the repo ─────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+
+if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/docker-compose.yml" && -f "$SCRIPT_DIR/Dockerfile" ]]; then
+    REPO_DIR="$SCRIPT_DIR"
+    bold "Using repo at $REPO_DIR"
+else
+    CLEANUP_DIR="$(mktemp -d)"
+    REPO_DIR="$CLEANUP_DIR/core"
+    bold "Cloning kiso..."
+    git clone --depth 1 "$KISO_REPO" "$REPO_DIR"
+    green "  cloned to temp dir"
+fi
+
+REPO_COMPOSE="$REPO_DIR/docker-compose.yml"
+WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
+
+# ── 3. Check existing state ─────────────────────────────────────────────────
 
 if [[ -f "$CONFIG" ]]; then
     yellow "  $CONFIG already exists."
@@ -93,7 +127,7 @@ if docker inspect "$CONTAINER" &>/dev/null; then
     fi
 fi
 
-# ── 3. Ask username ──────────────────────────────────────────────────────────
+# ── 4. Ask username ──────────────────────────────────────────────────────────
 
 default_user="$(whoami)"
 if [[ -n "$ARG_USER" ]]; then
@@ -104,7 +138,7 @@ else
     kiso_user="${kiso_user:-$default_user}"
 fi
 
-# ── 4. Ask API key ───────────────────────────────────────────────────────────
+# ── 5. Ask API key ───────────────────────────────────────────────────────────
 
 if [[ -n "$ARG_API_KEY" ]]; then
     api_key="$ARG_API_KEY"
@@ -119,11 +153,11 @@ if [[ -z "$api_key" ]]; then
     exit 1
 fi
 
-# ── 5. Generate token ────────────────────────────────────────────────────────
+# ── 6. Generate token ────────────────────────────────────────────────────────
 
 token="$(generate_token)"
 
-# ── 6. Create config ─────────────────────────────────────────────────────────
+# ── 7. Create config ─────────────────────────────────────────────────────────
 
 mkdir -p "$KISO_DIR"
 
@@ -145,7 +179,7 @@ else
     green "  config.toml kept (existing)"
 fi
 
-# ── 7. Create .env ───────────────────────────────────────────────────────────
+# ── 8. Create .env ───────────────────────────────────────────────────────────
 
 bold "Creating $ENV_FILE..."
 cat > "$ENV_FILE" <<EOF
@@ -153,7 +187,7 @@ KISO_OPENROUTER_API_KEY=$api_key
 EOF
 green "  .env created"
 
-# ── 8. Build image ───────────────────────────────────────────────────────────
+# ── 9. Build image ───────────────────────────────────────────────────────────
 
 bold "Building Docker image..."
 docker compose -f "$REPO_COMPOSE" build
@@ -161,11 +195,10 @@ docker compose -f "$REPO_COMPOSE" build
 # Get the built image name (e.g. "core-kiso")
 IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4)
 if [[ -z "$IMAGE_NAME" ]]; then
-    # fallback: derive from compose project name
     IMAGE_NAME="$(basename "$REPO_DIR")-kiso"
 fi
 
-# ── 9. Write runtime compose file ────────────────────────────────────────────
+# ── 10. Write runtime compose file ───────────────────────────────────────────
 # Self-contained — no dependency on the repo directory after install.
 
 bold "Writing $RUNTIME_COMPOSE..."
@@ -182,12 +215,12 @@ services:
 EOF
 green "  runtime compose created (image: $IMAGE_NAME)"
 
-# ── 10. Start container ──────────────────────────────────────────────────────
+# ── 11. Start container ─────────────────────────────────────────────────────
 
 bold "Starting container..."
 docker compose -f "$RUNTIME_COMPOSE" up -d
 
-# ── 11. Wait for healthcheck ─────────────────────────────────────────────────
+# ── 12. Wait for healthcheck ─────────────────────────────────────────────────
 
 bold "Waiting for healthcheck..."
 elapsed=0
@@ -206,7 +239,7 @@ if [[ $elapsed -ge 30 ]]; then
     yellow "  Check with: docker logs kiso"
 fi
 
-# ── 12. Install wrapper ──────────────────────────────────────────────────────
+# ── 13. Install wrapper ─────────────────────────────────────────────────────
 
 bold "Installing kiso wrapper..."
 mkdir -p "$(dirname "$WRAPPER_DST")"
@@ -224,7 +257,7 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     yellow ""
 fi
 
-# ── 13. Summary ──────────────────────────────────────────────────────────────
+# ── 14. Summary ──────────────────────────────────────────────────────────────
 
 echo
 green "  kiso is running!"

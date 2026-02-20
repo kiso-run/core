@@ -80,19 +80,29 @@ See [docker.md](docs/docker.md).
 ## Installation
 
 ```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
+```
+
+The installer clones the repo, builds the Docker image, creates `~/.kiso/` with your config, starts the container, and installs the `kiso` command in `~/.local/bin/`. The cloned repo is cleaned up automatically — everything lives in `~/.kiso/` after install.
+
+Non-interactive mode:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh) --user marco --api-key sk-or-v1-...
+```
+
+<details>
+<summary>Alternative: install from cloned repo</summary>
+
+```bash
 git clone git@github.com:kiso-run/core.git
 cd core
 ./install.sh
 ```
 
-The installer will:
-- Ask for your username and OpenRouter API key
-- Generate a secure token
-- Create `~/.kiso/config.toml` and `~/.kiso/.env`
-- Build and start the Docker container
-- Install the `kiso` command in `~/.local/bin/`
+When run from inside the repo, the installer uses it directly instead of cloning.
 
-Non-interactive mode: `./install.sh --user marco --api-key sk-or-v1-...`
+</details>
 
 See [config.md](docs/config.md) for all configuration options. Role prompts (`~/.kiso/roles/*.md`) are optional — sensible defaults are built in. See [llm-roles.md](docs/llm-roles.md) to customize them.
 
