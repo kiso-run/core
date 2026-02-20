@@ -1198,3 +1198,52 @@ def test_poll_status_task_count_reflects_current_plan(capsys, plain_caps):
     assert "2 tasks" in out
     assert "Done!" in out
     assert "old" not in out.lower().split("do it")[0]  # "old" shouldn't appear before plan header
+
+
+def test_poll_status_fallback_msg_on_failed_without_msg(capsys, plain_caps):
+    """When plan ends with failed tasks and no msg task, show a fallback message."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 5, "goal": "Do stuff", "status": "failed"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "bad-cmd",
+             "status": "failed", "output": "", "stderr": "not found"},
+        ],
+        "worker_running": False,
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "not found" in out  # stderr shown
+    assert "tasks failed" in out  # fallback message
+    assert "Bot:" in out  # fallback is rendered as bot message
+
+
+def test_poll_status_no_fallback_when_msg_shown(capsys, plain_caps):
+    """When a msg task is shown, no fallback message should appear."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 5, "goal": "Do stuff", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "ls",
+             "status": "done", "output": "file.txt"},
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Here you go."},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "Here you go." in out
+    assert "tasks failed" not in out
+    assert "No response" not in out
