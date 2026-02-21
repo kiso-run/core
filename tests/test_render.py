@@ -8,6 +8,7 @@ from kiso.render import (
     CLEAR_LINE,
     TermCaps,
     _icon,
+    _render_markdown,
     _style,
     detect_caps,
     extract_thinking,
@@ -15,6 +16,7 @@ from kiso.render import (
     render_cancel_done,
     render_cancel_start,
     render_command,
+    render_llm_calls,
     render_max_replan,
     render_msg_output,
     render_plan,
@@ -364,12 +366,14 @@ def test_render_msg_output_no_thinking():
 
 def test_render_msg_output():
     result = render_msg_output("Hello there!", _PLAIN)
-    assert "Bot: Hello there!" in result
+    assert "Bot:" in result
+    assert "Hello there!" in result
 
 
 def test_render_msg_output_custom_name():
     result = render_msg_output("Hi!", _PLAIN, "Jarvis")
-    assert "Jarvis: Hi!" in result
+    assert "Jarvis:" in result
+    assert "Hi!" in result
 
 
 # ── render_user_prompt ───────────────────────────────────────
@@ -788,20 +792,189 @@ def test_render_step_usage_zero():
 # ── render_review with token usage ──────────────────────────
 
 
-def test_render_review_with_tokens():
-    """Review line includes token usage suffix when tokens are present."""
-    task = {"review_verdict": "ok", "input_tokens": 430, "output_tokens": 85}
+def test_render_review_with_llm_calls():
+    """Review line includes per-call LLM breakdown when llm_calls is present."""
+    import json
+    calls = [
+        {"role": "translator", "model": "deepseek/deepseek-v3", "input_tokens": 300, "output_tokens": 45},
+        {"role": "reviewer", "model": "deepseek/deepseek-v3", "input_tokens": 350, "output_tokens": 60},
+    ]
+    task = {"review_verdict": "ok", "llm_calls": json.dumps(calls)}
     result = render_review(task, _COLOR)
     assert "review: ok" in result
-    assert "430" in result
-    assert "85" in result
+    assert "translator" in result
+    assert "reviewer" in result
+    assert "300" in result
+    assert "45" in result
 
 
-def test_render_review_without_tokens():
-    """Review line has no token suffix when both tokens are 0."""
-    task = {"review_verdict": "ok", "input_tokens": 0, "output_tokens": 0}
+def test_render_review_without_llm_calls():
+    """Review line has no LLM breakdown when llm_calls is absent."""
+    task = {"review_verdict": "ok"}
     result = render_review(task, _COLOR)
     assert "review: ok" in result
-    # No usage brackets should appear
-    assert "\u27E8" not in result
-    assert "\u27E9" not in result
+    assert "translator" not in result
+    assert "reviewer" not in result
+
+
+# ── render_llm_calls ────────────────────────────────────────
+
+
+def test_render_llm_calls_basic():
+    """Renders per-call breakdown with role, tokens, and shortened model."""
+    import json
+    calls = [
+        {"role": "planner", "model": "deepseek/deepseek-v3", "input_tokens": 400, "output_tokens": 80},
+        {"role": "translator", "model": "deepseek/deepseek-v3", "input_tokens": 300, "output_tokens": 45},
+        {"role": "reviewer", "model": "deepseek/deepseek-v3", "input_tokens": 350, "output_tokens": 60},
+    ]
+    result = render_llm_calls(json.dumps(calls), _COLOR)
+    assert "planner" in result
+    assert "translator" in result
+    assert "reviewer" in result
+    assert "400" in result
+    assert "80" in result
+    # Model name should be shortened (no provider prefix)
+    assert "deepseek-v3" in result
+
+
+def test_render_llm_calls_empty():
+    """Returns empty string for None or empty input."""
+    assert render_llm_calls(None, _COLOR) == ""
+    assert render_llm_calls("", _COLOR) == ""
+    assert render_llm_calls("[]", _COLOR) == ""
+
+
+def test_render_llm_calls_ascii():
+    """Uses ASCII arrow and no ANSI codes in plain mode."""
+    import json
+    calls = [{"role": "planner", "model": "gpt-4", "input_tokens": 100, "output_tokens": 50}]
+    result = render_llm_calls(json.dumps(calls), _PLAIN)
+    assert "planner" in result
+    assert "->" in result
+    assert "\033[" not in result
+
+
+def test_render_llm_calls_invalid_json():
+    """Returns empty string for invalid JSON."""
+    assert render_llm_calls("not json", _COLOR) == ""
+
+
+def test_render_llm_calls_model_without_slash():
+    """Model without slash is shown as-is."""
+    import json
+    calls = [{"role": "worker", "model": "gpt-4", "input_tokens": 100, "output_tokens": 50}]
+    result = render_llm_calls(json.dumps(calls), _PLAIN)
+    assert "gpt-4" in result
+
+
+# ── _render_markdown ────────────────────────────────────────
+
+
+def test_render_markdown_plain_text():
+    """Plain text passes through without spurious formatting."""
+    result = _render_markdown("Hello world", _PLAIN)
+    assert "Hello world" in result
+
+
+def test_render_markdown_bold_italic():
+    """ANSI codes are present when color=True and tty=True."""
+    result = _render_markdown("This is **bold** text", _COLOR)
+    assert "\033[" in result
+    assert "bold" in result
+
+
+def test_render_markdown_heading():
+    """Headings produce box-drawing or rule characters."""
+    result = _render_markdown("# My Heading", _COLOR)
+    assert "My Heading" in result
+
+
+def test_render_markdown_code_block():
+    """Code fences are rendered (content is visible)."""
+    result = _render_markdown("```python\nprint(42)\n```", _COLOR)
+    assert "print" in result
+    assert "42" in result
+
+
+def test_render_markdown_list():
+    """Bullet list items are visible."""
+    result = _render_markdown("- alpha\n- beta\n- gamma", _COLOR)
+    assert "alpha" in result
+    assert "beta" in result
+    assert "gamma" in result
+
+
+def test_render_markdown_no_color():
+    """No ANSI escape sequences with color=False."""
+    result = _render_markdown("**bold** and *italic*", _PLAIN)
+    assert "\033[" not in result
+    assert "bold" in result
+    assert "italic" in result
+
+
+def test_render_markdown_ascii_heading():
+    """ASCII box-drawing with unicode=False (no Unicode box chars)."""
+    caps = _caps(color=False, unicode=False, tty=False)
+    result = _render_markdown("# Title", caps)
+    assert "Title" in result
+    # Should NOT contain Unicode box-drawing characters
+    assert "━" not in result
+    assert "┃" not in result
+
+
+def test_render_markdown_respects_width():
+    """Output respects the width from caps."""
+    narrow = _caps(width=40, color=False, tty=False)
+    result = _render_markdown("A short line", narrow)
+    for line in result.splitlines():
+        assert len(line) <= 40
+
+
+def test_render_markdown_empty():
+    """Empty string input produces empty output."""
+    assert _render_markdown("", _COLOR) == ""
+    assert _render_markdown("", _PLAIN) == ""
+
+
+def test_render_markdown_table():
+    """Tables render with visible content."""
+    md = "| Name | Age |\n|------|-----|\n| Alice | 30 |"
+    result = _render_markdown(md, _COLOR)
+    assert "Alice" in result
+    assert "30" in result
+
+
+# ── render_msg_output + markdown integration ────────────────
+
+
+def test_render_msg_output_markdown_formatting():
+    """Full output with heading, bold, and list is rendered."""
+    text = "# Hello\n\nThis is **bold** and a list:\n- item 1\n- item 2"
+    result = render_msg_output(text, _COLOR)
+    assert "Bot:" in result
+    assert "Hello" in result
+    assert "item 1" in result
+    assert "item 2" in result
+
+
+def test_render_msg_output_markdown_no_color():
+    """Graceful degradation: content visible without ANSI escapes."""
+    text = "# Hello\n\nSome **bold** text"
+    result = render_msg_output(text, _PLAIN)
+    assert "Bot:" in result
+    assert "Hello" in result
+    assert "bold" in result
+    assert "\033[" not in result
+
+
+def test_render_msg_output_label_on_own_line():
+    """Label and body are on separate lines."""
+    result = render_msg_output("Hello world", _PLAIN)
+    lines = result.splitlines()
+    # First line should be the label
+    assert "Bot:" in lines[0]
+    # Body should be on subsequent line(s)
+    body_lines = lines[1:]
+    body_text = "\n".join(body_lines)
+    assert "Hello world" in body_text

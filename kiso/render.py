@@ -54,6 +54,77 @@ def _style(text: str, *codes: str, caps: TermCaps) -> str:
     return "".join(codes) + text + _RESET
 
 
+class _AsciiBuffer:
+    """StringIO wrapper that advertises ``encoding = "ascii"``.
+
+    When passed as *file* to :class:`rich.console.Console`, this forces rich
+    to pick ASCII box-drawing characters (``+``, ``-``, ``|``) instead of
+    Unicode ones (``━``, ``┃``, …) — useful for terminals that lack UTF-8.
+    """
+
+    encoding = "ascii"
+
+    def __init__(self) -> None:
+        from io import StringIO
+        self._buf = StringIO()
+
+    # Proxy the four methods Console actually calls on its file object.
+    def write(self, s: str) -> int:
+        return self._buf.write(s)
+
+    def flush(self) -> None:
+        self._buf.flush()
+
+    def getvalue(self) -> str:
+        return self._buf.getvalue()
+
+    @property
+    def writable(self) -> bool:
+        return True
+
+
+def _render_markdown(text: str, caps: TermCaps) -> str:
+    """Render *text* as markdown using :pymod:`rich`.
+
+    Behaviour adapts to terminal capabilities:
+
+    * ``caps.color and caps.tty`` → full ANSI (syntax highlighting, bold, …)
+    * otherwise → plain text with structure (headings, lists) but no escapes
+    * ``caps.unicode is False`` → ASCII box-drawing via :class:`_AsciiBuffer`
+
+    Returns the rendered string with trailing whitespace stripped per line
+    (rich pads every line to the full console width).
+    """
+    if not text:
+        return ""
+    from rich.console import Console
+    from rich.markdown import Markdown
+
+    use_color = caps.color and caps.tty
+    if caps.unicode:
+        from io import StringIO
+        buf = StringIO()
+    else:
+        buf = _AsciiBuffer()
+
+    console = Console(
+        file=buf,
+        width=caps.width,
+        force_terminal=use_color,
+        no_color=not use_color,
+        highlight=False,
+    )
+    md = Markdown(text, code_theme="monokai")
+    console.print(md)
+    raw = buf.getvalue()
+    # Strip trailing whitespace per line (rich pads to full width)
+    lines = [line.rstrip() for line in raw.splitlines()]
+    # Remove trailing empty lines
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
 # ── Icons ────────────────────────────────────────────────────
 
 _ICONS_UNICODE = {
@@ -301,14 +372,22 @@ def render_thinking(thinking: str, caps: TermCaps) -> str:
 
 
 def render_msg_output(output: str, caps: TermCaps, bot_name: str = "Bot") -> str:
-    """Render bot message output."""
+    """Render bot message output with markdown formatting.
+
+    The bot label (e.g. ``Bot:``) is placed on its own line, followed by
+    the response body rendered as markdown via :func:`_render_markdown`.
+    This keeps the label visually separate from multi-line markdown output
+    (headings, code blocks, lists, tables).
+    """
     thinking, clean = extract_thinking(output)
     parts: list[str] = []
     if thinking:
         parts.append(render_thinking(thinking, caps))
         parts.append("")  # blank line
     label = _style(f"{bot_name}:", _BOLD, _MAGENTA, caps=caps)
-    parts.append(f"{label} {clean}")
+    parts.append(label)
+    if clean:
+        parts.append(_render_markdown(clean, caps))
     return "\n".join(parts)
 
 
@@ -353,19 +432,46 @@ def render_step_usage(input_tokens: int, output_tokens: int, caps: TermCaps) -> 
     return _style(text, _DIM, caps=caps)
 
 
+def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
+    """Render per-LLM-call breakdown.
+
+    Each call shows: role, model, input→output tokens.
+    Example:
+      translator ⟨300→45 deepseek/deepseek-v3⟩
+      reviewer   ⟨350→60 deepseek/deepseek-v3⟩
+    """
+    if not llm_calls_json:
+        return ""
+    import json as _json
+    try:
+        calls = _json.loads(llm_calls_json)
+    except (ValueError, TypeError):
+        return ""
+    if not calls:
+        return ""
+    lines: list[str] = []
+    arrow = "→" if caps.unicode else "->"
+    for c in calls:
+        role = c.get("role", "?")
+        model = c.get("model", "")
+        in_t = c.get("input_tokens", 0)
+        out_t = c.get("output_tokens", 0)
+        # Shorten model name: "deepseek/deepseek-chat-v3" → "deepseek-chat-v3"
+        short_model = model.split("/", 1)[-1] if "/" in model else model
+        text = f"  {role:12s} {in_t:,}{arrow}{out_t:,}  {short_model}"
+        lines.append(_style(text, _DIM, caps=caps))
+    return "\n".join(lines)
+
+
 def render_review(task: dict, caps: TermCaps) -> str:
-    """Render review verdict, optional learning, and per-step token usage."""
+    """Render review verdict, optional learning, and per-call LLM usage."""
     verdict = task.get("review_verdict")
     if not verdict:
         return ""
     lines: list[str] = []
-    # Token usage suffix
-    in_tok = task.get("input_tokens", 0) or 0
-    out_tok = task.get("output_tokens", 0) or 0
-    usage_suffix = f"  {render_step_usage(in_tok, out_tok, caps)}" if in_tok or out_tok else ""
     if verdict == "ok":
         lines.append(
-            _style(f"  {_icon('ok', caps)} review: ok", _GREEN, caps=caps) + usage_suffix
+            _style(f"  {_icon('ok', caps)} review: ok", _GREEN, caps=caps)
         )
     elif verdict == "replan":
         reason = task.get("review_reason") or ""
@@ -373,8 +479,12 @@ def render_review(task: dict, caps: TermCaps) -> str:
             _style(
                 f'  {_icon("fail", caps)} review: replan — "{reason}"',
                 _BOLD, _RED, caps=caps,
-            ) + usage_suffix
+            )
         )
+    # Per-call LLM breakdown
+    llm_detail = render_llm_calls(task.get("llm_calls"), caps)
+    if llm_detail:
+        lines.append(llm_detail)
     learning = task.get("review_learning")
     if learning:
         prefix = "  📝 learning: " if caps.unicode else "  + learning: "
