@@ -138,12 +138,21 @@ if ! docker compose version &>/dev/null; then
     exit 1
 fi
 
+if ! docker info &>/dev/null; then
+    red "Error: cannot connect to Docker daemon."
+    red "  Either Docker is not running, or your user needs permission."
+    red "  Fix with: sudo usermod -aG docker \$USER  (then log out and back in)"
+    red "  Or for this shell only: newgrp docker"
+    exit 1
+fi
+
 if ! command -v git &>/dev/null; then
     red "Error: git is not installed."
     exit 1
 fi
 
 green "  docker, docker compose, git found"
+echo
 
 # ── 2. Locate or clone the repo ─────────────────────────────────────────────
 
@@ -164,6 +173,8 @@ REPO_COMPOSE="$REPO_DIR/docker-compose.yml"
 WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 
 # ── 3. Check existing state ─────────────────────────────────────────────────
+
+bold "Checking existing installation..."
 
 NEED_CONFIG=true
 NEED_ENV=true
@@ -191,6 +202,7 @@ else
     yellow "  $ENV_FILE not found — will ask for API key."
     yellow "  (API key is stored in .env, separate from config.toml)"
 fi
+echo
 
 NEED_BUILD=true
 
@@ -223,6 +235,7 @@ fi
 
 # ── 4. Configure ─────────────────────────────────────────────────────────────
 
+bold "Configuring..."
 mkdir -p "$KISO_DIR"
 
 if [[ "$NEED_CONFIG" == true ]]; then
@@ -266,6 +279,7 @@ bot_name = "$bot_name"
 EOF
     green "  config.toml created"
 fi
+echo
 
 if [[ "$NEED_ENV" == true ]]; then
     api_key="$(ask_api_key)"
@@ -281,6 +295,7 @@ if [[ "$NEED_ENV" == true ]]; then
         yellow "  warning: KISO_LLM_API_KEY is empty after loading .env"
     fi
 fi
+echo
 
 # ── 5. Build and start ──────────────────────────────────────────────────────
 
@@ -360,7 +375,7 @@ fi
 [[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP"
 
 # ── 6. Install wrapper ─────────────────────────────────────────────────────
-
+echo
 bold "Installing kiso wrapper..."
 mkdir -p "$(dirname "$WRAPPER_DST")"
 cp "$WRAPPER_SRC" "$WRAPPER_DST"
@@ -368,6 +383,7 @@ chmod +x "$WRAPPER_DST"
 green "  installed to $WRAPPER_DST"
 
 # ── 6b. Install completions ──────────────────────────────────────────────
+echo
 bold "Installing shell completions..."
 BASH_COMP_DIR="$HOME/.local/share/bash-completion/completions"
 ZSH_COMP_DIR="$HOME/.local/share/zsh/site-functions"
