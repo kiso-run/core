@@ -168,7 +168,10 @@ NEED_CONFIG=true
 NEED_ENV=true
 
 if [[ -f "$CONFIG" ]]; then
-    yellow "  $CONFIG already exists."
+    yellow "  $CONFIG already exists. Current contents:"
+    echo
+    cat "$CONFIG"
+    echo
     if ! confirm "  Overwrite config.toml?" "n"; then
         NEED_CONFIG=false
         green "  config.toml kept"
@@ -176,7 +179,7 @@ if [[ -f "$CONFIG" ]]; then
 fi
 
 if [[ -f "$ENV_FILE" ]]; then
-    yellow "  $ENV_FILE already exists."
+    yellow "  $ENV_FILE already exists (contains API key — not shown)."
     if ! confirm "  Overwrite .env (API key)?" "n"; then
         NEED_ENV=false
         green "  .env kept"
