@@ -16,11 +16,8 @@ from kiso.brain import (
     PlanError,
     ReviewError,
     SummarizerError,
-    _default_messenger_prompt,
-    _default_planner_prompt,
-    _default_reviewer_prompt,
-    _EXEC_TRANSLATOR_PROMPT,
     _load_system_prompt,
+    _ROLES_DIR,
     _strip_fences,
     build_curator_messages,
     build_exec_translator_messages,
@@ -197,19 +194,23 @@ class TestValidatePlan:
 # --- _load_system_prompt ---
 
 class TestLoadSystemPrompt:
-    def test_default_when_no_file(self):
-        with patch.object(type(KISO_DIR / "roles" / "planner.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("planner")
-        assert prompt == _default_planner_prompt()
+    def test_package_default_when_no_user_file(self):
+        prompt = _load_system_prompt("planner")
         assert "task planner" in prompt
 
-    def test_reads_file_when_exists(self, tmp_path):
+    def test_user_override_takes_priority(self, tmp_path):
         roles_dir = tmp_path / "roles"
         roles_dir.mkdir()
         (roles_dir / "planner.md").write_text("Custom prompt")
         with patch("kiso.brain.KISO_DIR", tmp_path):
             prompt = _load_system_prompt("planner")
         assert prompt == "Custom prompt"
+
+    def test_unknown_role_raises(self, tmp_path):
+        # Use a tmp_path with no roles dir as KISO_DIR to avoid class-wide mock
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            with pytest.raises(FileNotFoundError, match="No prompt found for role 'nonexistent'"):
+                _load_system_prompt("nonexistent")
 
 
 # --- build_planner_messages ---
@@ -328,10 +329,11 @@ class TestBuildPlannerMessages:
     async def test_includes_system_environment(self, db, config):
         """Planner context includes ## System Environment with OS and binaries."""
         await create_session(db, "sess1")
+        from kiso.config import KISO_DIR
         fake_env = {
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
             "shell": "/bin/sh",
-            "exec_cwd": "~/.kiso/sessions/{session}/",
+            "exec_cwd": str(KISO_DIR / "sessions"),
             "exec_env": "PATH only (all other env vars stripped)",
             "exec_timeout": 120,
             "max_output_size": 1_048_576,
@@ -347,6 +349,10 @@ class TestBuildPlannerMessages:
         assert "## System Environment" in content
         assert "Linux x86_64" in content
         assert "git, python3" in content
+        # Session name should be included in the system env section
+        assert "Session: sess1" in content
+        expected_cwd = str(KISO_DIR / "sessions" / "sess1")
+        assert f"Exec CWD: {expected_cwd}" in content
 
     async def test_system_env_after_facts_before_pending(self, db, config):
         """System Environment section appears between Known Facts and Pending Questions."""
@@ -357,10 +363,11 @@ class TestBuildPlannerMessages:
             ("Which DB?", "sess1", "curator"),
         )
         await db.commit()
+        from kiso.config import KISO_DIR
         fake_env = {
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
             "shell": "/bin/sh",
-            "exec_cwd": "~/.kiso/sessions/{session}/",
+            "exec_cwd": str(KISO_DIR / "sessions"),
             "exec_env": "PATH only (all other env vars stripped)",
             "exec_timeout": 120,
             "max_output_size": 1_048_576,
@@ -490,9 +497,7 @@ class TestRunPlanner:
 
 class TestLoadSystemPromptReviewer:
     def test_reviewer_default_when_no_file(self):
-        with patch.object(type(KISO_DIR / "roles" / "reviewer.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("reviewer")
-        assert prompt == _default_reviewer_prompt()
+        prompt = _load_system_prompt("reviewer")
         assert "task reviewer" in prompt
 
     def test_reviewer_reads_file_when_exists(self, tmp_path):
@@ -502,11 +507,6 @@ class TestLoadSystemPromptReviewer:
         with patch("kiso.brain.KISO_DIR", tmp_path):
             prompt = _load_system_prompt("reviewer")
         assert prompt == "Custom reviewer prompt"
-
-    def test_unknown_role_falls_back_to_planner(self):
-        with patch.object(type(KISO_DIR / "roles" / "unknown.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("unknown")
-        assert prompt == _default_planner_prompt()
 
 
 # --- validate_review ---
@@ -989,18 +989,15 @@ class TestRunFactConsolidation:
 
 class TestLoadSystemPromptCuratorSummarizer:
     def test_curator_default(self):
-        with patch.object(type(KISO_DIR / "roles" / "curator.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("curator")
+        prompt = _load_system_prompt("curator")
         assert "knowledge curator" in prompt
 
     def test_summarizer_default(self):
-        with patch.object(type(KISO_DIR / "roles" / "summarizer.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("summarizer")
+        prompt = _load_system_prompt("summarizer")
         assert "session summarizer" in prompt
 
     def test_paraphraser_default(self):
-        with patch.object(type(KISO_DIR / "roles" / "paraphraser.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("paraphraser")
+        prompt = _load_system_prompt("paraphraser")
         assert "paraphraser" in prompt
 
 
@@ -1176,7 +1173,7 @@ def _make_brain_config(**overrides) -> Config:
 
 class TestDefaultMessengerPrompt:
     def test_contains_placeholder(self):
-        prompt = _default_messenger_prompt()
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "{bot_name}" in prompt
 
     def test_load_replaces_bot_name(self):
@@ -1218,6 +1215,26 @@ class TestBuildMessengerMessages:
         config = _make_brain_config()
         msgs = build_messenger_messages(config, "", [], "say hi", "")
         assert "Preceding Task Outputs" not in msgs[1]["content"]
+
+    def test_includes_goal(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi", goal="List files")
+        assert "## Current User Request\nList files" in msgs[1]["content"]
+
+    def test_no_goal_section_when_empty(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        assert "Current User Request" not in msgs[1]["content"]
+
+    def test_goal_appears_before_summary(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "old context", [], "say hi", goal="new question",
+        )
+        content = msgs[1]["content"]
+        goal_pos = content.index("Current User Request")
+        summary_pos = content.index("Session Summary")
+        assert goal_pos < summary_pos
 
 
 class TestRunMessenger:
@@ -1293,8 +1310,7 @@ class TestRunMessenger:
 
 class TestLoadSystemPromptMessenger:
     def test_default_messenger_prompt(self):
-        with patch.object(type(KISO_DIR / "roles" / "messenger.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("messenger")
+        prompt = _load_system_prompt("messenger")
         assert "{bot_name}" in prompt
         assert "friendly" in prompt
 
@@ -1381,12 +1397,11 @@ class TestRunExecTranslator:
 
 class TestLoadSystemPromptExecTranslator:
     def test_default_prompt(self):
-        with patch.object(type(KISO_DIR / "roles" / "exec_translator.md"), "exists", return_value=False):
-            prompt = _load_system_prompt("exec_translator")
+        prompt = _load_system_prompt("exec_translator")
         assert "shell command translator" in prompt
         assert "CANNOT_TRANSLATE" in prompt
 
-    def test_custom_prompt(self, tmp_path):
+    def test_custom_prompt_overrides(self, tmp_path):
         roles_dir = tmp_path / "roles"
         roles_dir.mkdir()
         (roles_dir / "exec_translator.md").write_text("Custom exec translator")
@@ -1401,4 +1416,5 @@ class TestLoadSystemPromptExecTranslator:
 class TestExecTranslatorPromptContent:
     def test_exec_translator_prompt_mentions_preceding_outputs(self):
         """The default exec translator prompt should mention Preceding Task Outputs."""
-        assert "Preceding Task Outputs" in _EXEC_TRANSLATOR_PROMPT
+        prompt = (_ROLES_DIR / "exec_translator.md").read_text()
+        assert "Preceding Task Outputs" in prompt

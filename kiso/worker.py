@@ -408,7 +408,7 @@ async def _execute_plan(
 
             # Translate natural-language detail → shell command
             sys_env = get_system_env(config)
-            sys_env_text = build_system_env_section(sys_env)
+            sys_env_text = build_system_env_section(sys_env, session=session)
             outputs_text = _format_plan_outputs_for_msg(plan_outputs)
             try:
                 command = await run_exec_translator(
@@ -1084,9 +1084,23 @@ async def _process_message(
             )
         except PlanError as e:
             log.error("Replan failed: %s", e)
+            await update_plan_status(db, current_plan_id, "failed")
+            # Recovery msg task so the CLI displays feedback to the user
+            fail_detail = _build_failure_summary(
+                completed, remaining, current_goal,
+                reason=f"Replan failed: {e}",
+            )
+            try:
+                fail_text = await _msg_task(config, db, session, fail_detail,
+                                            goal=current_goal)
+            except (LLMError, MessengerError):
+                fail_text = fail_detail
+            fail_task_id = await create_task(
+                db, current_plan_id, session, "msg", fail_detail,
+            )
+            await update_task(db, fail_task_id, status="done", output=fail_text)
             await save_message(
-                db, session, None, "system",
-                f"Replan failed: {e}",
+                db, session, None, "system", fail_text,
                 trusted=True, processed=True,
             )
             break

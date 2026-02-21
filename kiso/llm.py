@@ -65,7 +65,8 @@ def get_usage_index() -> int:
 def get_usage_since(start_index: int) -> dict:
     """Get usage accumulated since *start_index*.
 
-    Returns dict with keys: input_tokens, output_tokens, model.
+    Returns dict with keys: input_tokens, output_tokens, model, calls.
+    ``calls`` is the raw list of per-LLM-call entries (role, model, tokens).
     """
     entries = _llm_usage_entries.get(None) or []
     subset = entries[start_index:]
@@ -73,6 +74,7 @@ def get_usage_since(start_index: int) -> dict:
         "input_tokens": sum(e["input_tokens"] for e in subset),
         "output_tokens": sum(e["output_tokens"] for e in subset),
         "model": subset[-1]["model"] if subset else None,
+        "calls": [dict(e) for e in subset],
     }
 
 

@@ -237,10 +237,11 @@ class TestGetSystemEnvCache:
 class TestBuildSystemEnvSection:
     @pytest.fixture()
     def sample_env(self):
+        from kiso.config import KISO_DIR
         return {
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.17.0-14-generic"},
             "shell": "/bin/sh",
-            "exec_cwd": "~/.kiso/sessions/{session}/",
+            "exec_cwd": str(KISO_DIR / "sessions"),
             "exec_env": "PATH only (all other env vars stripped)",
             "exec_timeout": 120,
             "max_output_size": 1_048_576,
@@ -320,3 +321,21 @@ class TestBuildSystemEnvSection:
         sample_env["max_output_size"] = 4 * 1_048_576  # 4MB
         section = build_system_env_section(sample_env)
         assert "Max output: 4MB" in section
+
+    def test_session_shows_absolute_workspace_path(self, sample_env):
+        """When session is passed, Exec CWD shows absolute path with session name."""
+        from kiso.config import KISO_DIR
+        section = build_system_env_section(sample_env, session="host@alice")
+        expected = str(KISO_DIR / "sessions" / "host@alice")
+        assert f"Exec CWD: {expected}" in section
+
+    def test_session_name_in_output(self, sample_env):
+        """Session name is shown when passed."""
+        section = build_system_env_section(sample_env, session="host@alice")
+        assert "Session: host@alice" in section
+
+    def test_no_session_shows_generic_path(self, sample_env):
+        """Without session, Exec CWD shows a generic path."""
+        section = build_system_env_section(sample_env)
+        assert "/<session>/" in section
+        assert "Session:" not in section

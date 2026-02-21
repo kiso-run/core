@@ -14,7 +14,7 @@ import platform
 import shutil
 import time
 
-from kiso.config import Config
+from kiso.config import Config, KISO_DIR
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ def collect_system_env(config: Config) -> dict:
     return {
         "os": os_info,
         "shell": "/bin/sh",
-        "exec_cwd": "~/.kiso/sessions/{session}/",
+        "exec_cwd": str(KISO_DIR / "sessions"),
         "exec_env": "PATH only (all other env vars stripped)",
         "exec_timeout": int(config.settings.get("exec_timeout", 120)),
         "max_output_size": int(config.settings.get("max_output_size", 1_048_576)),
@@ -149,8 +149,12 @@ def _format_size(nbytes: int) -> str:
     return f"{nbytes}B"
 
 
-def build_system_env_section(env: dict) -> str:
-    """Format the system env dict into a concise text block for the planner."""
+def build_system_env_section(env: dict, session: str = "") -> str:
+    """Format the system env dict into a concise text block for the planner.
+
+    When *session* is provided the ``Exec CWD`` line shows the actual
+    absolute workspace path and a ``Session`` line is added.
+    """
     os_info = env["os"]
     lines: list[str] = []
 
@@ -158,7 +162,12 @@ def build_system_env_section(env: dict) -> str:
         f"OS: {os_info['system']} {os_info['machine']} ({os_info['release']})"
     )
     lines.append(f"Shell: {env['shell']}")
-    lines.append(f"Exec CWD: {env['exec_cwd']}")
+    if session:
+        cwd = str(KISO_DIR / "sessions" / session)
+        lines.append(f"Session: {session}")
+    else:
+        cwd = env["exec_cwd"] + "/<session>/"
+    lines.append(f"Exec CWD: {cwd}")
     lines.append(f"Exec env: {env['exec_env']}")
     lines.append(
         f"Exec timeout: {env['exec_timeout']}s | "

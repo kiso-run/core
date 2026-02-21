@@ -32,7 +32,7 @@ from kiso.store import (
 from kiso.worker import (
     _apply_curator_result,
     _build_cancel_summary, _build_failure_summary,
-    _exec_task, _msg_task, _skill_task, _load_worker_prompt, _session_workspace,
+    _exec_task, _msg_task, _skill_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
@@ -208,23 +208,6 @@ class TestMsgTask:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("API down")):
             with pytest.raises(MessengerError, match="API down"):
                 await _msg_task(config, db, "sess1", "task")
-
-
-# --- _load_worker_prompt ---
-
-class TestLoadWorkerPrompt:
-    def test_default_when_no_file(self):
-        with patch.object(type(KISO_DIR / "roles" / "worker.md"), "exists", return_value=False):
-            prompt = _load_worker_prompt()
-        assert "helpful assistant" in prompt
-
-    def test_reads_file_when_exists(self, tmp_path):
-        roles_dir = tmp_path / "roles"
-        roles_dir.mkdir()
-        (roles_dir / "worker.md").write_text("Custom worker prompt")
-        with patch("kiso.worker.KISO_DIR", tmp_path):
-            prompt = _load_worker_prompt()
-        assert prompt == "Custom worker prompt"
 
 
 # --- run_worker ---
@@ -680,6 +663,48 @@ class TestRunWorker:
         )
         system_msgs = [r[0] for r in await cur.fetchall()]
         assert any("Replan failed" in m for m in system_msgs)
+
+    async def test_replan_error_creates_recovery_msg_task(self, db, tmp_path):
+        """When replanning raises PlanError, a recovery msg task is created
+        so the CLI can display feedback to the user."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
+
+        fail_plan = {
+            "goal": "Will fail",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(content)
+            if len(planner_calls) == 1:
+                return fail_plan
+            raise PlanError("Replan LLM failed")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "fail", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        # Should have a recovery msg task with status=done
+        cur = await db.execute(
+            "SELECT * FROM tasks WHERE session = 'sess1' AND type = 'msg' AND status = 'done'"
+        )
+        msg_tasks = [dict(r) for r in await cur.fetchall()]
+        # At least one msg task should have "Replan failed" in its output
+        assert any("Replan failed" in (t.get("output") or "") for t in msg_tasks), \
+            f"No recovery msg task found with 'Replan failed'; msg tasks: {msg_tasks}"
 
     async def test_replan_marks_remaining_tasks_superseded(self, db, tmp_path):
         """On replan, remaining pending tasks from old plan are marked failed."""
