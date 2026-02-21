@@ -16,6 +16,7 @@ ENV_FILE="$KISO_DIR/.env"
 RUNTIME_COMPOSE="$KISO_DIR/docker-compose.yml"
 WRAPPER_DST="$HOME/.local/bin/kiso"
 CONTAINER="kiso"
+LLM_BASE_URL="https://openrouter.ai/api/v1"
 CLEANUP_DIR=""
 USERNAME_RE='^[a-z_][a-z0-9_-]{0,31}$'
 
@@ -113,7 +114,7 @@ ask_api_key() {
         return
     fi
     while true; do
-        read -rsp "OpenRouter API key: " api_key
+        read -rsp "LLM API key for $LLM_BASE_URL: " api_key
         echo >&2
         if [[ -n "$api_key" ]]; then
             echo "$api_key"
@@ -170,7 +171,9 @@ NEED_ENV=true
 if [[ -f "$CONFIG" ]]; then
     yellow "  $CONFIG already exists. Current contents:"
     echo
+    printf '\033[0;36m'
     cat "$CONFIG"
+    printf '\033[0m'
     echo
     if ! confirm "  Overwrite config.toml?" "n"; then
         NEED_CONFIG=false
@@ -237,7 +240,7 @@ if [[ "$NEED_CONFIG" == true ]]; then
 cli = "$token"
 
 [providers.openrouter]
-base_url = "https://openrouter.ai/api/v1"
+base_url = "$LLM_BASE_URL"
 
 [users.$kiso_user]
 role = "admin"
@@ -253,7 +256,7 @@ EOF
 cli = "$token"
 
 [providers.openrouter]
-base_url = "https://openrouter.ai/api/v1"
+base_url = "$LLM_BASE_URL"
 
 [users.$kiso_user]
 role = "admin"
