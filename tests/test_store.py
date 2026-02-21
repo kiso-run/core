@@ -671,3 +671,82 @@ async def test_schema_has_task_token_columns(db: aiosqlite.Connection):
     columns = {row[1] for row in await cur.fetchall()}
     assert "input_tokens" in columns
     assert "output_tokens" in columns
+
+
+# --- llm_calls columns ---
+
+
+async def test_schema_has_llm_calls_columns(db: aiosqlite.Connection):
+    """Both tasks and plans tables have llm_calls TEXT column."""
+    for table in ("tasks", "plans"):
+        cur = await db.execute(f"PRAGMA table_info({table})")
+        columns = {row[1] for row in await cur.fetchall()}
+        assert "llm_calls" in columns, f"llm_calls missing from {table}"
+
+
+async def test_update_task_usage_with_llm_calls(db: aiosqlite.Connection):
+    """Stores and retrieves per-call LLM breakdown on tasks."""
+    import json
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    calls = [
+        {"role": "translator", "model": "deepseek/deepseek-v3", "input_tokens": 300, "output_tokens": 45},
+        {"role": "reviewer", "model": "deepseek/deepseek-v3", "input_tokens": 350, "output_tokens": 60},
+    ]
+    await update_task_usage(db, task_id, 650, 105, llm_calls=calls)
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["input_tokens"] == 650
+    assert tasks[0]["output_tokens"] == 105
+    stored = json.loads(tasks[0]["llm_calls"])
+    assert len(stored) == 2
+    assert stored[0]["role"] == "translator"
+    assert stored[1]["role"] == "reviewer"
+
+
+async def test_update_plan_usage_with_llm_calls(db: aiosqlite.Connection):
+    """Stores and retrieves per-call LLM breakdown on plans."""
+    import json
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    calls = [
+        {"role": "planner", "model": "gpt-4", "input_tokens": 400, "output_tokens": 80},
+        {"role": "messenger", "model": "gpt-4", "input_tokens": 200, "output_tokens": 100},
+    ]
+    await update_plan_usage(db, plan_id, 600, 180, "gpt-4", llm_calls=calls)
+    plan = await get_plan_for_session(db, "sess1")
+    assert plan["total_input_tokens"] == 600
+    assert plan["total_output_tokens"] == 180
+    stored = json.loads(plan["llm_calls"])
+    assert len(stored) == 2
+    assert stored[0]["role"] == "planner"
+
+
+async def test_update_plan_usage_preserves_llm_calls(db: aiosqlite.Connection):
+    """Updating totals without llm_calls preserves existing planner calls."""
+    import json
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    # First update: store planner calls
+    calls = [{"role": "planner", "model": "gpt-4", "input_tokens": 400, "output_tokens": 80}]
+    await update_plan_usage(db, plan_id, 400, 80, "gpt-4", llm_calls=calls)
+    # Second update: only update totals (default omits llm_calls)
+    await update_plan_usage(db, plan_id, 1000, 300, "gpt-4")
+    plan = await get_plan_for_session(db, "sess1")
+    assert plan["total_input_tokens"] == 1000
+    assert plan["total_output_tokens"] == 300
+    # llm_calls should still have only the planner call
+    stored = json.loads(plan["llm_calls"])
+    assert len(stored) == 1
+    assert stored[0]["role"] == "planner"
+
+
+async def test_llm_calls_null_by_default(db: aiosqlite.Connection):
+    """Newly created tasks and plans have NULL llm_calls."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["llm_calls"] is None
+    plan = await get_plan_for_session(db, "sess1")
+    assert plan["llm_calls"] is None

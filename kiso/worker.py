@@ -79,22 +79,6 @@ from kiso.store import (
 log = logging.getLogger(__name__)
 
 
-def _default_worker_prompt() -> str:
-    return """\
-You are a helpful assistant. Given a task description, produce a clear and
-concise response for the user. Use only the information provided in the
-task detail and context. Do not invent information.
-"""
-
-
-def _load_worker_prompt() -> str:
-    path = KISO_DIR / "roles" / "worker.md"
-    if path.exists():
-        return path.read_text()
-    return _default_worker_prompt()
-
-
-
 def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
     """Return and ensure the session workspace directory exists."""
     workspace = KISO_DIR / "sessions" / session
@@ -274,10 +258,11 @@ async def _msg_task(
     session: str,
     detail: str,
     plan_outputs: list[dict] | None = None,
+    goal: str = "",
 ) -> str:
     """Generate a user-facing message via the messenger brain role."""
     outputs_text = _format_plan_outputs_for_msg(plan_outputs) if plan_outputs else ""
-    return await run_messenger(db, config, session, detail, outputs_text)
+    return await run_messenger(db, config, session, detail, outputs_text, goal=goal)
 
 
 async def _persist_plan_tasks(
@@ -497,14 +482,14 @@ async def _execute_plan(
                     slog.info("Review → replan: %s", replan_reason)
                 # Store per-step token usage even on replan
                 step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
             # Store per-step token usage (translator + exec + reviewer)
             step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
 
             if slog:
                 slog.info("Review → %s", review["status"])
@@ -516,6 +501,7 @@ async def _execute_plan(
                 text = await _msg_task(
                     config, db, session, detail,
                     plan_outputs=plan_outputs,
+                    goal=goal,
                 )
                 task_duration_ms = int((time.perf_counter() - t0) * 1000)
                 await update_task(db, task_id, "done", output=text)
@@ -556,7 +542,7 @@ async def _execute_plan(
 
                 # Store per-step token usage (messenger)
                 step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
 
                 completed.append(task_row)
             except (LLMError, MessengerError) as e:
@@ -653,14 +639,14 @@ async def _execute_plan(
                 if slog:
                     slog.info("Review → replan: %s", replan_reason)
                 step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
             # Store per-step token usage (skill + reviewer)
             step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
 
             if slog:
                 slog.info("Review → %s", review["status"])
@@ -900,6 +886,16 @@ async def _process_message(
     if slog:
         slog.info("Plan %d created: %s (%d tasks)", plan_id, plan["goal"], len(plan["tasks"]))
 
+    # Store planner usage immediately so the CLI can display it with the plan header
+    planner_usage = get_usage_since(0)
+    if planner_usage["input_tokens"] or planner_usage["output_tokens"]:
+        await update_plan_usage(
+            db, plan_id,
+            planner_usage["input_tokens"], planner_usage["output_tokens"],
+            planner_usage["model"],
+            llm_calls=planner_usage.get("calls"),
+        )
+
     # Execute with replan loop
     replan_history: list[dict] = []
     current_plan_id = plan_id
@@ -929,6 +925,7 @@ async def _process_message(
             try:
                 cancel_text = await _msg_task(
                     config, db, session, cancel_detail,
+                    goal=current_goal,
                 )
             except (LLMError, MessengerError):
                 cancel_text = cancel_detail  # fallback to raw summary
@@ -973,7 +970,8 @@ async def _process_message(
                 completed, remaining, current_goal,
             )
             try:
-                fail_text = await _msg_task(config, db, session, fail_detail)
+                fail_text = await _msg_task(config, db, session, fail_detail,
+                                            goal=current_goal)
             except (LLMError, MessengerError):
                 fail_text = fail_detail
             fail_task_id = await create_task(
@@ -1015,7 +1013,8 @@ async def _process_message(
                        f"Last failure: {replan_reason}",
             )
             try:
-                replan_text = await _msg_task(config, db, session, replan_detail)
+                replan_text = await _msg_task(config, db, session, replan_detail,
+                                              goal=current_goal)
             except (LLMError, MessengerError):
                 replan_text = replan_detail
             replan_task_id = await create_task(
@@ -1077,6 +1076,7 @@ async def _process_message(
         )
         enriched_message = f"{content}\n\n{replan_context}"
 
+        replan_usage_idx = get_usage_index()
         try:
             new_plan = await run_planner(
                 db, config, session, user_role, enriched_message,
@@ -1105,8 +1105,28 @@ async def _process_message(
                        new_plan_id, new_plan["goal"], len(new_plan["tasks"]),
                        replan_depth, max_replan_depth)
 
+        # Store replanner usage immediately
+        replan_planner_usage = get_usage_since(replan_usage_idx)
+        if replan_planner_usage["input_tokens"] or replan_planner_usage["output_tokens"]:
+            await update_plan_usage(
+                db, new_plan_id,
+                replan_planner_usage["input_tokens"],
+                replan_planner_usage["output_tokens"],
+                replan_planner_usage["model"],
+                llm_calls=replan_planner_usage.get("calls"),
+            )
+
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
+
+    # --- Store token usage on the plan (before post-plan processing) ---
+    # Only update totals; llm_calls is preserved (planner-only, set earlier).
+    usage = get_usage_summary()
+    if current_plan_id and (usage["input_tokens"] or usage["output_tokens"]):
+        await update_plan_usage(
+            db, current_plan_id,
+            usage["input_tokens"], usage["output_tokens"], usage["model"],
+        )
 
     # --- Invalidate system env cache (exec tasks may have changed the system) ---
     from kiso.sysenv import invalidate_cache
@@ -1171,12 +1191,13 @@ async def _process_message(
         except SummarizerError as e:
             log.error("Fact consolidation failed: %s", e)
 
-    # --- Store token usage on the plan ---
-    usage = get_usage_summary()
-    if current_plan_id and (usage["input_tokens"] or usage["output_tokens"]):
+    # --- Update token usage with post-plan processing tokens ---
+    final_usage = get_usage_summary()
+    if current_plan_id and (final_usage["input_tokens"] or final_usage["output_tokens"]):
         await update_plan_usage(
             db, current_plan_id,
-            usage["input_tokens"], usage["output_tokens"], usage["model"],
+            final_usage["input_tokens"], final_usage["output_tokens"],
+            final_usage["model"],
         )
 
     clear_llm_budget()

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS plans (
     total_input_tokens  INTEGER NOT NULL DEFAULT 0,
     total_output_tokens INTEGER NOT NULL DEFAULT 0,
     model               TEXT,
+    llm_calls           TEXT,
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session, id);
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     review_learning TEXT,
     input_tokens  INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
+    llm_calls     TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -131,6 +133,8 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ("plans", "total_input_tokens", "ALTER TABLE plans ADD COLUMN total_input_tokens INTEGER NOT NULL DEFAULT 0"),
         ("plans", "total_output_tokens", "ALTER TABLE plans ADD COLUMN total_output_tokens INTEGER NOT NULL DEFAULT 0"),
         ("plans", "model", "ALTER TABLE plans ADD COLUMN model TEXT"),
+        ("tasks", "llm_calls", "ALTER TABLE tasks ADD COLUMN llm_calls TEXT"),
+        ("plans", "llm_calls", "ALTER TABLE plans ADD COLUMN llm_calls TEXT"),
     ]
     for table, column, sql in migrations:
         cur = await db.execute(f"PRAGMA table_info({table})")
@@ -362,12 +366,18 @@ async def update_task_command(
 
 
 async def update_task_usage(
-    db: aiosqlite.Connection, task_id: int, input_tokens: int, output_tokens: int
+    db: aiosqlite.Connection,
+    task_id: int,
+    input_tokens: int,
+    output_tokens: int,
+    llm_calls: list[dict] | None = None,
 ) -> None:
     """Store per-step token usage on a task."""
+    import json as _json
+    calls_json = _json.dumps(llm_calls) if llm_calls else None
     await db.execute(
-        "UPDATE tasks SET input_tokens = ?, output_tokens = ? WHERE id = ?",
-        (input_tokens, output_tokens, task_id),
+        "UPDATE tasks SET input_tokens = ?, output_tokens = ?, llm_calls = ? WHERE id = ?",
+        (input_tokens, output_tokens, calls_json, task_id),
     )
     await db.commit()
 
@@ -382,19 +392,37 @@ async def update_plan_status(
     await db.commit()
 
 
+_KEEP_LLM_CALLS = object()  # sentinel: don't touch the llm_calls column
+
+
 async def update_plan_usage(
     db: aiosqlite.Connection,
     plan_id: int,
     input_tokens: int,
     output_tokens: int,
     model: str | None = None,
+    llm_calls: list[dict] | None | object = _KEEP_LLM_CALLS,
 ) -> None:
-    """Store accumulated token usage on a plan."""
-    await db.execute(
-        "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ? "
-        "WHERE id = ?",
-        (input_tokens, output_tokens, model, plan_id),
-    )
+    """Store accumulated token usage on a plan.
+
+    When *llm_calls* is omitted the existing ``llm_calls`` column is
+    preserved (only totals and model are updated).  Pass an explicit list
+    to overwrite the column, or ``None`` to clear it.
+    """
+    if llm_calls is _KEEP_LLM_CALLS:
+        await db.execute(
+            "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ? "
+            "WHERE id = ?",
+            (input_tokens, output_tokens, model, plan_id),
+        )
+    else:
+        import json as _json
+        calls_json = _json.dumps(llm_calls) if llm_calls else None
+        await db.execute(
+            "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ?, llm_calls = ? "
+            "WHERE id = ?",
+            (input_tokens, output_tokens, model, calls_json, plan_id),
+        )
     await db.commit()
 
 

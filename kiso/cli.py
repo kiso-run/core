@@ -337,6 +337,7 @@ def _poll_status(
         render_planner_spinner,
         render_review,
         render_separator,
+        render_llm_calls,
         render_step_usage,
         render_task_header,
         render_task_output,
@@ -346,12 +347,14 @@ def _poll_status(
 
     _MAX_POLL_SECONDS = 300  # safety net: 5 min max
 
-    seen: dict[int, str] = {}
+    seen: dict[int, tuple] = {}  # tid → (status, review_verdict, has_llm_calls)
     shown_plan_id: int | None = None
+    shown_plan_llm_id: int | None = None  # plan id whose llm_calls we've printed
     max_task_id = base_task_id
     counter = 0
     start_time = time.time()
     no_plan_since_worker_stopped = 0  # consecutive polls with no plan and no worker
+    failed_stable_polls = 0  # polls with failed plan + all tasks rendered
     frames = spinner_frames(caps)
     active_spinner_task: dict | None = None
     active_spinner_index: int = 0
@@ -420,17 +423,38 @@ def _poll_status(
                     seen.clear()
                     seen_any_task = False
 
+            # Show plan-level LLM calls (planner step) once available
+            if (plan and not quiet and plan.get("message_id") == message_id
+                    and plan.get("llm_calls")
+                    and shown_plan_llm_id != plan.get("id")):
+                if (active_spinner_task or planning_phase) and caps.tty:
+                    sys.stdout.write(f"\r{CLEAR_LINE}")
+                    sys.stdout.flush()
+                    active_spinner_task = None
+                    planning_phase = False
+                llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
+                if llm_detail:
+                    print(llm_detail)
+                shown_plan_llm_id = plan["id"]
+
             total = len(tasks)
 
-            # Render tasks that changed status
+            # Render tasks that changed status or review
             for idx, task in enumerate(tasks, 1):
                 tid = task["id"]
                 status = task["status"]
+                review_verdict = task.get("review_verdict")
+                has_llm_calls = task.get("llm_calls") is not None
+                task_key = (status, review_verdict, has_llm_calls)
+
                 if tid > max_task_id:
                     max_task_id = tid
-                if seen.get(tid) == status:
+                if seen.get(tid) == task_key:
                     continue
-                seen[tid] = status
+
+                prev_key = seen.get(tid)
+                seen[tid] = task_key
+                prev_status = prev_key[0] if prev_key else None
                 ttype = task.get("type", "")
                 output = task.get("output", "") or ""
 
@@ -447,15 +471,23 @@ def _poll_status(
                         print(render_separator(caps))
                     continue
 
+                # If only review/llm_calls changed (status unchanged),
+                # show just the review line without re-rendering the task
+                if prev_status == status and prev_status is not None:
+                    if ttype != "msg":
+                        review_line = render_review(task, caps)
+                        if review_line:
+                            print(review_line)
+                    continue
+
                 # Msg tasks: only show via render_msg_output when done
                 if ttype == "msg":
                     if status == "done":
                         print(render_msg_output(output, caps, bot_name))
-                        # Per-step token usage for msg tasks
-                        msg_in = task.get("input_tokens", 0) or 0
-                        msg_out = task.get("output_tokens", 0) or 0
-                        if msg_in or msg_out:
-                            print(render_step_usage(msg_in, msg_out, caps))
+                        # Per-call LLM breakdown for msg tasks
+                        llm_detail = render_llm_calls(task.get("llm_calls"), caps)
+                        if llm_detail:
+                            print(llm_detail)
                         print(render_separator(caps))
                     continue
 
@@ -471,7 +503,14 @@ def _poll_status(
                     print(render_command(task_command, caps))
 
                 # Show output for completed/failed tasks
-                display_output = output or (task.get("stderr", "") or "") if status in ("done", "failed") else ""
+                if status in ("done", "failed"):
+                    stderr_text = task.get("stderr", "") or ""
+                    if status == "failed" and stderr_text:
+                        display_output = f"{output}\n{stderr_text}".strip() if output else stderr_text
+                    else:
+                        display_output = output
+                else:
+                    display_output = ""
                 if display_output:
                     out = render_task_output(display_output, caps)
                     if out:
@@ -501,23 +540,44 @@ def _poll_status(
 
             # Done condition: plan matches our message and is no longer running
             worker_running = data.get("worker_running", False)
+            should_break = False
             if (
                 plan
                 and plan.get("message_id") == message_id
                 and plan.get("status") != "running"
             ):
-                # Don't exit on "failed" if worker is still running (replan in progress)
-                if not (plan.get("status") == "failed" and worker_running):
-                    # Clear any remaining spinner
-                    if active_spinner_task and caps.tty:
-                        sys.stdout.write(f"\r{CLEAR_LINE}")
-                        sys.stdout.flush()
-                    # Show token usage
-                    if not quiet:
-                        usage_line = render_usage(plan, caps)
-                        if usage_line:
-                            print(usage_line)
-                    break
+                if plan.get("status") == "failed" and worker_running:
+                    # Worker still running after plan failed — could be:
+                    # a) replan in progress (new plan being created)
+                    # b) post-plan processing (curator/summarizer)
+                    # Wait until all tasks are rendered, then break after
+                    # a short stability window to catch replans.
+                    all_rendered = tasks and all(
+                        seen.get(t["id"]) is not None for t in tasks
+                    )
+                    if all_rendered:
+                        failed_stable_polls += 1
+                        if failed_stable_polls >= 10:  # ~5s (10 × 480ms)
+                            should_break = True
+                    else:
+                        failed_stable_polls = 0
+                else:
+                    failed_stable_polls = 0
+                    should_break = True
+            else:
+                failed_stable_polls = 0
+
+            if should_break:
+                # Clear any remaining spinner
+                if active_spinner_task and caps.tty:
+                    sys.stdout.write(f"\r{CLEAR_LINE}")
+                    sys.stdout.flush()
+                # Show aggregate token usage (per-call breakdown already shown per step)
+                if not quiet:
+                    usage_line = render_usage(plan, caps)
+                    if usage_line:
+                        print(usage_line)
+                break
 
             # Fallback: worker stopped without creating a plan for this message
             has_matching_plan = plan and plan.get("message_id") == message_id
