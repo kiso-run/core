@@ -707,3 +707,11 @@ class TestUsageTracking:
         assert delta["input_tokens"] == 500
         assert delta["output_tokens"] == 50
         assert delta["model"] == "gpt-3.5"
+        # calls key contains per-call entries
+        assert "calls" in delta
+        assert len(delta["calls"]) == 2
+        for call in delta["calls"]:
+            assert "role" in call
+            assert "model" in call
+            assert "input_tokens" in call
+            assert "output_tokens" in call

@@ -1000,6 +1000,14 @@ class TestLoadSystemPromptCuratorSummarizer:
         prompt = _load_system_prompt("paraphraser")
         assert "paraphraser" in prompt
 
+    def test_fact_consolidation_default(self):
+        prompt = _load_system_prompt("fact_consolidation")
+        assert "fact" in prompt.lower()
+
+    def test_worker_default(self):
+        prompt = _load_system_prompt("worker")
+        assert "helpful" in prompt.lower()
+
 
 # --- M10: Paraphraser ---
 
@@ -1262,6 +1270,21 @@ class TestRunMessenger:
         with patch("kiso.brain.call_llm", side_effect=_capture):
             await run_messenger(db, config, "sess1", "say hi")
         assert captured["role"] == "messenger"
+
+    async def test_goal_passed_to_context(self, db):
+        """run_messenger passes goal to build_messenger_messages context."""
+        config = _make_brain_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_messenger(db, config, "sess1", "say hi", goal="List files")
+        user_content = captured_messages[1]["content"]
+        assert "Current User Request" in user_content
+        assert "List files" in user_content
 
     async def test_llm_error_raises_messenger_error(self, db):
         config = _make_brain_config()

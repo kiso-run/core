@@ -202,6 +202,20 @@ class TestMsgTask:
         user_content = captured_messages[1]["content"]
         assert "Uses Python" in user_content
 
+    async def test_goal_reaches_messenger_context(self, db):
+        """_msg_task passes goal parameter through to messenger context."""
+        config = _make_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kwargs):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "Say hello", goal="Greet the user")
+        user_content = captured_messages[1]["content"]
+        assert "Greet the user" in user_content
+
     async def test_messenger_error_propagates(self, db):
         from kiso.brain import MessengerError
         config = _make_config()

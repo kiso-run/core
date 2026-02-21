@@ -649,6 +649,9 @@ async def run_messenger(
     Loads session summary and facts, builds context, and calls the
     messenger LLM to produce text for the user.
 
+    When *goal* is provided it is included as ``## Current User Request``
+    so the messenger knows the original intent behind the plan.
+
     Returns the generated text.
     Raises MessengerError on failure.
     """

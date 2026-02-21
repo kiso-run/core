@@ -12,6 +12,7 @@ import pytest
 
 from kiso.brain import (
     run_curator,
+    run_exec_translator,
     run_paraphraser,
     run_planner,
     run_reviewer,
@@ -21,6 +22,7 @@ from kiso.brain import (
     validate_review,
 )
 from kiso.store import save_message
+from kiso.sysenv import build_system_env_section
 from kiso.worker import _msg_task
 
 pytestmark = pytest.mark.llm_live
@@ -142,6 +144,57 @@ class TestWorkerLive:
         assert isinstance(text, str)
         assert len(text) > 0
         assert "paris" in text.lower()
+
+    async def test_msg_task_with_goal(
+        self, live_config, seeded_db, live_session,
+    ):
+        """Goal parameter gives messenger context about the user's request."""
+        text = await asyncio.wait_for(
+            _msg_task(
+                live_config, seeded_db, live_session,
+                "Summarize the results for the user.",
+                goal="List Python files in the project",
+            ),
+            timeout=TIMEOUT,
+        )
+        assert isinstance(text, str)
+        assert len(text) > 0
+
+
+# ---------------------------------------------------------------------------
+# Exec Translator
+# ---------------------------------------------------------------------------
+
+
+class TestExecTranslatorLive:
+    async def test_translates_simple_task(self, live_config):
+        """Exec translator produces a shell command from natural language."""
+        from kiso.config import KISO_DIR
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH only",
+            "exec_timeout": 120,
+            "max_output_size": 1_048_576,
+            "available_binaries": ["ls", "echo", "cat"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+        }
+        sys_env_text = build_system_env_section(fake_env, session="test-sess")
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config, "List all files in the current directory",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert isinstance(command, str)
+        assert len(command) > 0
+        assert command != "CANNOT_TRANSLATE"
+        assert "ls" in command.lower()
 
 
 # ---------------------------------------------------------------------------
