@@ -127,7 +127,7 @@ Two ways to provide deploy secrets:
 **1. `kiso env`** (recommended): manages `~/.kiso/.env` on the host (bind-mounted). Secrets persist across container restarts and can be hot-reloaded without restart via `kiso env reload`. See [cli.md — Deploy Secret Management](cli.md#deploy-secret-management).
 
 ```bash
-kiso env set KISO_OPENROUTER_API_KEY sk-or-...
+kiso env set KISO_LLM_API_KEY sk-or-...
 kiso env reload
 ```
 

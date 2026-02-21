@@ -139,6 +139,42 @@ def _truncate_output(text: str, limit: int) -> str:
     return text
 
 
+def _build_exec_env() -> dict[str, str]:
+    """Build the exec subprocess environment.
+
+    - PATH: prepend sys/bin if it exists
+    - HOME: set to KISO_DIR (for tools that need ~)
+    - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists
+    - GIT_SSH_COMMAND: use sys/ssh config if it exists
+    """
+    sys_dir = KISO_DIR / "sys"
+    sys_bin = sys_dir / "bin"
+    base_path = os.environ.get("PATH", "/usr/bin:/bin")
+
+    env: dict[str, str] = {}
+
+    # PATH with sys/bin prepended
+    if sys_bin.is_dir():
+        env["PATH"] = f"{sys_bin}:{base_path}"
+    else:
+        env["PATH"] = base_path
+
+    # HOME for tools that need it
+    env["HOME"] = str(KISO_DIR)
+
+    # Git config
+    gitconfig = sys_dir / "gitconfig"
+    if gitconfig.is_file():
+        env["GIT_CONFIG_GLOBAL"] = str(gitconfig)
+
+    # SSH config
+    ssh_dir = sys_dir / "ssh"
+    if ssh_dir.is_dir():
+        env["GIT_SSH_COMMAND"] = f"ssh -F {ssh_dir}/config -o UserKnownHostsFile={ssh_dir}/known_hosts -i {ssh_dir}/id_ed25519"
+
+    return env
+
+
 async def _exec_task(
     session: str, detail: str, timeout: int, sandbox_uid: int | None = None,
     max_output_size: int = 0,
@@ -153,7 +189,7 @@ async def _exec_task(
         return "", denial, False
 
     workspace = _session_workspace(session)
-    clean_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    clean_env = _build_exec_env()
 
     try:
         kwargs: dict = dict(

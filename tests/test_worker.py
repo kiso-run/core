@@ -31,7 +31,7 @@ from kiso.store import (
 )
 from kiso.worker import (
     _apply_curator_result,
-    _build_cancel_summary, _build_failure_summary,
+    _build_cancel_summary, _build_exec_env, _build_failure_summary,
     _exec_task, _msg_task, _skill_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
@@ -4469,3 +4469,62 @@ class TestRecoveryMsgTask:
         tasks = await get_tasks_for_plan(db, plan["id"])
         msg_tasks = [t for t in tasks if t["type"] == "msg" and t["status"] == "done"]
         assert any("cancelled" in (t["output"] or "").lower() for t in msg_tasks)
+
+
+# --- _build_exec_env ---
+
+
+class TestBuildExecEnv:
+    def test_path_without_sys_bin(self, tmp_path):
+        """When sys/bin doesn't exist, PATH is the base system PATH."""
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        # sys/bin doesn't exist, so PATH should not contain it
+        assert str(tmp_path / "sys" / "bin") not in env["PATH"]
+
+    def test_path_with_sys_bin(self, tmp_path):
+        """When sys/bin exists, it's prepended to PATH."""
+        sys_bin = tmp_path / "sys" / "bin"
+        sys_bin.mkdir(parents=True)
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        assert env["PATH"].startswith(str(sys_bin) + ":")
+
+    def test_home_set_to_kiso_dir(self, tmp_path):
+        """HOME is always set to KISO_DIR."""
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        assert env["HOME"] == str(tmp_path)
+
+    def test_git_config_global_when_exists(self, tmp_path):
+        """GIT_CONFIG_GLOBAL is set when sys/gitconfig exists."""
+        sys_dir = tmp_path / "sys"
+        sys_dir.mkdir(parents=True)
+        gitconfig = sys_dir / "gitconfig"
+        gitconfig.write_text("[user]\n  name = Test")
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        assert env["GIT_CONFIG_GLOBAL"] == str(gitconfig)
+
+    def test_no_git_config_global_when_missing(self, tmp_path):
+        """GIT_CONFIG_GLOBAL is not set when sys/gitconfig doesn't exist."""
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        assert "GIT_CONFIG_GLOBAL" not in env
+
+    def test_git_ssh_command_when_ssh_dir_exists(self, tmp_path):
+        """GIT_SSH_COMMAND is set when sys/ssh/ directory exists."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        assert "GIT_SSH_COMMAND" in env
+        assert str(ssh_dir / "config") in env["GIT_SSH_COMMAND"]
+        assert str(ssh_dir / "known_hosts") in env["GIT_SSH_COMMAND"]
+        assert str(ssh_dir / "id_ed25519") in env["GIT_SSH_COMMAND"]
+
+    def test_no_git_ssh_command_when_ssh_dir_missing(self, tmp_path):
+        """GIT_SSH_COMMAND is not set when sys/ssh/ doesn't exist."""
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            env = _build_exec_env()
+        assert "GIT_SSH_COMMAND" not in env

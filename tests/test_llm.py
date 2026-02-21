@@ -31,7 +31,7 @@ from kiso.llm import (
 def _make_config(**overrides) -> Config:
     defaults = dict(
         tokens={"cli": "tok"},
-        providers={"openrouter": Provider(base_url="https://api.example.com/v1", api_key_env="TEST_KEY")},
+        providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
         users={},
         models={"planner": "gpt-4", "worker": "gpt-3.5"},
         settings={},
@@ -82,22 +82,14 @@ class TestGetProvider:
 # --- _get_api_key ---
 
 class TestGetApiKey:
-    def test_no_api_key_env_returns_none(self):
-        provider = Provider(base_url="http://localhost")
-        assert _get_api_key(provider) is None
+    def test_returns_key_when_set(self):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-secret"}):
+            assert _get_api_key() == "sk-secret"
 
-    def test_env_var_set(self):
-        provider = Provider(base_url="http://localhost", api_key_env="TEST_LLM_KEY")
-        with patch.dict(os.environ, {"TEST_LLM_KEY": "sk-secret"}):
-            assert _get_api_key(provider) == "sk-secret"
-
-    def test_env_var_not_set_raises(self):
-        provider = Provider(base_url="http://localhost", api_key_env="MISSING_KEY")
+    def test_returns_none_when_unset(self):
         with patch.dict(os.environ, {}, clear=True):
-            # Ensure the key is definitely not in env
-            os.environ.pop("MISSING_KEY", None)
-            with pytest.raises(LLMError, match="MISSING_KEY.*not set"):
-                _get_api_key(provider)
+            os.environ.pop("KISO_LLM_API_KEY", None)
+            assert _get_api_key() is None
 
 
 # --- call_llm ---
@@ -123,14 +115,14 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_structured_role_without_format_raises(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with pytest.raises(LLMError, match="requires structured output"):
                 await call_llm(config, "planner", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
     async def test_non_structured_role_without_format_ok(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response("response text")
@@ -144,7 +136,7 @@ class TestCallLlm:
     async def test_successful_call_returns_content(self):
         config = _make_config()
         schema = {"type": "json_schema", "json_schema": {"name": "test"}}
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response('{"goal":"test"}')
@@ -157,7 +149,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_timeout_raises(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.side_effect = httpx.TimeoutException("timeout")
@@ -170,7 +162,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_request_error_raises(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.side_effect = httpx.ConnectError("refused")
@@ -183,7 +175,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_non_200_raises(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = httpx.Response(
@@ -199,7 +191,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_400_error_hint(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = httpx.Response(
@@ -215,7 +207,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_401_error_hint(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = httpx.Response(
@@ -231,7 +223,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_402_error_hint(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = httpx.Response(
@@ -247,7 +239,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_malformed_response_raises(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = httpx.Response(
@@ -263,7 +255,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_auth_header_sent_when_api_key(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response()
@@ -281,7 +273,8 @@ class TestCallLlm:
         config = _make_config(providers={
             "local": Provider(base_url="http://localhost:11434/v1"),
         }, models={"worker": "llama3"})
-        with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+        with patch.dict(os.environ, {}, clear=True), \
+             patch("kiso.llm.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.post.return_value = _ok_response()
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -297,7 +290,7 @@ class TestCallLlm:
     async def test_response_format_in_payload(self):
         config = _make_config()
         schema = {"type": "json_schema", "json_schema": {"name": "plan"}}
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response('{}')
@@ -337,7 +330,7 @@ class TestCallLlmAudit:
     async def test_audit_logged_on_success(self):
         config = _make_config()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = AsyncMock()
@@ -361,7 +354,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_error(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = AsyncMock()
@@ -379,7 +372,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_non_200(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = AsyncMock()
@@ -400,7 +393,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_request_error(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = AsyncMock()
@@ -419,7 +412,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_malformed_response(self):
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = AsyncMock()
@@ -441,7 +434,7 @@ class TestCallLlmAudit:
     async def test_audit_defaults_tokens_to_zero(self):
         """When no usage in response, tokens default to 0."""
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = AsyncMock()
@@ -464,7 +457,7 @@ class TestEmptyResponse:
     async def test_empty_content_raises_error(self):
         """Mock LLM returning content: '', verify LLMError raised."""
         config = _make_config()
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response("")
@@ -483,7 +476,7 @@ class TestEmptyResponse:
             200, json=body,
             request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
         )
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = resp
@@ -502,7 +495,7 @@ class TestTimeoutConfig:
     async def test_timeout_uses_config_value(self):
         """Verify httpx.AsyncClient receives timeout from exec_timeout config."""
         config = _make_config(settings={"exec_timeout": 42})
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response("ok")
@@ -533,7 +526,7 @@ class TestLLMBudget:
     async def test_budget_increments_on_call(self):
         config = _make_config()
         set_llm_budget(10)
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response("ok")
@@ -551,7 +544,7 @@ class TestLLMBudget:
     async def test_budget_exceeded_raises(self):
         config = _make_config()
         set_llm_budget(1)
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response("ok")
@@ -571,7 +564,7 @@ class TestLLMBudget:
         """When no budget is set, calls are unlimited."""
         config = _make_config()
         clear_llm_budget()  # Ensure no budget
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = _ok_response("ok")
@@ -588,7 +581,7 @@ class TestLLMBudget:
         """Budget check happens before making any HTTP request."""
         config = _make_config()
         set_llm_budget(0)  # Zero budget — no calls allowed
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -619,7 +612,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         usage1 = {"prompt_tokens": 100, "completion_tokens": 50}
         usage2 = {"prompt_tokens": 200, "completion_tokens": 80}
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -657,7 +650,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         usage1 = {"prompt_tokens": 10, "completion_tokens": 5}
         usage2 = {"prompt_tokens": 20, "completion_tokens": 8}
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -681,7 +674,7 @@ class TestUsageTracking:
             {"prompt_tokens": 200, "completion_tokens": 20},
             {"prompt_tokens": 300, "completion_tokens": 30},
         ]
-        with patch.dict(os.environ, {"TEST_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()
                 mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -715,3 +708,51 @@ class TestUsageTracking:
             assert "model" in call
             assert "input_tokens" in call
             assert "output_tokens" in call
+            assert "messages" in call
+            assert "response" in call
+
+    @pytest.mark.asyncio
+    async def test_usage_entries_contain_messages_and_response(self):
+        """Verify _llm_usage_entries now includes messages and response fields."""
+        config = _make_config()
+        reset_usage_tracking()
+        messages = [{"role": "user", "content": "hi there"}]
+        usage = {"prompt_tokens": 50, "completion_tokens": 25}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("hello back", usage=usage)
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", messages)
+
+        from kiso.llm import _llm_usage_entries
+        entries = _llm_usage_entries.get(None)
+        assert entries is not None
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["messages"] == [{"role": "user", "content": "hi there"}]
+        assert entry["response"] == "hello back"
+
+    @pytest.mark.asyncio
+    async def test_get_usage_since_includes_messages_and_response(self):
+        """Verify get_usage_since()['calls'] entries contain messages and response."""
+        config = _make_config()
+        reset_usage_tracking()
+        messages = [{"role": "user", "content": "test prompt"}]
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("test response", usage=usage)
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", messages)
+
+        delta = get_usage_since(0)
+        assert len(delta["calls"]) == 1
+        call = delta["calls"][0]
+        assert call["messages"] == [{"role": "user", "content": "test prompt"}]
+        assert call["response"] == "test response"

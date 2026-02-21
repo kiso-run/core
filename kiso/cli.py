@@ -10,7 +10,9 @@ class _ExitRepl(Exception):
     """Raised by /exit to break out of the REPL loop."""
 
 
-_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/sessions", "/status"]
+_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/sessions", "/status", "/verbose-off", "/verbose-on"]
+
+_verbose_mode = False
 
 
 def _setup_readline() -> None:
@@ -217,7 +219,7 @@ def _msg_cmd(args: argparse.Namespace) -> None:
     message_id = data["message_id"]
 
     try:
-        _poll_status(client, session, message_id, 0, quiet, caps, bot_name)
+        _poll_status(client, session, message_id, 0, quiet, False, caps, bot_name)
     except KeyboardInterrupt:
         try:
             client.post(f"/sessions/{session}/cancel")
@@ -302,7 +304,7 @@ def _chat(args: argparse.Namespace) -> None:
             try:
                 last_task_id = _poll_status(
                     client, session, message_id, last_task_id,
-                    args.quiet, caps, bot_name,
+                    args.quiet, _verbose_mode, caps, bot_name,
                 )
             except KeyboardInterrupt:
                 print(f"\n{render_cancel_start(caps)}")
@@ -323,6 +325,7 @@ def _poll_status(
     message_id: int,
     base_task_id: int,
     quiet: bool,
+    verbose: bool,
     caps: "TermCaps",  # noqa: F821
     bot_name: str = "Bot",
 ) -> int:
@@ -331,13 +334,14 @@ def _poll_status(
     from kiso.render import (
         CLEAR_LINE,
         render_command,
+        render_llm_calls,
+        render_llm_calls_verbose,
         render_msg_output,
         render_plan,
         render_plan_detail,
         render_planner_spinner,
         render_review,
         render_separator,
-        render_llm_calls,
         render_step_usage,
         render_task_header,
         render_task_output,
@@ -366,7 +370,8 @@ def _poll_status(
         if counter % _POLL_EVERY == 0:
             try:
                 resp = client.get(
-                    f"/status/{session}", params={"after": base_task_id}
+                    f"/status/{session}",
+                    params={"after": base_task_id, "verbose": str(verbose).lower()},
                 )
                 resp.raise_for_status()
             except Exception:
@@ -435,6 +440,10 @@ def _poll_status(
                 llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
                 if llm_detail:
                     print(llm_detail)
+                if verbose:
+                    verbose_detail = render_llm_calls_verbose(plan.get("llm_calls"), caps)
+                    if verbose_detail:
+                        print(verbose_detail)
                 shown_plan_llm_id = plan["id"]
 
             total = len(tasks)
@@ -478,6 +487,10 @@ def _poll_status(
                         review_line = render_review(task, caps)
                         if review_line:
                             print(review_line)
+                        if verbose:
+                            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+                            if verbose_detail:
+                                print(verbose_detail)
                     continue
 
                 # Msg tasks: only show via render_msg_output when done
@@ -488,6 +501,10 @@ def _poll_status(
                         llm_detail = render_llm_calls(task.get("llm_calls"), caps)
                         if llm_detail:
                             print(llm_detail)
+                        if verbose:
+                            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+                            if verbose_detail:
+                                print(verbose_detail)
                         print(render_separator(caps))
                     continue
 
@@ -655,6 +672,15 @@ def _handle_slash(
     elif cmd == "/sessions":
         _slash_sessions(client, user, caps)
 
+    elif cmd == "/verbose-on":
+        global _verbose_mode
+        _verbose_mode = True
+        print("Verbose mode: ON — LLM calls will show full input/output")
+
+    elif cmd == "/verbose-off":
+        _verbose_mode = False
+        print("Verbose mode: OFF")
+
     elif cmd == "/clear":
         if caps.tty:
             sys.stdout.write("\033[2J\033[H")
@@ -669,11 +695,13 @@ def _slash_help(caps: "TermCaps") -> None:  # noqa: F821
     from kiso.render import render_separator
 
     print(render_separator(caps))
-    print("  /help       — show this help")
-    print("  /status     — server health + session info")
-    print("  /sessions   — list your sessions")
-    print("  /clear      — clear the screen")
-    print("  /exit       — exit the REPL")
+    print("  /help        — show this help")
+    print("  /status      — server health + session info")
+    print("  /sessions    — list your sessions")
+    print("  /verbose-on  — show full LLM input/output")
+    print("  /verbose-off — hide LLM details (default)")
+    print("  /clear       — clear the screen")
+    print("  /exit        — exit the REPL")
     print(render_separator(caps))
 
 

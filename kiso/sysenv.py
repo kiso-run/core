@@ -49,12 +49,20 @@ def _collect_os_info() -> dict[str, str]:
 def _collect_binaries(
     probe_list: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Probe binaries with shutil.which(). Returns (found, missing)."""
+    """Probe binaries with shutil.which(). Returns (found, missing).
+
+    Prepends ``sys/bin/`` to PATH so that binaries installed by
+    ``deps.sh`` into the persistent directory are discovered.
+    """
     probe = probe_list if probe_list is not None else PROBE_BINARIES
+    # Prepend sys/bin to PATH for probing
+    sys_bin = str(KISO_DIR / "sys" / "bin")
+    orig_path = os.environ.get("PATH", "/usr/bin:/bin")
+    extended_path = f"{sys_bin}:{orig_path}" if os.path.isdir(sys_bin) else orig_path
     found: list[str] = []
     missing: list[str] = []
     for name in probe:
-        if shutil.which(name):
+        if shutil.which(name, path=extended_path):
             found.append(name)
         else:
             missing.append(name)
@@ -99,7 +107,7 @@ def collect_system_env(config: Config) -> dict:
         "os": os_info,
         "shell": "/bin/sh",
         "exec_cwd": str(KISO_DIR / "sessions"),
-        "exec_env": "PATH only (all other env vars stripped)",
+        "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
         "exec_timeout": int(config.settings.get("exec_timeout", 120)),
         "max_output_size": int(config.settings.get("max_output_size", 1_048_576)),
         "available_binaries": found_bins,
@@ -107,6 +115,8 @@ def collect_system_env(config: Config) -> dict:
         "connectors": connectors,
         "max_plan_tasks": int(config.settings.get("max_plan_tasks", 20)),
         "max_replan_depth": int(config.settings.get("max_replan_depth", 3)),
+        "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+        "reference_docs_path": str(KISO_DIR / "reference"),
     }
 
 
@@ -169,6 +179,9 @@ def build_system_env_section(env: dict, session: str = "") -> str:
         cwd = env["exec_cwd"] + "/<session>/"
     lines.append(f"Exec CWD: {cwd}")
     lines.append(f"Exec env: {env['exec_env']}")
+    lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
+    lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
+    lines.append(f"Reference docs: {env['reference_docs_path']} (skill/connector authoring guides — cat before planning)")
     lines.append(
         f"Exec timeout: {env['exec_timeout']}s | "
         f"Max output: {_format_size(env['max_output_size'])}"

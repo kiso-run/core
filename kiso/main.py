@@ -41,6 +41,25 @@ log = logging.getLogger(__name__)
 
 SESSION_RE = re.compile(r"^[a-zA-Z0-9_@.\-]{1,255}$")
 
+
+def _init_kiso_dirs() -> None:
+    """Ensure ~/.kiso/ subdirectories exist and sync reference docs."""
+    (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
+    (KISO_DIR / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
+    (KISO_DIR / "reference").mkdir(parents=True, exist_ok=True)
+
+    # Sync bundled reference docs to ~/.kiso/reference/
+    import importlib.resources
+    ref_pkg = importlib.resources.files("kiso") / "reference"
+    dest = KISO_DIR / "reference"
+    for src_file in ref_pkg.iterdir():
+        if src_file.name.endswith(".md"):
+            target = dest / src_file.name
+            content = src_file.read_text(encoding="utf-8")
+            # Only write if changed (avoid unnecessary writes)
+            if not target.exists() or target.read_text(encoding="utf-8") != content:
+                target.write_text(content, encoding="utf-8")
+
 # Per-session workers: session → (queue, asyncio.Task, cancel_event)
 _workers: dict[str, tuple[asyncio.Queue, asyncio.Task, asyncio.Event]] = {}
 
@@ -108,6 +127,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     config = load_config()
     app.state.config = config
+    _init_kiso_dirs()
     log.info("Server starting — host=%s port=%s",
              config.settings.get("host", "0.0.0.0"),
              config.settings.get("port", 8333))
@@ -303,10 +323,14 @@ async def get_status(
     request: Request,
     auth: AuthInfo = Depends(require_auth),
     after: int = Query(0),
+    verbose: bool = Query(False),
 ):
     db = request.app.state.db
     tasks = await get_tasks_for_session(db, session, after=after)
     plan = await get_plan_for_session(db, session)
+
+    if not verbose:
+        _strip_llm_verbose(tasks, plan)
 
     entry = _workers.get(session)
     worker_running = entry is not None and not entry[1].done()
@@ -319,6 +343,23 @@ async def get_status(
         "worker_running": worker_running,
         "active_task": None,
     }
+
+
+def _strip_llm_verbose(tasks: list[dict], plan: dict | None) -> None:
+    """Remove messages/response from llm_calls to keep default response compact."""
+    import json as _json
+    for obj in ([plan] if plan else []) + tasks:
+        raw = obj.get("llm_calls")
+        if not raw:
+            continue
+        try:
+            calls = _json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        for c in calls:
+            c.pop("messages", None)
+            c.pop("response", None)
+        obj["llm_calls"] = _json.dumps(calls)
 
 
 @app.get("/sessions/{session}/info")

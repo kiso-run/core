@@ -49,6 +49,18 @@ The username comes from the Linux user (`whoami`). Example: `laptop@marco`
    - Renders each event as it arrives (see [Display Rendering](#display-rendering))
 4. Loops until `Ctrl+C` or `exit`
 
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/status` | Server health + session info |
+| `/sessions` | List your sessions |
+| `/verbose-on` | Show full LLM input/output (messages sent and responses received) with beautified JSON |
+| `/verbose-off` | Hide LLM details (default) |
+| `/clear` | Clear the screen |
+| `/exit` | Exit the REPL |
+
 ### Display Rendering
 
 The CLI renders the full execution flow in real time. Every decision the system makes is visible to the user. The renderer reads task updates from `/status` polling and maps each event to a display element.
@@ -57,8 +69,18 @@ The CLI renders the full execution flow in real time. Every decision the system 
 
 | Mode | Shows | When |
 |------|-------|------|
-| **Default** (verbose) | Everything: plan goal, task progress, output, review verdicts, replans, learnings, bot messages | Always, unless `--quiet` |
+| **Default** | Everything: plan goal, task progress, output, review verdicts, replans, learnings, bot messages | Always, unless `--quiet` |
 | **Quiet** (`--quiet`) | Only `msg` task content — the bot's actual responses | When you don't care about internals |
+| **Verbose** (`/verbose-on`) | Default + full LLM input/output in bordered panels | When debugging LLM interactions |
+
+#### Verbose Mode
+
+Toggle with `/verbose-on` and `/verbose-off` during a chat session. When enabled, after each LLM call breakdown the CLI shows a bordered panel for every call containing:
+
+- **Messages sent**: each message with its role label (`[system]`, `[user]`, etc.)
+- **Response received**: the full LLM response, with JSON responses pretty-printed
+
+This is useful for debugging prompt issues, verifying what context the LLM receives, and inspecting structured output. The data is fetched via `GET /status/{session}?verbose=true` — the default `/status` response omits message/response data to keep payloads small.
 
 #### Visual Elements
 

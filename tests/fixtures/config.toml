@@ -2,7 +2,6 @@
 cli = "test-token-abc123"
 
 [providers.openrouter]
-api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
 [providers.ollama]

@@ -17,6 +17,7 @@ from kiso.render import (
     render_cancel_start,
     render_command,
     render_llm_calls,
+    render_llm_calls_verbose,
     render_max_replan,
     render_msg_output,
     render_plan,
@@ -978,3 +979,111 @@ def test_render_msg_output_label_on_own_line():
     body_lines = lines[1:]
     body_text = "\n".join(body_lines)
     assert "Hello world" in body_text
+
+
+# ── render_llm_calls_verbose ────────────────────────────────
+
+
+def test_render_llm_calls_verbose_with_messages():
+    """Produces non-empty output with panel borders when messages are present."""
+    import json
+    calls = [
+        {
+            "role": "planner",
+            "model": "deepseek/deepseek-v3",
+            "input_tokens": 400,
+            "output_tokens": 80,
+            "messages": [{"role": "user", "content": "hello"}],
+            "response": "world",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert result != ""
+    assert "planner" in result
+    assert "hello" in result
+    assert "world" in result
+
+
+def test_render_llm_calls_verbose_json_response_pretty_printed():
+    """JSON responses are pretty-printed."""
+    import json
+    calls = [
+        {
+            "role": "planner",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [{"role": "user", "content": "plan"}],
+            "response": '{"goal":"test","tasks":[]}',
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert '"goal": "test"' in result  # pretty-printed with spaces
+
+
+def test_render_llm_calls_verbose_text_response():
+    """Plain text responses shown as-is in panel."""
+    import json
+    calls = [
+        {
+            "role": "worker",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [{"role": "system", "content": "You are helpful"}],
+            "response": "This is plain text, not JSON",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
+    assert "This is plain text, not JSON" in result
+
+
+def test_render_llm_calls_verbose_none():
+    """Returns empty string for None input."""
+    assert render_llm_calls_verbose(None, _COLOR) == ""
+
+
+def test_render_llm_calls_verbose_empty():
+    """Returns empty string for empty list."""
+    assert render_llm_calls_verbose("[]", _COLOR) == ""
+    assert render_llm_calls_verbose("", _COLOR) == ""
+
+
+def test_render_llm_calls_verbose_no_messages():
+    """Calls without messages (compact data only) return empty string."""
+    import json
+    calls = [
+        {
+            "role": "planner",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert result == ""
+
+
+def test_render_llm_calls_verbose_non_tty():
+    """Non-TTY output has no ANSI codes but still has panel structure."""
+    import json
+    calls = [
+        {
+            "role": "reviewer",
+            "model": "gpt-4",
+            "input_tokens": 200,
+            "output_tokens": 60,
+            "messages": [{"role": "user", "content": "review this"}],
+            "response": "looks good",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
+    assert result != ""
+    assert "\033[" not in result
+    assert "review this" in result
+    assert "looks good" in result
+
+
+def test_render_llm_calls_verbose_invalid_json():
+    """Returns empty string for invalid JSON."""
+    assert render_llm_calls_verbose("not json", _COLOR) == ""

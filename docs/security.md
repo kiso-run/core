@@ -167,7 +167,7 @@ API keys and tokens that skills/connectors need to function. Belong to the *depl
 
 **Storage**: `~/.kiso/.env` file, loaded into process environment at startup. Hot-reloadable via `POST /admin/reload-env`. **Never** in config files, never in the database.
 
-**Naming**: `KISO_SKILL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, or whatever `api_key_env` specifies for providers.
+**Naming**: `KISO_SKILL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, and `KISO_LLM_API_KEY` for the LLM provider.
 
 **Declaration** in `kiso.toml`:
 

@@ -9,7 +9,7 @@ import secrets
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from kiso.config import Config
+from kiso.config import Config, LLM_API_KEY_ENV
 
 
 def escape_fence_delimiters(content: str) -> str:
@@ -110,17 +110,14 @@ def sanitize_output(
 
 
 def collect_deploy_secrets(config=None) -> dict[str, str]:
-    """Collect KISO_SKILL_*, KISO_CONNECTOR_* env vars + provider API keys."""
+    """Collect KISO_SKILL_*, KISO_CONNECTOR_* env vars + LLM API key."""
     secrets: dict[str, str] = {}
     for k, v in os.environ.items():
         if k.startswith(("KISO_SKILL_", "KISO_CONNECTOR_")):
             secrets[k] = v
-    if config:
-        for prov in config.providers.values():
-            if prov.api_key_env:
-                val = os.environ.get(prov.api_key_env)
-                if val:
-                    secrets[prov.api_key_env] = val
+    val = os.environ.get(LLM_API_KEY_ENV)
+    if val:
+        secrets[LLM_API_KEY_ENV] = val
     return secrets
 
 

@@ -334,7 +334,7 @@ class TestBuildPlannerMessages:
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
             "shell": "/bin/sh",
             "exec_cwd": str(KISO_DIR / "sessions"),
-            "exec_env": "PATH only (all other env vars stripped)",
+            "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
             "exec_timeout": 120,
             "max_output_size": 1_048_576,
             "available_binaries": ["git", "python3"],
@@ -342,6 +342,8 @@ class TestBuildPlannerMessages:
             "connectors": [],
             "max_plan_tasks": 20,
             "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
             msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
@@ -368,7 +370,7 @@ class TestBuildPlannerMessages:
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
             "shell": "/bin/sh",
             "exec_cwd": str(KISO_DIR / "sessions"),
-            "exec_env": "PATH only (all other env vars stripped)",
+            "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
             "exec_timeout": 120,
             "max_output_size": 1_048_576,
             "available_binaries": ["git"],
@@ -376,6 +378,8 @@ class TestBuildPlannerMessages:
             "connectors": [],
             "max_plan_tasks": 20,
             "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
             msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
@@ -1437,3 +1441,14 @@ class TestExecTranslatorPromptContent:
         """The default exec translator prompt should mention Preceding Task Outputs."""
         prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "Preceding Task Outputs" in prompt
+
+
+# --- Planner prompt content ---
+
+
+class TestPlannerPromptContent:
+    def test_planner_prompt_contains_reference_docs_instruction(self):
+        """The default planner prompt should mention Reference docs."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Reference docs" in prompt
+        assert "plan_outputs" in prompt

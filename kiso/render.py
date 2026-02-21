@@ -463,6 +463,93 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
     return "\n".join(lines)
 
 
+def render_llm_calls_verbose(llm_calls_json: str | None, caps: TermCaps) -> str:
+    """Render full LLM input/output with beautified JSON in bordered panels.
+
+    Each call is shown as a rich Panel with:
+    - Title: role -> model (tokens)
+    - Body: each message (role-labeled), then the response
+    - JSON responses are pretty-printed with syntax highlighting
+    """
+    if not llm_calls_json:
+        return ""
+    import json as _json
+    try:
+        calls = _json.loads(llm_calls_json)
+    except (ValueError, TypeError):
+        return ""
+    if not calls:
+        return ""
+
+    # Only render calls that have messages (verbose data present)
+    verbose_calls = [c for c in calls if c.get("messages")]
+    if not verbose_calls:
+        return ""
+
+    from rich.console import Console
+    from rich.panel import Panel
+
+    use_color = caps.color and caps.tty
+    if caps.unicode:
+        from io import StringIO
+        buf = StringIO()
+    else:
+        buf = _AsciiBuffer()
+
+    console = Console(
+        file=buf,
+        width=caps.width,
+        force_terminal=use_color,
+        no_color=not use_color,
+        highlight=False,
+    )
+
+    for c in verbose_calls:
+        role = c.get("role", "?")
+        model = c.get("model", "")
+        in_t = c.get("input_tokens", 0)
+        out_t = c.get("output_tokens", 0)
+        messages = c.get("messages", [])
+        response = c.get("response", "")
+
+        short_model = model.split("/", 1)[-1] if "/" in model else model
+        arrow = "\u2192" if caps.unicode else "->"
+        title = f" {role} {arrow} {short_model} ({in_t:,}{arrow}{out_t:,}) "
+
+        # Build body
+        parts: list[str] = []
+        for msg in messages:
+            label = msg.get("role", "?")
+            content = msg.get("content", "")
+            parts.append(f"[{label}]")
+            parts.append(content)
+            parts.append("")
+
+        parts.append("[response]")
+        # Try to beautify JSON responses
+        try:
+            parsed = _json.loads(response)
+            parts.append(_json.dumps(parsed, indent=2, ensure_ascii=False))
+        except (ValueError, TypeError):
+            parts.append(response)
+
+        body = "\n".join(parts)
+        panel = Panel(
+            body,
+            title=title,
+            border_style="dim magenta",
+            title_align="left",
+            expand=True,
+        )
+        console.print(panel)
+
+    raw = buf.getvalue()
+    lines = [line.rstrip() for line in raw.splitlines()]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
 def render_review(task: dict, caps: TermCaps) -> str:
     """Render review verdict, optional learning, and per-call LLM usage."""
     verdict = task.get("review_verdict")

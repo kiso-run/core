@@ -10,7 +10,7 @@ import time
 import httpx
 
 from kiso import audit
-from kiso.config import Config, Provider
+from kiso.config import Config, LLM_API_KEY_ENV, Provider
 
 # Roles that require structured output (response_format with json_schema).
 STRUCTURED_ROLES = {"planner", "reviewer", "curator"}
@@ -113,16 +113,9 @@ def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
     return config.providers[first_name], model_string
 
 
-def _get_api_key(provider: Provider) -> str | None:
-    """Resolve the API key from environment."""
-    if not provider.api_key_env:
-        return None
-    key = os.environ.get(provider.api_key_env)
-    if not key:
-        raise LLMError(
-            f"API key env var '{provider.api_key_env}' is not set"
-        )
-    return key
+def _get_api_key() -> str | None:
+    """Return the LLM API key from KISO_LLM_API_KEY, or None if unset."""
+    return os.environ.get(LLM_API_KEY_ENV)
 
 
 async def call_llm(
@@ -154,7 +147,7 @@ async def call_llm(
         raise LLMError(f"No model configured for role '{role}'")
 
     provider, model_name = get_provider(config, model_string)
-    api_key = _get_api_key(provider)
+    api_key = _get_api_key()
 
     if role in STRUCTURED_ROLES and response_format is None:
         raise LLMError(f"Role '{role}' requires structured output but no response_format given")
@@ -242,6 +235,8 @@ async def call_llm(
             "model": model_name,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            "response": content,
         })
 
     return content

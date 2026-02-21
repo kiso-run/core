@@ -252,32 +252,16 @@ class TestCollectDeploySecrets:
             "KISO_CONNECTOR_TOKEN": "ct-456",
         }
 
-    def test_provider_keys(self):
-        config = Config(
-            tokens={},
-            providers={"openai": Provider(base_url="https://api.openai.com", api_key_env="OPENAI_KEY")},
-            users={},
-            models={},
-            settings={},
-            raw={},
-        )
-        env = {"OPENAI_KEY": "sk-openai-test"}
+    def test_llm_api_key(self):
+        env = {"KISO_LLM_API_KEY": "sk-test-key"}
         with patch.dict(os.environ, env, clear=True):
-            secrets = collect_deploy_secrets(config)
-        assert secrets["OPENAI_KEY"] == "sk-openai-test"
+            secrets = collect_deploy_secrets()
+        assert secrets["KISO_LLM_API_KEY"] == "sk-test-key"
 
-    def test_missing_provider_env_skipped(self):
-        config = Config(
-            tokens={},
-            providers={"openai": Provider(base_url="https://api.openai.com", api_key_env="MISSING_KEY")},
-            users={},
-            models={},
-            settings={},
-            raw={},
-        )
+    def test_missing_llm_api_key_skipped(self):
         with patch.dict(os.environ, {}, clear=True):
-            secrets = collect_deploy_secrets(config)
-        assert "MISSING_KEY" not in secrets
+            secrets = collect_deploy_secrets()
+        assert "KISO_LLM_API_KEY" not in secrets
 
 
 # --- Random boundary fencing ---

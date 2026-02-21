@@ -21,7 +21,6 @@
 cli = "your-secret-token"
 
 [providers.openrouter]
-api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
 [users.marco]
@@ -39,7 +38,6 @@ All fields:
 cli = "your-secret-token"
 
 [providers.openrouter]
-api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
 [users.marco]
@@ -85,7 +83,6 @@ port = 8333
 |---|---|
 | `[tokens]` | At least one named token. Each client (CLI, connector) uses its own token. |
 | `[providers]` | At least one provider with `base_url`. |
-| `providers.*.api_key_env` | Env variable name for the API key. Optional for local providers (e.g. Ollama). |
 | `providers.*.base_url` | Required. No implicit default. |
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
@@ -125,19 +122,18 @@ Each client gets its own named token. The token name identifies the connector fo
 
 ## Providers
 
-All providers are OpenAI-compatible HTTP endpoints. Adding a provider = adding a section to config.
+All providers are OpenAI-compatible HTTP endpoints. Adding a provider = adding a section to config. The API key is read from the `KISO_LLM_API_KEY` environment variable (shared across all providers).
 
 ```toml
 [providers.openrouter]
-api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
 [providers.ollama]
 base_url = "http://localhost:11434/v1"
 ```
 
-- `api_key_env`: env var name for the API key. Read from env at startup — **never** stored in config. Optional for local providers (e.g. Ollama).
 - `base_url`: **required**. No implicit default.
+- API key: set `KISO_LLM_API_KEY` in `~/.kiso/.env`. Optional for local providers (e.g. Ollama).
 
 **Structured output requirement**: Planner, Reviewer, and Curator require `response_format` with strict `json_schema`. If the provider doesn't support it, the call fails with a clear error — no fallback. Worker, Summarizer, and Paraphraser produce free-form text and work with any provider.
 

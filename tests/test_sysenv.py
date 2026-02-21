@@ -144,6 +144,7 @@ class TestCollectSystemEnv:
             "os", "shell", "exec_cwd", "exec_env", "exec_timeout",
             "max_output_size", "available_binaries", "missing_binaries",
             "connectors", "max_plan_tasks", "max_replan_depth",
+            "sys_bin_path", "reference_docs_path",
         }
         assert expected_keys <= set(env.keys())
 
@@ -242,7 +243,7 @@ class TestBuildSystemEnvSection:
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.17.0-14-generic"},
             "shell": "/bin/sh",
             "exec_cwd": str(KISO_DIR / "sessions"),
-            "exec_env": "PATH only (all other env vars stripped)",
+            "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
             "exec_timeout": 120,
             "max_output_size": 1_048_576,
             "available_binaries": ["git", "python3", "curl"],
@@ -253,6 +254,8 @@ class TestBuildSystemEnvSection:
             ],
             "max_plan_tasks": 20,
             "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
         }
 
     def test_contains_os_info(self, sample_env):
@@ -339,3 +342,60 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "/<session>/" in section
         assert "Session:" not in section
+
+    def test_contains_sys_bin_line(self, sample_env):
+        """Output contains the Sys bin line."""
+        section = build_system_env_section(sample_env)
+        assert "Sys bin:" in section
+        assert "prepended to exec PATH" in section
+
+    def test_contains_reference_docs_line(self, sample_env):
+        """Output contains the Reference docs line."""
+        section = build_system_env_section(sample_env)
+        assert "Reference docs:" in section
+        assert "skill/connector authoring guides" in section
+
+    def test_contains_persistent_dir_line(self, sample_env):
+        """Output contains the Persistent dir line."""
+        section = build_system_env_section(sample_env)
+        assert "Persistent dir: ~/.kiso/sys/" in section
+
+
+# --- _collect_binaries with sys/bin ---
+
+
+class TestCollectBinariesSysBin:
+    def test_probes_sys_bin_when_exists(self, tmp_path):
+        """Binaries in sys/bin are found when directory exists."""
+        sys_bin = tmp_path / "sys" / "bin"
+        sys_bin.mkdir(parents=True)
+        # Create a fake binary
+        fake_bin = sys_bin / "myfakebin"
+        fake_bin.write_text("#!/bin/sh\necho hi")
+        fake_bin.chmod(0o755)
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            found, missing = _collect_binaries(["myfakebin"])
+        assert "myfakebin" in found
+
+    def test_no_sys_bin_dir_uses_system_path(self, tmp_path):
+        """When sys/bin doesn't exist, falls back to system PATH."""
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            found, missing = _collect_binaries(["__nonexistent_xyz__"])
+        assert "__nonexistent_xyz__" in missing
+
+
+# --- collect_system_env new keys ---
+
+
+class TestCollectSystemEnvNewKeys:
+    def test_includes_sys_bin_path(self, config):
+        from kiso.config import KISO_DIR
+        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+            env = collect_system_env(config)
+        assert env["sys_bin_path"] == str(KISO_DIR / "sys" / "bin")
+
+    def test_includes_reference_docs_path(self, config):
+        from kiso.config import KISO_DIR
+        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+            env = collect_system_env(config)
+        assert env["reference_docs_path"] == str(KISO_DIR / "reference")

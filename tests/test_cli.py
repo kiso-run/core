@@ -385,7 +385,7 @@ def test_poll_status_completes_on_plan_done(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 5
     out = capsys.readouterr().out
@@ -422,7 +422,7 @@ def test_poll_status_renders_tasks(capsys, plain_caps):
     mock_client.get.side_effect = [resp1, resp2]
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 4
     out = capsys.readouterr().out
@@ -452,7 +452,7 @@ def test_poll_status_detects_replan(capsys, plain_caps):
     mock_client.get.side_effect = [resp1, resp2]
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "Plan: First try" in out
@@ -475,7 +475,7 @@ def test_poll_status_exits_on_failed_plan(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 5
     out = capsys.readouterr().out
@@ -509,7 +509,7 @@ def test_poll_waits_on_failed_plan_while_worker_running(capsys, plain_caps):
     mock_client.get.side_effect = [resp1, resp2]
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 7
     out = capsys.readouterr().out
@@ -534,7 +534,7 @@ def test_poll_exits_on_failed_plan_when_worker_idle(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 5
     # Should exit after first poll (worker idle, no replan coming)
@@ -557,7 +557,7 @@ def test_poll_exits_on_done_plan_immediately(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 5
     # Should exit after first poll (plan done, exits immediately)
@@ -579,7 +579,7 @@ def test_poll_status_exits_when_worker_stopped(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 99, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 99, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "worker stopped" in out
@@ -599,7 +599,7 @@ def test_poll_status_ignores_plan_from_other_message(capsys, plain_caps):
     mock_client.get.return_value = resp1
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 42, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     # The old plan should NOT be shown
@@ -623,7 +623,7 @@ def test_poll_status_quiet_mode_only_shows_done_msg(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 7, 0, quiet=True, caps=plain_caps)
+        _poll_status(mock_client, "sess", 7, 0, quiet=True, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     # msg output shown
@@ -659,7 +659,7 @@ def test_poll_status_quiet_mode_skips_running_msg(capsys, plain_caps):
     mock_client.get.side_effect = [resp1, resp2]
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 7, 0, quiet=True, caps=plain_caps)
+        _poll_status(mock_client, "sess", 7, 0, quiet=True, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "Done!" in out
@@ -682,7 +682,7 @@ def test_poll_status_shows_output_for_failed_task(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "exec: bad-cmd" in out
@@ -706,7 +706,7 @@ def test_poll_status_shows_stderr_for_failed_task(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "No such file or directory" in out
@@ -732,7 +732,7 @@ def test_poll_status_blank_line_between_tasks(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 5, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     # There should be a blank line between the two exec tasks
@@ -766,7 +766,7 @@ def test_poll_status_msg_task_not_shown_while_running(capsys, plain_caps):
     mock_client.get.side_effect = [resp1, resp2]
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 3, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 3, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     # msg task header should not appear
@@ -792,7 +792,7 @@ def test_poll_status_shows_review_verdict(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 8, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 8, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "review: ok" in out
@@ -821,7 +821,7 @@ def test_poll_status_timeout_exit(capsys, plain_caps):
         return 1000.0
 
     with patch("time.sleep"), patch("time.time", side_effect=fake_time):
-        _poll_status(mock_client, "sess", 1, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 1, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "timed out" in out
@@ -844,7 +844,7 @@ def test_poll_status_worker_grace_period(capsys, plain_caps):
     mock_client.get.return_value = resp_no_worker
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 99, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 99, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "worker stopped" in out
@@ -879,7 +879,7 @@ def test_poll_status_shows_planner_spinner(capsys):
     mock_client.get.side_effect = [resp1, resp2]
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=tty_caps)
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
 
     out = capsys.readouterr().out
     assert "Planning..." in out
@@ -1246,7 +1246,7 @@ def test_poll_status_ignores_tasks_from_old_plan(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        result = _poll_status(mock_client, "sess", 50, 0, quiet=False, caps=plain_caps)
+        result = _poll_status(mock_client, "sess", 50, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "New answer" in out
@@ -1276,7 +1276,7 @@ def test_poll_status_task_count_reflects_current_plan(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 20, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 20, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     # Should show "2 tasks" (from plan_id=5), not "4 tasks"
@@ -1326,7 +1326,7 @@ def test_poll_status_shows_plan_detail(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "[exec]" in out
@@ -1356,7 +1356,7 @@ def test_poll_status_shows_command(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "$ ls -la" in out
@@ -1382,7 +1382,7 @@ def test_poll_status_shows_usage(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 10, 0, quiet=False, caps=plain_caps)
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "1,234" in out
@@ -1410,9 +1410,131 @@ def test_poll_status_quiet_hides_usage(capsys, plain_caps):
     mock_client.get.return_value = status_resp
 
     with patch("time.sleep"):
-        _poll_status(mock_client, "sess", 10, 0, quiet=True, caps=plain_caps)
+        _poll_status(mock_client, "sess", 10, 0, quiet=True, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
     assert "1,234" not in out
+
+
+# ── verbose mode ──────────────────────────────────────────────
+
+
+def test_verbose_on_sets_flag(capsys):
+    """'/verbose-on' sets _verbose_mode to True."""
+    import kiso.cli as cli_mod
+
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    client = MagicMock()
+
+    old = cli_mod._verbose_mode
+    try:
+        cli_mod._verbose_mode = False
+        _handle_slash("/verbose-on", client, "s", "alice", caps, "Bot")
+        assert cli_mod._verbose_mode is True
+        out = capsys.readouterr().out
+        assert "ON" in out
+    finally:
+        cli_mod._verbose_mode = old
+
+
+def test_verbose_off_sets_flag(capsys):
+    """'/verbose-off' sets _verbose_mode to False."""
+    import kiso.cli as cli_mod
+
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    client = MagicMock()
+
+    old = cli_mod._verbose_mode
+    try:
+        cli_mod._verbose_mode = True
+        _handle_slash("/verbose-off", client, "s", "alice", caps, "Bot")
+        assert cli_mod._verbose_mode is False
+        out = capsys.readouterr().out
+        assert "OFF" in out
+    finally:
+        cli_mod._verbose_mode = old
+
+
+def test_help_includes_verbose_commands(capsys):
+    """'/help' output includes /verbose-on and /verbose-off."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    client = MagicMock()
+
+    _handle_slash("/help", client, "sess", "alice", caps, "Bot")
+
+    out = capsys.readouterr().out
+    assert "/verbose-on" in out
+    assert "/verbose-off" in out
+
+
+def test_poll_status_accepts_verbose_parameter(capsys, plain_caps):
+    """_poll_status accepts verbose parameter without error."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Test", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Hello!"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=True, caps=plain_caps)
+
+    assert result == 1
+
+
+def test_poll_status_passes_verbose_query_param(capsys, plain_caps):
+    """When verbose=True, /status is called with verbose=true query param."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Test", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Ok"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=True, caps=plain_caps)
+
+    # Check that GET /status was called with verbose=true
+    get_call = mock_client.get.call_args
+    params = get_call.kwargs.get("params") or get_call[1].get("params", {})
+    assert params.get("verbose") == "true"
+
+
+def test_poll_status_verbose_false_query_param(capsys, plain_caps):
+    """When verbose=False, /status is called with verbose=false query param."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Test", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Ok"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    get_call = mock_client.get.call_args
+    params = get_call.kwargs.get("params") or get_call[1].get("params", {})
+    assert params.get("verbose") == "false"
+
+
+def test_slash_commands_include_verbose():
+    """_SLASH_COMMANDS list includes verbose commands for tab completion."""
+    assert "/verbose-on" in _SLASH_COMMANDS
+    assert "/verbose-off" in _SLASH_COMMANDS
 
 

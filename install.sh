@@ -228,13 +228,28 @@ if [[ "$NEED_CONFIG" == true ]]; then
 
     token="$(generate_token)"
 
-    bold "Creating $CONFIG..."
+    bold "Config preview:"
+    cat <<EOF
+[tokens]
+cli = "$token"
+
+[providers.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+
+[users.$kiso_user]
+role = "admin"
+
+[settings]
+bot_name = "$bot_name"
+EOF
+
+    confirm "Write this config to $CONFIG?"
+
     cat > "$CONFIG" <<EOF
 [tokens]
 cli = "$token"
 
 [providers.openrouter]
-api_key_env = "KISO_OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
 [users.$kiso_user]
@@ -251,8 +266,14 @@ if [[ "$NEED_ENV" == true ]]; then
 
     bold "Creating $ENV_FILE..."
     # Use printf to avoid shell expansion of special chars in API key
-    printf 'KISO_OPENROUTER_API_KEY=%s\n' "$api_key" > "$ENV_FILE"
+    printf 'KISO_LLM_API_KEY=%s\n' "$api_key" > "$ENV_FILE"
     green "  .env created"
+
+    # Verify the env var is loadable
+    set -a; source "$ENV_FILE"; set +a
+    if [[ -z "${KISO_LLM_API_KEY:-}" ]]; then
+        yellow "  warning: KISO_LLM_API_KEY is empty after loading .env"
+    fi
 fi
 
 # ── 5. Build and start ──────────────────────────────────────────────────────

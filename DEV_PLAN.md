@@ -666,7 +666,7 @@ Package everything for production.
 docker compose build
 docker compose up -d
 curl http://localhost:8333/health  # → ok
-docker exec -it kiso kiso env set KISO_OPENROUTER_API_KEY sk-...
+docker exec -it kiso kiso env set KISO_LLM_API_KEY sk-...
 docker exec -it kiso kiso env reload
 # Send a message via curl → get response
 # docker compose down && docker compose up → message recovery works
@@ -753,7 +753,7 @@ kiso --session test
 
 ## Milestone 20a: Live LLM Integration Tests
 
-Real LLM integration tests via OpenRouter. Three levels: role isolation, partial flows, end-to-end. Gated behind `--llm-live` flag + `KISO_OPENROUTER_API_KEY`. See [docs/testing-live.md](docs/testing-live.md).
+Real LLM integration tests via OpenRouter. Three levels: role isolation, partial flows, end-to-end. Gated behind `--llm-live` flag + `KISO_LLM_API_KEY`. See [docs/testing-live.md](docs/testing-live.md).
 
 - [x] Register `llm_live` marker in `pyproject.toml`
 - [x] Add `--llm-live` CLI flag + auto-skip hook in `tests/conftest.py`
@@ -781,7 +781,7 @@ Real LLM integration tests via OpenRouter. Three levels: role isolation, partial
 **Verify:**
 ```bash
 # Live tests (requires API key)
-KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/ --llm-live -v
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/ --llm-live -v
 
 # Regular tests unaffected (live tests skipped)
 uv run pytest tests/ -q
@@ -824,10 +824,10 @@ Practical acceptance tests (L4, real LLM) and CLI lifecycle tests (L5, real netw
 **Verify:**
 ```bash
 # All live tests
-KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/ --llm-live --live-network -v
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/ --llm-live --live-network -v
 
 # Only practical acceptance (L4)
-KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/test_practical.py --llm-live -v
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_practical.py --llm-live -v
 
 # Only CLI lifecycle (L5, no API key needed)
 uv run pytest tests/live/test_cli_live.py --live-network -v
@@ -1009,7 +1009,7 @@ uv run pytest tests/ -x -q -k sysenv # session tests
 uv run pytest tests/ -x -q -k render # markdown tests
 
 # Live tests
-KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/test_roles.py --llm-live -v
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_roles.py --llm-live -v
 
 # Visual check
 uv run python -c "
@@ -1017,6 +1017,31 @@ from kiso.render import render_msg_output, detect_caps
 caps = detect_caps()
 print(render_msg_output('# Hello\n\nThis is **bold** and a list:\n- item 1\n- item 2\n\n\`\`\`python\nprint(42)\n\`\`\`', caps))
 "
+```
+
+---
+
+## Milestone 23: Verbose mode
+
+Show full LLM input/output in CLI for debugging.
+
+- [x] Capture full LLM messages/response in `_llm_usage_entries` (`kiso/llm.py`)
+- [x] `/status?verbose=true` includes full data, default strips it (`kiso/main.py`)
+- [x] `/verbose-on` and `/verbose-off` REPL commands (`kiso/cli.py`)
+- [x] `render_llm_calls_verbose()` with rich panels and beautified JSON (`kiso/render.py`)
+- [x] Tests and documentation
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+
+uv run kiso
+> /verbose-on
+> what is 2+2?
+# Shows panels with full LLM input/output
+> /verbose-off
+> hello
+# Normal compact output
 ```
 
 ---
@@ -1037,6 +1062,18 @@ print(render_msg_output('# Hello\n\nThis is **bold** and a list:\n- item 1\n- it
 | `paraphraser.md` | `paraphraser` | `run_paraphraser` | Untrusted msg → safe text |
 
 > **Note:** `summarizer-session` and `summarizer-facts` share the `summarizer` model route because both are compression tasks that benefit from the same (typically cheaper) model. The prompt file naming convention `{model}-{action}.md` makes this relationship explicit.
+
+---
+
+## Milestone 24: Persistent system directory + Reference docs
+
+- [ ] `~/.kiso/sys/` directory: gitconfig, ssh/, bin/
+- [ ] `_build_exec_env()`: PATH with sys/bin, HOME, GIT_CONFIG_GLOBAL, GIT_SSH_COMMAND
+- [ ] `_init_kiso_dirs()`: create dirs at startup, sync bundled reference docs
+- [ ] `kiso/reference/skills.md` and `kiso/reference/connectors.md` bundled
+- [ ] `sysenv.py`: probe with extended PATH, show sys/bin and reference paths
+- [ ] Planner prompt: "read reference docs before planning unfamiliar tasks"
+- [ ] Tests
 
 ---
 

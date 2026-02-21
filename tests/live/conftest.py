@@ -33,7 +33,6 @@ def live_config() -> Config:
         providers={
             "openrouter": Provider(
                 base_url="https://openrouter.ai/api/v1",
-                api_key_env="KISO_OPENROUTER_API_KEY",
             ),
         },
         users={"testadmin": User(role="admin")},

@@ -10,6 +10,7 @@ from pathlib import Path
 
 KISO_DIR = Path.home() / ".kiso"
 CONFIG_PATH = KISO_DIR / "config.toml"
+LLM_API_KEY_ENV = "KISO_LLM_API_KEY"
 
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
@@ -48,7 +49,6 @@ MODEL_DEFAULTS: dict[str, str] = {
 @dataclass(frozen=True)
 class Provider:
     base_url: str
-    api_key_env: str | None = None
 
 
 @dataclass(frozen=True)
@@ -122,7 +122,6 @@ def _build_config(path: Path, on_error) -> Config:
             on_error(f"provider '{name}' is missing base_url")
         providers[name] = Provider(
             base_url=prov["base_url"],
-            api_key_env=prov.get("api_key_env"),
         )
 
     # --- users ---

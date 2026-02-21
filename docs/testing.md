@@ -46,10 +46,10 @@ tests/
 | Suite | Count | What it tests | Where to run | Secrets |
 |---|---|---|---|---|
 | Unit tests | ~970 | All code, fully mocked | Host | No |
-| L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `KISO_OPENROUTER_API_KEY` |
-| L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `KISO_OPENROUTER_API_KEY` |
-| L3 e2e | 4 | Full pipeline, **executes LLM-generated commands** | **Docker** | `KISO_OPENROUTER_API_KEY` |
-| L4 practical | 7 | Realistic scenarios, **executes LLM-generated commands** | **Docker** | `KISO_OPENROUTER_API_KEY` |
+| L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
+| L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
+| L3 e2e | 4 | Full pipeline, **executes LLM-generated commands** | **Docker** | `KISO_LLM_API_KEY` |
+| L4 practical | 7 | Realistic scenarios, **executes LLM-generated commands** | **Docker** | `KISO_LLM_API_KEY` |
 | L5 CLI lifecycle | 5 | GitHub API + git clone | Host or Docker | No |
 | Sandbox | 2 | Per-session Linux user isolation | Docker (root) | No |
 
@@ -62,7 +62,7 @@ tests/
 cp .env.example .env
 
 # 2. Add your OpenRouter API key (get one at https://openrouter.ai/keys)
-#    KISO_OPENROUTER_API_KEY=sk-or-v1-...
+#    KISO_LLM_API_KEY=sk-or-v1-...
 
 # 3. Build the test image (once, or after code changes)
 docker compose -f docker-compose.test.yml build
@@ -91,7 +91,7 @@ docker compose -f docker-compose.test.yml build test-live && \
 docker compose -f docker-compose.test.yml run --rm test-live
 ```
 
-Reads `.env` for `KISO_OPENROUTER_API_KEY`. LLM-generated exec commands run inside the container, isolated from the host.
+Reads `.env` for `KISO_LLM_API_KEY`. LLM-generated exec commands run inside the container, isolated from the host.
 
 ### Live tests on host (L1/L2/L5 only — no exec)
 
@@ -161,9 +161,9 @@ jobs:
 
       - name: Live tests (Docker)
         env:
-          KISO_OPENROUTER_API_KEY: ${{ secrets.KISO_OPENROUTER_API_KEY }}
+          KISO_LLM_API_KEY: ${{ secrets.KISO_LLM_API_KEY }}
         run: |
-          echo "KISO_OPENROUTER_API_KEY=$KISO_OPENROUTER_API_KEY" > .env
+          echo "KISO_LLM_API_KEY=$KISO_LLM_API_KEY" > .env
           docker compose -f docker-compose.test.yml run --rm test-live
 ```
 

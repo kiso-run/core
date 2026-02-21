@@ -22,7 +22,7 @@ from kiso.store import init_db
 def pytest_addoption(parser):
     parser.addoption(
         "--llm-live", action="store_true", default=False,
-        help="Run live LLM integration tests (requires KISO_OPENROUTER_API_KEY)",
+        help="Run live LLM integration tests (requires KISO_LLM_API_KEY)",
     )
     parser.addoption(
         "--live-network", action="store_true", default=False,
@@ -33,8 +33,8 @@ def pytest_addoption(parser):
 def pytest_collection_modifyitems(config, items):
     # --- llm_live gating ---
     if config.getoption("--llm-live"):
-        if not os.environ.get("KISO_OPENROUTER_API_KEY"):
-            skip = pytest.mark.skip(reason="KISO_OPENROUTER_API_KEY not set")
+        if not os.environ.get("KISO_LLM_API_KEY"):
+            skip = pytest.mark.skip(reason="KISO_LLM_API_KEY not set")
             for item in items:
                 if "llm_live" in item.keywords:
                     item.add_marker(skip)
@@ -58,7 +58,6 @@ discord = "discord-bot-token"
 
 [providers.openrouter]
 base_url = "https://openrouter.ai/api/v1"
-api_key_env = "KISO_OPENROUTER_API_KEY"
 
 [users.testadmin]
 role = "admin"

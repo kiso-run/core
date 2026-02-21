@@ -11,7 +11,7 @@ The `.env` file in the project root is shared between Docker (for running kiso) 
 cp .env.example .env
 
 # 2. Get an API key from https://openrouter.ai/keys and paste it
-#    KISO_OPENROUTER_API_KEY=sk-or-v1-...
+#    KISO_LLM_API_KEY=sk-or-v1-...
 
 # 3. Load into your shell (once per terminal session)
 set -a; source .env; set +a
@@ -48,7 +48,7 @@ uv run pytest tests/live/ -v
 
 | Flag | Marker | Env var required | Purpose |
 |---|---|---|---|
-| `--llm-live` | `llm_live` | `KISO_OPENROUTER_API_KEY` | Enable tests that call real LLMs |
+| `--llm-live` | `llm_live` | `KISO_LLM_API_KEY` | Enable tests that call real LLMs |
 | `--live-network` | `live_network` | — | Enable tests that call external services (GitHub, git) |
 
 ## Cost
@@ -67,18 +67,18 @@ A full run of all live tests makes roughly 30-50 LLM calls using the models in `
 
 ## CI (GitHub Actions)
 
-Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workflow:
+Add `KISO_LLM_API_KEY` as a repository secret, then use it in your workflow:
 
 ```yaml
 - name: Run live tests
   env:
-    KISO_OPENROUTER_API_KEY: ${{ secrets.KISO_OPENROUTER_API_KEY }}
+    KISO_LLM_API_KEY: ${{ secrets.KISO_LLM_API_KEY }}
   run: uv run pytest tests/live/ --llm-live --live-network -v
 ```
 
 ## Design Principles
 
-- **Two-layer gating**: LLM tests require both `--llm-live` flag AND `KISO_OPENROUTER_API_KEY` env var. Network tests require `--live-network`. Missing either skips with a clear reason.
+- **Two-layer gating**: LLM tests require both `--llm-live` flag AND `KISO_LLM_API_KEY` env var. Network tests require `--live-network`. Missing either skips with a clear reason.
 - **Structural + loose semantic assertions**: Validate JSON structure (required fields, validation passes) and loose semantics (goal mentions topic, answer present). Never exact text matching.
 - **Timeouts**: Every LLM call wrapped in `asyncio.wait_for(...)` to prevent hangs. L1/L2: 90s, L3: 120s, L4: 120s.
 - **Infrastructure isolation**: E2e and practical tests mock filesystem/security/webhook infrastructure (`mock_noop_infra` fixture) while letting real LLM calls flow through.
@@ -90,7 +90,7 @@ Add `KISO_OPENROUTER_API_KEY` as a repository secret, then use it in your workfl
 ### All tests skipped
 - Without `--llm-live`: Expected. Pass the flag to enable LLM tests.
 - Without `--live-network`: Expected. Pass the flag to enable network tests.
-- With `--llm-live` but skipped: Check `set -a; source .env; set +a` was run and `KISO_OPENROUTER_API_KEY` is set (`echo $KISO_OPENROUTER_API_KEY`).
+- With `--llm-live` but skipped: Check `set -a; source .env; set +a` was run and `KISO_LLM_API_KEY` is set (`echo $KISO_LLM_API_KEY`).
 
 ### Expected flakiness
 - Live LLM tests are inherently non-deterministic. Occasional failures (1-4 per run) are normal and caused by:
