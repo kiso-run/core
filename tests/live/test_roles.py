@@ -58,6 +58,45 @@ class TestPlannerLive:
         goal_lower = plan["goal"].lower()
         assert "france" in goal_lower or "capital" in goal_lower
 
+    async def test_investigation_produces_replan_task(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """Planner creates a discovery plan with exec tasks + final replan task
+        when the task clearly requires investigation first."""
+        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
+
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+        ):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "Check the plugin registry to find what skills are available, "
+                    "then install one that can do web search. "
+                    "You must investigate the registry first before deciding.",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(plan) == []
+        types = [t["type"] for t in plan["tasks"]]
+        # Should end with a replan task (investigation plan)
+        assert plan["tasks"][-1]["type"] == "replan", (
+            f"Expected last task to be 'replan' for investigation, "
+            f"got types: {types}"
+        )
+        # Should have at least one exec task before replan (the investigation)
+        assert "exec" in types, (
+            f"Expected at least one exec task for investigation, "
+            f"got types: {types}"
+        )
+        # Replan task should have detail explaining next steps
+        replan_task = plan["tasks"][-1]
+        assert replan_task["detail"], "Replan task should have a detail describing intent"
+        assert replan_task["expect"] is None
+        assert replan_task["skill"] is None
+
     async def test_exec_request_produces_exec_and_msg(
         self, live_config, seeded_db, live_session, tmp_path,
     ):
@@ -184,6 +223,7 @@ class TestExecTranslatorLive:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         sys_env_text = build_system_env_section(fake_env, session="test-sess")
         command = await asyncio.wait_for(

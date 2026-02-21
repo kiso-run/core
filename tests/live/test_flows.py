@@ -24,7 +24,7 @@ from kiso.store import (
     save_message,
 )
 from kiso.sysenv import collect_system_env, build_system_env_section
-from kiso.worker import _msg_task
+from kiso.worker import _build_replan_context, _msg_task
 
 pytestmark = pytest.mark.llm_live
 
@@ -356,4 +356,94 @@ class TestPlannerContextHandling:
         assert len(exec_tasks) == 0, (
             f"Greeting should not produce exec tasks from old context. "
             f"Got plan: {plan}"
+        )
+
+
+class TestDiscoveryPlanReplanFlow:
+    async def test_discovery_plan_replan_flow(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """Planner creates a discovery plan → exec tasks 'run' → replan
+        triggered → new plan created using investigation results.
+
+        We simulate exec outputs so we don't need real execution, but both
+        planner calls hit the real LLM.
+        """
+        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
+
+        # Step 1: Planner produces a discovery plan with investigation + replan
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+        ):
+            discovery_plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "Check the plugin registry to see what skills are available, "
+                    "then install one that can do web search. "
+                    "You must investigate the registry first before deciding.",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(discovery_plan) == []
+        assert discovery_plan["tasks"][-1]["type"] == "replan", (
+            f"Expected discovery plan to end with replan, "
+            f"got: {[t['type'] for t in discovery_plan['tasks']]}"
+        )
+
+        # Step 2: Simulate exec outputs (pretend we ran the investigation)
+        completed = []
+        for task in discovery_plan["tasks"]:
+            if task["type"] == "exec":
+                completed.append({
+                    **task,
+                    "status": "done",
+                    "output": (
+                        '{"skills": [{"name": "web-search", "description": '
+                        '"Search the web using DuckDuckGo", "install": '
+                        '"pip install kiso-skill-web-search"}]}'
+                    ),
+                })
+            elif task["type"] == "replan":
+                completed.append({
+                    **task,
+                    "status": "done",
+                    "output": "Replan requested by planner",
+                })
+
+        replan_reason = f"Self-directed replan: {discovery_plan['tasks'][-1]['detail']}"
+        replan_context = _build_replan_context(
+            completed, [], replan_reason, [],
+        )
+        enriched_message = (
+            "Check the plugin registry to see what skills are available, "
+            "then install one that can do web search.\n\n"
+            + replan_context
+        )
+
+        # Step 3: Call planner again with replan context → should produce
+        #         an action plan based on the investigation results
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+        ):
+            action_plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    enriched_message,
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(action_plan) == []
+        # The action plan should end with msg (actual work, not more investigation)
+        assert action_plan["tasks"][-1]["type"] == "msg", (
+            f"Expected action plan to end with msg task, "
+            f"got: {[t['type'] for t in action_plan['tasks']]}"
+        )
+        # Should reference web-search or the skill from investigation
+        plan_text = str(action_plan).lower()
+        assert "web" in plan_text or "search" in plan_text or "skill" in plan_text, (
+            f"Action plan should reference investigation results, got: {action_plan}"
         )

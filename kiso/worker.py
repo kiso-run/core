@@ -694,6 +694,18 @@ async def _execute_plan(
 
             completed.append(task_row)
 
+        elif task_type == "replan":
+            # Self-directed replan: mark task as done, trigger replan
+            replan_detail = task_row["detail"]
+            await update_task(db, task_id, "done", output="Replan requested by planner")
+            task_row = {**task_row, "output": "Replan requested by planner", "status": "done"}
+            completed.append(task_row)
+            remaining = [dict(t) for t in tasks[i + 1:]]
+            _cleanup_plan_outputs(session)
+            if slog:
+                slog.info("Task %d: self-directed replan: %s", task_id, replan_detail[:120])
+            return False, f"Self-directed replan: {replan_detail}", completed, remaining
+
     _cleanup_plan_outputs(session)
     return True, None, completed, []
 
@@ -1075,8 +1087,16 @@ async def _process_message(
                 )
             break
 
-        # Mark current plan as failed and remaining tasks
-        await update_plan_status(db, current_plan_id, "failed")
+        # Detect self-directed replan
+        is_self_directed = replan_reason.startswith("Self-directed replan:")
+
+        # Self-directed replans mark the plan as "done" (investigation succeeded)
+        if is_self_directed:
+            await update_plan_status(db, current_plan_id, "done")
+        else:
+            await update_plan_status(db, current_plan_id, "failed")
+
+        # Mark remaining tasks
         current_tasks = await get_tasks_for_plan(db, current_plan_id)
         for t in current_tasks:
             if t["status"] == "pending":
@@ -1094,10 +1114,15 @@ async def _process_message(
         })
 
         # Notify user about replan
+        if is_self_directed:
+            msg_text = f"Investigating... ({replan_depth}/{max_replan_depth})"
+        else:
+            msg_text = (
+                f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
+                f"{replan_reason}"
+            )
         await save_message(
-            db, session, None, "system",
-            f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
-            f"{replan_reason}",
+            db, session, None, "system", msg_text,
             trusted=True, processed=True,
         )
 
@@ -1165,6 +1190,14 @@ async def _process_message(
                 replan_planner_usage["model"],
                 llm_calls=replan_planner_usage.get("calls"),
             )
+
+        # Handle extend_replan: planner can request up to +3 extra attempts
+        extend = new_plan.get("extend_replan")
+        if extend and isinstance(extend, int) and extend > 0:
+            extend = min(extend, 3)  # cap at +3
+            max_replan_depth += extend
+            log.info("Planner requested %d extra replan attempts (new limit: %d)",
+                     extend, max_replan_depth)
 
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]

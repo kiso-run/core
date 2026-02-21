@@ -1210,6 +1210,50 @@ class TestExecutePlan:
         assert len(remaining) == 2  # second exec + msg
         assert len(review_calls) == 1  # only first exec reviewed
 
+    # --- M25: replan task type in _execute_plan ---
+
+    async def test_replan_task_triggers_replan(self, db, tmp_path):
+        """Plan with exec + replan → returns (False, 'Self-directed replan: ...', completed, remaining)."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Investigate")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo registry",
+                          expect="JSON output")
+        await create_task(db, plan_id, "sess1", type="replan",
+                          detail="install appropriate skill")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Investigate", "user msg", 5,
+            )
+
+        assert success is False
+        assert reason is not None
+        assert reason.startswith("Self-directed replan:")
+        assert "install appropriate skill" in reason
+        assert len(completed) == 2  # exec + replan both completed
+        assert remaining == []
+
+    async def test_replan_task_marked_done(self, db, tmp_path):
+        """The replan task itself gets status 'done'."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Investigate")
+        await create_task(db, plan_id, "sess1", type="replan",
+                          detail="decide next steps")
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Investigate", "user msg", 5,
+            )
+
+        assert success is False
+        assert reason.startswith("Self-directed replan:")
+        # Check DB status
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert tasks[0]["status"] == "done"
+        assert tasks[0]["output"] == "Replan requested by planner"
+
 
 # --- Exec translator integration in _execute_plan ---
 
@@ -4528,3 +4572,312 @@ class TestBuildExecEnv:
         with patch("kiso.worker.KISO_DIR", tmp_path):
             env = _build_exec_env()
         assert "GIT_SSH_COMMAND" not in env
+
+
+# --- M25: Planner-initiated replan (discovery plans) ---
+
+
+class TestSelfDirectedReplan:
+    """Tests for planner-initiated (self-directed) replan via replan task type."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_self_directed_replan_marks_plan_done(self, db, tmp_path):
+        """Self-directed replan marks the investigation plan as 'done' not 'failed'."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "install search skill", processed=False)
+
+        investigation_plan = {
+            "goal": "Investigate available skills",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo registry", "skill": None, "args": None, "expect": "JSON output"},
+                {"type": "replan", "detail": "install the right skill", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        followup_plan = {
+            "goal": "Install search skill",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "msg", "detail": "Done investigating", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(content)
+            if len(planner_calls) == 1:
+                return investigation_plan
+            return followup_plan
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "install search skill", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Done"), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        # Check both plans exist
+        cur = await db.execute(
+            "SELECT * FROM plans WHERE session = 'sess1' ORDER BY id"
+        )
+        plans = [dict(r) for r in await cur.fetchall()]
+        assert len(plans) == 2
+        # First plan (investigation) should be "done" (not "failed")
+        assert plans[0]["status"] == "done"
+        # Second plan (followup) should also be "done"
+        assert plans[1]["status"] == "done"
+        assert plans[1]["parent_id"] == plans[0]["id"]
+
+    async def test_self_directed_replan_counts_toward_limit(self, db, tmp_path):
+        """Self-directed replans increment replan_depth and count toward the limit."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "investigate", processed=False)
+
+        replan_plan = {
+            "goal": "Investigate",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "replan", "detail": "investigate more", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "investigate", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", new_callable=AsyncMock, return_value=replan_plan), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock,
+                   return_value="Max replan depth reached."), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        # Should hit the max replan depth limit
+        messages = await get_recent_messages(db, "sess1", limit=20)
+        msg_texts = [m["content"] for m in messages]
+        # Should have an "Investigating..." notification and then max-depth failure
+        assert any("Investigating..." in m for m in msg_texts)
+
+    async def test_self_directed_replan_notification_message(self, db, tmp_path):
+        """Self-directed replans send 'Investigating...' notification, not 'Replanning'."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "check registry", processed=False)
+
+        investigation_plan = {
+            "goal": "Check registry",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "replan", "detail": "decide next step", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        followup_plan = {
+            "goal": "Done",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "msg", "detail": "All done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(content)
+            if len(planner_calls) == 1:
+                return investigation_plan
+            return followup_plan
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "check registry", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Done"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
+
+        messages = await get_recent_messages(db, "sess1", limit=20)
+        msg_texts = [m["content"] for m in messages]
+        assert any("Investigating..." in m for m in msg_texts)
+        assert not any("Replanning" in m for m in msg_texts)
+
+
+class TestExtendReplan:
+    """Tests for the extend_replan field."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_extend_replan_increases_limit(self, db, tmp_path):
+        """Plan with extend_replan=2 raises max_replan_depth by 2."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
+
+        # First plan: exec fails, reviewer requests replan
+        fail_plan = {
+            "goal": "Will fail",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # Second plan: requests extension, also fails
+        extend_plan = {
+            "goal": "Second attempt with extension",
+            "secrets": None,
+            "extend_replan": 2,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # Third plan: succeeds
+        success_plan = {
+            "goal": "Finally works",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "msg", "detail": "Done!", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(content)
+            n = len(planner_calls)
+            if n == 1:
+                return fail_plan
+            elif n == 2:
+                return extend_plan
+            return success_plan
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Done"), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        # Without extend_replan, max_replan_depth=1 would have stopped after 1 replan.
+        # With extend_replan=2 (limit becomes 3), it can try 3 replans.
+        # Plan 1 fails → replan 1 (extend_plan) → replan 2 (success_plan) → done
+        assert len(planner_calls) >= 3
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
+    async def test_extend_replan_capped_at_3(self, db, tmp_path):
+        """extend_replan=10 only adds 3 (capped)."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
+
+        fail_plan = {
+            "goal": "Will fail",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # This plan tries to extend by 10, but should be capped at 3
+        extend_plan = {
+            "goal": "Extends by 10",
+            "secrets": None,
+            "extend_replan": 10,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # Subsequent plans don't extend
+        no_extend_plan = {
+            "goal": "No extend",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(content)
+            n = len(planner_calls)
+            if n == 1:
+                return fail_plan
+            elif n == 2:
+                return extend_plan  # This one requests extend_replan=10 (capped to 3)
+            return no_extend_plan
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
+
+        with patch("kiso.worker.run_planner", side_effect=_planner), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock,
+                   return_value="Failed after max depth"), \
+             patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        # max_replan_depth starts at 1, extend of 10 capped to 3, new limit = 4
+        # So we expect: plan 1 + 4 replans = 5 planner calls total
+        assert len(planner_calls) == 5
+
+
+class TestDefaultMaxReplanDepth:
+    """Test that the default max_replan_depth is 5."""
+
+    def test_default_max_replan_depth_is_5(self):
+        from kiso.config import SETTINGS_DEFAULTS
+        assert SETTINGS_DEFAULTS["max_replan_depth"] == 5

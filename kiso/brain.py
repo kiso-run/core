@@ -63,7 +63,7 @@ PLAN_SCHEMA: dict = {
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["exec", "msg", "skill"],
+                                "enum": ["exec", "msg", "skill", "replan"],
                             },
                             "detail": {"type": "string"},
                             "skill": {"anyOf": [{"type": "string"}, {"type": "null"}]},
@@ -74,8 +74,11 @@ PLAN_SCHEMA: dict = {
                         "additionalProperties": False,
                     },
                 },
+                "extend_replan": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                },
             },
-            "required": ["goal", "secrets", "tasks"],
+            "required": ["goal", "secrets", "tasks", "extend_replan"],
             "additionalProperties": False,
         },
     },
@@ -148,15 +151,26 @@ def validate_plan(
     if max_tasks and len(tasks) > max_tasks:
         errors.append(f"Plan has {len(tasks)} tasks, max allowed is {max_tasks}")
 
+    replan_count = 0
     for i, task in enumerate(tasks, 1):
         t = task.get("type")
-        if t not in ("exec", "msg", "skill"):
+        if t not in ("exec", "msg", "skill", "replan"):
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
         if t in ("exec", "skill") and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
         if t == "msg" and task.get("expect") is not None:
             errors.append(f"Task {i}: msg task must have expect = null")
+        if t == "replan":
+            replan_count += 1
+            if task.get("expect") is not None:
+                errors.append(f"Task {i}: replan task must have expect = null")
+            if task.get("skill") is not None:
+                errors.append(f"Task {i}: replan task must have skill = null")
+            if task.get("args") is not None:
+                errors.append(f"Task {i}: replan task must have args = null")
+            if i != len(tasks):
+                errors.append(f"Task {i}: replan task can only be the last task")
         if t == "skill":
             skill_name = task.get("skill")
             if not skill_name:
@@ -164,9 +178,12 @@ def validate_plan(
             elif installed_skills is not None and skill_name not in installed_skills:
                 errors.append(f"Task {i}: skill '{skill_name}' is not installed")
 
+    if replan_count > 1:
+        errors.append("A plan can have at most one replan task")
+
     last = tasks[-1]
-    if last.get("type") != "msg":
-        errors.append("Last task must be type 'msg'")
+    if last.get("type") not in ("msg", "replan"):
+        errors.append("Last task must be type 'msg' or 'replan'")
 
     return errors
 

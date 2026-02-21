@@ -117,6 +117,7 @@ def collect_system_env(config: Config) -> dict:
         "max_replan_depth": int(config.settings.get("max_replan_depth", 3)),
         "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
         "reference_docs_path": str(KISO_DIR / "reference"),
+        "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
     }
 
 
@@ -182,6 +183,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
     lines.append(f"Reference docs: {env['reference_docs_path']} (skill/connector authoring guides — cat before planning)")
+    lines.append(f"Plugin registry: {env['registry_url']} (curl to discover available skills/connectors)")
     lines.append(
         f"Exec timeout: {env['exec_timeout']}s | "
         f"Max output: {_format_size(env['max_output_size'])}"
@@ -209,7 +211,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     lines.append(f"Blocked commands: {_BLOCKED_COMMANDS}")
     lines.append(
         f"Plan limits: max {env['max_plan_tasks']} tasks per plan, "
-        f"max {env['max_replan_depth']} replans"
+        f"max {env['max_replan_depth']} replans (extendable by planner up to +3)"
     )
 
     return "\n".join(lines)

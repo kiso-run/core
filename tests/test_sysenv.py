@@ -144,7 +144,7 @@ class TestCollectSystemEnv:
             "os", "shell", "exec_cwd", "exec_env", "exec_timeout",
             "max_output_size", "available_binaries", "missing_binaries",
             "connectors", "max_plan_tasks", "max_replan_depth",
-            "sys_bin_path", "reference_docs_path",
+            "sys_bin_path", "reference_docs_path", "registry_url",
         }
         assert expected_keys <= set(env.keys())
 
@@ -256,6 +256,7 @@ class TestBuildSystemEnvSection:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
 
     def test_contains_os_info(self, sample_env):
@@ -290,6 +291,7 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "max 20 tasks per plan" in section
         assert "max 3 replans" in section
+        assert "extendable by planner up to +3" in section
 
     def test_no_connectors_says_none(self, sample_env):
         sample_env["connectors"] = []
@@ -360,6 +362,13 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "Persistent dir: ~/.kiso/sys/" in section
 
+    def test_contains_plugin_registry_line(self, sample_env):
+        """Output contains the Plugin registry line."""
+        section = build_system_env_section(sample_env)
+        assert "Plugin registry:" in section
+        assert "registry.json" in section
+        assert "curl to discover" in section
+
 
 # --- _collect_binaries with sys/bin ---
 
@@ -399,3 +408,8 @@ class TestCollectSystemEnvNewKeys:
         with patch("kiso.cli_connector.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert env["reference_docs_path"] == str(KISO_DIR / "reference")
+
+    def test_includes_registry_url(self, config):
+        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+            env = collect_system_env(config)
+        assert env["registry_url"] == "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"

@@ -73,7 +73,7 @@ response_format = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "type": {"type": "string", "enum": ["exec", "msg", "skill"]},
+                            "type": {"type": "string", "enum": ["exec", "msg", "skill", "replan"]},
                             "detail": {"type": "string"},
                             "skill": {"type": ["string", "null"]},
                             "args": {"type": ["string", "null"]},
@@ -82,9 +82,10 @@ response_format = {
                         "required": ["type", "detail", "skill", "args", "expect"],
                         "additionalProperties": False
                     }
-                }
+                },
+                "extend_replan": {"type": ["integer", "null"]}
             },
-            "required": ["goal", "secrets", "tasks"],
+            "required": ["goal", "secrets", "tasks", "extend_replan"],
             "additionalProperties": False
         }
     }
@@ -112,11 +113,13 @@ Structured output is a hard requirement for Planner, Reviewer, and Curator. Work
 JSON structure is guaranteed by the provider, but kiso validates **semantics** before execution:
 
 1. `exec` and `skill` tasks must have a non-null `expect`
-2. `msg` tasks must have `expect = null`
-3. Last task must be `type: "msg"` (user always gets a final response)
+2. `msg` and `replan` tasks must have `expect = null`
+3. Last task must be `type: "msg"` or `type: "replan"` (user gets a response, or investigation triggers a new plan)
 4. Every `skill` reference must exist in installed skills
 5. Every `skill` task's `args` must be valid JSON matching the skill's schema from `kiso.toml`
 6. `tasks` list must not be empty
+7. `replan` tasks must have `skill = null` and `args = null`, and can only be the last task
+8. A plan can have at most one `replan` task
 
 On failure, kiso sends the plan back with specific errors, up to `max_validation_retries` (default 3):
 
@@ -165,7 +168,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 | Field | Non-null when | Description |
 |---|---|---|
-| `type` | always | `exec`, `msg`, `skill` |
+| `type` | always | `exec`, `msg`, `skill`, `replan` |
 | `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. |
 | `expect` | `type` is `exec` or `skill` | Semantic success criteria (e.g. "tests pass", not exact output). Required — all exec/skill tasks are reviewed. |
 | `skill` | `type` is `skill` | Skill name. |
@@ -175,6 +178,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 - `goal`: high-level objective for the entire process. Persisted in `store.plans` (not on individual tasks). The reviewer uses it to evaluate individual tasks in context.
 - `secrets`: always present. `null` when no credentials; array of `{key, value}` pairs when the user mentioned them. Ephemeral — stored in worker memory only, never in DB. See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
+- `extend_replan`: always present. `null` normally; a positive integer (max 3) when the planner needs additional replan attempts beyond the default limit. The worker grants at most +3 extra attempts.
 
 After validation, the planner output becomes a **plan** entity — see [database.md — plans](database.md#plans).
 

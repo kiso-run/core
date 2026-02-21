@@ -1077,6 +1077,22 @@ uv run kiso
 
 ---
 
+## Milestone 25: Planner-initiated replan (discovery plans)
+
+- [x] New task type `replan` in PLAN_SCHEMA enum
+- [x] validate_plan(): replan can be last task, expect/skill/args null
+- [x] Planner prompt: document replan task type and investigation pattern
+- [x] Worker: handle replan task type in _execute_plan()
+- [x] Worker: distinguish self-directed vs failure replans in _process_message()
+- [x] Optional `extend_replan` field: planner can request up to +3 extra attempts
+- [x] max_replan_depth default: 3 → 5
+- [x] sysenv: add registry URL, update plan limits display
+- [x] docs: flow.md diagrams, llm-roles.md
+- [x] Unit tests: validate_plan with replan tasks, _execute_plan replan handling
+- [x] Live tests: planner produces discovery plan, investigation+replan flow
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.

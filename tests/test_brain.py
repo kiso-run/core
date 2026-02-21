@@ -93,7 +93,7 @@ class TestValidatePlan:
             {"type": "exec", "detail": "ls", "expect": "ok"},
         ]}
         errors = validate_plan(plan)
-        assert any("Last task must be type 'msg'" in e for e in errors)
+        assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
 
     def test_multiple_errors(self):
         plan = {"tasks": [
@@ -189,6 +189,83 @@ class TestValidatePlan:
         plan = {"tasks": tasks}
         errors = validate_plan(plan, max_tasks=20)
         assert not any("max allowed" in e for e in errors)
+
+    # --- M25: replan task type ---
+
+    def test_replan_as_last_task_valid(self):
+        """Plan with exec + replan → valid."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "read registry", "expect": "JSON output", "skill": None, "args": None},
+            {"type": "replan", "detail": "install appropriate skill", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_replan_not_last_task_invalid(self):
+        """Replan followed by msg → invalid."""
+        plan = {"tasks": [
+            {"type": "replan", "detail": "investigate", "expect": None, "skill": None, "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("replan task can only be the last task" in e for e in errors)
+
+    def test_replan_with_expect_invalid(self):
+        """Replan task with non-null expect → invalid."""
+        plan = {"tasks": [
+            {"type": "replan", "detail": "investigate", "expect": "something", "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("replan task must have expect = null" in e for e in errors)
+
+    def test_replan_with_skill_invalid(self):
+        """Replan task with non-null skill → invalid."""
+        plan = {"tasks": [
+            {"type": "replan", "detail": "investigate", "expect": None, "skill": "search", "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("replan task must have skill = null" in e for e in errors)
+
+    def test_replan_with_args_invalid(self):
+        """Replan task with non-null args → invalid."""
+        plan = {"tasks": [
+            {"type": "replan", "detail": "investigate", "expect": None, "skill": None, "args": "{}"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("replan task must have args = null" in e for e in errors)
+
+    def test_multiple_replan_tasks_invalid(self):
+        """Two replan tasks → invalid."""
+        plan = {"tasks": [
+            {"type": "replan", "detail": "first", "expect": None, "skill": None, "args": None},
+            {"type": "replan", "detail": "second", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("at most one replan task" in e for e in errors)
+
+    def test_replan_only_plan_valid(self):
+        """Plan with only a replan task → valid."""
+        plan = {"tasks": [
+            {"type": "replan", "detail": "investigate first", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_extend_replan_field_accepted(self):
+        """Plan with extend_replan=2 → valid (extend_replan is a plan-level field, not validated in validate_plan)."""
+        plan = {
+            "extend_replan": 2,
+            "tasks": [
+                {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+            ],
+        }
+        assert validate_plan(plan) == []
+
+    def test_last_task_must_be_msg_or_replan(self):
+        """Plan ending with exec (not msg or replan) → invalid."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "ls", "expect": "ok"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
 
 
 # --- _load_system_prompt ---
@@ -344,6 +421,7 @@ class TestBuildPlannerMessages:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
             msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
@@ -380,6 +458,7 @@ class TestBuildPlannerMessages:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
             msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
@@ -1452,3 +1531,10 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "Reference docs" in prompt
         assert "plan_outputs" in prompt
+
+    def test_planner_prompt_contains_replan_task_type(self):
+        """The default planner prompt should mention the replan task type."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "replan" in prompt
+        assert "investigation" in prompt.lower() or "investigate" in prompt.lower()
+        assert "extend_replan" in prompt

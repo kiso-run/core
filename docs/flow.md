@@ -121,9 +121,16 @@ All LLM calls, task executions, and webhook deliveries are logged to the audit t
 1. **Deliver**: POSTed to webhook (if set) and available via `GET /status/{session}`. `final: true` only on the last `msg` task in the plan, and only after all preceding tasks (including reviews) have completed successfully.
 2. If the webhook POST fails, kiso retries (3 attempts, backoff 1s/3s/9s). If all fail, logs and continues. Outputs remain available via `/status`. See [api.md — Webhook Callback](api.md#webhook-callback).
 
-### g) Replan Flow (if reviewer returns "replan")
+### g) Replan Flow
 
-When the reviewer determines that the task failed and the plan needs revision:
+Replans can be triggered two ways:
+
+1. **Reviewer-triggered**: the reviewer returns status="replan" after a task fails
+2. **Planner-initiated** (discovery plan): the planner ends a plan with a `replan` task after investigation steps
+
+In both cases the flow is:
+
+When the reviewer determines that the task failed and the plan needs revision, or when the planner requests a self-directed replan after investigation:
 
 1. **Notify the user**: the worker sends an automatic webhook message explaining that a replan is happening and why (using the reviewer's `reason`).
 
@@ -138,7 +145,9 @@ When the reviewer determines that the task failed and the plan needs revision:
 
 4. Execution continues with the new task list. Even on replan, the planner must produce at least one task (typically a `msg` task summarizing the situation).
 
-**Max replan depth**: after `max_replan_depth` replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on.
+**Self-directed replans**: when the planner creates a discovery plan (exec tasks + final `replan` task), the investigation tasks run normally, then the replan task triggers a new planning cycle with the investigation results in context. The completed plan is marked "done" (not "failed") since the investigation succeeded. Self-directed replans count toward the depth limit.
+
+**Max replan depth**: after `max_replan_depth` (default 5) replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on. The planner can request up to +3 additional replan attempts via the `extend_replan` field on the plan.
 
 ### Task Output Chaining
 
@@ -262,7 +271,9 @@ WORKER (per session)
   │  pass plan_outputs        │
   │  │                        │
   │  exec → translate → run   │
-  │  msg / skill              │
+  │  skill → validate → run   │
+  │  msg → generate → deliver │
+  │  replan → trigger replan  │
   │         │                 │
   │  sanitize + accumulate    │
   │         │                 │
