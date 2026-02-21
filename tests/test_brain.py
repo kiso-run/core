@@ -992,21 +992,17 @@ class TestLoadSystemPromptCuratorSummarizer:
         prompt = _load_system_prompt("curator")
         assert "knowledge curator" in prompt
 
-    def test_summarizer_default(self):
-        prompt = _load_system_prompt("summarizer")
+    def test_summarizer_session_default(self):
+        prompt = _load_system_prompt("summarizer-session")
         assert "session summarizer" in prompt
+
+    def test_summarizer_facts_default(self):
+        prompt = _load_system_prompt("summarizer-facts")
+        assert "fact" in prompt.lower()
 
     def test_paraphraser_default(self):
         prompt = _load_system_prompt("paraphraser")
         assert "paraphraser" in prompt
-
-    def test_fact_consolidation_default(self):
-        prompt = _load_system_prompt("fact_consolidation")
-        assert "fact" in prompt.lower()
-
-    def test_worker_default(self):
-        prompt = _load_system_prompt("worker")
-        assert "helpful" in prompt.lower()
 
 
 # --- M10: Paraphraser ---
@@ -1420,17 +1416,17 @@ class TestRunExecTranslator:
 
 class TestLoadSystemPromptExecTranslator:
     def test_default_prompt(self):
-        prompt = _load_system_prompt("exec_translator")
+        prompt = _load_system_prompt("worker")
         assert "shell command translator" in prompt
         assert "CANNOT_TRANSLATE" in prompt
 
     def test_custom_prompt_overrides(self, tmp_path):
         roles_dir = tmp_path / "roles"
         roles_dir.mkdir()
-        (roles_dir / "exec_translator.md").write_text("Custom exec translator")
+        (roles_dir / "worker.md").write_text("Custom worker prompt")
         with patch("kiso.brain.KISO_DIR", tmp_path):
-            prompt = _load_system_prompt("exec_translator")
-        assert prompt == "Custom exec translator"
+            prompt = _load_system_prompt("worker")
+        assert prompt == "Custom worker prompt"
 
 
 # --- Exec translator prompt content ---
@@ -1439,5 +1435,5 @@ class TestLoadSystemPromptExecTranslator:
 class TestExecTranslatorPromptContent:
     def test_exec_translator_prompt_mentions_preceding_outputs(self):
         """The default exec translator prompt should mention Preceding Task Outputs."""
-        prompt = (_ROLES_DIR / "exec_translator.md").read_text()
+        prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "Preceding Task Outputs" in prompt

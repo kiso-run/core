@@ -933,6 +933,113 @@ docker compose -f docker-compose.test.yml run --rm test-live
 
 ---
 
+## Milestone 22: CLI UX + Architecture refinements
+
+Post-hardening round of UX improvements, architecture cleanup, and gap closure.
+
+### 22a. Rich markdown rendering in CLI
+
+Bot responses rendered with full markdown formatting (headings, bold, code blocks, lists, tables) via `rich` library.
+
+- [x] Add `rich>=13` to dependencies
+- [x] `kiso/render.py`: `_AsciiBuffer` wrapper for ASCII fallback, `_render_markdown()` function
+- [x] `render_msg_output()`: label on own line, body rendered via `rich.console.Console`
+- [x] Graceful degradation: ANSI color when TTY+color, plain structure when no-color, ASCII box-drawing when no-unicode
+- [x] Tests: 12+ new tests for markdown rendering, existing tests updated
+
+### 22b. Per-step LLM call display
+
+LLM call details shown **per step** (planner after plan header, messenger after message) instead of duplicated at the end.
+
+- [x] `kiso/store.py`: `_KEEP_LLM_CALLS` sentinel so `update_plan_usage` can update totals without overwriting `llm_calls`
+- [x] `kiso/worker.py`: store planner-only calls immediately after plan creation; later updates only touch totals
+- [x] `kiso/cli.py`: show plan's `llm_calls` after plan header; remove `render_llm_calls(plan)` from end section
+- [x] `kiso/llm.py`: `get_usage_since()` returns `calls` key with per-call entries
+- [x] Tests: `test_update_plan_usage_preserves_llm_calls`, `calls` key verification in `test_get_usage_since_subset`
+
+### 22c. Session-aware exec paths
+
+Planner and exec translator now know the actual session name and absolute workspace path.
+
+- [x] `kiso/sysenv.py`: `exec_cwd` uses absolute `KISO_DIR` path; `build_system_env_section(env, session=)` adds `Session:` line and absolute `Exec CWD:`
+- [x] `kiso/brain.py`: pass `session=session` to `build_system_env_section` in planner context
+- [x] `kiso/worker.py`: pass `session=session` to `build_system_env_section` in exec translator
+- [x] Tests: 3 session tests in `test_sysenv.py`, session verification in `test_brain.py` and `test_worker.py`
+
+### 22d. Replan failure recovery
+
+When `run_planner` raises `PlanError` during replan, the user now gets feedback instead of a silent timeout.
+
+- [x] `kiso/worker.py`: create recovery msg task, update plan status to "failed", save system message
+- [x] Tests: `test_replan_error_creates_recovery_msg_task`
+
+### 22e. System prompts extracted to files
+
+All inline `_default_*_prompt()` functions replaced with `kiso/roles/*.md` files.
+
+- [x] `kiso/roles/`: 8 prompt files (planner, worker, reviewer, messenger, curator, summarizer-session, summarizer-facts, paraphraser)
+- [x] `kiso/brain.py`: `_load_system_prompt(role)` loads from package `_ROLES_DIR` with user override from `~/.kiso/roles/`
+- [x] `FileNotFoundError` for unknown roles (no silent fallback)
+- [x] `worker.md` = exec translator prompt (model routing role `"worker"`); function names kept as `run_exec_translator` / `build_exec_translator_messages`
+- [x] Tests: all 8 roles tested for loading, user override tests
+
+### 22f. Messenger goal context
+
+Messenger now knows the user's original request, preventing hallucinated responses about previous topics.
+
+- [x] `kiso/brain.py`: `build_messenger_messages(goal=)` adds `## Current User Request` section
+- [x] `kiso/worker.py`: `_msg_task(goal=)` passes through to `run_messenger`
+- [x] Tests: 3 goal tests in `test_brain.py`, 1 in `test_worker.py`, 1 live test
+
+### 22g. Test coverage audit + gap closure
+
+Systematic audit of all recent changes, closing every identified gap.
+
+- [x] `_msg_task` goal parameter verified end-to-end
+- [x] `get_usage_since` `calls` key structure verified
+- [x] `run_messenger` goal propagation tested
+- [x] All role prompt files tested for loading
+- [x] Exec translator session parameter verified in `test_worker.py`
+- [x] Live tests: exec translator + msg_task with goal in `test_roles.py`
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q           # 1191 passed
+uv run pytest tests/ -x -q -k sysenv # session tests
+uv run pytest tests/ -x -q -k render # markdown tests
+
+# Live tests
+KISO_OPENROUTER_API_KEY=sk-... uv run pytest tests/live/test_roles.py --llm-live -v
+
+# Visual check
+uv run python -c "
+from kiso.render import render_msg_output, detect_caps
+caps = detect_caps()
+print(render_msg_output('# Hello\n\nThis is **bold** and a list:\n- item 1\n- item 2\n\n\`\`\`python\nprint(42)\n\`\`\`', caps))
+"
+```
+
+---
+
+## Role architecture (reference)
+
+8 LLM roles, each with a prompt file in `kiso/roles/` and a model routing name in `config.toml [models]`:
+
+| Prompt file | Model route | Function | Purpose |
+|---|---|---|---|
+| `planner.md` | `planner` | `run_planner` | Message → JSON plan |
+| `worker.md` | `worker` | `run_exec_translator` | Task detail → shell command |
+| `reviewer.md` | `reviewer` | `run_reviewer` | Task output → ok/replan |
+| `messenger.md` | `messenger` | `run_messenger` | Task detail → user message |
+| `curator.md` | `curator` | `run_curator` | Learnings → facts/questions |
+| `summarizer-session.md` | `summarizer` | `run_summarizer` | Messages → session summary |
+| `summarizer-facts.md` | `summarizer` | `run_fact_consolidation` | Dedup/merge facts |
+| `paraphraser.md` | `paraphraser` | `run_paraphraser` | Untrusted msg → safe text |
+
+> **Note:** `summarizer-session` and `summarizer-facts` share the `summarizer` model route because both are compression tasks that benefit from the same (typically cheaper) model. The prompt file naming convention `{model}-{action}.md` makes this relationship explicit.
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.

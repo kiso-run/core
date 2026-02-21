@@ -1362,6 +1362,8 @@ class TestExecTranslatorIntegration:
         assert len(captured_sys_env) == 1
         assert "Shell:" in captured_sys_env[0]
         assert "Available binaries:" in captured_sys_env[0]
+        # Session name should appear in the sys env context (absolute CWD)
+        assert "Session: sess1" in captured_sys_env[0]
 
     async def test_msg_tasks_skip_translator(self, db, tmp_path):
         """msg tasks do NOT go through the translator."""

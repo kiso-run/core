@@ -180,7 +180,16 @@ async def build_planner_messages(
     user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
 ) -> list[dict]:
-    """Build the message list for the planner LLM call."""
+    """Build the message list for the planner LLM call.
+
+    Assembles context from session summary, facts, pending questions,
+    system environment, skills, and recent messages.
+
+    The *session* name is passed to ``build_system_env_section`` so the
+    planner sees the absolute workspace path (``KISO_DIR/sessions/<session>``)
+    and a ``Session:`` line — giving it precise knowledge of the execution
+    directory for shell commands.
+    """
     system_prompt = _load_system_prompt("planner")
 
     # Context pieces
@@ -520,7 +529,7 @@ def build_summarizer_messages(
     current_summary: str, messages: list[dict]
 ) -> list[dict]:
     """Build the message list for the summarizer LLM call."""
-    system_prompt = _load_system_prompt("summarizer")
+    system_prompt = _load_system_prompt("summarizer-session")
     msgs_text = "\n".join(
         f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
         for m in messages
@@ -678,7 +687,7 @@ def build_exec_translator_messages(
     plan_outputs_text: str = "",
 ) -> list[dict]:
     """Build the message list for the exec translator LLM call."""
-    system_prompt = _load_system_prompt("exec_translator")
+    system_prompt = _load_system_prompt("worker")
     context_parts: list[str] = []
     context_parts.append(f"## System Environment\n{sys_env_text}")
     if plan_outputs_text:
@@ -730,7 +739,7 @@ async def run_fact_consolidation(
 
     Raises SummarizerError on failure.
     """
-    system_prompt = _load_system_prompt("fact_consolidation")
+    system_prompt = _load_system_prompt("summarizer-facts")
     facts_text = "\n".join(f"- {f['content']}" for f in facts)
     messages = [
         {"role": "system", "content": system_prompt},
