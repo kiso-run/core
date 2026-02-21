@@ -126,7 +126,8 @@ kiso connector update all
 kiso connector remove discord
 kiso connector list
 kiso connector search [query]
-# → GET https://api.github.com/search/repositories?q=org:kiso-run+topic:kiso-connector
+# → fetches https://raw.githubusercontent.com/kiso-run/core/main/registry.json
+# → matches by name first, then by description
 ```
 
 ## Running

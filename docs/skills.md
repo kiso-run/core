@@ -247,7 +247,8 @@ $ kiso skill list
 
 ```bash
 kiso skill search [query]
-# → GET https://api.github.com/search/repositories?q=org:kiso-run+topic:kiso-skill
+# → fetches https://raw.githubusercontent.com/kiso-run/core/main/registry.json
+# → matches by name first, then by description
 ```
 
 ## Execution

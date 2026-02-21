@@ -1,0 +1,18 @@
+{
+  "skills": [
+    {
+      "name": "search",
+      "description": "Web search with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
+    },
+    {
+      "name": "aider",
+      "description": "Code editing, refactoring, bug fixes, and codebase Q&A using aider's architect/editor pattern"
+    }
+  ],
+  "connectors": [
+    {
+      "name": "discord",
+      "description": "Discord bridge — maps channels to kiso sessions, forwards messages, delivers responses with message splitting"
+    }
+  ]
+}

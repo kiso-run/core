@@ -17,7 +17,7 @@ from kiso.skills import _env_var_name, _validate_manifest, check_deps, discover_
 SKILLS_DIR = KISO_DIR / "skills"
 OFFICIAL_ORG = "kiso-run"
 OFFICIAL_PREFIX = "skill-"
-GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
+REGISTRY_URL = "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"
 
 # Prevent git from opening /dev/tty to prompt for credentials.
 _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
@@ -105,40 +105,47 @@ def _skill_list(args) -> None:
         print(f"  {name}  {ver}  — {summary}")
 
 
-def _skill_search(args) -> None:
-    """Search official skills on GitHub."""
+def _fetch_registry() -> dict:
+    """Fetch the official registry from GitHub (raw file, no API)."""
+    import json
+
     import httpx
 
-    query_parts = ["org:kiso-run", "topic:kiso-skill"]
-    if args.query:
-        query_parts.append(args.query)
-    q = " ".join(query_parts)
-
     try:
-        resp = httpx.get(GITHUB_SEARCH_URL, params={"q": q}, timeout=10.0)
+        resp = httpx.get(REGISTRY_URL, timeout=10.0, follow_redirects=True)
         resp.raise_for_status()
+        return json.loads(resp.text)
     except httpx.HTTPError as exc:
-        print(f"error: GitHub search failed: {exc}")
+        print(f"error: failed to fetch registry: {exc}")
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError):
+        print("error: invalid registry format")
         sys.exit(1)
 
-    data = resp.json()
-    items = data.get("items", [])
-    if not items:
+
+def _search_entries(entries: list[dict], query: str | None) -> list[dict]:
+    """Filter registry entries: match name first, then description."""
+    if not query:
+        return entries
+    q = query.lower()
+    by_name = [e for e in entries if q in e["name"].lower()]
+    if by_name:
+        return by_name
+    return [e for e in entries if q in e.get("description", "").lower()]
+
+
+def _skill_search(args) -> None:
+    """Search official skills from the registry."""
+    registry = _fetch_registry()
+    results = _search_entries(registry.get("skills", []), args.query)
+
+    if not results:
         print("No skills found.")
         return
 
-    # Build display list, stripping skill- prefix
-    results = []
-    for item in items:
-        name = item["name"]
-        if name.startswith(OFFICIAL_PREFIX):
-            name = name[len(OFFICIAL_PREFIX):]
-        desc = item.get("description", "")
-        results.append((name, desc))
-
-    max_name = max(len(r[0]) for r in results)
-    for name, desc in results:
-        print(f"  {name.ljust(max_name)}  — {desc}")
+    max_name = max(len(r["name"]) for r in results)
+    for r in results:
+        print(f"  {r['name'].ljust(max_name)}  — {r.get('description', '')}")
 
 
 def _skill_install(args) -> None:

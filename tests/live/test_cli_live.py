@@ -23,15 +23,14 @@ pytestmark = pytest.mark.live_network
 
 class TestSkillSearch:
     def test_search_returns_results(self, capsys):
-        """kiso skill search (no query) hits GitHub and doesn't crash."""
+        """kiso skill search (no query) fetches registry and lists skills."""
         from kiso.cli_skill import _skill_search
 
         try:
             _skill_search(Namespace(query=""))
         except SystemExit:
-            pytest.skip("GitHub search API unavailable or rate-limited")
+            pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
-        # Either results printed or "No skills found." — both acceptable
         assert out.strip()
 
     def test_search_with_query(self, capsys):
@@ -41,7 +40,7 @@ class TestSkillSearch:
         try:
             _skill_search(Namespace(query="search"))
         except SystemExit:
-            pytest.skip("GitHub search API unavailable or rate-limited")
+            pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
         assert out.strip()
 
@@ -53,13 +52,13 @@ class TestSkillSearch:
 
 class TestConnectorSearch:
     def test_search_returns_results(self, capsys):
-        """kiso connector search (no query) hits GitHub and doesn't crash."""
+        """kiso connector search (no query) fetches registry and lists connectors."""
         from kiso.cli_connector import _connector_search
 
         try:
             _connector_search(Namespace(query=""))
         except SystemExit:
-            pytest.skip("GitHub search API unavailable or rate-limited")
+            pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
         assert out.strip()
 

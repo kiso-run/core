@@ -273,71 +273,66 @@ def test_skill_list_column_alignment(capsys):
 # ── _skill_search ────────────────────────────────────────────
 
 
+FAKE_REGISTRY = {
+    "skills": [
+        {"name": "search", "description": "Web search with Brave and Serper"},
+        {"name": "aider", "description": "Code editing and refactoring"},
+    ],
+    "connectors": [
+        {"name": "discord", "description": "Discord bridge"},
+    ],
+}
+
+
 def test_skill_search_no_query(capsys):
     from kiso.cli_skill import _skill_search
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
-        "items": [
-            {"name": "skill-search", "description": "Web search"},
-            {"name": "skill-aider", "description": "Code editing"},
-        ],
-    }
-    mock_resp.raise_for_status = MagicMock()
-
-    with patch("httpx.get", return_value=mock_resp) as mock_get:
+    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
         _skill_search(argparse.Namespace(query=""))
 
     out = capsys.readouterr().out
     assert "search" in out
     assert "aider" in out
-    # Verify skill- prefix was stripped
-    assert "skill-search" not in out
-
-    # Verify query params
-    call_args = mock_get.call_args
-    assert "org:kiso-run" in call_args[1]["params"]["q"]
-    assert "topic:kiso-skill" in call_args[1]["params"]["q"]
 
 
-def test_skill_search_with_query(capsys):
+def test_skill_search_by_name(capsys):
     from kiso.cli_skill import _skill_search
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
-        "items": [{"name": "skill-search", "description": "Web search"}],
-    }
-    mock_resp.raise_for_status = MagicMock()
+    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
+        _skill_search(argparse.Namespace(query="search"))
 
-    with patch("httpx.get", return_value=mock_resp) as mock_get:
-        _skill_search(argparse.Namespace(query="web"))
+    out = capsys.readouterr().out
+    assert "search" in out
+    assert "aider" not in out
 
-    call_args = mock_get.call_args
-    assert "web" in call_args[1]["params"]["q"]
+
+def test_skill_search_by_description(capsys):
+    from kiso.cli_skill import _skill_search
+
+    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
+        _skill_search(argparse.Namespace(query="refactoring"))
+
+    out = capsys.readouterr().out
+    assert "aider" in out
+    assert "search" not in out
 
 
 def test_skill_search_network_error(capsys):
     import httpx
 
     with (
-        patch("httpx.get", side_effect=httpx.ConnectError("fail")),
+        patch("kiso.cli_skill._fetch_registry", side_effect=SystemExit(1)),
         pytest.raises(SystemExit, match="1"),
     ):
         from kiso.cli_skill import _skill_search
 
         _skill_search(argparse.Namespace(query=""))
-    out = capsys.readouterr().out
-    assert "GitHub search failed" in out
 
 
 def test_skill_search_no_results(capsys):
     from kiso.cli_skill import _skill_search
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"items": []}
-    mock_resp.raise_for_status = MagicMock()
-
-    with patch("httpx.get", return_value=mock_resp):
+    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
         _skill_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No skills found." in out

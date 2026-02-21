@@ -15,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from kiso.cli_skill import _is_url, _require_admin, url_to_name
+from kiso.cli_skill import _fetch_registry, _is_url, _require_admin, _search_entries, url_to_name
 from kiso.config import KISO_DIR
 
 log = logging.getLogger(__name__)
@@ -23,7 +23,6 @@ log = logging.getLogger(__name__)
 CONNECTORS_DIR = KISO_DIR / "connectors"
 OFFICIAL_ORG = "kiso-run"
 OFFICIAL_PREFIX = "connector-"
-GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 
 # Prevent git from opening /dev/tty to prompt for credentials.
 _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
@@ -272,38 +271,17 @@ def _connector_list(args) -> None:
 
 
 def _connector_search(args) -> None:
-    """Search official connectors on GitHub."""
-    import httpx
+    """Search official connectors from the registry."""
+    registry = _fetch_registry()
+    results = _search_entries(registry.get("connectors", []), args.query)
 
-    query_parts = ["org:kiso-run", "topic:kiso-connector"]
-    if args.query:
-        query_parts.append(args.query)
-    q = " ".join(query_parts)
-
-    try:
-        resp = httpx.get(GITHUB_SEARCH_URL, params={"q": q}, timeout=10.0)
-        resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        print(f"error: GitHub search failed: {exc}")
-        sys.exit(1)
-
-    data = resp.json()
-    items = data.get("items", [])
-    if not items:
+    if not results:
         print("No connectors found.")
         return
 
-    results = []
-    for item in items:
-        name = item["name"]
-        if name.startswith(OFFICIAL_PREFIX):
-            name = name[len(OFFICIAL_PREFIX):]
-        desc = item.get("description", "")
-        results.append((name, desc))
-
-    max_name = max(len(r[0]) for r in results)
-    for name, desc in results:
-        print(f"  {name.ljust(max_name)}  — {desc}")
+    max_name = max(len(r["name"]) for r in results)
+    for r in results:
+        print(f"  {r['name'].ljust(max_name)}  — {r.get('description', '')}")
 
 
 def _connector_install(args) -> None:

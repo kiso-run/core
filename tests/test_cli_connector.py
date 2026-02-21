@@ -291,70 +291,64 @@ def test_connector_list_shows_connectors(capsys):
 # ── _connector_search ────────────────────────────────────────
 
 
+FAKE_REGISTRY = {
+    "skills": [
+        {"name": "search", "description": "Web search"},
+    ],
+    "connectors": [
+        {"name": "discord", "description": "Discord bridge with message splitting"},
+        {"name": "telegram", "description": "Telegram bridge"},
+    ],
+}
+
+
 def test_connector_search_no_query(capsys):
     from kiso.cli_connector import _connector_search
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
-        "items": [
-            {"name": "connector-discord", "description": "Discord bridge"},
-            {"name": "connector-telegram", "description": "Telegram bridge"},
-        ],
-    }
-    mock_resp.raise_for_status = MagicMock()
-
-    with patch("httpx.get", return_value=mock_resp) as mock_get:
+    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query=""))
 
     out = capsys.readouterr().out
     assert "discord" in out
     assert "telegram" in out
-    # Verify connector- prefix was stripped
-    assert "connector-discord" not in out
-
-    call_args = mock_get.call_args
-    assert "org:kiso-run" in call_args[1]["params"]["q"]
-    assert "topic:kiso-connector" in call_args[1]["params"]["q"]
 
 
-def test_connector_search_with_query(capsys):
+def test_connector_search_by_name(capsys):
     from kiso.cli_connector import _connector_search
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
-        "items": [{"name": "connector-discord", "description": "Discord bridge"}],
-    }
-    mock_resp.raise_for_status = MagicMock()
-
-    with patch("httpx.get", return_value=mock_resp) as mock_get:
+    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="discord"))
 
-    call_args = mock_get.call_args
-    assert "discord" in call_args[1]["params"]["q"]
+    out = capsys.readouterr().out
+    assert "discord" in out
+    assert "telegram" not in out
+
+
+def test_connector_search_by_description(capsys):
+    from kiso.cli_connector import _connector_search
+
+    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
+        _connector_search(argparse.Namespace(query="splitting"))
+
+    out = capsys.readouterr().out
+    assert "discord" in out
+    assert "telegram" not in out
 
 
 def test_connector_search_network_error(capsys):
-    import httpx
-
     with (
-        patch("httpx.get", side_effect=httpx.ConnectError("fail")),
+        patch("kiso.cli_connector._fetch_registry", side_effect=SystemExit(1)),
         pytest.raises(SystemExit, match="1"),
     ):
         from kiso.cli_connector import _connector_search
 
         _connector_search(argparse.Namespace(query=""))
-    out = capsys.readouterr().out
-    assert "GitHub search failed" in out
 
 
 def test_connector_search_no_results(capsys):
     from kiso.cli_connector import _connector_search
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"items": []}
-    mock_resp.raise_for_status = MagicMock()
-
-    with patch("httpx.get", return_value=mock_resp):
+    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No connectors found." in out

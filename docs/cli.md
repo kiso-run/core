@@ -317,7 +317,7 @@ When stdout is not a TTY (piped), the CLI outputs plain text with no ANSI codes,
 Only admins can install, update, and remove skills.
 
 ```bash
-kiso skill search [query]                      # search official skills on GitHub
+kiso skill search [query]                      # search official skills from registry
 kiso skill install <name>                      # official: resolves from kiso-run org
 kiso skill install <git-url>                   # unofficial: clone from any git URL
 kiso skill install <git-url> --name foo        # unofficial with custom name
@@ -330,17 +330,15 @@ kiso skill list                                # list installed skills
 
 ### Search
 
-Queries the GitHub API for official skills:
+Searches the official registry (`registry.json` in the core repo). Matches by name first, then by description:
 
 ```bash
 $ kiso skill search
-  search      — Web search using Brave Search API
-  aider       — Code editing tool using LLM
-  screenshot  — Take screenshots of web pages
+  search  — Web search with multiple backends (Brave, Serper)
+  aider   — Code editing, refactoring, bug fixes using aider
 
-$ kiso skill search web
-  search      — Web search using Brave Search API
-  screenshot  — Take screenshots of web pages
+$ kiso skill search code
+  aider   — Code editing, refactoring, bug fixes using aider
 ```
 
 ### Install Flow
@@ -362,7 +360,7 @@ URL to name: see [skills.md — Naming Convention](skills.md#naming-convention) 
 Only admins can install, update, and remove connectors.
 
 ```bash
-kiso connector search [query]                  # search official connectors on GitHub
+kiso connector search [query]                  # search official connectors from registry
 kiso connector install <name>                  # official: resolves from kiso-run org
 kiso connector install <git-url>               # unofficial: clone from any git URL
 kiso connector install <git-url> --name foo    # unofficial with custom name
