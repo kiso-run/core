@@ -219,6 +219,10 @@ uv run --group dev pytest tests/ -v
 - Mock external APIs (HTTP calls, etc.) for offline tests; add a separate marker for live tests that hit real services
 - Test edge cases: missing optional args, empty `plan_outputs`, large inputs
 
+## License
+
+Official skills use the **MIT License**. Third-party skills can use any license.
+
 ## Key Conventions
 
 - Install: `kiso skill install {name|url}` (official: `kiso-run/skill-{name}`)

@@ -253,6 +253,10 @@ uv run --group dev pytest tests/test_integration.py -v
 - Test message splitting for long responses
 - Test startup validation: missing env vars → clear error
 
+## License
+
+Official connectors use the **MIT License**. Third-party connectors can use any license.
+
 ## Key Conventions
 
 - Install: `kiso connector install {name|url}` (official: `kiso-run/connector-{name}`)
