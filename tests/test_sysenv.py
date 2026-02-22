@@ -370,6 +370,12 @@ class TestBuildSystemEnvSection:
         assert "registry.json" in section
         assert "curl to discover" in section
 
+    def test_contains_network_line(self, sample_env):
+        """Output contains the Network line."""
+        section = build_system_env_section(sample_env)
+        assert "Network:" in section
+        assert "internet access available" in section
+
     def test_contains_public_files_line(self, sample_env):
         """Output contains the Public files line."""
         section = build_system_env_section(sample_env)

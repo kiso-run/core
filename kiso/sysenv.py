@@ -201,6 +201,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     else:
         cwd = env["exec_cwd"] + "/<session>/"
     lines.append(f"Exec CWD: {cwd}")
+    lines.append("Network: outbound internet access available (use `curl` for HTTP requests, `wget` for downloads)")
     lines.append("Public files: write to pub/ in exec CWD → auto-served at /pub/ URLs (no auth needed)")
     if session:
         ws_files = _collect_workspace_files(session)
