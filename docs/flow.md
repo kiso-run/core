@@ -72,6 +72,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Last `context_messages` raw messages (default 7, from `store.messages`, trusted only)
 - Paraphrased untrusted messages (from step a, with random boundary fencing)
 - Recent msg outputs (all `msg` task outputs since last summarization, from `store.tasks`)
+- Workspace file listing (files in the session directory, max 30, with sizes)
 - Skill summaries and args schemas (only skills allowed for this user, from `kiso.toml`, rescanned on each planner call — skips directories with `.installing` marker)
 - Caller role (admin | user)
 - New message

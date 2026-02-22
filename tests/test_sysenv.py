@@ -14,6 +14,7 @@ from kiso.sysenv import (
     _collect_binaries,
     _collect_connectors,
     _collect_os_info,
+    _collect_workspace_files,
     build_system_env_section,
     collect_system_env,
     get_system_env,
@@ -419,3 +420,134 @@ class TestCollectSystemEnvNewKeys:
         with patch("kiso.cli_connector.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert env["registry_url"] == "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"
+
+
+# --- _collect_workspace_files ---
+
+
+class TestCollectWorkspaceFiles:
+    def test_workspace_files_listed(self, tmp_path):
+        """Files in session workspace appear in listing."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        session_dir.mkdir(parents=True)
+        (session_dir / "report.pdf").write_bytes(b"x" * 2048)
+        (session_dir / "notes.txt").write_text("hello")
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = _collect_workspace_files("test-session")
+        assert "notes.txt" in result
+        assert "report.pdf" in result
+        assert "2KB" in result
+
+    def test_workspace_files_empty(self, tmp_path):
+        """Empty session dir returns empty string."""
+        session_dir = tmp_path / "sessions" / "empty-session"
+        session_dir.mkdir(parents=True)
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = _collect_workspace_files("empty-session")
+        assert result == ""
+
+    def test_workspace_files_excludes_kiso_dir(self, tmp_path):
+        """Files in .kiso/ subdirectory are excluded."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        session_dir.mkdir(parents=True)
+        (session_dir / "visible.txt").write_text("hi")
+        kiso_internal = session_dir / ".kiso"
+        kiso_internal.mkdir()
+        (kiso_internal / "plan_outputs.json").write_text("{}")
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = _collect_workspace_files("test-session")
+        assert "visible.txt" in result
+        assert "plan_outputs.json" not in result
+
+    def test_workspace_files_truncated_at_30(self, tmp_path):
+        """More than 30 files triggers truncation message."""
+        session_dir = tmp_path / "sessions" / "big-session"
+        session_dir.mkdir(parents=True)
+        for i in range(35):
+            (session_dir / f"file{i:03d}.txt").write_text("data")
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = _collect_workspace_files("big-session")
+        assert "truncated" in result
+        # file030-file034 should NOT appear (only first 30 files listed)
+        assert "file030.txt" not in result
+        assert "file029.txt" in result
+
+    def test_workspace_files_no_session(self, tmp_path):
+        """Non-existent session dir returns empty string."""
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = _collect_workspace_files("nonexistent")
+        assert result == ""
+
+
+# --- Workspace lines in build_system_env_section ---
+
+
+class TestWorkspaceInBuildSection:
+    @pytest.fixture()
+    def sample_env(self):
+        from kiso.config import KISO_DIR
+        return {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.17.0"},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "exec_timeout": 120,
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": "/tmp/sys/bin",
+            "reference_docs_path": "/tmp/reference",
+            "registry_url": "https://example.com/registry.json",
+        }
+
+    def test_workspace_files_listed_in_output(self, sample_env, tmp_path):
+        """When session has files, listing appears in output."""
+        session_dir = tmp_path / "sessions" / "ws-test"
+        session_dir.mkdir(parents=True)
+        (session_dir / "data.csv").write_text("a,b,c")
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            section = build_system_env_section(sample_env, session="ws-test")
+        assert "Workspace files: data.csv" in section
+
+    def test_workspace_files_empty_in_output(self, sample_env, tmp_path):
+        """Empty workspace shows '(empty)'."""
+        session_dir = tmp_path / "sessions" / "empty-ws"
+        session_dir.mkdir(parents=True)
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            section = build_system_env_section(sample_env, session="empty-ws")
+        assert "Workspace files: (empty)" in section
+
+    def test_workspace_files_no_session(self, sample_env):
+        """Without session, no workspace line appears."""
+        section = build_system_env_section(sample_env)
+        assert "Workspace files:" not in section
+
+    def test_file_search_line_present(self, sample_env, tmp_path):
+        """Output contains 'File search:' line when session is provided."""
+        session_dir = tmp_path / "sessions" / "search-test"
+        session_dir.mkdir(parents=True)
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            section = build_system_env_section(sample_env, session="search-test")
+        assert "File search:" in section
+        assert "find" in section
+        assert "grep" in section
+
+    def test_file_search_line_absent_without_session(self, sample_env):
+        """Without session, no file search line appears."""
+        section = build_system_env_section(sample_env)
+        assert "File search:" not in section
+
+    def test_workspace_excludes_kiso_in_output(self, sample_env, tmp_path):
+        """Workspace listing in section excludes .kiso/ files."""
+        session_dir = tmp_path / "sessions" / "filter-test"
+        session_dir.mkdir(parents=True)
+        (session_dir / "report.txt").write_text("hello")
+        (session_dir / ".kiso").mkdir()
+        (session_dir / ".kiso" / "internal.json").write_text("{}")
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            section = build_system_env_section(sample_env, session="filter-test")
+        assert "report.txt" in section
+        assert "internal.json" not in section

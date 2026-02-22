@@ -1164,6 +1164,24 @@ uv run pytest tests/ -x -q --ignore=tests/live  # all pass
 
 ---
 
+## Milestone 29: Workspace file awareness
+
+Inject workspace file listing into planner context so it knows what files exist in the session directory. Add file search guidance so it can use `find`/`grep` for deeper searches.
+
+- [x] `kiso/sysenv.py`: add `_collect_workspace_files()` — lightweight `rglob` scan, max 30 entries, excludes `.kiso/` internals, human-readable sizes
+- [x] `kiso/sysenv.py`: inject `Workspace files:` and `File search:` lines into `build_system_env_section()` when session is provided
+- [x] `kiso/roles/planner.md`: add file search guidance rule (workspace listing + `find`/`grep`/`rg` for deeper search)
+- [x] `docs/flow.md`: document workspace file listing in "Builds Planner Context" section
+- [x] `tests/test_sysenv.py`: 11 new tests (5 for `_collect_workspace_files`, 6 for workspace lines in `build_system_env_section`)
+- [x] `DEV_PLAN.md`: add Milestone 29
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+```
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.

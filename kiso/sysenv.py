@@ -13,6 +13,7 @@ import os
 import platform
 import shutil
 import time
+from pathlib import Path
 
 from kiso.config import Config, KISO_DIR
 
@@ -160,6 +161,27 @@ def _format_size(nbytes: int) -> str:
     return f"{nbytes}B"
 
 
+def _collect_workspace_files(session: str) -> str:
+    """List files in the session workspace (excluding .kiso/ internals).
+
+    Returns a compact listing: relative path + human size, max 30 entries.
+    """
+    workspace = KISO_DIR / "sessions" / session
+    if not workspace.is_dir():
+        return ""
+
+    entries: list[str] = []
+    for f in sorted(workspace.rglob("*")):
+        if f.is_file() and ".kiso" not in f.relative_to(workspace).parts:
+            rel = f.relative_to(workspace)
+            size = _format_size(f.stat().st_size)
+            entries.append(f"{rel} ({size})")
+        if len(entries) >= 30:
+            entries.append("... (truncated, use `find` for full listing)")
+            break
+    return ", ".join(entries)
+
+
 def build_system_env_section(env: dict, session: str = "") -> str:
     """Format the system env dict into a concise text block for the planner.
 
@@ -180,6 +202,13 @@ def build_system_env_section(env: dict, session: str = "") -> str:
         cwd = env["exec_cwd"] + "/<session>/"
     lines.append(f"Exec CWD: {cwd}")
     lines.append("Public files: write to pub/ in exec CWD → auto-served at /pub/ URLs (no auth needed)")
+    if session:
+        ws_files = _collect_workspace_files(session)
+        if ws_files:
+            lines.append(f"Workspace files: {ws_files}")
+        else:
+            lines.append("Workspace files: (empty)")
+        lines.append("File search: use `find` (by name/date/size), `grep`/`rg` (by content), `file` (by type) in exec tasks")
     lines.append(f"Exec env: {env['exec_env']}")
     lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
