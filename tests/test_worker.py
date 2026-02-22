@@ -818,6 +818,19 @@ class TestRunWorker:
         assert any("Replanning" in m for m in system_msgs)
         assert any("Task failed" in m for m in system_msgs)
 
+        # Replan notification should also be a visible msg task on the first plan
+        cur2 = await db.execute(
+            "SELECT * FROM plans WHERE session = 'sess1' ORDER BY id"
+        )
+        plans = [dict(r) for r in await cur2.fetchall()]
+        first_tasks = await get_tasks_for_plan(db, plans[0]["id"])
+        notify_tasks = [
+            t for t in first_tasks
+            if t["type"] == "msg" and "Replanning" in (t["output"] or "")
+        ]
+        assert len(notify_tasks) == 1
+        assert notify_tasks[0]["status"] == "done"
+
     async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
         """Skill task review error → plan fails without replan."""
         config = _make_config()

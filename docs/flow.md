@@ -133,7 +133,7 @@ In both cases the flow is:
 
 When the reviewer determines that the task failed and the plan needs revision, or when the planner requests a self-directed replan after investigation:
 
-1. **Notify the user**: the worker sends an automatic webhook message explaining that a replan is happening and why (using the reviewer's `reason`).
+1. **Notify the user**: the worker creates a `msg` task on the current plan with the replan notification (so the CLI can display it), saves a system message, and delivers a webhook (with `final: false`) explaining that a replan is happening and why (using the reviewer's `reason`).
 
 2. **Call the planner** with enriched context:
    - Everything the planner normally receives (facts, pending, summary, messages, skills, role, original message)

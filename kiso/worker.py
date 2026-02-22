@@ -1139,7 +1139,7 @@ async def _process_message(
             "what_was_tried": tried,
         })
 
-        # Notify user about replan
+        # Notify user about replan (as a visible msg task + webhook)
         if is_self_directed:
             msg_text = f"Investigating... ({replan_depth}/{max_replan_depth})"
         else:
@@ -1147,9 +1147,18 @@ async def _process_message(
                 f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
                 f"{replan_reason}"
             )
+        replan_notify_id = await create_task(
+            db, current_plan_id, session, "msg", msg_text,
+        )
+        await update_task(db, replan_notify_id, status="done", output=msg_text)
         await save_message(
             db, session, None, "system", msg_text,
             trusted=True, processed=True,
+        )
+        await _deliver_webhook_if_configured(
+            db, config, session, replan_notify_id, msg_text, False,
+            deploy_secrets=collect_deploy_secrets(config),
+            session_secrets=session_secrets,
         )
 
         # --- Cancel check before replan ---
