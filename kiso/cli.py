@@ -16,7 +16,7 @@ _verbose_mode = False
 
 
 def _setup_readline() -> None:
-    """Configure tab-completion for slash commands."""
+    """Configure tab-completion for slash commands and load persistent history."""
     try:
         import readline
     except ImportError:
@@ -32,6 +32,30 @@ def _setup_readline() -> None:
     readline.set_completer(completer)
     readline.set_completer_delims(" \t\n")
     readline.parse_and_bind("tab: complete")
+
+    from kiso.config import KISO_DIR
+
+    history_path = str(KISO_DIR / ".chat_history")
+    try:
+        readline.read_history_file(history_path)
+    except (FileNotFoundError, OSError):
+        pass
+    readline.set_history_length(500)
+
+
+def _save_readline_history() -> None:
+    """Save readline history to persistent file."""
+    try:
+        import readline
+    except ImportError:
+        return
+    from kiso.config import KISO_DIR
+
+    try:
+        KISO_DIR.mkdir(parents=True, exist_ok=True)
+        readline.write_history_file(str(KISO_DIR / ".chat_history"))
+    except OSError:
+        pass
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -313,6 +337,7 @@ def _chat(args: argparse.Namespace) -> None:
                 except httpx.HTTPError:
                     pass
     finally:
+        _save_readline_history()
         client.close()
 
 

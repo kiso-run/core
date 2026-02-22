@@ -179,6 +179,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     else:
         cwd = env["exec_cwd"] + "/<session>/"
     lines.append(f"Exec CWD: {cwd}")
+    lines.append("Public files: write to pub/ in exec CWD → auto-served at /pub/ URLs (no auth needed)")
     lines.append(f"Exec env: {env['exec_env']}")
     lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")

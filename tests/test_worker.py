@@ -32,7 +32,7 @@ from kiso.store import (
 from kiso.worker import (
     _apply_curator_result,
     _build_cancel_summary, _build_exec_env, _build_failure_summary,
-    _exec_task, _msg_task, _skill_task, _session_workspace,
+    _exec_task, _msg_task, _report_pub_files, _skill_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
@@ -4881,3 +4881,57 @@ class TestDefaultMaxReplanDepth:
     def test_default_max_replan_depth_is_5(self):
         from kiso.config import SETTINGS_DEFAULTS
         assert SETTINGS_DEFAULTS["max_replan_depth"] == 5
+
+
+class TestReportPubFiles:
+    """Tests for _report_pub_files."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "test-secret-token"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"planner": "gpt-4"},
+            settings={},
+            raw={},
+        )
+
+    def test_empty_when_no_pub_dir(self, tmp_path, config):
+        """No pub/ directory → empty list."""
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            result = _report_pub_files("no-pub-session", config)
+        assert result == []
+
+    def test_lists_files(self, tmp_path, config):
+        """Files in pub/ → correct URLs."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "report.pdf").write_text("fake pdf")
+        (pub_dir / "data.csv").write_text("a,b,c")
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            result = _report_pub_files("test-session", config)
+
+        assert len(result) == 2
+        filenames = [r["filename"] for r in result]
+        assert "data.csv" in filenames
+        assert "report.pdf" in filenames
+        for r in result:
+            assert r["url"].startswith("/pub/")
+            assert len(r["url"].split("/")[2]) == 16  # token is 16 hex chars
+
+    def test_nested_files(self, tmp_path, config):
+        """Files in pub/sub/ → relative paths preserved."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        sub_dir = pub_dir / "sub"
+        sub_dir.mkdir(parents=True)
+        (sub_dir / "nested.txt").write_text("hello")
+
+        with patch("kiso.worker.KISO_DIR", tmp_path):
+            result = _report_pub_files("test-session", config)
+
+        assert len(result) == 1
+        assert result[0]["filename"] == "sub/nested.txt"

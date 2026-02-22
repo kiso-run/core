@@ -815,11 +815,11 @@ Practical acceptance tests (L4, real LLM) and CLI lifecycle tests (L5, real netw
   - [x] Connector install + remove lifecycle *(currently skipped — `connector-discord` repo not published yet)*
 - [x] Update `docs/testing-live.md` with L4/L5 docs
 
-**Deferred (unblock when repos are published):**
-- [ ] Remove `pytest.skip` fallback from L5 install tests once `skill-search` / `connector-discord` repos exist in `kiso-run` org
-- [ ] Add L5 test: install a non-existent skill (`kiso skill install nonexistent-xyz`) → must print a clear "skill not found" message, not raw git stderr
-- [ ] Add L5 test: install a non-existent connector (`kiso connector install nonexistent-xyz`) → same clean error
-- [ ] Production fix: `_skill_install` / `_connector_install` should detect "repo not found" from git clone stderr and print a user-friendly message (e.g. `error: skill 'foo' not found in kiso-run org`)
+**Deferred (unblocked — repos now published):**
+- [x] Remove `pytest.skip` fallback from L5 install tests once `skill-search` / `connector-discord` repos exist in `kiso-run` org
+- [x] Add L5 test: install a non-existent skill (`kiso skill install nonexistent-xyz`) → must print a clear "skill not found" message, not raw git stderr
+- [x] Add L5 test: install a non-existent connector (`kiso connector install nonexistent-xyz`) → same clean error
+- [x] Production fix: `_skill_install` / `_connector_install` should detect "repo not found" from git clone stderr and print a user-friendly message (e.g. `error: skill 'foo' not found in kiso-run org`)
 
 **Verify:**
 ```bash
@@ -1090,6 +1090,34 @@ uv run kiso
 - [x] docs: flow.md diagrams, llm-roles.md
 - [x] Unit tests: validate_plan with replan tasks, _execute_plan replan handling
 - [x] Live tests: planner produces discovery plan, investigation+replan flow
+
+---
+
+## Milestone 26: Direct pub/ file serving
+
+Replace DB-based published file mechanism with direct file serving from `pub/` directories using HMAC-based URLs.
+
+- [x] Create `kiso/pub.py` with `pub_token()` and `resolve_pub_token()`
+- [x] Replace `/pub/{file_id}` endpoint with `/pub/{token}/{filename:path}` in `main.py`
+- [x] Add `_report_pub_files()` to `worker.py` — appends pub/ URLs to exec task output
+- [x] Remove `publish_file`, `get_published_file`, and `published` table from `store.py`
+- [x] Add "Public files" line to `sysenv.py` `build_system_env_section()`
+- [x] Add pub/ rule to `kiso/roles/planner.md`
+- [x] Update `docs/flow.md`, `docs/llm-roles.md`, `docs/api.md`
+- [x] Rewrite `tests/test_published.py` for HMAC-based endpoint
+- [x] Add `_report_pub_files` tests to `tests/test_worker.py`
+- [x] Add pub/ line test to `tests/test_sysenv.py`
+
+---
+
+## Milestone 27: Persistent chat input history
+
+Add persistent readline history so up/down arrow recalls previous messages across sessions.
+
+- [x] Load history from `~/.kiso/.chat_history` in `_setup_readline()`
+- [x] Save history on exit via `_save_readline_history()` in `_chat()` finally block
+- [x] Set history length to 500
+- [x] Add tests to `tests/test_cli.py`
 
 ---
 

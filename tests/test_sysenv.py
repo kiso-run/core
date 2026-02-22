@@ -369,6 +369,12 @@ class TestBuildSystemEnvSection:
         assert "registry.json" in section
         assert "curl to discover" in section
 
+    def test_contains_public_files_line(self, sample_env):
+        """Output contains the Public files line."""
+        section = build_system_env_section(sample_env)
+        assert "Public files:" in section
+        assert "pub/" in section
+
 
 # --- _collect_binaries with sys/bin ---
 

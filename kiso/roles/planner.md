@@ -28,3 +28,4 @@ Rules:
   - Explore a workspace before deciding what to do
 - A replan task can ONLY be the last task in a plan
 - If you're close to solving and hit the replan limit, set extend_replan (integer, max 3) on the plan to request additional attempts
+- To make files publicly accessible, write them to the `pub/` subdirectory of the exec CWD. Files there are automatically served via public URLs (no authentication). The URLs appear in the task output. Example: `cp report.pdf pub/` or `echo '<html>...' > pub/page.html`

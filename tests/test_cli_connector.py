@@ -515,7 +515,7 @@ def test_connector_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsy
         _connector_install(args)
 
     out = capsys.readouterr().out
-    assert "git clone failed" in out
+    assert "not found" in out
     assert not (connectors_dir / "discord").exists()
 
 
@@ -1473,7 +1473,7 @@ def test_connector_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
             target="discord", name=None, no_deps=False, show_deps=True,
         ))
 
-    assert "git clone failed" in capsys.readouterr().out
+    assert "not found" in capsys.readouterr().out
 
 
 def test_connector_install_missing_kiso_toml(tmp_path, mock_admin, capsys):

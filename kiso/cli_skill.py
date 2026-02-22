@@ -57,6 +57,18 @@ def _is_url(target: str) -> bool:
     return target.startswith(("git@", "http://", "https://"))
 
 
+def _is_repo_not_found(stderr: str) -> bool:
+    """Detect git clone failures caused by a nonexistent repo.
+
+    Git outputs different messages depending on auth setup:
+    - "not found" — when the server explicitly returns 404
+    - "terminal prompts disabled" — when GIT_TERMINAL_PROMPT=0 and repo
+      doesn't exist (GitHub returns a credential challenge for 404s)
+    """
+    s = stderr.lower()
+    return "not found" in s or "terminal prompts disabled" in s
+
+
 def _require_admin() -> None:
     """Check that the current Linux user is an admin in kiso config. Exits 1 if not."""
     username = getpass.getuser()
@@ -171,7 +183,10 @@ def _skill_install(args) -> None:
                 capture_output=True, text=True, env=_GIT_ENV,
             )
             if result.returncode != 0:
-                print(f"error: git clone failed: {result.stderr.strip()}")
+                if is_official and _is_repo_not_found(result.stderr):
+                    print(f"error: skill '{name}' not found in {OFFICIAL_ORG} org")
+                else:
+                    print(f"error: git clone failed: {result.stderr.strip()}")
                 sys.exit(1)
             deps_path = Path(tmpdir) / "deps.sh"
             if deps_path.exists():
@@ -198,7 +213,10 @@ def _skill_install(args) -> None:
             capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
-            print(f"error: git clone failed: {result.stderr.strip()}")
+            if is_official and _is_repo_not_found(result.stderr):
+                print(f"error: skill '{name}' not found in {OFFICIAL_ORG} org")
+            else:
+                print(f"error: git clone failed: {result.stderr.strip()}")
             raise RuntimeError("git clone failed")
 
         # Mark as installing (after clone succeeds)

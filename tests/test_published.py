@@ -1,127 +1,173 @@
-"""Tests for M18 — published files (store + endpoint)."""
+"""Tests for M26 — direct pub/ file serving (HMAC-based URLs)."""
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from kiso.store import get_published_file, init_db, publish_file
+from kiso.config import Config, KISO_DIR, Provider
+from kiso.pub import pub_token, resolve_pub_token
 
 
-# --- store functions ---
+# --- pub_token ---
 
 
-class TestPublishFile:
+class TestPubToken:
     @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        yield conn
-        await conn.close()
+    def config(self):
+        return Config(
+            tokens={"cli": "test-secret-token"},
+            providers={"p": Provider(base_url="http://x")},
+            users={},
+            models={},
+            settings={},
+            raw={},
+        )
 
-    async def test_returns_uuid(self, db):
-        file_id = await publish_file(db, "sess1", "report.pdf", "/tmp/report.pdf")
-        # Should be a valid UUID4
-        parsed = uuid.UUID(file_id, version=4)
-        assert str(parsed) == file_id
+    def test_deterministic(self, config):
+        t1 = pub_token("sess1", config)
+        t2 = pub_token("sess1", config)
+        assert t1 == t2
 
-    async def test_retrievable(self, db):
-        file_id = await publish_file(db, "sess1", "image.png", "/data/image.png")
-        row = await get_published_file(db, file_id)
-        assert row is not None
-        assert row["session"] == "sess1"
-        assert row["filename"] == "image.png"
-        assert row["path"] == "/data/image.png"
+    def test_different_sessions(self, config):
+        t1 = pub_token("sess1", config)
+        t2 = pub_token("sess2", config)
+        assert t1 != t2
 
-    async def test_unique_ids(self, db):
-        id1 = await publish_file(db, "sess1", "a.txt", "/a.txt")
-        id2 = await publish_file(db, "sess1", "b.txt", "/b.txt")
-        assert id1 != id2
+    def test_length_is_16(self, config):
+        t = pub_token("sess1", config)
+        assert len(t) == 16
 
-    async def test_not_found(self, db):
-        row = await get_published_file(db, str(uuid.uuid4()))
-        assert row is None
+    def test_hex_chars_only(self, config):
+        t = pub_token("sess1", config)
+        assert all(c in "0123456789abcdef" for c in t)
 
-    async def test_has_created_at(self, db):
-        file_id = await publish_file(db, "sess1", "f.txt", "/f.txt")
-        row = await get_published_file(db, file_id)
-        assert row["created_at"] is not None
+    def test_fallback_key_when_no_cli_token(self):
+        cfg = Config(
+            tokens={},
+            providers={"p": Provider(base_url="http://x")},
+            users={},
+            models={},
+            settings={},
+            raw={},
+        )
+        t = pub_token("sess1", cfg)
+        assert len(t) == 16
 
 
-# --- GET /pub/{id} endpoint ---
+# --- resolve_pub_token ---
+
+
+class TestResolvePubToken:
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "test-secret-token"},
+            providers={"p": Provider(base_url="http://x")},
+            users={},
+            models={},
+            settings={},
+            raw={},
+        )
+
+    def test_finds_session(self, tmp_path, config):
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        (sessions_dir / "my-session").mkdir()
+
+        with patch("kiso.pub.KISO_DIR", tmp_path):
+            token = pub_token("my-session", config)
+            result = resolve_pub_token(token, config)
+        assert result == "my-session"
+
+    def test_no_match(self, tmp_path, config):
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        (sessions_dir / "my-session").mkdir()
+
+        with patch("kiso.pub.KISO_DIR", tmp_path):
+            result = resolve_pub_token("0000000000000000", config)
+        assert result is None
+
+    def test_no_sessions_dir(self, tmp_path, config):
+        with patch("kiso.pub.KISO_DIR", tmp_path):
+            result = resolve_pub_token("anything", config)
+        assert result is None
+
+
+# --- GET /pub/{token}/{filename} endpoint ---
 
 
 class TestGetPubEndpoint:
-    async def test_serves_file(self, client, tmp_path):
-        db = client._transport.app.state.db  # type: ignore[attr-defined]
-        # Create a real file
-        pub_dir = tmp_path / "pub"
-        pub_dir.mkdir()
-        test_file = pub_dir / "hello.txt"
+    @pytest.fixture()
+    def _setup_session(self, client, tmp_path):
+        """Create a session directory with pub/ inside KISO_DIR for endpoint tests."""
+        config = client._transport.app.state.config  # type: ignore[attr-defined]
+        self._config = config
+        self._session = "test-pub-session"
+        self._sessions_dir = KISO_DIR / "sessions"
+        self._session_dir = self._sessions_dir / self._session
+        self._pub_dir = self._session_dir / "pub"
+        self._pub_dir.mkdir(parents=True, exist_ok=True)
+        self._token = pub_token(self._session, config)
+        yield
+        # Cleanup
+        import shutil
+        if self._session_dir.exists():
+            shutil.rmtree(self._session_dir)
+
+    async def test_serves_file(self, client, _setup_session):
+        test_file = self._pub_dir / "hello.txt"
         test_file.write_text("Hello, world!")
 
-        file_id = await publish_file(db, "sess1", "hello.txt", str(test_file))
-
-        resp = await client.get(f"/pub/{file_id}")
+        resp = await client.get(f"/pub/{self._token}/hello.txt")
         assert resp.status_code == 200
         assert resp.text == "Hello, world!"
         assert "hello.txt" in resp.headers.get("content-disposition", "")
 
-    async def test_content_type_from_filename(self, client, tmp_path):
-        db = client._transport.app.state.db  # type: ignore[attr-defined]
-        pub_dir = tmp_path / "pub"
-        pub_dir.mkdir()
-        test_file = pub_dir / "data.json"
-        test_file.write_text('{"key": "value"}')
+    async def test_404_missing_file(self, client, _setup_session):
+        resp = await client.get(f"/pub/{self._token}/nonexistent.txt")
+        assert resp.status_code == 404
 
-        file_id = await publish_file(db, "sess1", "data.json", str(test_file))
+    async def test_404_bad_token(self, client, _setup_session):
+        resp = await client.get("/pub/0000000000000000/hello.txt")
+        assert resp.status_code == 404
 
-        resp = await client.get(f"/pub/{file_id}")
+    async def test_path_traversal_blocked(self, client, _setup_session):
+        resp = await client.get(f"/pub/{self._token}/../../etc/passwd")
+        assert resp.status_code == 404
+
+    async def test_preserves_extension(self, client, _setup_session):
+        test_file = self._pub_dir / "report.pdf"
+        test_file.write_bytes(b"%PDF-1.4 fake")
+
+        resp = await client.get(f"/pub/{self._token}/report.pdf")
         assert resp.status_code == 200
-        assert "json" in resp.headers.get("content-type", "")
+        assert "pdf" in resp.headers.get("content-type", "")
 
-    async def test_unknown_extension_octet_stream(self, client, tmp_path):
-        db = client._transport.app.state.db  # type: ignore[attr-defined]
-        pub_dir = tmp_path / "pub"
-        pub_dir.mkdir()
-        test_file = pub_dir / "data.xyz123"
+    async def test_unknown_extension_octet_stream(self, client, _setup_session):
+        test_file = self._pub_dir / "data.xyz123"
         test_file.write_bytes(b"\x00\x01\x02")
 
-        file_id = await publish_file(db, "sess1", "data.xyz123", str(test_file))
-
-        resp = await client.get(f"/pub/{file_id}")
+        resp = await client.get(f"/pub/{self._token}/data.xyz123")
         assert resp.status_code == 200
         assert "octet-stream" in resp.headers.get("content-type", "")
 
-    async def test_not_found_uuid(self, client):
-        resp = await client.get(f"/pub/{uuid.uuid4()}")
-        assert resp.status_code == 404
+    async def test_nested_subdirectory(self, client, _setup_session):
+        sub_dir = self._pub_dir / "sub"
+        sub_dir.mkdir()
+        test_file = sub_dir / "file.txt"
+        test_file.write_text("nested content")
 
-    async def test_file_deleted_from_disk(self, client, tmp_path):
-        """DB entry exists but file was removed from disk → 404."""
-        db = client._transport.app.state.db  # type: ignore[attr-defined]
-        pub_dir = tmp_path / "pub"
-        pub_dir.mkdir()
-        test_file = pub_dir / "gone.txt"
-        test_file.write_text("bye")
+        resp = await client.get(f"/pub/{self._token}/sub/file.txt")
+        assert resp.status_code == 200
+        assert resp.text == "nested content"
 
-        file_id = await publish_file(db, "sess1", "gone.txt", str(test_file))
-        test_file.unlink()  # remove the file
-
-        resp = await client.get(f"/pub/{file_id}")
-        assert resp.status_code == 404
-
-    async def test_no_auth_required(self, client, tmp_path):
-        """The /pub endpoint works without an Authorization header."""
-        db = client._transport.app.state.db  # type: ignore[attr-defined]
-        pub_dir = tmp_path / "pub"
-        pub_dir.mkdir()
-        test_file = pub_dir / "open.txt"
+    async def test_no_auth_required(self, client, _setup_session):
+        test_file = self._pub_dir / "open.txt"
         test_file.write_text("public")
 
-        file_id = await publish_file(db, "sess1", "open.txt", str(test_file))
-
-        # Explicitly no auth header
-        resp = await client.get(f"/pub/{file_id}", headers={})
+        resp = await client.get(f"/pub/{self._token}/open.txt", headers={})
         assert resp.status_code == 200

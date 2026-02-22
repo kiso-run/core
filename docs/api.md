@@ -182,17 +182,19 @@ Every `msg` task output is POSTed to the session's webhook URL (set via `POST /s
 - **Retry**: 3 attempts with backoff (1s, 3s, 9s). If all fail, kiso logs the failure and continues. Outputs remain available via `/status`.
 - **Connector requirement**: connectors must implement a polling fallback — if no webhook callback arrives within a reasonable timeout, poll `GET /status/{session}?after={last_task_id}` to recover missed responses.
 
-## GET /pub/{id}
+## GET /pub/{token}/{filename}
 
-Serves a published file. **No authentication required** — anyone with the link can download.
+Serves a file from a session's `pub/` directory. **No authentication required** — anyone with the URL can download.
 
-The `id` is a UUID4 (128-bit random, non-enumerable) that maps to a file in `~/.kiso/sessions/{session}/pub/`. The session ID is never exposed in the URL.
+The `token` is an HMAC-SHA256 derived from the session ID and the `cli` token from config (`hmac_sha256(session_id, cli_token)[:16]`). The session ID is never exposed in the URL. The endpoint reverse-maps the token to a session by iterating existing sessions.
+
+Path traversal protection: the resolved filename must stay inside `pub/`. Attempts to access `../../etc/passwd` etc. return 404.
 
 **Response**: the file with appropriate `Content-Type` and `Content-Disposition` headers.
 
-**404** if the id doesn't exist.
+**404** if the token doesn't match any session, the file doesn't exist, or path traversal is detected.
 
-Files are published by exec or skill tasks that write to the session's `pub/` directory and register the file via the store.
+Files are published by exec or skill tasks that write to `pub/` in the session workspace. No DB registration needed — the worker scans `pub/` after exec tasks and appends URLs to the task output.
 
 ## GET /health
 

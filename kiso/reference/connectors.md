@@ -7,6 +7,7 @@
 ├── kiso.toml           # manifest (required)
 ├── pyproject.toml      # python deps (required, uv-managed)
 ├── run.py              # entry point (required)
+├── LICENSE             # MIT for official connectors (required)
 ├── config.example.toml # default config (shipped in repo, copied to config.toml on install)
 ├── config.toml         # actual config (gitignored, NO secrets)
 ├── deps.sh             # system deps (optional, idempotent)
@@ -255,7 +256,7 @@ uv run --group dev pytest tests/test_integration.py -v
 
 ## License
 
-Official connectors use the **MIT License**. Third-party connectors can use any license.
+Official connectors use the **MIT License**. Include a `LICENSE` file in the repo root. Third-party connectors can use any license.
 
 ## Key Conventions
 

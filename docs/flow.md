@@ -184,6 +184,22 @@ How each task type receives preceding outputs:
 
 The worker always provides preceding outputs — no conditional logic. The planner writes task details that reference them when needed. The file is cleaned up after plan completion.
 
+### Public File Serving
+
+Files written to `pub/` inside the session workspace (`~/.kiso/sessions/{session}/pub/`) are served directly via an HMAC-based URL:
+
+```
+GET /pub/{token}/{filename}
+```
+
+- `token` = `hmac_sha256(session_id, cli_token)[:16]` (hex, 16 chars)
+- The secret key is the `cli` token from config (per-install unique)
+- The endpoint reverse-maps token→session by iterating existing sessions and comparing HMAC
+- Path traversal protection: resolved path must stay inside `pub/`
+- No authentication required — anyone with the URL can download
+
+After exec task execution, the worker scans `pub/` and appends published file URLs to the task output. No DB registration needed — presence on disk is sufficient.
+
 ### Cancel
 
 A plan in execution can be cancelled via `POST /sessions/{session}/cancel` (see [api.md](api.md#post-sessionssessioncancel)).

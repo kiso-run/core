@@ -15,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from kiso.cli_skill import _fetch_registry, _is_url, _require_admin, _search_entries, url_to_name
+from kiso.cli_skill import _fetch_registry, _is_repo_not_found, _is_url, _require_admin, _search_entries, url_to_name
 from kiso.config import KISO_DIR
 
 log = logging.getLogger(__name__)
@@ -307,7 +307,10 @@ def _connector_install(args) -> None:
                 capture_output=True, text=True, env=_GIT_ENV,
             )
             if result.returncode != 0:
-                print(f"error: git clone failed: {result.stderr.strip()}")
+                if is_official and _is_repo_not_found(result.stderr):
+                    print(f"error: connector '{name}' not found in {OFFICIAL_ORG} org")
+                else:
+                    print(f"error: git clone failed: {result.stderr.strip()}")
                 sys.exit(1)
             deps_path = Path(tmpdir) / "deps.sh"
             if deps_path.exists():
@@ -333,7 +336,10 @@ def _connector_install(args) -> None:
             capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
-            print(f"error: git clone failed: {result.stderr.strip()}")
+            if is_official and _is_repo_not_found(result.stderr):
+                print(f"error: connector '{name}' not found in {OFFICIAL_ORG} org")
+            else:
+                print(f"error: git clone failed: {result.stderr.strip()}")
             raise RuntimeError("git clone failed")
 
         # Mark as installing (after clone succeeds)

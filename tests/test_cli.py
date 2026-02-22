@@ -14,6 +14,7 @@ from kiso.cli import (
     _handle_slash,
     _msg_cmd,
     _poll_status,
+    _save_readline_history,
     _setup_readline,
     build_parser,
     main,
@@ -1536,5 +1537,61 @@ def test_slash_commands_include_verbose():
     """_SLASH_COMMANDS list includes verbose commands for tab completion."""
     assert "/verbose-on" in _SLASH_COMMANDS
     assert "/verbose-off" in _SLASH_COMMANDS
+
+
+# ── Persistent readline history ──────────────────────────────
+
+
+class TestReadlineHistory:
+    def test_setup_readline_loads_history(self, tmp_path):
+        """_setup_readline calls readline.read_history_file with correct path."""
+        mock_rl = MagicMock()
+        mock_rl.read_history_file.side_effect = FileNotFoundError()
+        with patch.dict("sys.modules", {"readline": mock_rl}), \
+             patch("kiso.config.KISO_DIR", tmp_path):
+            _setup_readline()
+        mock_rl.read_history_file.assert_called_once_with(str(tmp_path / ".chat_history"))
+
+    def test_setup_readline_handles_missing_history(self):
+        """FileNotFoundError from read_history_file is silently caught."""
+        mock_rl = MagicMock()
+        mock_rl.read_history_file.side_effect = FileNotFoundError()
+        with patch.dict("sys.modules", {"readline": mock_rl}), \
+             patch("kiso.config.KISO_DIR", MagicMock()):
+            _setup_readline()
+        # Should not raise — FileNotFoundError is caught
+        mock_rl.read_history_file.assert_called_once()
+
+    def test_setup_readline_sets_history_length(self):
+        """readline.set_history_length(500) is called."""
+        mock_rl = MagicMock()
+        with patch.dict("sys.modules", {"readline": mock_rl}), \
+             patch("kiso.config.KISO_DIR", MagicMock()):
+            _setup_readline()
+        mock_rl.set_history_length.assert_called_once_with(500)
+
+    def test_save_readline_history_writes_file(self, tmp_path):
+        """_save_readline_history calls readline.write_history_file."""
+        mock_rl = MagicMock()
+        with patch.dict("sys.modules", {"readline": mock_rl}), \
+             patch("kiso.config.KISO_DIR", tmp_path):
+            _save_readline_history()
+        mock_rl.write_history_file.assert_called_once_with(str(tmp_path / ".chat_history"))
+
+    def test_save_readline_history_handles_write_error(self, tmp_path):
+        """OSError from write_history_file is silently caught."""
+        mock_rl = MagicMock()
+        mock_rl.write_history_file.side_effect = OSError("disk full")
+        with patch.dict("sys.modules", {"readline": mock_rl}), \
+             patch("kiso.config.KISO_DIR", tmp_path):
+            _save_readline_history()
+        # Should not raise
+
+    def test_save_readline_history_no_readline(self):
+        """_save_readline_history handles ImportError gracefully."""
+        with patch.dict("sys.modules", {"readline": None}):
+            with patch("builtins.__import__", side_effect=ImportError):
+                _save_readline_history()
+        # Should not raise
 
 

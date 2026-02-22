@@ -95,12 +95,7 @@ class TestSkillInstallRemove:
         ):
             from kiso.cli_skill import _skill_install
 
-            try:
-                _skill_install(args)
-            except SystemExit:
-                pytest.skip(
-                    f"skill-{skill_name} repo not available or clone failed"
-                )
+            _skill_install(args)
 
         skill_dir = skills_dir / skill_name
         assert skill_dir.is_dir(), f"Skill dir not created: {skill_dir}"
@@ -154,12 +149,7 @@ class TestConnectorInstallRemove:
         ):
             from kiso.cli_connector import _connector_install
 
-            try:
-                _connector_install(args)
-            except SystemExit:
-                pytest.skip(
-                    f"connector-{connector_name} repo not available yet"
-                )
+            _connector_install(args)
 
         connector_dir = connectors_dir / connector_name
         assert connector_dir.is_dir(), f"Connector dir not created: {connector_dir}"
@@ -182,3 +172,72 @@ class TestConnectorInstallRemove:
         assert not connector_dir.exists(), f"Connector dir not removed: {connector_dir}"
         out2 = capsys.readouterr().out
         assert "removed" in out2.lower()
+
+
+# ---------------------------------------------------------------------------
+# L5.5 — Install nonexistent skill/connector → clean error
+# ---------------------------------------------------------------------------
+
+
+class TestSkillInstallNotFound:
+    def test_install_nonexistent_skill(self, tmp_path: Path, capsys):
+        """Installing a nonexistent skill prints a clean 'not found' message."""
+        if shutil.which("git") is None:
+            pytest.skip("git not found on PATH")
+
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+
+        args = Namespace(
+            target="nonexistent-xyz-999",
+            name=None,
+            no_deps=True,
+            show_deps=False,
+        )
+
+        with (
+            patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+            patch("kiso.cli_skill._require_admin"),
+        ):
+            from kiso.cli_skill import _skill_install
+
+            with pytest.raises(SystemExit):
+                _skill_install(args)
+
+        out = capsys.readouterr().out
+        assert "not found" in out.lower()
+        assert "kiso-run" in out
+        # Must NOT show raw git stderr
+        assert "fatal:" not in out.lower()
+
+
+class TestConnectorInstallNotFound:
+    def test_install_nonexistent_connector(self, tmp_path: Path, capsys):
+        """Installing a nonexistent connector prints a clean 'not found' message."""
+        if shutil.which("git") is None:
+            pytest.skip("git not found on PATH")
+
+        connectors_dir = tmp_path / "connectors"
+        connectors_dir.mkdir()
+
+        args = Namespace(
+            target="nonexistent-xyz-999",
+            name=None,
+            no_deps=True,
+            show_deps=False,
+        )
+
+        with (
+            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("kiso.cli_skill._require_admin"),
+        ):
+            from kiso.cli_connector import _connector_install
+
+            with pytest.raises(SystemExit):
+                _connector_install(args)
+
+        out = capsys.readouterr().out
+        assert "not found" in out.lower()
+        assert "kiso-run" in out
+        # Must NOT show raw git stderr
+        assert "fatal:" not in out.lower()

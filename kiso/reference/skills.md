@@ -7,6 +7,7 @@
 ├── kiso.toml           # manifest (required)
 ├── pyproject.toml      # python deps (required, uv-managed)
 ├── run.py              # entry point (required)
+├── LICENSE             # MIT for official skills (required)
 ├── config.example.toml # default config (optional, copied to config.toml on install)
 ├── deps.sh             # system deps (optional, must be idempotent)
 ├── .gitignore
@@ -221,7 +222,7 @@ uv run --group dev pytest tests/ -v
 
 ## License
 
-Official skills use the **MIT License**. Third-party skills can use any license.
+Official skills use the **MIT License**. Include a `LICENSE` file in the repo root. Third-party skills can use any license.
 
 ## Key Conventions
 

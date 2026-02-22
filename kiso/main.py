@@ -19,12 +19,12 @@ from starlette.responses import JSONResponse
 from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.config import KISO_DIR, load_config
 from kiso.log import setup_logging
+from kiso.pub import pub_token, resolve_pub_token
 from kiso.store import (
     count_messages,
     create_session,
     get_all_sessions,
     get_plan_for_session,
-    get_published_file,
     get_session,
     get_sessions_for_user,
     get_tasks_for_session,
@@ -217,24 +217,25 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/pub/{file_id}")
-async def get_pub(file_id: str, request: Request):
-    """Serve a published file. No authentication required."""
-    db = request.app.state.db
-    row = await get_published_file(db, file_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="File not found")
+@app.get("/pub/{token}/{filename:path}")
+async def get_pub(token: str, filename: str, request: Request):
+    """Serve a file from a session's pub/ directory. No authentication required."""
+    config = request.app.state.config
+    session = resolve_pub_token(token, config)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Not found")
 
-    file_path = Path(row["path"])
+    pub_dir = KISO_DIR / "sessions" / session / "pub"
+    file_path = (pub_dir / filename).resolve()
+
+    # Path traversal guard
+    if not str(file_path).startswith(str(pub_dir.resolve())):
+        raise HTTPException(status_code=404, detail="Not found")
     if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Not found")
 
-    media_type = mimetypes.guess_type(row["filename"])[0] or "application/octet-stream"
-    return FileResponse(
-        path=file_path,
-        filename=row["filename"],
-        media_type=media_type,
-    )
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(path=file_path, filename=Path(filename).name, media_type=media_type)
 
 
 @app.post("/sessions")

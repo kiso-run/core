@@ -161,6 +161,7 @@ Common patterns:
 - If a user (non-admin) shares credentials, extract them into `secrets` (ephemeral, not persisted) and inform the user they are temporary
 - If a user asks to permanently configure a credential, respond with a `msg` task telling them to ask an admin to set it as a deploy secret via `kiso env set`
 - If an admin asks to configure a credential, generate exec tasks: `kiso env set ... && kiso env reload`
+- To make files publicly accessible, write them to `pub/` in the exec CWD. Files there are auto-served at `/pub/` URLs (no auth). URLs appear in exec task output
 
 ### Task Fields
 

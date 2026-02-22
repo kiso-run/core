@@ -40,6 +40,7 @@ from kiso.brain import (
     run_summarizer,
 )
 from kiso.config import Config, KISO_DIR
+from kiso.pub import pub_token
 from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, get_usage_index, get_usage_since, get_usage_summary, reset_usage_tracking, set_llm_budget
 from kiso.skills import (
     SkillError,
@@ -173,6 +174,23 @@ def _build_exec_env() -> dict[str, str]:
         env["GIT_SSH_COMMAND"] = f"ssh -F {ssh_dir}/config -o UserKnownHostsFile={ssh_dir}/known_hosts -i {ssh_dir}/id_ed25519"
 
     return env
+
+
+def _report_pub_files(session: str, config: Config) -> list[dict]:
+    """List files in pub/ and return their public URLs."""
+    pub_dir = _session_workspace(session) / "pub"
+    if not pub_dir.is_dir():
+        return []
+    token = pub_token(session, config)
+    results = []
+    for f in sorted(pub_dir.rglob("*")):
+        if f.is_file():
+            rel = f.relative_to(pub_dir)
+            results.append({
+                "filename": str(rel),
+                "url": f"/pub/{token}/{rel}",
+            })
+    return results
 
 
 async def _exec_task(
@@ -477,6 +495,15 @@ async def _execute_plan(
             stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
             stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
             status = "done" if success else "failed"
+
+            # Report pub/ files if any were created
+            pub_urls = _report_pub_files(session, config)
+            if pub_urls:
+                pub_note = "\n\nPublished files:\n" + "\n".join(
+                    f"- {u['filename']}: {u['url']}" for u in pub_urls
+                )
+                stdout += pub_note
+
             await update_task(db, task_id, status, output=stdout, stderr=stderr)
 
             audit.log_task(
