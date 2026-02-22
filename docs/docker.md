@@ -74,15 +74,21 @@ By default, `~/.kiso/` on the host is bind-mounted into the container. You can e
 
 | Command | Runs |
 |---|---|
-| `kiso` | `docker exec -it kiso kiso` (chat REPL) |
-| `kiso <args>` | `docker exec -it kiso kiso <args>` (skill, env, sessions, etc.) |
-| `kiso logs` | `docker logs -f kiso` |
+| `kiso` | `docker exec -it kiso kiso` (interactive chat REPL) |
+| `kiso --session NAME` | chat on a specific session (new name = fresh session) |
+| `kiso msg "text"` | send one message, print the response, exit |
+| `kiso skill ...` | `docker exec kiso kiso skill ...` (manage skills) |
+| `kiso connector ...` | `docker exec kiso kiso connector ...` (manage connectors) |
+| `kiso sessions` | list your sessions |
+| `kiso env ...` | manage deploy secrets |
 | `kiso up` | `docker compose up -d` |
 | `kiso down` | `docker compose down` |
 | `kiso restart` | `docker restart kiso` |
-| `kiso shell` | `docker exec -it kiso bash` |
-| `kiso status` | Container state + health check |
+| `kiso status` | container state + health check |
 | `kiso health` | `curl http://localhost:8333/health` |
+| `kiso logs` | `docker logs -f kiso` |
+| `kiso shell` | `docker exec -it kiso bash` |
+| `kiso explore [session]` | open a shell in the session workspace |
 
 `install.sh` writes a self-contained `~/.kiso/docker-compose.yml` (uses `image:` instead of `build:`) so `kiso up` and `kiso down` work from any directory — even if the repo is deleted after install.
 

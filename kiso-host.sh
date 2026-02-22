@@ -72,34 +72,56 @@ case "${1:-}" in
         cat <<'HELP'
 kiso — host wrapper for the kiso container
 
-Usage: kiso [command]
+Usage: kiso [options] [command]
 
 Chat:
   kiso                      interactive chat (REPL)
-  kiso msg "text"           send a message, print the response, exit
-  kiso <args>               pass arguments to kiso inside the container
+  kiso msg "text"           send one message, print the response, exit
+
+Options (for chat and msg):
+  --session NAME            session name (default: {hostname}@{username})
+                            use a new name to start a fresh session
+  --user NAME               username (default: system user)
+  --quiet, -q               only show message output (no plan/task details)
+
+Skills & connectors:
+  kiso skill list            list installed skills
+  kiso skill search [query]  search available skills in the registry
+  kiso skill install <name>  install a skill
+  kiso skill update <name|all>
+  kiso skill remove <name>
+  kiso connector list | search | install | update | remove  (same pattern)
+  kiso connector run <name>  start a connector daemon
+  kiso connector stop <name> stop a connector daemon
+  kiso connector status <name>
+
+Sessions & secrets:
+  kiso sessions              list your sessions
+  kiso sessions --all        list all sessions (admin only)
+  kiso env set KEY VALUE     set a deploy secret
+  kiso env get KEY           show a deploy secret
+  kiso env list              list deploy secret names
+  kiso env delete KEY        delete a deploy secret
+  kiso env reload            hot-reload secrets into the server
 
 Container management:
-  kiso up                   start the container
-  kiso down                 stop the container
-  kiso restart              restart the container
-  kiso status               show container state + health
-  kiso health               hit the /health endpoint
-  kiso logs                 follow container logs
-  kiso shell                open a bash shell inside the container
-  kiso explore [session]    open a shell in the session workspace
+  kiso up                    start the container
+  kiso down                  stop the container
+  kiso restart               restart the container
+  kiso status                show container state + health
+  kiso health                hit the /health endpoint
+  kiso logs                  follow container logs
+  kiso shell                 open a bash shell inside the container
+  kiso explore [session]     open a shell in the session workspace
   kiso completion [bash|zsh] print shell completion script
 
-Config:
-  ~/.kiso/config.toml       main configuration
-  ~/.kiso/.env              deploy secrets (API keys)
+Config files:
+  ~/.kiso/config.toml        main configuration
+  ~/.kiso/.env               deploy secrets (managed via kiso env)
   ~/.kiso/docker-compose.yml runtime compose file
 
-Run 'kiso help' inside the container for CLI commands:
-  kiso skill list           list installed skills
-  kiso skill search         search available skills
-  kiso env set KEY VALUE    set a deploy secret
-  kiso env reload           hot-reload secrets
+REPL commands (inside interactive chat):
+  /help  /status  /sessions  /verbose-on  /verbose-off  /clear  /exit
 HELP
         ;;
     completion)
