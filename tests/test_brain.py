@@ -312,7 +312,7 @@ class TestBuildPlannerMessages:
 
     async def test_basic_no_context(self, db, config):
         await create_session(db, "sess1")
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert len(msgs) == 2
         assert msgs[0]["role"] == "system"
         assert msgs[1]["role"] == "user"
@@ -325,7 +325,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await db.execute("UPDATE sessions SET summary = 'previous context' WHERE session = 'sess1'")
         await db.commit()
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert "## Session Summary" in msgs[1]["content"]
         assert "previous context" in msgs[1]["content"]
 
@@ -333,7 +333,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await db.execute("INSERT INTO facts (content, source) VALUES (?, ?)", ("Python 3.12", "curator"))
         await db.commit()
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert "## Known Facts" in msgs[1]["content"]
         assert "Python 3.12" in msgs[1]["content"]
 
@@ -344,7 +344,7 @@ class TestBuildPlannerMessages:
             ("Which DB?", "sess1", "curator"),
         )
         await db.commit()
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert "## Pending Questions" in msgs[1]["content"]
         assert "Which DB?" in msgs[1]["content"]
 
@@ -352,7 +352,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await save_message(db, "sess1", "alice", "user", "first msg")
         await save_message(db, "sess1", "alice", "user", "second msg")
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "third")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "third")
         assert "## Recent Messages" in msgs[1]["content"]
         assert "first msg" in msgs[1]["content"]
         assert "second msg" in msgs[1]["content"]
@@ -362,7 +362,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         for i in range(5):
             await save_message(db, "sess1", "alice", "user", f"msg-{i}")
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "new")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "new")
         content = msgs[1]["content"]
         # Only last 3 should be present
         assert "msg-0" not in content
@@ -375,14 +375,14 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await save_message(db, "sess1", "trusted", "user", "good msg", trusted=True)
         await save_message(db, "sess1", "stranger", "user", "bad msg", trusted=False, processed=True)
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "new")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "new")
         content = msgs[1]["content"]
         assert "good msg" in content
         assert "bad msg" not in content
 
     async def test_no_session_doesnt_crash(self, db, config):
         """Building context for a nonexistent session should not crash."""
-        msgs = await build_planner_messages(db, config, "nonexistent", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "nonexistent", "admin", "hello")
         assert len(msgs) == 2
 
     # --- M7: skills in planner context ---
@@ -395,7 +395,7 @@ class TestBuildPlannerMessages:
             }, "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
         ]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs = await build_planner_messages(db, config, "sess1", "admin", "search for X")
+            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "search for X")
         content = msgs[1]["content"]
         assert "## Skills" in content
         assert "search — Web search" in content
@@ -424,7 +424,7 @@ class TestBuildPlannerMessages:
             "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
-            msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "## System Environment" in content
         assert "Linux x86_64" in content
@@ -461,7 +461,7 @@ class TestBuildPlannerMessages:
             "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
-            msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         facts_pos = content.index("## Known Facts")
         sysenv_pos = content.index("## System Environment")
@@ -471,7 +471,7 @@ class TestBuildPlannerMessages:
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
         with patch("kiso.brain.discover_skills", return_value=[]):
-            msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "## Skills" not in content
 
@@ -484,7 +484,7 @@ class TestBuildPlannerMessages:
              "env": {}, "session_secrets": [], "path": "/fake2", "version": "0.1.0", "description": ""},
         ]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs = await build_planner_messages(
+            msgs, _installed = await build_planner_messages(
                 db, config, "sess1", "user", "hello", user_skills=["search"],
             )
         content = msgs[1]["content"]
@@ -1159,14 +1159,14 @@ class TestPlannerMessagesFencing:
     async def test_planner_messages_fence_recent(self, db, config):
         await create_session(db, "sess1")
         await save_message(db, "sess1", "alice", "user", "hello world")
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "new msg")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "new msg")
         content = msgs[1]["content"]
         assert "<<<MESSAGES_" in content
         assert "<<<END_MESSAGES_" in content
 
     async def test_planner_messages_fence_new_message(self, db, config):
         await create_session(db, "sess1")
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "test input")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "test input")
         content = msgs[1]["content"]
         assert "<<<USER_MSG_" in content
         assert "<<<END_USER_MSG_" in content
@@ -1174,7 +1174,7 @@ class TestPlannerMessagesFencing:
 
     async def test_planner_messages_include_paraphrased(self, db, config):
         await create_session(db, "sess1")
-        msgs = await build_planner_messages(
+        msgs, _installed = await build_planner_messages(
             db, config, "sess1", "admin", "hello",
             paraphrased_context="The external user asked about the weather.",
         )
@@ -1185,7 +1185,7 @@ class TestPlannerMessagesFencing:
 
     async def test_planner_messages_no_paraphrased_when_none(self, db, config):
         await create_session(db, "sess1")
-        msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "Paraphrased" not in content
 

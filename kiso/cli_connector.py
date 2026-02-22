@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import getpass
 import json
 import logging
 import os
-import re
 import shutil
 import signal
 import subprocess
@@ -15,17 +13,22 @@ import tempfile
 import time
 from pathlib import Path
 
-from kiso.cli_skill import _fetch_registry, _is_repo_not_found, _is_url, _require_admin, _search_entries, url_to_name
 from kiso.config import KISO_DIR
+from kiso.plugin_ops import (
+    OFFICIAL_ORG,
+    _GIT_ENV,
+    fetch_registry,
+    is_repo_not_found,
+    is_url,
+    require_admin,
+    search_entries,
+    url_to_name,
+)
 
 log = logging.getLogger(__name__)
 
 CONNECTORS_DIR = KISO_DIR / "connectors"
-OFFICIAL_ORG = "kiso-run"
 OFFICIAL_PREFIX = "connector-"
-
-# Prevent git from opening /dev/tty to prompt for credentials.
-_GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 
 # Supervisor restart settings
 SUPERVISOR_MAX_FAILURES = 5
@@ -272,8 +275,8 @@ def _connector_list(args) -> None:
 
 def _connector_search(args) -> None:
     """Search official connectors from the registry."""
-    registry = _fetch_registry()
-    results = _search_entries(registry.get("connectors", []), args.query)
+    registry = fetch_registry()
+    results = search_entries(registry.get("connectors", []), args.query)
 
     if not results:
         print("No connectors found.")
@@ -286,10 +289,10 @@ def _connector_search(args) -> None:
 
 def _connector_install(args) -> None:
     """Install a connector from official repo or git URL."""
-    _require_admin()
+    require_admin()
 
     target = args.target
-    if _is_url(target):
+    if is_url(target):
         git_url = target
         name = args.name or url_to_name(target)
         is_official = False
@@ -307,7 +310,7 @@ def _connector_install(args) -> None:
                 capture_output=True, text=True, env=_GIT_ENV,
             )
             if result.returncode != 0:
-                if is_official and _is_repo_not_found(result.stderr):
+                if is_official and is_repo_not_found(result.stderr):
                     print(f"error: connector '{name}' not found in {OFFICIAL_ORG} org")
                 else:
                     print(f"error: git clone failed: {result.stderr.strip()}")
@@ -336,7 +339,7 @@ def _connector_install(args) -> None:
             capture_output=True, text=True, env=_GIT_ENV,
         )
         if result.returncode != 0:
-            if is_official and _is_repo_not_found(result.stderr):
+            if is_official and is_repo_not_found(result.stderr):
                 print(f"error: connector '{name}' not found in {OFFICIAL_ORG} org")
             else:
                 print(f"error: git clone failed: {result.stderr.strip()}")
@@ -391,6 +394,13 @@ def _connector_install(args) -> None:
             capture_output=True, text=True,
         )
 
+        # Check binary deps (parity with skill install)
+        from kiso.skills import check_deps
+        connector_info = {"path": str(connector_dir)}
+        missing = check_deps(connector_info)
+        if missing:
+            print(f"warning: missing binaries: {', '.join(missing)}")
+
         # Check env vars
         kiso_section = manifest.get("kiso", {})
         connector_section = kiso_section.get("connector", {})
@@ -425,7 +435,7 @@ def _connector_install(args) -> None:
 
 def _connector_update(args) -> None:
     """Update an installed connector or all connectors."""
-    _require_admin()
+    require_admin()
 
     target = args.target
     if target == "all":
@@ -471,6 +481,13 @@ def _connector_update(args) -> None:
             capture_output=True, text=True,
         )
 
+        # check deps
+        from kiso.skills import check_deps
+        connector_info = {"path": str(connector_dir)}
+        missing = check_deps(connector_info)
+        if missing:
+            print(f"warning: '{name}' missing binaries: {', '.join(missing)}")
+
         print(f"Connector '{name}' updated.")
         from kiso.sysenv import invalidate_cache
         invalidate_cache()
@@ -478,7 +495,7 @@ def _connector_update(args) -> None:
 
 def _connector_remove(args) -> None:
     """Remove an installed connector."""
-    _require_admin()
+    require_admin()
 
     name = args.name
     connector_dir = CONNECTORS_DIR / name
@@ -503,7 +520,7 @@ def _connector_remove(args) -> None:
 
 def _connector_run(args) -> None:
     """Start a connector as a daemon."""
-    _require_admin()
+    require_admin()
 
     name = args.name
     connector_dir = CONNECTORS_DIR / name
@@ -547,7 +564,7 @@ def _connector_run(args) -> None:
 
 def _connector_stop(args) -> None:
     """Stop a connector daemon."""
-    _require_admin()
+    require_admin()
 
     name = args.name
     connector_dir = CONNECTORS_DIR / name

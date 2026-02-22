@@ -2885,7 +2885,7 @@ class TestKnowledgeProcessing:
 
         # Build planner messages for session B — facts are global
         from kiso.brain import build_planner_messages
-        msgs = await build_planner_messages(db, config, "sessB", "admin", "hello")
+        msgs, _installed = await build_planner_messages(db, config, "sessB", "admin", "hello")
         content = msgs[1]["content"]
         assert "Python 3.12" in content
 

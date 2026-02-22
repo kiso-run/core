@@ -61,7 +61,7 @@ worker = "deepseek/deepseek-v3.2"
 summarizer = "deepseek/deepseek-v3.2"
 
 [settings]
-context_messages = 5
+context_messages = 7
 summarize_threshold = 30
 knowledge_max_facts = 50
 max_replan_depth = 3
@@ -98,7 +98,7 @@ port = 8333
 | `models.curator` | `deepseek/deepseek-v3.2` | Requires structured output. |
 | `models.worker` | `deepseek/deepseek-v3.2` | Free-form text, no constraints. |
 | `models.summarizer` | `deepseek/deepseek-v3.2` | Free-form text, also used by paraphraser. |
-| `settings.context_messages` | `5` | Number of recent raw messages sent to the planner (see [llm-roles.md](llm-roles.md#planner)). |
+| `settings.context_messages` | `7` | Number of recent raw messages sent to the planner (see [llm-roles.md](llm-roles.md#planner)). |
 | `settings.summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value |
 | `settings.knowledge_max_facts` | `50` | Max global facts before consolidation |
 | `settings.max_replan_depth` | `3` | Max replan cycles per original message |

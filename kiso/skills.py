@@ -174,6 +174,9 @@ def check_deps(skill: dict) -> list[str]:
     skill_dir = Path(skill["path"])
     toml_path = skill_dir / "kiso.toml"
 
+    if not toml_path.exists():
+        return []
+
     with open(toml_path, "rb") as f:
         manifest = tomllib.load(f)
 

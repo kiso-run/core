@@ -193,6 +193,33 @@ def _report_pub_files(session: str, config: Config) -> list[dict]:
     return results
 
 
+async def _deliver_webhook_if_configured(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    task_id: int,
+    content: str,
+    final: bool,
+    deploy_secrets: dict[str, str] | None = None,
+    session_secrets: dict[str, str] | None = None,
+) -> None:
+    """Deliver a webhook if the session has one configured. No-op otherwise."""
+    sess = await get_session(db, session)
+    webhook_url = sess.get("webhook") if sess else None
+    if not webhook_url:
+        return
+    wh_success, wh_status, wh_attempts = await deliver_webhook(
+        webhook_url, session, task_id, content, final,
+        secret=str(config.settings.get("webhook_secret", "")),
+        max_payload=int(config.settings.get("webhook_max_payload", 0)),
+    )
+    audit.log_webhook(
+        session, task_id, webhook_url, wh_status, wh_attempts,
+        deploy_secrets=deploy_secrets or {},
+        session_secrets=session_secrets or {},
+    )
+
+
 async def _exec_task(
     session: str, detail: str, timeout: int, sandbox_uid: int | None = None,
     max_output_size: int = 0,
@@ -405,6 +432,8 @@ async def _execute_plan(
     plan_outputs: list[dict] = []
     deploy_secrets = collect_deploy_secrets(config)
     max_output_size = int(config.settings.get("max_output_size", 0))
+    # Cache installed skills for the whole plan execution (avoid rescanning per task)
+    installed_skills = discover_skills()
 
     for i, task_row in enumerate(tasks):
         # --- Cancel check ---
@@ -588,20 +617,12 @@ async def _execute_plan(
                 })
 
                 # Webhook delivery
-                sess = await get_session(db, session)
-                webhook_url = sess.get("webhook") if sess else None
-                if webhook_url:
-                    is_final = i == len(tasks) - 1
-                    wh_success, wh_status, wh_attempts = await deliver_webhook(
-                        webhook_url, session, task_id, text, is_final,
-                        secret=str(config.settings.get("webhook_secret", "")),
-                        max_payload=int(config.settings.get("webhook_max_payload", 0)),
-                    )
-                    audit.log_webhook(
-                        session, task_id, webhook_url, wh_status, wh_attempts,
-                        deploy_secrets=deploy_secrets,
-                        session_secrets=session_secrets or {},
-                    )
+                is_final = i == len(tasks) - 1
+                await _deliver_webhook_if_configured(
+                    db, config, session, task_id, text, is_final,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets,
+                )
 
                 # Store per-step token usage (messenger)
                 step_usage = get_usage_since(usage_idx_before)
@@ -626,9 +647,8 @@ async def _execute_plan(
             skill_name = task_row.get("skill")
             args_raw = task_row.get("args") or "{}"
 
-            # Look up the skill
-            installed = discover_skills()
-            skill_info = next((s for s in installed if s["name"] == skill_name), None)
+            # Look up the skill (from plan-level cache)
+            skill_info = next((s for s in installed_skills if s["name"] == skill_name), None)
 
             t0 = time.perf_counter()
 
@@ -929,12 +949,11 @@ async def _process_message(
         await update_task(db, fail_task_id, status="done", output=error_text)
         await update_plan_status(db, fail_plan_id, "failed")
         await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
-        sess = await get_session(db, session)
-        webhook_url = sess.get("webhook") if sess else None
-        if webhook_url:
-            await deliver_webhook(webhook_url, session, 0, error_text, True,
-                                  secret=str(config.settings.get("webhook_secret", "")),
-                                  max_payload=int(config.settings.get("webhook_max_payload", 0)))
+        deploy_secrets = collect_deploy_secrets(config)
+        await _deliver_webhook_if_configured(
+            db, config, session, 0, error_text, True,
+            deploy_secrets=deploy_secrets,
+        )
         return
 
     # Extract ephemeral secrets from plan
@@ -1015,21 +1034,11 @@ async def _process_message(
                 trusted=True, processed=True,
             )
             # Webhook
-            sess = await get_session(db, session)
-            webhook_url = sess.get("webhook") if sess else None
-            if webhook_url:
-                wh_success, wh_status, wh_attempts = await deliver_webhook(
-                    webhook_url, session, 0, cancel_text, True,
-                    secret=str(config.settings.get("webhook_secret", "")),
-                    max_payload=int(
-                        config.settings.get("webhook_max_payload", 0)
-                    ),
-                )
-                audit.log_webhook(
-                    session, 0, webhook_url, wh_status, wh_attempts,
-                    deploy_secrets=collect_deploy_secrets(config),
-                    session_secrets=session_secrets or {},
-                )
+            await _deliver_webhook_if_configured(
+                db, config, session, 0, cancel_text, True,
+                deploy_secrets=collect_deploy_secrets(config),
+                session_secrets=session_secrets,
+            )
             if cancel_event is not None:
                 cancel_event.clear()  # reset for next message
             break
@@ -1057,16 +1066,11 @@ async def _process_message(
                 db, session, None, "system", fail_text,
                 trusted=True, processed=True,
             )
-            sess = await get_session(db, session)
-            webhook_url = sess.get("webhook") if sess else None
-            if webhook_url:
-                await deliver_webhook(
-                    webhook_url, session, 0, fail_text, True,
-                    secret=str(config.settings.get("webhook_secret", "")),
-                    max_payload=int(
-                        config.settings.get("webhook_max_payload", 0)
-                    ),
-                )
+            await _deliver_webhook_if_configured(
+                db, config, session, 0, fail_text, True,
+                deploy_secrets=collect_deploy_secrets(config),
+                session_secrets=session_secrets,
+            )
             break
 
         # Replan requested
@@ -1102,16 +1106,11 @@ async def _process_message(
                 db, session, None, "system", replan_text,
                 trusted=True, processed=True,
             )
-            sess = await get_session(db, session)
-            webhook_url = sess.get("webhook") if sess else None
-            if webhook_url:
-                await deliver_webhook(
-                    webhook_url, session, 0, replan_text, True,
-                    secret=str(config.settings.get("webhook_secret", "")),
-                    max_payload=int(
-                        config.settings.get("webhook_max_payload", 0)
-                    ),
-                )
+            await _deliver_webhook_if_configured(
+                db, config, session, 0, replan_text, True,
+                deploy_secrets=collect_deploy_secrets(config),
+                session_secrets=session_secrets,
+            )
             break
 
         # Detect self-directed replan

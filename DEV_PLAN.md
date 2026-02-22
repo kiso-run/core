@@ -1121,6 +1121,49 @@ Add persistent readline history so up/down arrow recalls previous messages acros
 
 ---
 
+## Milestone 28: Code quality — deduplication, readability, performance
+
+Reduce duplication, improve readability, and fix minor asymmetries across the codebase.
+
+### 28a. brain.py — retry loop deduplication + context increase
+
+- [x] Extract `_retry_llm_with_validation()` — generic retry-parse-validate loop used by `run_planner`, `run_reviewer`, `run_curator`
+- [x] Extract `_build_error_feedback()` helper for the error message pattern
+- [x] Fix double `discover_skills()` call in `run_planner` — pass result from `build_planner_messages`
+- [x] Increase context messages default from 5 to 7 (`config.settings.get("context_messages", 5)` → 7)
+- [x] Tests updated
+
+### 28b. worker.py — webhook helper + cached skills
+
+- [x] Extract `_deliver_webhook_if_configured()` — eliminates 4× duplicated webhook delivery pattern
+- [x] Cache `discover_skills()` per `_execute_plan` call (currently called inside task loop at line 630)
+- [x] Tests updated
+
+### 28c. main.py — NamedTuple for worker state
+
+- [x] Replace `dict[str, tuple[asyncio.Queue, asyncio.Task, asyncio.Event]]` with `WorkerEntry` NamedTuple
+- [x] Replace all `entry[0]`, `entry[1]`, `entry[2]` with `.queue`, `.task`, `.cancel_event`
+- [x] Tests updated
+
+### 28d. store.py — fetch helper
+
+- [x] Extract `_rows_to_dicts(cursor)` to replace 12× `[dict(r) for r in await cur.fetchall()]`
+- [x] Tests updated
+
+### 28e. cli_skill.py / cli_connector.py — shared utilities module
+
+- [x] Create `kiso/plugin_ops.py` with shared functions: `url_to_name`, `is_url`, `is_repo_not_found`, `require_admin`, `fetch_registry`, `search_entries`, `_GIT_ENV`
+- [x] Update `cli_skill.py` and `cli_connector.py` to import from `plugin_ops`
+- [x] Add connector `check_deps` call in `_connector_install` / `_connector_update` (parity with skills)
+- [x] Tests updated
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live  # all pass
+```
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.

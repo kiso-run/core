@@ -27,8 +27,8 @@ def _admin_cfg():
 def mock_admin():
     """Patch load_config and getpass so _require_admin passes."""
     with (
-        patch("kiso.cli_skill.load_config", return_value=_admin_cfg()),
-        patch("kiso.cli_skill.getpass.getuser", return_value="alice"),
+        patch("kiso.plugin_ops.load_config", return_value=_admin_cfg()),
+        patch("kiso.plugin_ops.getpass.getuser", return_value="alice"),
     ):
         yield
 
@@ -187,8 +187,8 @@ def test_require_admin_passes():
     cfg = MagicMock()
     cfg.users = {"alice": User(role="admin")}
     with (
-        patch("kiso.cli_skill.load_config", return_value=cfg),
-        patch("kiso.cli_skill.getpass.getuser", return_value="alice"),
+        patch("kiso.plugin_ops.load_config", return_value=cfg),
+        patch("kiso.plugin_ops.getpass.getuser", return_value="alice"),
     ):
         _require_admin()  # should not raise
 
@@ -199,8 +199,8 @@ def test_require_admin_non_admin_exits(capsys):
     cfg = MagicMock()
     cfg.users = {"bob": User(role="user", skills="*")}
     with (
-        patch("kiso.cli_skill.load_config", return_value=cfg),
-        patch("kiso.cli_skill.getpass.getuser", return_value="bob"),
+        patch("kiso.plugin_ops.load_config", return_value=cfg),
+        patch("kiso.plugin_ops.getpass.getuser", return_value="bob"),
         pytest.raises(SystemExit, match="1"),
     ):
         _require_admin()
@@ -214,8 +214,8 @@ def test_require_admin_unknown_user_exits(capsys):
     cfg = MagicMock()
     cfg.users = {"alice": User(role="admin")}
     with (
-        patch("kiso.cli_skill.load_config", return_value=cfg),
-        patch("kiso.cli_skill.getpass.getuser", return_value="unknown"),
+        patch("kiso.plugin_ops.load_config", return_value=cfg),
+        patch("kiso.plugin_ops.getpass.getuser", return_value="unknown"),
         pytest.raises(SystemExit, match="1"),
     ):
         _require_admin()

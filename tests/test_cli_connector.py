@@ -30,10 +30,10 @@ def _admin_cfg():
 
 @pytest.fixture()
 def mock_admin():
-    """Patch load_config and getpass so _require_admin passes."""
+    """Patch load_config and getpass so require_admin passes."""
     with (
-        patch("kiso.cli_skill.load_config", return_value=_admin_cfg()),
-        patch("kiso.cli_skill.getpass.getuser", return_value="alice"),
+        patch("kiso.plugin_ops.load_config", return_value=_admin_cfg()),
+        patch("kiso.plugin_ops.getpass.getuser", return_value="alice"),
     ):
         yield
 
@@ -305,7 +305,7 @@ FAKE_REGISTRY = {
 def test_connector_search_no_query(capsys):
     from kiso.cli_connector import _connector_search
 
-    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query=""))
 
     out = capsys.readouterr().out
@@ -316,7 +316,7 @@ def test_connector_search_no_query(capsys):
 def test_connector_search_by_name(capsys):
     from kiso.cli_connector import _connector_search
 
-    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="discord"))
 
     out = capsys.readouterr().out
@@ -327,7 +327,7 @@ def test_connector_search_by_name(capsys):
 def test_connector_search_by_description(capsys):
     from kiso.cli_connector import _connector_search
 
-    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="splitting"))
 
     out = capsys.readouterr().out
@@ -337,7 +337,7 @@ def test_connector_search_by_description(capsys):
 
 def test_connector_search_network_error(capsys):
     with (
-        patch("kiso.cli_connector._fetch_registry", side_effect=SystemExit(1)),
+        patch("kiso.cli_connector.fetch_registry", side_effect=SystemExit(1)),
         pytest.raises(SystemExit, match="1"),
     ):
         from kiso.cli_connector import _connector_search
@@ -348,7 +348,7 @@ def test_connector_search_network_error(capsys):
 def test_connector_search_no_results(capsys):
     from kiso.cli_connector import _connector_search
 
-    with patch("kiso.cli_connector._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No connectors found." in out

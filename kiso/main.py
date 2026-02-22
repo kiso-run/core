@@ -9,6 +9,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import NamedTuple
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import HTTPException
@@ -42,6 +43,13 @@ log = logging.getLogger(__name__)
 SESSION_RE = re.compile(r"^[a-zA-Z0-9_@.\-]{1,255}$")
 
 
+class WorkerEntry(NamedTuple):
+    """Per-session worker state: queue, asyncio task, and cancel event."""
+    queue: asyncio.Queue
+    task: asyncio.Task
+    cancel_event: asyncio.Event
+
+
 def _init_kiso_dirs() -> None:
     """Ensure ~/.kiso/ subdirectories exist and sync reference docs."""
     (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
@@ -60,8 +68,8 @@ def _init_kiso_dirs() -> None:
             if not target.exists() or target.read_text(encoding="utf-8") != content:
                 target.write_text(content, encoding="utf-8")
 
-# Per-session workers: session → (queue, asyncio.Task, cancel_event)
-_workers: dict[str, tuple[asyncio.Queue, asyncio.Task, asyncio.Event]] = {}
+# Per-session workers: session → WorkerEntry
+_workers: dict[str, WorkerEntry] = {}
 
 
 class SessionRequest(BaseModel):
@@ -82,8 +90,8 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     Atomic: no await between checking and creating (prevents duplicate workers).
     """
     entry = _workers.get(session)
-    if entry and not entry[1].done():
-        return entry[0]
+    if entry and not entry.task.done():
+        return entry.queue
     maxsize = int(config.settings.get("max_queue_size", 50))
     queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
     cancel_event = asyncio.Event()
@@ -95,7 +103,7 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
         _workers.pop(s, None)
 
     task.add_done_callback(_cleanup)
-    _workers[session] = (queue, task, cancel_event)
+    _workers[session] = WorkerEntry(queue, task, cancel_event)
     return queue
 
 
@@ -187,19 +195,19 @@ async def lifespan(app: FastAPI):
 
     # Graceful shutdown with timeout
     shutdown_timeout = int(config.settings.get("exec_timeout", 120))
-    for session, (queue, task, cancel) in _workers.items():
-        cancel.set()
-    for session, (queue, task, _cancel) in list(_workers.items()):
+    for session, entry in _workers.items():
+        entry.cancel_event.set()
+    for session, entry in list(_workers.items()):
         try:
-            await asyncio.wait_for(task, timeout=shutdown_timeout)
+            await asyncio.wait_for(entry.task, timeout=shutdown_timeout)
         except asyncio.TimeoutError:
             log.warning(
                 "Worker session=%s did not finish in %ds, force cancelling",
                 session, shutdown_timeout,
             )
-            task.cancel()
+            entry.task.cancel()
             try:
-                await task
+                await entry.task
             except asyncio.CancelledError:
                 pass
         except asyncio.CancelledError:
@@ -334,8 +342,8 @@ async def get_status(
         _strip_llm_verbose(tasks, plan)
 
     entry = _workers.get(session)
-    worker_running = entry is not None and not entry[1].done()
-    queue_length = entry[0].qsize() if entry and not entry[1].done() else 0
+    worker_running = entry is not None and not entry.task.done()
+    queue_length = entry.queue.qsize() if entry and not entry.task.done() else 0
 
     return {
         "tasks": tasks,
@@ -410,15 +418,14 @@ async def post_cancel(
     db = request.app.state.db
 
     entry = _workers.get(session)
-    if entry is None or entry[1].done():
+    if entry is None or entry.task.done():
         return {"cancelled": False}
 
     plan = await get_plan_for_session(db, session)
     if plan is None or plan["status"] != "running":
         return {"cancelled": False}
 
-    cancel_event = entry[2]
-    cancel_event.set()
+    entry.cancel_event.set()
     return {"cancelled": True, "plan_id": plan["id"]}
 
 

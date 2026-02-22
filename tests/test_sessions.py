@@ -182,7 +182,8 @@ async def test_post_cancel_with_active_plan(client: httpx.AsyncClient):
     fake_task = MagicMock()
     fake_task.done.return_value = False
     fake_queue = asyncio.Queue()
-    main_mod._workers["cancel-sess"] = (fake_queue, fake_task, cancel_event)
+    from kiso.main import WorkerEntry
+    main_mod._workers["cancel-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
 
     try:
         resp = await client.post(
@@ -220,7 +221,8 @@ async def test_post_cancel_no_running_plan(client: httpx.AsyncClient):
     fake_task = MagicMock()
     fake_task.done.return_value = False
     fake_queue = asyncio.Queue()
-    main_mod._workers["done-plan-sess"] = (fake_queue, fake_task, cancel_event)
+    from kiso.main import WorkerEntry
+    main_mod._workers["done-plan-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
 
     try:
         resp = await client.post(

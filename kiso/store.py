@@ -101,6 +101,11 @@ CREATE INDEX IF NOT EXISTS idx_pending_scope ON pending(scope, status);
 """
 
 
+async def _rows_to_dicts(cur: aiosqlite.Cursor) -> list[dict]:
+    """Fetch all rows from a cursor and return as a list of dicts."""
+    return [dict(r) for r in await cur.fetchall()]
+
+
 async def init_db(db_path: Path) -> aiosqlite.Connection:
     """Create tables, enable WAL, set row_factory, return connection."""
     db = await aiosqlite.connect(db_path)
@@ -225,7 +230,7 @@ async def get_unprocessed_messages(db: aiosqlite.Connection) -> list[dict]:
     cur = await db.execute(
         "SELECT * FROM messages WHERE processed = 0 ORDER BY id"
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list[dict]:
@@ -236,7 +241,7 @@ async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list
         "WHERE m.user = ? ORDER BY s.updated_at DESC",
         (username,),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def get_all_sessions(db: aiosqlite.Connection) -> list[dict]:
@@ -245,7 +250,7 @@ async def get_all_sessions(db: aiosqlite.Connection) -> list[dict]:
         "SELECT session, connector, description, updated_at "
         "FROM sessions ORDER BY updated_at DESC"
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def get_tasks_for_session(
@@ -256,7 +261,7 @@ async def get_tasks_for_session(
         "SELECT * FROM tasks WHERE session = ? AND id > ? ORDER BY id",
         (session, after),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> dict | None:
@@ -278,7 +283,7 @@ async def get_recent_messages(
         "ORDER BY id DESC LIMIT ?",
         (session, limit),
     )
-    rows = [dict(r) for r in await cur.fetchall()]
+    rows = await _rows_to_dicts(cur)
     rows.reverse()
     return rows
 
@@ -286,7 +291,7 @@ async def get_recent_messages(
 async def get_facts(db: aiosqlite.Connection) -> list[dict]:
     """Return all facts (global)."""
     cur = await db.execute("SELECT * FROM facts ORDER BY id")
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def get_pending_items(db: aiosqlite.Connection, session: str) -> list[dict]:
@@ -296,7 +301,7 @@ async def get_pending_items(db: aiosqlite.Connection, session: str) -> list[dict
         "AND (scope = 'global' OR scope = ?) ORDER BY id",
         (session,),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def create_plan(
@@ -422,7 +427,7 @@ async def get_tasks_for_plan(db: aiosqlite.Connection, plan_id: int) -> list[dic
     cur = await db.execute(
         "SELECT * FROM tasks WHERE plan_id = ? ORDER BY id", (plan_id,)
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 async def save_learning(
     db: aiosqlite.Connection,
@@ -447,7 +452,7 @@ async def get_pending_learnings(
         "SELECT * FROM learnings WHERE status = 'pending' ORDER BY id LIMIT ?",
         (limit,),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def update_learning(
@@ -520,7 +525,7 @@ async def get_oldest_messages(
         "ORDER BY id ASC LIMIT ?",
         (session, limit),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def delete_facts(db: aiosqlite.Connection, fact_ids: list[int]) -> None:
@@ -541,7 +546,7 @@ async def get_untrusted_messages(
         "ORDER BY id ASC LIMIT ?",
         (session, limit),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def recover_stale_running(db: aiosqlite.Connection) -> tuple[int, int]:
@@ -567,7 +572,7 @@ async def get_unprocessed_trusted_messages(db: aiosqlite.Connection) -> list[dic
     cur = await db.execute(
         "SELECT * FROM messages WHERE processed = 0 AND trusted = 1 ORDER BY id"
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def create_task(

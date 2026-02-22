@@ -30,6 +30,71 @@ def _strip_fences(text: str) -> str:
         s = s[:-3]
     return s.strip()
 
+async def _retry_llm_with_validation(
+    config: Config,
+    role: str,
+    messages: list[dict],
+    schema: dict,
+    validate_fn,
+    error_class: type[Exception],
+    error_noun: str,
+    session: str = "",
+    validate_kwargs: dict | None = None,
+) -> dict:
+    """Generic retry loop: call LLM, parse JSON, validate, retry on errors.
+
+    Args:
+        config: App config (reads max_validation_retries).
+        role: LLM model route name (e.g. "planner", "reviewer", "curator").
+        messages: Initial message list (mutated in-place with retries).
+        schema: JSON schema for structured output.
+        validate_fn: Callable(parsed_dict, **validate_kwargs) → list[str] errors.
+        error_class: Exception type to raise on exhaustion.
+        error_noun: Human noun for error messages (e.g. "Plan", "Review").
+        session: Session name for LLM call tracking.
+        validate_kwargs: Extra kwargs passed to validate_fn.
+
+    Returns:
+        The validated parsed dict.
+    """
+    max_retries = int(config.settings.get("max_validation_retries", 3))
+    last_errors: list[str] = []
+    vkw = validate_kwargs or {}
+
+    for attempt in range(1, max_retries + 1):
+        if last_errors:
+            error_feedback = (
+                f"Your {error_noun.lower()} has errors:\n"
+                + "\n".join(f"- {e}" for e in last_errors)
+                + f"\nFix these and return the corrected {error_noun.lower()}."
+            )
+            messages.append({"role": "user", "content": error_feedback})
+
+        try:
+            raw = await call_llm(config, role, messages, response_format=schema, session=session)
+        except LLMError as e:
+            raise error_class(f"LLM call failed: {e}")
+
+        try:
+            result = json.loads(_strip_fences(raw))
+        except json.JSONDecodeError as e:
+            raise error_class(f"{error_noun} returned invalid JSON: {e}")
+
+        errors = validate_fn(result, **vkw)
+        if not errors:
+            log.info("%s accepted (attempt %d)", error_noun, attempt)
+            return result
+
+        log.warning("%s validation failed (attempt %d/%d): %s",
+                    error_noun, attempt, max_retries, errors)
+        last_errors = errors
+        messages.append({"role": "assistant", "content": raw})
+
+    raise error_class(
+        f"{error_noun} validation failed after {max_retries} attempts: {last_errors}"
+    )
+
+
 PLAN_SCHEMA: dict = {
     "type": "json_schema",
     "json_schema": {
@@ -196,7 +261,7 @@ async def build_planner_messages(
     new_message: str,
     user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], list[str]]:
     """Build the message list for the planner LLM call.
 
     Assembles context from session summary, facts, pending questions,
@@ -206,6 +271,9 @@ async def build_planner_messages(
     planner sees the absolute workspace path (``KISO_DIR/sessions/<session>``)
     and a ``Session:`` line — giving it precise knowledge of the execution
     directory for shell commands.
+
+    Returns (messages, installed_skill_names) — the caller can reuse the
+    skill names list for plan validation without rescanning the filesystem.
     """
     system_prompt = _load_system_prompt("planner")
 
@@ -214,7 +282,7 @@ async def build_planner_messages(
     summary = sess["summary"] if sess else ""
     facts = await get_facts(db)
     pending = await get_pending_items(db, session)
-    context_limit = int(config.settings.get("context_messages", 5))
+    context_limit = int(config.settings.get("context_messages", 7))
     recent = await get_recent_messages(db, session, limit=context_limit)
 
     # Build context block
@@ -251,6 +319,7 @@ async def build_planner_messages(
 
     # Skill discovery — rescan on each planner call
     installed = discover_skills()
+    installed_names = [s["name"] for s in installed]
     skill_list = build_planner_skill_list(installed, user_role, user_skills)
     if skill_list:
         context_parts.append(f"## Skills\n{skill_list}")
@@ -263,7 +332,7 @@ async def build_planner_messages(
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": context_block},
-    ]
+    ], installed_names
 
 
 async def run_planner(
@@ -280,51 +349,20 @@ async def run_planner(
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
     """
-    max_retries = int(config.settings.get("max_validation_retries", 3))
-    messages = await build_planner_messages(
+    messages, installed_names = await build_planner_messages(
         db, config, session, user_role, new_message, user_skills=user_skills,
         paraphrased_context=paraphrased_context,
     )
 
-    # Get installed skill names for plan validation
-    installed = discover_skills()
-    installed_names = [s["name"] for s in installed]
-
-    last_errors: list[str] = []
-
-    for attempt in range(1, max_retries + 1):
-        if last_errors:
-            error_feedback = "Your plan has errors:\n" + "\n".join(
-                f"- {e}" for e in last_errors
-            ) + "\nFix these and return the corrected plan."
-            messages.append({"role": "user", "content": error_feedback})
-
-        try:
-            raw = await call_llm(config, "planner", messages, response_format=PLAN_SCHEMA, session=session)
-        except LLMError as e:
-            raise PlanError(f"LLM call failed: {e}")
-
-        try:
-            plan = json.loads(_strip_fences(raw))
-        except json.JSONDecodeError as e:
-            raise PlanError(f"Planner returned invalid JSON: {e}")
-
-        max_tasks = int(config.settings.get("max_plan_tasks", 20))
-        errors = validate_plan(plan, installed_skills=installed_names, max_tasks=max_tasks)
-        if not errors:
-            log.info("Plan accepted (attempt %d): goal=%r, %d tasks",
-                     attempt, plan["goal"], len(plan["tasks"]))
-            return plan
-
-        log.warning("Plan validation failed (attempt %d/%d): %s",
-                    attempt, max_retries, errors)
-        last_errors = errors
-        # Add assistant response to conversation for retry
-        messages.append({"role": "assistant", "content": raw})
-
-    raise PlanError(
-        f"Plan validation failed after {max_retries} attempts: {last_errors}"
+    max_tasks = int(config.settings.get("max_plan_tasks", 20))
+    plan = await _retry_llm_with_validation(
+        config, "planner", messages, PLAN_SCHEMA,
+        validate_plan, PlanError, "Plan",
+        session=session,
+        validate_kwargs={"installed_skills": installed_names, "max_tasks": max_tasks},
     )
+    log.info("Plan: goal=%r, %d tasks", plan["goal"], len(plan["tasks"]))
+    return plan
 
 
 def validate_review(review: dict) -> list[str]:
@@ -383,40 +421,14 @@ async def run_reviewer(
     Returns dict with keys: status ("ok" | "replan"), reason, learn.
     Raises ReviewError if all retries exhausted.
     """
-    max_retries = int(config.settings.get("max_validation_retries", 3))
     messages = await build_reviewer_messages(goal, detail, expect, output, user_message, success=success)
-    last_errors: list[str] = []
-
-    for attempt in range(1, max_retries + 1):
-        if last_errors:
-            error_feedback = "Your review has errors:\n" + "\n".join(
-                f"- {e}" for e in last_errors
-            ) + "\nFix these and return the corrected review."
-            messages.append({"role": "user", "content": error_feedback})
-
-        try:
-            raw = await call_llm(config, "reviewer", messages, response_format=REVIEW_SCHEMA, session=session)
-        except LLMError as e:
-            raise ReviewError(f"LLM call failed: {e}")
-
-        try:
-            review = json.loads(_strip_fences(raw))
-        except json.JSONDecodeError as e:
-            raise ReviewError(f"Reviewer returned invalid JSON: {e}")
-
-        errors = validate_review(review)
-        if not errors:
-            log.info("Review accepted (attempt %d): status=%s", attempt, review["status"])
-            return review
-
-        log.warning("Review validation failed (attempt %d/%d): %s",
-                    attempt, max_retries, errors)
-        last_errors = errors
-        messages.append({"role": "assistant", "content": raw})
-
-    raise ReviewError(
-        f"Review validation failed after {max_retries} attempts: {last_errors}"
+    review = await _retry_llm_with_validation(
+        config, "reviewer", messages, REVIEW_SCHEMA,
+        validate_review, ReviewError, "Review",
+        session=session,
     )
+    log.info("Review: status=%s", review["status"])
+    return review
 
 
 # ---------------------------------------------------------------------------
@@ -501,41 +513,15 @@ async def run_curator(config: Config, learnings: list[dict], session: str = "") 
     Returns dict with key "evaluations".
     Raises CuratorError if all retries exhausted.
     """
-    max_retries = int(config.settings.get("max_validation_retries", 3))
     messages = build_curator_messages(learnings)
-    last_errors: list[str] = []
-
-    for attempt in range(1, max_retries + 1):
-        if last_errors:
-            error_feedback = "Your evaluations have errors:\n" + "\n".join(
-                f"- {e}" for e in last_errors
-            ) + "\nFix these and return the corrected evaluations."
-            messages.append({"role": "user", "content": error_feedback})
-
-        try:
-            raw = await call_llm(config, "curator", messages, response_format=CURATOR_SCHEMA, session=session)
-        except LLMError as e:
-            raise CuratorError(f"LLM call failed: {e}")
-
-        try:
-            result = json.loads(_strip_fences(raw))
-        except json.JSONDecodeError as e:
-            raise CuratorError(f"Curator returned invalid JSON: {e}")
-
-        errors = validate_curator(result, expected_count=len(learnings))
-        if not errors:
-            log.info("Curator accepted (attempt %d): %d evaluations",
-                     attempt, len(result["evaluations"]))
-            return result
-
-        log.warning("Curator validation failed (attempt %d/%d): %s",
-                    attempt, max_retries, errors)
-        last_errors = errors
-        messages.append({"role": "assistant", "content": raw})
-
-    raise CuratorError(
-        f"Curator validation failed after {max_retries} attempts: {last_errors}"
+    result = await _retry_llm_with_validation(
+        config, "curator", messages, CURATOR_SCHEMA,
+        validate_curator, CuratorError, "Curator",
+        session=session,
+        validate_kwargs={"expected_count": len(learnings)},
     )
+    log.info("Curator: %d evaluations", len(result["evaluations"]))
+    return result
 
 
 # ---------------------------------------------------------------------------
