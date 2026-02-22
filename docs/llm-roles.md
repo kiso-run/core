@@ -4,31 +4,31 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 
 ## Context per Role
 
-| Context piece | Planner | Reviewer | Exec Translator | Worker (msg) | Summarizer | Curator | Paraphraser |
-|---|---|---|---|---|---|---|---|
-| Session summary | yes | - | - | yes | yes (existing) | yes | - |
-| Last N raw messages | yes | - | - | - | - | - | - |
-| Recent msg outputs | yes | - | - | - | - | - | - |
-| Paraphrased untrusted messages | yes | - | - | - | - | - | generates |
-| New message | yes | - | - | - | - | - | - |
-| Facts (global) | yes | - | - | yes | - | yes | - |
-| Pending items (global + session) | yes | - | - | - | - | yes | - |
-| Allowed skill summaries + args schemas | yes | - | - | - | - | - | - |
-| Caller role (admin/user) | yes | - | - | - | - | - | - |
-| System environment | yes | - | yes | - | - | - | - |
-| Process goal | generates | yes | - | - | - | - | - |
-| Preceding plan outputs (fenced) | - | - | yes | yes | - | - | - |
-| Current task detail | - | yes | yes | yes | - | - | - |
-| Current task expect | - | yes | - | - | - | - | - |
-| Current task output (fenced) | - | yes | - | - | - | - | - |
-| Original user request | - | yes | - | - | - | - | - |
-| Messages to compress + their msg outputs | - | - | - | - | yes | - | - |
-| Pending learnings | - | - | - | - | - | yes | - |
-| Completed tasks + outputs (fenced) | replan only | - | - | - | - | - | - |
-| Remaining tasks | replan only | - | - | - | - | - | - |
-| Failure reason | replan only | - | - | - | - | - | - |
-| Replan history | replan only | - | - | - | - | - | - |
-| Raw untrusted messages (batch) | - | - | - | - | - | - | yes |
+| Context piece | Planner | Reviewer | Exec Translator | Worker (msg) | Searcher | Summarizer | Curator | Paraphraser |
+|---|---|---|---|---|---|---|---|---|
+| Session summary | yes | - | - | yes | - | yes (existing) | yes | - |
+| Last N raw messages | yes | - | - | - | - | - | - | - |
+| Recent msg outputs | yes | - | - | - | - | - | - | - |
+| Paraphrased untrusted messages | yes | - | - | - | - | - | - | generates |
+| New message | yes | - | - | - | - | - | - | - |
+| Facts (global) | yes | - | - | yes | - | - | yes | - |
+| Pending items (global + session) | yes | - | - | - | - | - | yes | - |
+| Allowed skill summaries + args schemas | yes | - | - | - | - | - | - | - |
+| Caller role (admin/user) | yes | - | - | - | - | - | - | - |
+| System environment | yes | - | yes | - | - | - | - | - |
+| Process goal | generates | yes | - | - | - | - | - | - |
+| Preceding plan outputs (fenced) | - | - | yes | yes | yes | - | - | - |
+| Current task detail | - | yes | yes | yes | yes | - | - | - |
+| Current task expect | - | yes | - | - | - | - | - | - |
+| Current task output (fenced) | - | yes | - | - | - | - | - | - |
+| Original user request | - | yes | - | - | - | - | - | - |
+| Messages to compress + their msg outputs | - | - | - | - | - | yes | - | - |
+| Pending learnings | - | - | - | - | - | - | yes | - |
+| Completed tasks + outputs (fenced) | replan only | - | - | - | - | - | - | - |
+| Remaining tasks | replan only | - | - | - | - | - | - | - |
+| Failure reason | replan only | - | - | - | - | - | - | - |
+| Replan history | replan only | - | - | - | - | - | - | - |
+| Raw untrusted messages (batch) | - | - | - | - | - | - | - | yes |
 
 Key principle: the planner must put everything the worker needs into the task `detail` — the worker won't see the conversation (see [Why the Worker Doesn't See the Conversation](#why-the-worker-doesnt-see-the-conversation)). For `exec` tasks, `detail` is a natural-language description; the **exec translator** (an LLM step) converts it to the actual shell command before execution (architect/editor pattern).
 
@@ -73,7 +73,7 @@ response_format = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "type": {"type": "string", "enum": ["exec", "msg", "skill", "replan"]},
+                            "type": {"type": "string", "enum": ["exec", "msg", "skill", "search", "replan"]},
                             "detail": {"type": "string"},
                             "skill": {"type": ["string", "null"]},
                             "args": {"type": ["string", "null"]},
@@ -94,9 +94,9 @@ response_format = {
 
 Schema notes:
 - **`secrets`**: array of `{key, value}` pairs — ephemeral credentials extracted from user messages. Stored in worker memory only, never in DB. `null` when no secrets. Example: `[{"key": "api_token", "value": "tok_abc123"}]`
-- **`args`**: JSON string (strict mode doesn't allow dynamic-key objects). `null` for non-skill tasks.
+- **`args`**: JSON string (strict mode doesn't allow dynamic-key objects). `null` for `exec`, `msg`, and `replan` tasks. Required for `skill` tasks (validated against `kiso.toml` schema). Optional for `search` tasks (`null` or JSON with `max_results`, `lang`, `country`).
 - **Optional task fields** (`skill`, `args`, `expect`): nullable — `null` when not applicable.
-- **`review` field removed**: `exec` and `skill` tasks are always reviewed. `msg` tasks are never reviewed. The task type determines behavior.
+- **`review` field removed**: `exec`, `skill`, and `search` tasks are always reviewed. `msg` tasks are never reviewed. The task type determines behavior.
 
 Provider guarantees valid JSON at decoding level — no parse retries needed. If the provider doesn't support structured output, the call fails with a clear error:
 
@@ -106,13 +106,13 @@ Planner, Reviewer, and Curator require it. Route these roles to a compatible pro
 (e.g. models.planner = "openrouter:minimax/minimax-m2.5").
 ```
 
-Structured output is a hard requirement for Planner, Reviewer, and Curator. Worker, Summarizer, and Paraphraser produce free-form text.
+Structured output is a hard requirement for Planner, Reviewer, and Curator. Worker, Searcher, Summarizer, and Paraphraser produce free-form text.
 
 ### Validation After Parsing
 
 JSON structure is guaranteed by the provider, but kiso validates **semantics** before execution:
 
-1. `exec` and `skill` tasks must have a non-null `expect`
+1. `exec`, `skill`, and `search` tasks must have a non-null `expect`
 2. `msg` and `replan` tasks must have `expect = null`
 3. Last task must be `type: "msg"` or `type: "replan"` (user gets a response, or investigation triggers a new plan)
 4. Every `skill` reference must exist in installed skills
@@ -120,6 +120,7 @@ JSON structure is guaranteed by the provider, but kiso validates **semantics** b
 6. `tasks` list must not be empty
 7. `replan` tasks must have `skill = null` and `args = null`, and can only be the last task
 8. A plan can have at most one `replan` task
+9. `search` tasks must have `skill = null`, `expect` non-null, and `args` (if present) must be valid JSON with optional keys: `max_results` (int), `lang` (string), `country` (string)
 
 On failure, kiso sends the plan back with specific errors, up to `max_validation_retries` (default 3):
 
@@ -143,7 +144,9 @@ If exhausted: fail the message, notify user. No silent fallback.
 ```
 Common patterns:
 - Code change: msg → skill(aider) → exec(test) → msg
-- Research: skill(search) → msg
+- Web lookup: search → msg
+- Bulk research: skill(search) → msg (if search skill installed, cheaper for >10 results)
+- Investigation: search → exec → replan (gather info, then replan with results)
 - Simple question: msg
 - Clarification needed: msg (ask the user)
 - Multi-step build: msg → exec(setup) → skill(aider) → exec(test) → msg
@@ -151,8 +154,8 @@ Common patterns:
 
 **3. Rules** — the expected JSON format, available task types, available skills with args schemas, caller role, and these constraints:
 - Task `detail` must be self-contained — the worker does not see the conversation
-- The last task must be `type: "msg"` — the user always gets a final response
-- `exec` and `skill` tasks must have an `expect` field (they are always reviewed)
+- The last task must be `type: "msg"` or `type: "replan"` — the user always gets a final response, or investigation triggers a new plan
+- `exec`, `skill`, and `search` tasks must have an `expect` field (they are always reviewed)
 - `msg` tasks are the only way to communicate with the user
 - **Asking the user**: if the planner needs information it doesn't have, it ends the plan with a `msg` task asking the question. The next message cycle will have the user's answer in context (recent messages + msg outputs). Two cases:
   - Request is ambiguous or missing critical info **upfront** → produce a single `msg` task asking for clarification, do not guess
@@ -169,11 +172,11 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 | Field | Non-null when | Description |
 |---|---|---|
-| `type` | always | `exec`, `msg`, `skill`, `replan` |
-| `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. |
-| `expect` | `type` is `exec` or `skill` | Semantic success criteria (e.g. "tests pass", not exact output). Required — all exec/skill tasks are reviewed. |
-| `skill` | `type` is `skill` | Skill name. |
-| `args` | `type` is `skill` | Skill arguments as a JSON string. Kiso parses and validates against `kiso.toml` schema. |
+| `type` | always | `exec`, `msg`, `skill`, `search`, `replan` |
+| `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. For `search` tasks, the search query. |
+| `expect` | `type` is `exec`, `skill`, or `search` | Semantic success criteria (e.g. "tests pass", not exact output). Required — all exec/skill/search tasks are reviewed. |
+| `skill` | `type` is `skill` | Skill name. Must be `null` for search tasks. |
+| `args` | `type` is `skill` (required); `type` is `search` (optional) | For skills: arguments as a JSON string validated against `kiso.toml` schema. For search: nullable — `null` or JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. |
 
 ### Output Fields
 
@@ -187,7 +190,7 @@ After validation, the planner output becomes a **plan** entity — see [database
 
 ## Reviewer
 
-**When**: after execution of every `exec` and `skill` task (always — no opt-out).
+**When**: after execution of every `exec`, `skill`, and `search` task (always — no opt-out).
 
 **Input**: see [Context per Role](#context-per-role) table. Task output is fenced (see [security.md](security.md#layer-2-random-boundary-fencing)).
 
@@ -294,6 +297,41 @@ Deliberate design choice:
 3. **Predictability.** Behavior depends only on (facts + summary + detail). No hidden context, easier to debug.
 
 If `detail` lacks context, the reviewer catches it and triggers a replan.
+
+---
+
+## Searcher
+
+**When**: executing `search` type tasks (web search queries).
+
+**Model**: `google/gemini-2.5-flash-lite:online` (default). The `:online` suffix enables the Exa web search plugin on OpenRouter (~$0.014/query). Users can override to `perplexity/sonar` or any search-capable model in `config.toml [models]`.
+
+**Input**: see [Context per Role](#context-per-role) table. Receives the task `detail` (search query) and preceding plan outputs (fenced). Optional search parameters from `args`: `max_results`, `lang`, `country`.
+
+**Output**: free-form text. NOT structured output — no `response_format`. The system prompt suggests a JSON structure (`results`, `summary`, `sources`) for consistency, but the output is treated as opaque text: it flows as-is into `plan_outputs` and is reviewed by the reviewer. No JSON parsing is performed — the messenger and reviewer work with the raw text regardless of format.
+
+### How It Works
+
+The planner creates a `search` task with `detail` containing the search query. The searcher LLM (with online/grounded search capability via OpenRouter's `:online` suffix) executes the query and returns results. Optional `args` can specify `{"max_results": N, "lang": "xx", "country": "XX"}` to constrain the search. The `expect` field provides semantic success criteria for the reviewer.
+
+Search tasks are always reviewed (same as exec/skill). Results flow into `plan_outputs` for subsequent tasks.
+
+### Coexistence with Search Skill
+
+The built-in searcher and the `search` skill (if installed) coexist:
+
+| | Built-in searcher | Search skill |
+|---|---|---|
+| **Best for** | Simple lookups (1-10 results) | Bulk queries (>10 results), pagination, advanced filtering |
+| **Cost** | ~$0.014/query (LLM + Exa) | ~$0.001-0.003/query (Brave/Serper API) |
+| **Task type** | `search` | `skill` |
+| **Requires install** | No (built-in) | Yes |
+
+The planner prompt instructs it to prefer the search skill for bulk queries when installed, and use the built-in `search` task type for simple lookups.
+
+### System Prompt
+
+Custom prompt: `~/.kiso/roles/searcher.md` (user override) or `kiso/roles/searcher.md` (package default). Same override mechanism as all other roles.
 
 ---
 

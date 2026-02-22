@@ -1087,3 +1087,66 @@ def test_render_llm_calls_verbose_non_tty():
 def test_render_llm_calls_verbose_invalid_json():
     """Returns empty string for invalid JSON."""
     assert render_llm_calls_verbose("not json", _COLOR) == ""
+
+
+# ── M31: search icon + substatus ──────────────────────────────
+
+
+def test_search_icon_unicode():
+    """Search task uses magnifying glass icon in unicode mode."""
+    caps = _caps(unicode=True)
+    assert _icon("search", caps) == "\U0001f50d"
+
+
+def test_search_icon_ascii():
+    """Search task uses S icon in ASCII mode."""
+    caps = _caps(unicode=False)
+    assert _icon("search", caps) == "S"
+
+
+def test_task_header_search_type():
+    """Search task renders with search icon."""
+    task = {"type": "search", "detail": "best SEO agencies", "status": "running"}
+    result = render_task_header(task, 1, 2, _COLOR)
+    assert "\U0001f50d" in result
+    assert "search: best SEO agencies" in result
+
+
+def test_task_header_with_substatus():
+    """Spinner shows substatus text when present."""
+    task = {"type": "exec", "detail": "ls", "status": "running", "substatus": "translating"}
+    result = render_task_header(task, 1, 2, _COLOR, spinner_frame="\u280b")
+    assert "translating" in result
+    assert "\u280b" in result
+
+
+def test_task_header_substatus_searching():
+    """Search task with searching substatus shows label."""
+    task = {"type": "search", "detail": "find info", "status": "running", "substatus": "searching"}
+    result = render_task_header(task, 1, 2, _COLOR, spinner_frame="\u280b")
+    assert "searching" in result
+
+
+def test_task_header_substatus_reviewing():
+    """Reviewing substatus shows 'reviewing' label."""
+    task = {"type": "exec", "detail": "ls", "status": "running", "substatus": "reviewing"}
+    result = render_task_header(task, 1, 2, _COLOR, spinner_frame="\u280b")
+    assert "reviewing" in result
+
+
+def test_task_header_substatus_executing():
+    """Executing substatus shows 'running' label."""
+    task = {"type": "exec", "detail": "ls", "status": "running", "substatus": "executing"}
+    result = render_task_header(task, 1, 2, _COLOR, spinner_frame="\u280b")
+    assert "running" in result
+
+
+def test_task_header_no_substatus():
+    """Empty substatus = spinner only (backwards compatible)."""
+    task = {"type": "exec", "detail": "ls", "status": "running"}
+    result = render_task_header(task, 1, 2, _COLOR, spinner_frame="\u280b")
+    assert "\u280b" in result
+    assert "translating" not in result
+    assert "reviewing" not in result
+    assert "searching" not in result
+    assert "composing" not in result

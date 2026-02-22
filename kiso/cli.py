@@ -396,7 +396,7 @@ def _poll_status(
 
     _MAX_POLL_SECONDS = 300  # safety net: 5 min max
 
-    seen: dict[int, tuple] = {}  # tid → (status, review_verdict, has_llm_calls)
+    seen: dict[int, tuple] = {}  # tid → (status, review_verdict, substatus, llm_call_count)
     shown_plan_id: int | None = None
     shown_plan_llm_id: int | None = None  # plan id whose llm_calls we've printed
     max_task_id = base_task_id
@@ -498,8 +498,10 @@ def _poll_status(
                 tid = task["id"]
                 status = task["status"]
                 review_verdict = task.get("review_verdict")
-                has_llm_calls = task.get("llm_calls") is not None
-                task_key = (status, review_verdict, has_llm_calls)
+                import json as _json
+                llm_call_count = len(_json.loads(task["llm_calls"])) if task.get("llm_calls") else 0
+                substatus = task.get("substatus") or ""
+                task_key = (status, review_verdict, substatus, llm_call_count)
 
                 if tid > max_task_id:
                     max_task_id = tid

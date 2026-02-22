@@ -128,7 +128,7 @@ PLAN_SCHEMA: dict = {
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["exec", "msg", "skill", "replan"],
+                                "enum": ["exec", "msg", "skill", "search", "replan"],
                             },
                             "detail": {"type": "string"},
                             "skill": {"anyOf": [{"type": "string"}, {"type": "null"}]},
@@ -219,13 +219,16 @@ def validate_plan(
     replan_count = 0
     for i, task in enumerate(tasks, 1):
         t = task.get("type")
-        if t not in ("exec", "msg", "skill", "replan"):
+        if t not in ("exec", "msg", "skill", "search", "replan"):
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in ("exec", "skill") and task.get("expect") is None:
+        if t in ("exec", "skill", "search") and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
         if t == "msg" and task.get("expect") is not None:
             errors.append(f"Task {i}: msg task must have expect = null")
+        if t == "search":
+            if task.get("skill") is not None:
+                errors.append(f"Task {i}: search task must have skill = null")
         if t == "replan":
             replan_count += 1
             if task.get("expect") is not None:
@@ -677,6 +680,65 @@ async def run_messenger(
         return await call_llm(config, "messenger", messages, session=session)
     except LLMError as e:
         raise MessengerError(f"LLM call failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Searcher
+# ---------------------------------------------------------------------------
+
+
+class SearcherError(Exception):
+    """Searcher generation failure."""
+
+
+def build_searcher_messages(
+    query: str,
+    context: str = "",
+    max_results: int | None = None,
+    lang: str | None = None,
+    country: str | None = None,
+) -> list[dict]:
+    """Build the message list for the searcher LLM call."""
+    system_prompt = _load_system_prompt("searcher")
+    parts = [f"## Search Query\n{query}"]
+    params: list[str] = []
+    if max_results is not None:
+        params.append(f"max_results: {max_results}")
+    if lang:
+        params.append(f"lang: {lang}")
+    if country:
+        params.append(f"country: {country}")
+    if params:
+        parts.append("## Search Parameters\n" + "\n".join(params))
+    if context:
+        parts.append(f"## Context\n{context}")
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "\n\n".join(parts)},
+    ]
+
+
+async def run_searcher(
+    config: Config,
+    query: str,
+    context: str = "",
+    max_results: int | None = None,
+    lang: str | None = None,
+    country: str | None = None,
+    session: str = "",
+) -> str:
+    """Run the searcher: web search via an online-capable model.
+
+    Returns the raw search results text (not parsed).
+    Raises SearcherError on failure.
+    """
+    messages = build_searcher_messages(
+        query, context, max_results=max_results, lang=lang, country=country,
+    )
+    try:
+        return await call_llm(config, "searcher", messages, session=session)
+    except LLMError as e:
+        raise SearcherError(f"LLM call failed: {e}")
 
 
 # ---------------------------------------------------------------------------

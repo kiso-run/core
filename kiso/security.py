@@ -150,6 +150,10 @@ def revalidate_permissions(
             reason=f"User '{username}' no longer exists in config",
         )
 
+    # search tasks are safe (no shell execution, no sandbox) — always allowed
+    if task_type == "search":
+        return PermissionResult(allowed=True, role=user.role, skills=user.skills)
+
     if task_type == "skill" and skill_name and user.role == "user":
         if user.skills != "*":
             if skill_name not in (user.skills or []):

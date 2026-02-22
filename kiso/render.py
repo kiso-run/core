@@ -135,6 +135,7 @@ _ICONS_UNICODE = {
     "ok": "✓",
     "fail": "✗",
     "replan": "↻",
+    "search": "🔍",
     "cancel": "⊘",
     "thinking": "🤔",
 }
@@ -147,6 +148,7 @@ _ICONS_ASCII = {
     "ok": "ok",
     "fail": "FAIL",
     "replan": "~>",
+    "search": "S",
     "cancel": "X",
     "thinking": "?",
 }
@@ -275,10 +277,22 @@ def render_task_header(
         detail_str = ""
     text = f"{icon} [{index}/{total}] {label}{detail_str}"
 
-    # Append spinner frame
+    # Append substatus + spinner frame when running
     if spinner_frame is not None:
+        substatus = task.get("substatus") or ""
+        label_map = {
+            "translating": "translating",
+            "executing": "running",
+            "reviewing": "reviewing",
+            "searching": "searching",
+            "composing": "composing",
+        }
+        phase_label = label_map.get(substatus, "")
         spinner = _style(spinner_frame, _CYAN, caps=caps)
-        text = f"{text} {spinner}"
+        if phase_label:
+            text = f"{text} {phase_label} {spinner}"
+        else:
+            text = f"{text} {spinner}"
 
     # Pick color based on type
     if status == "done":

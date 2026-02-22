@@ -29,6 +29,7 @@ from kiso.brain import (
     ParaphraserError,
     PlanError,
     ReviewError,
+    SearcherError,
     SummarizerError,
     run_curator,
     run_exec_translator,
@@ -37,6 +38,7 @@ from kiso.brain import (
     run_paraphraser,
     run_planner,
     run_reviewer,
+    run_searcher,
     run_summarizer,
 )
 from kiso.config import Config, KISO_DIR
@@ -74,6 +76,7 @@ from kiso.store import (
     update_task,
     update_task_command,
     update_task_review,
+    update_task_substatus,
     update_task_usage,
 )
 
@@ -84,8 +87,11 @@ def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
     """Return and ensure the session workspace directory exists."""
     workspace = KISO_DIR / "sessions" / session
     workspace.mkdir(parents=True, exist_ok=True)
+    pub_dir = workspace / "pub"
+    pub_dir.mkdir(exist_ok=True)
     if sandbox_uid is not None:
         os.chown(workspace, sandbox_uid, sandbox_uid)
+        os.chown(pub_dir, sandbox_uid, sandbox_uid)
         os.chmod(workspace, 0o700)
     return workspace
 
@@ -489,6 +495,7 @@ async def _execute_plan(
             # Write plan_outputs.json before execution
             _write_plan_outputs(session, plan_outputs)
 
+            await update_task_substatus(db, task_id, "translating")
             # Translate natural-language detail → shell command
             sys_env = get_system_env(config)
             sys_env_text = build_system_env_section(sys_env, session=session)
@@ -515,6 +522,7 @@ async def _execute_plan(
             if slog:
                 slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
 
+            await update_task_substatus(db, task_id, "executing")
             t0 = time.perf_counter()
             stdout, stderr, success = await _exec_task(
                 session, command, exec_timeout, sandbox_uid=sandbox_uid,
@@ -556,6 +564,7 @@ async def _execute_plan(
             })
 
             # Review exec tasks
+            await update_task_substatus(db, task_id, "reviewing")
             try:
                 review = await _review_task(
                     config, db, session, goal, task_row, user_message,
@@ -589,6 +598,7 @@ async def _execute_plan(
 
         elif task_type == "msg":
             try:
+                await update_task_substatus(db, task_id, "composing")
                 t0 = time.perf_counter()
                 text = await _msg_task(
                     config, db, session, detail,
@@ -652,40 +662,48 @@ async def _execute_plan(
 
             t0 = time.perf_counter()
 
+            # Pre-flight checks: skill installed, args valid
+            setup_error: str | None = None
             if skill_info is None:
-                error_msg = f"Skill '{skill_name}' not installed"
-                await update_task(db, task_id, "failed", output=error_msg)
-                task_row = {**task_row, "output": error_msg, "status": "failed"}
+                setup_error = f"Skill '{skill_name}' not installed"
             else:
-                # Parse and validate args
                 try:
                     args = json.loads(args_raw)
                 except json.JSONDecodeError as e:
-                    error_msg = f"Invalid skill args JSON: {e}"
-                    await update_task(db, task_id, "failed", output=error_msg)
-                    task_row = {**task_row, "output": error_msg, "status": "failed"}
+                    setup_error = f"Invalid skill args JSON: {e}"
                     args = None
                 else:
                     validation_errors = validate_skill_args(args, skill_info["args_schema"])
                     if validation_errors:
-                        error_msg = "Skill args validation failed: " + "; ".join(validation_errors)
-                        await update_task(db, task_id, "failed", output=error_msg)
-                        task_row = {**task_row, "output": error_msg, "status": "failed"}
-                    else:
-                        # Write plan_outputs.json before skill execution
-                        _write_plan_outputs(session, plan_outputs)
+                        setup_error = "Skill args validation failed: " + "; ".join(validation_errors)
 
-                        stdout, stderr, success = await _skill_task(
-                            session, skill_info, args, plan_outputs,
-                            session_secrets, exec_timeout,
-                            sandbox_uid=sandbox_uid,
-                            max_output_size=max_output_size,
-                        )
-                        stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
-                        stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
-                        status = "done" if success else "failed"
-                        await update_task(db, task_id, status, output=stdout, stderr=stderr)
-                        task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+            if setup_error:
+                log.error("Skill setup failed for task %d: %s", task_id, setup_error)
+                await update_task(db, task_id, "failed", output=setup_error)
+                audit.log_task(
+                    session, task_id, "skill", detail, "failed", 0, 0,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
+                )
+                remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
+                return False, None, completed, remaining
+
+            # Write plan_outputs.json before skill execution
+            _write_plan_outputs(session, plan_outputs)
+
+            await update_task_substatus(db, task_id, "executing")
+            stdout, stderr, success = await _skill_task(
+                session, skill_info, args, plan_outputs,
+                session_secrets, exec_timeout,
+                sandbox_uid=sandbox_uid,
+                max_output_size=max_output_size,
+            )
+            stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
+            stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
+            status = "done" if success else "failed"
+            await update_task(db, task_id, status, output=stdout, stderr=stderr)
+            task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
 
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_task(
@@ -707,6 +725,7 @@ async def _execute_plan(
             })
 
             # Review skill tasks
+            await update_task_substatus(db, task_id, "reviewing")
             try:
                 review = await _review_task(
                     config, db, session, goal, task_row, user_message,
@@ -741,6 +760,105 @@ async def _execute_plan(
 
             completed.append(task_row)
 
+        elif task_type == "search":
+            t0 = time.perf_counter()
+
+            # Parse optional search parameters from args
+            search_params: dict = {}
+            if task_row.get("args"):
+                try:
+                    search_params = json.loads(task_row["args"])
+                except json.JSONDecodeError:
+                    pass  # ignore malformed args, use defaults
+
+            # Validate search parameter types
+            max_results = search_params.get("max_results")
+            if max_results is not None:
+                try:
+                    max_results = max(1, min(int(max_results), 100))
+                except (TypeError, ValueError):
+                    max_results = None
+            lang = search_params.get("lang")
+            if not isinstance(lang, str):
+                lang = None
+            country = search_params.get("country")
+            if not isinstance(country, str):
+                country = None
+
+            await update_task_substatus(db, task_id, "searching")
+            try:
+                outputs_text = _format_plan_outputs_for_msg(plan_outputs)
+                search_result = await run_searcher(
+                    config, detail, context=outputs_text,
+                    max_results=max_results,
+                    lang=lang,
+                    country=country,
+                    session=session,
+                )
+            except SearcherError as e:
+                task_duration_ms = int((time.perf_counter() - t0) * 1000)
+                log.error("Search failed for task %d: %s", task_id, e)
+                await update_task(db, task_id, "failed", output=str(e))
+                audit.log_task(
+                    session, task_id, "search", detail, "failed", task_duration_ms, 0,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
+                )
+                remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
+                return False, None, completed, remaining
+
+            task_duration_ms = int((time.perf_counter() - t0) * 1000)
+            await update_task(db, task_id, "done", output=search_result)
+            task_row = {**task_row, "output": search_result, "status": "done"}
+
+            audit.log_task(
+                session, task_id, "search", detail, "done", task_duration_ms,
+                len(search_result), deploy_secrets=deploy_secrets,
+                session_secrets=session_secrets or {},
+            )
+            if slog:
+                slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
+
+            # Accumulate plan output
+            plan_outputs.append({
+                "index": i + 1,
+                "type": "search",
+                "detail": detail,
+                "output": search_result,
+                "status": "done",
+            })
+
+            # Review search tasks
+            await update_task_substatus(db, task_id, "reviewing")
+            try:
+                review = await _review_task(
+                    config, db, session, goal, task_row, user_message,
+                )
+            except ReviewError as e:
+                log.error("Review failed for search task %d: %s", task_id, e)
+                remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
+                return False, None, completed, remaining
+
+            if review["status"] == "replan":
+                replan_reason = review["reason"]
+                if slog:
+                    slog.info("Review → replan: %s", replan_reason)
+                step_usage = get_usage_since(usage_idx_before)
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                remaining = [dict(t) for t in tasks[i + 1:]]
+                _cleanup_plan_outputs(session)
+                return False, replan_reason, completed, remaining
+
+            # Store per-step token usage (searcher + reviewer)
+            step_usage = get_usage_since(usage_idx_before)
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+
+            if slog:
+                slog.info("Review → %s", review["status"])
+            completed.append(task_row)
+
         elif task_type == "replan":
             # Self-directed replan: mark task as done, trigger replan
             replan_detail = task_row["detail"]
@@ -769,7 +887,8 @@ def _build_replan_context(
     if completed:
         items = []
         for t in completed:
-            out = (t.get("output") or "")[:500]
+            limit = 4000 if t.get("type") == "search" else 500
+            out = (t.get("output") or "")[:limit]
             out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
             items.append(f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}")
         parts.append("## Completed Tasks\n" + "\n".join(items))
@@ -871,7 +990,7 @@ async def run_worker(
     idle_timeout = int(config.settings.get("worker_idle_timeout", 300))
     exec_timeout = int(config.settings.get("exec_timeout", 120))
     max_replan_depth = int(config.settings.get("max_replan_depth", 3))
-    slog = SessionLogger(session)
+    slog = SessionLogger(session, base_dir=KISO_DIR)
 
     try:
         while True:

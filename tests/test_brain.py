@@ -267,6 +267,66 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
 
+    # --- M31: search task type ---
+
+    def test_search_task_valid(self):
+        """search + expect, skill=null → valid."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "best restaurants in Milan", "expect": "list of restaurants", "skill": None, "args": None},
+            {"type": "msg", "detail": "present results", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_search_task_with_args(self):
+        """search + args JSON string → valid."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "best SEO agencies", "expect": "list of agencies", "skill": None, "args": '{"max_results": 10, "lang": "it", "country": "IT"}'},
+            {"type": "msg", "detail": "present results", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_search_task_missing_expect(self):
+        """search without expect → error."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "find info", "expect": None, "skill": None, "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("search task must have a non-null expect" in e for e in errors)
+
+    def test_search_task_with_skill(self):
+        """search with skill set → error."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "find info", "expect": "results", "skill": "search", "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("search task must have skill = null" in e for e in errors)
+
+    def test_search_task_not_last(self):
+        """Plan ending with search → error (last must be msg or replan)."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "find info", "expect": "results", "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
+
+    def test_plan_search_then_msg(self):
+        """search + msg → valid."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "find info", "expect": "results", "skill": None, "args": None},
+            {"type": "msg", "detail": "present results", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_plan_search_then_replan(self):
+        """search + replan → valid (investigation pattern)."""
+        plan = {"tasks": [
+            {"type": "search", "detail": "find info", "expect": "results", "skill": None, "args": None},
+            {"type": "replan", "detail": "plan next steps", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
 
 # --- _load_system_prompt ---
 
@@ -1538,3 +1598,9 @@ class TestPlannerPromptContent:
         assert "replan" in prompt
         assert "investigation" in prompt.lower() or "investigate" in prompt.lower()
         assert "extend_replan" in prompt
+
+    def test_planner_prompt_contains_search_task_type(self):
+        """The default planner prompt should mention the search task type."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "search:" in prompt
+        assert "web search" in prompt.lower() or "search query" in prompt.lower()

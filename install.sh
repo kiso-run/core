@@ -408,6 +408,23 @@ fi
 [[ -n "$ENV_BACKUP" ]] && rm -f "$ENV_BACKUP"
 [[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP"
 
+# ── 5c. Append model defaults to config ──────────────────────────────────
+
+if [[ "$NEED_CONFIG" == true && "$NEED_BUILD" == true ]]; then
+    bold "Appending model defaults to config..."
+    if docker exec "$CONTAINER" uv run python -c "
+from kiso.config import MODEL_DEFAULTS
+print()
+print('[models]')
+for role, model in sorted(MODEL_DEFAULTS.items()):
+    print(f'# {role} = \"{model}\"')
+" >> "$CONFIG" 2>/dev/null; then
+        green "  model defaults appended (all commented out — uncomment to override)"
+    else
+        warn "  could not read model defaults from container — [models] section skipped"
+    fi
+fi
+
 # ── 6. Install wrapper ─────────────────────────────────────────────────────
 echo
 bold "Installing kiso wrapper..."

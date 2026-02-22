@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import aiosqlite
 from pathlib import Path
 
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     expect       TEXT,
     command      TEXT,
     status       TEXT NOT NULL DEFAULT 'pending',
+    substatus    TEXT,
     output       TEXT,
     stderr       TEXT,
     review_verdict  TEXT,
@@ -131,6 +133,7 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ("plans", "model", "ALTER TABLE plans ADD COLUMN model TEXT"),
         ("tasks", "llm_calls", "ALTER TABLE tasks ADD COLUMN llm_calls TEXT"),
         ("plans", "llm_calls", "ALTER TABLE plans ADD COLUMN llm_calls TEXT"),
+        ("tasks", "substatus", "ALTER TABLE tasks ADD COLUMN substatus TEXT"),
     ]
     for table, column, sql in migrations:
         cur = await db.execute(f"PRAGMA table_info({table})")
@@ -369,11 +372,41 @@ async def update_task_usage(
     llm_calls: list[dict] | None = None,
 ) -> None:
     """Store per-step token usage on a task."""
-    import json as _json
-    calls_json = _json.dumps(llm_calls) if llm_calls else None
+    calls_json = json.dumps(llm_calls) if llm_calls else None
     await db.execute(
         "UPDATE tasks SET input_tokens = ?, output_tokens = ?, llm_calls = ? WHERE id = ?",
         (input_tokens, output_tokens, calls_json, task_id),
+    )
+    await db.commit()
+
+
+async def update_task_substatus(
+    db: aiosqlite.Connection, task_id: int, substatus: str
+) -> None:
+    """Update only the substatus text (lightweight, no output/status change)."""
+    await db.execute(
+        "UPDATE tasks SET substatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (substatus, task_id),
+    )
+    await db.commit()
+
+
+async def append_task_llm_call(
+    db: aiosqlite.Connection, task_id: int, call_data: dict
+) -> None:
+    """Append a single LLM call entry to the task's llm_calls JSON array."""
+    cur = await db.execute(
+        "SELECT llm_calls FROM tasks WHERE id = ?", (task_id,),
+    )
+    row = await cur.fetchone()
+    try:
+        existing = json.loads(row["llm_calls"]) if row and row["llm_calls"] else []
+    except (json.JSONDecodeError, TypeError):
+        existing = []
+    existing.append(call_data)
+    await db.execute(
+        "UPDATE tasks SET llm_calls = ? WHERE id = ?",
+        (json.dumps(existing), task_id),
     )
     await db.commit()
 
@@ -412,8 +445,7 @@ async def update_plan_usage(
             (input_tokens, output_tokens, model, plan_id),
         )
     else:
-        import json as _json
-        calls_json = _json.dumps(llm_calls) if llm_calls else None
+        calls_json = json.dumps(llm_calls) if llm_calls else None
         await db.execute(
             "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ?, llm_calls = ? "
             "WHERE id = ?",

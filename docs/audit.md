@@ -32,7 +32,7 @@ Every entry has a `timestamp`, `type`, `session`, and type-specific fields.
 }
 ```
 
-Logged for all roles: planner, reviewer, worker, summarizer, curator, paraphraser.
+Logged for all roles: planner, reviewer, worker (exec translator), messenger, searcher, summarizer, curator, paraphraser.
 
 ### Task Executions
 
@@ -50,7 +50,7 @@ Logged for all roles: planner, reviewer, worker, summarizer, curator, paraphrase
 }
 ```
 
-Logged for all task types: exec, msg, skill. Output content is **not** stored in the audit log (it's in `store.tasks`). Only the length.
+Logged for all task types: exec, msg, skill, search, replan. Output content is **not** stored in the audit log (it's in `store.tasks`). Only the length.
 
 ### Webhook Deliveries
 

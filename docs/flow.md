@@ -84,7 +84,7 @@ Uses structured output (`response_format` with strict JSON schema — see [llm-r
 Returns JSON with:
 - `goal`: high-level objective for the entire process. Stored for the reviewer and potential replan cycles.
 - `secrets`: `{key, value}` pairs or `null`. If present, stored in **worker memory** (ephemeral, never in DB). See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
-- `tasks`: `exec` and `skill` tasks must include an `expect` field with semantic success criteria (they are always reviewed).
+- `tasks`: `exec`, `skill`, and `search` tasks must include an `expect` field with semantic success criteria (they are always reviewed).
 
 ### d) Validates and Persists the Plan
 
@@ -99,7 +99,8 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 | Type | Execution |
 |---|---|
 | `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
-| `msg` | Calls LLM with `worker` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
+| `msg` | Calls LLM with `messenger` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
+| `search` | Calls LLM with `searcher` role (`google/gemini-2.5-flash-lite:online`). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
 | `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
 **Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
@@ -110,7 +111,7 @@ All LLM calls, task executions, and webhook deliveries are logged to the audit t
 
 ### f) Reviews and Delivers
 
-**For `exec` and `skill` tasks** (always reviewed):
+**For `exec`, `skill`, and `search` tasks** (always reviewed):
 
 1. **Review**: Reviewer receives process goal + task detail + task expect + task output + original user message. Uses structured output. Two outcomes:
    - `status: "ok"` → proceed to next task
@@ -181,7 +182,8 @@ How each task type receives preceding outputs:
 |---|---|---|
 | `exec` | File `{workspace}/.kiso/plan_outputs.json` | Written before each execution. Empty array (`[]`) if first task. The planner writes commands that reference it, e.g. `jq -r '.[-1].output' .kiso/plan_outputs.json`. |
 | `skill` | `plan_outputs` field in input JSON | Same structure, added alongside `args`, `session`, `workspace`, `session_secrets` in the stdin JSON. |
-| `msg` | Fenced section in worker LLM prompt | Formatted as readable text inside boundary fencing (external content). The worker uses it naturally when writing responses. |
+| `search` | Fenced section in searcher LLM prompt | Same structure as `msg`, preceding outputs provided in the searcher's context. |
+| `msg` | Fenced section in messenger LLM prompt | Formatted as readable text inside boundary fencing (external content). The worker uses it naturally when writing responses. |
 
 The worker always provides preceding outputs — no conditional logic. The planner writes task details that reference them when needed. The file is cleaned up after plan completion.
 
@@ -289,12 +291,13 @@ WORKER (per session)
   │  │                        │
   │  exec → translate → run   │
   │  skill → validate → run   │
+  │  search → searcher LLM     │
   │  msg → generate → deliver │
   │  replan → trigger replan  │
   │         │                 │
   │  sanitize + accumulate    │
   │         │                 │
-  │  exec/skill ──▶ review    │
+  │  exec/skill/search ──▶ review │
   │                 │    │    │
   │              ok │  replan ──▶ new plan (parent_id)
   │                 │         │
@@ -324,5 +327,5 @@ When displaying a plan execution, the CLI shows:
    - Task header with index, type, and detail
    - For `exec` tasks: the translated shell command (e.g. `$ ls -la`)
    - Task output (truncated on TTY)
-   - Review verdict (for exec/skill tasks)
+   - Review verdict (for exec/skill/search tasks)
 4. **Token usage summary** at the end (input/output tokens and model used)

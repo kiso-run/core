@@ -1048,7 +1048,7 @@ uv run kiso
 
 ## Role architecture (reference)
 
-8 LLM roles, each with a prompt file in `kiso/roles/` and a model routing name in `config.toml [models]`:
+9 LLM roles, each with a prompt file in `kiso/roles/` and a model routing name in `config.toml [models]`:
 
 | Prompt file | Model route | Function | Purpose |
 |---|---|---|---|
@@ -1056,12 +1056,15 @@ uv run kiso
 | `worker.md` | `worker` | `run_exec_translator` | Task detail → shell command |
 | `reviewer.md` | `reviewer` | `run_reviewer` | Task output → ok/replan |
 | `messenger.md` | `messenger` | `run_messenger` | Task detail → user message |
+| `searcher.md` | `searcher` | `run_searcher` | Search query → web results |
 | `curator.md` | `curator` | `run_curator` | Learnings → facts/questions |
 | `summarizer-session.md` | `summarizer` | `run_summarizer` | Messages → session summary |
 | `summarizer-facts.md` | `summarizer` | `run_fact_consolidation` | Dedup/merge facts |
 | `paraphraser.md` | `paraphraser` | `run_paraphraser` | Untrusted msg → safe text |
 
 > **Note:** `summarizer-session` and `summarizer-facts` share the `summarizer` model route because both are compression tasks that benefit from the same (typically cheaper) model. The prompt file naming convention `{model}-{action}.md` makes this relationship explicit.
+>
+> **Note:** The `searcher` role uses `google/gemini-2.5-flash-lite:online` by default — the `:online` suffix enables the Exa web search plugin on OpenRouter (~$0.014/query). Not a structured-output role.
 
 ---
 
@@ -1204,6 +1207,170 @@ All commands require admin role and `--yes` flag or interactive confirmation. CL
 ```bash
 uv run pytest tests/test_cli_reset.py -x -q
 uv run pytest tests/ -x -q --ignore=tests/live
+```
+
+---
+
+## ~~Milestone 31: Searcher role + planner hardening~~ DONE
+
+Live testing exposed critical failures in how Kiso handles web search requests: planner hallucination (fabricating search results in msg detail), useless curl-Google approach (returns JS blobs), registry blindness (never checking for search skill), missing pub/ directory, and replan death spiral (fabricating data after failures). Also: task spinners lack phase detail, and verbose mode doesn't show LLM calls incrementally.
+
+### Solution overview
+
+- **New `searcher` LLM role**: cheap model with web search via OpenRouter (`google/gemini-2.5-flash-lite:online`, ~$0.014/query). Built-in — no skill needed.
+- **New `search` task type**: planner emits `search` tasks with query + optional params (max_results, lang, country). Results flow into `plan_outputs`.
+- **Search skill coexistence**: the `search` skill is kept alive. If installed, planner prefers it for bulk/parameterized queries (cheaper per result via Brave/Serper). Built-in searcher is the fallback.
+- **Planner prompt hardening**: prevent hallucination, enforce registry checking, introduce search type, fix replan death spiral, search-then-replan pattern, intermediate user feedback.
+- **pub/ auto-creation**: ensure the directory exists before any exec task.
+- **Task substatus**: worker updates a `substatus` field at each phase transition (translating, executing, reviewing, searching, composing). Client shows substatus in spinner.
+- **Incremental LLM call rendering**: LLM calls appended to task as each completes (not just at task end). Verbose mode renders panels incrementally.
+- **Install-time model config**: after build, read `MODEL_DEFAULTS` from the running container and append as commented TOML to config.toml.
+
+### Changes
+
+- [x] `kiso/config.py` — add `"searcher": "google/gemini-2.5-flash-lite:online"` to `MODEL_DEFAULTS`
+- [x] `kiso/roles/searcher.md` — **new**: searcher system prompt (web search assistant, JSON output with results/summary/sources, parameters for max_results/lang/country)
+- [x] `kiso/brain.py` — add `SearcherError`, `build_searcher_messages()`, `run_searcher()`; add `"search"` to PLAN_SCHEMA task type enum; update `validate_plan()` for search type (require expect, skill=null, args optional JSON)
+- [x] `kiso/worker.py` — add `search` handler in `_execute_plan` (parse args, call `run_searcher`, flow output to `plan_outputs`); ensure `pub/` in `_session_workspace()`; update substatus at each phase for all task types; pass `base_dir=KISO_DIR` to `SessionLogger` (fixes test patching)
+- [x] `kiso/worker.py` — increase replan context truncation from 500 to 4000 chars for search tasks in `_build_replan_context()`
+- [x] `kiso/roles/planner.md` — 7 prompt fixes: (A) anti-hallucination for msg detail, (B) introduce search task type, (C) search skill preference rule, (D) strengthen registry check, (E) anti-hallucination for replans, (F) search-then-replan pattern, (G) intermediate user feedback
+- [x] `kiso/security.py` — add `"search"` as safe task type in permission checks
+- [x] `kiso/store.py` — add `substatus TEXT` column to tasks schema; new `update_task_substatus()` and `append_task_llm_call()` functions
+- [x] `kiso/render.py` — substatus-aware spinner in `render_task_header()`; search icon (`🔍` / `?`)
+- [x] `kiso/cli.py` — track substatus + llm_call_count in `seen` dict
+- [x] `install.sh` — after healthcheck, read `MODEL_DEFAULTS` from container via `docker exec` and append as commented `[models]` section to config.toml
+- [x] `tests/test_brain.py` — 8 new validate_plan tests for search type
+- [x] `tests/test_worker.py` — 3 new tests for replan context truncation + pub/ creation
+- [x] `tests/test_searcher.py` — **new**: 6 tests for `build_searcher_messages` and `run_searcher`
+- [x] `tests/test_render.py` — 8 new tests for substatus spinner + search icon
+- [x] `tests/test_published.py` — fixed pre-existing PermissionError (patch `kiso.main.KISO_DIR` + `kiso.pub.KISO_DIR`)
+- [x] `docs/flow.md`, `docs/llm-roles.md`, `docs/security.md`, `docs/audit.md`, `docs/cli.md` — updated for search task, searcher role, substatus
+
+**Result:** 1348 passed, 4 skipped, 0 failures.
+
+---
+
+## ~~Milestone 31b: M31 hardening — tests, cleanups, verbose note~~ DONE
+
+Post-implementation audit of M31 found missing test coverage, minor code quality issues, and a verbose-mode limitation to document.
+
+### A. Missing tests
+
+#### A1. `tests/test_store.py` — store function tests (CRITICAL)
+
+No tests exist for the two new store functions:
+
+- `test_update_task_substatus` — verify substatus updated, timestamp updated, other fields unchanged
+- `test_update_task_substatus_empty` — empty string substatus
+- `test_append_task_llm_call_first` — append to empty llm_calls
+- `test_append_task_llm_call_existing` — append to array with existing entries
+- `test_append_task_llm_call_corrupted_json` — existing llm_calls is invalid JSON (graceful handling)
+
+#### A2. `tests/test_worker.py` — search task execution (CRITICAL)
+
+The search handler in `_execute_plan` has no execution tests. Only replan-context and pub/ tests exist.
+
+- `test_search_task_calls_searcher` — mock `run_searcher`, verify called with detail + params from args
+- `test_search_task_with_params` — verify args JSON parsed and max_results/lang/country passed
+- `test_search_task_malformed_args` — invalid JSON in args → silently ignored, defaults used
+- `test_search_task_searcher_error` — `SearcherError` → task marked failed, plan stops
+- `test_search_task_result_in_plan_outputs` — verify output flows to plan_outputs list
+- `test_search_task_review_ok` — search → review ok → task done, completed
+- `test_search_task_review_replan` — search → review replan → returns replan reason
+- `test_search_task_review_error` — `ReviewError` → plan fails
+- `test_search_task_substatus_transitions` — verify "searching" → "reviewing" substatus updates
+- `test_search_task_usage_tracking` — verify `update_task_usage` called with searcher+reviewer tokens
+- `test_search_task_empty_result` — empty string from searcher → still stored, reviewed
+
+#### A3. `tests/test_security.py` — search permission
+
+- `test_search_task_always_allowed` — verify search type returns `PermissionResult(allowed=True)` regardless of user role
+
+#### A4. `tests/live/test_flows.py` — live search test
+
+- `test_search_task_real_query` — send a search-triggering message, verify plan contains `search` task type, task completes with real results, no hallucination
+- `test_search_then_msg_flow` — search + msg plan, verify msg uses search output
+- `test_search_substatus_visible` — poll `/status` during search, verify substatus field present
+
+### B. Code cleanups
+
+#### B1. `kiso/worker.py` — pub/ ownership for sandbox
+
+`pub_dir.mkdir(exist_ok=True)` at line 91 creates pub/ before `os.chown` at line 93. When `sandbox_uid` is set, pub/ is owned by root, not the sandbox user. Fix: also chown pub/:
+
+```python
+if sandbox_uid is not None:
+    os.chown(workspace, sandbox_uid, sandbox_uid)
+    os.chown(pub_dir, sandbox_uid, sandbox_uid)
+    os.chmod(workspace, 0o700)
+```
+
+#### B2. `kiso/worker.py` — search params type validation
+
+`search_params.get("max_results")` at line 771 could be any type (string, list, etc.) if the JSON is weird. Add defensive casting:
+
+```python
+max_results = search_params.get("max_results")
+if max_results is not None:
+    try:
+        max_results = int(max_results)
+    except (TypeError, ValueError):
+        max_results = None
+lang = search_params.get("lang")
+if not isinstance(lang, str):
+    lang = None
+country = search_params.get("country")
+if not isinstance(country, str):
+    country = None
+```
+
+#### B3. `kiso/store.py` — `import json as _json` consistency
+
+Functions `update_task_substatus` and `append_task_llm_call` use `import json as _json` (local import, underscore prefix). The rest of the module uses `import json` at the top. Unify: use the existing top-level import.
+
+**Evaluation**: check if `json` is already imported at module level in store.py. If yes, remove the local `import json as _json` and use `json` directly. If not, add it at the top.
+
+### C. Verbose mode — incremental LLM rendering note
+
+**Current behavior**: LLM call data for search tasks (and all tasks) is stored in bulk via `update_task_usage(..., llm_calls=step_usage.get("calls"))` after the task completes. This means verbose panels appear only when the task finishes — not incrementally between phases (searching → reviewing).
+
+**Documented behavior** (cli.md): "LLM call panels appear incrementally as each call completes within a task."
+
+**Decision**: document this as a known limitation. The `append_task_llm_call()` function exists in store.py but is not yet used by the worker. A future milestone can add explicit `append_task_llm_call()` calls after each LLM call (searcher, translator, reviewer, messenger) to enable true incremental rendering. This requires careful design to avoid duplicating data (append + final bulk update) and to handle the CLI polling loop correctly.
+
+**Action**: add a "Known limitations" note to `docs/cli.md` verbose section.
+
+### Changes
+
+- [x] `tests/test_store.py` — 5 new tests for `update_task_substatus` and `append_task_llm_call`
+- [x] `tests/test_worker.py` — 11 new tests for search task execution flow + chown test updated
+- [x] `tests/test_security.py` — 1 new test for search permission
+- [x] `tests/live/test_flows.py` — 3 new live tests for search task
+- [x] `kiso/worker.py` — fix pub/ ownership (chown pub_dir when sandbox_uid set)
+- [x] `kiso/worker.py` — add type validation for search params
+- [x] `kiso/store.py` — unify json import style; harden `append_task_llm_call` against corrupted JSON
+- [x] `kiso/render.py` — fix `_ICONS_ASCII["thinking"]` from `"??"` back to `"?"`
+- [x] `kiso/cli.py` — fix seen dict comment to match 4-tuple
+- [x] `docs/cli.md` — add "Known limitations" note about verbose incremental rendering
+
+Second-round audit fixes:
+
+- [x] `docs/cli.md` — rephrase line 78: "appear incrementally" → "show the full input/output" (consistency with Known Limitation note)
+- [x] `kiso/render.py` — change `_ICONS_ASCII["search"]` from `"?"` to `"S"` (avoid collision with `_icon()` fallback)
+- [x] `install.sh` — wrap MODEL_DEFAULTS docker exec in error handling (if/else + warn)
+- [x] `kiso/worker.py` — add `max_results` bounds check: `max(1, min(int(max_results), 100))`
+- [x] `kiso/worker.py` — refactor skill handler: setup errors early-return immediately (match exec pattern), add `log.error()`
+- [x] `tests/test_worker.py` — rename `test_skill_reviewed_replan` → `test_skill_not_installed_fails_immediately` (match new behavior)
+- [x] `tests/test_cli.py` — 4 new tests for seen dict tracking (skips unchanged, rerenders on substatus change, renders search task, shows review on llm_count change)
+- [x] `tests/test_worker.py` — 2 new edge case tests (empty detail search, multiple sequential search tasks)
+- [x] `tests/test_render.py` — update `test_search_icon_ascii` to expect `"S"`
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+
+# Live tests (requires running container)
+uv run pytest tests/live/test_flows.py -x -q -k search
 ```
 
 ---

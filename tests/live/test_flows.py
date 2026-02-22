@@ -15,6 +15,7 @@ from kiso.brain import (
     run_paraphraser,
     run_planner,
     run_reviewer,
+    run_searcher,
     validate_plan,
     validate_review,
 )
@@ -447,3 +448,71 @@ class TestDiscoveryPlanReplanFlow:
         assert "web" in plan_text or "search" in plan_text or "skill" in plan_text, (
             f"Action plan should reference investigation results, got: {action_plan}"
         )
+
+
+class TestSearchTaskFlow:
+    """L2 — Search task: planner → searcher → reviewer flow."""
+
+    async def test_planner_emits_search_for_web_query(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """When asked a web-lookup question, planner emits a search task."""
+        await save_message(seeded_db, live_session, "testadmin", "user",
+                           "Find the top 3 Italian restaurants in Berlin")
+
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_skills", return_value=[]),
+        ):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "Find the top 3 Italian restaurants in Berlin",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        errors = validate_plan(plan)
+        assert errors == [], f"Plan validation failed: {errors}"
+        task_types = [t["type"] for t in plan["tasks"]]
+        assert "search" in task_types, (
+            f"Expected at least one search task, got: {task_types}"
+        )
+        # Last task should be msg or replan
+        assert task_types[-1] in ("msg", "replan"), (
+            f"Last task should be msg or replan, got: {task_types[-1]}"
+        )
+
+    async def test_searcher_returns_real_results(
+        self, live_config, live_session,
+    ):
+        """run_searcher returns non-empty results for a real query."""
+        result = await asyncio.wait_for(
+            run_searcher(
+                live_config, "best pizza restaurants in Rome",
+                session=live_session,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        assert len(result) > 50, f"Search result too short: {result!r}"
+        # Should contain real content, not an error
+        lower = result.lower()
+        assert "rome" in lower or "pizza" in lower or "roma" in lower, (
+            f"Search result doesn't mention the query topic: {result[:200]}"
+        )
+
+    async def test_searcher_with_params(
+        self, live_config, live_session,
+    ):
+        """run_searcher respects lang/country params."""
+        result = await asyncio.wait_for(
+            run_searcher(
+                live_config, "migliori ristoranti",
+                lang="it", country="IT", max_results=3,
+                session=live_session,
+            ),
+            timeout=TIMEOUT,
+        )
+
+        assert len(result) > 20, f"Search result too short: {result!r}"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import aiosqlite
 
 from kiso.store import (
+    append_task_llm_call,
     count_messages,
     create_plan,
     create_session,
@@ -34,6 +35,7 @@ from kiso.store import (
     update_task,
     update_task_command,
     update_task_review,
+    update_task_substatus,
     update_task_usage,
 )
 
@@ -750,3 +752,103 @@ async def test_llm_calls_null_by_default(db: aiosqlite.Connection):
     assert tasks[0]["llm_calls"] is None
     plan = await get_plan_for_session(db, "sess1")
     assert plan["llm_calls"] is None
+
+
+# --- M31b: update_task_substatus ---
+
+
+async def test_update_task_substatus(db: aiosqlite.Connection):
+    """update_task_substatus sets substatus and updates timestamp."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    await update_task_substatus(db, task_id, "translating")
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["substatus"] == "translating"
+    # Other fields unchanged
+    assert tasks[0]["status"] == "pending"
+    assert tasks[0]["detail"] == "echo ok"
+
+
+async def test_update_task_substatus_empty(db: aiosqlite.Connection):
+    """Empty string substatus is stored without error."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    await update_task_substatus(db, task_id, "")
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["substatus"] == ""
+
+
+# --- M31b: append_task_llm_call ---
+
+
+async def test_append_task_llm_call_first(db: aiosqlite.Connection):
+    """First append creates a single-element JSON array."""
+    import json
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+    assert tasks[0]["llm_calls"] is None
+
+    call = {"role": "searcher", "model": "gemini-flash", "input_tokens": 100, "output_tokens": 50}
+    await append_task_llm_call(db, task_id, call)
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    stored = json.loads(tasks[0]["llm_calls"])
+    assert len(stored) == 1
+    assert stored[0]["role"] == "searcher"
+    assert stored[0]["input_tokens"] == 100
+
+
+async def test_append_task_llm_call_existing(db: aiosqlite.Connection):
+    """Appending to existing calls array grows it."""
+    import json
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    call1 = {"role": "searcher", "model": "gemini", "input_tokens": 100, "output_tokens": 50}
+    call2 = {"role": "reviewer", "model": "deepseek", "input_tokens": 200, "output_tokens": 60}
+    await append_task_llm_call(db, task_id, call1)
+    await append_task_llm_call(db, task_id, call2)
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    stored = json.loads(tasks[0]["llm_calls"])
+    assert len(stored) == 2
+    assert stored[0]["role"] == "searcher"
+    assert stored[1]["role"] == "reviewer"
+
+
+async def test_append_task_llm_call_corrupted_json(db: aiosqlite.Connection):
+    """Corrupted existing llm_calls JSON: append starts fresh array."""
+    import json
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    # Manually corrupt the llm_calls field
+    await db.execute("UPDATE tasks SET llm_calls = 'NOT_JSON' WHERE id = ?", (task_id,))
+    await db.commit()
+
+    call = {"role": "searcher", "model": "gemini", "input_tokens": 100, "output_tokens": 50}
+    await append_task_llm_call(db, task_id, call)
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    stored = json.loads(tasks[0]["llm_calls"])
+    assert len(stored) == 1
+    assert stored[0]["role"] == "searcher"

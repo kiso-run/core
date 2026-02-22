@@ -1656,3 +1656,193 @@ class TestReadlineHistory:
         # Should not raise
 
 
+# ── seen dict tracking in _poll_status ────────────────────────
+
+
+def test_poll_status_skips_unchanged_task(capsys, plain_caps):
+    """Two polls returning the same task with identical status/review/substatus/llm_calls
+    should only render the task header once (not duplicated)."""
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "llm_calls": "[]"},
+        ],
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: identical task (same status, no review, same substatus, same llm count)
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "done"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "llm_calls": "[]"},
+            {"id": 4, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Done.", "llm_calls": "[]"},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # The task header "exec: ls" should appear exactly once (not re-rendered on second poll)
+    assert out.count("exec: ls") == 1
+    assert "Done." in out
+
+
+def test_poll_status_rerenders_on_substatus_change(capsys, plain_caps):
+    """When substatus changes (translating -> executing) but status stays 'running',
+    the task_key changes so the code reaches the prev_status == status branch
+    which renders just the review line (not the full header again)."""
+    mock_client = MagicMock()
+
+    # First poll: task running with substatus "translating"
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "substatus": "translating", "llm_calls": "[]"},
+        ],
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: same task, substatus changed to "executing", still running
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "substatus": "executing", "llm_calls": "[]"},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+
+    # Third poll: done
+    resp3 = MagicMock()
+    resp3.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "done"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "done",
+             "output": "file.txt", "substatus": "", "llm_calls": "[]"},
+            {"id": 4, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Ok.", "llm_calls": "[]"},
+        ],
+    }
+    resp3.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2, resp3]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # First render: prev_status is None so full header is shown
+    assert "exec: ls" in out
+    # The task_key changed (substatus "translating" -> "executing") so the task is
+    # processed again.  Since prev_status == status == "running", the code enters the
+    # "show just review" branch (lines 532-541).  With no review_verdict the review
+    # line is empty, so nothing extra is printed — but the task was NOT skipped.
+    # The header appears exactly twice: once for the initial running render (prev None→running)
+    # and once for the done render (status running→done).  The substatus change does NOT
+    # produce a third header — it only enters the review branch.
+    assert out.count("exec: ls") == 2
+    # Final done render shows output
+    assert "file.txt" in out
+
+
+def test_poll_status_renders_search_task(capsys, plain_caps):
+    """A search task should render like an exec task: header + output + review."""
+    mock_client = MagicMock()
+    status_resp = MagicMock()
+    status_resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Find it", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "search", "detail": "find config files",
+             "status": "done", "output": "config.toml\nconfig.yaml",
+             "review_verdict": "ok", "llm_calls": "[]"},
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Found them.", "llm_calls": "[]"},
+        ],
+    }
+    status_resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = status_resp
+
+    with patch("time.sleep"):
+        result = _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    assert result == 2
+    out = capsys.readouterr().out
+    # Search task header rendered (type label is "search")
+    assert "search: find config files" in out
+    # Search task output rendered
+    assert "config.toml" in out
+    # Review rendered
+    assert "review: ok" in out
+    # Msg output rendered
+    assert "Found them." in out
+
+
+def test_poll_status_shows_review_on_llm_count_change(capsys, plain_caps):
+    """When llm_call_count changes but status stays the same, only the review line
+    is rendered (not the full task header again)."""
+    mock_client = MagicMock()
+
+    # First poll: task running with 0 llm_calls, no review
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "compile", "status": "running",
+             "output": "", "llm_calls": "[]"},
+        ],
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: still running, but llm_call_count went from 0 → 1, review_verdict added
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "compile", "status": "running",
+             "output": "", "review_verdict": "ok",
+             "llm_calls": '[{"role":"translator","model":"m","input_tokens":10,"output_tokens":5}]'},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+
+    # Third poll: task done + plan done
+    resp3 = MagicMock()
+    resp3.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "done"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "compile", "status": "done",
+             "output": "success", "review_verdict": "ok",
+             "llm_calls": '[{"role":"translator","model":"m","input_tokens":10,"output_tokens":5}]'},
+            {"id": 4, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Built.", "llm_calls": "[]"},
+        ],
+    }
+    resp3.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2, resp3]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # Full header appears twice: once for initial running render (prev None→running)
+    # and once for done render (status running→done).  The llm_count change on the
+    # second poll does NOT produce a third header — it only shows the review line.
+    assert out.count("exec: compile") == 2
+    # Review line appears from the llm_count change (second poll hits prev_status == status branch)
+    assert "review: ok" in out
+    # Final done render shows output
+    assert "success" in out
+
+

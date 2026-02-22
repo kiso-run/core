@@ -94,8 +94,8 @@ Each user needs an actual Linux user for the exec sandbox (see below). The usern
 
 | Role | Allowed task types | Skills | Package management | Who |
 |---|---|---|---|---|
-| `admin` | `exec` (unrestricted), `msg`, `skill` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
-| `user` | `exec` (sandboxed), `msg`, `skill` | per-user (`skills` field) | no | `role = "user"` in `[users]` |
+| `admin` | `exec` (unrestricted), `msg`, `skill`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
+| `user` | `exec` (sandboxed), `msg`, `skill`, `search` | per-user (`skills` field) | no | `role = "user"` in `[users]` |
 
 Both roles can use all task types. The differences are the **sandbox** and **skill access**.
 
@@ -141,7 +141,7 @@ echo `rm -rf /`             # backtick substitution
 
 The full command is also checked as-is to catch patterns that span metacharacters (e.g. fork bombs `:(){ :|:& };:`).
 
-Additionally, the user's **role is re-verified** from `config.toml` before each exec/skill task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
+Additionally, the user's **role is re-verified** from `config.toml` before each exec/skill/search task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
 
 ### Runtime Permission Re-validation
 
@@ -225,6 +225,7 @@ Kiso passes **only the declared session secrets** to the skill. A skill declarin
 |---|---|---|
 | `exec` tasks | Not available (clean env, PATH only) | Not available |
 | `skill` tasks | Available via env vars (automatic) | Only declared ones, via input JSON |
+| `search` tasks | Not available (LLM call, no env) | Not available |
 | `msg` tasks | Not available (LLM sees nothing) | Not available (LLM sees key names only, never values) |
 
 ### Leak Prevention
@@ -421,7 +422,7 @@ After extracting content from an LLM response, kiso validates that the content i
 
 ### Plan Task Type Validation
 
-`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `skill`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
+`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `skill`, `search`, `replan`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
 
 ### Cancel During Replan
 

@@ -75,12 +75,34 @@ The CLI renders the full execution flow in real time. Every decision the system 
 
 #### Verbose Mode
 
-Toggle with `/verbose-on` and `/verbose-off` during a chat session. When enabled, after each LLM call breakdown the CLI shows a bordered panel for every call containing:
+Toggle with `/verbose-on` and `/verbose-off` during a chat session. When enabled, LLM call panels show the full input/output for each LLM call in a task. Each panel shows:
 
 - **Messages sent**: each message with its role label (`[system]`, `[user]`, etc.)
 - **Response received**: the full LLM response, with JSON responses pretty-printed
 
-This is useful for debugging prompt issues, verifying what context the LLM receives, and inspecting structured output. The data is fetched via `GET /status/{session}?verbose=true` — the default `/status` response omits message/response data to keep payloads small.
+Example verbose flow for an exec task:
+
+```
+▶ [1/3] exec: check file exists  translating ⠋
+  ┌─ translator → deepseek-v3 (300→45) ────────┐
+  │ [system] You translate natural language...   │
+  │ [user] ## Task\ncheck file exists...         │
+  │ [response] ls -la requirements.txt           │
+  └──────────────────────────────────────────────┘
+  $ ls -la requirements.txt
+▶ [1/3] exec: check file exists  running ⠋
+▶ [1/3] exec: check file exists  reviewing ⠋
+  ┌─ reviewer → deepseek-v3 (350→60) ──────────┐
+  │ ...                                          │
+  └──────────────────────────────────────────────┘
+✓ [1/3] exec: check file exists
+  ┊ -rw-r--r-- 1 root root 245 ...
+  ✓ review: ok
+```
+
+This is useful for debugging prompt issues, verifying what context the LLM receives, and inspecting structured output. The data is fetched via `GET /status/{session}?verbose=true` — the default `/status` response omits message/response data to keep payloads small. The verbose endpoint is also available for API consumers directly.
+
+> **Known limitation — batch rendering**: LLM call data is currently stored in bulk when a task completes (`update_task_usage`), not incrementally after each LLM call. This means verbose panels appear when the task finishes — not between phases (e.g., searching → reviewing). The `append_task_llm_call()` store function exists but is not yet wired into the worker. A future milestone will add explicit per-call appends to enable true incremental rendering.
 
 #### Visual Elements
 
@@ -89,7 +111,7 @@ This is useful for debugging prompt issues, verifying what context the LLM recei
 | Element | Color | Purpose |
 |---------|-------|---------|
 | Plan goal | **bold cyan** | Distinguishes the high-level objective |
-| Task header (`exec`, `skill`) | **yellow** | Work in progress |
+| Task header (`exec`, `skill`, `search`) | **yellow** | Work in progress |
 | Task header (`msg`) | **green** | Bot response |
 | Task output | **dim** | De-emphasized, secondary information |
 | Review: ok | **green** | Success |
@@ -106,6 +128,7 @@ This is useful for debugging prompt issues, verifying what context the LLM recei
 | Plan | `◆` | `*` | New plan started |
 | exec task | `▶` | `>` | Shell command running |
 | skill task | `⚡` | `!` | Skill running |
+| search task | `🔍` | `S` | Web search running |
 | msg task | `💬` | `"` | Bot message |
 | Review ok | `✓` | `ok` | Task passed review |
 | Review replan | `✗` | `FAIL` | Task failed review |
@@ -169,7 +192,7 @@ Bot: Deployed to fly.io. The app is live at https://dev-app.fly.dev.
      The health check is configured at /health.
 ⟨620→150⟩
 ────────────────────────────────────────────────────────────
-⟨ 4,521 in → 1,203 out │ deepseek/deepseek-chat-v3 ⟩
+⟨ 4,521 in → 1,203 out │ deepseek/deepseek-v3.2 ⟩
 
 You: _
 ```
@@ -261,6 +284,21 @@ For `exec` tasks, the CLI shows the actual shell command translated from the nat
 
 The `$` line shows the command produced by the exec translator. This makes it clear what shell command was actually run.
 
+#### Search Tasks
+
+For `search` tasks, the CLI shows the search query and results:
+
+```
+🔍 [1/2] search: best SEO agencies in Milan  searching ⠋
+✓ [1/2] search: best SEO agencies in Milan
+  ┊ {"results": [...], "summary": "..."}
+  ✓ review: ok
+  searcher     200→800  gemini-2.5-flash-lite
+  reviewer     350→60   deepseek-v3
+```
+
+Search tasks use the built-in searcher role (`google/gemini-2.5-flash-lite:online` by default) for web lookups. If the `search` skill is installed, the planner prefers it for bulk queries (>10 results) since dedicated search APIs (Brave, Serper) are cheaper per result.
+
 #### Token Usage
 
 Token usage is tracked at two levels:
@@ -279,7 +317,7 @@ Kiso: Deployed successfully.
 ────────────────────────────────────────────────────────────
 ```
 
-The per-step count includes all LLM calls for that task (exec translator + reviewer for exec/skill tasks, messenger for msg tasks).
+The per-step count includes all LLM calls for that task (exec translator + reviewer for exec/skill tasks, searcher + reviewer for search tasks, messenger for msg tasks).
 
 **Grand total**: after plan completion, the CLI shows the full summary:
 
@@ -291,11 +329,25 @@ Shows total input tokens, output tokens, and the model used. Includes planner, a
 
 #### Spinner
 
-While a task is running, the CLI shows a spinner animation on the task header line:
+While a task is running, the CLI shows a spinner animation on the task header line with the current phase:
 
 ```
-▶ [2/3] exec: fly deploy ⠋
+▶ [1/3] exec: check file exists  translating ⠋
+▶ [1/3] exec: check file exists  running ⠋
+▶ [1/3] exec: check file exists  reviewing ⠋
+🔍 [2/3] search: best SEO agencies  searching ⠋
+💬 [3/3] msg: present results  composing ⠋
 ```
+
+The phase label shows what the worker is currently doing:
+
+| Phase | Shown for | Meaning |
+|-------|-----------|---------|
+| `translating` | exec | Exec translator LLM converting task detail to shell command |
+| `running` | exec, skill | Shell command or skill subprocess executing |
+| `reviewing` | exec, skill, search | Reviewer LLM checking task output |
+| `searching` | search | Searcher LLM performing web search |
+| `composing` | msg | Messenger LLM generating user-facing message |
 
 The spinner replaces itself with the final status icon (`✓` or `✗`) when the task completes. Uses a standard braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`), cycling every 80ms.
 

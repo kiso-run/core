@@ -103,20 +103,19 @@ class TestResolvePubToken:
 class TestGetPubEndpoint:
     @pytest.fixture()
     def _setup_session(self, client, tmp_path):
-        """Create a session directory with pub/ inside KISO_DIR for endpoint tests."""
+        """Create a session directory with pub/ inside tmp_path for endpoint tests."""
         config = client._transport.app.state.config  # type: ignore[attr-defined]
         self._config = config
         self._session = "test-pub-session"
-        self._sessions_dir = KISO_DIR / "sessions"
+        self._sessions_dir = tmp_path / "sessions"
         self._session_dir = self._sessions_dir / self._session
         self._pub_dir = self._session_dir / "pub"
         self._pub_dir.mkdir(parents=True, exist_ok=True)
         self._token = pub_token(self._session, config)
-        yield
-        # Cleanup
-        import shutil
-        if self._session_dir.exists():
-            shutil.rmtree(self._session_dir)
+        # Patch KISO_DIR in both modules so token resolution and file serving use tmp_path
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("kiso.pub.KISO_DIR", tmp_path):
+            yield
 
     async def test_serves_file(self, client, _setup_session):
         test_file = self._pub_dir / "hello.txt"

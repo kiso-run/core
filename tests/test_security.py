@@ -394,6 +394,19 @@ class TestRevalidatePermissions:
         result = revalidate_permissions(cfg, "bob", "msg")
         assert result.allowed is True
 
+    def test_revalidate_search_always_allowed(self):
+        """search task type is always allowed, no matter the user role."""
+        cfg = _perm_config()
+        # Admin
+        result = revalidate_permissions(cfg, "alice", "search")
+        assert result.allowed is True
+        assert result.role == "admin"
+        # Regular user
+        result = revalidate_permissions(cfg, "bob", "search")
+        assert result.allowed is True
+        assert result.role == "user"
+        assert result.skills == ["search", "deploy"]
+
 
 # --- Double masking proof ---
 
