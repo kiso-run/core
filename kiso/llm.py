@@ -98,15 +98,17 @@ def get_llm_call_count() -> int:
 def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
     """Resolve a model string to (provider, model_name).
 
-    "ollama:llama3"       → provider "ollama", model "llama3"
-    "minimax/minimax-m2.5" → first provider, model "minimax/minimax-m2.5"
+    "ollama:llama3"                       → provider "ollama", model "llama3"
+    "minimax/minimax-m2.5"                → first provider, model "minimax/minimax-m2.5"
+    "google/gemini-2.5-flash-lite:online" → first provider, full string as model
+                                            (colon ignored when left side isn't a known provider)
     """
     if ":" in model_string:
         provider_name, model_name = model_string.split(":", 1)
-        if provider_name not in config.providers:
-            raise LLMError(f"Provider '{provider_name}' not found in config")
-        return config.providers[provider_name], model_name
-    # No colon → use the first listed provider
+        if provider_name in config.providers:
+            return config.providers[provider_name], model_name
+        # Colon is part of the model name (e.g. "google/gemini:online"),
+        # not a provider selector — fall through to first-provider logic.
     if not config.providers:
         raise LLMError("No providers configured")
     first_name = next(iter(config.providers))

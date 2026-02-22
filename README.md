@@ -108,18 +108,20 @@ When run from inside the repo, the installer uses it directly (no temp clone).
 1. Checks prerequisites (docker, docker compose, git)
 2. If `~/.kiso/config.toml` or `~/.kiso/.env` already exist, asks whether to keep or overwrite
 3. If rebuilding, cleans up root-owned files from previous Docker runs
-4. Asks for username, bot name, and API key (interactive) — writes `config.toml` and `.env`
+4. Asks for username, bot name, provider name, provider URL, API key, and per-role model selection (interactive) — writes `config.toml` and `.env`
 5. Builds the Docker image, writes a self-contained `docker-compose.yml` in `~/.kiso/`, starts the container
 6. Waits for healthcheck (`/health` endpoint on port 8333)
-7. Appends `[models]` section (all commented out) to `config.toml` with current model defaults
-8. Installs the `kiso` wrapper script to `~/.local/bin/kiso` and shell completions
+7. Installs the `kiso` wrapper script to `~/.local/bin/kiso` and shell completions
 
 ### Non-interactive mode
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh) \
-  --user marco --api-key sk-or-v1-...
+  --user marco --api-key sk-or-v1-... \
+  --base-url https://openrouter.ai/api/v1 --provider openrouter
 ```
+
+When both `--user` and `--api-key` are set, model prompts are skipped (defaults used). `--base-url` and `--provider` are optional and default to `https://openrouter.ai/api/v1` and `openrouter`.
 
 ### Clean reinstall
 

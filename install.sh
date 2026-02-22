@@ -16,7 +16,6 @@ ENV_FILE="$KISO_DIR/.env"
 RUNTIME_COMPOSE="$KISO_DIR/docker-compose.yml"
 WRAPPER_DST="$HOME/.local/bin/kiso"
 CONTAINER="kiso"
-LLM_BASE_URL="https://openrouter.ai/api/v1"
 CLEANUP_DIR=""
 USERNAME_RE='^[a-z_][a-z0-9_-]{0,31}$'
 
@@ -40,6 +39,8 @@ trap cleanup EXIT
 
 ARG_USER=""
 ARG_API_KEY=""
+ARG_BASE_URL=""
+ARG_PROVIDER=""
 RESET_REQUESTED=false
 
 while [[ $# -gt 0 ]]; do
@@ -50,6 +51,12 @@ while [[ $# -gt 0 ]]; do
         --api-key)
             if [[ $# -lt 2 ]]; then red "Error: --api-key requires a value"; exit 1; fi
             ARG_API_KEY="$2"; shift 2 ;;
+        --base-url)
+            if [[ $# -lt 2 ]]; then red "Error: --base-url requires a value"; exit 1; fi
+            ARG_BASE_URL="$2"; shift 2 ;;
+        --provider)
+            if [[ $# -lt 2 ]]; then red "Error: --provider requires a value"; exit 1; fi
+            ARG_PROVIDER="$2"; shift 2 ;;
         --reset)
             RESET_REQUESTED=true; shift ;;
         *)
@@ -110,6 +117,26 @@ ask_bot_name() {
     echo "$bot_name"
 }
 
+ask_provider_name() {
+    if [[ -n "$ARG_PROVIDER" ]]; then
+        echo "$ARG_PROVIDER"
+        return
+    fi
+    local name
+    read -rp "Provider name [openrouter]: " name
+    echo "${name:-openrouter}"
+}
+
+ask_base_url() {
+    if [[ -n "$ARG_BASE_URL" ]]; then
+        echo "$ARG_BASE_URL"
+        return
+    fi
+    local url
+    read -rp "LLM provider URL [https://openrouter.ai/api/v1]: " url
+    echo "${url:-https://openrouter.ai/api/v1}"
+}
+
 ask_api_key() {
     if [[ -n "$ARG_API_KEY" ]]; then
         echo "API key: (provided via --api-key)" >&2
@@ -117,7 +144,7 @@ ask_api_key() {
         return
     fi
     while true; do
-        read -rsp "LLM API key for $LLM_BASE_URL: " api_key
+        read -rsp "LLM API key for $base_url: " api_key
         echo >&2
         if [[ -n "$api_key" ]]; then
             echo "$api_key"
@@ -125,6 +152,45 @@ ask_api_key() {
         fi
         red "  API key cannot be empty. Try again."
     done
+}
+
+ask_models() {
+    local roles=(
+        "planner|interprets requests, creates task plans|minimax/minimax-m2.5"
+        "reviewer|checks task output, decides replan|deepseek/deepseek-v3.2"
+        "worker|translates tasks to shell commands|deepseek/deepseek-v3.2"
+        "messenger|writes human-readable responses|deepseek/deepseek-v3.2"
+        "searcher|web search (needs :online model)|google/gemini-2.5-flash-lite:online"
+        "summarizer|compresses conversation history|deepseek/deepseek-v3.2"
+        "curator|manages learned knowledge|deepseek/deepseek-v3.2"
+        "paraphraser|prompt injection defense|deepseek/deepseek-v3.2"
+    )
+
+    # Non-interactive: use defaults
+    if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]]; then
+        local result=""
+        for entry in "${roles[@]}"; do
+            IFS='|' read -r role _ default <<< "$entry"
+            result+="$role = \"$default\"\n"
+        done
+        printf '%b' "$result"
+        return
+    fi
+
+    echo >&2
+    bold "Models — press Enter to keep default:" >&2
+    echo >&2
+    local result=""
+    for entry in "${roles[@]}"; do
+        IFS='|' read -r role desc default <<< "$entry"
+        printf '  \033[1m%-12s\033[0m  \033[0;90m%s\033[0m\n' "$role" "$desc" >&2
+        printf '               [\033[0;33m%s\033[0m]: ' "$default" >&2
+        read -r choice
+        choice="${choice:-$default}"
+        result+="$role = \"$choice\"\n"
+        echo >&2
+    done
+    printf '%b' "$result"
 }
 
 # ── 1. Check prerequisites ───────────────────────────────────────────────────
@@ -270,41 +336,58 @@ if [[ "$NEED_CONFIG" == true ]]; then
     bot_name="$(ask_bot_name)"
     echo "  bot name: $bot_name"
 
+    provider_name="$(ask_provider_name)"
+    echo "  provider: $provider_name"
+
+    base_url="$(ask_base_url)"
+    echo "  base url: $base_url"
+
     token="$(generate_token)"
+
+    models_section="$(ask_models)"
 
     bold "Config preview:"
     cat <<EOF
 [tokens]
 cli = "$token"
 
-[providers.openrouter]
-base_url = "$LLM_BASE_URL"
+[providers.$provider_name]
+base_url = "$base_url"
 
 [users.$kiso_user]
 role = "admin"
 
 [settings]
 bot_name = "$bot_name"
+
+[models]
+$(printf '%b' "$models_section")
 EOF
 
     confirm "Write this config to $CONFIG?"
 
-    cat > "$CONFIG" <<EOF
+    cat > "$CONFIG" <<CONF
 [tokens]
 cli = "$token"
 
-[providers.openrouter]
-base_url = "$LLM_BASE_URL"
+[providers.$provider_name]
+base_url = "$base_url"
 
 [users.$kiso_user]
 role = "admin"
 
 [settings]
 bot_name = "$bot_name"
-EOF
+
+[models]
+$(printf '%b' "$models_section")
+CONF
     green "  config.toml created"
 fi
 echo
+
+# Ensure base_url is set for the API key prompt (may not be set if config was kept)
+base_url="${base_url:-https://openrouter.ai/api/v1}"
 
 if [[ "$NEED_ENV" == true ]]; then
     api_key="$(ask_api_key)"
@@ -407,23 +490,6 @@ if [[ -n "$CONFIG_BACKUP" && ! -s "$CONFIG" ]]; then
 fi
 [[ -n "$ENV_BACKUP" ]] && rm -f "$ENV_BACKUP"
 [[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP"
-
-# ── 5c. Append model defaults to config ──────────────────────────────────
-
-if [[ "$NEED_CONFIG" == true && "$NEED_BUILD" == true ]]; then
-    bold "Appending model defaults to config..."
-    if docker exec "$CONTAINER" uv run python -c "
-from kiso.config import MODEL_DEFAULTS
-print()
-print('[models]')
-for role, model in sorted(MODEL_DEFAULTS.items()):
-    print(f'# {role} = \"{model}\"')
-" >> "$CONFIG" 2>/dev/null; then
-        green "  model defaults appended (all commented out — uncomment to override)"
-    else
-        warn "  could not read model defaults from container — [models] section skipped"
-    fi
-fi
 
 # ── 6. Install wrapper ─────────────────────────────────────────────────────
 echo

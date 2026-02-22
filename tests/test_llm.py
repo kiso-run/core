@@ -59,10 +59,12 @@ class TestGetProvider:
         assert model == "llama3"
         assert provider.base_url == "http://localhost:11434/v1"
 
-    def test_colon_unknown_provider_raises(self):
+    def test_colon_unknown_provider_falls_through(self):
+        """Colon with non-provider prefix uses first provider and full string."""
         config = _make_config()
-        with pytest.raises(LLMError, match="Provider 'missing' not found"):
-            get_provider(config, "missing:model")
+        provider, model = get_provider(config, "google/gemini-2.5-flash-lite:online")
+        assert model == "google/gemini-2.5-flash-lite:online"
+        assert provider.base_url == "https://api.example.com/v1"
 
     def test_no_providers_raises(self):
         config = _make_config(providers={})

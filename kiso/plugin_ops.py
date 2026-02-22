@@ -59,6 +59,8 @@ def is_repo_not_found(stderr: str) -> bool:
 def require_admin() -> None:
     """Check that the current Linux user is an admin in kiso config. Exits 1 if not."""
     username = getpass.getuser()
+    if username == "root" and os.getuid() == 0:
+        return  # running inside the container as root — skip check
     cfg = load_config()
     user = cfg.users.get(username)
     if user is None:
