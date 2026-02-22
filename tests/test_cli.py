@@ -78,7 +78,7 @@ def test_quiet_short_flag():
     assert args.quiet is True
 
 
-@pytest.mark.parametrize("cmd", ["skill", "connector", "sessions", "env"])
+@pytest.mark.parametrize("cmd", ["skill", "connector", "sessions", "env", "reset"])
 def test_subcommand_parsed(cmd: str):
     parser = build_parser()
     args = parser.parse_args([cmd])
@@ -181,6 +181,67 @@ def test_env_reload():
     parser = build_parser()
     args = parser.parse_args(["env", "reload"])
     assert args.env_command == "reload"
+
+
+# ── reset parsing ────────────────────────────────────────────
+
+
+def test_reset_no_subcommand():
+    parser = build_parser()
+    args = parser.parse_args(["reset"])
+    assert args.command == "reset"
+    assert args.reset_command is None
+
+
+def test_reset_session_with_name():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "session", "my-session"])
+    assert args.reset_command == "session"
+    assert args.name == "my-session"
+
+
+def test_reset_session_default_name():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "session"])
+    assert args.reset_command == "session"
+    assert args.name is None
+
+
+def test_reset_session_yes_flag():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "session", "--yes"])
+    assert args.yes is True
+
+
+def test_reset_session_y_flag():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "session", "-y"])
+    assert args.yes is True
+
+
+def test_reset_knowledge():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "knowledge"])
+    assert args.reset_command == "knowledge"
+
+
+def test_reset_all():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "all"])
+    assert args.reset_command == "all"
+
+
+def test_reset_factory():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "factory"])
+    assert args.reset_command == "factory"
+
+
+def test_reset_factory_yes():
+    parser = build_parser()
+    args = parser.parse_args(["reset", "factory", "--yes"])
+    assert args.reset_command == "factory"
+    assert args.yes is True
 
 
 # ── _chat REPL ───────────────────────────────────────────────

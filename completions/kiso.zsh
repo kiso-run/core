@@ -20,6 +20,7 @@ _kiso() {
         'env:manage deploy secrets'
         'completion:print shell completion script'
         'msg:send a message and print the response'
+        'reset:reset/cleanup data'
     )
 
     skill_cmds=(
@@ -74,6 +75,33 @@ _kiso() {
         env)
             if (( CURRENT == 3 )); then
                 _describe -t env-commands 'env command' env_cmds
+            fi
+            return
+            ;;
+        reset)
+            if (( CURRENT == 3 )); then
+                local -a reset_cmds=(
+                    'session:reset one session'
+                    'knowledge:reset all knowledge'
+                    'all:reset all data'
+                    'factory:factory reset'
+                )
+                _describe -t reset-commands 'reset command' reset_cmds
+            elif (( CURRENT >= 4 )); then
+                case "$words[3]" in
+                    session)
+                        # Dynamic session name completion from DB
+                        local -a session_names
+                        session_names=(${(f)"$(docker exec kiso sqlite3 /root/.kiso/store.db 'SELECT session FROM sessions' 2>/dev/null)"})
+                        if (( ${#session_names} )); then
+                            compadd -- "${session_names[@]}"
+                        fi
+                        _arguments '--yes[skip confirmation]' '-y[skip confirmation]'
+                        ;;
+                    knowledge|all|factory)
+                        _arguments '--yes[skip confirmation]' '-y[skip confirmation]'
+                        ;;
+                esac
             fi
             return
             ;;

@@ -404,6 +404,52 @@ $ kiso sessions --all
 
 Non-admins see only sessions they have participated in. Admins with `--all` see every session including connector-managed ones. See [api.md — GET /sessions](api.md#get-sessions).
 
+## Reset / Cleanup
+
+Only admins can run reset commands. All commands require `--yes` (or `-y`) to skip interactive confirmation.
+
+```bash
+kiso reset session [name]     # clear one session (default: current)
+kiso reset knowledge          # clear all facts, learnings, pending items
+kiso reset all                # clear all sessions + knowledge + audit + history
+kiso reset factory            # wipe everything, reinitialize (keeps config.toml + .env)
+```
+
+Four levels, from lightest to heaviest:
+
+| Level | DB | Filesystem | Keeps |
+|-------|-----|------------|-------|
+| `session` | messages, plans, tasks, facts, learnings, pending for that session; session row | `sessions/{name}/` | everything else |
+| `knowledge` | facts, learnings, pending (all rows) | nothing | sessions, config, skills |
+| `all` | all rows in all tables | `sessions/`, `audit/`, `.chat_history` | config.toml, .env, skills, connectors |
+| `factory` | store.db deleted entirely | `sessions/`, `audit/`, `skills/`, `connectors/`, `roles/`, `reference/`, `sys/`, `.chat_history`, `server.log` | config.toml, .env, docker-compose.yml |
+
+### Architecture
+
+`kiso reset` opens the database directly with sync `sqlite3` — no API call needed. This works because:
+
+- SQLite WAL mode handles concurrent access safely
+- The server may not be running when you want to reset
+- Same pattern as `kiso env` (direct file) and `kiso skill` (direct filesystem)
+
+After `kiso reset factory`, the host wrapper automatically restarts the container so the server reinitializes with a fresh database.
+
+### Examples
+
+```bash
+# Reset your current session (will prompt for confirmation)
+kiso reset session
+
+# Reset a specific session without prompting
+kiso reset session dev-backend --yes
+
+# Clear all accumulated knowledge (facts, learnings, pending items)
+kiso reset knowledge -y
+
+# Start completely fresh (keeps only config.toml and .env)
+kiso reset factory --yes
+```
+
 ## Deploy Secret Management
 
 Only admins can manage deploy secrets.

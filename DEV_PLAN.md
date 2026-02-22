@@ -1182,6 +1182,32 @@ uv run pytest tests/ -x -q --ignore=tests/live
 
 ---
 
+## Milestone 30: `kiso reset` — cleanup commands
+
+Users need a way to clean up data at different levels. One new subcommand with four levels (lightest to heaviest):
+
+- `kiso reset session [name]` — clear one session (default: current)
+- `kiso reset knowledge` — clear all facts, learnings, pending items
+- `kiso reset all` — clear all sessions + knowledge + audit + history
+- `kiso reset factory` — wipe everything, reinitialize (keeps config.toml + .env)
+
+All commands require admin role and `--yes` flag or interactive confirmation. CLI-direct architecture (sync sqlite3, no API needed).
+
+- [x] `kiso/cli_reset.py` — new file with reset command implementation
+- [x] `kiso/cli.py` — add reset subparser + dispatch
+- [x] `kiso-host.sh` — intercept `reset factory` for auto-restart + update help
+- [x] `install.sh` — add `--reset` flag for factory reset during install
+- [x] `tests/test_cli_reset.py` — ~14 tests
+- [x] `DEV_PLAN.md` — add Milestone 30
+
+**Verify:**
+```bash
+uv run pytest tests/test_cli_reset.py -x -q
+uv run pytest tests/ -x -q --ignore=tests/live
+```
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.

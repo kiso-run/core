@@ -104,6 +104,12 @@ Sessions & secrets:
   kiso env delete KEY        delete a deploy secret
   kiso env reload            hot-reload secrets into the server
 
+Reset (admin only, requires --yes or interactive confirmation):
+  kiso reset session [name]  clear one session (default: current)
+  kiso reset knowledge       clear all facts, learnings, pending items
+  kiso reset all             clear all sessions + knowledge + audit + history
+  kiso reset factory         wipe everything, reinitialize (keeps config.toml + .env)
+
 Container management:
   kiso up                    start the container
   kiso down                  stop the container
@@ -130,6 +136,14 @@ HELP
             zsh)  cat "$HOME/.local/share/zsh/site-functions/_kiso" 2>/dev/null || echo "Completion not installed. Run install.sh." >&2 ;;
             *)    echo "Usage: kiso completion [bash|zsh]" >&2 ;;
         esac
+        ;;
+    reset)
+        require_running
+        docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" uv run kiso --user "$(whoami)" "$@"
+        if [[ "${2:-}" == "factory" ]]; then
+            echo "Restarting container..."
+            docker restart "$CONTAINER"
+        fi
         ;;
     *)
         require_running

@@ -40,6 +40,7 @@ trap cleanup EXIT
 
 ARG_USER=""
 ARG_API_KEY=""
+RESET_REQUESTED=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -49,6 +50,8 @@ while [[ $# -gt 0 ]]; do
         --api-key)
             if [[ $# -lt 2 ]]; then red "Error: --api-key requires a value"; exit 1; fi
             ARG_API_KEY="$2"; shift 2 ;;
+        --reset)
+            RESET_REQUESTED=true; shift ;;
         *)
             red "Unknown option: $1"; exit 1 ;;
     esac
@@ -233,6 +236,28 @@ if [[ "$NEED_CONFIG" == false && -f "$CONFIG" ]]; then
     cp "$CONFIG" "$CONFIG_BACKUP"
 fi
 
+# ── 3c. Clean root-owned files ────────────────────────────────────────────
+
+# The container runs as root, so files it creates (store.db, session.log,
+# workspace files, sys/, reference/) are owned by root and cannot be deleted
+# by the host user.  Use a throwaway container to remove them.
+if [[ "$NEED_BUILD" == true && -d "$KISO_DIR" ]]; then
+    # Check if any root-owned files exist
+    if find "$KISO_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
+        bold "Cleaning root-owned files from previous install..."
+        docker run --rm -v "${KISO_DIR}:/mnt/kiso" alpine sh -c '
+            # Remove directories that contain root-owned runtime data
+            for d in sessions audit sys reference skills/*/; do
+                rm -rf "/mnt/kiso/$d" 2>/dev/null
+            done
+            # Remove root-owned files (but never config.toml, .env, docker-compose.yml)
+            rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
+            # Fix ownership on remaining files so host user can manage them
+            chown -R '"$(id -u):$(id -g)"' /mnt/kiso/ 2>/dev/null
+        ' && green "  cleaned" || yellow "  warning: could not clean all root-owned files"
+    fi
+fi
+
 # ── 4. Configure ─────────────────────────────────────────────────────────────
 
 bold "Configuring..."
@@ -356,18 +381,27 @@ else
     green "  Skipping build (container kept)."
 fi
 
+# ── 5a. Factory reset if requested ──────────────────────────────────────────
+
+if [[ "$RESET_REQUESTED" == true ]]; then
+    bold "Running factory reset..."
+    docker exec "$CONTAINER" uv run kiso reset factory --yes
+    docker restart "$CONTAINER"
+    green "  factory reset complete"
+fi
+
 # ── 5b. Restore files if Docker wiped them ──────────────────────────────────
 
 # Old Docker images (before commit 4caab64) had a VOLUME directive that could
 # cause .env to disappear on rebuild.  Stale layers / anonymous volumes may
 # still trigger this.  Restore from backup if needed.
-if [[ -n "$ENV_BACKUP" && ! -f "$ENV_FILE" ]]; then
-    yellow "  .env was unexpectedly removed during build — restoring from backup"
+if [[ -n "$ENV_BACKUP" && ! -s "$ENV_FILE" ]]; then
+    yellow "  .env was unexpectedly removed or emptied during build — restoring from backup"
     cp "$ENV_BACKUP" "$ENV_FILE"
     green "  .env restored"
 fi
-if [[ -n "$CONFIG_BACKUP" && ! -f "$CONFIG" ]]; then
-    yellow "  config.toml was unexpectedly removed during build — restoring from backup"
+if [[ -n "$CONFIG_BACKUP" && ! -s "$CONFIG" ]]; then
+    yellow "  config.toml was unexpectedly removed or emptied during build — restoring from backup"
     cp "$CONFIG_BACKUP" "$CONFIG"
     green "  config.toml restored"
 fi

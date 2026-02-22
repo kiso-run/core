@@ -161,6 +161,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     env_sub.add_parser("reload", help="hot-reload .env into the server")
 
+    reset_parser = sub.add_parser("reset", help="reset/cleanup data")
+    reset_sub = reset_parser.add_subparsers(dest="reset_command")
+
+    rs = reset_sub.add_parser("session", help="reset one session")
+    rs.add_argument("name", nargs="?", default=None, help="session name (default: current)")
+    rs.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+
+    rk = reset_sub.add_parser("knowledge", help="reset all knowledge")
+    rk.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+
+    ra = reset_sub.add_parser("all", help="reset all data")
+    ra.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+
+    rf = reset_sub.add_parser("factory", help="factory reset")
+    rf.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+
     return parser
 
 
@@ -190,6 +206,10 @@ def main() -> None:
         from kiso.cli_env import run_env_command
 
         run_env_command(args)
+    elif args.command == "reset":
+        from kiso.cli_reset import run_reset_command
+
+        run_reset_command(args)
 
 
 def _msg_cmd(args: argparse.Namespace) -> None:
