@@ -79,38 +79,77 @@ See [docker.md](docs/docker.md).
 
 ## Installation
 
+### Prerequisites
+
+- **Docker** with Docker Compose v2 (`docker compose`)
+- **git**
+- An **OpenRouter API key** (or any OpenAI-compatible provider key)
+
+### Quick install (one-liner)
+
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
 ```
 
-The installer will:
-- Ask for your username and OpenRouter API key
-- Generate a secure token
-- Build the Docker image (clones the repo to a temp dir, cleaned up after)
-- Create `~/.kiso/config.toml` and `~/.kiso/.env`
-- Start the container
-- Install the `kiso` command in `~/.local/bin/`
+This clones the repo to a temp dir, builds the Docker image, and cleans up after.
 
-Non-interactive mode:
+### Install from cloned repo
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh) --user marco --api-key sk-or-v1-...
-```
-
-<details>
-<summary>Alternative: install from cloned repo</summary>
-
-```bash
-git clone git@github.com:kiso-run/core.git
+git clone https://github.com/kiso-run/core.git
 cd core
 ./install.sh
 ```
 
-When run from inside the repo, the installer uses it directly instead of cloning.
+When run from inside the repo, the installer uses it directly (no temp clone).
 
-</details>
+### What the installer does
 
-See [config.md](docs/config.md) for all configuration options. Role prompts (`~/.kiso/roles/*.md`) are optional — sensible defaults are built in. See [llm-roles.md](docs/llm-roles.md) to customize them.
+1. Checks prerequisites (docker, docker compose, git)
+2. If `~/.kiso/config.toml` or `~/.kiso/.env` already exist, asks whether to keep or overwrite
+3. If rebuilding, cleans up root-owned files from previous Docker runs
+4. Asks for username, bot name, and API key (interactive) — writes `config.toml` and `.env`
+5. Builds the Docker image, writes a self-contained `docker-compose.yml` in `~/.kiso/`, starts the container
+6. Waits for healthcheck (`/health` endpoint on port 8333)
+7. Appends `[models]` section (all commented out) to `config.toml` with current model defaults
+8. Installs the `kiso` wrapper script to `~/.local/bin/kiso` and shell completions
+
+### Non-interactive mode
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh) \
+  --user marco --api-key sk-or-v1-...
+```
+
+### Clean reinstall
+
+To start completely fresh, remove the data directory and rerun:
+
+```bash
+# Stop and remove the container
+docker rm -f kiso
+
+# Remove all data (config, database, sessions, skills, connectors)
+# Uses Docker because some files are root-owned from the container
+docker run --rm -v ~/.kiso:/mnt/kiso alpine rm -rf /mnt/kiso/*
+rm -rf ~/.kiso
+
+# Reinstall
+./install.sh
+```
+
+Or use the `--reset` flag to factory-reset during install (keeps config and API key, wipes sessions/knowledge/skills):
+
+```bash
+./install.sh --reset
+```
+
+### After installation
+
+- Config: `~/.kiso/config.toml` — see [config.md](docs/config.md) for all options
+- API key: `~/.kiso/.env` — managed separately from config
+- Role prompts: `~/.kiso/roles/*.md` — optional overrides, sensible defaults built in. See [llm-roles.md](docs/llm-roles.md)
+- `~/.local/bin/kiso` must be in your `PATH`
 
 ## Usage
 
