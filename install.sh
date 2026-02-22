@@ -412,7 +412,24 @@ if [[ "$NEED_BUILD" == true ]]; then
     docker image prune -f &>/dev/null || true
 
     bold "Building Docker image..."
-    docker compose -f "$REPO_COMPOSE" build
+    if ! docker compose -f "$REPO_COMPOSE" build; then
+        yellow "  Build failed — pruning build cache and retrying without cache..."
+        docker builder prune -f &>/dev/null || true
+        if ! docker compose -f "$REPO_COMPOSE" build --no-cache; then
+            echo
+            red "Error: Docker build failed."
+            red "  This is usually caused by corrupted Docker cache or storage."
+            red ""
+            red "  Try these steps manually:"
+            red "    1. docker builder prune --all -f"
+            red "    2. docker system prune -f"
+            red "    3. ./install.sh"
+            red ""
+            red "  If it still fails, restart Docker and try again:"
+            red "    sudo systemctl restart docker"
+            exit 1
+        fi
+    fi
 
     # Get the built image name (e.g. "core-kiso")
     IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json 2>/dev/null | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
