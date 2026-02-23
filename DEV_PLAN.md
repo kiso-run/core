@@ -1375,6 +1375,317 @@ uv run pytest tests/live/test_flows.py -x -q -k search
 
 ---
 
+## Milestone 32: Fast path — skip planner for simple messages
+
+Conversational messages ("hello", "thanks", "what was that?") currently go through the full planner → exec/msg → reviewer pipeline, wasting 2-3 LLM calls on something that needs only 1. A lightweight classifier short-circuits straight to the messenger.
+
+### Design
+
+**New function: `classify_message()` in `brain.py`**
+
+A single LLM call to a cheap model (reuses the `worker` model route — fast, cheap) that returns one of:
+- `"plan"` — needs the planner (anything involving exec, search, skills, multi-step work)
+- `"chat"` — pure conversation, greeting, question about previous output, clarification
+
+The classifier prompt is intentionally conservative: when in doubt, return `"plan"`. False positives (classifying something as `"plan"` when it could be `"chat"`) are safe — the planner handles it. False negatives (classifying a real task as `"chat"`) would skip execution, which is the dangerous case.
+
+**New role file: `kiso/roles/classifier.md`**
+
+```
+You classify user messages into two categories:
+- "plan" — the user wants something done (file operations, code, search, install, any action)
+- "chat" — the user is just talking (greetings, thanks, follow-up questions about previous output, opinions, clarifications)
+
+Return ONLY the word "plan" or "chat". Nothing else.
+
+When in doubt, return "plan".
+```
+
+No new model route needed — reuses `worker` model. No structured output needed — just raw text response trimmed to `"plan"` or `"chat"`.
+
+**Integration point: `_process_message()` in `worker.py` (line 1055)**
+
+```python
+# Before calling run_planner:
+msg_class = await classify_message(config, content, session=session)
+if msg_class == "chat":
+    # Fast path: direct to messenger
+    fast_plan_id = await create_plan(db, session, msg_id, "Chat response")
+    fast_task_id = await create_task(db, fast_plan_id, session, "msg", content)
+    await update_task(db, fast_task_id, "running")
+    await update_task_substatus(db, fast_task_id, "composing")
+    text = await run_messenger(db, config, session, content, goal=content)
+    await update_task(db, fast_task_id, "done", output=text)
+    await update_plan_status(db, fast_plan_id, "done")
+    # Webhook, save message, usage tracking — same as normal msg task
+    ...
+    return  # skip planner entirely
+# Normal path: call run_planner
+```
+
+A `plan` + `msg task` are still created for fast path so the CLI renders normally and `/status` works.
+
+**Config setting: `fast_path_enabled`**
+
+Default `true`. When `false`, every message goes through the planner (current behavior). Allows users to disable if the classifier is too aggressive.
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `kiso/roles/classifier.md` | **New**: classifier system prompt |
+| `kiso/brain.py` | Add `classify_message()` function — single LLM call to worker model, returns `"plan"` or `"chat"` |
+| `kiso/worker.py` | Add fast-path branch in `_process_message()` before `run_planner` call |
+| `kiso/config.py` | Add `"fast_path_enabled": True` to `SETTINGS_DEFAULTS` |
+| `tests/test_brain.py` | Tests for `classify_message()` — mock LLM, verify plan/chat responses, verify fallback to "plan" on ambiguous output |
+| `tests/test_worker.py` | Tests for fast path: chat message skips planner, plan message goes to planner, fast_path_enabled=false always plans |
+| `tests/live/test_flows.py` | Live test: send "hello" → verify fast path used (1 LLM call for classifier + 1 for messenger = 2 total, vs 3+ with planner) |
+
+### Savings
+
+| Message type | Current calls | Fast path calls | Saved |
+|---|---|---|---|
+| "hello" | planner(1) + messenger(1) = 2 | classifier(1) + messenger(1) = 2 | 0 (but cheaper model for classifier) |
+| "thanks, that worked" | planner(1) + messenger(1) = 2 | classifier(1) + messenger(1) = 2 | 0 calls, but ~50% cheaper (classifier is trivial prompt) |
+| "list files" | planner(1) + translator(1) + exec + reviewer(1) + messenger(1) = 4 | classifier(1) + planner(1) + ... = 5 | -1 (classifier overhead) |
+
+The real win is **latency**, not cost: the classifier returns in ~200ms (short prompt, cheap model) vs the planner at ~1-2s (long context). For chat messages, total latency drops from ~3s to ~1.5s.
+
+### Verify
+
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+
+# Live test
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_flows.py --llm-live -v -k fast_path
+```
+
+---
+
+## Milestone 33: Worker-level retry for transient exec errors
+
+Currently, any exec failure goes to the reviewer, and if the reviewer says "replan", the entire plan is scrapped and a new one is generated. This is wasteful for transient errors like typos in filenames, permission issues fixable with `chmod`, or commands that just need a retry with a small tweak.
+
+### Design
+
+**New concept: worker retry (micro-replan)**
+
+After an exec task fails AND the reviewer says "replan", instead of immediately replanning at the plan level, the worker gets ONE chance to fix the command. This is a local retry — same task, same goal, no new plan.
+
+**Flow:**
+
+```
+exec task → fail → reviewer says replan (reason: "file not found")
+  → worker retry: send exec translator the original detail + error output + reviewer reason
+  → exec retried command → succeed → reviewer says ok → continue plan
+  → fail again → escalate to full replan (current behavior)
+```
+
+**Retry eligibility — only for simple, retryable errors:**
+
+The reviewer already provides a `reason` string. The worker checks if the error is "locally fixable" by these heuristics:
+- Exit code is non-zero (command actually failed, not just unexpected output)
+- The failure is NOT about missing tools/binaries (those need a plan change)
+- The failure is NOT about wrong approach (those need a plan change)
+- The retry count for this task is < `max_worker_retries` (default: 1)
+
+Rather than complex heuristics, we extend the reviewer schema with a new field:
+
+**New reviewer field: `retry_hint`**
+
+```json
+{
+  "status": "replan",
+  "reason": "File not found: data.csv",
+  "retry_hint": "Try looking in the workspace root directory instead of /tmp",
+  "learn": null
+}
+```
+
+- `retry_hint`: if non-null, the reviewer believes a local retry can fix it. The hint is passed to the exec translator as additional context.
+- If `retry_hint` is null, the reviewer believes a full replan is needed.
+
+This keeps the intelligence in the LLM (reviewer decides if retryable) rather than brittle regex heuristics.
+
+**Integration point: exec review block in `_execute_plan()` (worker.py ~line 579)**
+
+```python
+if review["status"] == "replan":
+    retry_hint = review.get("retry_hint")
+    if retry_hint and task_retry_count < max_worker_retries:
+        # Worker retry: re-translate with error context
+        retry_detail = (
+            f"{detail}\n\n"
+            f"Previous attempt failed:\n"
+            f"Command: {command}\n"
+            f"Error: {stderr[:500]}\n"
+            f"Hint: {retry_hint}"
+        )
+        command = await run_exec_translator(config, retry_detail, sys_env_text, ...)
+        stdout, stderr, success = await _exec_task(session, command, ...)
+        # Review again
+        review = await _review_task(...)
+        if review["status"] == "ok":
+            completed.append(task_row)
+            continue  # success! continue plan
+    # Full replan (current behavior)
+    return False, review["reason"], completed, remaining
+```
+
+**Search tasks**: also eligible for retry (re-run search with refined query from `retry_hint`).
+
+**Skill tasks**: NOT eligible for retry (skill execution is opaque).
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `kiso/roles/reviewer.md` | Add `retry_hint` field documentation + when to use it vs full replan |
+| `kiso/brain.py` | Update `REVIEW_SCHEMA` to include optional `retry_hint` field; update `validate_review()` |
+| `kiso/worker.py` | Add retry logic in exec and search task handlers; new `max_worker_retries` config setting |
+| `kiso/config.py` | Add `"max_worker_retries": 1` to `SETTINGS_DEFAULTS` |
+| `kiso/store.py` | (optional) Track retry count per task if needed for display |
+| `kiso/render.py` | Show retry indicator: `↻ retry (hint: ...)` before re-execution |
+| `tests/test_brain.py` | Tests for new `retry_hint` in review schema |
+| `tests/test_worker.py` | Tests for: retry succeeds on second attempt, retry fails → full replan, retry_hint=null → immediate replan, max_worker_retries=0 disables retries |
+| `tests/live/test_flows.py` | Live test: exec with retryable error → verify retry attempted before replan |
+
+### Cost analysis
+
+| Scenario | Current (full replan) | With worker retry |
+|---|---|---|
+| Typo fixable by retry | planner(1) + translator(1) + reviewer(1) + planner(1 replan) + translator(1) + reviewer(1) + messenger(1) = 7 | translator(1) + reviewer(1, retry_hint) + translator(1 retry) + reviewer(1) + messenger(1) = 5 |
+| Fundamental failure | Same as current — retry_hint is null, goes straight to replan | +0 calls (reviewer just sets retry_hint=null) |
+
+Saves 2 LLM calls per successful retry, plus avoids discarding the entire plan (remaining tasks are preserved).
+
+### Verify
+
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+
+# Live test
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_flows.py --llm-live -v -k worker_retry
+```
+
+---
+
+## Milestone 34: Richer LLM-driven memory consolidation
+
+The current knowledge system has three separate mechanisms that don't communicate well:
+1. **Reviewer learnings** → curator promotes/discards → individual facts
+2. **Session summarizer** → compresses messages into a summary string
+3. **Fact consolidation** → deduplicates when facts exceed threshold
+
+Problems:
+- Facts are flat, unstructured strings — no categorization, no priority
+- Session summaries are isolated per-session — no cross-session knowledge synthesis
+- Consolidation is a bulk delete-and-replace with no validation
+- No aging/decay — stale facts persist forever
+
+### Design
+
+**Two-layer memory model (inspired by nanobot's MEMORY.md + HISTORY.md):**
+
+| Layer | What | Scope | TTL | Store |
+|---|---|---|---|---|
+| **Working memory** | Current session facts + recent learnings | Per-session | Session lifetime | `sessions.summary` (enriched) |
+| **Long-term memory** | Cross-session knowledge, user preferences, project facts | Global | Indefinite (with decay) | `facts` table (enriched) |
+
+**Enriched fact schema — new columns in `facts` table:**
+
+```sql
+ALTER TABLE facts ADD COLUMN category TEXT DEFAULT 'general';
+ALTER TABLE facts ADD COLUMN confidence REAL DEFAULT 1.0;
+ALTER TABLE facts ADD COLUMN last_used TEXT;
+ALTER TABLE facts ADD COLUMN use_count INTEGER DEFAULT 0;
+```
+
+- `category`: one of `project`, `user`, `tool`, `general` — helps the planner find relevant facts
+- `confidence`: 0.0-1.0, starts at 1.0, decays with time, increases with use
+- `last_used`: ISO timestamp of last time this fact was included in a planner context
+- `use_count`: how many times this fact was actually relevant to a plan
+
+**Enriched consolidation — `run_fact_consolidation()` upgrade:**
+
+Instead of the current "squash everything into a smaller list", the new consolidation:
+1. Groups facts by category
+2. Within each category: merge duplicates, resolve contradictions (keep newer)
+3. Applies confidence decay: facts not used in 7+ days lose 0.1 confidence per consolidation cycle
+4. Removes facts with confidence < 0.3 (with soft-delete to a `facts_archive` table)
+5. Returns structured output with category assignments
+
+**New consolidation prompt (`summarizer-facts.md` upgrade):**
+
+```
+You consolidate a knowledge base. For each group of facts:
+1. Merge duplicates (keep the most specific version)
+2. Resolve contradictions (keep the most recent)
+3. Assign a category: project, user, tool, or general
+4. Assign a confidence: 1.0 for well-established facts, 0.5-0.9 for uncertain ones
+
+Return a JSON array of objects: [{content, category, confidence}]
+```
+
+**Enriched session summary — `run_summarizer()` upgrade:**
+
+The session summarizer currently produces a single paragraph. Upgrade to structured output:
+
+```
+## Session Summary
+Brief narrative of what happened.
+
+## Key Decisions
+- Chose X over Y because Z.
+
+## Open Questions
+- Need to clarify X.
+
+## Working Knowledge
+- File structure: ...
+- Current branch: ...
+```
+
+This structured format helps the planner extract relevant context faster.
+
+**Fact usage tracking — planner integration:**
+
+When the planner runs, we track which facts were included in its context. After the plan executes successfully, increment `use_count` and update `last_used` for those facts. This creates a feedback loop: useful facts survive, irrelevant facts decay.
+
+**New function: `update_fact_usage()` in `store.py`**
+
+Called after successful plan execution in `_process_message()` — update all facts that were in the planner context.
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `kiso/store.py` | Add `category`, `confidence`, `last_used`, `use_count` columns to `facts`; add `facts_archive` table; add `update_fact_usage()`, `decay_facts()`, `archive_low_confidence_facts()` |
+| `kiso/brain.py` | Update `run_fact_consolidation()` to return structured output with categories; update `build_planner_messages()` to group facts by category |
+| `kiso/roles/summarizer-facts.md` | Rewrite for structured consolidation output |
+| `kiso/roles/summarizer-session.md` | Rewrite for structured session summary |
+| `kiso/worker.py` | Call `update_fact_usage()` after successful plan; call `decay_facts()` during post-plan processing; archive low-confidence facts |
+| `kiso/config.py` | Add settings: `fact_decay_days: 7`, `fact_decay_rate: 0.1`, `fact_archive_threshold: 0.3` |
+| `tests/test_store.py` | Tests for new columns, update_fact_usage, decay_facts, archive |
+| `tests/test_brain.py` | Tests for structured consolidation, categorized planner context |
+| `tests/test_worker.py` | Tests for fact usage tracking, decay cycle |
+| `tests/live/test_practical.py` | Live test: multi-session knowledge retention with decay |
+
+### Migration
+
+The `facts` table schema change is additive (new columns with defaults), so existing databases work without migration. The `facts_archive` table is created lazily on first use.
+
+### Verify
+
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+
+# Live test
+KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_practical.py --llm-live -v -k knowledge
+```
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.
