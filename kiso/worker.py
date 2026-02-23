@@ -78,6 +78,7 @@ from kiso.store import (
     update_task,
     update_task_command,
     update_task_review,
+    update_task_retry_count,
     update_task_substatus,
     update_task_usage,
 )
@@ -613,6 +614,7 @@ async def _execute_plan(
     plan_outputs: list[dict] = []
     deploy_secrets = collect_deploy_secrets(config)
     max_output_size = int(config.settings.get("max_output_size", 0))
+    max_worker_retries = int(config.settings.get("max_worker_retries", 1))
     # Cache installed skills for the whole plan execution (avoid rescanning per task)
     installed_skills = discover_skills()
 
@@ -670,98 +672,132 @@ async def _execute_plan(
             # Write plan_outputs.json before execution
             _write_plan_outputs(session, plan_outputs)
 
-            await update_task_substatus(db, task_id, "translating")
-            # Translate natural-language detail → shell command
-            sys_env = get_system_env(config)
-            sys_env_text = build_system_env_section(sys_env, session=session)
-            outputs_text = _format_plan_outputs_for_msg(plan_outputs)
-            try:
-                command = await run_exec_translator(
-                    config, detail, sys_env_text,
-                    plan_outputs_text=outputs_text, session=session,
+            retry_context = ""
+            exec_retries = 0
+
+            while True:
+                await update_task_substatus(db, task_id, "translating")
+                # Translate natural-language detail → shell command
+                sys_env = get_system_env(config)
+                sys_env_text = build_system_env_section(sys_env, session=session)
+                outputs_text = _format_plan_outputs_for_msg(plan_outputs)
+                try:
+                    command = await run_exec_translator(
+                        config, detail, sys_env_text,
+                        plan_outputs_text=outputs_text, session=session,
+                        retry_context=retry_context,
+                    )
+                except ExecTranslatorError as e:
+                    log.error("Exec translation failed for task %d: %s", task_id, e)
+                    await update_task(db, task_id, "failed", output="", stderr=str(e))
+                    audit.log_task(
+                        session, task_id, "exec", detail, "failed", 0, 0,
+                        deploy_secrets=deploy_secrets,
+                        session_secrets=session_secrets or {},
+                    )
+                    remaining = [dict(t) for t in tasks[i + 1:]]
+                    _cleanup_plan_outputs(session)
+                    return False, None, completed, remaining
+
+                await update_task_command(db, task_id, command)
+
+                if slog:
+                    slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
+
+                await update_task_substatus(db, task_id, "executing")
+                t0 = time.perf_counter()
+                stdout, stderr, success = await _exec_task(
+                    session, command, exec_timeout, sandbox_uid=sandbox_uid,
+                    max_output_size=max_output_size,
                 )
-            except ExecTranslatorError as e:
-                log.error("Exec translation failed for task %d: %s", task_id, e)
-                await update_task(db, task_id, "failed", output="", stderr=str(e))
+                task_duration_ms = int((time.perf_counter() - t0) * 1000)
+                stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
+                stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
+                status = "done" if success else "failed"
+
+                # Report pub/ files if any were created
+                pub_urls = _report_pub_files(session, config)
+                if pub_urls:
+                    pub_note = "\n\nPublished files:\n" + "\n".join(
+                        f"- {u['filename']}: {u['url']}" for u in pub_urls
+                    )
+                    stdout += pub_note
+
+                await update_task(db, task_id, status, output=stdout, stderr=stderr)
+
                 audit.log_task(
-                    session, task_id, "exec", detail, "failed", 0, 0,
-                    deploy_secrets=deploy_secrets,
+                    session, task_id, "exec", detail, status, task_duration_ms,
+                    len(stdout), deploy_secrets=deploy_secrets,
                     session_secrets=session_secrets or {},
                 )
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            await update_task_command(db, task_id, command)
-
-            if slog:
-                slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
-
-            await update_task_substatus(db, task_id, "executing")
-            t0 = time.perf_counter()
-            stdout, stderr, success = await _exec_task(
-                session, command, exec_timeout, sandbox_uid=sandbox_uid,
-                max_output_size=max_output_size,
-            )
-            task_duration_ms = int((time.perf_counter() - t0) * 1000)
-            stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
-            stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
-            status = "done" if success else "failed"
-
-            # Report pub/ files if any were created
-            pub_urls = _report_pub_files(session, config)
-            if pub_urls:
-                pub_note = "\n\nPublished files:\n" + "\n".join(
-                    f"- {u['filename']}: {u['url']}" for u in pub_urls
-                )
-                stdout += pub_note
-
-            await update_task(db, task_id, status, output=stdout, stderr=stderr)
-
-            audit.log_task(
-                session, task_id, "exec", detail, status, task_duration_ms,
-                len(stdout), deploy_secrets=deploy_secrets,
-                session_secrets=session_secrets or {},
-            )
-            if slog:
-                slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
-
-            # Refresh task_row with output
-            task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
-
-            # Accumulate plan output
-            plan_outputs.append({
-                "index": i + 1,
-                "type": "exec",
-                "detail": detail,
-                "output": stdout,
-                "status": status,
-            })
-
-            # Review exec tasks
-            await update_task_substatus(db, task_id, "reviewing")
-            try:
-                review = await _review_task(
-                    config, db, session, goal, task_row, user_message,
-                )
-            except ReviewError as e:
-                log.error("Review failed for task %d: %s", task_id, e)
-                await update_task(db, task_id, "failed")
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            if review["status"] == "replan":
-                replan_reason = review["reason"]
-                log.info("Reviewer requests replan: %s", replan_reason)
                 if slog:
-                    slog.info("Review → replan: %s", replan_reason)
-                # Store per-step token usage even on replan
-                step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, replan_reason, completed, remaining
+                    slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
+
+                # Refresh task_row with output
+                task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+
+                # Accumulate plan output (replace on retry)
+                plan_output_entry = {
+                    "index": i + 1,
+                    "type": "exec",
+                    "detail": detail,
+                    "output": stdout,
+                    "status": status,
+                }
+                if exec_retries > 0 and plan_outputs and plan_outputs[-1]["index"] == i + 1:
+                    plan_outputs[-1] = plan_output_entry
+                else:
+                    plan_outputs.append(plan_output_entry)
+                _write_plan_outputs(session, plan_outputs)
+
+                # Review exec tasks
+                await update_task_substatus(db, task_id, "reviewing")
+                try:
+                    review = await _review_task(
+                        config, db, session, goal, task_row, user_message,
+                    )
+                except ReviewError as e:
+                    log.error("Review failed for task %d: %s", task_id, e)
+                    await update_task(db, task_id, "failed")
+                    remaining = [dict(t) for t in tasks[i + 1:]]
+                    _cleanup_plan_outputs(session)
+                    return False, None, completed, remaining
+
+                if review["status"] == "replan":
+                    retry_hint = review.get("retry_hint")
+                    if retry_hint and exec_retries < max_worker_retries:
+                        exec_retries += 1
+                        await update_task_retry_count(db, task_id, exec_retries)
+                        retry_context = (
+                            f"Attempt {exec_retries} failed.\n"
+                            f"Command: {command}\n"
+                            f"Output: {stdout[:500]}\n"
+                            f"Stderr: {stderr[:500]}\n"
+                            f"Hint: {retry_hint}"
+                        )
+                        if slog:
+                            slog.info("Task %d retry %d/%d: %s",
+                                      task_id, exec_retries, max_worker_retries, retry_hint)
+                        continue
+
+                    # No hint or retries exhausted → escalate to full replan
+                    replan_reason = review["reason"]
+                    log.info("Reviewer requests replan: %s", replan_reason)
+                    if slog:
+                        if exec_retries > 0:
+                            slog.info("Review → replan (retried %dx before escalating): %s",
+                                      exec_retries, replan_reason)
+                        else:
+                            slog.info("Review → replan: %s", replan_reason)
+                    # Store per-step token usage even on replan
+                    step_usage = get_usage_since(usage_idx_before)
+                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                    remaining = [dict(t) for t in tasks[i + 1:]]
+                    _cleanup_plan_outputs(session)
+                    return False, replan_reason, completed, remaining
+
+                # review ok → break out of retry loop
+                break
 
             # Store per-step token usage (translator + exec + reviewer)
             step_usage = get_usage_since(usage_idx_before)
@@ -936,8 +972,6 @@ async def _execute_plan(
             completed.append(task_row)
 
         elif task_type == "search":
-            t0 = time.perf_counter()
-
             # Parse optional search parameters from args
             search_params: dict = {}
             if task_row.get("args"):
@@ -960,71 +994,104 @@ async def _execute_plan(
             if not isinstance(country, str):
                 country = None
 
-            await update_task_substatus(db, task_id, "searching")
-            try:
-                outputs_text = _format_plan_outputs_for_msg(plan_outputs)
-                search_result = await run_searcher(
-                    config, detail, context=outputs_text,
-                    max_results=max_results,
-                    lang=lang,
-                    country=country,
-                    session=session,
-                )
-            except SearcherError as e:
+            search_retries = 0
+            search_extra_context = ""
+
+            while True:
+                t0 = time.perf_counter()
+                await update_task_substatus(db, task_id, "searching")
+                try:
+                    outputs_text = _format_plan_outputs_for_msg(plan_outputs)
+                    full_context = outputs_text
+                    if search_extra_context:
+                        full_context = (full_context + "\n\n" + search_extra_context).strip()
+                    search_result = await run_searcher(
+                        config, detail, context=full_context,
+                        max_results=max_results,
+                        lang=lang,
+                        country=country,
+                        session=session,
+                    )
+                except SearcherError as e:
+                    task_duration_ms = int((time.perf_counter() - t0) * 1000)
+                    log.error("Search failed for task %d: %s", task_id, e)
+                    await update_task(db, task_id, "failed", output=str(e))
+                    audit.log_task(
+                        session, task_id, "search", detail, "failed", task_duration_ms, 0,
+                        deploy_secrets=deploy_secrets,
+                        session_secrets=session_secrets or {},
+                    )
+                    remaining = [dict(t) for t in tasks[i + 1:]]
+                    _cleanup_plan_outputs(session)
+                    return False, None, completed, remaining
+
                 task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                log.error("Search failed for task %d: %s", task_id, e)
-                await update_task(db, task_id, "failed", output=str(e))
+                await update_task(db, task_id, "done", output=search_result)
+                task_row = {**task_row, "output": search_result, "status": "done"}
+
                 audit.log_task(
-                    session, task_id, "search", detail, "failed", task_duration_ms, 0,
-                    deploy_secrets=deploy_secrets,
+                    session, task_id, "search", detail, "done", task_duration_ms,
+                    len(search_result), deploy_secrets=deploy_secrets,
                     session_secrets=session_secrets or {},
                 )
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            task_duration_ms = int((time.perf_counter() - t0) * 1000)
-            await update_task(db, task_id, "done", output=search_result)
-            task_row = {**task_row, "output": search_result, "status": "done"}
-
-            audit.log_task(
-                session, task_id, "search", detail, "done", task_duration_ms,
-                len(search_result), deploy_secrets=deploy_secrets,
-                session_secrets=session_secrets or {},
-            )
-            if slog:
-                slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
-
-            # Accumulate plan output
-            plan_outputs.append({
-                "index": i + 1,
-                "type": "search",
-                "detail": detail,
-                "output": search_result,
-                "status": "done",
-            })
-
-            # Review search tasks
-            await update_task_substatus(db, task_id, "reviewing")
-            try:
-                review = await _review_task(
-                    config, db, session, goal, task_row, user_message,
-                )
-            except ReviewError as e:
-                log.error("Review failed for search task %d: %s", task_id, e)
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            if review["status"] == "replan":
-                replan_reason = review["reason"]
                 if slog:
-                    slog.info("Review → replan: %s", replan_reason)
-                step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, replan_reason, completed, remaining
+                    slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
+
+                # Accumulate plan output (replace on retry)
+                plan_output_entry = {
+                    "index": i + 1,
+                    "type": "search",
+                    "detail": detail,
+                    "output": search_result,
+                    "status": "done",
+                }
+                if search_retries > 0 and plan_outputs and plan_outputs[-1]["index"] == i + 1:
+                    plan_outputs[-1] = plan_output_entry
+                else:
+                    plan_outputs.append(plan_output_entry)
+
+                # Review search tasks
+                await update_task_substatus(db, task_id, "reviewing")
+                try:
+                    review = await _review_task(
+                        config, db, session, goal, task_row, user_message,
+                    )
+                except ReviewError as e:
+                    log.error("Review failed for search task %d: %s", task_id, e)
+                    remaining = [dict(t) for t in tasks[i + 1:]]
+                    _cleanup_plan_outputs(session)
+                    return False, None, completed, remaining
+
+                if review["status"] == "replan":
+                    retry_hint = review.get("retry_hint")
+                    if retry_hint and search_retries < max_worker_retries:
+                        search_retries += 1
+                        await update_task_retry_count(db, task_id, search_retries)
+                        search_extra_context += (
+                            f"\n\n[Retry {search_retries}] Previous search was insufficient. "
+                            f"Hint: {retry_hint}"
+                        )
+                        if slog:
+                            slog.info("Task %d search retry %d/%d: %s",
+                                      task_id, search_retries, max_worker_retries, retry_hint)
+                        continue
+
+                    # No hint or retries exhausted → escalate to full replan
+                    replan_reason = review["reason"]
+                    if slog:
+                        if search_retries > 0:
+                            slog.info("Review → replan (retried %dx before escalating): %s",
+                                      search_retries, replan_reason)
+                        else:
+                            slog.info("Review → replan: %s", replan_reason)
+                    step_usage = get_usage_since(usage_idx_before)
+                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                    remaining = [dict(t) for t in tasks[i + 1:]]
+                    _cleanup_plan_outputs(session)
+                    return False, replan_reason, completed, remaining
+
+                # review ok → break out of retry loop
+                break
 
             # Store per-step token usage (searcher + reviewer)
             step_usage = get_usage_since(usage_idx_before)

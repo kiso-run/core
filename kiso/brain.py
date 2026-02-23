@@ -164,8 +164,9 @@ REVIEW_SCHEMA: dict = {
                 },
                 "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 "learn": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "retry_hint": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             },
-            "required": ["status", "reason", "learn"],
+            "required": ["status", "reason", "learn", "retry_hint"],
             "additionalProperties": False,
         },
     },
@@ -793,6 +794,7 @@ def build_exec_translator_messages(
     detail: str,
     sys_env_text: str,
     plan_outputs_text: str = "",
+    retry_context: str = "",
 ) -> list[dict]:
     """Build the message list for the exec translator LLM call."""
     system_prompt = _load_system_prompt("worker")
@@ -800,6 +802,8 @@ def build_exec_translator_messages(
     context_parts.append(f"## System Environment\n{sys_env_text}")
     if plan_outputs_text:
         context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
+    if retry_context:
+        context_parts.append(f"## Retry Context\n{retry_context}")
     context_parts.append(f"## Task\n{detail}")
 
     return [
@@ -814,6 +818,7 @@ async def run_exec_translator(
     sys_env_text: str,
     plan_outputs_text: str = "",
     session: str = "",
+    retry_context: str = "",
 ) -> str:
     """Translate a natural-language exec task detail into a shell command.
 
@@ -822,6 +827,7 @@ async def run_exec_translator(
     """
     messages = build_exec_translator_messages(
         config, detail, sys_env_text, plan_outputs_text,
+        retry_context=retry_context,
     )
     try:
         raw = await call_llm(config, "worker", messages, session=session)

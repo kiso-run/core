@@ -794,10 +794,10 @@ class TestBuildReviewerMessages:
 
 # --- run_reviewer ---
 
-VALID_REVIEW_OK = json.dumps({"status": "ok", "reason": None, "learn": None})
-VALID_REVIEW_REPLAN = json.dumps({"status": "replan", "reason": "File missing", "learn": None})
-VALID_REVIEW_WITH_LEARN = json.dumps({"status": "ok", "reason": None, "learn": "Uses Python 3.12"})
-INVALID_REVIEW = json.dumps({"status": "replan", "reason": None, "learn": None})
+VALID_REVIEW_OK = json.dumps({"status": "ok", "reason": None, "learn": None, "retry_hint": None})
+VALID_REVIEW_REPLAN = json.dumps({"status": "replan", "reason": "File missing", "learn": None, "retry_hint": None})
+VALID_REVIEW_WITH_LEARN = json.dumps({"status": "ok", "reason": None, "learn": "Uses Python 3.12", "retry_hint": None})
+INVALID_REVIEW = json.dumps({"status": "replan", "reason": None, "learn": None, "retry_hint": None})
 
 
 class TestRunReviewer:
@@ -1725,3 +1725,103 @@ class TestClassifierPromptContent:
         prompt = (_ROLES_DIR / "classifier.md").read_text()
         assert "doubt" in prompt.lower()
         assert "plan" in prompt
+
+
+# --- M33: retry_hint in REVIEW_SCHEMA ---
+
+
+class TestRetryHintInSchema:
+    def test_retry_hint_in_review_schema(self):
+        """REVIEW_SCHEMA includes retry_hint property."""
+        from kiso.brain import REVIEW_SCHEMA
+        props = REVIEW_SCHEMA["json_schema"]["schema"]["properties"]
+        assert "retry_hint" in props
+        required = REVIEW_SCHEMA["json_schema"]["schema"]["required"]
+        assert "retry_hint" in required
+
+    def test_validate_review_ok_with_retry_hint(self):
+        review = {"status": "ok", "reason": None, "learn": None, "retry_hint": None}
+        assert validate_review(review) == []
+
+    def test_validate_review_replan_with_retry_hint(self):
+        review = {"status": "replan", "reason": "wrong path", "learn": None, "retry_hint": "use /opt/app"}
+        assert validate_review(review) == []
+
+    async def test_run_reviewer_returns_retry_hint(self):
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"reviewer": "gpt-4"},
+            settings={"max_validation_retries": 3},
+            raw={},
+        )
+        review_json = json.dumps({
+            "status": "replan", "reason": "wrong path",
+            "learn": None, "retry_hint": "use /opt/app",
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=review_json):
+            review = await run_reviewer(config, "goal", "detail", "expect", "output", "msg")
+        assert review["retry_hint"] == "use /opt/app"
+
+
+# --- M33: retry_context in exec translator ---
+
+
+class TestExecTranslatorRetryContext:
+    def test_retry_context_included_in_messages(self):
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config, "List Python files", "OS: Linux",
+            retry_context="Previous command failed. Hint: use python3 not python",
+        )
+        content = msgs[1]["content"]
+        assert "## Retry Context" in content
+        assert "use python3 not python" in content
+
+    def test_retry_context_empty_not_included(self):
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config, "List Python files", "OS: Linux",
+            retry_context="",
+        )
+        content = msgs[1]["content"]
+        assert "Retry Context" not in content
+
+    def test_retry_context_before_task_section(self):
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config, "List Python files", "OS: Linux",
+            retry_context="Hint: use python3",
+        )
+        content = msgs[1]["content"]
+        retry_pos = content.index("## Retry Context")
+        task_pos = content.index("## Task")
+        assert retry_pos < task_pos
+
+    async def test_run_exec_translator_passes_retry_context(self):
+        config = _make_brain_config(models={"worker": "gpt-4"})
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "python3 script.py"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            result = await run_exec_translator(
+                config, "Run script", "OS: Linux",
+                retry_context="use python3 not python",
+            )
+        assert result == "python3 script.py"
+        user_content = captured_messages[1]["content"]
+        assert "## Retry Context" in user_content
+        assert "use python3 not python" in user_content
+
+
+# --- M33: reviewer prompt mentions retry_hint ---
+
+
+class TestReviewerPromptRetryHint:
+    def test_reviewer_prompt_mentions_retry_hint(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "retry_hint" in prompt

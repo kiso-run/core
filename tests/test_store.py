@@ -34,6 +34,7 @@ from kiso.store import (
     update_summary,
     update_task,
     update_task_command,
+    update_task_retry_count,
     update_task_review,
     update_task_substatus,
     update_task_usage,
@@ -852,3 +853,35 @@ async def test_append_task_llm_call_corrupted_json(db: aiosqlite.Connection):
     stored = json.loads(tasks[0]["llm_calls"])
     assert len(stored) == 1
     assert stored[0]["role"] == "searcher"
+
+
+# --- M33: retry_count column ---
+
+
+async def test_retry_count_column_exists(db: aiosqlite.Connection):
+    """Tasks table has a retry_count column."""
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "retry_count" in columns
+
+
+async def test_retry_count_defaults_to_zero(db: aiosqlite.Connection):
+    """New tasks have retry_count = 0."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["retry_count"] == 0
+
+
+async def test_update_task_retry_count(db: aiosqlite.Connection):
+    """update_task_retry_count sets retry_count correctly."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    await update_task_retry_count(db, task_id, 2)
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["retry_count"] == 2

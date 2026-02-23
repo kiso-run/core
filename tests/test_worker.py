@@ -28,6 +28,7 @@ from kiso.store import (
     save_fact,
     save_learning,
     save_message,
+    update_task_retry_count,
 )
 from kiso.worker import (
     _apply_curator_result,
@@ -65,8 +66,9 @@ SKILL_PLAN = {
     ],
 }
 
-REVIEW_OK = {"status": "ok", "reason": None, "learn": None}
-REVIEW_REPLAN = {"status": "replan", "reason": "Task failed", "learn": None}
+REVIEW_OK = {"status": "ok", "reason": None, "learn": None, "retry_hint": None}
+REVIEW_REPLAN = {"status": "replan", "reason": "Task failed", "learn": None, "retry_hint": None}
+REVIEW_REPLAN_WITH_HINT = {"status": "replan", "reason": "Wrong path", "learn": None, "retry_hint": "use /opt/app not /app"}
 
 
 def _passthrough_translator(config, detail, sys_env_text, **kw):
@@ -5631,3 +5633,219 @@ class TestFastPathEdgeCases:
         tasks = await get_tasks_for_session(db, "sess1")
         # substatus was set during execution (may be cleared after done)
         assert tasks[0]["status"] == "done"
+
+
+# --- M33: Worker Retry ---
+
+
+class TestWorkerRetry:
+    """Tests for worker-level retry on transient exec/search errors."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_exec_retry_on_hint_then_ok(self, db, tmp_path):
+        """First review returns replan+hint → retry → second review ok."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 1,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        review_calls = [0]
+
+        async def _mock_reviewer(*args, **kw):
+            review_calls[0] += 1
+            if review_calls[0] == 1:
+                return REVIEW_REPLAN_WITH_HINT
+            return REVIEW_OK
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert reason is None
+        assert len(completed) == 2
+        assert review_calls[0] == 2
+
+        # Verify retry_count persisted
+        tasks = await get_tasks_for_plan(db, plan_id)
+        exec_task = [t for t in tasks if t["type"] == "exec"][0]
+        assert exec_task["retry_count"] == 1
+
+    async def test_exec_retry_still_fails_escalates(self, db, tmp_path):
+        """Retry also returns replan+hint but retries exhausted → full replan."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 1,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        # Both reviews return replan with hint
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Wrong path"
+        assert len(remaining) == 1  # msg task
+
+    async def test_exec_no_retry_when_hint_is_null(self, db, tmp_path):
+        """Null retry_hint → immediate replan (no retry)."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 1,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Task failed"  # immediate escalation
+
+    async def test_exec_retry_context_passed_to_translator(self, db, tmp_path):
+        """On retry, translator receives retry_context with hint."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 1,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="run script", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        translator_calls = []
+
+        async def _capture_translator(config, detail, sys_env_text, **kw):
+            translator_calls.append(kw.get("retry_context", ""))
+            return "echo hello"
+
+        review_calls = [0]
+
+        async def _mock_reviewer(*args, **kw):
+            review_calls[0] += 1
+            if review_calls[0] == 1:
+                return REVIEW_REPLAN_WITH_HINT
+            return REVIEW_OK
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.run_exec_translator", new_callable=AsyncMock, side_effect=_capture_translator), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # First call: no retry_context
+        assert translator_calls[0] == ""
+        # Second call: retry_context with hint
+        assert "use /opt/app not /app" in translator_calls[1]
+        assert "Attempt 1 failed" in translator_calls[1]
+
+    async def test_search_retry_on_hint(self, db, tmp_path):
+        """Search task: first review returns hint → retry → second ok."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 1,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="search", detail="find info", expect="results")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        review_calls = [0]
+
+        async def _mock_reviewer(*args, **kw):
+            review_calls[0] += 1
+            if review_calls[0] == 1:
+                return {"status": "replan", "reason": "No results", "learn": None, "retry_hint": "try broader terms"}
+            return REVIEW_OK
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.run_searcher", new_callable=AsyncMock, return_value="search results"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert review_calls[0] == 2
+
+        # Verify retry_count persisted
+        tasks = await get_tasks_for_plan(db, plan_id)
+        search_task = [t for t in tasks if t["type"] == "search"][0]
+        assert search_task["retry_count"] == 1
+
+    async def test_max_worker_retries_zero_disables(self, db, tmp_path):
+        """max_worker_retries=0 → hint is ignored, immediate replan."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 0,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Wrong path"  # immediate escalation, no retry
+
+    async def test_retry_count_persisted(self, db, tmp_path):
+        """DB retry_count matches actual retry attempts."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 2,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        review_calls = [0]
+
+        async def _mock_reviewer(*args, **kw):
+            review_calls[0] += 1
+            if review_calls[0] <= 2:
+                return REVIEW_REPLAN_WITH_HINT
+            return REVIEW_OK
+
+        with patch("kiso.worker.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
+             patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_translator(), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            success, reason, completed, remaining = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        tasks = await get_tasks_for_plan(db, plan_id)
+        exec_task = [t for t in tasks if t["type"] == "exec"][0]
+        assert exec_task["retry_count"] == 2

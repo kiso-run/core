@@ -19,6 +19,7 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
     "summarize_threshold": 30,
     "knowledge_max_facts": 50,
     "max_replan_depth": 5,
+    "max_worker_retries": 1,
     "max_validation_retries": 3,
     "max_output_size": 1_048_576,
     "max_message_size": 65536,

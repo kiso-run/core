@@ -570,10 +570,13 @@ def render_review(task: dict, caps: TermCaps) -> str:
     if not verdict:
         return ""
     lines: list[str] = []
+    retry_count = task.get("retry_count") or 0
     if verdict == "ok":
-        lines.append(
-            _style(f"  {_icon('ok', caps)} review: ok", _GREEN, caps=caps)
-        )
+        ok_text = f"  {_icon('ok', caps)} review: ok"
+        if retry_count > 0:
+            suffix = "retry" if retry_count == 1 else "retries"
+            ok_text += f" (after {retry_count} {suffix})"
+        lines.append(_style(ok_text, _GREEN, caps=caps))
     elif verdict == "replan":
         reason = task.get("review_reason") or ""
         lines.append(
@@ -582,6 +585,10 @@ def render_review(task: dict, caps: TermCaps) -> str:
                 _BOLD, _RED, caps=caps,
             )
         )
+        if retry_count > 0:
+            lines.append(
+                _style(f"  (retried {retry_count}x before escalating)", _DIM, caps=caps)
+            )
     # Per-call LLM breakdown
     llm_detail = render_llm_calls(task.get("llm_calls"), caps)
     if llm_detail:

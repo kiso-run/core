@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     substatus    TEXT,
     output       TEXT,
     stderr       TEXT,
+    retry_count     INTEGER NOT NULL DEFAULT 0,
     review_verdict  TEXT,
     review_reason   TEXT,
     review_learning TEXT,
@@ -134,6 +135,7 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ("tasks", "llm_calls", "ALTER TABLE tasks ADD COLUMN llm_calls TEXT"),
         ("plans", "llm_calls", "ALTER TABLE plans ADD COLUMN llm_calls TEXT"),
         ("tasks", "substatus", "ALTER TABLE tasks ADD COLUMN substatus TEXT"),
+        ("tasks", "retry_count", "ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"),
     ]
     for table, column, sql in migrations:
         cur = await db.execute(f"PRAGMA table_info({table})")
@@ -387,6 +389,17 @@ async def update_task_substatus(
     await db.execute(
         "UPDATE tasks SET substatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         (substatus, task_id),
+    )
+    await db.commit()
+
+
+async def update_task_retry_count(
+    db: aiosqlite.Connection, task_id: int, retry_count: int
+) -> None:
+    """Update the retry_count on a task."""
+    await db.execute(
+        "UPDATE tasks SET retry_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (retry_count, task_id),
     )
     await db.commit()
 

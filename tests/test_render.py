@@ -1150,3 +1150,44 @@ def test_task_header_no_substatus():
     assert "reviewing" not in result
     assert "searching" not in result
     assert "composing" not in result
+
+
+# ── M33: render_review retry indicator ───────────────────────
+
+
+def test_render_review_ok_after_retry():
+    """OK verdict with retry_count > 0 shows '(after N retries)'."""
+    task = {"review_verdict": "ok", "retry_count": 2}
+    result = render_review(task, _COLOR)
+    assert "review: ok" in result
+    assert "(after 2 retries)" in result
+
+
+def test_render_review_ok_after_single_retry():
+    """OK verdict with retry_count = 1 shows '(after 1 retry)' (singular)."""
+    task = {"review_verdict": "ok", "retry_count": 1}
+    result = render_review(task, _COLOR)
+    assert "(after 1 retry)" in result
+
+
+def test_render_review_replan_with_retry_count():
+    """Replan verdict with retry_count > 0 shows escalation message."""
+    task = {"review_verdict": "replan", "review_reason": "still broken", "retry_count": 1}
+    result = render_review(task, _COLOR)
+    assert "replan" in result
+    assert "(retried 1x before escalating)" in result
+
+
+def test_render_review_no_retry_no_indicator():
+    """No retry_count or retry_count=0 → no retry indicator."""
+    task = {"review_verdict": "ok"}
+    result = render_review(task, _COLOR)
+    assert "retry" not in result.lower()
+
+    task2 = {"review_verdict": "ok", "retry_count": 0}
+    result2 = render_review(task2, _COLOR)
+    assert "retry" not in result2.lower()
+
+    task3 = {"review_verdict": "replan", "review_reason": "fail", "retry_count": 0}
+    result3 = render_review(task3, _COLOR)
+    assert "retried" not in result3.lower()
