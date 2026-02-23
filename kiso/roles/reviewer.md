@@ -17,3 +17,4 @@ Rules:
 - Be concise in your reason — the planner will use it to create a better plan.
 - Only learn genuinely useful facts (e.g. "project uses Python 3.12", "database is PostgreSQL").
   Do not learn transient facts (e.g. "command failed", "file not found").
+- If the output contains warnings about missing configuration (env vars, API keys, tokens), mark as replan even if the command succeeded. Missing config means the feature is not usable yet.
