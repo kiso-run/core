@@ -354,6 +354,85 @@ async def _msg_task(
     return await run_messenger(db, config, session, detail, outputs_text, goal=goal)
 
 
+async def _post_plan_knowledge(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    plan_id: int | None,
+    exec_timeout: int,
+) -> None:
+    """Run post-plan knowledge processing: curator, summarizer, fact consolidation.
+
+    Called after both normal and fast-path message processing to keep
+    the knowledge base current regardless of which path was taken.
+    """
+    # 1. Curator — process pending learnings
+    learnings = await get_pending_learnings(db)
+    if learnings:
+        try:
+            curator_result = await asyncio.wait_for(
+                run_curator(config, learnings, session=session),
+                timeout=exec_timeout,
+            )
+            await _apply_curator_result(db, session, curator_result)
+        except asyncio.TimeoutError:
+            log.warning("Curator timed out after %ds", exec_timeout)
+        except CuratorError as e:
+            log.error("Curator failed: %s", e)
+
+    # 2. Summarizer — compress when threshold reached
+    msg_count = await count_messages(db, session)
+    if msg_count >= int(config.settings.get("summarize_threshold", 30)):
+        try:
+            sess = await get_session(db, session)
+            current_summary = sess["summary"] if sess else ""
+            oldest = await get_oldest_messages(db, session, limit=msg_count)
+            new_summary = await asyncio.wait_for(
+                run_summarizer(config, current_summary, oldest, session=session),
+                timeout=exec_timeout,
+            )
+            await update_summary(db, session, new_summary)
+        except asyncio.TimeoutError:
+            log.warning("Summarizer timed out after %ds", exec_timeout)
+        except SummarizerError as e:
+            log.error("Summarizer failed: %s", e)
+
+    # 3. Fact consolidation
+    max_facts = int(config.settings.get("knowledge_max_facts", 50))
+    all_facts = await get_facts(db)
+    if len(all_facts) > max_facts:
+        try:
+            consolidated = await asyncio.wait_for(
+                run_fact_consolidation(config, all_facts, session=session),
+                timeout=exec_timeout,
+            )
+            if consolidated:
+                if len(consolidated) < len(all_facts) * 0.3:
+                    log.warning("Fact consolidation shrank %d → %d (< 30%%), skipping",
+                                len(all_facts), len(consolidated))
+                else:
+                    consolidated = [f for f in consolidated if isinstance(f, str) and len(f.strip()) >= 10]
+                    if consolidated:
+                        await delete_facts(db, [f["id"] for f in all_facts])
+                        for text in consolidated:
+                            await save_fact(db, text, source="consolidation")
+                    else:
+                        log.warning("All consolidated facts filtered out, preserving originals")
+        except asyncio.TimeoutError:
+            log.warning("Fact consolidation timed out after %ds", exec_timeout)
+        except SummarizerError as e:
+            log.error("Fact consolidation failed: %s", e)
+
+    # Update token usage with post-plan processing tokens
+    final_usage = get_usage_summary()
+    if plan_id and (final_usage["input_tokens"] or final_usage["output_tokens"]):
+        await update_plan_usage(
+            db, plan_id,
+            final_usage["input_tokens"], final_usage["output_tokens"],
+            final_usage["model"],
+        )
+
+
 async def _fast_path_chat(
     db: aiosqlite.Connection,
     config: Config,
@@ -361,12 +440,21 @@ async def _fast_path_chat(
     msg_id: int,
     content: str,
     slog: SessionLogger | None = None,
-) -> None:
+) -> int:
     """Fast path for chat messages: skip planner, go straight to messenger.
 
     Creates a plan + msg task in the DB so the CLI renders normally and
     ``/status`` works.  Delivers webhook if configured.
+
+    Returns the plan_id (used by caller for post-plan usage tracking).
+
+    .. note::
+
+       Post-plan knowledge processing (curator, summarizer, fact
+       consolidation) is handled by the caller after this returns,
+       so chat-heavy sessions still trigger summarization.
     """
+    deploy_secrets = collect_deploy_secrets(config)
     plan_id = await create_plan(db, session, msg_id, "Chat response")
     task_id = await create_task(db, plan_id, session, "msg", content)
     await update_task(db, task_id, "running")
@@ -383,21 +471,35 @@ async def _fast_path_chat(
         )
 
     usage_idx_before = get_usage_index()
+    t0 = time.perf_counter()
     try:
         text = await _msg_task(config, db, session, content, goal=content)
     except (LLMError, MessengerError) as e:
+        task_duration_ms = int((time.perf_counter() - t0) * 1000)
         log.error("Fast path messenger failed: %s", e)
+        if slog:
+            slog.info("Fast path failed: %s", e)
         error_text = f"Chat response failed: {e}"
         await update_task(db, task_id, "failed", output=error_text)
         await update_plan_status(db, plan_id, "failed")
+        audit.log_task(
+            session, task_id, "msg", content, "failed", task_duration_ms, 0,
+            deploy_secrets=deploy_secrets,
+        )
         await save_message(
             db, session, None, "system", error_text,
             trusted=True, processed=True,
         )
-        return
+        return plan_id
 
+    task_duration_ms = int((time.perf_counter() - t0) * 1000)
     await update_task(db, task_id, "done", output=text)
     await update_plan_status(db, plan_id, "done")
+
+    audit.log_task(
+        session, task_id, "msg", content, "done", task_duration_ms,
+        len(text), deploy_secrets=deploy_secrets,
+    )
 
     # Store messenger usage
     step_usage = get_usage_since(usage_idx_before)
@@ -407,30 +509,22 @@ async def _fast_path_chat(
         llm_calls=step_usage.get("calls"),
     )
 
-    # Save as system message (for conversation history)
+    # Save assistant response to conversation history
     await save_message(
-        db, session, None, "system", text,
+        db, session, None, "assistant", text,
         trusted=True, processed=True,
     )
 
     # Webhook delivery
-    deploy_secrets = collect_deploy_secrets(config)
     await _deliver_webhook_if_configured(
         db, config, session, task_id, text, True,
         deploy_secrets=deploy_secrets,
     )
 
-    # Final usage on plan
-    final_usage = get_usage_summary()
-    if final_usage["input_tokens"] or final_usage["output_tokens"]:
-        await update_plan_usage(
-            db, plan_id,
-            final_usage["input_tokens"], final_usage["output_tokens"],
-            final_usage["model"],
-        )
-
     if slog:
-        slog.info("Fast path done: chat response delivered")
+        slog.info("Fast path done: chat response delivered (%dms)", task_duration_ms)
+
+    return plan_id
 
 
 async def _persist_plan_tasks(
@@ -1131,8 +1225,12 @@ async def _process_message(
             log.info("Fast path: chat message, skipping planner")
             if slog:
                 slog.info("Fast path: classified as chat, skipping planner")
-            await _fast_path_chat(
+            fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content, slog=slog,
+            )
+            # Run post-plan knowledge processing (summarizer, curator, etc.)
+            await _post_plan_knowledge(
+                db, config, session, fast_plan_id, exec_timeout,
             )
             clear_llm_budget()
             return
@@ -1465,71 +1563,6 @@ async def _process_message(
     invalidate_cache()
 
     # --- Post-plan knowledge processing ---
-
-    # 1. Curator — process pending learnings
-    learnings = await get_pending_learnings(db)
-    if learnings:
-        try:
-            curator_result = await asyncio.wait_for(
-                run_curator(config, learnings, session=session),
-                timeout=exec_timeout,
-            )
-            await _apply_curator_result(db, session, curator_result)
-        except asyncio.TimeoutError:
-            log.warning("Curator timed out after %ds", exec_timeout)
-        except CuratorError as e:
-            log.error("Curator failed: %s", e)
-
-    # 2. Summarizer — compress when threshold reached
-    msg_count = await count_messages(db, session)
-    if msg_count >= int(config.settings.get("summarize_threshold", 30)):
-        try:
-            sess = await get_session(db, session)
-            current_summary = sess["summary"] if sess else ""
-            oldest = await get_oldest_messages(db, session, limit=msg_count)
-            new_summary = await asyncio.wait_for(
-                run_summarizer(config, current_summary, oldest, session=session),
-                timeout=exec_timeout,
-            )
-            await update_summary(db, session, new_summary)
-        except asyncio.TimeoutError:
-            log.warning("Summarizer timed out after %ds", exec_timeout)
-        except SummarizerError as e:
-            log.error("Summarizer failed: %s", e)
-
-    # 3. Fact consolidation
-    max_facts = int(config.settings.get("knowledge_max_facts", 50))
-    all_facts = await get_facts(db)
-    if len(all_facts) > max_facts:
-        try:
-            consolidated = await asyncio.wait_for(
-                run_fact_consolidation(config, all_facts, session=session),
-                timeout=exec_timeout,
-            )
-            if consolidated:
-                if len(consolidated) < len(all_facts) * 0.3:
-                    log.warning("Fact consolidation shrank %d → %d (< 30%%), skipping",
-                                len(all_facts), len(consolidated))
-                else:
-                    consolidated = [f for f in consolidated if isinstance(f, str) and len(f.strip()) >= 10]
-                    if consolidated:
-                        await delete_facts(db, [f["id"] for f in all_facts])
-                        for text in consolidated:
-                            await save_fact(db, text, source="consolidation")
-                    else:
-                        log.warning("All consolidated facts filtered out, preserving originals")
-        except asyncio.TimeoutError:
-            log.warning("Fact consolidation timed out after %ds", exec_timeout)
-        except SummarizerError as e:
-            log.error("Fact consolidation failed: %s", e)
-
-    # --- Update token usage with post-plan processing tokens ---
-    final_usage = get_usage_summary()
-    if current_plan_id and (final_usage["input_tokens"] or final_usage["output_tokens"]):
-        await update_plan_usage(
-            db, current_plan_id,
-            final_usage["input_tokens"], final_usage["output_tokens"],
-            final_usage["model"],
-        )
+    await _post_plan_knowledge(db, config, session, current_plan_id, exec_timeout)
 
     clear_llm_budget()

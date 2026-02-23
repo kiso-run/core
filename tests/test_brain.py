@@ -1682,6 +1682,21 @@ class TestClassifyMessage:
             result = await classify_message(config, "hello")
         assert result == "plan"
 
+    async def test_budget_exceeded_falls_back_to_plan(self):
+        """classify_message returns 'plan' when LLM budget is exhausted."""
+        from kiso.llm import LLMBudgetExceeded
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("over")):
+            result = await classify_message(config, "hello")
+        assert result == "plan"
+
+    async def test_empty_response_falls_back_to_plan(self):
+        """classify_message returns 'plan' when LLM returns empty string."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=""):
+            result = await classify_message(config, "hello")
+        assert result == "plan"
+
     async def test_uses_worker_model(self):
         """classify_message should call LLM with 'worker' role."""
         config = _make_config_for_classifier()

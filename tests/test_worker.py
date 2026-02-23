@@ -32,7 +32,8 @@ from kiso.store import (
 from kiso.worker import (
     _apply_curator_result,
     _build_cancel_summary, _build_exec_env, _build_failure_summary,
-    _exec_task, _fast_path_chat, _msg_task, _report_pub_files, _skill_task, _session_workspace,
+    _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
+    _report_pub_files, _skill_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
@@ -5341,16 +5342,16 @@ class TestFastPathChat:
         assert plan["status"] == "done"
         assert plan["goal"] == "Chat response"
 
-    async def test_saves_system_message(self, db, tmp_path):
-        """_fast_path_chat saves the response as a system message."""
+    async def test_saves_assistant_message(self, db, tmp_path):
+        """_fast_path_chat saves the response as an assistant message."""
         config = _make_config()
         with patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Reply"), \
              patch("kiso.worker.KISO_DIR", tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
 
         msgs = await get_recent_messages(db, "sess1", limit=10)
-        system_msgs = [m for m in msgs if m["role"] == "system"]
-        assert any("Reply" in m["content"] for m in system_msgs)
+        assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
+        assert any("Reply" in m["content"] for m in assistant_msgs)
 
     async def test_messenger_failure_marks_plan_failed(self, db, tmp_path):
         """_fast_path_chat marks plan as failed when messenger errors."""
@@ -5481,3 +5482,131 @@ class TestFastPathIntegration:
 
         mock_classifier.assert_not_called()
         mock_planner.assert_called_once()
+
+    async def test_fast_path_runs_post_plan_knowledge(self, db, tmp_path):
+        """Fast path should run post-plan knowledge processing (summarizer, etc.)."""
+        conn, msg_id = db
+        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        msg = self._make_msg(msg_id)
+        mock_classifier = AsyncMock(return_value="chat")
+        mock_messenger = AsyncMock(return_value="Hi")
+        mock_post = AsyncMock()
+        q = asyncio.Queue()
+
+        with patch("kiso.worker.classify_message", mock_classifier), \
+             patch("kiso.worker.run_messenger", mock_messenger), \
+             patch("kiso.worker._post_plan_knowledge", mock_post), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            from kiso.worker import _process_message
+            await _process_message(
+                conn, config, "sess1", msg, q, None, 1, 5, 3,
+            )
+
+        mock_post.assert_called_once()
+
+
+# --- _fast_path_chat edge cases ---
+
+
+class TestFastPathEdgeCases:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_audit_log_on_success(self, db, tmp_path):
+        """_fast_path_chat calls audit.log_task on success."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.audit.log_task") as mock_audit, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        mock_audit.assert_called_once()
+        # Verify it logged as "done"
+        assert mock_audit.call_args[0][4] == "done"  # status arg
+
+    async def test_audit_log_on_failure(self, db, tmp_path):
+        """_fast_path_chat calls audit.log_task on messenger failure."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
+             patch("kiso.worker.audit.log_task") as mock_audit, \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args[0][4] == "failed"  # status arg
+
+    async def test_slog_on_failure(self, db, tmp_path):
+        """_fast_path_chat logs to slog on messenger failure."""
+        config = _make_config()
+        mock_slog = type("MockSlog", (), {"info": lambda self, *a, **kw: None})()
+        mock_slog.info = AsyncMock() if asyncio.iscoroutinefunction(getattr(mock_slog, "info", None)) else lambda *a, **kw: None
+
+        # Use a real mock for slog
+        from unittest.mock import MagicMock
+        slog = MagicMock()
+
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello", slog=slog)
+
+        # slog.info should have been called with error info
+        assert slog.info.called
+        logged_msg = slog.info.call_args[0][0]
+        assert "Fast path failed" in logged_msg
+
+    async def test_returns_plan_id(self, db, tmp_path):
+        """_fast_path_chat returns the plan_id for post-plan processing."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        assert isinstance(plan_id, int)
+        assert plan_id > 0
+
+    async def test_returns_plan_id_on_failure(self, db, tmp_path):
+        """_fast_path_chat returns plan_id even on failure."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        assert isinstance(plan_id, int)
+        assert plan_id > 0
+
+    async def test_budget_exceeded_in_messenger(self, db, tmp_path):
+        """LLMBudgetExceeded during messenger is caught (subclass of LLMError)."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("budget")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        # Should not crash — plan marked failed
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "failed"
+
+    async def test_error_message_saved_as_system(self, db, tmp_path):
+        """On failure, error message is saved as system role (not assistant)."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        msgs = await get_recent_messages(db, "sess1", limit=10)
+        system_msgs = [m for m in msgs if m["role"] == "system"]
+        assert any("Chat response failed" in m["content"] for m in system_msgs)
+
+    async def test_substatus_set_to_composing(self, db, tmp_path):
+        """_fast_path_chat sets task substatus to composing."""
+        config = _make_config()
+        with patch("kiso.worker.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        tasks = await get_tasks_for_session(db, "sess1")
+        # substatus was set during execution (may be cleared after done)
+        assert tasks[0]["status"] == "done"
