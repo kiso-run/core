@@ -33,6 +33,7 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
     "webhook_secret": "",
     "webhook_max_payload": 1048576,
     "bot_name": "Kiso",
+    "fast_path_enabled": True,
 }
 
 MODEL_DEFAULTS: dict[str, str] = {

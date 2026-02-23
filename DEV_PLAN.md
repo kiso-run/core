@@ -1375,7 +1375,7 @@ uv run pytest tests/live/test_flows.py -x -q -k search
 
 ---
 
-## Milestone 32: Fast path — skip planner for simple messages
+## ~~Milestone 32: Fast path — skip planner for simple messages~~ DONE
 
 Conversational messages ("hello", "thanks", "what was that?") currently go through the full planner → exec/msg → reviewer pipeline, wasting 2-3 LLM calls on something that needs only 1. A lightweight classifier short-circuits straight to the messenger.
 
@@ -1433,13 +1433,12 @@ Default `true`. When `false`, every message goes through the planner (current be
 
 | File | Change |
 |------|--------|
-| `kiso/roles/classifier.md` | **New**: classifier system prompt |
-| `kiso/brain.py` | Add `classify_message()` function — single LLM call to worker model, returns `"plan"` or `"chat"` |
-| `kiso/worker.py` | Add fast-path branch in `_process_message()` before `run_planner` call |
+| `kiso/roles/classifier.md` | **New**: classifier system prompt (plan vs chat) |
+| `kiso/brain.py` | Add `ClassifierError`, `build_classifier_messages()`, `classify_message()` — single LLM call to worker model, returns `"plan"` or `"chat"`, safe fallback to `"plan"` on error/ambiguity |
+| `kiso/worker.py` | Add `_fast_path_chat()` function + fast-path branch in `_process_message()` before `run_planner` call; creates plan + task for CLI compatibility, handles webhook, usage tracking |
 | `kiso/config.py` | Add `"fast_path_enabled": True` to `SETTINGS_DEFAULTS` |
-| `tests/test_brain.py` | Tests for `classify_message()` — mock LLM, verify plan/chat responses, verify fallback to "plan" on ambiguous output |
-| `tests/test_worker.py` | Tests for fast path: chat message skips planner, plan message goes to planner, fast_path_enabled=false always plans |
-| `tests/live/test_flows.py` | Live test: send "hello" → verify fast path used (1 LLM call for classifier + 1 for messenger = 2 total, vs 3+ with planner) |
+| `tests/test_brain.py` | 12 new tests: `build_classifier_messages` structure, `classify_message` (chat/plan/whitespace/case/unexpected/error/model), classifier prompt content |
+| `tests/test_worker.py` | 9 new tests: `_fast_path_chat` (plan+task creation, status, system message, failure, webhook, goal), integration (chat skips planner, plan goes to planner, disabled skips classifier) |
 
 ### Savings
 
@@ -1459,6 +1458,8 @@ uv run pytest tests/ -x -q --ignore=tests/live
 # Live test
 KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_flows.py --llm-live -v -k fast_path
 ```
+
+**Result:** 1391 passed, 4 skipped, 0 failures.
 
 ---
 

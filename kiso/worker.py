@@ -23,6 +23,7 @@ from kiso.security import (
     sanitize_output,
 )
 from kiso.brain import (
+    ClassifierError,
     CuratorError,
     ExecTranslatorError,
     MessengerError,
@@ -31,6 +32,7 @@ from kiso.brain import (
     ReviewError,
     SearcherError,
     SummarizerError,
+    classify_message,
     run_curator,
     run_exec_translator,
     run_fact_consolidation,
@@ -350,6 +352,85 @@ async def _msg_task(
     """Generate a user-facing message via the messenger brain role."""
     outputs_text = _format_plan_outputs_for_msg(plan_outputs) if plan_outputs else ""
     return await run_messenger(db, config, session, detail, outputs_text, goal=goal)
+
+
+async def _fast_path_chat(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    msg_id: int,
+    content: str,
+    slog: SessionLogger | None = None,
+) -> None:
+    """Fast path for chat messages: skip planner, go straight to messenger.
+
+    Creates a plan + msg task in the DB so the CLI renders normally and
+    ``/status`` works.  Delivers webhook if configured.
+    """
+    plan_id = await create_plan(db, session, msg_id, "Chat response")
+    task_id = await create_task(db, plan_id, session, "msg", content)
+    await update_task(db, task_id, "running")
+    await update_task_substatus(db, task_id, "composing")
+
+    # Store classifier usage on the plan header
+    classifier_usage = get_usage_since(0)
+    if classifier_usage["input_tokens"] or classifier_usage["output_tokens"]:
+        await update_plan_usage(
+            db, plan_id,
+            classifier_usage["input_tokens"], classifier_usage["output_tokens"],
+            classifier_usage["model"],
+            llm_calls=classifier_usage.get("calls"),
+        )
+
+    usage_idx_before = get_usage_index()
+    try:
+        text = await _msg_task(config, db, session, content, goal=content)
+    except (LLMError, MessengerError) as e:
+        log.error("Fast path messenger failed: %s", e)
+        error_text = f"Chat response failed: {e}"
+        await update_task(db, task_id, "failed", output=error_text)
+        await update_plan_status(db, plan_id, "failed")
+        await save_message(
+            db, session, None, "system", error_text,
+            trusted=True, processed=True,
+        )
+        return
+
+    await update_task(db, task_id, "done", output=text)
+    await update_plan_status(db, plan_id, "done")
+
+    # Store messenger usage
+    step_usage = get_usage_since(usage_idx_before)
+    await update_task_usage(
+        db, task_id,
+        step_usage["input_tokens"], step_usage["output_tokens"],
+        llm_calls=step_usage.get("calls"),
+    )
+
+    # Save as system message (for conversation history)
+    await save_message(
+        db, session, None, "system", text,
+        trusted=True, processed=True,
+    )
+
+    # Webhook delivery
+    deploy_secrets = collect_deploy_secrets(config)
+    await _deliver_webhook_if_configured(
+        db, config, session, task_id, text, True,
+        deploy_secrets=deploy_secrets,
+    )
+
+    # Final usage on plan
+    final_usage = get_usage_summary()
+    if final_usage["input_tokens"] or final_usage["output_tokens"]:
+        await update_plan_usage(
+            db, plan_id,
+            final_usage["input_tokens"], final_usage["output_tokens"],
+            final_usage["model"],
+        )
+
+    if slog:
+        slog.info("Fast path done: chat response delivered")
 
 
 async def _persist_plan_tasks(
@@ -1041,6 +1122,20 @@ async def _process_message(
     reset_usage_tracking()
 
     await mark_message_processed(db, msg_id)
+
+    # --- Fast path: skip planner for conversational messages ---
+    fast_path_enabled = config.settings.get("fast_path_enabled", True)
+    if fast_path_enabled:
+        msg_class = await classify_message(config, content, session=session)
+        if msg_class == "chat":
+            log.info("Fast path: chat message, skipping planner")
+            if slog:
+                slog.info("Fast path: classified as chat, skipping planner")
+            await _fast_path_chat(
+                db, config, session, msg_id, content, slog=slog,
+            )
+            clear_llm_budget()
+            return
 
     # Paraphraser — fetch untrusted messages, paraphrase if any
     paraphrased_context: str | None = None

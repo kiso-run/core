@@ -368,6 +368,49 @@ async def run_planner(
     return plan
 
 
+# ---------------------------------------------------------------------------
+# Classifier (fast path)
+# ---------------------------------------------------------------------------
+
+
+class ClassifierError(Exception):
+    """Classifier generation failure."""
+
+
+def build_classifier_messages(content: str) -> list[dict]:
+    """Build the message list for the classifier LLM call."""
+    system_prompt = _load_system_prompt("classifier")
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": content},
+    ]
+
+
+async def classify_message(
+    config: Config, content: str, session: str = "",
+) -> str:
+    """Classify a user message as 'plan' or 'chat'.
+
+    Returns ``"plan"`` or ``"chat"``.  On any error or ambiguous output,
+    returns ``"plan"`` (safe fallback — the planner handles everything).
+    """
+    messages = build_classifier_messages(content)
+    try:
+        raw = await call_llm(config, "worker", messages, session=session)
+    except LLMError as e:
+        log.warning("Classifier LLM failed, falling back to plan: %s", e)
+        return "plan"
+
+    result = raw.strip().lower()
+    if result in ("plan", "chat"):
+        log.info("Classifier: %s", result)
+        return result
+
+    # Ambiguous output — safe fallback
+    log.warning("Classifier returned unexpected value %r, falling back to plan", raw.strip())
+    return "plan"
+
+
 def validate_review(review: dict) -> list[str]:
     """Validate review semantics. Returns list of error strings."""
     errors: list[str] = []

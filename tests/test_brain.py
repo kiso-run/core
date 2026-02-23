@@ -9,6 +9,7 @@ import pytest
 
 import aiosqlite
 from kiso.brain import (
+    ClassifierError,
     CuratorError,
     ExecTranslatorError,
     MessengerError,
@@ -19,6 +20,7 @@ from kiso.brain import (
     _load_system_prompt,
     _ROLES_DIR,
     _strip_fences,
+    build_classifier_messages,
     build_curator_messages,
     build_exec_translator_messages,
     build_messenger_messages,
@@ -26,6 +28,7 @@ from kiso.brain import (
     build_planner_messages,
     build_reviewer_messages,
     build_summarizer_messages,
+    classify_message,
     run_curator,
     run_exec_translator,
     run_fact_consolidation,
@@ -1604,3 +1607,106 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "search:" in prompt
         assert "web search" in prompt.lower() or "search query" in prompt.lower()
+
+
+# --- Classifier (fast path) ---
+
+
+def _make_config_for_classifier():
+    return Config(
+        tokens={"cli": "tok"},
+        providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+        users={},
+        models={"worker": "gpt-3.5"},
+        settings={},
+        raw={},
+    )
+
+
+class TestBuildClassifierMessages:
+    def test_basic_structure(self):
+        """build_classifier_messages returns system + user messages."""
+        msgs = build_classifier_messages("hello there")
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+        assert msgs[1]["content"] == "hello there"
+
+    def test_system_prompt_loaded(self):
+        """System prompt should come from classifier.md."""
+        msgs = build_classifier_messages("test")
+        assert "plan" in msgs[0]["content"]
+        assert "chat" in msgs[0]["content"]
+
+
+class TestClassifyMessage:
+    async def test_returns_chat(self):
+        """classify_message returns 'chat' when LLM says 'chat'."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat"):
+            result = await classify_message(config, "hello")
+        assert result == "chat"
+
+    async def test_returns_plan(self):
+        """classify_message returns 'plan' when LLM says 'plan'."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="plan"):
+            result = await classify_message(config, "list files")
+        assert result == "plan"
+
+    async def test_strips_whitespace(self):
+        """classify_message handles LLM output with whitespace."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  chat\n"):
+            result = await classify_message(config, "thanks")
+        assert result == "chat"
+
+    async def test_case_insensitive(self):
+        """classify_message handles uppercase responses."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CHAT"):
+            result = await classify_message(config, "thanks")
+        assert result == "chat"
+
+    async def test_unexpected_output_falls_back_to_plan(self):
+        """classify_message returns 'plan' for unexpected LLM output."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="I think this is a chat"):
+            result = await classify_message(config, "hello")
+        assert result == "plan"
+
+    async def test_llm_error_falls_back_to_plan(self):
+        """classify_message returns 'plan' when LLM call fails."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("timeout")):
+            result = await classify_message(config, "hello")
+        assert result == "plan"
+
+    async def test_uses_worker_model(self):
+        """classify_message should call LLM with 'worker' role."""
+        config = _make_config_for_classifier()
+        mock_llm = AsyncMock(return_value="chat")
+        with patch("kiso.brain.call_llm", mock_llm):
+            await classify_message(config, "hello", session="s1")
+        mock_llm.assert_called_once()
+        assert mock_llm.call_args[0][1] == "worker"  # role argument
+        assert mock_llm.call_args[1].get("session") == "s1"
+
+
+class TestClassifierPromptContent:
+    def test_classifier_prompt_exists(self):
+        """classifier.md role file should exist."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text()
+        assert len(prompt) > 0
+
+    def test_classifier_prompt_mentions_categories(self):
+        """Classifier prompt should define plan and chat categories."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text()
+        assert "plan" in prompt
+        assert "chat" in prompt
+
+    def test_classifier_prompt_safe_fallback(self):
+        """Classifier prompt should instruct to default to plan when in doubt."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text()
+        assert "doubt" in prompt.lower()
+        assert "plan" in prompt
