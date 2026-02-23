@@ -5504,6 +5504,27 @@ class TestFastPathIntegration:
 
         mock_post.assert_called_once()
 
+    async def test_fast_path_skips_paraphraser(self, db, tmp_path):
+        """Fast path must NOT call the paraphraser — context is already trusted."""
+        conn, msg_id = db
+        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        msg = self._make_msg(msg_id)
+        mock_classifier = AsyncMock(return_value="chat")
+        mock_messenger = AsyncMock(return_value="Hi")
+        mock_paraphraser = AsyncMock(return_value="paraphrased")
+        q = asyncio.Queue()
+
+        with patch("kiso.worker.classify_message", mock_classifier), \
+             patch("kiso.worker.run_messenger", mock_messenger), \
+             patch("kiso.worker.run_paraphraser", mock_paraphraser), \
+             patch("kiso.worker.KISO_DIR", tmp_path):
+            from kiso.worker import _process_message
+            await _process_message(
+                conn, config, "sess1", msg, q, None, 1, 5, 3,
+            )
+
+        mock_paraphraser.assert_not_called()
+
 
 # --- _fast_path_chat edge cases ---
 

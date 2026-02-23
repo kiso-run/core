@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
-from kiso.config import KISO_DIR, load_config
+from kiso.config import KISO_DIR, load_config, setting_bool
 from kiso.log import setup_logging
 from kiso.pub import pub_token, resolve_pub_token
 from kiso.store import (
@@ -262,7 +262,7 @@ async def post_sessions(
             validate_webhook_url(
                 body.webhook,
                 config.settings.get("webhook_allow_list"),
-                require_https=bool(config.settings.get("webhook_require_https", True)),
+                require_https=setting_bool(config.settings, "webhook_require_https", default=True),
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))

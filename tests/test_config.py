@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config
+from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config, setting_bool
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -321,3 +321,54 @@ def test_config_permission_error(tmp_path: Path, capsys):
         assert "Cannot read" in err
     finally:
         os.chmod(p, 0o644)
+
+
+# --- setting_bool ---
+
+
+class TestSettingBool:
+    def test_true_bool(self):
+        assert setting_bool({"key": True}, "key") is True
+
+    def test_false_bool(self):
+        assert setting_bool({"key": False}, "key") is False
+
+    def test_default_when_missing(self):
+        assert setting_bool({}, "key", default=True) is True
+        assert setting_bool({}, "key", default=False) is False
+
+    def test_string_true(self):
+        assert setting_bool({"key": "true"}, "key") is True
+
+    def test_string_false(self):
+        """String 'false' must NOT be truthy — this is the bug this helper fixes."""
+        assert setting_bool({"key": "false"}, "key") is False
+
+    def test_string_yes_no(self):
+        assert setting_bool({"key": "yes"}, "key") is True
+        assert setting_bool({"key": "no"}, "key") is False
+
+    def test_string_1_0(self):
+        assert setting_bool({"key": "1"}, "key") is True
+        assert setting_bool({"key": "0"}, "key") is False
+
+    def test_int_truthy(self):
+        assert setting_bool({"key": 1}, "key") is True
+        assert setting_bool({"key": 0}, "key") is False
+
+    def test_string_case_insensitive(self):
+        assert setting_bool({"key": "TRUE"}, "key") is True
+        assert setting_bool({"key": "FALSE"}, "key") is False
+        assert setting_bool({"key": "False"}, "key") is False
+
+    def test_string_whitespace(self):
+        assert setting_bool({"key": " true "}, "key") is True
+        assert setting_bool({"key": " false "}, "key") is False
+
+    def test_unexpected_type_uses_default(self):
+        assert setting_bool({"key": [1, 2]}, "key", default=True) is True
+        assert setting_bool({"key": {"a": 1}}, "key", default=False) is False
+
+    def test_unrecognized_string_uses_default(self):
+        assert setting_bool({"key": "maybe"}, "key", default=True) is True
+        assert setting_bool({"key": "maybe"}, "key", default=False) is False

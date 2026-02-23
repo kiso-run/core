@@ -74,6 +74,29 @@ class ConfigError(Exception):
     """Raised when config is invalid (for runtime reload)."""
 
 
+def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
+    """Read a boolean setting with strict type handling.
+
+    TOML natively parses ``true``/``false`` as Python ``bool``.
+    If a user accidentally quotes the value (``"false"``), a plain
+    truthiness check would treat the string as ``True``.  This helper
+    rejects non-boolean types so the misconfiguration is caught early.
+    """
+    val = settings.get(key, default)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        low = val.strip().lower()
+        if low in ("true", "1", "yes"):
+            return True
+        if low in ("false", "0", "no"):
+            return False
+    if isinstance(val, int):
+        return bool(val)
+    # Anything else — warn and use default
+    return default
+
+
 def _die(msg: str) -> None:
     print(f"config error: {msg}", file=sys.stderr)
     sys.exit(1)

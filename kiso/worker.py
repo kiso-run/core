@@ -43,7 +43,7 @@ from kiso.brain import (
     run_searcher,
     run_summarizer,
 )
-from kiso.config import Config, KISO_DIR
+from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.pub import pub_token
 from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, get_usage_index, get_usage_since, get_usage_summary, reset_usage_tracking, set_llm_budget
 from kiso.skills import (
@@ -1218,7 +1218,10 @@ async def _process_message(
     await mark_message_processed(db, msg_id)
 
     # --- Fast path: skip planner for conversational messages ---
-    fast_path_enabled = config.settings.get("fast_path_enabled", True)
+    # Paraphraser is intentionally skipped here — the messenger only sees
+    # session summary + facts + the current user message (all trusted).
+    # Untrusted messages feed into planner context, not messenger context.
+    fast_path_enabled = setting_bool(config.settings, "fast_path_enabled", default=True)
     if fast_path_enabled:
         msg_class = await classify_message(config, content, session=session)
         if msg_class == "chat":
