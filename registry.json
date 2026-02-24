@@ -7,6 +7,10 @@
     {
       "name": "aider",
       "description": "Code editing, refactoring, bug fixes, and codebase Q&A using aider's architect/editor pattern"
+    },
+    {
+      "name": "browser",
+      "description": "Headless WebKit browser automation — navigate pages, snapshot interactive elements, click, fill forms, take screenshots"
     }
   ],
   "connectors": [
