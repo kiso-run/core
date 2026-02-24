@@ -73,10 +73,11 @@ summarize_threshold       = 30       # message count before summarizer runs
 bot_name                  = "Kiso"
 
 # --- knowledge / memory ---
-knowledge_max_facts       = 50
-fact_decay_days           = 7
-fact_decay_rate           = 0.1
-fact_archive_threshold    = 0.3
+knowledge_max_facts           = 50
+fact_decay_days               = 7
+fact_decay_rate               = 0.1
+fact_archive_threshold        = 0.3
+fact_consolidation_min_ratio  = 0.3
 
 # --- planning ---
 max_replan_depth          = 3
@@ -134,6 +135,7 @@ webhook_max_payload       = 1048576
 | `fact_decay_days` | `7` | Facts not used in this many days lose `fact_decay_rate` confidence per post-plan cycle. |
 | `fact_decay_rate` | `0.1` | How much confidence is subtracted per decay cycle (0.0–1.0). |
 | `fact_archive_threshold` | `0.3` | Facts with confidence below this are moved to `facts_archive` and removed from active context. |
+| `fact_consolidation_min_ratio` | `0.3` | Minimum fraction of facts that must survive consolidation. If the LLM returns fewer than this fraction, consolidation is aborted and the original facts are kept. |
 | `max_replan_depth` | `3` | Max replan cycles per original message. |
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |

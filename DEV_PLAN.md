@@ -1810,6 +1810,81 @@ uv run pytest tests/ -x -q --ignore=tests/live
 
 ---
 
+## Milestone 37: Robustness hardening — DoS, silent errors, validation
+
+Fixes identified by post-v1.0 code audit. No new features, no API changes.
+
+### Issues to fix
+
+#### 1. Unbounded `rglob` on workspace/pub (DoS) — HIGH
+- **Files**: `kiso/sysenv.py`, `kiso/worker/utils.py`
+- `sysenv.py` uses `rglob("*")` to enumerate workspace files for the system env section sent to the planner. A deeply nested directory or symlink loop can block the worker.
+- `worker/utils.py` `_report_pub_files` uses `rglob("*")` on `pub/` with no depth or count limit.
+- **Fix**: Add a max-depth guard and a file count cap. For sysenv, one level of `iterdir()` is sufficient (the planner only needs top-level awareness). For pub, cap at e.g. 1000 files and log a warning if exceeded.
+
+#### 2. Silent JSON decode failure in search task args — HIGH
+- **File**: `kiso/worker/loop.py` ~line 785
+- When `task_row["args"]` is malformed JSON, the exception is swallowed with `pass` — no log, no warning. The planner created bad data and the worker silently falls back to defaults.
+- **Fix**: Replace `pass` with `log.warning("Malformed search args JSON for task %d: %s", task_id, e)`.
+
+#### 3. Fact confidence not clamped to [0.0, 1.0] — MEDIUM
+- **File**: `kiso/brain.py` (fact consolidation output parsing)
+- LLM can return `confidence > 1.0` or `< 0.0`. Values are stored as-is, breaking semantic meaning of the confidence field.
+- **Fix**: Clamp with `max(0.0, min(1.0, val))` when reading confidence from LLM output.
+
+#### 4. Connector discovery errors are silent — MEDIUM
+- **File**: `kiso/connectors.py`
+- `except Exception: continue` when reading a connector's `kiso.toml`. A corrupt or unreadable manifest causes the connector to silently disappear from the registry with no log entry.
+- **Fix**: Add `log.warning("Connector '%s': failed to read manifest: %s", name, e)` before `continue`.
+
+#### 5. Hardcoded 30% consolidation sanity threshold — LOW
+- **File**: `kiso/worker/loop.py` ~line 191
+- `if len(consolidated) < len(all_facts) * 0.3` is hardcoded. Should be a named constant or config setting.
+- **Fix**: Add `fact_consolidation_min_ratio = 0.3` to `SETTINGS_DEFAULTS` / `config.toml` and read it from config.
+
+#### 6. `setting_bool` silently coerces integers — LOW
+- **File**: `kiso/config.py`
+- `setting_bool` accepts `int` and coerces to `bool`, masking typos like `fast_path_enabled = 0`.
+- **Fix**: Remove the `isinstance(val, int)` branch. TOML parses booleans natively; if the user wrote an integer, it's a config error and should be rejected.
+
+### Tests to add
+
+- `test_sysenv.py`: workspace with deeply nested dirs doesn't hang / is capped
+- `test_worker.py`: malformed search args → warning logged, task proceeds with defaults
+- `test_brain.py`: confidence values outside [0, 1] are clamped
+- `test_connectors.py`: corrupt manifest → warning logged, connector skipped
+- `test_config.py`: `setting_bool` rejects integer values
+
+### Changes
+
+| File | Change |
+|---|---|
+| `kiso/sysenv.py` | Replace `rglob("*")` with depth-limited enumeration |
+| `kiso/worker/utils.py` | Cap `_report_pub_files` at N files, add warning |
+| `kiso/worker/loop.py` | Log warning on malformed search args; read consolidation ratio from config |
+| `kiso/brain.py` | Clamp confidence to [0.0, 1.0] |
+| `kiso/connectors.py` | Log warning on manifest read failure |
+| `kiso/config.py` | Remove int coercion from `setting_bool`; add `fact_consolidation_min_ratio` to `SETTINGS_DEFAULTS` |
+| `kiso/roles/planner.md` | No change |
+| `tests/` | New tests per issues above |
+| `docs/config.md` | Add `fact_consolidation_min_ratio` to settings reference |
+
+- [ ] Fix unbounded rglob (sysenv + pub)
+- [ ] Fix silent JSON decode failure
+- [ ] Clamp fact confidence
+- [ ] Log connector manifest errors
+- [ ] Extract consolidation ratio to config
+- [ ] Fix `setting_bool` int coercion
+- [ ] Add tests for all fixes
+- [ ] Update docs/config.md
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+```
+
+---
+
 ## Done
 
-All milestones complete. **v1.0** tagged.
+All milestones through v1.0 complete. M37 in progress.
