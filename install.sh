@@ -601,8 +601,9 @@ fi
 
 # Ensure ~/.local/bin is in PATH — add to bashrc/zshrc if missing
 PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+_needs_source=false
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    export PATH="$HOME/.local/bin:$PATH"
+    _needs_source=true
     # Append to the appropriate shell profile
     if [[ -f "$HOME/.zshrc" ]]; then
         _profile="$HOME/.zshrc"
@@ -613,8 +614,6 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
         printf '\n%s\n' "$PATH_LINE" >> "$_profile"
         green "  added ~/.local/bin to PATH in $_profile"
     fi
-    yellow "  run this to use kiso now (or open a new terminal):"
-    yellow "    source $_profile"
 fi
 
 # ── 7. Summary ──────────────────────────────────────────────────────────────
@@ -636,3 +635,14 @@ echo
 echo "  Config:   $CONFIG"
 echo "  API:      http://localhost:8333"
 echo
+
+if [[ "$_needs_source" == true ]]; then
+    echo "  ┌─────────────────────────────────────────────────┐"
+    bold "  │  Run this command to activate kiso:             │"
+    bold "  │                                                 │"
+    bold "  │    source $_profile"
+    bold "  │                                                 │"
+    echo "  │  (or open a new terminal)                       │"
+    echo "  └─────────────────────────────────────────────────┘"
+    echo
+fi
