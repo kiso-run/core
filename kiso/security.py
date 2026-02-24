@@ -47,6 +47,9 @@ DENY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bruby\s+-e\b"), "ruby one-liner execution"),
     (re.compile(r"\beval\b"), "eval command (indirect execution)"),
     (re.compile(r"\bnode\s+-e\b"), "node one-liner execution"),
+    # Protect kiso config files from direct shell writes (use 'kiso env set' instead)
+    (re.compile(r">{1,2}\s*['\"]?[^|;&\n]*\.kiso[/\\]\.env\b"), "direct write to .kiso/.env (use 'kiso env set' instead)"),
+    (re.compile(r">{1,2}\s*['\"]?[^|;&\n]*\.kiso[/\\]config\.toml\b"), "direct write to .kiso/config.toml"),
 ]
 
 _SUBSHELL_RE = re.compile(r"\$\(([^)]+)\)|`([^`]+)`")

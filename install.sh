@@ -313,7 +313,7 @@ fi
 # so we can restore them if anything (stale VOLUME metadata, etc.) wipes them.
 ENV_BACKUP=""
 CONFIG_BACKUP=""
-if [[ "$NEED_ENV" == false && -f "$ENV_FILE" ]]; then
+if [[ -f "$ENV_FILE" ]]; then
     ENV_BACKUP="$(mktemp)"
     cp "$ENV_FILE" "$ENV_BACKUP"
 fi
@@ -402,15 +402,29 @@ base_url="${base_url:-https://openrouter.ai/api/v1}"
 if [[ "$NEED_ENV" == true ]]; then
     api_key="$(ask_api_key)"
 
-    bold "Creating $ENV_FILE..."
-    # Use printf to avoid shell expansion of special chars in API key
-    printf 'KISO_LLM_API_KEY=%s\n' "$api_key" > "$ENV_FILE"
-    green "  .env created"
+    if [[ -f "$ENV_FILE" ]]; then
+        bold "Updating $ENV_FILE..."
+        # Preserve all existing entries; update only KISO_LLM_API_KEY
+        tmpfile="$(mktemp)"
+        grep -v '^KISO_LLM_API_KEY=' "$ENV_FILE" > "$tmpfile" || true
+        printf 'KISO_LLM_API_KEY=%s\n' "$api_key" >> "$tmpfile"
+        mv "$tmpfile" "$ENV_FILE"
+        green "  .env updated (other entries preserved)"
+    else
+        bold "Creating $ENV_FILE..."
+        printf 'KISO_LLM_API_KEY=%s\n' "$api_key" > "$ENV_FILE"
+        green "  .env created"
+    fi
 
     # Verify the env var is loadable
     set -a; source "$ENV_FILE"; set +a
     if [[ -z "${KISO_LLM_API_KEY:-}" ]]; then
         yellow "  warning: KISO_LLM_API_KEY is empty after loading .env"
+    fi
+
+    # Refresh backup so Docker-wipe restore has the newly-written content
+    if [[ -n "$ENV_BACKUP" ]]; then
+        cp "$ENV_FILE" "$ENV_BACKUP"
     fi
 fi
 echo

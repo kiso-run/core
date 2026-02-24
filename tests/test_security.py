@@ -148,6 +148,41 @@ class TestCheckCommandDenyList:
         for cmd in ["ls -la", "echo hello", "git status", "python3 script.py"]:
             assert check_command_deny_list(cmd) is None, f"Should allow: {cmd}"
 
+    # --- .kiso config file write protection ---
+
+    def test_env_direct_overwrite_blocked(self):
+        assert check_command_deny_list("echo KISO_LLM_API_KEY=sk-x > ~/.kiso/.env") is not None
+
+    def test_env_printf_overwrite_blocked(self):
+        assert check_command_deny_list("printf 'KEY=%s\\n' val > ~/.kiso/.env") is not None
+
+    def test_env_cat_heredoc_overwrite_blocked(self):
+        assert check_command_deny_list("cat > ~/.kiso/.env << 'EOF'") is not None
+
+    def test_env_append_blocked(self):
+        assert check_command_deny_list("echo KEY=val >> ~/.kiso/.env") is not None
+
+    def test_env_root_path_blocked(self):
+        assert check_command_deny_list("echo KEY=val > /root/.kiso/.env") is not None
+
+    def test_config_toml_overwrite_blocked(self):
+        assert check_command_deny_list("cat > ~/.kiso/config.toml << 'EOF'") is not None
+
+    def test_config_toml_root_path_blocked(self):
+        assert check_command_deny_list("echo '[settings]' > /root/.kiso/config.toml") is not None
+
+    def test_kiso_env_set_allowed(self):
+        """kiso env set is the correct way — must NOT be blocked."""
+        assert check_command_deny_list("kiso env set KISO_LLM_API_KEY sk-or-v1-abc") is None
+
+    def test_env_write_session_file_allowed(self):
+        """Writing to session workspace files is fine."""
+        assert check_command_deny_list("echo hello > ~/.kiso/sessions/abc/output.txt") is None
+
+    def test_other_env_file_allowed(self):
+        """Writing to a project .env (not .kiso/) is allowed."""
+        assert check_command_deny_list("echo KEY=val > /tmp/myproject/.env") is None
+
 
 # --- Secret sanitization ---
 

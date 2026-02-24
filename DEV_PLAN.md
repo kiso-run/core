@@ -1953,6 +1953,49 @@ uv run pytest tests/ -x -q --ignore=tests/live
 
 ---
 
+## Milestone 39 — .env protection + install.sh merge fix
+
+Two related bugs: install.sh wiped `.env` on re-install, and nothing stopped exec tasks from doing the same via shell redirection.
+
+### Issues
+
+#### 1. install.sh overwrites `.env` entirely on re-install — HIGH
+- **File**: `install.sh`
+- When the user re-runs the installer and says "yes" to "Overwrite .env?", line 407 did `printf '...' > "$ENV_FILE"`, replacing the whole file with only `KISO_LLM_API_KEY=...`. All other entries (skill tokens, connector secrets) were silently lost.
+- Additionally, the pre-Docker backup was only made when `NEED_ENV=false`, so there was no fallback when overwriting.
+- **Fix**: Merge instead of overwrite — strip old `KISO_LLM_API_KEY=` with `grep -v`, append new value, preserve all other lines. Always backup the existing `.env` before Docker ops. Refresh backup after writing so Docker-wipe restore has the new content.
+
+#### 2. Exec tasks could directly overwrite `.kiso/.env` or `.kiso/config.toml` — MEDIUM
+- **Files**: `kiso/security.py`, `kiso/roles/planner.md`, `kiso/sysenv.py`
+- An AI-generated exec command like `echo "KEY=val" > ~/.kiso/.env` would overwrite the file just like the installer bug above. The deny list had no path-based protection.
+- **Fix**: Add two deny patterns blocking `>` / `>>` redirects targeting `*.kiso/.env` and `*.kiso/config.toml`. Update planner.md and sysenv.py blocked-commands list to document this. `kiso env set` remains the correct tool.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `install.sh` | Merge API key update (preserve other entries); always backup; refresh backup post-write |
+| `kiso/security.py` | Deny patterns: block direct shell writes to `.kiso/.env` / `.kiso/config.toml` |
+| `kiso/roles/planner.md` | Explicit rule: use `kiso env set`, never write directly to config files |
+| `kiso/sysenv.py` | Add `.kiso/.env` / `config.toml` write protection to `_BLOCKED_COMMANDS` string |
+| `tests/test_security.py` | 11 new tests for the new deny patterns |
+
+- [x] install.sh: merge instead of overwrite
+- [x] install.sh: always backup existing .env
+- [x] install.sh: refresh backup after write
+- [x] security.py: deny direct writes to .kiso config files
+- [x] planner.md: document the rule
+- [x] sysenv.py: update blocked commands hint
+- [x] tests: verify deny patterns
+
+**Verify:**
+```bash
+uv run pytest tests/test_security.py -x -q
+bash -n install.sh
+```
+
+---
+
 ## Done
 
-All milestones through M38 complete.
+All milestones through M39 complete.

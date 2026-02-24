@@ -146,7 +146,8 @@ _KISO_CLI_COMMANDS = """\
 
 _BLOCKED_COMMANDS = (
     "rm -rf / ~ $HOME, dd if=, mkfs, chmod -R 777 /, "
-    "recursive chown, shutdown/reboot, fork bombs"
+    "recursive chown, shutdown/reboot, fork bombs, "
+    "direct writes to ~/.kiso/.env or ~/.kiso/config.toml (use 'kiso env set' instead)"
 )
 
 

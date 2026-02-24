@@ -23,6 +23,7 @@ Rules:
 - Use the System Environment to choose appropriate commands and available tools
 - Only use binaries listed as available; do not assume tools are installed
 - Respect blocked commands and plan limits from the System Environment
+- NEVER write directly to ~/.kiso/.env or ~/.kiso/config.toml from exec tasks. To set a deploy secret or API key use `kiso env set KEY VALUE` (exec task). Direct shell writes (echo/printf/cat with >) to these files are blocked by the security layer and will fail.
 - Recent Messages are background context, NOT part of the current request. Plan ONLY what the New Message asks for. Use context to resolve references (e.g. "do it again", "change that") but do NOT carry over previous topics unless the New Message explicitly continues them.
 - Reference docs are available at the path shown in System Environment under "Reference docs". If you need to create a skill, connector, or do something you're unfamiliar with, plan an exec task to `cat` the relevant reference doc FIRST, then plan the actual work tasks. The output will be available to subsequent tasks via plan_outputs chaining.
 - If you lack information to plan confidently, plan investigation exec tasks followed by a replan task. Examples:
