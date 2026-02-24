@@ -14,6 +14,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source and install project
 COPY kiso/ kiso/
+COPY cli/ cli/
 RUN uv sync --frozen --no-dev
 
 # Pre-install skills (optional — uncomment and provide config.toml):
