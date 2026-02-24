@@ -1571,7 +1571,7 @@ KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_flows.py --llm-live -v -k 
 
 ---
 
-## Milestone 34: Richer LLM-driven memory consolidation
+## ~~Milestone 34: Richer LLM-driven memory consolidation~~ DONE
 
 The current knowledge system has three separate mechanisms that don't communicate well:
 1. **Reviewer learnings** → curator promotes/discards → individual facts
@@ -1685,6 +1685,8 @@ uv run pytest tests/ -x -q --ignore=tests/live
 KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_practical.py --llm-live -v -k knowledge
 ```
 
+**Result:** 1467 passed, 4 skipped.
+
 ---
 
 ## ~~Milestone 35: CLI → root-level `cli/` package~~ DONE
@@ -1734,7 +1736,7 @@ kiso/                    ← bot/server code only (no CLI modules)
 
 ---
 
-## Milestone 36: Composable worker (`kiso/worker/` package)
+## ~~Milestone 36: Composable worker (`kiso/worker/` package)~~ DONE
 
 Split the monolithic `kiso/worker.py` (~1400 lines) into a `kiso/worker/` package with one module per task type. Each handler is independently importable and testable. The orchestration layer stays thin and type-stable.
 
@@ -1794,18 +1796,20 @@ kiso/worker/
 | `kiso/worker/utils.py` | Shared helpers (env, workspace, truncation, pub files) |
 | `tests/test_worker.py` | Update imports; tests otherwise unchanged |
 
-- [ ] Create `kiso/worker/` package, extract modules above
-- [ ] `main.py` `from kiso.worker import run_worker` works unchanged
-- [ ] Each handler testable in isolation without importing the full `worker.py`
-- [ ] All existing tests pass
+- [x] Create `kiso/worker/` package, extract modules above
+- [x] `main.py` `from kiso.worker import run_worker` works unchanged
+- [x] Each handler testable in isolation without importing the full `worker.py`
+- [x] All existing tests pass
 
 **Verify:**
 ```bash
 uv run pytest tests/ -x -q --ignore=tests/live
 ```
 
+**Result:** 1467 passed, 4 skipped.
+
 ---
 
 ## Done
 
-When all milestones are checked off, kiso is production-ready per the documentation spec.
+All milestones complete. **v1.0** tagged.
