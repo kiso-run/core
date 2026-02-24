@@ -366,7 +366,6 @@ if [[ "$NEED_CONFIG" == true ]]; then
 
     models_section="$(ask_models)"
 
-    local config_body
     config_body=$(cat <<PREVIEW
 [tokens]
 cli = "$token"
