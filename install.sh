@@ -377,7 +377,44 @@ base_url = "$base_url"
 role = "admin"
 
 [settings]
-bot_name = "$bot_name"
+bot_name                     = "$bot_name"
+
+# Conversation
+context_messages             = 7      # messages kept in context window
+summarize_threshold          = 30     # messages before auto-summarize
+
+# Memory / knowledge
+knowledge_max_facts          = 50     # max stored facts per session
+fact_decay_days              = 7
+fact_decay_rate              = 0.1
+fact_archive_threshold       = 0.3
+fact_consolidation_min_ratio = 0.3
+
+# Planning & execution
+max_plan_tasks               = 20
+max_replan_depth             = 3
+max_validation_retries       = 3
+max_worker_retries           = 1
+exec_timeout                 = 120    # seconds
+planner_timeout              = 60     # seconds
+max_output_size              = 1048576  # bytes (1 MB)
+fast_path_enabled            = true   # skip planner for simple chat messages
+
+# Limits
+max_llm_calls_per_message    = 200
+max_message_size             = 65536  # bytes
+max_queue_size               = 50
+
+# Server
+host                         = "0.0.0.0"
+port                         = 8333
+worker_idle_timeout          = 300    # seconds
+
+# Webhooks
+webhook_require_https        = true
+webhook_secret               = ""
+webhook_max_payload          = 1048576  # bytes
+webhook_allow_list           = []
 
 [models]
 $(printf '%b' "$models_section")
