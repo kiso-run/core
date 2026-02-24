@@ -41,7 +41,17 @@ from kiso.brain import (
     validate_plan,
     validate_review,
 )
-from kiso.config import Config, Provider, KISO_DIR
+from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
+
+
+def _full_settings(**overrides) -> dict:
+    """Return a complete settings dict (all required keys) with optional overrides."""
+    return {**SETTINGS_DEFAULTS, **overrides}
+
+
+def _full_models(**overrides) -> dict:
+    """Return a complete models dict with optional overrides."""
+    return {**MODEL_DEFAULTS, **overrides}
 from kiso.llm import LLMError
 from kiso.store import (
     create_session,
@@ -368,8 +378,8 @@ class TestBuildPlannerMessages:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"planner": "gpt-4"},
-            settings={"context_messages": 3},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(context_messages=3),
             raw={},
         )
 
@@ -618,8 +628,8 @@ class TestRunPlanner:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"planner": "gpt-4"},
-            settings={"max_validation_retries": 3, "context_messages": 5},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3, context_messages=5),
             raw={},
         )
 
@@ -841,8 +851,8 @@ class TestRunReviewer:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"reviewer": "gpt-4"},
-            settings={"max_validation_retries": 3},
+            models=_full_models(reviewer="gpt-4"),
+            settings=_full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -1027,8 +1037,8 @@ class TestRunCurator:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"curator": "gpt-4"},
-            settings={"max_validation_retries": 3},
+            models=_full_models(curator="gpt-4"),
+            settings=_full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -1100,8 +1110,8 @@ class TestRunSummarizer:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"summarizer": "gpt-4"},
-            settings={},
+            models=_full_models(summarizer="gpt-4"),
+            settings=_full_settings(),
             raw={},
         )
 
@@ -1128,8 +1138,8 @@ class TestRunFactConsolidation:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"summarizer": "gpt-4"},
-            settings={},
+            models=_full_models(summarizer="gpt-4"),
+            settings=_full_settings(),
             raw={},
         )
 
@@ -1263,8 +1273,8 @@ class TestRunParaphraser:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"paraphraser": "gpt-4"},
-            settings={},
+            models=_full_models(paraphraser="gpt-4"),
+            settings=_full_settings(),
             raw={},
         )
 
@@ -1298,8 +1308,8 @@ class TestPlannerMessagesFencing:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"planner": "gpt-4"},
-            settings={"context_messages": 3},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(context_messages=3),
             raw={},
         )
 
@@ -1393,12 +1403,18 @@ class TestStripFences:
 # --- Messenger ---
 
 def _make_brain_config(**overrides) -> Config:
+    base_settings = _full_settings()
+    if "settings" in overrides:
+        base_settings.update(overrides.pop("settings"))
+    base_models = _full_models(messenger="gpt-4")
+    if "models" in overrides:
+        base_models.update(overrides.pop("models"))
     defaults = dict(
         tokens={"cli": "tok"},
         providers={"local": Provider(base_url="http://localhost:11434/v1")},
         users={},
-        models={"messenger": "gpt-4"},
-        settings={"bot_name": "Kiso"},
+        models=base_models,
+        settings=base_settings,
         raw={},
     )
     defaults.update(overrides)
@@ -1542,7 +1558,7 @@ class TestRunMessenger:
         roles_dir = tmp_path / "roles"
         roles_dir.mkdir()
         (roles_dir / "messenger.md").write_text("You are a helpful robot.")
-        config = _make_brain_config(settings={"bot_name": "Kiso"})
+        config = _make_brain_config(settings=_full_settings(bot_name="Kiso"))
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kw):
@@ -1597,7 +1613,7 @@ class TestBuildExecTranslatorMessages:
 
 class TestRunExecTranslator:
     async def test_successful_translation(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="ls -la *.py"):
             result = await run_exec_translator(
                 config, "List all Python files", "OS: Linux",
@@ -1605,7 +1621,7 @@ class TestRunExecTranslator:
         assert result == "ls -la *.py"
 
     async def test_strips_whitespace(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  ls -la  \n"):
             result = await run_exec_translator(
                 config, "List files", "OS: Linux",
@@ -1613,26 +1629,26 @@ class TestRunExecTranslator:
         assert result == "ls -la"
 
     async def test_cannot_translate_raises(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CANNOT_TRANSLATE"):
             with pytest.raises(ExecTranslatorError, match="Cannot translate"):
                 await run_exec_translator(config, "Do something impossible", "OS: Linux")
 
     async def test_empty_result_raises(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="   "):
             with pytest.raises(ExecTranslatorError, match="Cannot translate"):
                 await run_exec_translator(config, "Do something", "OS: Linux")
 
     async def test_llm_error_raises_translator_error(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     side_effect=LLMError("API down")):
             with pytest.raises(ExecTranslatorError, match="API down"):
                 await run_exec_translator(config, "List files", "OS: Linux")
 
     async def test_uses_worker_role(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         captured = {}
 
         async def _capture(cfg, role, messages, **kw):
@@ -1701,8 +1717,8 @@ def _make_config_for_classifier():
         tokens={"cli": "tok"},
         providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
         users={},
-        models={"worker": "gpt-3.5"},
-        settings={},
+        models=_full_models(worker="gpt-3.5"),
+        settings=_full_settings(),
         raw={},
     )
 
@@ -1836,8 +1852,8 @@ class TestRetryHintInSchema:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models={"reviewer": "gpt-4"},
-            settings={"max_validation_retries": 3},
+            models=_full_models(reviewer="gpt-4"),
+            settings=_full_settings(max_validation_retries=3),
             raw={},
         )
         review_json = json.dumps({
@@ -1884,7 +1900,7 @@ class TestExecTranslatorRetryContext:
         assert retry_pos < task_pos
 
     async def test_run_exec_translator_passes_retry_context(self):
-        config = _make_brain_config(models={"worker": "gpt-4"})
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kw):

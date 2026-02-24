@@ -112,8 +112,8 @@ async def _deliver_webhook_if_configured(
         return
     wh_success, wh_status, wh_attempts = await deliver_webhook(
         webhook_url, session, task_id, content, final,
-        secret=str(config.settings.get("webhook_secret", "")),
-        max_payload=int(config.settings.get("webhook_max_payload", 0)),
+        secret=str(config.settings["webhook_secret"]),
+        max_payload=int(config.settings["webhook_max_payload"]),
     )
     audit.log_webhook(
         session, task_id, webhook_url, wh_status, wh_attempts,
@@ -163,7 +163,7 @@ async def _post_plan_knowledge(
 
     # 2. Summarizer — compress when threshold reached
     msg_count = await count_messages(db, session)
-    if msg_count >= int(config.settings.get("summarize_threshold", 30)):
+    if msg_count >= int(config.settings["summarize_threshold"]):
         try:
             sess = await get_session(db, session)
             current_summary = sess["summary"] if sess else ""
@@ -179,7 +179,7 @@ async def _post_plan_knowledge(
             log.error("Summarizer failed: %s", e)
 
     # 3. Fact consolidation
-    max_facts = int(config.settings.get("knowledge_max_facts", 50))
+    max_facts = int(config.settings["knowledge_max_facts"])
     all_facts = await get_facts(db)
     if len(all_facts) > max_facts:
         try:
@@ -213,8 +213,8 @@ async def _post_plan_knowledge(
             log.error("Fact consolidation failed: %s", e)
 
     # 4. Decay stale facts
-    decay_days = int(config.settings.get("fact_decay_days", 7))
-    decay_rate = float(config.settings.get("fact_decay_rate", 0.1))
+    decay_days = int(config.settings["fact_decay_days"])
+    decay_rate = float(config.settings["fact_decay_rate"])
     try:
         decayed = await decay_facts(db, decay_days=decay_days, decay_rate=decay_rate)
         if decayed:
@@ -223,7 +223,7 @@ async def _post_plan_knowledge(
         log.error("Fact decay failed: %s", e)
 
     # 5. Archive low-confidence facts
-    archive_threshold = float(config.settings.get("fact_archive_threshold", 0.3))
+    archive_threshold = float(config.settings["fact_archive_threshold"])
     try:
         archived = await archive_low_confidence_facts(db, threshold=archive_threshold)
         if archived:
@@ -419,8 +419,8 @@ async def _execute_plan(
     completed: list[dict] = []
     plan_outputs: list[dict] = []
     deploy_secrets = collect_deploy_secrets(config)
-    max_output_size = int(config.settings.get("max_output_size", 0))
-    max_worker_retries = int(config.settings.get("max_worker_retries", 1))
+    max_output_size = int(config.settings["max_output_size"])
+    max_worker_retries = int(config.settings["max_worker_retries"])
     # Cache installed skills for the whole plan execution (avoid rescanning per task)
     installed_skills = discover_skills()
 
@@ -948,9 +948,10 @@ async def run_worker(
     cancel_event: asyncio.Event | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
-    idle_timeout = int(config.settings.get("worker_idle_timeout", 300))
-    exec_timeout = int(config.settings.get("exec_timeout", 120))
-    max_replan_depth = int(config.settings.get("max_replan_depth", 3))
+    idle_timeout = int(config.settings["worker_idle_timeout"])
+    exec_timeout = int(config.settings["exec_timeout"])
+    planner_timeout = int(config.settings["planner_timeout"])
+    max_replan_depth = int(config.settings["max_replan_depth"])
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
     try:
@@ -964,8 +965,8 @@ async def run_worker(
 
             try:
                 await _process_message(db, config, session, msg, queue, cancel_event,
-                                       idle_timeout, exec_timeout, max_replan_depth,
-                                       slog=slog)
+                                       idle_timeout, exec_timeout, planner_timeout,
+                                       max_replan_depth, slog=slog)
             except Exception:
                 log.exception("Unexpected error processing message in session=%s", session)
                 slog.error("Unexpected error processing message")
@@ -983,6 +984,7 @@ async def _process_message(
     cancel_event: asyncio.Event | None,
     idle_timeout: int,
     exec_timeout: int,
+    planner_timeout: int,
     max_replan_depth: int,
     slog: SessionLogger | None = None,
 ):
@@ -997,7 +999,7 @@ async def _process_message(
         slog.info("Message received: user=%s, %d chars", username or "?", len(content))
 
     # Per-message LLM call budget and usage tracking
-    max_llm_calls = int(config.settings.get("max_llm_calls_per_message", 200))
+    max_llm_calls = int(config.settings["max_llm_calls_per_message"])
     set_llm_budget(max_llm_calls)
     reset_usage_tracking()
 
@@ -1007,7 +1009,7 @@ async def _process_message(
     # Paraphraser is intentionally skipped here — the messenger only sees
     # session summary + facts + the current user message (all trusted).
     # Untrusted messages feed into planner context, not messenger context.
-    fast_path_enabled = setting_bool(config.settings, "fast_path_enabled", default=True)
+    fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     if fast_path_enabled:
         msg_class = await classify_message(config, content, session=session)
         if msg_class == "chat":
@@ -1040,11 +1042,27 @@ async def _process_message(
 
     # Plan
     try:
-        plan = await run_planner(
-            db, config, session, user_role, content,
-            user_skills=user_skills,
-            paraphrased_context=paraphrased_context,
+        plan = await asyncio.wait_for(
+            run_planner(
+                db, config, session, user_role, content,
+                user_skills=user_skills,
+                paraphrased_context=paraphrased_context,
+            ),
+            timeout=planner_timeout,
         )
+    except asyncio.TimeoutError:
+        log.error("Planner timed out after %ds for session=%s msg=%d", planner_timeout, session, msg_id)
+        error_text = f"Planning timed out after {planner_timeout}s"
+        fail_plan_id = await create_plan(db, session, msg_id, "Failed")
+        fail_task_id = await create_task(db, fail_plan_id, session, "msg", error_text)
+        await update_task(db, fail_task_id, status="done", output=error_text)
+        await update_plan_status(db, fail_plan_id, "failed")
+        await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
+        await _deliver_webhook_if_configured(
+            db, config, session, 0, error_text, True,
+            deploy_secrets=collect_deploy_secrets(config),
+        )
+        return
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
         error_text = f"Planning failed: {e}"
@@ -1280,10 +1298,35 @@ async def _process_message(
 
         replan_usage_idx = get_usage_index()
         try:
-            new_plan = await run_planner(
-                db, config, session, user_role, enriched_message,
-                user_skills=user_skills,
+            new_plan = await asyncio.wait_for(
+                run_planner(
+                    db, config, session, user_role, enriched_message,
+                    user_skills=user_skills,
+                ),
+                timeout=planner_timeout,
             )
+        except asyncio.TimeoutError:
+            log.error("Replan timed out after %ds", planner_timeout)
+            e = f"Replan timed out after {planner_timeout}s"
+            await update_plan_status(db, current_plan_id, "failed")
+            fail_detail = _build_failure_summary(
+                completed, remaining, current_goal,
+                reason=f"Replan timed out: {e}",
+            )
+            try:
+                fail_text = await _msg_task(config, db, session, fail_detail,
+                                            goal=current_goal)
+            except (LLMError, MessengerError):
+                fail_text = fail_detail
+            fail_task_id = await create_task(
+                db, current_plan_id, session, "msg", fail_detail,
+            )
+            await update_task(db, fail_task_id, status="done", output=fail_text)
+            await save_message(
+                db, session, None, "system", fail_text,
+                trusted=True, processed=True,
+            )
+            break
         except PlanError as e:
             log.error("Replan failed: %s", e)
             # Finalize plan status from "replanning" to "failed"

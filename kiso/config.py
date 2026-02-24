@@ -14,30 +14,42 @@ LLM_API_KEY_ENV = "KISO_LLM_API_KEY"
 
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
-SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list[str]] = {
-    "context_messages": 5,
+# Default values used to write config.toml on first run.
+# NOT used as runtime fallbacks — all settings must be explicitly present.
+SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
+    # conversation
+    "context_messages": 7,
     "summarize_threshold": 30,
+    "bot_name": "Kiso",
+    # knowledge / memory
     "knowledge_max_facts": 50,
-    "max_replan_depth": 5,
-    "max_worker_retries": 1,
+    "fact_decay_days": 7,
+    "fact_decay_rate": 0.1,
+    "fact_archive_threshold": 0.3,
+    # planning
+    "max_replan_depth": 3,
     "max_validation_retries": 3,
-    "max_output_size": 1_048_576,
+    "max_plan_tasks": 20,
+    # execution
+    "exec_timeout": 120,
+    "planner_timeout": 60,
+    "max_output_size": 1048576,
+    "max_worker_retries": 1,
+    # limits
+    "max_llm_calls_per_message": 200,
     "max_message_size": 65536,
     "max_queue_size": 50,
-    "max_plan_tasks": 20,
-    "exec_timeout": 120,
-    "worker_idle_timeout": 300,
+    # server
     "host": "0.0.0.0",
     "port": 8333,
+    "worker_idle_timeout": 300,
+    # fast path
+    "fast_path_enabled": True,
+    # webhooks
     "webhook_allow_list": [],
     "webhook_require_https": True,
     "webhook_secret": "",
     "webhook_max_payload": 1048576,
-    "bot_name": "Kiso",
-    "fast_path_enabled": True,
-    "fact_decay_days": 7,
-    "fact_decay_rate": 0.1,
-    "fact_archive_threshold": 0.3,
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
@@ -50,6 +62,78 @@ MODEL_DEFAULTS: dict[str, str] = {
     "messenger": "deepseek/deepseek-v3.2",
     "searcher": "perplexity/sonar",
 }
+
+# Complete config.toml written on first run. Edit to configure your instance.
+CONFIG_TEMPLATE = """\
+# kiso configuration
+# Documentation: https://github.com/kiso-run/core/blob/main/docs/config.md
+# Generate tokens with: openssl rand -hex 32
+
+[tokens]
+# cli = "your-secret-token-here"
+
+[providers.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+
+# [providers.ollama]
+# base_url = "http://localhost:11434/v1"
+
+[users.admin]
+role = "admin"
+# aliases.discord = "YourDiscordUser#1234"
+
+[models]
+planner     = "minimax/minimax-m2.5"
+reviewer    = "deepseek/deepseek-v3.2"
+curator     = "deepseek/deepseek-v3.2"
+worker      = "deepseek/deepseek-v3.2"
+summarizer  = "deepseek/deepseek-v3.2"
+paraphraser = "deepseek/deepseek-v3.2"
+messenger   = "deepseek/deepseek-v3.2"
+searcher    = "perplexity/sonar"
+
+[settings]
+# --- conversation ---
+context_messages          = 7        # recent messages sent to planner
+summarize_threshold       = 30       # message count before summarizer runs
+bot_name                  = "Kiso"
+
+# --- knowledge / memory ---
+knowledge_max_facts       = 50
+fact_decay_days           = 7
+fact_decay_rate           = 0.1
+fact_archive_threshold    = 0.3
+
+# --- planning ---
+max_replan_depth          = 3
+max_validation_retries    = 3
+max_plan_tasks            = 20
+
+# --- execution ---
+exec_timeout              = 120      # seconds; also used for post-plan LLM calls
+planner_timeout           = 60       # seconds for planner LLM call
+max_output_size           = 1048576  # max chars per task output (0 = unlimited)
+max_worker_retries        = 1
+
+# --- limits ---
+max_llm_calls_per_message = 200
+max_message_size          = 65536    # bytes, POST /msg content
+max_queue_size            = 50       # queued messages per session
+
+# --- server ---
+host                      = "0.0.0.0"
+port                      = 8333
+worker_idle_timeout       = 300
+
+# --- fast path ---
+fast_path_enabled         = true     # skip planner for conversational messages
+
+# --- webhooks (only needed when using connector integrations) ---
+webhook_allow_list        = []       # IPs exempt from SSRF check
+webhook_require_https     = true
+webhook_secret            = ""       # HMAC-SHA256 secret; empty = no signing
+webhook_max_payload       = 1048576
+"""
 
 
 @dataclass(frozen=True)
@@ -191,13 +275,25 @@ def _build_config(path: Path, on_error) -> Config:
 
         users[uname] = User(role=role, skills=skills, aliases=aliases)
 
-    # --- models (optional, with defaults) ---
+    # --- models: all roles required ---
     models_raw = raw.get("models", {})
-    models = {**MODEL_DEFAULTS, **models_raw}
+    missing_models = sorted(set(MODEL_DEFAULTS) - set(models_raw))
+    if missing_models:
+        on_error(
+            f"[models] missing required fields: {', '.join(missing_models)}\n"
+            f"  Add them to [models] in {path}"
+        )
+    models = dict(models_raw)
 
-    # --- settings (optional, with defaults) ---
+    # --- settings: all keys required ---
     settings_raw = raw.get("settings", {})
-    settings = {**SETTINGS_DEFAULTS, **settings_raw}
+    missing_settings = sorted(set(SETTINGS_DEFAULTS) - set(settings_raw))
+    if missing_settings:
+        on_error(
+            f"[settings] missing required fields: {', '.join(missing_settings)}\n"
+            f"  Add them to [settings] in {path}"
+        )
+    settings = dict(settings_raw)
 
     return Config(
         tokens=tokens,
@@ -210,8 +306,24 @@ def _build_config(path: Path, on_error) -> Config:
 
 
 def load_config(path: Path | None = None) -> Config:
-    """Load and validate config. Exits on error."""
-    return _build_config(path or CONFIG_PATH, _die)
+    """Load and validate config. Exits on error.
+
+    On first run (config file absent): writes CONFIG_TEMPLATE and exits with
+    instructions so the user knows where to fill in tokens and users.
+    """
+    target = path or CONFIG_PATH
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(CONFIG_TEMPLATE, encoding="utf-8")
+        print(
+            f"Config created at {target}\n"
+            f"  1. Set your token in [tokens]\n"
+            f"  2. Configure [providers] and [users]\n"
+            f"  3. Restart kiso",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+    return _build_config(target, _die)
 
 
 def reload_config(path: Path | None = None) -> Config:

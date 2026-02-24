@@ -172,7 +172,7 @@ async def call_llm(
 
     t0 = time.perf_counter()
 
-    llm_timeout = int(config.settings.get("exec_timeout", 120))
+    llm_timeout = int(config.settings["exec_timeout"])
     async with httpx.AsyncClient(timeout=llm_timeout) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)

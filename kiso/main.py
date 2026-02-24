@@ -92,7 +92,7 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     entry = _workers.get(session)
     if entry and not entry.task.done():
         return entry.queue
-    maxsize = int(config.settings.get("max_queue_size", 50))
+    maxsize = int(config.settings["max_queue_size"])
     queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
     cancel_event = asyncio.Event()
     task = asyncio.create_task(
@@ -137,8 +137,8 @@ async def lifespan(app: FastAPI):
     app.state.config = config
     _init_kiso_dirs()
     log.info("Server starting — host=%s port=%s",
-             config.settings.get("host", "0.0.0.0"),
-             config.settings.get("port", 8333))
+             config.settings["host"],
+             config.settings["port"])
     db = await init_db(KISO_DIR / "store.db")
     app.state.db = db
 
@@ -184,7 +184,7 @@ async def lifespan(app: FastAPI):
             log.info("Startup recovery: re-enqueued %d unprocessed messages", recovered_count)
 
     # Webhook secret length warning
-    webhook_secret = config.settings.get("webhook_secret", "")
+    webhook_secret = config.settings["webhook_secret"]
     if webhook_secret and len(webhook_secret) < 32:
         log.warning(
             "webhook_secret is only %d characters — recommend at least 32",
@@ -194,7 +194,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Graceful shutdown with timeout
-    shutdown_timeout = int(config.settings.get("exec_timeout", 120))
+    shutdown_timeout = int(config.settings["exec_timeout"])
     for session, entry in _workers.items():
         entry.cancel_event.set()
     for session, entry in list(_workers.items()):
@@ -261,8 +261,8 @@ async def post_sessions(
         try:
             validate_webhook_url(
                 body.webhook,
-                config.settings.get("webhook_allow_list"),
-                require_https=setting_bool(config.settings, "webhook_require_https", default=True),
+                config.settings["webhook_allow_list"],
+                require_https=setting_bool(config.settings, "webhook_require_https"),
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -293,7 +293,7 @@ async def post_msg(
     config = request.app.state.config
     resolved = resolve_user(config, body.user, auth.token_name)
 
-    max_msg = int(config.settings.get("max_message_size", 65536))
+    max_msg = int(config.settings["max_message_size"])
     if len(body.content) > max_msg:
         raise HTTPException(status_code=413, detail="Message content too large")
 

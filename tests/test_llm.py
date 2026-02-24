@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from kiso.config import Config, Provider
+from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 from kiso.llm import (
     LLMBudgetExceeded,
     LLMError,
@@ -33,8 +33,8 @@ def _make_config(**overrides) -> Config:
         tokens={"cli": "tok"},
         providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
         users={},
-        models={"planner": "gpt-4", "worker": "gpt-3.5"},
-        settings={},
+        models={**MODEL_DEFAULTS, "planner": "gpt-4", "worker": "gpt-3.5"},
+        settings={**SETTINGS_DEFAULTS},
         raw={},
     )
     defaults.update(overrides)

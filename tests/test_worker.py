@@ -97,18 +97,22 @@ def _patch_translator():
 
 
 def _make_config(**overrides) -> Config:
+    from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
+    base_settings = {
+        **SETTINGS_DEFAULTS,
+        "worker_idle_timeout": 1,  # short for tests
+        "exec_timeout": 5,
+        "planner_timeout": 5,
+    }
+    # Merge settings overrides rather than replacing the whole dict
+    if "settings" in overrides:
+        base_settings.update(overrides.pop("settings"))
     defaults = dict(
         tokens={"cli": "tok"},
         providers={"local": Provider(base_url="http://localhost:11434/v1")},
         users={},
-        models={"planner": "gpt-4", "worker": "gpt-3.5", "reviewer": "gpt-4"},
-        settings={
-            "worker_idle_timeout": 1,  # short for tests
-            "exec_timeout": 5,
-            "max_validation_retries": 1,
-            "context_messages": 5,
-            "max_replan_depth": 3,
-        },
+        models={**MODEL_DEFAULTS, "planner": "gpt-4", "worker": "gpt-3.5", "reviewer": "gpt-4"},
+        settings=base_settings,
         raw={},
     )
     defaults.update(overrides)
@@ -5059,11 +5063,11 @@ class TestExtendReplan:
 
 
 class TestDefaultMaxReplanDepth:
-    """Test that the default max_replan_depth is 5."""
+    """Test that the default max_replan_depth is 3."""
 
-    def test_default_max_replan_depth_is_5(self):
+    def test_default_max_replan_depth_is_3(self):
         from kiso.config import SETTINGS_DEFAULTS
-        assert SETTINGS_DEFAULTS["max_replan_depth"] == 5
+        assert SETTINGS_DEFAULTS["max_replan_depth"] == 3
 
 
 class TestReportPubFiles:
@@ -5603,7 +5607,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 3,
+                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
             )
 
         mock_classifier.assert_called_once()
@@ -5627,7 +5631,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 3,
+                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
             )
 
         mock_classifier.assert_called_once()
@@ -5650,7 +5654,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 3,
+                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
             )
 
         mock_classifier.assert_not_called()
@@ -5672,7 +5676,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 3,
+                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
             )
 
         mock_post.assert_called_once()
@@ -5693,7 +5697,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 3,
+                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
             )
 
         mock_paraphraser.assert_not_called()

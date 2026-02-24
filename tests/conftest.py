@@ -68,6 +68,43 @@ skills = "*"
 
 [users.testuser.aliases]
 discord = "TestUser#1234"
+
+[models]
+planner     = "test-planner"
+reviewer    = "test-reviewer"
+curator     = "test-curator"
+worker      = "test-worker"
+summarizer  = "test-summarizer"
+paraphraser = "test-paraphraser"
+messenger   = "test-messenger"
+searcher    = "test-searcher"
+
+[settings]
+context_messages          = 7
+summarize_threshold       = 30
+bot_name                  = "Kiso"
+knowledge_max_facts       = 50
+fact_decay_days           = 7
+fact_decay_rate           = 0.1
+fact_archive_threshold    = 0.3
+max_replan_depth          = 3
+max_validation_retries    = 3
+max_plan_tasks            = 20
+exec_timeout              = 5
+planner_timeout           = 5
+max_output_size           = 1048576
+max_worker_retries        = 1
+max_llm_calls_per_message = 200
+max_message_size          = 65536
+max_queue_size            = 50
+host                      = "0.0.0.0"
+port                      = 8333
+worker_idle_timeout       = 1
+fast_path_enabled         = true
+webhook_allow_list        = []
+webhook_require_https     = true
+webhook_secret            = ""
+webhook_max_payload       = 1048576
 """
 
 AUTH_HEADER = {"Authorization": "Bearer test-secret-token"}

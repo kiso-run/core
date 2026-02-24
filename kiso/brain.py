@@ -57,7 +57,7 @@ async def _retry_llm_with_validation(
     Returns:
         The validated parsed dict.
     """
-    max_retries = int(config.settings.get("max_validation_retries", 3))
+    max_retries = int(config.settings["max_validation_retries"])
     last_errors: list[str] = []
     vkw = validate_kwargs or {}
 
@@ -286,7 +286,7 @@ async def build_planner_messages(
     summary = sess["summary"] if sess else ""
     facts = await get_facts(db)
     pending = await get_pending_items(db, session)
-    context_limit = int(config.settings.get("context_messages", 7))
+    context_limit = int(config.settings["context_messages"])
     recent = await get_recent_messages(db, session, limit=context_limit)
 
     # Build context block
@@ -369,7 +369,7 @@ async def run_planner(
         paraphrased_context=paraphrased_context,
     )
 
-    max_tasks = int(config.settings.get("max_plan_tasks", 20))
+    max_tasks = int(config.settings["max_plan_tasks"])
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,
         validate_plan, PlanError, "Plan",
@@ -685,7 +685,7 @@ def build_messenger_messages(
         plan_outputs_text: Pre-formatted preceding task outputs (from worker).
         goal: The plan goal (user's original request for this turn).
     """
-    bot_name = config.settings.get("bot_name", "Kiso")
+    bot_name = config.settings["bot_name"]
     system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
 
     context_parts: list[str] = []

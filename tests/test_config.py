@@ -29,6 +29,43 @@ base_url = "https://openrouter.ai/api/v1"
 
 [users.marco]
 role = "admin"
+
+[models]
+planner     = "minimax/minimax-m2.5"
+reviewer    = "deepseek/deepseek-v3.2"
+curator     = "deepseek/deepseek-v3.2"
+worker      = "deepseek/deepseek-v3.2"
+summarizer  = "deepseek/deepseek-v3.2"
+paraphraser = "deepseek/deepseek-v3.2"
+messenger   = "deepseek/deepseek-v3.2"
+searcher    = "perplexity/sonar"
+
+[settings]
+context_messages          = 7
+summarize_threshold       = 30
+bot_name                  = "Kiso"
+knowledge_max_facts       = 50
+fact_decay_days           = 7
+fact_decay_rate           = 0.1
+fact_archive_threshold    = 0.3
+max_replan_depth          = 3
+max_validation_retries    = 3
+max_plan_tasks            = 20
+exec_timeout              = 120
+planner_timeout           = 60
+max_output_size           = 1048576
+max_worker_retries        = 1
+max_llm_calls_per_message = 200
+max_message_size          = 65536
+max_queue_size            = 50
+host                      = "0.0.0.0"
+port                      = 8333
+worker_idle_timeout       = 300
+fast_path_enabled         = true
+webhook_allow_list        = []
+webhook_require_https     = true
+webhook_secret            = ""
+webhook_max_payload       = 1048576
 """
 
 
@@ -140,12 +177,29 @@ discord = "alice123"
     assert "duplicate alias" in _die_msg(capsys)
 
 
-def test_defaults_applied(tmp_path: Path):
+def test_all_settings_loaded(tmp_path: Path):
+    """All settings from TOML are present — no silent code defaults."""
     cfg = load_config(_write(tmp_path, VALID))
-    for key, val in SETTINGS_DEFAULTS.items():
-        assert cfg.settings[key] == val
-    for key, val in MODEL_DEFAULTS.items():
-        assert cfg.models[key] == val
+    for key in SETTINGS_DEFAULTS:
+        assert key in cfg.settings, f"Missing setting: {key}"
+    for key in MODEL_DEFAULTS:
+        assert key in cfg.models, f"Missing model: {key}"
+
+
+def test_missing_model_role(tmp_path: Path, capsys):
+    """Config missing a model role fails loudly."""
+    text = VALID.replace('planner     = "minimax/minimax-m2.5"\n', "")
+    with pytest.raises(SystemExit):
+        load_config(_write(tmp_path, text))
+    assert "planner" in _die_msg(capsys)
+
+
+def test_missing_setting(tmp_path: Path, capsys):
+    """Config missing a setting fails loudly."""
+    text = VALID.replace("exec_timeout              = 120\n", "")
+    with pytest.raises(SystemExit):
+        load_config(_write(tmp_path, text))
+    assert "exec_timeout" in _die_msg(capsys)
 
 
 def test_provider_missing_base_url(tmp_path: Path, capsys):
@@ -162,10 +216,18 @@ role = "admin"
     assert "base_url" in _die_msg(capsys)
 
 
-def test_config_file_not_found(tmp_path: Path, capsys):
-    with pytest.raises(SystemExit):
-        load_config(tmp_path / "nonexistent.toml")
-    assert "not found" in _die_msg(capsys)
+def test_config_file_not_found_writes_template(tmp_path: Path, capsys):
+    """On first run (no config file), load_config writes the template and exits."""
+    p = tmp_path / "config.toml"
+    assert not p.exists()
+    with pytest.raises(SystemExit) as exc_info:
+        load_config(p)
+    assert exc_info.value.code == 0
+    assert p.exists(), "Template should be written"
+    content = p.read_text()
+    assert "[settings]" in content
+    assert "[models]" in content
+    assert "Config created" in capsys.readouterr().err
 
 
 def test_token_not_string(tmp_path: Path, capsys):
