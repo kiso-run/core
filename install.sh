@@ -613,7 +613,8 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
         printf '\n%s\n' "$PATH_LINE" >> "$_profile"
         green "  added ~/.local/bin to PATH in $_profile"
     fi
-    green "  kiso is now available in this session"
+    yellow "  run this to use kiso now (or open a new terminal):"
+    yellow "    source $_profile"
 fi
 
 # ── 7. Summary ──────────────────────────────────────────────────────────────
