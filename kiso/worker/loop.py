@@ -281,8 +281,15 @@ async def _fast_path_chat(
 
     usage_idx_before = get_usage_index()
     t0 = time.perf_counter()
+    _msg_timeout = int(config.settings["planner_timeout"])
     try:
-        text = await _msg_task(config, db, session, content, goal=content)
+        try:
+            text = await asyncio.wait_for(
+                _msg_task(config, db, session, content, goal=content),
+                timeout=_msg_timeout,
+            )
+        except asyncio.TimeoutError:
+            raise MessengerError(f"Messenger timed out after {_msg_timeout}s")
     except (LLMError, MessengerError) as e:
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
         log.error("Fast path messenger failed: %s", e)
@@ -618,11 +625,18 @@ async def _execute_plan(
             try:
                 await update_task_substatus(db, task_id, "composing")
                 t0 = time.perf_counter()
-                text = await _msg_task(
-                    config, db, session, detail,
-                    plan_outputs=plan_outputs,
-                    goal=goal,
-                )
+                _msg_timeout = int(config.settings["planner_timeout"])
+                try:
+                    text = await asyncio.wait_for(
+                        _msg_task(
+                            config, db, session, detail,
+                            plan_outputs=plan_outputs,
+                            goal=goal,
+                        ),
+                        timeout=_msg_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    raise MessengerError(f"Messenger timed out after {_msg_timeout}s")
                 task_duration_ms = int((time.perf_counter() - t0) * 1000)
                 await update_task(db, task_id, "done", output=text)
                 task_row = {**task_row, "output": text, "status": "done"}
