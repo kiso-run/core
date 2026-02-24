@@ -553,6 +553,11 @@ def _poll_status(
                                 print(verbose_detail)
                         print(render_msg_output(output, caps, bot_name))
                         print(render_separator(caps))
+                    elif status == "running":
+                        # Track for spinner while messenger LLM is composing
+                        active_spinner_task = task
+                        active_spinner_index = idx
+                        active_spinner_total = total
                     continue
 
                 # Print header for non-msg tasks (blank line between tasks)
