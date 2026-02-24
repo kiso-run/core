@@ -285,15 +285,10 @@ def _build_config(path: Path, on_error) -> Config:
         )
     models = dict(models_raw)
 
-    # --- settings: all keys required ---
+    # --- settings: start from defaults, override with config values ---
     settings_raw = raw.get("settings", {})
-    missing_settings = sorted(set(SETTINGS_DEFAULTS) - set(settings_raw))
-    if missing_settings:
-        on_error(
-            f"[settings] missing required fields: {', '.join(missing_settings)}\n"
-            f"  Add them to [settings] in {path}"
-        )
-    settings = dict(settings_raw)
+    settings = dict(SETTINGS_DEFAULTS)
+    settings.update(settings_raw)
 
     return Config(
         tokens=tokens,

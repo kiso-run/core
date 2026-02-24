@@ -562,14 +562,21 @@ if command -v zsh &>/dev/null; then
     fi
 fi
 
-# Check PATH
+# Ensure ~/.local/bin is in PATH — add to bashrc/zshrc if missing
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    yellow ""
-    yellow "  ~/.local/bin is not in your PATH."
-    yellow "  Add this to your shell profile (~/.bashrc or ~/.zshrc):"
-    yellow ""
-    yellow "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-    yellow ""
+    export PATH="$HOME/.local/bin:$PATH"
+    # Append to the appropriate shell profile
+    if [[ -f "$HOME/.zshrc" ]]; then
+        _profile="$HOME/.zshrc"
+    else
+        _profile="$HOME/.bashrc"
+    fi
+    if ! grep -qF "$PATH_LINE" "$_profile" 2>/dev/null; then
+        printf '\n%s\n' "$PATH_LINE" >> "$_profile"
+        green "  added ~/.local/bin to PATH in $_profile"
+    fi
+    green "  kiso is now available in this session"
 fi
 
 # ── 7. Summary ──────────────────────────────────────────────────────────────

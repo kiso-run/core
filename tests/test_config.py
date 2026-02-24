@@ -195,12 +195,11 @@ def test_missing_model_role(tmp_path: Path, capsys):
     assert "planner" in _die_msg(capsys)
 
 
-def test_missing_setting(tmp_path: Path, capsys):
-    """Config missing a setting fails loudly."""
+def test_missing_setting_uses_default(tmp_path: Path):
+    """Missing settings fall back to SETTINGS_DEFAULTS silently."""
     text = VALID.replace("exec_timeout              = 120\n", "")
-    with pytest.raises(SystemExit):
-        load_config(_write(tmp_path, text))
-    assert "exec_timeout" in _die_msg(capsys)
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.settings["exec_timeout"] == SETTINGS_DEFAULTS["exec_timeout"]
 
 
 def test_provider_missing_base_url(tmp_path: Path, capsys):
@@ -464,9 +463,8 @@ def test_m37_setting_bool_rejects_int():
     assert setting_bool({"key": 0}, "key", default=True) is True
 
 
-def test_m37_missing_consolidation_ratio(tmp_path: Path, capsys):
-    """M37: config missing fact_consolidation_min_ratio fails loudly."""
+def test_m37_missing_consolidation_ratio_uses_default(tmp_path: Path):
+    """M39: missing fact_consolidation_min_ratio falls back to default."""
     text = VALID.replace("fact_consolidation_min_ratio = 0.3\n", "")
-    with pytest.raises(SystemExit):
-        load_config(_write(tmp_path, text))
-    assert "fact_consolidation_min_ratio" in _die_msg(capsys)
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.settings["fact_consolidation_min_ratio"] == 0.3
