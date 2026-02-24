@@ -114,8 +114,18 @@ def _report_pub_files(session: str, config: Config) -> list[dict]:
     if not pub_dir.is_dir():
         return []
     token = pub_token(session, config)
+    _MAX_PUB_SCAN = 1000
+    all_paths: list[Path] = []
+    truncated = False
+    for p in pub_dir.rglob("*"):
+        if len(all_paths) >= _MAX_PUB_SCAN:
+            truncated = True
+            break
+        all_paths.append(p)
+    if truncated:
+        log.warning("pub/ for session %r has >%d entries, listing truncated", session, _MAX_PUB_SCAN)
     results = []
-    for f in sorted(pub_dir.rglob("*")):
+    for f in sorted(all_paths):
         if f.is_file():
             rel = f.relative_to(pub_dir)
             results.append({

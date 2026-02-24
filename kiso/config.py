@@ -26,6 +26,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "fact_decay_days": 7,
     "fact_decay_rate": 0.1,
     "fact_archive_threshold": 0.3,
+    "fact_consolidation_min_ratio": 0.3,
     # planning
     "max_replan_depth": 3,
     "max_validation_retries": 3,
@@ -103,6 +104,7 @@ knowledge_max_facts       = 50
 fact_decay_days           = 7
 fact_decay_rate           = 0.1
 fact_archive_threshold    = 0.3
+fact_consolidation_min_ratio = 0.3  # abort consolidation if fewer than this fraction survive
 
 # --- planning ---
 max_replan_depth          = 3
@@ -179,9 +181,7 @@ def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
             return True
         if low in ("false", "0", "no"):
             return False
-    if isinstance(val, int):
-        return bool(val)
-    # Anything else — warn and use default
+    # Anything else (int, list, dict …) — fall through to default
     return default
 
 

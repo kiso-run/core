@@ -87,6 +87,7 @@ knowledge_max_facts       = 50
 fact_decay_days           = 7
 fact_decay_rate           = 0.1
 fact_archive_threshold    = 0.3
+fact_consolidation_min_ratio = 0.3
 max_replan_depth          = 3
 max_validation_retries    = 3
 max_plan_tasks            = 20

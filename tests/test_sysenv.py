@@ -484,6 +484,17 @@ class TestCollectWorkspaceFiles:
             result = _collect_workspace_files("nonexistent")
         assert result == ""
 
+    def test_workspace_files_scan_cap(self, tmp_path):
+        """M37: rglob scan caps at 1000 files to avoid materialising huge dirs."""
+        session_dir = tmp_path / "sessions" / "huge-session"
+        session_dir.mkdir(parents=True)
+        for i in range(1001):
+            (session_dir / f"file{i:04d}.txt").write_bytes(b"")
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = _collect_workspace_files("huge-session")
+        # Function must return (not hang) and show truncation marker
+        assert "truncated" in result
+
 
 # --- Workspace lines in build_system_env_section ---
 

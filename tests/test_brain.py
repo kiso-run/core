@@ -1219,6 +1219,21 @@ class TestRunFactConsolidation:
             with pytest.raises(SummarizerError, match="must return a JSON array"):
                 await run_fact_consolidation(config, facts)
 
+    async def test_confidence_clamped_to_unit_interval(self, config):
+        """M37: confidence values outside [0.0, 1.0] are clamped."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([
+            {"content": "high", "confidence": 99.9},
+            {"content": "low", "confidence": -5.0},
+            {"content": "normal", "confidence": 0.7},
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert result[0]["confidence"] == 1.0   # clamped from 99.9
+        assert result[1]["confidence"] == 0.0   # clamped from -5.0
+        assert result[2]["confidence"] == 0.7   # unchanged
+
 
 # --- M9: _load_system_prompt for curator/summarizer ---
 

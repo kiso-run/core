@@ -891,7 +891,7 @@ async def run_fact_consolidation(
             normalized.append({
                 "content": item["content"],
                 "category": item.get("category", "general"),
-                "confidence": item.get("confidence", 1.0),
+                "confidence": max(0.0, min(1.0, float(item.get("confidence", 1.0)))),
             })
         elif isinstance(item, str):
             normalized.append({

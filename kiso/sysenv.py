@@ -170,12 +170,19 @@ def _collect_workspace_files(session: str) -> str:
     if not workspace.is_dir():
         return ""
 
-    entries: list[str] = []
-    for f in sorted(workspace.rglob("*")):
+    # Collect at most _MAX_SCAN candidates to avoid materialising a huge rglob.
+    _MAX_SCAN = 1000
+    candidates: list[Path] = []
+    for f in workspace.rglob("*"):
         if f.is_file() and ".kiso" not in f.relative_to(workspace).parts:
-            rel = f.relative_to(workspace)
-            size = _format_size(f.stat().st_size)
-            entries.append(f"{rel} ({size})")
+            candidates.append(f)
+        if len(candidates) >= _MAX_SCAN:
+            break
+    entries: list[str] = []
+    for f in sorted(candidates):
+        rel = f.relative_to(workspace)
+        size = _format_size(f.stat().st_size)
+        entries.append(f"{rel} ({size})")
         if len(entries) >= 30:
             entries.append("... (truncated, use `find` for full listing)")
             break

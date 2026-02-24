@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from kiso.config import KISO_DIR
+
+log = logging.getLogger(__name__)
 
 CONNECTORS_DIR = KISO_DIR / "connectors"
 
@@ -72,11 +75,13 @@ def discover_connectors(connectors_dir: Path | None = None) -> list[dict]:
         try:
             with open(toml_path, "rb") as f:
                 manifest = tomllib.load(f)
-        except Exception:
+        except Exception as e:
+            log.warning("Skipping connector %s: failed to read kiso.toml: %s", entry.name, e)
             continue
 
         errors = _validate_connector_manifest(manifest, entry)
         if errors:
+            log.warning("Skipping connector %s: invalid manifest: %s", entry.name, "; ".join(errors))
             continue
 
         kiso = manifest["kiso"]

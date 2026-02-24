@@ -188,9 +188,10 @@ async def _post_plan_knowledge(
                 timeout=exec_timeout,
             )
             if consolidated:
-                if len(consolidated) < len(all_facts) * 0.3:
-                    log.warning("Fact consolidation shrank %d → %d (< 30%%), skipping",
-                                len(all_facts), len(consolidated))
+                min_ratio = float(config.settings["fact_consolidation_min_ratio"])
+                if len(consolidated) < len(all_facts) * min_ratio:
+                    log.warning("Fact consolidation shrank %d → %d (< %.0f%%), skipping",
+                                len(all_facts), len(consolidated), min_ratio * 100)
                 else:
                     consolidated = [
                         f for f in consolidated
@@ -783,8 +784,8 @@ async def _execute_plan(
             if task_row.get("args"):
                 try:
                     search_params = json.loads(task_row["args"])
-                except json.JSONDecodeError:
-                    pass  # ignore malformed args, use defaults
+                except json.JSONDecodeError as e:
+                    log.warning("search task %r: malformed args JSON, using defaults: %s", task_row.get("id"), e)
 
             # Validate search parameter types
             max_results = search_params.get("max_results")

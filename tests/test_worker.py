@@ -5123,6 +5123,22 @@ class TestReportPubFiles:
         assert len(result) == 1
         assert result[0]["filename"] == "sub/nested.txt"
 
+    def test_pub_scan_cap_truncates_and_warns(self, tmp_path, config, caplog):
+        """M37: pub/ listing capped at 1000 entries with a warning."""
+        import logging
+        session_dir = tmp_path / "sessions" / "cap-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        for i in range(1001):
+            (pub_dir / f"file{i:04d}.txt").write_bytes(b"")
+
+        with _patch_kiso_dir(tmp_path), \
+             caplog.at_level(logging.WARNING, logger="kiso.worker.utils"):
+            result = _report_pub_files("cap-session", config)
+
+        assert len(result) <= 1000
+        assert any("truncated" in r.message for r in caplog.records)
+
 
 # --- M31: search output truncation in replan context ---
 
@@ -5222,7 +5238,7 @@ class TestExecutePlanSearch:
         assert call_kwargs.kwargs.get("country") == "IT"
 
     async def test_search_malformed_args(self, db, tmp_path):
-        """Malformed JSON in args is silently ignored, defaults used."""
+        """Malformed JSON in args logs a warning and uses defaults."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(
@@ -5245,6 +5261,27 @@ class TestExecutePlanSearch:
         assert call_kwargs.kwargs.get("max_results") is None
         assert call_kwargs.kwargs.get("lang") is None
         assert call_kwargs.kwargs.get("country") is None
+
+    async def test_search_malformed_args_emits_warning(self, db, tmp_path, caplog):
+        """M37: malformed search args emit a warning log."""
+        import logging
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(
+            db, plan_id, "sess1", type="search",
+            detail="query", args="NOT_JSON", expect="results",
+        )
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        mock_searcher = AsyncMock(return_value="results")
+        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             caplog.at_level(logging.WARNING, logger="kiso.worker.loop"), \
+             _patch_kiso_dir(tmp_path):
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "user msg", 5)
+
+        assert any("malformed args" in r.message for r in caplog.records)
 
     async def test_search_params_invalid_types(self, db, tmp_path):
         """Invalid types in search params are coerced or set to None."""

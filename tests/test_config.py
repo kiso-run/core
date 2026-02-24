@@ -48,6 +48,7 @@ knowledge_max_facts       = 50
 fact_decay_days           = 7
 fact_decay_rate           = 0.1
 fact_archive_threshold    = 0.3
+fact_consolidation_min_ratio = 0.3
 max_replan_depth          = 3
 max_validation_retries    = 3
 max_plan_tasks            = 20
@@ -414,9 +415,11 @@ class TestSettingBool:
         assert setting_bool({"key": "1"}, "key") is True
         assert setting_bool({"key": "0"}, "key") is False
 
-    def test_int_truthy(self):
-        assert setting_bool({"key": 1}, "key") is True
-        assert setting_bool({"key": 0}, "key") is False
+    def test_int_uses_default(self):
+        """Integers are not coerced to bool — TOML has native booleans."""
+        assert setting_bool({"key": 1}, "key", default=True) is True    # default, not coercion
+        assert setting_bool({"key": 1}, "key", default=False) is False   # 1 doesn't override default
+        assert setting_bool({"key": 0}, "key", default=True) is True     # 0 falls through to default
 
     def test_string_case_insensitive(self):
         assert setting_bool({"key": "TRUE"}, "key") is True
@@ -444,3 +447,26 @@ def test_m34_settings_defaults():
     assert SETTINGS_DEFAULTS["fact_decay_days"] == 7
     assert SETTINGS_DEFAULTS["fact_decay_rate"] == 0.1
     assert SETTINGS_DEFAULTS["fact_archive_threshold"] == 0.3
+
+
+# --- M37: robustness fixes ---
+
+
+def test_m37_fact_consolidation_min_ratio_default():
+    """M37: fact_consolidation_min_ratio has correct default."""
+    assert SETTINGS_DEFAULTS["fact_consolidation_min_ratio"] == 0.3
+
+
+def test_m37_setting_bool_rejects_int():
+    """M37: setting_bool no longer coerces int to bool."""
+    # Integer 1 must not override the default
+    assert setting_bool({"key": 1}, "key", default=False) is False
+    assert setting_bool({"key": 0}, "key", default=True) is True
+
+
+def test_m37_missing_consolidation_ratio(tmp_path: Path, capsys):
+    """M37: config missing fact_consolidation_min_ratio fails loudly."""
+    text = VALID.replace("fact_consolidation_min_ratio = 0.3\n", "")
+    with pytest.raises(SystemExit):
+        load_config(_write(tmp_path, text))
+    assert "fact_consolidation_min_ratio" in _die_msg(capsys)
