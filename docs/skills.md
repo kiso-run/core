@@ -219,9 +219,10 @@ https://gitlab.com/team/cool-skill.git        → gitlab-com_team_cool-skill
 3. Validate kiso.toml (exists? type=skill? has name? has [kiso.skill.args]?)
 4. Validate run.py and pyproject.toml exist — fail if missing
 5. If unofficial repo → warn user, ask confirmation (see security.md)
-6. If deps.sh exists → run it (skipped with --no-deps)
+6. uv sync (pyproject.toml → .venv)  ← must run before deps.sh
+7. If deps.sh exists → run it (skipped with --no-deps)
    ⚠ on failure: warn user, suggest "ask the bot to fix deps for skill {name}"
-7. uv sync (pyproject.toml → .venv)
+   Note: deps.sh may call binaries installed by uv (e.g. playwright install webkit)
 8. Check [kiso.deps].bin (verify with `which`)
 9. Check [kiso.skill.env] vars
    ⚠ KISO_SKILL_SEARCH_API_KEY not set (warn, don't block)
@@ -239,8 +240,9 @@ kiso skill list                   # list installed skills
 
 ```
 $ kiso skill list
-  search  0.1.0  — Web search using Brave Search API
-  aider   0.3.2  — Code editing tool using LLM
+  search   0.1.0  — Web search using Brave Search API
+  aider    0.3.2  — Code editing tool using LLM
+  browser  0.1.0  — Headless WebKit browser automation
 ```
 
 ### Search
