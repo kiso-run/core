@@ -174,6 +174,13 @@ def _skill_install(args) -> None:
                 print("Installation cancelled.")
                 raise RuntimeError("cancelled")
 
+        # uv sync first (deps.sh may need packages installed by uv)
+        subprocess.run(
+            ["uv", "sync"],
+            cwd=str(skill_dir),
+            capture_output=True, text=True,
+        )
+
         # Run deps.sh if present and not --no-deps
         deps_path = skill_dir / "deps.sh"
         if deps_path.exists() and not args.no_deps:
@@ -183,13 +190,6 @@ def _skill_install(args) -> None:
             )
             if result.returncode != 0:
                 print(f"warning: deps.sh failed: {result.stderr.strip()}")
-
-        # uv sync
-        subprocess.run(
-            ["uv", "sync"],
-            cwd=str(skill_dir),
-            capture_output=True, text=True,
-        )
 
         # Check binary deps
         skill_info = {"path": str(skill_dir)}
@@ -269,6 +269,13 @@ def _skill_update(args) -> None:
             print(f"error: git pull failed for '{name}': {result.stderr.strip()}")
             sys.exit(1)
 
+        # uv sync first (deps.sh may need packages installed by uv)
+        subprocess.run(
+            ["uv", "sync"],
+            cwd=str(skill_dir),
+            capture_output=True, text=True,
+        )
+
         # deps.sh
         deps_path = skill_dir / "deps.sh"
         if deps_path.exists():
@@ -278,13 +285,6 @@ def _skill_update(args) -> None:
             )
             if result.returncode != 0:
                 print(f"warning: deps.sh failed for '{name}': {result.stderr.strip()}")
-
-        # uv sync
-        subprocess.run(
-            ["uv", "sync"],
-            cwd=str(skill_dir),
-            capture_output=True, text=True,
-        )
 
         # check deps
         skill_info = {"path": str(skill_dir)}
