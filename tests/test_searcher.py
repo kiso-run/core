@@ -21,7 +21,7 @@ def _make_config(**overrides) -> Config:
         tokens={"cli": "tok"},
         providers={"local": Provider(base_url="http://localhost:11434/v1")},
         users={},
-        models={"searcher": "google/gemini-2.5-flash-lite:online"},
+        models={"searcher": "perplexity/sonar"},
         settings={},
         raw={},
     )

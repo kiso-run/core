@@ -160,7 +160,7 @@ ask_models() {
         "reviewer|checks task output, decides replan|deepseek/deepseek-v3.2"
         "worker|translates tasks to shell commands|deepseek/deepseek-v3.2"
         "messenger|writes human-readable responses|deepseek/deepseek-v3.2"
-        "searcher|web search (needs :online model)|google/gemini-2.5-flash-lite:online"
+        "searcher|web search (native search)|perplexity/sonar"
         "summarizer|compresses conversation history|deepseek/deepseek-v3.2"
         "curator|manages learned knowledge|deepseek/deepseek-v3.2"
         "paraphraser|prompt injection defense|deepseek/deepseek-v3.2"

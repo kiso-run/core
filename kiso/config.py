@@ -48,7 +48,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "summarizer": "deepseek/deepseek-v3.2",
     "paraphraser": "deepseek/deepseek-v3.2",
     "messenger": "deepseek/deepseek-v3.2",
-    "searcher": "google/gemini-2.5-flash-lite:online",
+    "searcher": "perplexity/sonar",
 }
 
 
