@@ -195,7 +195,7 @@ async def call_llm(
             try:
                 err_data = resp.json()
                 detail = json.dumps(err_data, indent=None)[:500]
-            except Exception:
+            except (json.JSONDecodeError, ValueError, TypeError):
                 detail = "(empty response body)"
         # Add actionable hints for common HTTP errors
         hint = ""

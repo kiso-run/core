@@ -15,6 +15,9 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+# Retry delays (seconds) for webhook delivery: 1s → 3s → 9s
+_WEBHOOK_BACKOFF = [1, 3, 9]
+
 
 def validate_webhook_url(
     url: str,
@@ -101,10 +104,9 @@ async def deliver_webhook(
         sig = hmac_mod.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
         headers["X-Kiso-Signature"] = f"sha256={sig}"
 
-    backoff = [1, 3, 9]
     last_status = 0
 
-    for attempt, delay in enumerate(backoff):
+    for attempt, delay in enumerate(_WEBHOOK_BACKOFF):
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                 resp = await client.post(url, content=raw_body, headers=headers)
@@ -113,16 +115,16 @@ async def deliver_webhook(
                 return True, resp.status_code, attempt + 1
             log.warning(
                 "Webhook attempt %d/%d to %s returned %d",
-                attempt + 1, len(backoff), url, resp.status_code,
+                attempt + 1, len(_WEBHOOK_BACKOFF), url, resp.status_code,
             )
         except Exception as e:
             log.warning(
                 "Webhook attempt %d/%d to %s failed: %s",
-                attempt + 1, len(backoff), url, e,
+                attempt + 1, len(_WEBHOOK_BACKOFF), url, e,
             )
 
-        if attempt < len(backoff) - 1:
+        if attempt < len(_WEBHOOK_BACKOFF) - 1:
             await asyncio.sleep(delay)
 
     log.warning("All webhook delivery attempts failed for %s", url)
-    return False, last_status, len(backoff)
+    return False, last_status, len(_WEBHOOK_BACKOFF)

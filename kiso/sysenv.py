@@ -78,8 +78,6 @@ def _collect_connectors() -> list[dict[str, str]]:
     connectors = discover_connectors()
     result: list[dict[str, str]] = []
     for c in connectors:
-        from pathlib import Path
-
         connector_dir = Path(c["path"])
         pid_file = connector_dir / ".pid"
         status = "stopped"

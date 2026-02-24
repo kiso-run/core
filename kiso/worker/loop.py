@@ -196,7 +196,7 @@ async def _post_plan_knowledge(
                     consolidated = [
                         f for f in consolidated
                         if isinstance(f, dict) and isinstance(f.get("content"), str)
-                        and len(f["content"].strip()) >= 10
+                        and len(f["content"].strip()) >= 3
                     ]
                     if consolidated:
                         await delete_facts(db, [f["id"] for f in all_facts])

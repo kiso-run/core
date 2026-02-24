@@ -4261,7 +4261,7 @@ class TestConsolidationSafetyGuards:
         assert len(facts) == 10
 
     async def test_consolidation_short_facts_filtered(self, db, tmp_path):
-        """Consolidation returns mix of valid and <10-char → short ones filtered."""
+        """Consolidation returns mix of valid and <3-char → short ones filtered."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
             "exec_timeout": 5,
@@ -4278,11 +4278,11 @@ class TestConsolidationSafetyGuards:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
 
-        # Mix of valid and short/empty facts (structured dicts)
+        # Mix of valid and too-short/empty facts (structured dicts)
         consolidated = [
             {"content": "This is a valid consolidated fact", "category": "general", "confidence": 1.0},
-            {"content": "short", "category": "general", "confidence": 1.0},
-            {"content": "", "category": "general", "confidence": 1.0},
+            {"content": "ab", "category": "general", "confidence": 1.0},   # 2 chars → filtered
+            {"content": "", "category": "general", "confidence": 1.0},     # empty → filtered
             {"content": "Another valid fact here", "category": "project", "confidence": 0.9},
         ]
         with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
@@ -4292,7 +4292,7 @@ class TestConsolidationSafetyGuards:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
 
-        # Only the 2 valid (>= 10 chars) facts should remain
+        # Only the 2 valid (>= 3 chars) facts should remain
         facts = await get_facts(db)
         assert len(facts) == 2
         contents = [f["content"] for f in facts]
@@ -4744,15 +4744,25 @@ class TestBuildExecEnv:
         assert "GIT_CONFIG_GLOBAL" not in env
 
     def test_git_ssh_command_when_ssh_dir_exists(self, tmp_path):
-        """GIT_SSH_COMMAND is set when sys/ssh/ directory exists."""
+        """GIT_SSH_COMMAND is set when sys/ssh/ dir AND config + key files exist."""
         ssh_dir = tmp_path / "sys" / "ssh"
         ssh_dir.mkdir(parents=True)
+        (ssh_dir / "config").write_text("Host *\n  StrictHostKeyChecking no\n")
+        (ssh_dir / "id_ed25519").write_bytes(b"fake-key")
         with _patch_kiso_dir(tmp_path):
             env = _build_exec_env()
         assert "GIT_SSH_COMMAND" in env
         assert str(ssh_dir / "config") in env["GIT_SSH_COMMAND"]
         assert str(ssh_dir / "known_hosts") in env["GIT_SSH_COMMAND"]
         assert str(ssh_dir / "id_ed25519") in env["GIT_SSH_COMMAND"]
+
+    def test_no_git_ssh_command_when_ssh_files_missing(self, tmp_path):
+        """GIT_SSH_COMMAND not set when ssh dir exists but config/key files are absent."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)  # dir exists, files don't
+        with _patch_kiso_dir(tmp_path):
+            env = _build_exec_env()
+        assert "GIT_SSH_COMMAND" not in env
 
     def test_no_git_ssh_command_when_ssh_dir_missing(self, tmp_path):
         """GIT_SSH_COMMAND is not set when sys/ssh/ doesn't exist."""

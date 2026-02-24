@@ -177,7 +177,8 @@ async def lifespan(app: FastAPI):
                     recovered_count += 1
                 except asyncio.QueueFull:
                     log.warning(
-                        "Queue full for session=%s, skipping message %d",
+                        "Queue full for session=%s during startup recovery — "
+                        "message %d remains unprocessed in DB and will retry on next restart",
                         sess_id, msg["id"],
                     )
         if recovered_count:

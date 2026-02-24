@@ -159,7 +159,9 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ("facts", "last_used", "ALTER TABLE facts ADD COLUMN last_used TEXT"),
         ("facts", "use_count", "ALTER TABLE facts ADD COLUMN use_count INTEGER DEFAULT 0"),
     ]
+    _known = frozenset(t for t, _, _ in migrations)
     for table, column, sql in migrations:
+        assert table in _known, f"Unknown table in migration: {table!r}"
         cur = await db.execute(f"PRAGMA table_info({table})")
         columns = {row[1] for row in await cur.fetchall()}
         if column not in columns:

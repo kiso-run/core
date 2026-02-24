@@ -1885,6 +1885,74 @@ uv run pytest tests/ -x -q --ignore=tests/live
 
 ---
 
+## Milestone 38 — Code Quality Hardening
+
+Follow-up fixes from a full code audit after M37.
+
+### Issues
+
+#### 1. Fact consolidation minimum content length too strict — MEDIUM
+- **File**: `kiso/worker/loop.py`
+- `len(f["content"].strip()) >= 10` silently discards valid short facts like `"Go"`, `"C++"`, `"vim"`, `"GPT-4"`.
+- **Fix**: Lower threshold to 3 characters.
+
+#### 2. PRAGMA f-string in migrations without explicit whitelist — LOW
+- **File**: `kiso/store.py`
+- `f"PRAGMA table_info({table})"` uses an f-string even though `table` comes from a hardcoded tuple. Safe today, but the invariant is implicit.
+- **Fix**: Add `assert table in _known` before the f-string to make the constraint explicit.
+
+#### 3. Startup recovery queue-full log message unclear — LOW
+- **File**: `kiso/main.py`
+- When queue is full at startup (rare), dropped messages are logged with a generic warning. The message is safe (still `processed=false` in DB and retries on next restart), but the log doesn't say so.
+- **Fix**: Improve log message to clarify the message remains in DB and will retry.
+
+#### 4. SSH config set without verifying files exist — LOW
+- **File**: `kiso/worker/utils.py`
+- `GIT_SSH_COMMAND` is set when `ssh_dir.is_dir()` but references `config` and `id_ed25519` without checking they exist. Missing files produce cryptic ssh errors.
+- **Fix**: Guard with `(ssh_dir / "config").is_file() and (ssh_dir / "id_ed25519").is_file()`.
+
+#### 5. Redundant `from pathlib import Path` inside loop — LOW
+- **File**: `kiso/sysenv.py`
+- `from pathlib import Path` appears inside the `_collect_connectors()` for-loop body. `Path` is already imported at module level on line 16.
+- **Fix**: Remove the inner import.
+
+#### 6. `except Exception` too broad in error-body parsing — LOW
+- **File**: `kiso/llm.py`
+- `except Exception` when parsing an LLM error response body catches unrelated runtime errors.
+- **Fix**: Replace with `except (json.JSONDecodeError, ValueError, TypeError)`.
+
+#### 7. Webhook retry backoff is an inline literal — LOW
+- **File**: `kiso/webhook.py`
+- `backoff = [1, 3, 9]` is defined inline with no name. The same value is referenced four times.
+- **Fix**: Extract to module-level constant `_WEBHOOK_BACKOFF = [1, 3, 9]`.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `kiso/worker/loop.py` | Fact content min length 10 → 3 |
+| `kiso/store.py` | Assert table in known set before PRAGMA f-string |
+| `kiso/main.py` | Improve startup recovery queue-full log message |
+| `kiso/worker/utils.py` | Check SSH config + key files exist before setting GIT_SSH_COMMAND |
+| `kiso/sysenv.py` | Remove redundant `from pathlib import Path` inside loop |
+| `kiso/llm.py` | Narrow `except Exception` to `(json.JSONDecodeError, ValueError, TypeError)` |
+| `kiso/webhook.py` | Extract backoff list to `_WEBHOOK_BACKOFF` constant |
+
+- [x] Lower fact content min length
+- [x] Assert PRAGMA table whitelist
+- [x] Improve startup recovery log
+- [x] SSH config file existence check
+- [x] Remove redundant import
+- [x] Narrow except Exception
+- [x] Extract webhook backoff constant
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+```
+
+---
+
 ## Done
 
-All milestones through v1.0 complete. M37 in progress.
+All milestones through M38 complete.
