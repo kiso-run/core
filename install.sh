@@ -26,6 +26,26 @@ green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 bold()   { printf '\033[1m%s\033[0m\n' "$*"; }
 
+# Print a colorized, boxed TOML preview (reads content from first argument)
+print_config_preview() {
+    local content="$1"
+    local sep="────────────────────────────────────────────────────────"
+    printf '\033[2m  %s\033[0m\n' "$sep"
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^\[.+\] ]]; then
+            printf '  \033[1;36m%s\033[0m\n' "$line"
+        elif [[ "$line" == *" = "* ]]; then
+            local k="${line%% = *}" v="${line#* = }"
+            printf '  \033[2m%s\033[0m = %s\n' "$k" "$v"
+        elif [[ -z "$line" ]]; then
+            printf '\n'
+        else
+            printf '  %s\n' "$line"
+        fi
+    done <<< "$content"
+    printf '\033[2m  %s\033[0m\n' "$sep"
+}
+
 cleanup() {
     if [[ -n "$CLEANUP_DIR" && -d "$CLEANUP_DIR" ]]; then
         rm -rf "$CLEANUP_DIR"
@@ -346,8 +366,8 @@ if [[ "$NEED_CONFIG" == true ]]; then
 
     models_section="$(ask_models)"
 
-    bold "Config preview:"
-    cat <<EOF
+    local config_body
+    config_body=$(cat <<PREVIEW
 [tokens]
 cli = "$token"
 
@@ -362,26 +382,17 @@ bot_name = "$bot_name"
 
 [models]
 $(printf '%b' "$models_section")
-EOF
+PREVIEW
+)
 
+    echo
+    printf '  \033[1mConfig preview\033[0m — \033[2m%s\033[0m\n' "$CONFIG"
+    echo
+    print_config_preview "$config_body"
+    echo
     confirm "Write this config to $CONFIG?"
 
-    cat > "$CONFIG" <<CONF
-[tokens]
-cli = "$token"
-
-[providers.$provider_name]
-base_url = "$base_url"
-
-[users.$kiso_user]
-role = "admin"
-
-[settings]
-bot_name = "$bot_name"
-
-[models]
-$(printf '%b' "$models_section")
-CONF
+    printf '%s\n' "$config_body" > "$CONFIG"
     green "  config.toml created"
 fi
 echo
