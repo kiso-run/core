@@ -64,6 +64,9 @@ summarizer = "deepseek/deepseek-v3.2"
 context_messages = 7
 summarize_threshold = 30
 knowledge_max_facts = 50
+fact_decay_days = 7
+fact_decay_rate = 0.1
+fact_archive_threshold = 0.3
 max_replan_depth = 3
 max_validation_retries = 3
 max_output_size = 1048576
@@ -107,6 +110,9 @@ port = 8333
 | `settings.max_message_size` | `65536` | Max bytes for POST /msg content. Requests exceeding this return 413. See [security.md — Input Validation](security.md#input-validation). |
 | `settings.max_queue_size` | `50` | Max queued messages per session before backpressure (429). See [security.md — Queue Backpressure](security.md#queue-backpressure). |
 | `settings.max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
+| `settings.fact_decay_days` | `7` | Facts not used in this many days lose `fact_decay_rate` confidence per post-plan cycle. |
+| `settings.fact_decay_rate` | `0.1` | How much confidence is subtracted per decay cycle (0.0–1.0). |
+| `settings.fact_archive_threshold` | `0.3` | Facts with confidence below this are moved to `facts_archive` and removed from active context. |
 | `settings.exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used as timeout for post-plan LLM calls (curator, summarizer, fact consolidation), LLM HTTP calls, and graceful shutdown per worker. |
 | `settings.worker_idle_timeout` | `300` | Seconds before idle worker shuts down |
 | `settings.host` | `0.0.0.0` | Server bind address |

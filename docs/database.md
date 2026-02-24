@@ -112,6 +112,10 @@ CREATE TABLE facts (
     content    TEXT NOT NULL,
     source     TEXT NOT NULL,       -- "curator" | "summarizer" | "manual"
     session    TEXT,                -- provenance: which session originated this (null for manual)
+    category   TEXT DEFAULT 'general',  -- "project" | "user" | "tool" | "general"
+    confidence REAL DEFAULT 1.0,    -- 0.0–1.0; decays with disuse, raises with use
+    last_used  TEXT,                -- ISO timestamp of last inclusion in planner context
+    use_count  INTEGER DEFAULT 0,   -- how many times included in a plan context
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -120,14 +124,38 @@ CREATE TABLE facts (
 
 Facts are **certain truths** that have passed evaluation by the curator. They are not created directly by the reviewer — the reviewer produces learnings (see below), and the curator promotes confirmed learnings to facts. See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle).
 
+- **`category`**: one of `project`, `user`, `tool`, `general`. The planner receives facts grouped by category so it can find relevant context faster.
+- **`confidence`**: starts at 1.0. Decays by `fact_decay_rate` for facts not used in `fact_decay_days` days. Facts below `fact_archive_threshold` (default 0.3) are moved to `facts_archive`.
+- **`last_used` / `use_count`**: updated after each successful plan that included the fact in the planner context. Facts used frequently maintain their confidence.
+
 Example entries:
 ```
-id=1  content="Project uses Flask 2.3"                  source="curator"     session="dev-backend"
-id=2  content="Team: marco (backend), anna (frontend)"  source="curator"     session="discord-general"
-id=3  content="Conventions: snake_case, type hints"      source="manual"      session=NULL
+id=1  content="Project uses Flask 2.3"  category="project"  confidence=0.9  source="curator"
+id=2  content="Team: marco (backend)"   category="user"     confidence=1.0  source="curator"
+id=3  content="snake_case conventions"  category="project"  confidence=0.6  source="manual"
 ```
 
-All three are visible in every session.
+All entries are visible in every session, grouped by category in the planner context.
+
+### facts_archive
+
+Soft-deleted facts moved from `facts` when their confidence drops below `fact_archive_threshold`. Kept for audit and potential recovery.
+
+```sql
+CREATE TABLE facts_archive (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_id INTEGER,            -- id from facts table at time of archiving
+    content     TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    session     TEXT,
+    category    TEXT DEFAULT 'general',
+    confidence  REAL DEFAULT 0.0,
+    last_used   TEXT,
+    use_count   INTEGER DEFAULT 0,
+    archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at  TEXT
+);
+```
 
 ### learnings
 

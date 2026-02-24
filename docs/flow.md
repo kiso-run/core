@@ -221,10 +221,13 @@ Queued messages on the same session are processed normally after cancellation.
 
 After draining the task list:
 
-1. **Curator**: if there are pending learnings from this cycle, calls the Curator to evaluate them (promote to facts, ask the user, or discard). See [llm-roles.md — Curator](llm-roles.md#curator).
-2. **Summarize messages**: if `len(raw_messages) >= summarize_threshold`, calls Summarizer (current summary + oldest messages + their msg task outputs → new summary → `store.sessions.summary`).
-3. **Consolidate facts**: if facts exceed `knowledge_max_facts`, calls Summarizer to merge/deduplicate in `store.facts`. See [Facts Lifecycle](#facts-lifecycle).
-4. **Wait or shutdown**: worker waits on session queue. After `worker_idle_timeout` seconds idle, shuts down (respawned on next message). Ephemeral secrets in worker memory are lost on shutdown.
+1. **Update fact usage**: increments `use_count` and updates `last_used` for all facts that were included in the planner context this cycle.
+2. **Curator**: if there are pending learnings from this cycle, calls the Curator to evaluate them (promote to facts, ask the user, or discard). See [llm-roles.md — Curator](llm-roles.md#curator).
+3. **Summarize messages**: if `len(raw_messages) >= summarize_threshold`, calls Summarizer (current summary + oldest messages + their msg task outputs → new structured summary → `store.sessions.summary`). The summary has four sections: Session Summary, Key Decisions, Open Questions, Working Knowledge.
+4. **Consolidate facts**: if facts exceed `knowledge_max_facts`, calls Summarizer to merge/deduplicate facts and assign categories and confidence scores. Structured output: `[{content, category, confidence}]`. See [Facts Lifecycle](#facts-lifecycle).
+5. **Decay facts**: reduces `confidence` by `fact_decay_rate` for facts not used in the last `fact_decay_days` days (floor at 0.0).
+6. **Archive low-confidence facts**: moves facts with `confidence < fact_archive_threshold` to `facts_archive` and removes them from active context.
+7. **Wait or shutdown**: worker waits on session queue. After `worker_idle_timeout` seconds idle, shuts down (respawned on next message). Ephemeral secrets in worker memory are lost on shutdown.
 
 ## 5. New Message on the Same Session
 
@@ -254,7 +257,26 @@ See [database.md — facts](database.md#facts) for details. All facts are visibl
 
 ### Consolidation
 
-When facts exceed `knowledge_max_facts` (default 50), the Summarizer reads all facts, merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), removes outdated ones, and replaces old rows with fewer consolidated entries.
+When facts exceed `knowledge_max_facts` (default 50), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `tool`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
+
+After consolidation, the worker runs a **decay pass** (reduces confidence for stale facts) and an **archive pass** (moves low-confidence facts to `facts_archive`). See [database.md — facts](database.md#facts) for the full schema.
+
+### Planner Context
+
+The planner receives facts grouped by category:
+
+```
+### Project
+- Project uses Flask 2.3
+
+### User
+- Team: marco (backend), anna (frontend)
+
+### Tool
+- Tests run with: pytest tests/ -q
+```
+
+Unknown or uncategorized facts fall into `### General`.
 
 ---
 
@@ -310,9 +332,12 @@ WORKER (per session)
   plan → done
   │
 POST-EXECUTION
+  ├─ update fact usage (use_count, last_used)
   ├─ curator (if learnings)
-  ├─ summarize (if threshold)
-  ├─ consolidate facts (if limit)
+  ├─ summarize messages (if threshold) → structured summary
+  ├─ consolidate facts (if limit) → {content, category, confidence}
+  ├─ decay stale facts (confidence -= fact_decay_rate)
+  ├─ archive low-confidence facts → facts_archive
   ├─ store token usage on plan
   └─ wait / shutdown
 ```

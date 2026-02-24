@@ -339,11 +339,37 @@ Custom prompt: `~/.kiso/roles/searcher.md` (user override) or `kiso/roles/search
 
 **When**: after queue completion, if raw messages >= `summarize_threshold`. Also when facts exceed `knowledge_max_facts`.
 
-Two tasks (see [Context per Role](#context-per-role) table):
-- **Messages**: current summary + oldest messages + their msg task outputs → updated summary. Includes bot responses so the summary captures what was communicated, not just what was asked.
-- **Facts**: all fact entries → consolidated into fewer entries (merges duplicates, removes outdated).
+Two distinct tasks (see [Context per Role](#context-per-role) table):
 
-**Output**: free-form text. **Prompt** (`roles/summarizer.md`): preserve facts, decisions, technical context. Discard noise and redundancy.
+**Session summary** (`roles/summarizer-session.md`): current summary + oldest messages + their msg task outputs → updated structured summary stored in `sessions.summary`. Output has four sections:
+
+```markdown
+## Session Summary
+Brief narrative of what happened and current state.
+
+## Key Decisions
+- Chose Flask over FastAPI for this project.
+
+## Open Questions
+- Still need to clarify deployment target.
+
+## Working Knowledge
+- File structure: src/app.py, tests/
+- Current branch: main
+```
+
+**Fact consolidation** (`roles/summarizer-facts.md`): all fact entries → structured JSON array with merged, categorized, confidence-scored entries. Output format:
+
+```json
+[
+  {"content": "Project uses Flask 2.3", "category": "project", "confidence": 1.0},
+  {"content": "Team: marco (backend)", "category": "user", "confidence": 0.9}
+]
+```
+
+Categories: `project`, `user`, `tool`, `general`. Confidence: 1.0 for well-established facts, lower for uncertain or inferred ones. Backward-compatible: plain string items are normalized to `{content, category: "general", confidence: 1.0}`.
+
+After consolidation, the worker runs decay and archive passes — see [flow.md — Post-Execution](flow.md#4-post-execution).
 
 ---
 
