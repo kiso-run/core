@@ -1,24 +1,19 @@
-"""Per-session asyncio worker — drains queue, plans, executes tasks."""
+"""Session loop, plan orchestration, and message processing for the kiso worker."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import os
-import pwd
 import time
-from pathlib import Path
 
 import aiosqlite
 
 from kiso import audit
-from kiso.config import ConfigError, reload_config
+from kiso.config import ConfigError, KISO_DIR, reload_config
 from kiso.log import SessionLogger
 from kiso.security import (
-    check_command_deny_list,
     collect_deploy_secrets,
-    fence_content,
     revalidate_permissions,
     sanitize_output,
 )
@@ -43,22 +38,21 @@ from kiso.brain import (
     run_searcher,
     run_summarizer,
 )
-from kiso.config import Config, KISO_DIR, setting_bool
-from kiso.pub import pub_token
-from kiso.llm import LLMBudgetExceeded, LLMError, call_llm, clear_llm_budget, get_usage_index, get_usage_since, get_usage_summary, reset_usage_tracking, set_llm_budget
+from kiso.config import Config, setting_bool
+from kiso.llm import LLMBudgetExceeded, LLMError, clear_llm_budget, get_usage_index, get_usage_since, get_usage_summary, reset_usage_tracking, set_llm_budget
 from kiso.skills import (
     SkillError,
-    build_skill_env,
-    build_skill_input,
     discover_skills,
     validate_skill_args,
 )
 from kiso.sysenv import get_system_env, build_system_env_section
 from kiso.webhook import deliver_webhook
 from kiso.store import (
+    archive_low_confidence_facts,
     count_messages,
     create_plan,
     create_task,
+    decay_facts,
     delete_facts,
     get_facts,
     get_oldest_messages,
@@ -71,6 +65,7 @@ from kiso.store import (
     save_learning,
     save_message,
     save_pending_item,
+    update_fact_usage,
     update_learning,
     update_plan_status,
     update_plan_usage,
@@ -83,123 +78,21 @@ from kiso.store import (
     update_task_usage,
 )
 
+from kiso.worker.utils import (
+    _build_cancel_summary,
+    _build_failure_summary,
+    _build_replan_context,
+    _cleanup_plan_outputs,
+    _ensure_sandbox_user,
+    _format_plan_outputs_for_msg,
+    _report_pub_files,
+    _session_workspace,
+    _write_plan_outputs,
+)
+from kiso.worker.exec import _exec_task
+from kiso.worker.skill import _skill_task
+
 log = logging.getLogger(__name__)
-
-
-def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
-    """Return and ensure the session workspace directory exists."""
-    workspace = KISO_DIR / "sessions" / session
-    workspace.mkdir(parents=True, exist_ok=True)
-    pub_dir = workspace / "pub"
-    pub_dir.mkdir(exist_ok=True)
-    if sandbox_uid is not None:
-        os.chown(workspace, sandbox_uid, sandbox_uid)
-        os.chown(pub_dir, sandbox_uid, sandbox_uid)
-        os.chmod(workspace, 0o700)
-    return workspace
-
-
-def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
-    """Write plan_outputs.json to the session workspace's .kiso/ directory."""
-    workspace = _session_workspace(session)
-    kiso_dir = workspace / ".kiso"
-    kiso_dir.mkdir(exist_ok=True)
-    (kiso_dir / "plan_outputs.json").write_text(
-        json.dumps(plan_outputs, indent=2, ensure_ascii=False)
-    )
-
-
-def _cleanup_plan_outputs(session: str) -> None:
-    """Remove plan_outputs.json after plan completion."""
-    workspace = _session_workspace(session)
-    outputs_file = workspace / ".kiso" / "plan_outputs.json"
-    if outputs_file.exists():
-        outputs_file.unlink()
-
-
-def _ensure_sandbox_user(session: str) -> int | None:
-    """Create or reuse a per-session Linux user. Returns UID or None on failure."""
-    import hashlib
-    import subprocess
-
-    # Deterministic username from session (max 32 chars for Linux)
-    h = hashlib.sha256(session.encode()).hexdigest()[:12]
-    username = f"kiso-s-{h}"
-    try:
-        return pwd.getpwnam(username).pw_uid
-    except KeyError:
-        pass
-    # Create user — requires root
-    try:
-        subprocess.run(
-            ["useradd", "--system", "--no-create-home",
-             "--shell", "/usr/sbin/nologin", username],
-            check=True, capture_output=True,
-        )
-        return pwd.getpwnam(username).pw_uid
-    except (subprocess.CalledProcessError, KeyError, FileNotFoundError) as exc:
-        log.warning("Cannot create sandbox user '%s': %s", username, exc)
-        return None
-
-
-def _truncate_output(text: str, limit: int) -> str:
-    """Truncate text to *limit* characters, appending a marker if truncated."""
-    if limit > 0 and len(text) > limit:
-        return text[:limit] + "\n[truncated]"
-    return text
-
-
-def _build_exec_env() -> dict[str, str]:
-    """Build the exec subprocess environment.
-
-    - PATH: prepend sys/bin if it exists
-    - HOME: set to KISO_DIR (for tools that need ~)
-    - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists
-    - GIT_SSH_COMMAND: use sys/ssh config if it exists
-    """
-    sys_dir = KISO_DIR / "sys"
-    sys_bin = sys_dir / "bin"
-    base_path = os.environ.get("PATH", "/usr/bin:/bin")
-
-    env: dict[str, str] = {}
-
-    # PATH with sys/bin prepended
-    if sys_bin.is_dir():
-        env["PATH"] = f"{sys_bin}:{base_path}"
-    else:
-        env["PATH"] = base_path
-
-    # HOME for tools that need it
-    env["HOME"] = str(KISO_DIR)
-
-    # Git config
-    gitconfig = sys_dir / "gitconfig"
-    if gitconfig.is_file():
-        env["GIT_CONFIG_GLOBAL"] = str(gitconfig)
-
-    # SSH config
-    ssh_dir = sys_dir / "ssh"
-    if ssh_dir.is_dir():
-        env["GIT_SSH_COMMAND"] = f"ssh -F {ssh_dir}/config -o UserKnownHostsFile={ssh_dir}/known_hosts -i {ssh_dir}/id_ed25519"
-
-    return env
-
-
-def _report_pub_files(session: str, config: Config) -> list[dict]:
-    """List files in pub/ and return their public URLs."""
-    pub_dir = _session_workspace(session) / "pub"
-    if not pub_dir.is_dir():
-        return []
-    token = pub_token(session, config)
-    results = []
-    for f in sorted(pub_dir.rglob("*")):
-        if f.is_file():
-            rel = f.relative_to(pub_dir)
-            results.append({
-                "filename": str(rel),
-                "url": f"/pub/{token}/{rel}",
-            })
-    return results
 
 
 async def _deliver_webhook_if_configured(
@@ -227,119 +120,6 @@ async def _deliver_webhook_if_configured(
         deploy_secrets=deploy_secrets or {},
         session_secrets=session_secrets or {},
     )
-
-
-async def _exec_task(
-    session: str, detail: str, timeout: int, sandbox_uid: int | None = None,
-    max_output_size: int = 0,
-) -> tuple[str, str, bool]:
-    """Run a shell command. Returns (stdout, stderr, success).
-
-    When *max_output_size* > 0, stdout and stderr are each truncated to
-    that many characters to prevent memory exhaustion from oversized output.
-    """
-    denial = check_command_deny_list(detail)
-    if denial:
-        return "", denial, False
-
-    workspace = _session_workspace(session)
-    clean_env = _build_exec_env()
-
-    try:
-        kwargs: dict = dict(
-            cwd=str(workspace),
-            env=clean_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        if sandbox_uid is not None:
-            kwargs["user"] = sandbox_uid
-        proc = await asyncio.create_subprocess_shell(detail, **kwargs)
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
-        return "", "Timed out", False
-
-    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
-    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
-    success = proc.returncode == 0
-    return stdout, stderr, success
-
-
-async def _skill_task(
-    session: str,
-    skill: dict,
-    args: dict,
-    plan_outputs: list[dict] | None,
-    session_secrets: dict[str, str] | None,
-    timeout: int,
-    sandbox_uid: int | None = None,
-    max_output_size: int = 0,
-) -> tuple[str, str, bool]:
-    """Run a skill subprocess. Returns (stdout, stderr, success).
-
-    When *max_output_size* > 0, stdout and stderr are each truncated to
-    that many characters to prevent memory exhaustion from oversized output.
-    """
-    workspace = _session_workspace(session)
-
-    # Build input and env
-    input_data = build_skill_input(
-        skill, args, session, str(workspace),
-        session_secrets=session_secrets,
-        plan_outputs=plan_outputs,
-    )
-    env = build_skill_env(skill)
-
-    # Find the python executable in the skill's venv
-    skill_path = Path(skill["path"])
-    venv_python = skill_path / ".venv" / "bin" / "python"
-    if not venv_python.exists():
-        # Fall back to system python if no venv
-        venv_python = Path("python3")
-
-    run_py = skill_path / "run.py"
-
-    try:
-        skill_kwargs: dict = dict(
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(workspace),
-            env=env,
-        )
-        if sandbox_uid is not None:
-            skill_kwargs["user"] = sandbox_uid
-        proc = await asyncio.create_subprocess_exec(
-            str(venv_python), str(run_py), **skill_kwargs,
-        )
-        input_bytes = json.dumps(input_data).encode()
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(input=input_bytes), timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        return "", "Timed out", False
-    except OSError as e:
-        return "", f"Skill executable not found: {e}", False
-
-    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
-    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
-    success = proc.returncode == 0
-    return stdout, stderr, success
-
-
-def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
-    """Format plan_outputs as readable text for the worker LLM prompt."""
-    if not plan_outputs:
-        return ""
-    parts: list[str] = []
-    for entry in plan_outputs:
-        header = f"[{entry['index']}] {entry['type']}: {entry['detail']}"
-        output = entry.get("output") or "(no output)"
-        status = entry["status"]
-        parts.append(f"{header}\nStatus: {status}\n{fence_content(output, 'TASK_OUTPUT')}")
-    return "\n\n".join(parts)
 
 
 async def _msg_task(
@@ -412,17 +192,44 @@ async def _post_plan_knowledge(
                     log.warning("Fact consolidation shrank %d → %d (< 30%%), skipping",
                                 len(all_facts), len(consolidated))
                 else:
-                    consolidated = [f for f in consolidated if isinstance(f, str) and len(f.strip()) >= 10]
+                    consolidated = [
+                        f for f in consolidated
+                        if isinstance(f, dict) and isinstance(f.get("content"), str)
+                        and len(f["content"].strip()) >= 10
+                    ]
                     if consolidated:
                         await delete_facts(db, [f["id"] for f in all_facts])
-                        for text in consolidated:
-                            await save_fact(db, text, source="consolidation")
+                        for fact in consolidated:
+                            await save_fact(
+                                db, fact["content"], source="consolidation",
+                                category=fact.get("category", "general"),
+                                confidence=fact.get("confidence", 1.0),
+                            )
                     else:
                         log.warning("All consolidated facts filtered out, preserving originals")
         except asyncio.TimeoutError:
             log.warning("Fact consolidation timed out after %ds", exec_timeout)
         except SummarizerError as e:
             log.error("Fact consolidation failed: %s", e)
+
+    # 4. Decay stale facts
+    decay_days = int(config.settings.get("fact_decay_days", 7))
+    decay_rate = float(config.settings.get("fact_decay_rate", 0.1))
+    try:
+        decayed = await decay_facts(db, decay_days=decay_days, decay_rate=decay_rate)
+        if decayed:
+            log.info("Decayed %d stale facts", decayed)
+    except Exception as e:
+        log.error("Fact decay failed: %s", e)
+
+    # 5. Archive low-confidence facts
+    archive_threshold = float(config.settings.get("fact_archive_threshold", 0.3))
+    try:
+        archived = await archive_low_confidence_facts(db, threshold=archive_threshold)
+        if archived:
+            log.info("Archived %d low-confidence facts", archived)
+    except Exception as e:
+        log.error("Fact archiving failed: %s", e)
 
     # Update token usage with post-plan processing tokens
     final_usage = get_usage_summary()
@@ -573,7 +380,6 @@ async def _review_task(
         success=success,
     )
 
-    # Store learning if present
     has_learning = bool(review.get("learn"))
     if has_learning:
         await save_learning(db, review["learn"], session)
@@ -1117,93 +923,6 @@ async def _execute_plan(
     return True, None, completed, []
 
 
-def _build_replan_context(
-    completed: list[dict],
-    remaining: list[dict],
-    replan_reason: str,
-    replan_history: list[dict],
-) -> str:
-    """Build extra context for replanning."""
-    parts: list[str] = []
-
-    if completed:
-        items = []
-        for t in completed:
-            limit = 4000 if t.get("type") == "search" else 500
-            out = (t.get("output") or "")[:limit]
-            out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
-            items.append(f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}")
-        parts.append("## Completed Tasks\n" + "\n".join(items))
-
-    if remaining:
-        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
-        parts.append("## Remaining Tasks (not executed)\n" + "\n".join(items))
-
-    parts.append(f"## Failure Reason\n{replan_reason}")
-
-    if replan_history:
-        items = []
-        for h in replan_history:
-            tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
-            items.append(f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}")
-        parts.append(
-            "## Previous Replan Attempts (DO NOT repeat these approaches)\n"
-            + "\n".join(items)
-        )
-
-    return "\n\n".join(parts)
-
-
-def _build_cancel_summary(
-    completed: list[dict], remaining: list[dict], goal: str,
-) -> str:
-    """Build a detail string for the worker LLM summarising a cancel."""
-    parts: list[str] = [f"The user cancelled the plan: {goal}"]
-
-    if completed:
-        items = [f"- [{t['type']}] {t['detail']}" for t in completed]
-        parts.append(f"Completed ({len(completed)}):\n" + "\n".join(items))
-    else:
-        parts.append("No tasks were completed.")
-
-    if remaining:
-        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
-        parts.append(f"Skipped ({len(remaining)}):\n" + "\n".join(items))
-
-    parts.append(
-        "Generate a brief message: what was done, what wasn't, "
-        "and suggest next steps."
-    )
-    return "\n\n".join(parts)
-
-
-def _build_failure_summary(
-    completed: list[dict], remaining: list[dict], goal: str,
-    reason: str | None = None,
-) -> str:
-    """Build a detail string for the messenger LLM summarising a plan failure."""
-    parts: list[str] = [f"The plan failed: {goal}"]
-
-    if reason:
-        parts.append(f"Failure reason: {reason}")
-
-    if completed:
-        items = [f"- [{t['type']}] {t['detail']}" for t in completed]
-        parts.append(f"Completed ({len(completed)}):\n" + "\n".join(items))
-    else:
-        parts.append("No tasks were completed.")
-
-    if remaining:
-        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
-        parts.append(f"Failed/Skipped ({len(remaining)}):\n" + "\n".join(items))
-
-    parts.append(
-        "Generate a brief message explaining what went wrong "
-        "and suggest next steps."
-    )
-    return "\n\n".join(parts)
-
-
 async def _apply_curator_result(
     db: aiosqlite.Connection, session: str, result: dict
 ) -> None:
@@ -1298,6 +1017,10 @@ async def _process_message(
             fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content, slog=slog,
             )
+            # Bump fact usage for fast path (facts contributed to chat response)
+            all_facts = await get_facts(db)
+            if all_facts:
+                await update_fact_usage(db, [f["id"] for f in all_facts])
             # Run post-plan knowledge processing (summarizer, curator, etc.)
             await _post_plan_knowledge(
                 db, config, session, fast_plan_id, exec_timeout,
@@ -1390,6 +1113,10 @@ async def _process_message(
             log.info("Plan %d done", current_plan_id)
             if slog:
                 slog.info("Plan %d done", current_plan_id)
+            # Bump fact usage for all facts (they contributed to a successful plan)
+            all_facts = await get_facts(db)
+            if all_facts:
+                await update_fact_usage(db, [f["id"] for f in all_facts])
             break
 
         # --- Cancel handling ---
@@ -1498,11 +1225,8 @@ async def _process_message(
         # Detect self-directed replan
         is_self_directed = replan_reason.startswith("Self-directed replan:")
 
-        # Self-directed replans mark the plan as "done" (investigation succeeded)
-        if is_self_directed:
-            await update_plan_status(db, current_plan_id, "done")
-        else:
-            await update_plan_status(db, current_plan_id, "failed")
+        # Set "replanning" status so the CLI knows to keep polling
+        await update_plan_status(db, current_plan_id, "replanning")
 
         # Mark remaining tasks
         current_tasks = await get_tasks_for_plan(db, current_plan_id)
@@ -1562,6 +1286,7 @@ async def _process_message(
             )
         except PlanError as e:
             log.error("Replan failed: %s", e)
+            # Finalize plan status from "replanning" to "failed"
             await update_plan_status(db, current_plan_id, "failed")
             # Recovery msg task so the CLI displays feedback to the user
             fail_detail = _build_failure_summary(
@@ -1582,6 +1307,12 @@ async def _process_message(
                 trusted=True, processed=True,
             )
             break
+
+        # Finalize old plan status from "replanning" to its final state
+        if is_self_directed:
+            await update_plan_status(db, current_plan_id, "done")
+        else:
+            await update_plan_status(db, current_plan_id, "failed")
 
         # Create new plan with parent_id
         new_plan_id = await create_plan(

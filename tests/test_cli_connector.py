@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kiso.cli import build_parser
-from kiso.cli_connector import (
+from cli import build_parser
+from cli.connector import (
     _connector_env_var_name,
     _validate_connector_manifest,
     discover_connectors,
@@ -32,8 +32,8 @@ def _admin_cfg():
 def mock_admin():
     """Patch load_config and getpass so require_admin passes."""
     with (
-        patch("kiso.plugin_ops.load_config", return_value=_admin_cfg()),
-        patch("kiso.plugin_ops.getpass.getuser", return_value="alice"),
+        patch("cli.plugin_ops.load_config", return_value=_admin_cfg()),
+        patch("cli.plugin_ops.getpass.getuser", return_value="alice"),
     ):
         yield
 
@@ -264,22 +264,22 @@ def test_discover_connectors_skips_installing(tmp_path):
 
 
 def test_connector_list_empty(capsys):
-    from kiso.cli_connector import _connector_list
+    from cli.connector import _connector_list
 
-    with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+    with patch("cli.connector.discover_connectors", return_value=[]):
         _connector_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "No connectors installed." in out
 
 
 def test_connector_list_shows_connectors(capsys):
-    from kiso.cli_connector import _connector_list
+    from cli.connector import _connector_list
 
     connectors = [
         {"name": "discord", "version": "0.1.0", "description": "Discord bridge"},
         {"name": "telegram", "version": "0.2.0", "description": "Telegram bridge"},
     ]
-    with patch("kiso.cli_connector.discover_connectors", return_value=connectors):
+    with patch("cli.connector.discover_connectors", return_value=connectors):
         _connector_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "discord" in out
@@ -303,9 +303,9 @@ FAKE_REGISTRY = {
 
 
 def test_connector_search_no_query(capsys):
-    from kiso.cli_connector import _connector_search
+    from cli.connector import _connector_search
 
-    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query=""))
 
     out = capsys.readouterr().out
@@ -314,9 +314,9 @@ def test_connector_search_no_query(capsys):
 
 
 def test_connector_search_by_name(capsys):
-    from kiso.cli_connector import _connector_search
+    from cli.connector import _connector_search
 
-    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="discord"))
 
     out = capsys.readouterr().out
@@ -325,9 +325,9 @@ def test_connector_search_by_name(capsys):
 
 
 def test_connector_search_by_description(capsys):
-    from kiso.cli_connector import _connector_search
+    from cli.connector import _connector_search
 
-    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="splitting"))
 
     out = capsys.readouterr().out
@@ -337,18 +337,18 @@ def test_connector_search_by_description(capsys):
 
 def test_connector_search_network_error(capsys):
     with (
-        patch("kiso.cli_connector.fetch_registry", side_effect=SystemExit(1)),
+        patch("cli.connector.fetch_registry", side_effect=SystemExit(1)),
         pytest.raises(SystemExit, match="1"),
     ):
-        from kiso.cli_connector import _connector_search
+        from cli.connector import _connector_search
 
         _connector_search(argparse.Namespace(query=""))
 
 
 def test_connector_search_no_results(capsys):
-    from kiso.cli_connector import _connector_search
+    from cli.connector import _connector_search
 
-    with patch("kiso.cli_connector.fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):
         _connector_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No connectors found." in out
@@ -379,7 +379,7 @@ def _ok_run(cmd, **kwargs):
 
 
 def test_connector_install_official(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -392,7 +392,7 @@ def test_connector_install_official(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=run_dispatch),
     ):
         args = argparse.Namespace(
@@ -405,7 +405,7 @@ def test_connector_install_official(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -418,7 +418,7 @@ def test_connector_install_unofficial_with_confirm(tmp_path, mock_admin, capsys)
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=run_dispatch),
         patch("builtins.input", return_value="y"),
     ):
@@ -436,7 +436,7 @@ def test_connector_install_unofficial_with_confirm(tmp_path, mock_admin, capsys)
 
 
 def test_connector_install_config_example_copy(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -460,7 +460,7 @@ def test_connector_install_config_example_copy(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=run_dispatch),
     ):
         args = argparse.Namespace(
@@ -474,14 +474,14 @@ def test_connector_install_config_example_copy(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_already_installed(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
     (connectors_dir / "discord").mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         args = argparse.Namespace(
@@ -494,7 +494,7 @@ def test_connector_install_already_installed(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -505,7 +505,7 @@ def test_connector_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsy
         return subprocess.CompletedProcess(cmd, 1, stderr="fatal: repo not found")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=fake_clone_fail),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -520,7 +520,7 @@ def test_connector_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsy
 
 
 def test_connector_install_show_deps(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     deps_content = "#!/bin/bash\napt install something\n"
 
@@ -544,7 +544,7 @@ def test_connector_install_show_deps(tmp_path, mock_admin, capsys):
 
 
 def test_connector_update_single(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_update
+    from cli.connector import _connector_update
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -552,7 +552,7 @@ def test_connector_update_single(tmp_path, mock_admin, capsys):
     connector_dir.mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=_ok_run),
     ):
         _connector_update(argparse.Namespace(target="discord"))
@@ -562,7 +562,7 @@ def test_connector_update_single(tmp_path, mock_admin, capsys):
 
 
 def test_connector_update_all(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_update
+    from cli.connector import _connector_update
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -570,7 +570,7 @@ def test_connector_update_all(tmp_path, mock_admin, capsys):
         (connectors_dir / name).mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=_ok_run),
     ):
         _connector_update(argparse.Namespace(target="all"))
@@ -581,13 +581,13 @@ def test_connector_update_all(tmp_path, mock_admin, capsys):
 
 
 def test_connector_update_nonexistent(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_update
+    from cli.connector import _connector_update
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_update(argparse.Namespace(target="nonexistent"))
@@ -600,13 +600,13 @@ def test_connector_update_nonexistent(tmp_path, mock_admin, capsys):
 
 
 def test_connector_remove_existing(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_remove
+    from cli.connector import _connector_remove
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
     (connectors_dir / "discord").mkdir()
 
-    with patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir):
+    with patch("cli.connector.CONNECTORS_DIR", connectors_dir):
         _connector_remove(argparse.Namespace(name="discord"))
 
     out = capsys.readouterr().out
@@ -615,13 +615,13 @@ def test_connector_remove_existing(tmp_path, mock_admin, capsys):
 
 
 def test_connector_remove_nonexistent(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_remove
+    from cli.connector import _connector_remove
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_remove(argparse.Namespace(name="nonexistent"))
@@ -634,7 +634,7 @@ def test_connector_remove_nonexistent(tmp_path, mock_admin, capsys):
 
 
 def test_connector_run_start_ok(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_run
+    from cli.connector import _connector_run
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -645,7 +645,7 @@ def test_connector_run_start_ok(tmp_path, mock_admin, capsys):
     mock_proc.pid = 12345
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
     ):
         _connector_run(argparse.Namespace(name="discord"))
@@ -660,7 +660,7 @@ def test_connector_run_start_ok(tmp_path, mock_admin, capsys):
 
 
 def test_connector_run_clears_old_status(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_run
+    from cli.connector import _connector_run
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -672,7 +672,7 @@ def test_connector_run_clears_old_status(tmp_path, mock_admin, capsys):
     mock_proc.pid = 12345
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.Popen", return_value=mock_proc),
     ):
         _connector_run(argparse.Namespace(name="discord"))
@@ -681,7 +681,7 @@ def test_connector_run_clears_old_status(tmp_path, mock_admin, capsys):
 
 
 def test_connector_run_already_running(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_run
+    from cli.connector import _connector_run
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -690,7 +690,7 @@ def test_connector_run_already_running(tmp_path, mock_admin, capsys):
     (connector_dir / ".pid").write_text("99999")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill"),  # os.kill(pid, 0) succeeds → process alive
         pytest.raises(SystemExit, match="1"),
     ):
@@ -701,13 +701,13 @@ def test_connector_run_already_running(tmp_path, mock_admin, capsys):
 
 
 def test_connector_run_nonexistent(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_run
+    from cli.connector import _connector_run
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_run(argparse.Namespace(name="nonexistent"))
@@ -720,7 +720,7 @@ def test_connector_run_nonexistent(tmp_path, mock_admin, capsys):
 
 
 def test_connector_stop_ok(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_stop
+    from cli.connector import _connector_stop
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -740,7 +740,7 @@ def test_connector_stop_ok(tmp_path, mock_admin, capsys):
     import signal
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=fake_kill),
         patch("time.sleep"),
     ):
@@ -752,7 +752,7 @@ def test_connector_stop_ok(tmp_path, mock_admin, capsys):
 
 
 def test_connector_stop_not_running(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_stop
+    from cli.connector import _connector_stop
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -761,7 +761,7 @@ def test_connector_stop_not_running(tmp_path, mock_admin, capsys):
     # No .pid file
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_stop(argparse.Namespace(name="discord"))
@@ -771,13 +771,13 @@ def test_connector_stop_not_running(tmp_path, mock_admin, capsys):
 
 
 def test_connector_stop_nonexistent(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_stop
+    from cli.connector import _connector_stop
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_stop(argparse.Namespace(name="nonexistent"))
@@ -790,7 +790,7 @@ def test_connector_stop_nonexistent(tmp_path, mock_admin, capsys):
 
 
 def test_connector_status_running(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -799,7 +799,7 @@ def test_connector_status_running(tmp_path, capsys):
     (connector_dir / ".pid").write_text("12345")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill"),  # os.kill(pid, 0) succeeds
     ):
         _connector_status(argparse.Namespace(name="discord"))
@@ -810,7 +810,7 @@ def test_connector_status_running(tmp_path, capsys):
 
 
 def test_connector_status_running_with_restarts(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -822,7 +822,7 @@ def test_connector_status_running_with_restarts(tmp_path, capsys):
     )
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill"),
     ):
         _connector_status(argparse.Namespace(name="discord"))
@@ -833,7 +833,7 @@ def test_connector_status_running_with_restarts(tmp_path, capsys):
 
 
 def test_connector_status_not_running(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -841,7 +841,7 @@ def test_connector_status_not_running(tmp_path, capsys):
     connector_dir.mkdir()
     # No .pid file
 
-    with patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir):
+    with patch("cli.connector.CONNECTORS_DIR", connectors_dir):
         _connector_status(argparse.Namespace(name="discord"))
 
     out = capsys.readouterr().out
@@ -849,7 +849,7 @@ def test_connector_status_not_running(tmp_path, capsys):
 
 
 def test_connector_status_stale_pid(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -858,7 +858,7 @@ def test_connector_status_stale_pid(tmp_path, capsys):
     (connector_dir / ".pid").write_text("99999")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=ProcessLookupError()),
     ):
         _connector_status(argparse.Namespace(name="discord"))
@@ -870,7 +870,7 @@ def test_connector_status_stale_pid(tmp_path, capsys):
 
 
 def test_connector_status_gave_up(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -882,7 +882,7 @@ def test_connector_status_gave_up(tmp_path, capsys):
     )
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=ProcessLookupError()),
     ):
         _connector_status(argparse.Namespace(name="discord"))
@@ -931,7 +931,7 @@ class TestSupervisorMain:
 
     def test_clean_exit_no_restart(self, tmp_path):
         """Child exits with code 0 — supervisor exits, no restarts."""
-        from kiso.cli_connector import _supervisor_main
+        from cli.connector import _supervisor_main
 
         connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
 
@@ -942,10 +942,10 @@ class TestSupervisorMain:
         clock = _FakeClock()
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", return_value=mock_child),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
         ):
             _supervisor_main("discord")
 
@@ -954,7 +954,7 @@ class TestSupervisorMain:
 
     def test_crash_and_restart(self, tmp_path):
         """Child crashes once, gets restarted, then exits clean."""
-        from kiso.cli_connector import _supervisor_main
+        from cli.connector import _supervisor_main
 
         connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
 
@@ -969,10 +969,10 @@ class TestSupervisorMain:
         clock = _FakeClock()
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", side_effect=[child1, child2]),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
         ):
             _supervisor_main("discord")
 
@@ -982,7 +982,7 @@ class TestSupervisorMain:
 
     def test_max_failures_gives_up(self, tmp_path):
         """After SUPERVISOR_MAX_FAILURES consecutive quick crashes, supervisor gives up."""
-        from kiso.cli_connector import (
+        from cli.connector import (
             SUPERVISOR_MAX_FAILURES,
             _supervisor_main,
         )
@@ -999,10 +999,10 @@ class TestSupervisorMain:
         clock = _FakeClock()  # step=0.1 → all crashes are "quick" (<60s elapsed)
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", side_effect=children),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
         ):
             _supervisor_main("discord")
 
@@ -1013,7 +1013,7 @@ class TestSupervisorMain:
 
     def test_stable_run_resets_failure_count(self, tmp_path):
         """If child ran for >= STABLE_THRESHOLD before crashing, consecutive failures reset."""
-        from kiso.cli_connector import SUPERVISOR_STABLE_THRESHOLD, _supervisor_main
+        from cli.connector import SUPERVISOR_STABLE_THRESHOLD, _supervisor_main
 
         connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
 
@@ -1038,10 +1038,10 @@ class TestSupervisorMain:
         child3.wait.return_value = 0
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", side_effect=[child1, child2, child3]),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
         ):
             _supervisor_main("discord")
 
@@ -1051,7 +1051,7 @@ class TestSupervisorMain:
 
     def test_sigterm_stops_supervisor(self, tmp_path):
         """SIGTERM forwarded to child, supervisor exits cleanly."""
-        from kiso.cli_connector import _supervisor_main
+        from cli.connector import _supervisor_main
 
         connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
 
@@ -1076,11 +1076,11 @@ class TestSupervisorMain:
         clock = _FakeClock()
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", return_value=mock_child),
-            patch("kiso.cli_connector.signal.signal", side_effect=capture_signal),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.signal.signal", side_effect=capture_signal),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
         ):
             _supervisor_main("discord")
 
@@ -1089,7 +1089,7 @@ class TestSupervisorMain:
 
     def test_crash_with_exception_during_popen(self, tmp_path):
         """If Popen raises, supervisor still cleans up PID file."""
-        from kiso.cli_connector import _supervisor_main
+        from cli.connector import _supervisor_main
 
         connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
         (connector_dir / ".pid").write_text("12345")
@@ -1097,10 +1097,10 @@ class TestSupervisorMain:
         clock = _FakeClock()
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", side_effect=OSError("no such file")),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
             pytest.raises(OSError),
         ):
             _supervisor_main("discord")
@@ -1110,7 +1110,7 @@ class TestSupervisorMain:
 
     def test_pid_file_cleaned_on_exit(self, tmp_path):
         """PID file is always removed when supervisor exits."""
-        from kiso.cli_connector import _supervisor_main
+        from cli.connector import _supervisor_main
 
         connectors_dir, connector_dir = self._make_connector_dir(tmp_path)
         (connector_dir / ".pid").write_text("12345")
@@ -1122,10 +1122,10 @@ class TestSupervisorMain:
         clock = _FakeClock()
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
             patch("subprocess.Popen", return_value=mock_child),
-            patch("kiso.cli_connector.time.monotonic", side_effect=clock.monotonic),
-            patch("kiso.cli_connector.time.sleep", side_effect=clock.sleep),
+            patch("cli.connector.time.monotonic", side_effect=clock.monotonic),
+            patch("cli.connector.time.sleep", side_effect=clock.sleep),
         ):
             _supervisor_main("discord")
 
@@ -1244,7 +1244,7 @@ def test_discover_connectors_skips_files(tmp_path):
 
 def test_connector_stop_corrupt_pid_file(tmp_path, mock_admin, capsys):
     """PID file contains non-numeric content."""
-    from kiso.cli_connector import _connector_stop
+    from cli.connector import _connector_stop
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1253,7 +1253,7 @@ def test_connector_stop_corrupt_pid_file(tmp_path, mock_admin, capsys):
     (connector_dir / ".pid").write_text("not-a-number")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_stop(argparse.Namespace(name="discord"))
@@ -1264,7 +1264,7 @@ def test_connector_stop_corrupt_pid_file(tmp_path, mock_admin, capsys):
 
 def test_connector_stop_stale_pid(tmp_path, mock_admin, capsys):
     """SIGTERM fails because process is already dead."""
-    from kiso.cli_connector import _connector_stop
+    from cli.connector import _connector_stop
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1273,7 +1273,7 @@ def test_connector_stop_stale_pid(tmp_path, mock_admin, capsys):
     (connector_dir / ".pid").write_text("99999")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=ProcessLookupError()),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -1286,7 +1286,7 @@ def test_connector_stop_stale_pid(tmp_path, mock_admin, capsys):
 
 def test_connector_stop_sigkill_fallback(tmp_path, mock_admin, capsys):
     """Process ignores SIGTERM — falls through to SIGKILL."""
-    from kiso.cli_connector import _connector_stop
+    from cli.connector import _connector_stop
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1302,7 +1302,7 @@ def test_connector_stop_sigkill_fallback(tmp_path, mock_admin, capsys):
             return
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=fake_kill),
         patch("time.sleep"),
     ):
@@ -1317,13 +1317,13 @@ def test_connector_stop_sigkill_fallback(tmp_path, mock_admin, capsys):
 
 
 def test_connector_status_nonexistent(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _connector_status(argparse.Namespace(name="nonexistent"))
@@ -1333,7 +1333,7 @@ def test_connector_status_nonexistent(tmp_path, capsys):
 
 
 def test_connector_status_corrupt_pid_file(tmp_path, capsys):
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1341,7 +1341,7 @@ def test_connector_status_corrupt_pid_file(tmp_path, capsys):
     connector_dir.mkdir()
     (connector_dir / ".pid").write_text("garbage")
 
-    with patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir):
+    with patch("cli.connector.CONNECTORS_DIR", connectors_dir):
         _connector_status(argparse.Namespace(name="discord"))
 
     out = capsys.readouterr().out
@@ -1351,7 +1351,7 @@ def test_connector_status_corrupt_pid_file(tmp_path, capsys):
 
 def test_connector_status_corrupted_status_json(tmp_path, capsys):
     """Corrupted .status.json gracefully ignored."""
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1361,7 +1361,7 @@ def test_connector_status_corrupted_status_json(tmp_path, capsys):
     (connector_dir / ".status.json").write_text("{invalid json")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill"),
     ):
         _connector_status(argparse.Namespace(name="discord"))
@@ -1372,7 +1372,7 @@ def test_connector_status_corrupted_status_json(tmp_path, capsys):
 
 def test_connector_status_zero_restarts(tmp_path, capsys):
     """Zero restarts — no restart info shown."""
-    from kiso.cli_connector import _connector_status
+    from cli.connector import _connector_status
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1382,7 +1382,7 @@ def test_connector_status_zero_restarts(tmp_path, capsys):
     (connector_dir / ".status.json").write_text('{"restarts": 0, "gave_up": false}')
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill"),
     ):
         _connector_status(argparse.Namespace(name="discord"))
@@ -1397,7 +1397,7 @@ def test_connector_status_zero_restarts(tmp_path, capsys):
 
 def test_connector_remove_stops_running(tmp_path, mock_admin, capsys):
     """Remove sends SIGTERM to running connector."""
-    from kiso.cli_connector import _connector_remove
+    from cli.connector import _connector_remove
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1411,7 +1411,7 @@ def test_connector_remove_stops_running(tmp_path, mock_admin, capsys):
         killed.append((pid, sig))
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=fake_kill),
     ):
         _connector_remove(argparse.Namespace(name="discord"))
@@ -1422,7 +1422,7 @@ def test_connector_remove_stops_running(tmp_path, mock_admin, capsys):
 
 def test_connector_remove_stale_pid(tmp_path, mock_admin, capsys):
     """Remove with stale PID — still removes dir."""
-    from kiso.cli_connector import _connector_remove
+    from cli.connector import _connector_remove
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1431,7 +1431,7 @@ def test_connector_remove_stale_pid(tmp_path, mock_admin, capsys):
     (connector_dir / ".pid").write_text("99999")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=ProcessLookupError()),
     ):
         _connector_remove(argparse.Namespace(name="discord"))
@@ -1444,7 +1444,7 @@ def test_connector_remove_stale_pid(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     def fake_clone(cmd, **kwargs):
         dest = Path(cmd[3])
@@ -1460,7 +1460,7 @@ def test_connector_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     def fail(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stderr="fatal: not found")
@@ -1477,7 +1477,7 @@ def test_connector_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1488,7 +1488,7 @@ def test_connector_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 0)
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=fake_clone),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -1502,7 +1502,7 @@ def test_connector_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_unofficial_declined(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_install
+    from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1514,7 +1514,7 @@ def test_connector_install_unofficial_declined(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=run_dispatch),
         patch("builtins.input", return_value="n"),
         pytest.raises(SystemExit, match="1"),
@@ -1532,28 +1532,28 @@ def test_connector_install_unofficial_declined(tmp_path, mock_admin, capsys):
 
 
 def test_connector_update_all_no_dir(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_update
+    from cli.connector import _connector_update
 
-    with patch("kiso.cli_connector.CONNECTORS_DIR", tmp_path / "nonexistent"):
+    with patch("cli.connector.CONNECTORS_DIR", tmp_path / "nonexistent"):
         _connector_update(argparse.Namespace(target="all"))
 
     assert "No connectors installed" in capsys.readouterr().out
 
 
 def test_connector_update_all_empty_dir(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_update
+    from cli.connector import _connector_update
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
 
-    with patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir):
+    with patch("cli.connector.CONNECTORS_DIR", connectors_dir):
         _connector_update(argparse.Namespace(target="all"))
 
     assert "No connectors installed" in capsys.readouterr().out
 
 
 def test_connector_update_git_pull_failure(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_update
+    from cli.connector import _connector_update
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1563,7 +1563,7 @@ def test_connector_update_git_pull_failure(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 1, stderr="merge conflict")
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("subprocess.run", side_effect=fail),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -1576,7 +1576,7 @@ def test_connector_update_git_pull_failure(tmp_path, mock_admin, capsys):
 
 
 def test_connector_run_stale_pid_cleaned(tmp_path, mock_admin, capsys):
-    from kiso.cli_connector import _connector_run
+    from cli.connector import _connector_run
 
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
@@ -1588,7 +1588,7 @@ def test_connector_run_stale_pid_cleaned(tmp_path, mock_admin, capsys):
     mock_proc.pid = 54321
 
     with (
-        patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
         patch("os.kill", side_effect=ProcessLookupError()),
         patch("subprocess.Popen", return_value=mock_proc),
     ):

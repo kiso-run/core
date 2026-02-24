@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-kiso = "kiso.cli:main"
+kiso = "cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.25", "httpx>=0.28", "pytest-cov>=6"]
@@ -31,7 +31,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["kiso"]
+source = ["kiso", "cli"]
 
 [build-system]
 requires = ["hatchling"]

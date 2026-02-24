@@ -400,6 +400,40 @@ class TestBuildPlannerMessages:
         assert "## Known Facts" in msgs[1]["content"]
         assert "Python 3.12" in msgs[1]["content"]
 
+    async def test_facts_grouped_by_category(self, db, config):
+        """Facts are grouped by category in planner context."""
+        await create_session(db, "sess1")
+        from kiso.store import save_fact
+        await save_fact(db, "Uses Flask", "curator", category="project")
+        await save_fact(db, "Prefers dark mode", "curator", category="user")
+        await save_fact(db, "Git available", "curator", category="tool")
+        await save_fact(db, "Some general fact", "curator", category="general")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "### Project" in content
+        assert "### User" in content
+        assert "### Tool" in content
+        assert "### General" in content
+        # Verify order: project before user before tool before general
+        proj_pos = content.index("### Project")
+        user_pos = content.index("### User")
+        tool_pos = content.index("### Tool")
+        gen_pos = content.index("### General")
+        assert proj_pos < user_pos < tool_pos < gen_pos
+
+    async def test_unknown_category_falls_back_to_general(self, db, config):
+        """Facts with unknown categories appear under ### General."""
+        await create_session(db, "sess1")
+        from kiso.store import save_fact
+        await save_fact(db, "Exotic fact", "curator", category="exotic")
+        await save_fact(db, "Normal fact", "curator", category="general")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "### General" in content
+        assert "Exotic fact" in content
+        # Unknown category should NOT get its own heading
+        assert "### Exotic" not in content
+
     async def test_includes_pending(self, db, config):
         await create_session(db, "sess1")
         await db.execute(
@@ -1099,7 +1133,24 @@ class TestRunFactConsolidation:
             raw={},
         )
 
-    async def test_returns_list_of_strings(self, config):
+    async def test_returns_list_of_dicts(self, config):
+        facts = [
+            {"id": 1, "content": "Uses Python"},
+            {"id": 2, "content": "Uses Python 3.12"},
+        ]
+        llm_response = json.dumps([
+            {"content": "Uses Python 3.12", "category": "project", "confidence": 1.0}
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert len(result) == 1
+        assert result[0]["content"] == "Uses Python 3.12"
+        assert result[0]["category"] == "project"
+        assert result[0]["confidence"] == 1.0
+
+    async def test_backward_compat_plain_strings(self, config):
+        """LLM returns plain strings → wrapped into dicts with defaults."""
         facts = [
             {"id": 1, "content": "Uses Python"},
             {"id": 2, "content": "Uses Python 3.12"},
@@ -1107,7 +1158,35 @@ class TestRunFactConsolidation:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value='["Uses Python 3.12"]'):
             result = await run_fact_consolidation(config, facts)
-        assert result == ["Uses Python 3.12"]
+        assert len(result) == 1
+        assert result[0]["content"] == "Uses Python 3.12"
+        assert result[0]["category"] == "general"
+        assert result[0]["confidence"] == 1.0
+
+    async def test_dict_with_defaults(self, config):
+        """Dict with only content key → category and confidence get defaults."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([{"content": "test fact"}])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert result[0]["category"] == "general"
+        assert result[0]["confidence"] == 1.0
+
+    async def test_invalid_items_skipped(self, config):
+        """Items that are not dicts or strings are skipped."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([
+            {"content": "valid", "category": "project", "confidence": 0.9},
+            42,
+            None,
+            {"no_content_key": True},
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert len(result) == 1
+        assert result[0]["content"] == "valid"
 
     async def test_llm_error_raises_summarizer_error(self, config):
         facts = [{"id": 1, "content": "test"}]
@@ -1141,10 +1220,15 @@ class TestLoadSystemPromptCuratorSummarizer:
     def test_summarizer_session_default(self):
         prompt = _load_system_prompt("summarizer-session")
         assert "session summarizer" in prompt
+        assert "Key Decisions" in prompt
+        assert "Open Questions" in prompt
+        assert "Working Knowledge" in prompt
 
     def test_summarizer_facts_default(self):
         prompt = _load_system_prompt("summarizer-facts")
         assert "fact" in prompt.lower()
+        assert "category" in prompt.lower()
+        assert "confidence" in prompt.lower()
 
     def test_paraphraser_default(self):
         prompt = _load_system_prompt("paraphraser")

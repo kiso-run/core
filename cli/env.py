@@ -6,7 +6,7 @@ import getpass
 import sys
 from pathlib import Path
 
-from kiso.cli_skill import _require_admin
+from cli.plugin_ops import require_admin
 from kiso.config import KISO_DIR
 
 ENV_FILE = KISO_DIR / ".env"
@@ -70,7 +70,7 @@ def _write_lines(lines: list[str], path: Path | None = None) -> None:
 
 def _env_set(args) -> None:
     """Set a deploy secret."""
-    _require_admin()
+    require_admin()
 
     key = args.key
     value = args.value
@@ -92,7 +92,7 @@ def _env_set(args) -> None:
 
 def _env_get(args) -> None:
     """Get a deploy secret."""
-    _require_admin()
+    require_admin()
 
     key = args.key
     lines = _read_lines()
@@ -107,7 +107,7 @@ def _env_get(args) -> None:
 
 def _env_list(args) -> None:
     """List all deploy secret names."""
-    _require_admin()
+    require_admin()
 
     lines = _read_lines()
     keys = [k for line in lines if (k := _parse_key(line)) is not None]
@@ -122,7 +122,7 @@ def _env_list(args) -> None:
 
 def _env_delete(args) -> None:
     """Delete a deploy secret."""
-    _require_admin()
+    require_admin()
 
     key = args.key
     lines = _read_lines()
@@ -138,7 +138,7 @@ def _env_delete(args) -> None:
 
 def _env_reload(args) -> None:
     """Hot-reload .env into the running server."""
-    _require_admin()
+    require_admin()
 
     import httpx
 

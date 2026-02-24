@@ -521,3 +521,21 @@ Secrets are stored in `~/.kiso/.env` and loaded into the process environment. `k
 - `kiso serve` starts the HTTP server (used in Docker CMD, not typically run directly).
 - Chat mode is a thin HTTP wrapper — all intelligence lives in the server.
 - Works against a remote server (`--api`) — useful for running kiso on a VPS.
+
+## Code Organization
+
+The CLI lives in a root-level `cli/` package, separate from `kiso/` (the server/bot code). This boundary keeps the bot line count clean and makes it clear that the CLI is a client of the server, not part of it.
+
+```
+cli/
+├── __init__.py    ← entry point, argument parsing, REPL loop, /verbose commands
+├── connector.py   ← kiso connector subcommands (install, update, remove, run, stop, status)
+├── env.py         ← kiso env subcommands (set, get, list, delete, reload)
+├── plugin_ops.py  ← shared utilities for skill and connector management
+├── render.py      ← terminal renderer (task display, markdown, spinner, colors)
+├── reset.py       ← kiso reset subcommands (session, knowledge, all, factory)
+├── session.py     ← kiso sessions subcommand
+└── skill.py       ← kiso skill subcommands (install, update, remove, list, search)
+```
+
+Server-side code (`kiso/`) has no dependency on `cli/`. The CLI depends on `kiso/` only for config path constants and store access (direct SQLite for `reset` and `env` commands).

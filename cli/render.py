@@ -416,8 +416,11 @@ def render_banner(bot_name: str, session: str, caps: TermCaps) -> str:
     display_name = f"  {bot_name} 基礎" if caps.unicode and bot_name == "Kiso" else f"  {bot_name}"
     name_line = _style(display_name, _BOLD, _MAGENTA, caps=caps)
     session_line = _style(f"  session: {session}", _DIM, caps=caps)
-    hint = _style("  Type a message. /help for commands.", _DIM, caps=caps)
-    return f"\n{sep}\n{name_line}\n{session_line}\n{hint}\n{sep}\n"
+    dot = " · " if caps.unicode else " | "
+    caps_text = f"  run commands{dot}search the web{dot}write code{dot}use skills"
+    caps_line = _style(caps_text, _DIM, caps=caps)
+    hint = _style(f"  /help for commands{dot}Ctrl+C to cancel a task", _DIM, caps=caps)
+    return f"\n{sep}\n{name_line}\n{session_line}\n{caps_line}\n{hint}\n{sep}\n"
 
 
 def render_planner_spinner(caps: TermCaps, spinner_frame: str) -> str:

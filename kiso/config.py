@@ -14,7 +14,7 @@ LLM_API_KEY_ENV = "KISO_LLM_API_KEY"
 
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
-SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
+SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list[str]] = {
     "context_messages": 5,
     "summarize_threshold": 30,
     "knowledge_max_facts": 50,
@@ -35,6 +35,9 @@ SETTINGS_DEFAULTS: dict[str, int | str | bool | list[str]] = {
     "webhook_max_payload": 1048576,
     "bot_name": "Kiso",
     "fast_path_enabled": True,
+    "fact_decay_days": 7,
+    "fact_decay_rate": 0.1,
+    "fact_archive_threshold": 0.3,
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
@@ -67,7 +70,7 @@ class Config:
     providers: dict[str, Provider]
     users: dict[str, User]
     models: dict[str, str]
-    settings: dict[str, int | str | list[str]]
+    settings: dict[str, int | float | str | list[str]]
     raw: dict  # full parsed TOML for future use
 
 

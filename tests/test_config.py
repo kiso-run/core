@@ -372,3 +372,13 @@ class TestSettingBool:
     def test_unrecognized_string_uses_default(self):
         assert setting_bool({"key": "maybe"}, "key", default=True) is True
         assert setting_bool({"key": "maybe"}, "key", default=False) is False
+
+
+# --- M34: settings defaults ---
+
+
+def test_m34_settings_defaults():
+    """M34 fact decay/archive settings have correct defaults."""
+    assert SETTINGS_DEFAULTS["fact_decay_days"] == 7
+    assert SETTINGS_DEFAULTS["fact_decay_rate"] == 0.1
+    assert SETTINGS_DEFAULTS["fact_archive_threshold"] == 0.3

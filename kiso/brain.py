@@ -296,8 +296,19 @@ async def build_planner_messages(
         context_parts.append(f"## Session Summary\n{summary}")
 
     if facts:
-        facts_text = "\n".join(f"- {f['content']}" for f in facts)
-        context_parts.append(f"## Known Facts\n{facts_text}")
+        # Group facts by category
+        categories: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
+        for f in facts:
+            cat = f.get("category", "general")
+            if cat not in categories:
+                cat = "general"
+            categories[cat].append(f"- {f['content']}")
+        facts_parts: list[str] = []
+        for cat in ("project", "user", "tool", "general"):
+            if categories[cat]:
+                facts_parts.append(f"### {cat.title()}\n" + "\n".join(categories[cat]))
+        if facts_parts:
+            context_parts.append("## Known Facts\n" + "\n".join(facts_parts))
 
     # System environment — semi-static context about the execution environment
     sys_env = get_system_env(config)
@@ -848,8 +859,11 @@ async def run_exec_translator(
 
 async def run_fact_consolidation(
     config: Config, facts: list[dict], session: str = "",
-) -> list[str]:
-    """Consolidate/deduplicate facts via LLM. Returns list of consolidated fact strings.
+) -> list[dict]:
+    """Consolidate/deduplicate facts via LLM. Returns list of consolidated fact dicts.
+
+    Each dict has keys: content (str), category (str), confidence (float).
+    Plain strings from backward-compatible LLM responses are wrapped into dicts.
 
     Raises SummarizerError on failure.
     """
@@ -869,4 +883,21 @@ async def run_fact_consolidation(
         raise SummarizerError(f"Consolidation returned invalid JSON: {e}")
     if not isinstance(result, list):
         raise SummarizerError("Consolidation must return a JSON array")
-    return result
+
+    # Normalize items: dicts with content key, or plain strings (backward compat)
+    normalized: list[dict] = []
+    for item in result:
+        if isinstance(item, dict) and isinstance(item.get("content"), str):
+            normalized.append({
+                "content": item["content"],
+                "category": item.get("category", "general"),
+                "confidence": item.get("confidence", 1.0),
+            })
+        elif isinstance(item, str):
+            normalized.append({
+                "content": item,
+                "category": "general",
+                "confidence": 1.0,
+            })
+        # Skip invalid items
+    return normalized

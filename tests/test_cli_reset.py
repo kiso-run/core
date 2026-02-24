@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.cli_reset import (
+from cli.reset import (
     _confirm,
     _reset_all,
     _reset_factory,
@@ -31,7 +31,7 @@ def _make_args(reset_command=None, yes=True, name=None, **kwargs):
 
 def _mock_admin():
     """Patch require_admin to be a no-op."""
-    return patch("kiso.cli_reset.require_admin")
+    return patch("cli.reset.require_admin")
 
 
 def _create_test_db(db_path: Path) -> sqlite3.Connection:
@@ -128,7 +128,7 @@ class TestResetSession:
         _seed_session(conn, "mysession")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="mysession"))
 
         conn = sqlite3.connect(str(db_path))
@@ -149,8 +149,8 @@ class TestResetSession:
         conn.close()
 
         with (
-            patch("kiso.cli_reset.DB_PATH", db_path),
-            patch("kiso.cli_reset.KISO_DIR", tmp_path),
+            patch("cli.reset.DB_PATH", db_path),
+            patch("cli.reset.KISO_DIR", tmp_path),
             patch("socket.gethostname", return_value="myhost"),
             patch("getpass.getuser", return_value="myuser"),
         ):
@@ -170,7 +170,7 @@ class TestResetSession:
         workspace.mkdir(parents=True)
         (workspace / "file.txt").write_text("data")
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="ws-test"))
 
         assert not workspace.exists()
@@ -180,7 +180,7 @@ class TestResetSession:
         conn = _create_test_db(db_path)
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="nonexistent"))
 
         assert "reset" in capsys.readouterr().out.lower()
@@ -189,7 +189,7 @@ class TestResetSession:
         db_path = tmp_path / "store.db"
         # No DB created
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="any"))
 
         assert "no database" in capsys.readouterr().out.lower()
@@ -202,7 +202,7 @@ class TestResetSession:
         _seed_session(conn, "keep-me")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="delete-me"))
 
         conn = sqlite3.connect(str(db_path))
@@ -225,7 +225,7 @@ class TestResetSession:
         conn.commit()
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="target"))
 
         conn = sqlite3.connect(str(db_path))
@@ -247,7 +247,7 @@ class TestResetKnowledge:
         _seed_session(conn, "s2")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path):
+        with patch("cli.reset.DB_PATH", db_path):
             _reset_knowledge(_make_args(reset_command="knowledge"))
 
         conn = sqlite3.connect(str(db_path))
@@ -262,7 +262,7 @@ class TestResetKnowledge:
         _seed_session(conn, "keep-me")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path):
+        with patch("cli.reset.DB_PATH", db_path):
             _reset_knowledge(_make_args(reset_command="knowledge"))
 
         conn = sqlite3.connect(str(db_path))
@@ -275,7 +275,7 @@ class TestResetKnowledge:
     def test_no_db_graceful(self, tmp_path, capsys):
         db_path = tmp_path / "store.db"
 
-        with patch("kiso.cli_reset.DB_PATH", db_path):
+        with patch("cli.reset.DB_PATH", db_path):
             _reset_knowledge(_make_args(reset_command="knowledge"))
 
         assert "no database" in capsys.readouterr().out.lower()
@@ -287,7 +287,7 @@ class TestResetKnowledge:
         _seed_session(conn, "s1")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path):
+        with patch("cli.reset.DB_PATH", db_path):
             _reset_knowledge(_make_args(reset_command="knowledge", yes=False))
 
         assert "aborted" in capsys.readouterr().out.lower()
@@ -312,7 +312,7 @@ class TestResetAll:
         (tmp_path / "audit" / "2024-01-01.jsonl").write_text("{}")
         (tmp_path / ".chat_history").write_text("history")
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_all(_make_args(reset_command="all"))
 
         conn = sqlite3.connect(str(db_path))
@@ -334,7 +334,7 @@ class TestResetAll:
         (tmp_path / "skills").mkdir()
         (tmp_path / "skills" / "search").mkdir()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_all(_make_args(reset_command="all"))
 
         assert (tmp_path / "config.toml").exists()
@@ -348,7 +348,7 @@ class TestResetAll:
         _seed_session(conn, "s1")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_all(_make_args(reset_command="all"))
 
         assert db_path.exists()
@@ -356,7 +356,7 @@ class TestResetAll:
     def test_no_db_graceful(self, tmp_path, capsys):
         db_path = tmp_path / "store.db"
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_all(_make_args(reset_command="all"))
 
         assert "all data reset" in capsys.readouterr().out.lower()
@@ -368,7 +368,7 @@ class TestResetAll:
         _seed_session(conn, "s1")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_all(_make_args(reset_command="all", yes=False))
 
         assert "aborted" in capsys.readouterr().out.lower()
@@ -387,7 +387,7 @@ class TestResetFactory:
         conn.close()
         assert db_path.exists()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_factory(_make_args(reset_command="factory"))
 
         assert not db_path.exists()
@@ -402,7 +402,7 @@ class TestResetFactory:
         (tmp_path / ".env").write_text("KEY=val\n")
         (tmp_path / "docker-compose.yml").write_text("services:\n")
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_factory(_make_args(reset_command="factory"))
 
         assert (tmp_path / "config.toml").exists()
@@ -424,7 +424,7 @@ class TestResetFactory:
         (tmp_path / ".chat_history").write_text("history")
         (tmp_path / "server.log").write_text("logs")
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_factory(_make_args(reset_command="factory"))
 
         for dirname in ("sessions", "audit", "skills", "connectors", "roles", "reference", "sys"):
@@ -435,7 +435,7 @@ class TestResetFactory:
     def test_no_db_graceful(self, tmp_path, capsys):
         db_path = tmp_path / "store.db"
         # No DB — should not error
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_factory(_make_args(reset_command="factory"))
 
         assert "factory reset complete" in capsys.readouterr().out.lower()
@@ -452,7 +452,7 @@ class TestRunResetCommand:
 
     def test_requires_admin(self):
         with (
-            patch("kiso.cli_reset.require_admin", side_effect=SystemExit(1)),
+            patch("cli.reset.require_admin", side_effect=SystemExit(1)),
             pytest.raises(SystemExit, match="1"),
         ):
             run_reset_command(_make_args(reset_command="knowledge"))
@@ -464,8 +464,8 @@ class TestRunResetCommand:
 
         with (
             _mock_admin(),
-            patch("kiso.cli_reset.DB_PATH", db_path),
-            patch("kiso.cli_reset.KISO_DIR", tmp_path),
+            patch("cli.reset.DB_PATH", db_path),
+            patch("cli.reset.KISO_DIR", tmp_path),
         ):
             run_reset_command(_make_args(reset_command="session", name="any"))
 
@@ -474,7 +474,7 @@ class TestRunResetCommand:
         conn = _create_test_db(db_path)
         conn.close()
 
-        with _mock_admin(), patch("kiso.cli_reset.DB_PATH", db_path):
+        with _mock_admin(), patch("cli.reset.DB_PATH", db_path):
             run_reset_command(_make_args(reset_command="knowledge"))
 
     def test_dispatches_all(self, tmp_path, capsys):
@@ -484,8 +484,8 @@ class TestRunResetCommand:
 
         with (
             _mock_admin(),
-            patch("kiso.cli_reset.DB_PATH", db_path),
-            patch("kiso.cli_reset.KISO_DIR", tmp_path),
+            patch("cli.reset.DB_PATH", db_path),
+            patch("cli.reset.KISO_DIR", tmp_path),
         ):
             run_reset_command(_make_args(reset_command="all"))
 
@@ -496,8 +496,8 @@ class TestRunResetCommand:
 
         with (
             _mock_admin(),
-            patch("kiso.cli_reset.DB_PATH", db_path),
-            patch("kiso.cli_reset.KISO_DIR", tmp_path),
+            patch("cli.reset.DB_PATH", db_path),
+            patch("cli.reset.KISO_DIR", tmp_path),
         ):
             run_reset_command(_make_args(reset_command="factory"))
 
@@ -513,7 +513,7 @@ class TestConfirmationAborts:
         _seed_session(conn, "keep")
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_session(_make_args(reset_command="session", name="keep", yes=False))
 
         assert "aborted" in capsys.readouterr().out.lower()
@@ -527,7 +527,7 @@ class TestConfirmationAborts:
         conn = _create_test_db(db_path)
         conn.close()
 
-        with patch("kiso.cli_reset.DB_PATH", db_path), patch("kiso.cli_reset.KISO_DIR", tmp_path):
+        with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_factory(_make_args(reset_command="factory", yes=False))
 
         assert "aborted" in capsys.readouterr().out.lower()

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, call, patch
 import httpx
 import pytest
 
-from kiso.cli import (
+from cli import (
     _ExitRepl,
     _SLASH_COMMANDS,
     _handle_slash,
@@ -19,7 +19,7 @@ from kiso.cli import (
     build_parser,
     main,
 )
-from kiso.render import TermCaps
+from cli.render import TermCaps
 
 
 # ── Fixtures ─────────────────────────────────────────────────
@@ -107,7 +107,7 @@ def test_serve_calls_uvicorn():
         patch("kiso.config.load_config", return_value=mock_cfg) as mock_load,
         patch("uvicorn.run") as mock_run,
     ):
-        from kiso.cli import _serve
+        from cli import _serve
 
         _serve()
 
@@ -258,12 +258,12 @@ def _make_args(session=None, api="http://localhost:8333", quiet=False, user=None
 
 
 def test_chat_exits_on_exit_command(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -277,12 +277,12 @@ def test_chat_exits_on_exit_command(capsys):
 
 
 def test_chat_exits_on_keyboard_interrupt(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=KeyboardInterrupt),
         patch("getpass.getuser", return_value="alice"),
@@ -294,12 +294,12 @@ def test_chat_exits_on_keyboard_interrupt(capsys):
 
 
 def test_chat_exits_on_eof(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=EOFError),
         patch("getpass.getuser", return_value="alice"),
@@ -311,11 +311,11 @@ def test_chat_exits_on_eof(capsys):
 
 
 def test_chat_missing_cli_token(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config(has_cli_token=False)),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         pytest.raises(SystemExit, match="1"),
     ):
         _chat(_make_args())
@@ -325,7 +325,7 @@ def test_chat_missing_cli_token(capsys):
 
 
 def test_chat_default_session():
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     mock_resp = MagicMock()
@@ -335,12 +335,12 @@ def test_chat_default_session():
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["hello", "exit"]),
         patch("getpass.getuser", return_value="bob"),
         patch("socket.gethostname", return_value="myhost"),
-        patch("kiso.cli._poll_status", return_value=0),
+        patch("cli._poll_status", return_value=0),
     ):
         _chat(_make_args(session=None))
 
@@ -350,7 +350,7 @@ def test_chat_default_session():
 
 
 def test_chat_connection_error(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     mock_client.post.side_effect = [
@@ -360,7 +360,7 @@ def test_chat_connection_error(capsys):
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["hello", "exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -373,7 +373,7 @@ def test_chat_connection_error(capsys):
 
 
 def test_chat_untrusted_message(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     mock_resp = MagicMock()
@@ -388,7 +388,7 @@ def test_chat_untrusted_message(capsys):
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["hello", "exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -401,7 +401,7 @@ def test_chat_untrusted_message(capsys):
 
 
 def test_chat_cancel_on_ctrl_c_during_poll(capsys):
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     mock_resp = MagicMock()
@@ -411,12 +411,12 @@ def test_chat_cancel_on_ctrl_c_during_poll(capsys):
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["hello", "exit"]),
         patch("getpass.getuser", return_value="alice"),
         patch("socket.gethostname", return_value="h"),
-        patch("kiso.cli._poll_status", side_effect=KeyboardInterrupt),
+        patch("cli._poll_status", side_effect=KeyboardInterrupt),
     ):
         _chat(_make_args(session="mysess"))
 
@@ -949,7 +949,7 @@ def test_poll_status_shows_planner_spinner(capsys):
 
 def test_chat_http_status_error_on_msg_post(capsys):
     """HTTPStatusError on /msg POST should print status code and continue."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     mock_response = MagicMock()
@@ -962,7 +962,7 @@ def test_chat_http_status_error_on_msg_post(capsys):
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["hello", "exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -976,12 +976,12 @@ def test_chat_http_status_error_on_msg_post(capsys):
 
 def test_chat_empty_input_continues(capsys):
     """Empty or whitespace input should not trigger a POST."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["", "   ", "exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -995,7 +995,7 @@ def test_chat_empty_input_continues(capsys):
 
 def test_chat_user_flag_overrides_getuser(capsys):
     """--user flag should be used as username instead of getpass.getuser()."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     mock_resp = MagicMock()
@@ -1005,12 +1005,12 @@ def test_chat_user_flag_overrides_getuser(capsys):
 
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["hello", "exit"]),
         patch("getpass.getuser", return_value="alice"),
         patch("socket.gethostname", return_value="myhost"),
-        patch("kiso.cli._poll_status", return_value=0),
+        patch("cli._poll_status", return_value=0),
     ):
         _chat(_make_args(user="bob"))
 
@@ -1024,12 +1024,12 @@ def test_chat_user_flag_overrides_getuser(capsys):
 
 def test_slash_exit_breaks_repl(capsys):
     """'/exit' exits the REPL without sending a POST."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["/exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -1147,12 +1147,12 @@ def test_slash_clear_on_tty(capsys):
 
 def test_old_exit_still_works(capsys):
     """Plain 'exit' text still exits the REPL."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -1166,12 +1166,12 @@ def test_old_exit_still_works(capsys):
 
 def test_old_quit_still_works(capsys):
     """Plain 'quit' text also exits the REPL."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["quit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -1185,12 +1185,12 @@ def test_old_quit_still_works(capsys):
 
 def test_slash_command_not_sent_to_llm(capsys):
     """Slash commands should never be sent as POST /msg."""
-    from kiso.cli import _chat
+    from cli import _chat
 
     mock_client = MagicMock()
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
-        patch("kiso.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
         patch("httpx.Client", return_value=mock_client),
         patch("builtins.input", side_effect=["/unknown", "/help", "exit"]),
         patch("getpass.getuser", return_value="alice"),
@@ -1361,7 +1361,7 @@ def test_msg_subcommand_parsed():
 
 
 def test_msg_command_routing():
-    with patch("kiso.cli._msg_cmd") as mock_msg:
+    with patch("cli._msg_cmd") as mock_msg:
         with patch("sys.argv", ["kiso", "msg", "test message"]):
             main()
         mock_msg.assert_called_once()
@@ -1483,7 +1483,7 @@ def test_poll_status_quiet_hides_usage(capsys, plain_caps):
 
 def test_verbose_on_sets_flag(capsys):
     """'/verbose-on' sets _verbose_mode to True."""
-    import kiso.cli as cli_mod
+    import cli as cli_mod
 
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     client = MagicMock()
@@ -1501,7 +1501,7 @@ def test_verbose_on_sets_flag(capsys):
 
 def test_verbose_off_sets_flag(capsys):
     """'/verbose-off' sets _verbose_mode to False."""
-    import kiso.cli as cli_mod
+    import cli as cli_mod
 
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     client = MagicMock()

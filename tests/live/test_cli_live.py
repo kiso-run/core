@@ -24,7 +24,7 @@ pytestmark = pytest.mark.live_network
 class TestSkillSearch:
     def test_search_returns_results(self, capsys):
         """kiso skill search (no query) fetches registry and lists skills."""
-        from kiso.cli_skill import _skill_search
+        from cli.skill import _skill_search
 
         try:
             _skill_search(Namespace(query=""))
@@ -35,7 +35,7 @@ class TestSkillSearch:
 
     def test_search_with_query(self, capsys):
         """kiso skill search 'search' filters results without error."""
-        from kiso.cli_skill import _skill_search
+        from cli.skill import _skill_search
 
         try:
             _skill_search(Namespace(query="search"))
@@ -53,7 +53,7 @@ class TestSkillSearch:
 class TestConnectorSearch:
     def test_search_returns_results(self, capsys):
         """kiso connector search (no query) fetches registry and lists connectors."""
-        from kiso.cli_connector import _connector_search
+        from cli.connector import _connector_search
 
         try:
             _connector_search(Namespace(query=""))
@@ -89,11 +89,11 @@ class TestSkillInstallRemove:
         )
 
         with (
-            patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
-            patch("kiso.cli_skill._require_admin"),
-            patch("kiso.cli_skill.check_deps", return_value=[]),
+            patch("cli.skill.SKILLS_DIR", skills_dir),
+            patch("cli.skill._require_admin"),
+            patch("cli.skill.check_deps", return_value=[]),
         ):
-            from kiso.cli_skill import _skill_install
+            from cli.skill import _skill_install
 
             _skill_install(args)
 
@@ -108,10 +108,10 @@ class TestSkillInstallRemove:
         # Now remove
         remove_args = Namespace(name=skill_name)
         with (
-            patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
-            patch("kiso.cli_skill._require_admin"),
+            patch("cli.skill.SKILLS_DIR", skills_dir),
+            patch("cli.skill._require_admin"),
         ):
-            from kiso.cli_skill import _skill_remove
+            from cli.skill import _skill_remove
 
             _skill_remove(remove_args)
 
@@ -144,10 +144,10 @@ class TestConnectorInstallRemove:
         )
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
-            patch("kiso.cli_skill._require_admin"),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.skill._require_admin"),
         ):
-            from kiso.cli_connector import _connector_install
+            from cli.connector import _connector_install
 
             _connector_install(args)
 
@@ -162,10 +162,10 @@ class TestConnectorInstallRemove:
         # Now remove
         remove_args = Namespace(name=connector_name)
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
-            patch("kiso.cli_skill._require_admin"),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.skill._require_admin"),
         ):
-            from kiso.cli_connector import _connector_remove
+            from cli.connector import _connector_remove
 
             _connector_remove(remove_args)
 
@@ -196,10 +196,10 @@ class TestSkillInstallNotFound:
         )
 
         with (
-            patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
-            patch("kiso.cli_skill._require_admin"),
+            patch("cli.skill.SKILLS_DIR", skills_dir),
+            patch("cli.skill._require_admin"),
         ):
-            from kiso.cli_skill import _skill_install
+            from cli.skill import _skill_install
 
             with pytest.raises(SystemExit):
                 _skill_install(args)
@@ -228,10 +228,10 @@ class TestConnectorInstallNotFound:
         )
 
         with (
-            patch("kiso.cli_connector.CONNECTORS_DIR", connectors_dir),
-            patch("kiso.cli_skill._require_admin"),
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("cli.skill._require_admin"),
         ):
-            from kiso.cli_connector import _connector_install
+            from cli.connector import _connector_install
 
             with pytest.raises(SystemExit):
                 _connector_install(args)

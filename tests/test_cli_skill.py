@@ -9,8 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kiso.cli import build_parser
-from kiso.cli_skill import _is_url, run_skill_command, url_to_name
+from cli import build_parser
+from cli.skill import run_skill_command
+from cli.plugin_ops import is_url as _is_url, url_to_name
 from kiso.config import User
 
 
@@ -27,8 +28,8 @@ def _admin_cfg():
 def mock_admin():
     """Patch load_config and getpass so _require_admin passes."""
     with (
-        patch("kiso.plugin_ops.load_config", return_value=_admin_cfg()),
-        patch("kiso.plugin_ops.getpass.getuser", return_value="alice"),
+        patch("cli.plugin_ops.load_config", return_value=_admin_cfg()),
+        patch("cli.plugin_ops.getpass.getuser", return_value="alice"),
     ):
         yield
 
@@ -182,25 +183,25 @@ def test_run_skill_command_no_subcommand(capsys):
 
 
 def test_require_admin_passes():
-    from kiso.cli_skill import _require_admin
+    from cli.skill import _require_admin
 
     cfg = MagicMock()
     cfg.users = {"alice": User(role="admin")}
     with (
-        patch("kiso.plugin_ops.load_config", return_value=cfg),
-        patch("kiso.plugin_ops.getpass.getuser", return_value="alice"),
+        patch("cli.plugin_ops.load_config", return_value=cfg),
+        patch("cli.plugin_ops.getpass.getuser", return_value="alice"),
     ):
         _require_admin()  # should not raise
 
 
 def test_require_admin_non_admin_exits(capsys):
-    from kiso.cli_skill import _require_admin
+    from cli.skill import _require_admin
 
     cfg = MagicMock()
     cfg.users = {"bob": User(role="user", skills="*")}
     with (
-        patch("kiso.plugin_ops.load_config", return_value=cfg),
-        patch("kiso.plugin_ops.getpass.getuser", return_value="bob"),
+        patch("cli.plugin_ops.load_config", return_value=cfg),
+        patch("cli.plugin_ops.getpass.getuser", return_value="bob"),
         pytest.raises(SystemExit, match="1"),
     ):
         _require_admin()
@@ -209,13 +210,13 @@ def test_require_admin_non_admin_exits(capsys):
 
 
 def test_require_admin_unknown_user_exits(capsys):
-    from kiso.cli_skill import _require_admin
+    from cli.skill import _require_admin
 
     cfg = MagicMock()
     cfg.users = {"alice": User(role="admin")}
     with (
-        patch("kiso.plugin_ops.load_config", return_value=cfg),
-        patch("kiso.plugin_ops.getpass.getuser", return_value="unknown"),
+        patch("cli.plugin_ops.load_config", return_value=cfg),
+        patch("cli.plugin_ops.getpass.getuser", return_value="unknown"),
         pytest.raises(SystemExit, match="1"),
     ):
         _require_admin()
@@ -227,22 +228,22 @@ def test_require_admin_unknown_user_exits(capsys):
 
 
 def test_skill_list_empty(capsys):
-    from kiso.cli_skill import _skill_list
+    from cli.skill import _skill_list
 
-    with patch("kiso.cli_skill.discover_skills", return_value=[]):
+    with patch("cli.skill.discover_skills", return_value=[]):
         _skill_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "No skills installed." in out
 
 
 def test_skill_list_shows_skills(capsys):
-    from kiso.cli_skill import _skill_list
+    from cli.skill import _skill_list
 
     skills = [
         {"name": "search", "version": "0.1.0", "summary": "Web search"},
         {"name": "aider", "version": "0.3.2", "summary": "Code editing"},
     ]
-    with patch("kiso.cli_skill.discover_skills", return_value=skills):
+    with patch("cli.skill.discover_skills", return_value=skills):
         _skill_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "search" in out
@@ -253,13 +254,13 @@ def test_skill_list_shows_skills(capsys):
 
 
 def test_skill_list_column_alignment(capsys):
-    from kiso.cli_skill import _skill_list
+    from cli.skill import _skill_list
 
     skills = [
         {"name": "a", "version": "1.0", "summary": "Short"},
         {"name": "longname", "version": "10.20.30", "summary": "Long"},
     ]
-    with patch("kiso.cli_skill.discover_skills", return_value=skills):
+    with patch("cli.skill.discover_skills", return_value=skills):
         _skill_list(argparse.Namespace())
     lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
     assert len(lines) == 2
@@ -285,9 +286,9 @@ FAKE_REGISTRY = {
 
 
 def test_skill_search_no_query(capsys):
-    from kiso.cli_skill import _skill_search
+    from cli.skill import _skill_search
 
-    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.skill._fetch_registry", return_value=FAKE_REGISTRY):
         _skill_search(argparse.Namespace(query=""))
 
     out = capsys.readouterr().out
@@ -296,9 +297,9 @@ def test_skill_search_no_query(capsys):
 
 
 def test_skill_search_by_name(capsys):
-    from kiso.cli_skill import _skill_search
+    from cli.skill import _skill_search
 
-    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.skill._fetch_registry", return_value=FAKE_REGISTRY):
         _skill_search(argparse.Namespace(query="search"))
 
     out = capsys.readouterr().out
@@ -307,9 +308,9 @@ def test_skill_search_by_name(capsys):
 
 
 def test_skill_search_by_description(capsys):
-    from kiso.cli_skill import _skill_search
+    from cli.skill import _skill_search
 
-    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.skill._fetch_registry", return_value=FAKE_REGISTRY):
         _skill_search(argparse.Namespace(query="refactoring"))
 
     out = capsys.readouterr().out
@@ -321,18 +322,18 @@ def test_skill_search_network_error(capsys):
     import httpx
 
     with (
-        patch("kiso.cli_skill._fetch_registry", side_effect=SystemExit(1)),
+        patch("cli.skill._fetch_registry", side_effect=SystemExit(1)),
         pytest.raises(SystemExit, match="1"),
     ):
-        from kiso.cli_skill import _skill_search
+        from cli.skill import _skill_search
 
         _skill_search(argparse.Namespace(query=""))
 
 
 def test_skill_search_no_results(capsys):
-    from kiso.cli_skill import _skill_search
+    from cli.skill import _skill_search
 
-    with patch("kiso.cli_skill._fetch_registry", return_value=FAKE_REGISTRY):
+    with patch("cli.skill._fetch_registry", return_value=FAKE_REGISTRY):
         _skill_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No skills found." in out
@@ -363,7 +364,7 @@ def _ok_run(cmd, **kwargs):
 
 
 def test_skill_install_official(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -376,9 +377,9 @@ def test_skill_install_official(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
@@ -390,7 +391,7 @@ def test_skill_install_official(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -403,9 +404,9 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
         patch("builtins.input", return_value="y"),
     ):
         args = argparse.Namespace(
@@ -422,7 +423,7 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -435,7 +436,7 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
         patch("builtins.input", return_value="n"),
         pytest.raises(SystemExit, match="1"),
@@ -454,7 +455,7 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -467,9 +468,9 @@ def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
         patch("builtins.input", return_value="y"),
     ):
         args = argparse.Namespace(
@@ -484,7 +485,7 @@ def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -512,9 +513,9 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=tracking_run),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=True, show_deps=False,
@@ -527,7 +528,7 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_show_deps(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     deps_content = "#!/bin/bash\napt install ffmpeg\n"
 
@@ -548,14 +549,14 @@ def test_skill_install_show_deps(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "search").mkdir()
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         args = argparse.Namespace(
@@ -568,7 +569,7 @@ def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -579,7 +580,7 @@ def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 1, stderr="fatal: repo not found")
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=fake_clone_fail),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -597,7 +598,7 @@ def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_single(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -606,9 +607,9 @@ def test_skill_update_single(tmp_path, mock_admin, capsys):
     (skill_dir / "kiso.toml").write_text('[kiso]\ntype = "skill"\nname = "search"\n')
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=_ok_run),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_update(argparse.Namespace(target="search"))
 
@@ -617,7 +618,7 @@ def test_skill_update_single(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_all(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -627,9 +628,9 @@ def test_skill_update_all(tmp_path, mock_admin, capsys):
         (d / "kiso.toml").write_text(f'[kiso]\ntype = "skill"\nname = "{name}"\n')
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=_ok_run),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_update(argparse.Namespace(target="all"))
 
@@ -639,13 +640,13 @@ def test_skill_update_all(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_nonexistent(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _skill_update(argparse.Namespace(target="nonexistent"))
@@ -655,7 +656,7 @@ def test_skill_update_nonexistent(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -665,7 +666,7 @@ def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 1, stderr="error: cannot pull")
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=fake_pull_fail),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -679,13 +680,13 @@ def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
 
 
 def test_skill_remove_existing(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_remove
+    from cli.skill import _skill_remove
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "search").mkdir()
 
-    with patch("kiso.cli_skill.SKILLS_DIR", skills_dir):
+    with patch("cli.skill.SKILLS_DIR", skills_dir):
         _skill_remove(argparse.Namespace(name="search"))
 
     out = capsys.readouterr().out
@@ -694,13 +695,13 @@ def test_skill_remove_existing(tmp_path, mock_admin, capsys):
 
 
 def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
-    from kiso.cli_skill import _skill_remove
+    from cli.skill import _skill_remove
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         pytest.raises(SystemExit, match="1"),
     ):
         _skill_remove(argparse.Namespace(name="nonexistent"))
@@ -714,7 +715,7 @@ def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
 
 def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
     """show-deps when git clone fails."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     def fail(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stderr="fatal: not found")
@@ -732,7 +733,7 @@ def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
 
 def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
     """show-deps when repo has no deps.sh."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     def fake_clone(cmd, **kwargs):
         dest = Path(cmd[3])
@@ -749,7 +750,7 @@ def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
 
 def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
     """Clone succeeds but no kiso.toml — cleaned up."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -760,7 +761,7 @@ def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 0)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=fake_clone),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -775,7 +776,7 @@ def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
 
 def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
     """kiso.toml exists but fails validation — cleaned up."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -790,7 +791,7 @@ def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 0)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=fake_clone),
         pytest.raises(SystemExit, match="1"),
     ):
@@ -805,7 +806,7 @@ def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
 
 def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     """deps.sh fails — warning printed but install continues."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -832,9 +833,9 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
@@ -847,7 +848,7 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
     """check_deps returns missing binaries — warning printed."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -859,9 +860,9 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=["ffmpeg", "node"]),
+        patch("cli.skill.check_deps", return_value=["ffmpeg", "node"]),
     ):
         _skill_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
@@ -874,7 +875,7 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
     """Env vars declared in manifest but not in environment — warning printed."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -900,9 +901,9 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
         patch.dict("os.environ", {}, clear=False),
     ):
         _skill_install(argparse.Namespace(
@@ -919,9 +920,9 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
     """Update all when skills dir doesn't exist."""
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
-    with patch("kiso.cli_skill.SKILLS_DIR", tmp_path / "nonexistent"):
+    with patch("cli.skill.SKILLS_DIR", tmp_path / "nonexistent"):
         _skill_update(argparse.Namespace(target="all"))
 
     assert "No skills installed" in capsys.readouterr().out
@@ -929,12 +930,12 @@ def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
 
 def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
     """Update all when skills dir is empty."""
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
 
-    with patch("kiso.cli_skill.SKILLS_DIR", skills_dir):
+    with patch("cli.skill.SKILLS_DIR", skills_dir):
         _skill_update(argparse.Namespace(target="all"))
 
     assert "No skills installed" in capsys.readouterr().out
@@ -942,7 +943,7 @@ def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
 
 def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     """deps.sh fails during update — warning printed but update continues."""
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -961,9 +962,9 @@ def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_update(argparse.Namespace(target="search"))
 
@@ -974,16 +975,16 @@ def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
     """check_deps returns missing binaries during update — warning printed."""
-    from kiso.cli_skill import _skill_update
+    from cli.skill import _skill_update
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "search").mkdir()
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=_ok_run),
-        patch("kiso.cli_skill.check_deps", return_value=["docker"]),
+        patch("cli.skill.check_deps", return_value=["docker"]),
     ):
         _skill_update(argparse.Namespace(target="search"))
 
@@ -997,7 +998,7 @@ def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
 
 def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
     """Install creates usage_guide.local.md from toml default."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -1026,9 +1027,9 @@ def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
@@ -1041,7 +1042,7 @@ def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
 
 def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
     """Install adds usage_guide.local.md to .git/info/exclude."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -1067,9 +1068,9 @@ def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
@@ -1083,7 +1084,7 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
     """No usage_guide in toml → no override file created (skill won't validate
     but we test the file-creation logic in isolation via a passing manifest
     that has an empty usage_guide-like value)."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -1108,9 +1109,9 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
@@ -1122,7 +1123,7 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
 
 def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
     """Install does not overwrite an existing usage_guide.local.md."""
-    from kiso.cli_skill import _skill_install
+    from cli.skill import _skill_install
 
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -1150,9 +1151,9 @@ def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("kiso.cli_skill.SKILLS_DIR", skills_dir),
+        patch("cli.skill.SKILLS_DIR", skills_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("kiso.cli_skill.check_deps", return_value=[]),
+        patch("cli.skill.check_deps", return_value=[]),
     ):
         _skill_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,

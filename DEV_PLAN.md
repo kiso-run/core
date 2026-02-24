@@ -1687,6 +1687,125 @@ KISO_LLM_API_KEY=sk-... uv run pytest tests/live/test_practical.py --llm-live -v
 
 ---
 
+## ~~Milestone 35: CLI → root-level `cli/` package~~ DONE
+
+Move all CLI-related code out of `kiso/` into a root-level `cli/` package. `kiso/` then contains only server/bot code — a clean boundary that makes line-counting and auditing the bot meaningful. The CLI is a client of the bot, not part of it.
+
+### Target structure
+
+```
+cli/                     ← new root-level package (alongside kiso/)
+├── __init__.py          ← current kiso/cli.py (entry point, arg parsing, REPL)
+├── connector.py         ← current kiso/cli_connector.py
+├── env.py               ← current kiso/cli_env.py
+├── plugin_ops.py        ← current kiso/plugin_ops.py (shared skill/connector utils)
+├── render.py            ← current kiso/render.py
+├── reset.py             ← current kiso/cli_reset.py
+├── session.py           ← current kiso/cli_session.py
+└── skill.py             ← current kiso/cli_skill.py
+
+kiso/                    ← bot/server code only (no CLI modules)
+```
+
+### Changes
+
+| File | Action |
+|---|---|
+| `cli/__init__.py` | Move from `kiso/cli.py` |
+| `cli/connector.py` | Move from `kiso/cli_connector.py` |
+| `cli/env.py` | Move from `kiso/cli_env.py` |
+| `cli/plugin_ops.py` | Move from `kiso/plugin_ops.py` |
+| `cli/render.py` | Move from `kiso/render.py` |
+| `cli/reset.py` | Move from `kiso/cli_reset.py` |
+| `cli/session.py` | Move from `kiso/cli_session.py` |
+| `cli/skill.py` | Move from `kiso/cli_skill.py` |
+| `pyproject.toml` | Entry point: `kiso.cli:main` → `cli:main`; add `cli/` to packages |
+| `tests/` | Update all imports referencing moved modules |
+
+- [x] Create `cli/` package at project root
+- [x] Move all 8 modules above, update internal cross-imports
+- [x] Extract `discover_connectors` + validators to `kiso/connectors.py` (breaks sysenv→cli dependency)
+- [x] Update `pyproject.toml` entry point and coverage source
+- [x] `kiso/` contains zero CLI-specific modules
+- [x] Update all test imports
+- [x] 1467 tests pass
+
+**Result:** 1467 passed, 4 skipped, 0 failures.
+
+---
+
+## Milestone 36: Composable worker (`kiso/worker/` package)
+
+Split the monolithic `kiso/worker.py` (~1400 lines) into a `kiso/worker/` package with one module per task type. Each handler is independently importable and testable. The orchestration layer stays thin and type-stable.
+
+### Design
+
+Each task handler receives a `TaskContext` dataclass and returns a `TaskResult`. `_execute_plan` dispatches by task type.
+
+```python
+# kiso/worker/context.py
+@dataclass
+class TaskContext:
+    db: aiosqlite.Connection
+    config: Config
+    session: str
+    plan_id: int
+    goal: str
+    workspace: Path
+    plan_outputs: list[dict]
+    session_secrets: dict[str, str]
+    allowed_skills: list[str]
+    cancel_event: asyncio.Event
+
+@dataclass
+class TaskResult:
+    success: bool
+    output: str
+    replan_reason: str | None = None
+    retry_hint: str | None = None
+```
+
+### Target structure
+
+```
+kiso/worker/
+├── __init__.py   ← re-exports run_worker() — main.py import unchanged
+├── context.py    ← TaskContext, TaskResult
+├── loop.py       ← _execute_plan(), _process_message(), session loop, post-execution
+├── exec.py       ← handle_exec_task() (translate → run → review → retry)
+├── skill.py      ← handle_skill_task() (validate → run → review)
+├── search.py     ← handle_search_task() (run_searcher → review → retry)
+├── msg.py        ← handle_msg_task() (run_messenger → deliver webhook)
+└── utils.py      ← _truncate_output(), _build_exec_env(), _session_workspace(),
+                     _write_plan_outputs(), _report_pub_files(), etc.
+```
+
+### Changes
+
+| File | Action |
+|---|---|
+| `kiso/worker/__init__.py` | Re-export `run_worker` — `main.py` import unchanged |
+| `kiso/worker/context.py` | `TaskContext`, `TaskResult` dataclasses |
+| `kiso/worker/loop.py` | `_execute_plan`, `_process_message`, session loop, post-execution |
+| `kiso/worker/exec.py` | Exec handler: translate → run → review → worker retry |
+| `kiso/worker/skill.py` | Skill handler: validate → run → review |
+| `kiso/worker/search.py` | Search handler: run_searcher → review → worker retry |
+| `kiso/worker/msg.py` | Msg handler: run_messenger → deliver → webhook |
+| `kiso/worker/utils.py` | Shared helpers (env, workspace, truncation, pub files) |
+| `tests/test_worker.py` | Update imports; tests otherwise unchanged |
+
+- [ ] Create `kiso/worker/` package, extract modules above
+- [ ] `main.py` `from kiso.worker import run_worker` works unchanged
+- [ ] Each handler testable in isolation without importing the full `worker.py`
+- [ ] All existing tests pass
+
+**Verify:**
+```bash
+uv run pytest tests/ -x -q --ignore=tests/live
+```
+
+---
+
 ## Done
 
 When all milestones are checked off, kiso is production-ready per the documentation spec.

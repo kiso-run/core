@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
 import aiosqlite
 
 from kiso.store import (
     append_task_llm_call,
+    archive_low_confidence_facts,
     count_messages,
     create_plan,
     create_session,
     create_task,
+    decay_facts,
     delete_facts,
     get_all_sessions,
     get_facts,
@@ -28,6 +31,7 @@ from kiso.store import (
     save_fact,
     save_message,
     save_pending_item,
+    update_fact_usage,
     update_learning,
     update_plan_status,
     update_plan_usage,
@@ -49,8 +53,8 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
         r[0] for r in await cur.fetchall() if not r[0].startswith("sqlite_")
     )
     expected = [
-        "facts", "learnings", "messages", "pending",
-        "plans", "sessions", "tasks",
+        "facts", "facts_archive", "learnings", "messages",
+        "pending", "plans", "sessions", "tasks",
     ]
     assert tables == expected
 
@@ -885,3 +889,201 @@ async def test_update_task_retry_count(db: aiosqlite.Connection):
     await update_task_retry_count(db, task_id, 2)
     tasks = await get_tasks_for_plan(db, plan_id)
     assert tasks[0]["retry_count"] == 2
+
+
+# --- M34: facts enriched schema ---
+
+
+async def test_facts_have_category_column(db: aiosqlite.Connection):
+    cur = await db.execute("PRAGMA table_info(facts)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "category" in columns
+
+
+async def test_facts_have_confidence_column(db: aiosqlite.Connection):
+    cur = await db.execute("PRAGMA table_info(facts)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "confidence" in columns
+
+
+async def test_facts_have_last_used_column(db: aiosqlite.Connection):
+    cur = await db.execute("PRAGMA table_info(facts)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "last_used" in columns
+
+
+async def test_facts_have_use_count_column(db: aiosqlite.Connection):
+    cur = await db.execute("PRAGMA table_info(facts)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "use_count" in columns
+
+
+async def test_facts_archive_table_exists(db: aiosqlite.Connection):
+    cur = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='facts_archive'"
+    )
+    row = await cur.fetchone()
+    assert row is not None
+
+
+# --- M34: save_fact with category and confidence ---
+
+
+async def test_save_fact_with_category_and_confidence(db: aiosqlite.Connection):
+    fid = await save_fact(db, "Uses Docker", "curator", category="tool", confidence=0.9)
+    facts = await get_facts(db)
+    assert len(facts) == 1
+    assert facts[0]["content"] == "Uses Docker"
+    assert facts[0]["category"] == "tool"
+    assert facts[0]["confidence"] == 0.9
+
+
+async def test_save_fact_defaults(db: aiosqlite.Connection):
+    fid = await save_fact(db, "A fact", "curator")
+    facts = await get_facts(db)
+    assert facts[0]["category"] == "general"
+    assert facts[0]["confidence"] == 1.0
+    assert facts[0]["use_count"] == 0
+    assert facts[0]["last_used"] is None
+
+
+# --- M34: update_fact_usage ---
+
+
+async def test_update_fact_usage(db: aiosqlite.Connection):
+    fid = await save_fact(db, "Fact 1", "curator")
+    await update_fact_usage(db, [fid])
+    facts = await get_facts(db)
+    assert facts[0]["use_count"] == 1
+    assert facts[0]["last_used"] is not None
+
+
+async def test_update_fact_usage_increments(db: aiosqlite.Connection):
+    fid = await save_fact(db, "Fact 1", "curator")
+    await update_fact_usage(db, [fid])
+    await update_fact_usage(db, [fid])
+    facts = await get_facts(db)
+    assert facts[0]["use_count"] == 2
+
+
+async def test_update_fact_usage_empty_list(db: aiosqlite.Connection):
+    """Empty list is a no-op."""
+    fid = await save_fact(db, "Fact 1", "curator")
+    await update_fact_usage(db, [])
+    facts = await get_facts(db)
+    assert facts[0]["use_count"] == 0
+
+
+# --- M34: decay_facts ---
+
+
+async def test_decay_facts_stale(db: aiosqlite.Connection):
+    """Facts older than decay_days get confidence reduced."""
+    fid = await save_fact(db, "Old fact", "curator")
+    # Backdate created_at to 10 days ago
+    await db.execute(
+        "UPDATE facts SET created_at = datetime('now', '-10 days') WHERE id = ?",
+        (fid,),
+    )
+    await db.commit()
+    affected = await decay_facts(db, decay_days=7, decay_rate=0.1)
+    assert affected == 1
+    facts = await get_facts(db)
+    assert facts[0]["confidence"] == pytest.approx(0.9)
+
+
+async def test_decay_facts_recent_not_decayed(db: aiosqlite.Connection):
+    """Facts created recently are not decayed."""
+    await save_fact(db, "Fresh fact", "curator")
+    affected = await decay_facts(db, decay_days=7, decay_rate=0.1)
+    assert affected == 0
+    facts = await get_facts(db)
+    assert facts[0]["confidence"] == 1.0
+
+
+async def test_decay_facts_recently_used_not_decayed(db: aiosqlite.Connection):
+    """Facts used recently (even if created long ago) are not decayed."""
+    fid = await save_fact(db, "Used fact", "curator")
+    await db.execute(
+        "UPDATE facts SET created_at = datetime('now', '-30 days') WHERE id = ?",
+        (fid,),
+    )
+    await db.commit()
+    # Mark as recently used
+    await update_fact_usage(db, [fid])
+    affected = await decay_facts(db, decay_days=7, decay_rate=0.1)
+    assert affected == 0
+
+
+async def test_decay_facts_floor_at_zero(db: aiosqlite.Connection):
+    """Confidence doesn't go below 0.0."""
+    fid = await save_fact(db, "Dying fact", "curator", confidence=0.05)
+    await db.execute(
+        "UPDATE facts SET created_at = datetime('now', '-10 days') WHERE id = ?",
+        (fid,),
+    )
+    await db.commit()
+    await decay_facts(db, decay_days=7, decay_rate=0.1)
+    facts = await get_facts(db)
+    assert facts[0]["confidence"] == 0.0
+
+
+# --- M34: archive_low_confidence_facts ---
+
+
+async def test_archive_moves_low_confidence(db: aiosqlite.Connection):
+    """Facts below threshold are moved to facts_archive and deleted from facts."""
+    fid1 = await save_fact(db, "Strong fact", "curator", confidence=0.8)
+    fid2 = await save_fact(db, "Weak fact", "curator", confidence=0.2)
+    archived = await archive_low_confidence_facts(db, threshold=0.3)
+    assert archived == 1
+    facts = await get_facts(db)
+    assert len(facts) == 1
+    assert facts[0]["content"] == "Strong fact"
+    # Check archive
+    cur = await db.execute("SELECT * FROM facts_archive")
+    archive_rows = await cur.fetchall()
+    assert len(archive_rows) == 1
+    assert dict(archive_rows[0])["content"] == "Weak fact"
+    assert dict(archive_rows[0])["original_id"] == fid2
+
+
+async def test_archive_nothing_above_threshold(db: aiosqlite.Connection):
+    """No facts archived when all above threshold."""
+    await save_fact(db, "Good fact", "curator", confidence=0.9)
+    archived = await archive_low_confidence_facts(db, threshold=0.3)
+    assert archived == 0
+    facts = await get_facts(db)
+    assert len(facts) == 1
+
+
+async def test_archive_exact_threshold_not_archived(db: aiosqlite.Connection):
+    """Fact with confidence == threshold is NOT archived (only < threshold)."""
+    await save_fact(db, "Boundary fact", "curator", confidence=0.3)
+    archived = await archive_low_confidence_facts(db, threshold=0.3)
+    assert archived == 0
+    facts = await get_facts(db)
+    assert len(facts) == 1
+    assert facts[0]["confidence"] == 0.3
+
+
+async def test_save_fact_null_confidence_gets_default(db: aiosqlite.Connection):
+    """Schema DEFAULT 1.0 applies when no confidence is explicitly set."""
+    # Insert directly without the category/confidence params to test schema default
+    await db.execute(
+        "INSERT INTO facts (content, source) VALUES (?, ?)",
+        ("Raw insert fact", "test"),
+    )
+    await db.commit()
+    facts = await get_facts(db)
+    assert len(facts) == 1
+    assert facts[0]["confidence"] == 1.0
+    assert facts[0]["category"] == "general"
+    assert facts[0]["use_count"] == 0
+
+
+async def test_categorized_fact_unknown_category_stored(db: aiosqlite.Connection):
+    """Unknown category strings are stored as-is (no validation at DB level)."""
+    fid = await save_fact(db, "Exotic fact", "curator", category="exotic")
+    facts = await get_facts(db)
+    assert facts[0]["category"] == "exotic"

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from kiso.cli_session import _relative_time, run_sessions_command
+from cli.session import _relative_time, run_sessions_command
 
 
 # ── _relative_time ─────────────────────────────────────────

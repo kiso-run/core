@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.plugin_ops import (
+from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
     fetch_registry,

@@ -191,23 +191,23 @@ def main() -> None:
     elif args.command == "serve":
         _serve()
     elif args.command == "skill":
-        from kiso.cli_skill import run_skill_command
+        from cli.skill import run_skill_command
 
         run_skill_command(args)
     elif args.command == "connector":
-        from kiso.cli_connector import run_connector_command
+        from cli.connector import run_connector_command
 
         run_connector_command(args)
     elif args.command == "sessions":
-        from kiso.cli_session import run_sessions_command
+        from cli.session import run_sessions_command
 
         run_sessions_command(args)
     elif args.command == "env":
-        from kiso.cli_env import run_env_command
+        from cli.env import run_env_command
 
         run_env_command(args)
     elif args.command == "reset":
-        from kiso.cli_reset import run_reset_command
+        from cli.reset import run_reset_command
 
         run_reset_command(args)
 
@@ -220,7 +220,7 @@ def _msg_cmd(args: argparse.Namespace) -> None:
     import httpx
 
     from kiso.config import load_config
-    from kiso.render import detect_caps
+    from cli.render import detect_caps
 
     cfg = load_config()
     caps = detect_caps()
@@ -281,7 +281,7 @@ def _chat(args: argparse.Namespace) -> None:
     import httpx
 
     from kiso.config import load_config
-    from kiso.render import detect_caps, render_banner, render_cancel_start, render_user_prompt
+    from cli.render import detect_caps, render_banner, render_cancel_start, render_user_prompt
 
     cfg = load_config()
     caps = detect_caps()
@@ -376,7 +376,7 @@ def _poll_status(
 ) -> int:
     import time
 
-    from kiso.render import (
+    from cli.render import (
         CLEAR_LINE,
         render_command,
         render_llm_calls,
@@ -598,11 +598,11 @@ def _poll_status(
                     active_spinner_index = idx
                     active_spinner_total = total
 
-            # Detect planning phase: plan running, no task executing yet
+            # Detect planning phase: plan running/replanning, no task executing yet
             has_matching_running_plan = (
                 plan
                 and plan.get("message_id") == message_id
-                and plan.get("status") == "running"
+                and plan.get("status") in ("running", "replanning")
             )
             any_task_running = any(t.get("status") == "running" for t in tasks)
             planning_phase = bool(
@@ -615,7 +615,7 @@ def _poll_status(
             if (
                 plan
                 and plan.get("message_id") == message_id
-                and plan.get("status") != "running"
+                and plan.get("status") not in ("running", "replanning")
             ):
                 if plan.get("status") == "failed" and worker_running:
                     # Worker still running after plan failed — could be:
@@ -746,7 +746,7 @@ def _handle_slash(
 
 def _slash_help(caps: "TermCaps") -> None:  # noqa: F821
     """Print available REPL slash commands."""
-    from kiso.render import render_separator
+    from cli.render import render_separator
 
     print(render_separator(caps))
     print("  /help        — show this help")
@@ -763,7 +763,7 @@ def _slash_status(client, session: str, caps: "TermCaps") -> None:  # noqa: F821
     """Show server health, session message count, and worker state."""
     import httpx
 
-    from kiso.render import render_separator
+    from cli.render import render_separator
 
     print(render_separator(caps))
 
@@ -803,8 +803,8 @@ def _slash_sessions(client, user: str, caps: "TermCaps") -> None:  # noqa: F821
     """List sessions for the current user."""
     import httpx
 
-    from kiso.cli_session import _relative_time
-    from kiso.render import render_separator
+    from cli.session import _relative_time
+    from cli.render import render_separator
 
     print(render_separator(caps))
 

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.plugin_ops import require_admin
+from cli.plugin_ops import require_admin
 
 DB_PATH = KISO_DIR / "store.db"
 

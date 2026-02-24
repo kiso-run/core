@@ -88,7 +88,7 @@ class TestCollectBinaries:
 
 class TestCollectConnectors:
     def test_empty_when_no_connectors(self):
-        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
             result = _collect_connectors()
         assert result == []
 
@@ -97,7 +97,7 @@ class TestCollectConnectors:
         connector_dir = tmp_path / "myconn"
         connector_dir.mkdir()
         connectors = [{"name": "myconn", "platform": "discord", "path": str(connector_dir)}]
-        with patch("kiso.cli_connector.discover_connectors", return_value=connectors):
+        with patch("kiso.connectors.discover_connectors", return_value=connectors):
             result = _collect_connectors()
         assert len(result) == 1
         assert result[0]["name"] == "myconn"
@@ -110,7 +110,7 @@ class TestCollectConnectors:
         (connector_dir / ".pid").write_text("12345")
         connectors = [{"name": "myconn", "platform": "telegram", "path": str(connector_dir)}]
 
-        with patch("kiso.cli_connector.discover_connectors", return_value=connectors), \
+        with patch("kiso.connectors.discover_connectors", return_value=connectors), \
              patch("os.kill") as mock_kill:
             # os.kill(pid, 0) succeeds → process alive
             mock_kill.return_value = None
@@ -127,7 +127,7 @@ class TestCollectConnectors:
         (connector_dir / ".pid").write_text("99999")
         connectors = [{"name": "myconn", "platform": "discord", "path": str(connector_dir)}]
 
-        with patch("kiso.cli_connector.discover_connectors", return_value=connectors), \
+        with patch("kiso.connectors.discover_connectors", return_value=connectors), \
              patch("os.kill", side_effect=ProcessLookupError):
             result = _collect_connectors()
 
@@ -139,7 +139,7 @@ class TestCollectConnectors:
 
 class TestCollectSystemEnv:
     def test_returns_all_expected_keys(self, config):
-        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         expected_keys = {
             "os", "shell", "exec_cwd", "exec_env", "exec_timeout",
@@ -159,7 +159,7 @@ class TestCollectSystemEnv:
                 "max_replan_depth": 2,
             },
         )
-        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(cfg)
         assert env["exec_timeout"] == 60
         assert env["max_output_size"] == 512_000
@@ -182,7 +182,7 @@ class TestGetSystemEnvCache:
             return original_collect(cfg)
 
         with patch("kiso.sysenv.collect_system_env", side_effect=counting_collect), \
-             patch("kiso.cli_connector.discover_connectors", return_value=[]):
+             patch("kiso.connectors.discover_connectors", return_value=[]):
             env1 = get_system_env(config)
             env2 = get_system_env(config)
 
@@ -200,7 +200,7 @@ class TestGetSystemEnvCache:
             return original_collect(cfg)
 
         with patch("kiso.sysenv.collect_system_env", side_effect=counting_collect), \
-             patch("kiso.cli_connector.discover_connectors", return_value=[]):
+             patch("kiso.connectors.discover_connectors", return_value=[]):
             get_system_env(config)
             invalidate_cache()
             get_system_env(config)
@@ -223,7 +223,7 @@ class TestGetSystemEnvCache:
 
         with patch("kiso.sysenv.collect_system_env", side_effect=counting_collect), \
              patch("kiso.sysenv.time.monotonic", side_effect=mock_monotonic), \
-             patch("kiso.cli_connector.discover_connectors", return_value=[]):
+             patch("kiso.connectors.discover_connectors", return_value=[]):
             get_system_env(config)  # t=0, collects
             fake_time[0] = 100.0
             get_system_env(config)  # t=100, cached
@@ -412,18 +412,18 @@ class TestCollectBinariesSysBin:
 class TestCollectSystemEnvNewKeys:
     def test_includes_sys_bin_path(self, config):
         from kiso.config import KISO_DIR
-        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert env["sys_bin_path"] == str(KISO_DIR / "sys" / "bin")
 
     def test_includes_reference_docs_path(self, config):
         from kiso.config import KISO_DIR
-        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert env["reference_docs_path"] == str(KISO_DIR / "reference")
 
     def test_includes_registry_url(self, config):
-        with patch("kiso.cli_connector.discover_connectors", return_value=[]):
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert env["registry_url"] == "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"
 

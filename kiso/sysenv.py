@@ -73,7 +73,7 @@ def _collect_binaries(
 def _collect_connectors() -> list[dict[str, str]]:
     """Discover connectors and check running status via PID files."""
     # Lazy import to avoid circular deps
-    from kiso.cli_connector import discover_connectors
+    from kiso.connectors import discover_connectors
 
     connectors = discover_connectors()
     result: list[dict[str, str]] = []

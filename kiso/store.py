@@ -78,7 +78,25 @@ CREATE TABLE IF NOT EXISTS facts (
     content    TEXT NOT NULL,
     source     TEXT NOT NULL,
     session    TEXT,
+    category   TEXT DEFAULT 'general',
+    confidence REAL DEFAULT 1.0,
+    last_used  TEXT,
+    use_count  INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS facts_archive (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_id INTEGER,
+    content     TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    session     TEXT,
+    category    TEXT DEFAULT 'general',
+    confidence  REAL,
+    last_used   TEXT,
+    use_count   INTEGER DEFAULT 0,
+    archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at  DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS learnings (
@@ -136,6 +154,10 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ("plans", "llm_calls", "ALTER TABLE plans ADD COLUMN llm_calls TEXT"),
         ("tasks", "substatus", "ALTER TABLE tasks ADD COLUMN substatus TEXT"),
         ("tasks", "retry_count", "ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"),
+        ("facts", "category", "ALTER TABLE facts ADD COLUMN category TEXT DEFAULT 'general'"),
+        ("facts", "confidence", "ALTER TABLE facts ADD COLUMN confidence REAL DEFAULT 1.0"),
+        ("facts", "last_used", "ALTER TABLE facts ADD COLUMN last_used TEXT"),
+        ("facts", "use_count", "ALTER TABLE facts ADD COLUMN use_count INTEGER DEFAULT 0"),
     ]
     for table, column, sql in migrations:
         cur = await db.execute(f"PRAGMA table_info({table})")
@@ -515,11 +537,14 @@ async def save_fact(
     content: str,
     source: str,
     session: str | None = None,
+    category: str = "general",
+    confidence: float = 1.0,
 ) -> int:
     """Insert a fact row. Returns fact id."""
     cur = await db.execute(
-        "INSERT INTO facts (content, source, session) VALUES (?, ?, ?)",
-        (content, source, session),
+        "INSERT INTO facts (content, source, session, category, confidence) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (content, source, session, category, confidence),
     )
     await db.commit()
     return cur.lastrowid  # type: ignore[return-value]
@@ -618,6 +643,54 @@ async def get_unprocessed_trusted_messages(db: aiosqlite.Connection) -> list[dic
         "SELECT * FROM messages WHERE processed = 0 AND trusted = 1 ORDER BY id"
     )
     return await _rows_to_dicts(cur)
+
+
+async def update_fact_usage(
+    db: aiosqlite.Connection, fact_ids: list[int]
+) -> None:
+    """Bump use_count and last_used for the given fact IDs. No-op if list is empty."""
+    if not fact_ids:
+        return
+    placeholders = ",".join("?" for _ in fact_ids)
+    await db.execute(
+        f"UPDATE facts SET use_count = use_count + 1, "
+        f"last_used = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+        fact_ids,
+    )
+    await db.commit()
+
+
+async def decay_facts(
+    db: aiosqlite.Connection,
+    decay_days: int = 7,
+    decay_rate: float = 0.1,
+) -> int:
+    """Reduce confidence of facts not used in decay_days. Returns rows affected."""
+    cur = await db.execute(
+        "UPDATE facts SET confidence = MAX(0.0, confidence - ?) "
+        "WHERE COALESCE(last_used, created_at) < datetime('now', ?)",
+        (decay_rate, f"-{decay_days} days"),
+    )
+    await db.commit()
+    return cur.rowcount
+
+
+async def archive_low_confidence_facts(
+    db: aiosqlite.Connection, threshold: float = 0.3
+) -> int:
+    """Copy facts with confidence < threshold to facts_archive, then delete. Returns rows archived."""
+    cur = await db.execute(
+        "INSERT INTO facts_archive (original_id, content, source, session, "
+        "category, confidence, last_used, use_count, created_at) "
+        "SELECT id, content, source, session, category, confidence, "
+        "last_used, use_count, created_at FROM facts WHERE confidence < ?",
+        (threshold,),
+    )
+    archived = cur.rowcount
+    if archived:
+        await db.execute("DELETE FROM facts WHERE confidence < ?", (threshold,))
+    await db.commit()
+    return archived
 
 
 async def create_task(

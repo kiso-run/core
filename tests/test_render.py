@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kiso.render import (
+from cli.render import (
     CLEAR_LINE,
     TermCaps,
     _icon,
@@ -94,7 +94,7 @@ def test_detect_caps_width_fallback(monkeypatch):
     def _raise(*args, **kwargs):
         raise OSError("no terminal")
 
-    monkeypatch.setattr("kiso.render.os.get_terminal_size", _raise)
+    monkeypatch.setattr("cli.render.os.get_terminal_size", _raise)
     caps = detect_caps()
     assert caps.width == 80
     assert caps.height == 24

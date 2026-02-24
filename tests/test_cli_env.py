@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from kiso.cli_env import (
+from cli.env import (
     _parse_key,
     _parse_value,
     _read_lines,
@@ -29,7 +29,7 @@ def _make_args(env_command=None, **kwargs):
 
 def _mock_admin():
     """Patch _require_admin to be a no-op."""
-    return patch("kiso.cli_env._require_admin")
+    return patch("cli.env.require_admin")
 
 
 # ── _parse_key ──────────────────────────────────────────
@@ -115,7 +115,7 @@ class TestRunEnvCommandDispatch:
 class TestEnvSet:
     def test_creates_new_file(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("set", key="API_KEY", value="sk-123"))
 
         content = env_file.read_text()
@@ -125,7 +125,7 @@ class TestEnvSet:
     def test_appends_to_existing(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("EXISTING=val\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("set", key="NEW_KEY", value="new"))
 
         content = env_file.read_text()
@@ -135,7 +135,7 @@ class TestEnvSet:
     def test_updates_existing_key(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("# comment\nAPI_KEY=old\nOTHER=keep\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("set", key="API_KEY", value="new"))
 
         content = env_file.read_text()
@@ -147,7 +147,7 @@ class TestEnvSet:
     def test_preserves_comments(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("# Deploy secrets\n\nKEY=val\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("set", key="KEY", value="updated"))
 
         lines = env_file.read_text().splitlines()
@@ -162,7 +162,7 @@ class TestEnvGet:
     def test_gets_value(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("API_KEY=sk-abc\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("get", key="API_KEY"))
 
         assert "sk-abc" in capsys.readouterr().out
@@ -170,7 +170,7 @@ class TestEnvGet:
     def test_gets_quoted_value(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text('API_KEY="sk-quoted"\n')
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("get", key="API_KEY"))
 
         assert "sk-quoted" in capsys.readouterr().out
@@ -180,7 +180,7 @@ class TestEnvGet:
         env_file.write_text("OTHER=val\n")
         with (
             _mock_admin(),
-            patch("kiso.cli_env.ENV_FILE", env_file),
+            patch("cli.env.ENV_FILE", env_file),
             pytest.raises(SystemExit, match="1"),
         ):
             run_env_command(_make_args("get", key="MISSING"))
@@ -191,7 +191,7 @@ class TestEnvGet:
         env_file = tmp_path / ".env"
         with (
             _mock_admin(),
-            patch("kiso.cli_env.ENV_FILE", env_file),
+            patch("cli.env.ENV_FILE", env_file),
             pytest.raises(SystemExit, match="1"),
         ):
             run_env_command(_make_args("get", key="ANY"))
@@ -204,7 +204,7 @@ class TestEnvList:
     def test_lists_keys(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("# header\nALPHA=1\nBETA=2\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("list"))
 
         out = capsys.readouterr().out
@@ -214,14 +214,14 @@ class TestEnvList:
     def test_empty_file(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("# only comments\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("list"))
 
         assert "No deploy secrets" in capsys.readouterr().out
 
     def test_no_file(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("list"))
 
         assert "No deploy secrets" in capsys.readouterr().out
@@ -234,7 +234,7 @@ class TestEnvDelete:
     def test_deletes_key(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
         env_file.write_text("# header\nALPHA=1\nBETA=2\n")
-        with _mock_admin(), patch("kiso.cli_env.ENV_FILE", env_file):
+        with _mock_admin(), patch("cli.env.ENV_FILE", env_file):
             run_env_command(_make_args("delete", key="ALPHA"))
 
         content = env_file.read_text()
@@ -248,7 +248,7 @@ class TestEnvDelete:
         env_file.write_text("ONLY=this\n")
         with (
             _mock_admin(),
-            patch("kiso.cli_env.ENV_FILE", env_file),
+            patch("cli.env.ENV_FILE", env_file),
             pytest.raises(SystemExit, match="1"),
         ):
             run_env_command(_make_args("delete", key="NOPE"))
