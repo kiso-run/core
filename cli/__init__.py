@@ -543,16 +543,15 @@ def _poll_status(
                 # Msg tasks: only show via render_msg_output when done
                 if ttype == "msg":
                     if status == "done":
-                        # Verbose LLM detail BEFORE the output
+                        # Per-call LLM breakdown first, then verbose detail
+                        llm_detail = render_llm_calls(task.get("llm_calls"), caps)
+                        if llm_detail:
+                            print(llm_detail)
                         if verbose:
                             verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
                             if verbose_detail:
                                 print(verbose_detail)
                         print(render_msg_output(output, caps, bot_name))
-                        # Per-call LLM breakdown after output
-                        llm_detail = render_llm_calls(task.get("llm_calls"), caps)
-                        if llm_detail:
-                            print(llm_detail)
                         print(render_separator(caps))
                     continue
 
@@ -566,12 +565,6 @@ def _poll_status(
                 task_command = task.get("command")
                 if task_command:
                     print(render_command(task_command, caps))
-
-                # Verbose LLM detail BEFORE the task output
-                if verbose and status in ("done", "failed"):
-                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-                    if verbose_detail:
-                        print(verbose_detail)
 
                 # Show output for completed/failed tasks
                 if status in ("done", "failed"):
@@ -591,6 +584,12 @@ def _poll_status(
                 review_line = render_review(task, caps)
                 if review_line:
                     print(review_line)
+
+                # Verbose LLM detail AFTER compact review summary
+                if verbose and status in ("done", "failed"):
+                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+                    if verbose_detail:
+                        print(verbose_detail)
 
                 # Track running task for spinner
                 if status == "running":
