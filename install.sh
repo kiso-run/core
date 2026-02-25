@@ -396,7 +396,7 @@ max_replan_depth             = 3
 max_validation_retries       = 3
 max_worker_retries           = 1
 exec_timeout                 = 120    # seconds
-planner_timeout              = 60     # seconds
+planner_timeout              = 120    # seconds (planner + messenger LLM calls)
 max_output_size              = 1048576  # bytes (1 MB)
 fast_path_enabled            = true   # skip planner for simple chat messages
 
