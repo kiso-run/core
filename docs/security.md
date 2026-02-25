@@ -118,23 +118,32 @@ Skills run as subprocesses with `cwd=session workspace` for both roles. The sand
 
 ### Knowledge Isolation
 
-Kiso accumulates curated facts in the `kiso_facts` table (see `store.db`). These facts are
-currently **global** — every user's planner receives the full fact set on each request.
+Kiso accumulates curated facts in the `kiso_facts` table. These facts are currently
+**global**: `get_facts()` returns the full table with no filtering, so every planner call
+receives all facts ever curated, regardless of which session or channel it originates from.
 
-This is correct for `category = "project"`, `"tool"`, and `"general"` facts (e.g. "the DB is
-PostgreSQL", "ffmpeg is available") which are context-neutral shared knowledge.
+**Why this is a problem**: kiso may be deployed across multiple sessions — a Discord group
+channel (`discord-general`), a private Telegram chat (`telegram-marco`), a Slack workspace.
+A fact curated in one context (e.g. something learned in a private conversation) can
+surface in a completely different context where the participants don't know it and shouldn't.
 
-However, `category = "user"` facts (personal preferences, habits, communication style) create
-**cross-session leakage**: something kiso learns in `discord-general` can surface in
-`telegram-marco`, where a different set of users is present and may not know that information.
+**Scoping model (M43)**:
 
-**Planned fix (M43)**: User-category facts are scoped to the session where they were
-generated. Admin users retain global visibility across all sessions. Project/tool/general
-facts remain global. See DEV_PLAN.md M43.
+| Category | Scope |
+|---|---|
+| `project`, `tool`, `general` | Global — technical facts are context-neutral |
+| `user` | Session where generated — personal learnings stay in their context |
+| Any category, admin user | Global — admins have system-wide oversight |
 
-**Current mitigation**: The curator prompt explicitly discards secrets and credentials.
-Sensitive values should never be promoted as facts. Benign personal preferences can still
-cross session boundaries until M43 is implemented.
+The `facts` table already has a `session` column, and it is already populated for
+curator-promoted facts. The gap is purely in retrieval: `get_facts()` ignores the column.
+There is also a secondary bug: fact consolidation re-inserts facts without preserving
+`session`, silently making scoped facts global after each consolidation run. Both are fixed
+in M43.
+
+**Current mitigation**: The curator prompt explicitly discards secrets, credentials, and
+sensitive values — these should never be promoted as facts. Benign personal information
+(preferences, habits) can still cross session boundaries until M43 is implemented.
 
 ### Exec Command Validation
 

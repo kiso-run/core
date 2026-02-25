@@ -2112,44 +2112,76 @@ uv run pytest tests/test_store.py -k facts -v
 
 ## Milestone 43: Session-scoped fact isolation
 
-**Problem**: Facts are currently global — every user's planner receives the full `kiso_facts`
-set on each request. This creates cross-channel leakage: something kiso learns in
-`discord-general` (e.g. details of a private conversation, a user's personal preference) can
-surface in `telegram-marco` where a different set of people is present.
+### Problem
 
-The issue isn't who *generated* the fact, but in which *session context* it was discovered.
-The person in the new session may not know — and should not see — what was said elsewhere.
+Facts are currently global: `get_facts(db)` returns the full `kiso_facts` table with no
+filtering. Every planner call — regardless of session, user, or channel — receives all facts
+ever curated. This creates cross-channel leakage.
 
-**Scoping rules**:
-- `category = "project" | "tool" | "general"` — **global**. These are technical facts about
-  the system (e.g. "the DB is PostgreSQL", "ffmpeg is available"). They are context-neutral
-  and useful across all sessions.
-- `category = "user"` — **session-scoped**. Personal learnings (preferences, habits,
-  communication style) are visible only within the session where they were generated.
-  Exception: **admin users see all facts regardless of session** — they have global oversight.
+**Concrete scenario**: kiso is deployed with a Discord connector (`discord-general`) and a
+Telegram connector (`telegram-marco`). In the Discord group, someone mentions that Marco is
+working on a confidential project. The curator promotes this as a `user` fact. The next time
+Marco (or anyone else) sends a message on Telegram, kiso's planner context contains that
+fact and may volunteer it.
 
-**Fix**: Add a `session TEXT` origin column to `kiso_facts` (already exists as a column in
-the current schema — verify whether it's populated and used for filtering). Filter
-`category='user'` facts by `session` when fetching for non-admin users.
+The issue isn't *who* generated the fact, but *where* it was discovered. A fact learned in
+session A is contextually tied to that session — participants in session B were not present
+and may not know it.
 
-> **Note**: the exact implementation details (whether `session` is already stored, whether
-> the filter goes in `get_facts()` or `search_facts()`, whether admin bypass needs a new
-> parameter) should be verified against the current schema before implementation.
+### Design decision: strict session-scoping
+
+Two approaches were considered:
+
+**Option A — cross-session user facts**: user-category facts follow the user across all
+sessions they participate in. This preserves personal preferences (e.g. Marco's language
+preference learned on Telegram carries over to Discord). Requires querying which sessions a
+user participates in, defining what "participation" means, and handling edge cases.
+
+**Option B — strict session-scoping**: user-category facts are visible only in the session
+where they were generated. Personal facts are re-learned naturally as kiso interacts with
+each session. Simpler, no cross-session queries, no ambiguity.
+
+**Chosen: Option B.** The privacy guarantee is clear and the loss is minimal — kiso
+re-learning a personal preference in a new channel is natural chatbot behaviour and costs
+at most one extra planning cycle. The complexity of Option A is not worth the gain at this
+stage, and Option A can always be layered on top of Option B later if it proves necessary
+in practice.
+
+### Scoping rules
+
+| Category | Scope | Rationale |
+|---|---|---|
+| `project`, `tool`, `general` | Global (all sessions) | Technical facts about the system are context-neutral and useful everywhere |
+| `user` | Session where generated | Personal learnings are contextually tied to the session; other sessions should not receive them |
+| Any category, admin user | Global (all sessions) | Admins have system-wide oversight by definition |
+
+### Current state of the schema
+
+The `facts` table already has a `session TEXT` column, and it is already populated for
+curator-promoted facts (`_apply_curator_result` passes `session=session`). The retrieval
+layer ignores it entirely — `get_facts()` runs `SELECT * FROM facts` with no filter.
+
+There is a second bug: fact **consolidation** re-inserts facts without preserving `session`,
+silently making previously session-scoped `user` facts global after every consolidation run.
+Both issues must be fixed together.
 
 ### Changes
 
 | File | Change |
 |---|---|
-| `kiso/store.py` | `get_facts()` and `search_facts()`: filter `category='user'` facts by `session` (NULL or matching); pass `is_admin` flag to bypass filter for admin users |
-| `kiso/worker/loop.py` | Ensure `session` is stored on every promoted fact |
-| `kiso/brain.py` | Pass `session` and `is_admin` when fetching facts for planner and messenger |
+| `kiso/store.py` | `get_facts(db, session, is_admin)` — filter `category='user'` by session unless `is_admin=True`; `session=NULL` facts always included (treated as global) |
+| `kiso/worker/loop.py` | Fact consolidation: carry `session` from the original fact row when re-inserting after consolidation |
+| `kiso/brain.py` | Pass `session` and `is_admin` to `get_facts()` in both `build_planner_messages()` and `run_messenger()` |
 
-- [ ] Verify current schema: does `kiso_facts` already have a `session` column? Is it populated?
-- [ ] store.py: `get_facts()` / `search_facts()` filter `category='user'` by session unless `is_admin=True`
-- [ ] worker/loop.py: ensure session is stored when promoting facts via curator
-- [ ] brain.py: pass `session` + `is_admin` to fact fetch calls
-- [ ] tests: user-category fact from session A is not visible when querying from session B (non-admin)
-- [ ] tests: admin sees user-category facts from all sessions
+- [ ] store.py: update `get_facts()` signature — add `session: str | None`, `is_admin: bool = False`
+- [ ] store.py: SQL filter — `WHERE category != 'user' OR session IS NULL OR session = ?` (skipped when `is_admin=True`)
+- [ ] worker/loop.py: consolidation loop — read `session` from each source fact; pass it to `save_fact()`
+- [ ] brain.py: pass `session` + `is_admin` in `build_planner_messages()` call to `get_facts()`
+- [ ] brain.py: pass `session` + `is_admin` in `run_messenger()` call to `get_facts()`
+- [ ] tests: `user` fact from session A not returned when querying from session B (non-admin)
+- [ ] tests: `project`/`tool`/`general` facts returned regardless of session
+- [ ] tests: admin receives `user` facts from all sessions
+- [ ] tests: consolidation preserves `session` on re-inserted facts
 
 **Verify:**
 ```bash
