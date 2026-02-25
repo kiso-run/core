@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kiso.brain import PlanError, run_curator, run_planner, validate_plan, validate_curator
+from kiso.brain import PlanError, run_curator, run_fact_consolidation, run_planner, validate_plan, validate_curator
 from kiso.store import (
     create_plan,
     create_task,
@@ -21,6 +21,7 @@ from kiso.store import (
     get_pending_learnings,
     get_plan_for_session,
     get_tasks_for_plan,
+    save_fact,
     save_learning,
     save_message,
 )
@@ -728,4 +729,58 @@ class TestPerStepTokenTracking:
         all_output = " ".join((t.get("output") or "") for t in tasks)
         assert "chain-ok" in all_output, (
             f"Expected 'chain-ok' in task output (exec chaining), got: {all_output[:300]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# L4.9 — Fact consolidation (21c)
+# ---------------------------------------------------------------------------
+
+
+class TestFactConsolidation:
+    async def test_consolidation_preserves_topics(
+        self, live_config, seeded_db, live_session,
+    ):
+        """Seed 5+ diverse facts → run_fact_consolidation → result is non-empty
+        and key topics from the originals survive in the consolidated output.
+
+        This validates that the consolidation LLM does not silently destroy
+        accumulated knowledge when the facts table exceeds knowledge_max_facts.
+        """
+        seed = [
+            ("This project uses Python 3.12", "project"),
+            ("The database is PostgreSQL 15", "project"),
+            ("ffmpeg is available at /usr/bin/ffmpeg", "tool"),
+            ("git is installed; default branch is main", "tool"),
+            ("The user prefers concise responses without emoji", "user"),
+            ("The API is built with FastAPI using async endpoints", "project"),
+        ]
+        for content, category in seed:
+            await save_fact(
+                seeded_db, content, source="test",
+                session=live_session, category=category,
+            )
+
+        all_facts = await get_facts(seeded_db)
+        assert len(all_facts) >= 5, "Fixture: expected ≥5 seeded facts"
+
+        consolidated = await asyncio.wait_for(
+            run_fact_consolidation(live_config, all_facts, session=live_session),
+            timeout=TIMEOUT,
+        )
+
+        assert consolidated, "Consolidation returned an empty list"
+
+        combined = " ".join(f["content"].lower() for f in consolidated)
+
+        # Core technical facts must survive — if these are lost the knowledge
+        # base is essentially destroyed after consolidation.
+        assert "python" in combined or "3.12" in combined, (
+            f"Python version lost in consolidation. Result: {combined[:400]}"
+        )
+        assert "postgresql" in combined or "database" in combined, (
+            f"Database info lost in consolidation. Result: {combined[:400]}"
+        )
+        assert any(kw in combined for kw in ("ffmpeg", "git", "fastapi")), (
+            f"Tool/tech info lost in consolidation. Result: {combined[:400]}"
         )

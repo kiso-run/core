@@ -879,7 +879,7 @@ Risk: consolidation LLM returns garbage/minimal list → all accumulated knowled
 
 - [x] Add safety check: if `len(consolidated) < len(all_facts) * 0.3`, refuse consolidation (catastrophic shrinkage)
 - [x] Add safety check: if any consolidated fact is empty or < 10 chars, skip that entry
-- [ ] Add L4 live test: seed 5+ facts → trigger consolidation → verify consolidated facts cover the original topics
+- [x] Add L4 live test: seed 5+ facts → trigger consolidation → verify consolidated facts cover the original topics
 - [ ] Consider: soft-delete old facts instead of hard-delete, allow rollback — deferred, hard-delete + archive is sufficient for now
 
 ### 21d. Silent planning failure — no user feedback (MEDIUM-HIGH)
@@ -1070,13 +1070,13 @@ uv run kiso
 
 ## Milestone 24: Persistent system directory + Reference docs
 
-- [ ] `~/.kiso/sys/` directory: gitconfig, ssh/, bin/
-- [ ] `_build_exec_env()`: PATH with sys/bin, HOME, GIT_CONFIG_GLOBAL, GIT_SSH_COMMAND
-- [ ] `_init_kiso_dirs()`: create dirs at startup, sync bundled reference docs
-- [ ] `kiso/reference/skills.md` and `kiso/reference/connectors.md` bundled
-- [ ] `sysenv.py`: probe with extended PATH, show sys/bin and reference paths
-- [ ] Planner prompt: "read reference docs before planning unfamiliar tasks"
-- [ ] Tests
+- [x] `~/.kiso/sys/` directory: gitconfig, ssh/, bin/ — created by `_init_kiso_dirs()` in `main.py`
+- [x] `_build_exec_env()`: PATH with sys/bin, HOME, GIT_CONFIG_GLOBAL, GIT_SSH_COMMAND — `worker/utils.py`
+- [x] `_init_kiso_dirs()`: create dirs at startup, sync bundled reference docs — `main.py:53`
+- [x] `kiso/reference/skills.md` and `kiso/reference/connectors.md` bundled
+- [x] `sysenv.py`: probe with extended PATH, show sys/bin and reference paths — `collect_system_env()`
+- [x] Planner prompt: "read reference docs before planning unfamiliar tasks" — `planner.md`
+- [x] Tests — `test_worker.py` (`_build_exec_env` suite), `test_sysenv.py` (sys_bin + reference_docs_path)
 
 ---
 
@@ -2196,4 +2196,4 @@ uv run pytest tests/test_brain.py -k facts -v
 
 ## Done
 
-All milestones through M41 complete.
+All milestones through M41 complete. M24 also complete (discovered during M24 review — all tasks already implemented). M21 L4 live test complete.
