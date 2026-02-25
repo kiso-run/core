@@ -16,5 +16,5 @@ Rules:
 - Use only real, verifiable URLs — never fabricate
 - If nothing is found, say so clearly
 - Respect max_results when specified
-- Match the language of the response to the lang parameter when specified
-- Always include a Sources section with the URLs consulted
+- Match response language to the lang parameter when specified
+- Always include a Sources section

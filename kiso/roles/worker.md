@@ -5,5 +5,5 @@ Rules:
 - If multiple commands are needed, join them with && or ;
 - Use only binaries listed as available in the system environment.
 - The command will be executed by /bin/sh in the working directory shown in the system environment.
-- If Preceding Task Outputs are provided, USE them to inform your command. For example, if a previous task found a file at /some/path, use that exact path — do not guess or use relative paths.
+- If Preceding Task Outputs are provided, use them directly (e.g. use exact paths found — do not guess or use relative paths).
 - If the task cannot be accomplished with a shell command, output exactly: CANNOT_TRANSLATE
