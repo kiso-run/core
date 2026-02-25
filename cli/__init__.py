@@ -361,7 +361,7 @@ def _chat(args: argparse.Namespace) -> None:
         client.close()
 
 
-_POLL_EVERY = 6  # poll API every 6 iterations (6 × 80ms ≈ 480ms)
+_POLL_EVERY = 2  # poll API every 2 iterations (2 × 80ms ≈ 160ms)
 
 
 def _poll_status(
@@ -602,19 +602,25 @@ def _poll_status(
                     active_spinner_index = idx
                     active_spinner_total = total
 
-            # Detect planning phase: plan running/replanning, no task executing yet
+            # Done condition: plan matches our message and is no longer running
+            worker_running = data.get("worker_running", False)
+
+            # Detect planning phase: spinner shown while worker is thinking but
+            # no task is executing yet. This covers two sub-phases:
+            # 1. Pre-plan: worker running but plan not yet created (classifier +
+            #    planner LLM calls). This is the longest silent gap — up to 15s.
+            # 2. Post-plan: plan exists and is running but no task has started.
             has_matching_running_plan = (
                 plan
                 and plan.get("message_id") == message_id
                 and plan.get("status") in ("running", "replanning")
             )
+            has_matching_plan = bool(plan and plan.get("message_id") == message_id)
             any_task_running = any(t.get("status") == "running" for t in tasks)
             planning_phase = bool(
-                has_matching_running_plan and not any_task_running and not active_spinner_task
+                (has_matching_running_plan and not any_task_running and not active_spinner_task)
+                or (worker_running and not has_matching_plan)
             )
-
-            # Done condition: plan matches our message and is no longer running
-            worker_running = data.get("worker_running", False)
             should_break = False
             if (
                 plan
@@ -632,7 +638,7 @@ def _poll_status(
                     )
                     if all_rendered:
                         failed_stable_polls += 1
-                        if failed_stable_polls >= 10:  # ~5s (10 × 480ms)
+                        if failed_stable_polls >= 30:  # ~5s (30 × 160ms)
                             should_break = True
                     else:
                         failed_stable_polls = 0
