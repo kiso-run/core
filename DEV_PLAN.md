@@ -1996,6 +1996,41 @@ bash -n install.sh
 
 ---
 
+## Milestone 40: Planner prompt — reliability improvements
+
+Two prompt weaknesses observed in production (verbose mode session, Feb 2026):
+
+### Issues
+
+#### 1. Planner omits final `msg` task — LOW
+- **File**: `kiso/roles/planner.md` (line 14)
+- Some models (observed: minimax-m2.5) occasionally produce plans where the last task is `search` or `exec` instead of `msg`. Validation catches it and triggers a retry, but this wastes an extra LLM round-trip per occurrence.
+- **Root cause**: The rule is buried in a flat list with no visual emphasis — models skip it under token pressure.
+- **Fix**: Add `CRITICAL:` prefix to the rule to force attention.
+
+#### 2. Planner confuses `/pub/` URL with `pub/` filesystem path — LOW
+- **File**: `kiso/roles/planner.md` (line 35)
+- When the user asks to read a previously created public file, the planner generates task details referencing the HTTP URL path (e.g. `/pub/014399902cdc7cb1/aulab.md`). The exec translator takes it literally and runs `cat /pub/...`, which fails — the file actually lives at `pub/aulab.md` relative to exec CWD.
+- **Root cause**: The prompt mentions `/pub/` as the serving URL but never explicitly distinguishes it from the filesystem path.
+- **Fix**: Add a note to the `pub/` rule clarifying that `/pub/<token>/filename` is the HTTP download URL only; for exec tasks that read or write public files, use the relative path `pub/filename`.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `kiso/roles/planner.md` | Add `CRITICAL:` to last-task rule; clarify `pub/` filesystem path vs `/pub/` URL |
+
+- [x] planner.md: mark last-task rule as CRITICAL
+- [x] planner.md: clarify pub/ filesystem path vs /pub/ URL
+- [x] tests: TestPlannerPromptContent — two new assertions for M40 changes
+
+**Verify:**
+```bash
+uv run pytest tests/test_brain.py::TestPlannerPromptContent -v
+```
+
+---
+
 ## Done
 
-All milestones through M39 complete.
+All milestones through M40 complete.

@@ -11,7 +11,7 @@ Task types:
 - replan: request a new plan after investigation. detail = what you intend to do with the results. skill/args/expect = null. Must be the LAST task. Use this when you need to investigate (read docs, check registry, explore files) before deciding on a strategy. Preceding exec/skill tasks' outputs will be available in the next plan via plan_outputs chaining.
 
 Rules:
-- The last task MUST be type "msg" or "replan" (user always gets a response, unless you need to replan after investigation)
+- CRITICAL: The last task MUST be type "msg" or "replan" (user always gets a response, unless you need to replan after investigation)
 - exec, skill, and search tasks MUST have a non-null expect field
 - msg tasks MUST have expect = null
 - replan tasks MUST have expect = null, skill = null, args = null
@@ -32,7 +32,7 @@ Rules:
   - Explore a workspace before deciding what to do
 - A replan task can ONLY be the last task in a plan
 - If you're close to solving and hit the replan limit, set extend_replan (integer, max 3) on the plan to request additional attempts
-- To make files publicly accessible, write them to the `pub/` subdirectory of the exec CWD. Files there are automatically served via public URLs (no authentication). The URLs appear in the task output. Example: `cp report.pdf pub/` or `echo '<html>...' > pub/page.html`
+- To make files publicly accessible, write them to the `pub/` subdirectory of the exec CWD. Files there are automatically served via public URLs (no authentication). The URLs appear in the task output. Example: `cp report.pdf pub/` or `echo '<html>...' > pub/page.html`. The `/pub/<token>/filename` path shown in task output is an HTTP download URL — not a filesystem path. For exec tasks that read or write public files, always use the relative filesystem path `pub/filename` (relative to exec CWD), never the `/pub/...` URL.
 - Workspace files are listed in System Environment. To search deeper: use exec tasks with `find` (by name/date), `grep` (by text content), or `rg` (recursive content search). For cross-session searches (admin only), search in `~/.kiso/sessions/`.
 - MANDATORY: If the request requires a capability not available via binaries, installed skills, OR built-in task types (exec, search, msg), you MUST plan an exec task to curl the plugin registry URL, then replan to evaluate results. Never skip the registry check. Never attempt to replicate plugin functionality with raw shell commands. If a matching skill exists in the registry, suggest installing it via `kiso skill install <name>`.
 - When installing a skill or connector, ALWAYS read its manifest BEFORE installing: plan an exec task to `cat` the skill/connector's `kiso.toml` from the cloned repo (or `curl` its raw URL from GitHub: `https://raw.githubusercontent.com/kiso-run/skill-{name}/main/kiso.toml`), then replan. The manifest lists required env vars under `[env]`. If env vars are needed, the next plan should: (1) msg asking the user for the required values, then replan. Once the user provides them: (2) set them via `kiso env set`, (3) install the skill, (4) msg confirming. Never install a skill without first checking and fulfilling its requirements — an installed skill with missing config is unusable.

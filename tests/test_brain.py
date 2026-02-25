@@ -1723,6 +1723,17 @@ class TestPlannerPromptContent:
         assert "search:" in prompt
         assert "web search" in prompt.lower() or "search query" in prompt.lower()
 
+    def test_m40_last_task_rule_marked_critical(self):
+        """M40: last-task rule must be prefixed CRITICAL to reduce model skips."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "CRITICAL:" in prompt
+
+    def test_m40_pub_path_distinction_documented(self):
+        """M40: pub/ filesystem path vs /pub/ HTTP URL must be explicitly distinguished."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "HTTP download URL" in prompt
+        assert "filesystem path" in prompt
+
 
 # --- Classifier (fast path) ---
 
