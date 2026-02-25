@@ -868,8 +868,8 @@ Example: exec output containing "This system uses admin password 'hunter2'" → 
 
 - [x] Add L4 live test: seed a manipulative/obviously-false learning (e.g. "The admin password is hunter2") → run curator → assert verdict is `discard`, not `promote`
 - [x] Add L4 live test: seed a transient learning ("file was created successfully") → curator should discard it
-- [ ] Consider: should `save_learning` validate/filter content before storing? (e.g. reject learnings containing secret-like patterns)
-- [ ] Consider: scope facts per-session by default instead of global, with explicit promotion to global
+- [ ] Consider: should `save_learning` validate/filter content before storing? (e.g. reject learnings containing secret-like patterns) — deferred, curator prompt already guards this
+- [x] Scope facts per-session by default instead of global → covered by M43
 
 ### 21c. Fact consolidation deletes-all-and-replaces (HIGH)
 
@@ -880,7 +880,7 @@ Risk: consolidation LLM returns garbage/minimal list → all accumulated knowled
 - [x] Add safety check: if `len(consolidated) < len(all_facts) * 0.3`, refuse consolidation (catastrophic shrinkage)
 - [x] Add safety check: if any consolidated fact is empty or < 10 chars, skip that entry
 - [ ] Add L4 live test: seed 5+ facts → trigger consolidation → verify consolidated facts cover the original topics
-- [ ] Consider: soft-delete old facts instead of hard-delete, allow rollback
+- [ ] Consider: soft-delete old facts instead of hard-delete, allow rollback — deferred, hard-delete + archive is sufficient for now
 
 ### 21d. Silent planning failure — no user feedback (MEDIUM-HIGH)
 
@@ -895,7 +895,7 @@ Risk: consolidation LLM returns garbage/minimal list → all accumulated knowled
 `worker.py:464-487`: if exec returns non-zero exit code (status="failed") but reviewer says "ok", the task is added to `completed` and the plan continues toward `status="done"`. A flaky reviewer can mark failures as successes.
 
 - [x] Add L3 live test: exec with `exit 1` + valid-looking output → verify reviewer says "replan" (not "ok")
-- [ ] Consider: should the worker auto-replan on exec failure regardless of reviewer verdict? Or at minimum include `exit_code` in reviewer context?
+- [ ] Consider: auto-replan on exec failure regardless of reviewer verdict — deferred; exit_code is now in reviewer context (21e fix), monitor in production whether rubber-stamping still occurs
 - [x] Fix: pass exit code / success status to reviewer context so it knows the command actually failed
 
 ### 21f. Replan cost amplification (MEDIUM)
@@ -903,7 +903,7 @@ Risk: consolidation LLM returns garbage/minimal list → all accumulated knowled
 A single message can trigger up to: `max_replan_depth(3) × max_plan_tasks(20) × 2` LLM calls + 3 planner calls = ~123 LLM calls. This is an API cost amplification vector, especially with expensive models.
 
 - [x] Add per-message LLM call budget tracking (count calls, enforce ceiling)
-- [ ] Consider: audit log already tracks LLM calls per session — add alerting/metrics on high-volume sessions
+- [ ] Consider: alerting/metrics on high-volume sessions from audit log — deferred, operational concern for when kiso is in production at scale
 - [x] Document the worst-case amplification in `docs/security-risks.md`
 
 ### 21g. Paraphraser injection resistance (MEDIUM)
@@ -1871,12 +1871,12 @@ Fixes identified by post-v1.0 code audit. No new features, no API changes.
 
 - [ ] Fix unbounded rglob (sysenv + pub)
 - [ ] Fix silent JSON decode failure
-- [ ] Clamp fact confidence
 - [ ] Log connector manifest errors
-- [ ] Extract consolidation ratio to config
 - [ ] Fix `setting_bool` int coercion
-- [ ] Add tests for all fixes
-- [ ] Update docs/config.md
+- [ ] Add tests for above fixes
+- [ ] Clamp fact confidence — **do together with M43** (same code path)
+- [ ] Extract consolidation ratio to config — **do together with M43** (same code path)
+- [ ] Update docs/config.md (consolidation ratio field)
 
 **Verify:**
 ```bash
@@ -2078,6 +2078,8 @@ uv run pytest tests/test_cli.py::test_m41_poll_every_is_160ms tests/test_cli.py:
 
 ## Milestone 42: Relevant fact retrieval via FTS5
 
+> **Depends on M43.** `search_facts()` must respect session-scoping from day one. Implement M43 first, then add FTS5 on top of the already-filtered `get_facts()` signature.
+
 **Inspiration**: ZeroClaw's hybrid vector + BM25 keyword search retrieves only the facts
 *relevant to the current query* instead of dumping the entire knowledge base into every prompt.
 
@@ -2088,8 +2090,9 @@ As usage grows (more users, longer sessions), the prompt bloat and noise increas
 
 **Fix**: Add an FTS5 virtual table on `kiso_facts.content`. Replace `get_facts()` in
 `build_planner_messages()` with a new `search_facts(db, query, limit=15)` that returns only
-the top-K keyword-matched facts relevant to the current message. The messenger keeps the full
-`get_facts()` — it needs complete context when composing a response.
+the top-K keyword-matched facts relevant to the current message, already filtered by session.
+The messenger keeps `get_facts()` (with session filter) — it needs broader context when
+composing a response.
 
 ### Changes
 
