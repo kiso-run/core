@@ -2064,20 +2064,18 @@ the plan appears, and completed steps appear all at once instead of one at a tim
 | `cli/__init__.py` | Move `worker_running` read before `planning_phase`; extend `planning_phase` condition to cover pre-plan phase |
 | `cli/__init__.py` | `_POLL_EVERY = 6` → `_POLL_EVERY = 2` |
 
-- [ ] Move `worker_running` read before `planning_phase` assignment
-- [ ] Extend `planning_phase` to cover pre-plan worker phase
-- [ ] Reduce `_POLL_EVERY` from 6 to 2
+- [x] Move `worker_running` read before `planning_phase` assignment
+- [x] Extend `planning_phase` to cover pre-plan worker phase
+- [x] Reduce `_POLL_EVERY` from 6 to 2
+- [x] tests: `test_m41_poll_every_is_160ms`, `test_m41_shows_spinner_before_plan_created`
 
 **Verify:**
 ```bash
-# Manual — start kiso, send a message, observe:
-# 1. Spinner appears immediately after submit (no frozen gap)
-# 2. Fast exec tasks show ▶ spinner before ✓, not just ✓ directly
-uv run pytest tests/test_cli.py -x -q
+uv run pytest tests/test_cli.py::test_m41_poll_every_is_160ms tests/test_cli.py::test_m41_shows_spinner_before_plan_created -v
 ```
 
 ---
 
 ## Done
 
-All milestones through M40 complete.
+All milestones through M41 complete.

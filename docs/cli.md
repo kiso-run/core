@@ -104,9 +104,9 @@ This is useful for debugging prompt issues, verifying what context the LLM recei
 
 > **Known limitation — batch rendering**: LLM call data is currently stored in bulk when a task completes (`update_task_usage`), not incrementally after each LLM call. This means verbose panels appear when the task finishes — not between phases (e.g., searching → reviewing). The `append_task_llm_call()` store function exists but is not yet wired into the worker. A future milestone will add explicit per-call appends to enable true incremental rendering.
 
-> **Known limitation — no spinner before the plan exists (M41)**: The planning spinner only activates once the plan is written to the database, which happens *after* the classifier + planner LLM calls complete (typically 4–15 s). During that window the CLI shows nothing and can appear frozen. Fix planned in M41: activate the spinner as soon as `worker_running=True`, even before the plan is created.
+> **M41 — spinner before the plan exists**: The planning spinner activates as soon as `worker_running=True`, even before the plan is written to the database. This covers the classifier + planner LLM calls (typically 4–15 s) that previously left the CLI appearing frozen.
 
-> **Known limitation — fast tasks appear all at once (M41)**: The poll interval is ~480 ms (`_POLL_EVERY = 6` × 80 ms loop). Tasks that complete in under 480 ms are never observed in `"running"` state, so no per-task spinner is shown — they appear in bulk on the next poll, already marked done. Fix planned in M41: reduce to 160 ms (`_POLL_EVERY = 2`).
+> **M41 — fast task visibility**: The poll interval is 160 ms (`_POLL_EVERY = 2` × 80 ms loop), reduced from 480 ms. Most tasks are now observed in `"running"` state before completing, so per-task spinners appear correctly.
 
 #### Visual Elements
 

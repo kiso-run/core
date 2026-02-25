@@ -10,6 +10,7 @@ import pytest
 
 from cli import (
     _ExitRepl,
+    _POLL_EVERY,
     _SLASH_COMMANDS,
     _handle_slash,
     _msg_cmd,
@@ -1844,5 +1845,52 @@ def test_poll_status_shows_review_on_llm_count_change(capsys, plain_caps):
     assert "review: ok" in out
     # Final done render shows output
     assert "success" in out
+
+
+# ── M41: CLI polling UX gaps ───────────────────────────────────────────────────
+
+
+def test_m41_poll_every_is_160ms():
+    """M41: poll interval must be 2 iterations × 80 ms = 160 ms (was 480 ms)."""
+    assert _POLL_EVERY == 2
+
+
+def test_m41_shows_spinner_before_plan_created(capsys):
+    """M41: planning spinner must activate when worker is running but plan not yet created.
+
+    During the pre-plan phase (classifier + planner LLM calls, typically 4-15 s) the
+    server returns worker_running=True but plan=None.  The CLI must show the
+    'Planning...' spinner rather than appearing frozen.
+    """
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    # First poll: worker running, no plan yet (classifier + planner not done)
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": None,
+        "tasks": [],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: everything done
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Do stuff", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond",
+             "status": "done", "output": "Done."},
+        ],
+        "worker_running": False,
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
+
+    out = capsys.readouterr().out
+    assert "Planning..." in out
 
 
