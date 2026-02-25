@@ -154,7 +154,7 @@ Common patterns:
 
 **3. Rules** — the expected JSON format, available task types, available skills with args schemas, caller role, and these constraints:
 - Task `detail` must be self-contained — the worker does not see the conversation
-- The last task must be `type: "msg"` or `type: "replan"` — the user always gets a final response, or investigation triggers a new plan
+- **CRITICAL**: The last task must be `type: "msg"` or `type: "replan"` — the user always gets a final response, or investigation triggers a new plan. This rule is marked `CRITICAL:` in the prompt because some models skip it under token pressure, wasting a validation retry.
 - `exec`, `skill`, and `search` tasks must have an `expect` field (they are always reviewed)
 - `msg` tasks are the only way to communicate with the user
 - **Asking the user**: if the planner needs information it doesn't have, it ends the plan with a `msg` task asking the question. The next message cycle will have the user's answer in context (recent messages + msg outputs). Two cases:
@@ -164,7 +164,7 @@ Common patterns:
 - If a user (non-admin) shares credentials, extract them into `secrets` (ephemeral, not persisted) and inform the user they are temporary
 - If a user asks to permanently configure a credential, respond with a `msg` task telling them to ask an admin to set it as a deploy secret via `kiso env set`
 - If an admin asks to configure a credential, generate exec tasks: `kiso env set ... && kiso env reload`
-- To make files publicly accessible, write them to `pub/` in the exec CWD. Files there are auto-served at `/pub/` URLs (no auth). URLs appear in exec task output
+- To make files publicly accessible, write them to `pub/` in the exec CWD. Files there are auto-served at `/pub/` URLs (no auth). URLs appear in exec task output. **Important**: `/pub/<token>/filename` is the HTTP download URL — not a filesystem path. For exec tasks that read or write public files, always use the relative path `pub/filename` (relative to exec CWD).
 
 ### Task Fields
 
