@@ -116,32 +116,25 @@ The planner receives the user's allowed skill list and only sees those skills in
 
 Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
-### Supervised Exec (planned — M44)
-
-An optional `confirm_exec = true` flag per user will pause exec tasks before execution and
-require explicit confirmation via the originating connector. Useful for risk-sensitive users
-or high-impact workflows where the user wants oversight over what kiso executes on their
-behalf. See DEV_PLAN.md M44 for the full design.
-
 ### Knowledge Isolation
 
 Kiso accumulates curated facts in the `kiso_facts` table (see `store.db`). These facts are
 currently **global** — every user's planner receives the full fact set on each request.
 
 This is correct for `category = "project"`, `"tool"`, and `"general"` facts (e.g. "the DB is
-PostgreSQL", "ffmpeg is available") which are genuinely shared knowledge.
+PostgreSQL", "ffmpeg is available") which are context-neutral shared knowledge.
 
-However, `category = "user"` facts (personal preferences, habits, communication style) can
-leak between users: a fact generated from Marco's session is visible in Anna's planner
-context. This is a correctness and privacy gap.
+However, `category = "user"` facts (personal preferences, habits, communication style) create
+**cross-session leakage**: something kiso learns in `discord-general` can surface in
+`telegram-marco`, where a different set of users is present and may not know that information.
 
-**Planned fix (M43)**: Add a `username` column to `kiso_facts`. User-category facts are
-scoped to the user who generated them; project/tool/general facts remain global. See
-DEV_PLAN.md M43 for the full design.
+**Planned fix (M43)**: User-category facts are scoped to the session where they were
+generated. Admin users retain global visibility across all sessions. Project/tool/general
+facts remain global. See DEV_PLAN.md M43.
 
-**Current mitigation**: The curator prompt explicitly discards secrets and credentials. Facts
-about personal identity (passwords, API keys) should never be promoted. However, benign
-personal preferences can still cross user boundaries until M43 is implemented.
+**Current mitigation**: The curator prompt explicitly discards secrets and credentials.
+Sensitive values should never be promoted as facts. Benign personal preferences can still
+cross session boundaries until M43 is implemented.
 
 ### Exec Command Validation
 

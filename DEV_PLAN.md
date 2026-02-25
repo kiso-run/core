@@ -2110,135 +2110,51 @@ uv run pytest tests/test_store.py -k facts -v
 
 ---
 
-## Milestone 43: Per-user fact scoping
+## Milestone 43: Session-scoped fact isolation
 
-**Inspiration**: ZeroClaw's per-agent memory isolation. In kiso's multi-user deployment,
-facts are currently global: all facts (regardless of who generated them) are visible to every
-user's planner. This is a correctness and privacy issue.
+**Problem**: Facts are currently global — every user's planner receives the full `kiso_facts`
+set on each request. This creates cross-channel leakage: something kiso learns in
+`discord-general` (e.g. details of a private conversation, a user's personal preference) can
+surface in `telegram-marco` where a different set of people is present.
 
-**Problem**:
-- `category = "user"` facts represent *personal* learnings about a specific user
-  (e.g. "Marco prefers Italian", "Anna's project uses Python 3.12"). These are stored in
-  `kiso_facts` with a `session` column but `get_facts()` and `search_facts()` return them
-  for all users.
-- `category = "project" | "tool" | "general"` facts are genuinely shared across users
-  (e.g. "the DB is PostgreSQL", "ffmpeg is available") and should remain global.
+The issue isn't who *generated* the fact, but in which *session context* it was discovered.
+The person in the new session may not know — and should not see — what was said elsewhere.
 
-**Fix**: Add a `username TEXT` column to `kiso_facts`. When promoting a `category = "user"`
-fact from the curator, record the username of the session that generated it. When fetching
-facts, filter: global categories are returned always, `user`-category facts are filtered to
-the current username.
+**Scoping rules**:
+- `category = "project" | "tool" | "general"` — **global**. These are technical facts about
+  the system (e.g. "the DB is PostgreSQL", "ffmpeg is available"). They are context-neutral
+  and useful across all sessions.
+- `category = "user"` — **session-scoped**. Personal learnings (preferences, habits,
+  communication style) are visible only within the session where they were generated.
+  Exception: **admin users see all facts regardless of session** — they have global oversight.
+
+**Fix**: Add a `session TEXT` origin column to `kiso_facts` (already exists as a column in
+the current schema — verify whether it's populated and used for filtering). Filter
+`category='user'` facts by `session` when fetching for non-admin users.
+
+> **Note**: the exact implementation details (whether `session` is already stored, whether
+> the filter goes in `get_facts()` or `search_facts()`, whether admin bypass needs a new
+> parameter) should be verified against the current schema before implementation.
 
 ### Changes
 
 | File | Change |
 |---|---|
-| `kiso/store.py` | Add `username` column to `kiso_facts`; update `save_fact()`, `get_facts()`, `search_facts()` to filter `category='user'` by username |
-| `kiso/worker/loop.py` | Pass `username` when calling `save_fact()` for user-category facts |
-| `kiso/brain.py` | Pass `username` to `get_facts()` / `search_facts()` calls |
+| `kiso/store.py` | `get_facts()` and `search_facts()`: filter `category='user'` facts by `session` (NULL or matching); pass `is_admin` flag to bypass filter for admin users |
+| `kiso/worker/loop.py` | Ensure `session` is stored on every promoted fact |
+| `kiso/brain.py` | Pass `session` and `is_admin` when fetching facts for planner and messenger |
 
-- [ ] store.py: migration — add `username TEXT` to `kiso_facts` (nullable, default NULL = global)
-- [ ] store.py: `save_fact()` accepts optional `username`; stores it for `category='user'` facts
-- [ ] store.py: `get_facts()` and `search_facts()` filter `category='user'` by username (NULL = visible to all)
-- [ ] worker/loop.py: pass username when promoting curator facts
-- [ ] brain.py: pass username when fetching facts for planner and messenger
-- [ ] tests: user-category facts from user A are not visible to user B's planner
+- [ ] Verify current schema: does `kiso_facts` already have a `session` column? Is it populated?
+- [ ] store.py: `get_facts()` / `search_facts()` filter `category='user'` by session unless `is_admin=True`
+- [ ] worker/loop.py: ensure session is stored when promoting facts via curator
+- [ ] brain.py: pass `session` + `is_admin` to fact fetch calls
+- [ ] tests: user-category fact from session A is not visible when querying from session B (non-admin)
+- [ ] tests: admin sees user-category facts from all sessions
 
 **Verify:**
 ```bash
 uv run pytest tests/test_store.py -k facts -v
 uv run pytest tests/test_brain.py -k facts -v
-```
-
----
-
-## Milestone 44: Supervised exec mode per user
-
-**Inspiration**: ZeroClaw's `autonomy = "readonly" | "supervised" | "full"` per-agent config.
-In kiso's multi-user deployment, users can trigger `exec` tasks that affect their session
-workspace. Some users (or admins on their behalf) may want to require explicit confirmation
-before exec commands run.
-
-**Problem**: Currently the only exec gating is the global deny-list (destructive patterns) and
-the sandboxed vs unrestricted distinction (user vs admin). There's no per-user oversight
-mechanism: once a user sends a message, exec tasks run automatically without confirmation.
-For risk-sensitive users or high-impact commands, this is a gap.
-
-**Fix**: Add an optional `confirm_exec = false` boolean to the `[users.*]` config block.
-When `true`, exec tasks are held in a `pending_confirm` status before execution. Kiso sends a
-confirmation webhook to the connector with the planned command. The connector delivers it to the
-user who responds with an approval or rejection. A new API endpoint (`POST /tasks/{id}/confirm`)
-receives the decision. Rejected tasks are marked `failed` with reason "user rejected"; the worker
-continues to the next task (or escalates per normal replan logic).
-
-### Changes
-
-| File | Change |
-|---|---|
-| `kiso/config.py` | Add optional `confirm_exec: bool = False` to `User` dataclass |
-| `kiso/worker/exec.py` | Before executing: check `confirm_exec`; if true, emit `pending_confirm` status and wait for confirmation event |
-| `kiso/main.py` | New endpoint `POST /tasks/{id}/confirm` accepting `{"approved": true/false}` |
-| `kiso/store.py` | New task status `pending_confirm`; store confirmation result |
-| `docs/config.md` | Document `confirm_exec` field |
-| `docs/security.md` | Update §4 Role-Based Permissions table |
-
-- [ ] config.py: add `confirm_exec: bool = False` to User
-- [ ] store.py: add `pending_confirm` task status
-- [ ] worker/exec.py: supervised exec pause + await confirmation
-- [ ] main.py: `POST /tasks/{id}/confirm` endpoint
-- [ ] docs/config.md + docs/security.md: document new field and behavior
-- [ ] tests: exec task pauses when confirm_exec=True; approved tasks complete; rejected tasks fail
-
-**Verify:**
-```bash
-uv run pytest tests/test_worker.py -k confirm -v
-```
-
----
-
-## Milestone 45: `kiso doctor` diagnostic subcommand
-
-**Inspiration**: ZeroClaw's `zeroclaw doctor` command that checks daemon health, connector
-freshness, and skill configuration in a single unified diagnostic view.
-
-**Problem**: In a multi-user, multi-connector deployment, debugging kiso is hard. The current
-tools are: `GET /health` (binary ok/error), `/status` REPL command (session-level), and
-manual file inspection. When something breaks — a skill missing its env var, a connector
-that can't reach the server, a DB with stale running tasks — there's no single command that
-surfaces all issues at once.
-
-**Fix**: Add a `kiso doctor` CLI subcommand that aggregates local + remote diagnostics:
-- **Server**: `GET /health` reachable? version?
-- **Database**: via API — stale running plans/tasks? message queue depths?
-- **Skills**: list installed skills from `~/.kiso/skills/`; for each, check required env vars
-  in `kiso.toml` against `~/.kiso/.env` — report which vars are missing
-- **Connectors**: list installed connectors from `~/.kiso/connectors/`; same env var check;
-  list which platforms they serve
-- **Users**: list usernames, roles, skill access (from API, admin token only)
-- **Recent errors**: last 5 entries from `~/.kiso/audit/` marked as errors/failures
-
-Output uses ✓ / ✗ / ⚠ symbols, structured by section.
-
-### Changes
-
-| File | Change |
-|---|---|
-| `cli/__init__.py` | Add `doctor` subcommand |
-| `cli/doctor.py` | New module: local + remote diagnostic checks |
-| `docs/cli.md` | Document `kiso doctor` |
-
-- [ ] cli/doctor.py: server health check
-- [ ] cli/doctor.py: skills env var check
-- [ ] cli/doctor.py: connectors env var check
-- [ ] cli/doctor.py: recent audit errors
-- [ ] cli/__init__.py: wire up `doctor` subcommand
-- [ ] docs/cli.md: document the command and its output
-- [ ] tests: mock checks produce correct pass/warn/fail output
-
-**Verify:**
-```bash
-kiso doctor
-uv run pytest tests/test_cli.py -k doctor -v
 ```
 
 ---
