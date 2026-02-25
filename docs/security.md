@@ -97,7 +97,7 @@ Each user needs an actual Linux user for the exec sandbox (see below). The usern
 | `admin` | `exec` (unrestricted), `msg`, `skill`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
 | `user` | `exec` (sandboxed), `msg`, `skill`, `search` | per-user (`skills` field) | no | `role = "user"` in `[users]` |
 
-Both roles can use all task types. The differences are the **sandbox** and **skill access**.
+Both roles can use all task types. The differences are the **sandbox**, **skill access**, and optionally **exec confirmation**.
 
 ### Skill Access Control
 
@@ -115,6 +115,33 @@ The planner receives the user's allowed skill list and only sees those skills in
 - **user exec**: runs with `cwd=~/.kiso/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `~/.kiso/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
 Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
+
+### Supervised Exec (planned — M44)
+
+An optional `confirm_exec = true` flag per user will pause exec tasks before execution and
+require explicit confirmation via the originating connector. Useful for risk-sensitive users
+or high-impact workflows where the user wants oversight over what kiso executes on their
+behalf. See DEV_PLAN.md M44 for the full design.
+
+### Knowledge Isolation
+
+Kiso accumulates curated facts in the `kiso_facts` table (see `store.db`). These facts are
+currently **global** — every user's planner receives the full fact set on each request.
+
+This is correct for `category = "project"`, `"tool"`, and `"general"` facts (e.g. "the DB is
+PostgreSQL", "ffmpeg is available") which are genuinely shared knowledge.
+
+However, `category = "user"` facts (personal preferences, habits, communication style) can
+leak between users: a fact generated from Marco's session is visible in Anna's planner
+context. This is a correctness and privacy gap.
+
+**Planned fix (M43)**: Add a `username` column to `kiso_facts`. User-category facts are
+scoped to the user who generated them; project/tool/general facts remain global. See
+DEV_PLAN.md M43 for the full design.
+
+**Current mitigation**: The curator prompt explicitly discards secrets and credentials. Facts
+about personal identity (passwords, API keys) should never be promoted. However, benign
+personal preferences can still cross user boundaries until M43 is implemented.
 
 ### Exec Command Validation
 

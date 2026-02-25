@@ -2076,6 +2076,173 @@ uv run pytest tests/test_cli.py::test_m41_poll_every_is_160ms tests/test_cli.py:
 
 ---
 
+## Milestone 42: Relevant fact retrieval via FTS5
+
+**Inspiration**: ZeroClaw's hybrid vector + BM25 keyword search retrieves only the facts
+*relevant to the current query* instead of dumping the entire knowledge base into every prompt.
+
+**Problem**: `get_facts(db)` returns all facts and injects them into every planner call.
+With `knowledge_max_facts = 50` this already means 50 facts injected unconditionally — the
+planner receives facts about Marco's Python setup when Anna asks about a cooking recipe.
+As usage grows (more users, longer sessions), the prompt bloat and noise increase linearly.
+
+**Fix**: Add an FTS5 virtual table on `kiso_facts.content`. Replace `get_facts()` in
+`build_planner_messages()` with a new `search_facts(db, query, limit=15)` that returns only
+the top-K keyword-matched facts relevant to the current message. The messenger keeps the full
+`get_facts()` — it needs complete context when composing a response.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `kiso/store.py` | FTS5 virtual table `kiso_facts_fts` on `content`; trigger to keep it in sync; `search_facts(db, query, limit)` function |
+| `kiso/brain.py` | `build_planner_messages()`: replace `get_facts()` with `search_facts(query=message_content, limit=15)` |
+
+- [ ] store.py: create `kiso_facts_fts` FTS5 table + sync triggers
+- [ ] store.py: implement `search_facts(db, query, limit=15)`
+- [ ] brain.py: use `search_facts()` in planner context (keep `get_facts()` for messenger)
+- [ ] tests: FTS5 search returns relevant facts and ignores unrelated ones
+
+**Verify:**
+```bash
+uv run pytest tests/test_store.py -k facts -v
+```
+
+---
+
+## Milestone 43: Per-user fact scoping
+
+**Inspiration**: ZeroClaw's per-agent memory isolation. In kiso's multi-user deployment,
+facts are currently global: all facts (regardless of who generated them) are visible to every
+user's planner. This is a correctness and privacy issue.
+
+**Problem**:
+- `category = "user"` facts represent *personal* learnings about a specific user
+  (e.g. "Marco prefers Italian", "Anna's project uses Python 3.12"). These are stored in
+  `kiso_facts` with a `session` column but `get_facts()` and `search_facts()` return them
+  for all users.
+- `category = "project" | "tool" | "general"` facts are genuinely shared across users
+  (e.g. "the DB is PostgreSQL", "ffmpeg is available") and should remain global.
+
+**Fix**: Add a `username TEXT` column to `kiso_facts`. When promoting a `category = "user"`
+fact from the curator, record the username of the session that generated it. When fetching
+facts, filter: global categories are returned always, `user`-category facts are filtered to
+the current username.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `kiso/store.py` | Add `username` column to `kiso_facts`; update `save_fact()`, `get_facts()`, `search_facts()` to filter `category='user'` by username |
+| `kiso/worker/loop.py` | Pass `username` when calling `save_fact()` for user-category facts |
+| `kiso/brain.py` | Pass `username` to `get_facts()` / `search_facts()` calls |
+
+- [ ] store.py: migration — add `username TEXT` to `kiso_facts` (nullable, default NULL = global)
+- [ ] store.py: `save_fact()` accepts optional `username`; stores it for `category='user'` facts
+- [ ] store.py: `get_facts()` and `search_facts()` filter `category='user'` by username (NULL = visible to all)
+- [ ] worker/loop.py: pass username when promoting curator facts
+- [ ] brain.py: pass username when fetching facts for planner and messenger
+- [ ] tests: user-category facts from user A are not visible to user B's planner
+
+**Verify:**
+```bash
+uv run pytest tests/test_store.py -k facts -v
+uv run pytest tests/test_brain.py -k facts -v
+```
+
+---
+
+## Milestone 44: Supervised exec mode per user
+
+**Inspiration**: ZeroClaw's `autonomy = "readonly" | "supervised" | "full"` per-agent config.
+In kiso's multi-user deployment, users can trigger `exec` tasks that affect their session
+workspace. Some users (or admins on their behalf) may want to require explicit confirmation
+before exec commands run.
+
+**Problem**: Currently the only exec gating is the global deny-list (destructive patterns) and
+the sandboxed vs unrestricted distinction (user vs admin). There's no per-user oversight
+mechanism: once a user sends a message, exec tasks run automatically without confirmation.
+For risk-sensitive users or high-impact commands, this is a gap.
+
+**Fix**: Add an optional `confirm_exec = false` boolean to the `[users.*]` config block.
+When `true`, exec tasks are held in a `pending_confirm` status before execution. Kiso sends a
+confirmation webhook to the connector with the planned command. The connector delivers it to the
+user who responds with an approval or rejection. A new API endpoint (`POST /tasks/{id}/confirm`)
+receives the decision. Rejected tasks are marked `failed` with reason "user rejected"; the worker
+continues to the next task (or escalates per normal replan logic).
+
+### Changes
+
+| File | Change |
+|---|---|
+| `kiso/config.py` | Add optional `confirm_exec: bool = False` to `User` dataclass |
+| `kiso/worker/exec.py` | Before executing: check `confirm_exec`; if true, emit `pending_confirm` status and wait for confirmation event |
+| `kiso/main.py` | New endpoint `POST /tasks/{id}/confirm` accepting `{"approved": true/false}` |
+| `kiso/store.py` | New task status `pending_confirm`; store confirmation result |
+| `docs/config.md` | Document `confirm_exec` field |
+| `docs/security.md` | Update §4 Role-Based Permissions table |
+
+- [ ] config.py: add `confirm_exec: bool = False` to User
+- [ ] store.py: add `pending_confirm` task status
+- [ ] worker/exec.py: supervised exec pause + await confirmation
+- [ ] main.py: `POST /tasks/{id}/confirm` endpoint
+- [ ] docs/config.md + docs/security.md: document new field and behavior
+- [ ] tests: exec task pauses when confirm_exec=True; approved tasks complete; rejected tasks fail
+
+**Verify:**
+```bash
+uv run pytest tests/test_worker.py -k confirm -v
+```
+
+---
+
+## Milestone 45: `kiso doctor` diagnostic subcommand
+
+**Inspiration**: ZeroClaw's `zeroclaw doctor` command that checks daemon health, connector
+freshness, and skill configuration in a single unified diagnostic view.
+
+**Problem**: In a multi-user, multi-connector deployment, debugging kiso is hard. The current
+tools are: `GET /health` (binary ok/error), `/status` REPL command (session-level), and
+manual file inspection. When something breaks — a skill missing its env var, a connector
+that can't reach the server, a DB with stale running tasks — there's no single command that
+surfaces all issues at once.
+
+**Fix**: Add a `kiso doctor` CLI subcommand that aggregates local + remote diagnostics:
+- **Server**: `GET /health` reachable? version?
+- **Database**: via API — stale running plans/tasks? message queue depths?
+- **Skills**: list installed skills from `~/.kiso/skills/`; for each, check required env vars
+  in `kiso.toml` against `~/.kiso/.env` — report which vars are missing
+- **Connectors**: list installed connectors from `~/.kiso/connectors/`; same env var check;
+  list which platforms they serve
+- **Users**: list usernames, roles, skill access (from API, admin token only)
+- **Recent errors**: last 5 entries from `~/.kiso/audit/` marked as errors/failures
+
+Output uses ✓ / ✗ / ⚠ symbols, structured by section.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `cli/__init__.py` | Add `doctor` subcommand |
+| `cli/doctor.py` | New module: local + remote diagnostic checks |
+| `docs/cli.md` | Document `kiso doctor` |
+
+- [ ] cli/doctor.py: server health check
+- [ ] cli/doctor.py: skills env var check
+- [ ] cli/doctor.py: connectors env var check
+- [ ] cli/doctor.py: recent audit errors
+- [ ] cli/__init__.py: wire up `doctor` subcommand
+- [ ] docs/cli.md: document the command and its output
+- [ ] tests: mock checks produce correct pass/warn/fail output
+
+**Verify:**
+```bash
+kiso doctor
+uv run pytest tests/test_cli.py -k doctor -v
+```
+
+---
+
 ## Done
 
 All milestones through M41 complete.
