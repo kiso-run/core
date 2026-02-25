@@ -2031,6 +2031,53 @@ uv run pytest tests/test_brain.py::TestPlannerPromptContent -v
 
 ---
 
+## Milestone 41: CLI polling — UX gaps (spinner missing + steps all at once)
+
+Two related issues observed in production (Feb 2026): the CLI looks frozen before
+the plan appears, and completed steps appear all at once instead of one at a time.
+
+### Issues
+
+#### 1. No feedback during classifier + planner LLM calls — MEDIUM
+- **File**: `cli/__init__.py`, lines 606–614 (`planning_phase` assignment)
+- From the moment the user submits a message until the plan is written to the DB
+  (4–15 s: classifier LLM + planner LLM), `planning_phase` remains `False` because
+  it requires `has_matching_running_plan`, which requires `plan` to be non-null.
+  The plan only exists in the DB after the planner call completes — so the CLI shows
+  nothing during the longest wait in the whole cycle.
+- **Fix**: also set `planning_phase = True` when `worker_running=True` and no
+  matching plan exists yet for the current message. Move the `worker_running` read
+  (currently line 617) to before the `planning_phase` assignment.
+
+#### 2. Fast tasks appear all at once — LOW
+- **File**: `cli/__init__.py`, line 364 (`_POLL_EVERY = 6`)
+- The effective poll interval is 6 × 80 ms = **480 ms**. Tasks that complete in
+  under 480 ms are never seen in `"running"` state, so no per-task spinner ever
+  shows — they appear in bulk on the next poll already marked `"done"`.
+- **Fix**: reduce `_POLL_EVERY` from `6` to `2` (160 ms interval). Low risk —
+  just more frequent GETs to the local server.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `cli/__init__.py` | Move `worker_running` read before `planning_phase`; extend `planning_phase` condition to cover pre-plan phase |
+| `cli/__init__.py` | `_POLL_EVERY = 6` → `_POLL_EVERY = 2` |
+
+- [ ] Move `worker_running` read before `planning_phase` assignment
+- [ ] Extend `planning_phase` to cover pre-plan worker phase
+- [ ] Reduce `_POLL_EVERY` from 6 to 2
+
+**Verify:**
+```bash
+# Manual — start kiso, send a message, observe:
+# 1. Spinner appears immediately after submit (no frozen gap)
+# 2. Fast exec tasks show ▶ spinner before ✓, not just ✓ directly
+uv run pytest tests/test_cli.py -x -q
+```
+
+---
+
 ## Done
 
 All milestones through M40 complete.
