@@ -1240,3 +1240,66 @@ async def test_search_facts_no_match_falls_back_to_get_facts(db: aiosqlite.Conne
     results = await search_facts(db, "xyzzy quux nonexistent term")
     # Should fall back and return the existing fact
     assert len(results) >= 1
+
+
+async def test_search_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
+    """M42: is_admin=True lets search_facts return user-category facts from any session."""
+    await save_fact(db, "Alice prefers verbose output in Python", "curator",
+                    session="session-A", category="user")
+    await save_fact(db, "Bob prefers brief Python output", "curator",
+                    session="session-B", category="user")
+
+    # Admin querying from session-A should see Bob's fact (different session)
+    results = await search_facts(db, "python output preferences",
+                                 session="session-A", is_admin=True)
+    contents = [f["content"] for f in results]
+    assert "Alice prefers verbose output in Python" in contents
+    assert "Bob prefers brief Python output" in contents
+
+
+async def test_search_facts_session_none_no_admin(db: aiosqlite.Connection):
+    """M42: session=None + is_admin=False uses unconstrained path (mirrors get_facts behaviour).
+
+    When no session is provided and the caller is not an admin, search_facts
+    should return global facts plus legacy user facts (session IS NULL), but
+    it MUST NOT restrict by any session — matching the get_facts fallback path.
+    """
+    # Global project fact
+    await save_fact(db, "FastAPI is the Python web framework", "curator",
+                    category="project")
+    # Legacy user fact with no session (pre-M43 row)
+    await db.execute(
+        "INSERT INTO facts (content, source, category, confidence) VALUES (?, ?, ?, ?)",
+        ("Legacy Python preference", "curator", "user", 1.0),
+    )
+    await db.commit()
+    # Rebuild FTS index manually since we bypassed save_fact trigger
+    await db.execute(
+        "INSERT INTO kiso_facts_fts(rowid, content) "
+        "SELECT id, content FROM facts WHERE content = 'Legacy Python preference'"
+    )
+    await db.commit()
+
+    results = await search_facts(db, "python", session=None, is_admin=False)
+    contents = [f["content"] for f in results]
+    assert "FastAPI is the Python web framework" in contents
+    assert "Legacy Python preference" in contents
+
+
+async def test_search_facts_unicode_content_and_query(db: aiosqlite.Connection):
+    """M42: facts with non-ASCII content are indexed and retrievable.
+
+    SQLite FTS5 handles UTF-8 text; _fts5_query's \\w+ extracts ASCII word
+    tokens from the query, so we search with the transliterated ASCII portion.
+    The fact itself is stored and returned correctly.
+    """
+    await save_fact(db, "Il progetto usa PostgreSQL come database principale", "curator",
+                    category="project")
+    await save_fact(db, "ffmpeg installed at /usr/bin/ffmpeg", "curator")
+
+    # Query with Italian keywords — FTS5 matches on token overlap
+    results = await search_facts(db, "postgresql database")
+    contents = [f["content"] for f in results]
+    assert any("PostgreSQL" in c for c in contents), (
+        f"Expected Italian PostgreSQL fact in results. Got: {contents}"
+    )
