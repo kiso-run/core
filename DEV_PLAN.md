@@ -220,6 +220,62 @@ Notes:
 
 ---
 
+## Milestone 44: Supervised exec mode per user
+
+Inspired by ZeroClaw's `autonomy = "readonly" | "supervised" | "full"` per-agent config.
+
+**Problem**: The only exec gating is the global deny-list and the sandbox distinction (user vs admin). No per-user oversight mechanism: once a user sends a message, exec tasks run automatically without confirmation. For risk-sensitive users or high-impact commands this is a gap.
+
+**Fix**: Add optional `confirm_exec = false` to `[users.*]` config block. When `true`, exec tasks pause at `pending_confirm` status. Kiso sends a confirmation webhook to the connector with the planned command; the user responds approve/reject via `POST /tasks/{id}/confirm`. Rejected tasks fail with reason "user rejected"; worker continues to next task (or replans per normal logic).
+
+| File | Change |
+|---|---|
+| `kiso/config.py` | `confirm_exec: bool = False` on User |
+| `kiso/store.py` | New task status `pending_confirm` |
+| `kiso/worker/exec.py` | Supervised exec pause + await confirmation event before executing |
+| `kiso/main.py` | `POST /tasks/{id}/confirm` accepting `{"approved": true/false}` |
+| `docs/config.md` | Document `confirm_exec` |
+| `docs/security.md` | Update §4 Role-Based Permissions table |
+
+- [ ] config.py: add `confirm_exec` to User
+- [ ] store.py: `pending_confirm` task status
+- [ ] worker/exec.py: pause + wait for confirmation
+- [ ] main.py: `POST /tasks/{id}/confirm` endpoint
+- [ ] docs update
+- [ ] tests: task pauses when `confirm_exec=True`; approved → completes; rejected → fails
+
+---
+
+## Milestone 45: `kiso doctor` diagnostic subcommand
+
+**Problem**: In a multi-user, multi-connector deployment, debugging kiso is hard. `GET /health` is binary, `/status` is session-level, manual file inspection is required for everything else. When something breaks (skill missing env var, connector unreachable, stale running tasks) there's no single command that surfaces all issues.
+
+**Fix**: `kiso doctor` aggregates local + remote diagnostics:
+- **Server**: `GET /health` reachable? version?
+- **Database** (via API): stale running plans/tasks? queue depths?
+- **Skills**: for each installed skill, check required env vars in `kiso.toml` against `~/.kiso/.env` — report missing vars
+- **Connectors**: same env var check; which platforms they serve
+- **Users**: usernames, roles, skill access (admin token only)
+- **Recent errors**: last 5 audit entries marked error/failure
+
+Output uses ✓ / ✗ / ⚠ symbols, structured by section.
+
+| File | Change |
+|---|---|
+| `cli/doctor.py` | New module: local + remote diagnostic checks |
+| `cli/__init__.py` | Wire `doctor` subcommand |
+| `docs/cli.md` | Document `kiso doctor` |
+
+- [ ] cli/doctor.py: server health check
+- [ ] cli/doctor.py: skills env var check
+- [ ] cli/doctor.py: connectors env var check
+- [ ] cli/doctor.py: recent audit errors
+- [ ] cli/__init__.py: wire `doctor` subcommand
+- [ ] docs/cli.md: document output format
+- [ ] tests: mock checks produce correct pass/warn/fail output
+
+---
+
 ## Deferred items
 
 - **M21**: filter `save_learning` content for secret-like patterns — curator prompt already guards this, revisit if poisoning observed in production
