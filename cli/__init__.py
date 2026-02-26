@@ -375,6 +375,22 @@ def _poll_status(
     bot_name: str = "Bot",
     _at_col0: bool = True,
 ) -> int:
+    """Poll ``/status`` and render task progress to the terminal.
+
+    Args:
+        client: authenticated httpx.Client pointed at the kiso server.
+        session: session identifier to poll.
+        message_id: id of the user message that triggered the plan.
+        base_task_id: only consider tasks with id > this value.
+        quiet: suppress all output except final message text.
+        verbose: show per-LLM-call token panels.
+        caps: terminal capabilities (color, unicode, TTY, size).
+        bot_name: display name used in message output headers.
+        _at_col0: ``True`` (default) if the cursor is at column 0 when this
+            function is called.  Pass ``False`` when the caller has printed
+            text without a trailing newline (e.g. an inline prompt) so the
+            spinner always opens on a fresh line instead of overwriting it.
+    """
     import time
 
     from cli.render import (

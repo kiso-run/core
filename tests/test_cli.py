@@ -1032,6 +1032,51 @@ def test_poll_status_spinner_no_extra_newline_when_at_col0(capsys):
     )
 
 
+def test_poll_status_spinner_extra_newline_emitted_only_once(capsys):
+    """M44g: the extra \\n (for _at_col0=False) is emitted only on the FIRST spinner frame.
+
+    Subsequent frames use \\r to overwrite without adding new lines, so \\n\\n\\r
+    appears exactly once regardless of how many spinner frames are rendered.
+    """
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Work", "status": "running"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "echo ok",
+             "status": "running", "output": None},
+        ],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Work", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "echo ok",
+             "status": "done", "output": "ok"},
+        ],
+        "worker_running": False,
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False,
+                     caps=tty_caps, _at_col0=False)
+
+    raw = capsys.readouterr().out
+    # The extra \n appears exactly once (before the first spinner frame), not on
+    # subsequent \r-overwrite frames.
+    assert raw.count("\n\n\r") == 1, (
+        f"Expected \\n\\n\\r exactly once, got {raw.count(chr(10)+chr(10)+chr(13))}. "
+        f"Raw: {raw!r}"
+    )
+
+
 def test_chat_http_status_error_on_msg_post(capsys):
     """HTTPStatusError on /msg POST should print status code and continue."""
     from cli import _chat

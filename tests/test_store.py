@@ -1410,3 +1410,51 @@ async def test_update_task_usage_with_explicit_calls_overwrites(db: aiosqlite.Co
 
     tasks = await get_tasks_for_plan(db, plan_id)
     assert tasks[0]["llm_calls"] is None
+
+
+# --- M44g: save_learning input guard (None / empty / hex boundary) ---
+
+
+async def test_save_learning_rejects_none_content(db: aiosqlite.Connection):
+    """save_learning raises TypeError when content is not a str."""
+    await create_session(db, "sess1")
+    with pytest.raises(TypeError, match="content must be str"):
+        await save_learning(db, None, "sess1")  # type: ignore[arg-type]
+
+
+async def test_save_learning_rejects_empty_string(db: aiosqlite.Connection):
+    """Empty string is rejected and returns 0 without DB insert."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "", "sess1")
+    assert result == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 0
+
+
+async def test_save_learning_rejects_whitespace_only(db: aiosqlite.Connection):
+    """Whitespace-only string is rejected and returns 0."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "   \t\n  ", "sess1")
+    assert result == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 0
+
+
+async def test_save_learning_hex_boundary_31_chars_accepted(db: aiosqlite.Connection):
+    """31-char hex string is below the threshold and must be accepted."""
+    await create_session(db, "sess1")
+    hex31 = "0" * 31
+    result = await save_learning(db, f"hash: {hex31}", "sess1")
+    assert result != 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 1
+
+
+async def test_save_learning_hex_boundary_32_chars_rejected(db: aiosqlite.Connection):
+    """Exactly 32 consecutive hex chars triggers the filter."""
+    await create_session(db, "sess1")
+    hex32 = "0" * 32
+    result = await save_learning(db, f"hash: {hex32}", "sess1")
+    assert result == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 0

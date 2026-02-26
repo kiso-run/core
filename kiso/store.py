@@ -649,9 +649,19 @@ async def save_learning(
 ) -> int:
     """Insert a learning row. Returns learning id, or 0 if content was rejected.
 
-    Learnings that match secret-like patterns (passwords, tokens, long hex
-    strings) are silently dropped with a warning log to prevent fact poisoning.
+    Learnings are rejected (return 0) when:
+    - *content* is empty or whitespace-only
+    - *content* matches secret-like patterns (password/passwd/token keywords,
+      hex strings ≥ 32 chars) — logged as a warning to prevent fact poisoning
+
+    Raises ``TypeError`` if *content* is not a ``str``.
     """
+    if not isinstance(content, str):
+        raise TypeError(
+            f"save_learning: content must be str, got {type(content).__name__!r}"
+        )
+    if not content.strip():
+        return 0
     if _SENSITIVE_PATTERN.search(content):
         log.warning(
             "Learning rejected (contains secret-like content): %s", content[:80]

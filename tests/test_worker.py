@@ -6273,3 +6273,118 @@ class TestIncrementalLLMCalls:
                 f"update_task_usage was called with llm_calls — expected sentinel path. "
                 f"kwargs: {call_kwargs}"
             )
+
+
+# --- M44g: _append_calls robustness + fast_path failure path + retry accumulation ---
+
+
+@pytest.mark.asyncio
+class TestM44gAppendCallsRobustness:
+    """M44g: _append_calls must survive exceptions and be called on all code paths."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import init_db
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_append_calls_handles_exception_without_crash(self, db, tmp_path):
+        """If get_usage_since raises, _append_calls logs a warning but does not crash."""
+        from kiso.worker.loop import _append_calls
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        task_id_val = await create_task(db, plan_id, "sess1", type="msg", detail="hi")
+
+        with patch("kiso.worker.loop.get_usage_since", side_effect=RuntimeError("boom")):
+            # Must not raise
+            await _append_calls(db, task_id_val, 0)
+
+    async def test_fast_path_failure_calls_append_calls(self, db, tmp_path):
+        """_fast_path_chat calls _append_calls even when messenger fails."""
+        config = _make_config()
+        mock_append = AsyncMock()
+
+        with patch("kiso.worker.loop._append_calls", mock_append), \
+             patch("kiso.worker.loop.run_messenger",
+                   new_callable=AsyncMock, side_effect=MessengerError("boom")), \
+             _patch_kiso_dir(tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        # _append_calls must be called in the failure branch
+        assert mock_append.call_count >= 1
+
+    async def test_fast_path_success_and_failure_append_same_count(self, db, tmp_path):
+        """Both success and failure paths call _append_calls exactly once."""
+        config = _make_config()
+
+        # Success path
+        mock_append_ok = AsyncMock()
+        with patch("kiso.worker.loop._append_calls", mock_append_ok), \
+             patch("kiso.worker.loop.run_messenger",
+                   new_callable=AsyncMock, return_value="Hi"), \
+             _patch_kiso_dir(tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+        success_calls = mock_append_ok.call_count
+
+        # Failure path (new session)
+        await create_session(db, "sess2")
+        mock_append_fail = AsyncMock()
+        with patch("kiso.worker.loop._append_calls", mock_append_fail), \
+             patch("kiso.worker.loop.run_messenger",
+                   new_callable=AsyncMock, side_effect=MessengerError("boom")), \
+             _patch_kiso_dir(tmp_path):
+            await _fast_path_chat(db, config, "sess2", 2, "hello")
+        failure_calls = mock_append_fail.call_count
+
+        assert success_calls == failure_calls == 1
+
+
+@pytest.mark.asyncio
+class TestM44gRetryLLMCalls:
+    """M44g: on exec retry, llm_calls accumulates across attempts."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import init_db
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_retry_accumulates_append_calls(self, db, tmp_path):
+        """On exec retry, _append_calls is called once per attempt (translator + reviewer each)."""
+        config = _make_config(settings={
+            **_make_config().settings,
+            "max_worker_retries": 1,
+        })
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        review_calls = [0]
+
+        async def _reviewer_first_replan_then_ok(*args, **kw):
+            review_calls[0] += 1
+            if review_calls[0] == 1:
+                return REVIEW_REPLAN_WITH_HINT
+            return REVIEW_OK
+
+        mock_append = AsyncMock()
+        with patch("kiso.worker.loop._append_calls", mock_append), \
+             patch("kiso.worker.loop.run_reviewer",
+                   new_callable=AsyncMock, side_effect=_reviewer_first_replan_then_ok), \
+             patch("kiso.worker.loop.run_messenger",
+                   new_callable=AsyncMock, return_value="done"), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # attempt 1: translator+reviewer = 2 calls
+        # attempt 2: translator+reviewer = 2 calls
+        # msg task: 1 call
+        # total _append_calls = 5
+        assert mock_append.call_count == 5

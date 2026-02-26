@@ -103,10 +103,18 @@ async def _append_calls(
     Called right after each LLM step (translator, reviewer, messenger,
     searcher) so verbose panels appear incrementally in the CLI instead of
     only when the task finishes.
+
+    Failures are caught and logged so a transient usage-tracking error never
+    crashes the worker or corrupts the task result.
     """
-    usage = get_usage_since(idx_before)
-    for call in usage.get("calls") or []:
-        await append_task_llm_call(db, task_id, call)
+    try:
+        usage = get_usage_since(idx_before)
+        for call in usage.get("calls") or []:
+            await append_task_llm_call(db, task_id, call)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "_append_calls: failed to store LLM calls for task %d: %s", task_id, exc
+        )
 
 
 async def _deliver_webhook_if_configured(
@@ -316,6 +324,9 @@ async def _fast_path_chat(
         if slog:
             slog.info("Fast path failed: %s", e)
         error_text = f"Chat response failed: {e}"
+        # Persist any partial LLM calls collected before the failure so verbose
+        # panels still show the attempted messenger call.
+        await _append_calls(db, task_id, usage_idx_before)
         await update_task(db, task_id, "failed", output=error_text)
         await update_plan_status(db, plan_id, "failed")
         audit.log_task(
