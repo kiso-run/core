@@ -4335,8 +4335,60 @@ class TestConsolidationSafetyGuards:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
 
         # All 10 originals must be preserved (4 < 10 * 0.5 = 5)
-        facts = await get_facts(db)
+        facts = await get_facts(db, is_admin=True)
         assert len(facts) == 10
+
+    async def test_consolidation_preserves_user_fact_session(self, db, tmp_path):
+        """M43: user-category facts re-inserted after consolidation keep their session.
+
+        After consolidation the re-inserted user fact must be visible in the
+        session that triggered consolidation but hidden from a different session.
+        """
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 2,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        for i in range(5):
+            await save_fact(db, f"Fact {i}", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        user_fact_content = "Alice prefers concise answers"
+        consolidated = [
+            {"content": "General project info", "category": "project", "confidence": 1.0},
+            {"content": user_fact_content, "category": "user", "confidence": 1.0},
+        ]
+        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.loop.run_fact_consolidation", new_callable=AsyncMock,
+                   return_value=consolidated), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        facts_sess1 = await get_facts(db, session="sess1")
+        facts_sess2 = await get_facts(db, session="sess2")
+
+        sess1_contents = [f["content"] for f in facts_sess1]
+        sess2_contents = [f["content"] for f in facts_sess2]
+
+        # user fact is visible in the session that triggered consolidation
+        assert user_fact_content in sess1_contents, (
+            "user fact should be visible in the consolidation session"
+        )
+        # user fact is NOT visible in another session
+        assert user_fact_content not in sess2_contents, (
+            "user fact leaked into unrelated session after consolidation"
+        )
+        # project fact is global — visible everywhere
+        assert "General project info" in sess1_contents
+        assert "General project info" in sess2_contents
 
 
 # --- M34: Fact usage tracking ---

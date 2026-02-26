@@ -1087,3 +1087,73 @@ async def test_categorized_fact_unknown_category_stored(db: aiosqlite.Connection
     fid = await save_fact(db, "Exotic fact", "curator", category="exotic")
     facts = await get_facts(db)
     assert facts[0]["category"] == "exotic"
+
+
+# --- M43: Session-scoped fact isolation ---
+
+
+async def test_get_facts_user_fact_hidden_from_other_session(db: aiosqlite.Connection):
+    """M43: user-category fact from session A is not returned when querying from session B."""
+    await save_fact(db, "Marco likes concise answers", "curator",
+                    session="session-A", category="user")
+    await save_fact(db, "Project uses Python 3.12", "curator",
+                    session="session-A", category="project")
+
+    facts_b = await get_facts(db, session="session-B")
+    contents = [f["content"] for f in facts_b]
+    assert "Marco likes concise answers" not in contents, (
+        "user fact from session-A leaked into session-B"
+    )
+    assert "Project uses Python 3.12" in contents, (
+        "project fact (global) should be visible to all sessions"
+    )
+
+
+async def test_get_facts_user_fact_visible_in_own_session(db: aiosqlite.Connection):
+    """M43: user-category fact is returned when querying the session that created it."""
+    await save_fact(db, "Prefers dark mode", "curator",
+                    session="session-A", category="user")
+    facts_a = await get_facts(db, session="session-A")
+    contents = [f["content"] for f in facts_a]
+    assert "Prefers dark mode" in contents
+
+
+async def test_get_facts_global_categories_always_visible(db: aiosqlite.Connection):
+    """M43: project / tool / general facts are returned regardless of session."""
+    await save_fact(db, "Uses FastAPI", "curator", session="session-X", category="project")
+    await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="tool")
+    await save_fact(db, "Async preferred", "curator", session="session-X", category="general")
+
+    for sess in ("session-X", "session-Y", "session-Z"):
+        facts = await get_facts(db, session=sess)
+        contents = [f["content"] for f in facts]
+        assert "Uses FastAPI" in contents
+        assert "ffmpeg installed" in contents
+        assert "Async preferred" in contents
+
+
+async def test_get_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
+    """M43: admin user receives user-category facts from every session."""
+    await save_fact(db, "Alice prefers verbose output", "curator",
+                    session="session-A", category="user")
+    await save_fact(db, "Bob prefers brief output", "curator",
+                    session="session-B", category="user")
+
+    facts = await get_facts(db, session="session-A", is_admin=True)
+    contents = [f["content"] for f in facts]
+    assert "Alice prefers verbose output" in contents
+    assert "Bob prefers brief output" in contents
+
+
+async def test_get_facts_null_session_user_fact_is_global(db: aiosqlite.Connection):
+    """M43: user fact with session=NULL (legacy) is visible to any session."""
+    # Insert a legacy user fact with no session (as if written before M43)
+    await db.execute(
+        "INSERT INTO facts (content, source, category, confidence) VALUES (?, ?, ?, ?)",
+        ("Legacy user preference", "curator", "user", 1.0),
+    )
+    await db.commit()
+
+    facts = await get_facts(db, session="any-session")
+    contents = [f["content"] for f in facts]
+    assert "Legacy user preference" in contents

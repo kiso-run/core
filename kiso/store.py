@@ -317,9 +317,34 @@ async def get_recent_messages(
     return rows
 
 
-async def get_facts(db: aiosqlite.Connection) -> list[dict]:
-    """Return all facts (global)."""
-    cur = await db.execute("SELECT * FROM facts ORDER BY id")
+async def get_facts(
+    db: aiosqlite.Connection,
+    *,
+    session: str | None = None,
+    is_admin: bool = False,
+) -> list[dict]:
+    """Return facts filtered by session scope (M43).
+
+    - project / tool / general facts are always global and returned unconditionally.
+    - user-category facts are visible only in the session where they were created.
+    - Facts with ``session IS NULL`` are legacy global facts and are always included.
+    - Admin users bypass all filtering and receive every fact.
+
+    When *session* is ``None`` and *is_admin* is ``False`` the query returns all
+    non-user facts plus user facts with no session (legacy global rows).  This
+    preserves backward-compatible behaviour for callers that do not yet supply a
+    session (e.g. system operations like fact consolidation that use ``is_admin=True``
+    explicitly).
+    """
+    if is_admin or session is None:
+        cur = await db.execute("SELECT * FROM facts ORDER BY id")
+    else:
+        cur = await db.execute(
+            "SELECT * FROM facts "
+            "WHERE category != 'user' OR session IS NULL OR session = ? "
+            "ORDER BY id",
+            (session,),
+        )
     return await _rows_to_dicts(cur)
 
 

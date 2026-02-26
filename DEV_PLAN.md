@@ -1870,14 +1870,14 @@ Fixes identified by post-v1.0 code audit. No new features, no API changes.
 | `tests/` | New tests per issues above |
 | `docs/config.md` | Add `fact_consolidation_min_ratio` to settings reference |
 
-- [ ] Fix unbounded rglob (sysenv + pub)
-- [ ] Fix silent JSON decode failure
-- [ ] Log connector manifest errors
-- [ ] Fix `setting_bool` int coercion
-- [ ] Add tests for remaining fixes above
+- [x] Fix unbounded rglob sysenv (`sysenv.py` `_MAX_SCAN=1000`) + test (`test_workspace_files_scan_cap`)
+- [x] Fix unbounded rglob pub (`worker/utils.py` `_MAX_PUB_SCAN=1000`) + test (`test_pub_scan_cap_truncates_and_warns`)
+- [x] Fix silent JSON decode failure (`loop.py:802` log.warning) + test (`test_search_malformed_args_emits_warning`)
+- [x] Log connector manifest errors (`connectors.py:79,84`) + tests (`test_discover_connectors_corrupted_toml`, `test_discover_connectors_invalid_manifest_skipped` with caplog)
+- [x] Fix `setting_bool` int coercion (`config.py` — falls through to default) + test (`test_m37_setting_bool_rejects_int`)
 - [x] Clamp fact confidence (`brain.py:894`) + test (`test_confidence_clamped_to_unit_interval`)
 - [x] Extract consolidation ratio to config (`config.py:29`, `loop.py:191`) + test (`test_consolidation_custom_min_ratio_respected`)
-- [ ] Update docs/config.md (consolidation ratio field)
+- [x] Update docs/config.md (consolidation ratio field)
 
 **Verify:**
 ```bash
@@ -2177,15 +2177,17 @@ Both issues must be fixed together.
 | `kiso/worker/loop.py` | Fact consolidation: carry `session` from the original fact row when re-inserting after consolidation |
 | `kiso/brain.py` | Pass `session` and `is_admin` to `get_facts()` in both `build_planner_messages()` and `run_messenger()` |
 
-- [ ] store.py: update `get_facts()` signature — add `session: str | None`, `is_admin: bool = False`
-- [ ] store.py: SQL filter — `WHERE category != 'user' OR session IS NULL OR session = ?` (skipped when `is_admin=True`)
-- [ ] worker/loop.py: consolidation loop — read `session` from each source fact; pass it to `save_fact()`
-- [ ] brain.py: pass `session` + `is_admin` in `build_planner_messages()` call to `get_facts()`
-- [ ] brain.py: pass `session` + `is_admin` in `run_messenger()` call to `get_facts()`
-- [ ] tests: `user` fact from session A not returned when querying from session B (non-admin)
-- [ ] tests: `project`/`tool`/`general` facts returned regardless of session
-- [ ] tests: admin receives `user` facts from all sessions
-- [ ] tests: consolidation preserves `session` on re-inserted facts
+- [x] store.py: update `get_facts()` signature — `session: str | None = None`, `is_admin: bool = False`
+- [x] store.py: SQL filter — `WHERE category != 'user' OR session IS NULL OR session = ?` (skipped when `is_admin=True` or `session=None`)
+- [x] worker/loop.py: consolidation uses `is_admin=True` (full view); re-inserts `user` facts with current `session`, other categories with `session=None`
+- [x] brain.py: `build_planner_messages()` → `get_facts(db, session=session, is_admin=(user_role=="admin"))`
+- [x] brain.py: `run_messenger()` → `get_facts(db, session=session)` (conservative — no cross-session user data needed for response formatting)
+- [x] tests: `user` fact from session A not returned when querying from session B (`test_get_facts_user_fact_hidden_from_other_session`)
+- [x] tests: `user` fact visible in own session (`test_get_facts_user_fact_visible_in_own_session`)
+- [x] tests: `project`/`tool`/`general` facts returned regardless of session (`test_get_facts_global_categories_always_visible`)
+- [x] tests: admin receives `user` facts from all sessions (`test_get_facts_admin_sees_all_sessions`)
+- [x] tests: legacy `user` facts with `session=NULL` treated as global (`test_get_facts_null_session_user_fact_is_global`)
+- [x] tests: consolidation re-inserts `user` facts with current session, `project` facts as global (`test_consolidation_preserves_user_fact_session`)
 
 **Verify:**
 ```bash
@@ -2197,7 +2199,7 @@ uv run pytest tests/test_brain.py -k facts -v
 
 ## Done
 
-All milestones through M41 complete. M24 also complete (discovered during M24 review — all tasks already implemented).
+All milestones through M43 complete (M42 pending — depends on M43). M24 also complete (discovered during M24 review — all tasks already implemented).
 
 ### M21 — Fact Consolidation: test coverage
 

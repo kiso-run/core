@@ -178,9 +178,10 @@ async def _post_plan_knowledge(
         except SummarizerError as e:
             log.error("Summarizer failed: %s", e)
 
-    # 3. Fact consolidation
+    # 3. Fact consolidation — uses full (admin-level) view so the count check
+    # reflects the true global fact table, not just the current session's view.
     max_facts = int(config.settings["knowledge_max_facts"])
-    all_facts = await get_facts(db)
+    all_facts = await get_facts(db, is_admin=True)
     if len(all_facts) > max_facts:
         try:
             consolidated = await asyncio.wait_for(
@@ -201,10 +202,15 @@ async def _post_plan_knowledge(
                     if consolidated:
                         await delete_facts(db, [f["id"] for f in all_facts])
                         for fact in consolidated:
+                            category = fact.get("category", "general")
                             await save_fact(
                                 db, fact["content"], source="consolidation",
-                                category=fact.get("category", "general"),
+                                category=category,
                                 confidence=fact.get("confidence", 1.0),
+                                # Preserve session scoping: user facts belong to the
+                                # session that triggered consolidation; all other
+                                # categories are global (session=None).
+                                session=session if category == "user" else None,
                             )
                     else:
                         log.warning("All consolidated facts filtered out, preserving originals")

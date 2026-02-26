@@ -284,7 +284,8 @@ async def build_planner_messages(
     # Context pieces
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
-    facts = await get_facts(db)
+    is_admin = user_role == "admin"
+    facts = await get_facts(db, session=session, is_admin=is_admin)
     pending = await get_pending_items(db, session)
     context_limit = int(config.settings["context_messages"])
     recent = await get_recent_messages(db, session, limit=context_limit)
@@ -727,7 +728,7 @@ async def run_messenger(
     """
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
-    facts = await get_facts(db)
+    facts = await get_facts(db, session=session)
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
     )

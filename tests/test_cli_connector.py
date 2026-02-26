@@ -1203,20 +1203,25 @@ def test_discover_connectors_no_dir():
     assert result == []
 
 
-def test_discover_connectors_corrupted_toml(tmp_path):
-    """Corrupted TOML file should be silently skipped."""
+def test_discover_connectors_corrupted_toml(tmp_path, caplog):
+    """M37: corrupted kiso.toml is skipped and a warning is logged."""
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
     d = connectors_dir / "broken"
     d.mkdir()
     (d / "kiso.toml").write_text("this is not valid TOML [[[")
 
-    result = discover_connectors(connectors_dir)
+    import logging
+    with caplog.at_level(logging.WARNING, logger="kiso.connectors"):
+        result = discover_connectors(connectors_dir)
     assert result == []
+    assert any("broken" in r.message and "kiso.toml" in r.message for r in caplog.records), (
+        f"Expected warning about broken connector, got: {[r.message for r in caplog.records]}"
+    )
 
 
-def test_discover_connectors_invalid_manifest_skipped(tmp_path):
-    """Valid TOML but invalid manifest should be skipped."""
+def test_discover_connectors_invalid_manifest_skipped(tmp_path, caplog):
+    """M37: valid TOML but invalid manifest is skipped with a warning."""
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
     d = connectors_dir / "bad"
@@ -1225,8 +1230,13 @@ def test_discover_connectors_invalid_manifest_skipped(tmp_path):
     (d / "run.py").write_text("pass\n")
     (d / "pyproject.toml").write_text("[project]\nname = 'bad'\n")
 
-    result = discover_connectors(connectors_dir)
+    import logging
+    with caplog.at_level(logging.WARNING, logger="kiso.connectors"):
+        result = discover_connectors(connectors_dir)
     assert result == []
+    assert any("bad" in r.message for r in caplog.records), (
+        f"Expected warning about bad connector, got: {[r.message for r in caplog.records]}"
+    )
 
 
 def test_discover_connectors_skips_files(tmp_path):
