@@ -12,7 +12,7 @@ from kiso.config import Config, KISO_DIR
 from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
 from kiso.skills import discover_skills, build_planner_skill_list
-from kiso.store import get_facts, get_pending_items, get_recent_messages, get_session
+from kiso.store import get_facts, get_pending_items, get_recent_messages, get_session, search_facts
 from kiso.sysenv import get_system_env, build_system_env_section
 
 log = logging.getLogger(__name__)
@@ -285,7 +285,7 @@ async def build_planner_messages(
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
     is_admin = user_role == "admin"
-    facts = await get_facts(db, session=session, is_admin=is_admin)
+    facts = await search_facts(db, new_message, session=session, is_admin=is_admin)
     pending = await get_pending_items(db, session)
     context_limit = int(config.settings["context_messages"])
     recent = await get_recent_messages(db, session, limit=context_limit)

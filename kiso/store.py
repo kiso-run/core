@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import aiosqlite
 from pathlib import Path
 
@@ -84,6 +85,22 @@ CREATE TABLE IF NOT EXISTS facts (
     use_count  INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS kiso_facts_fts USING fts5(
+    content,
+    content='facts',
+    content_rowid='id'
+);
+CREATE TRIGGER IF NOT EXISTS facts_fts_insert AFTER INSERT ON facts BEGIN
+    INSERT INTO kiso_facts_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS facts_fts_update AFTER UPDATE ON facts BEGIN
+    INSERT INTO kiso_facts_fts(kiso_facts_fts, rowid, content) VALUES ('delete', old.id, old.content);
+    INSERT INTO kiso_facts_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS facts_fts_delete AFTER DELETE ON facts BEGIN
+    INSERT INTO kiso_facts_fts(kiso_facts_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
 
 CREATE TABLE IF NOT EXISTS facts_archive (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,6 +184,24 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         if column not in columns:
             await db.execute(sql)
     await db.commit()
+
+    # Rebuild FTS index for pre-existing facts (first run after M42).
+    # The triggers keep the index current for new rows; existing rows need a
+    # one-time backfill.  We check by comparing counts — if the FTS index is
+    # empty while facts exist, it has not been populated yet.
+    try:
+        cur = await db.execute("SELECT count(*) FROM kiso_facts_fts")
+        fts_count = (await cur.fetchone())[0]
+        if fts_count == 0:
+            cur = await db.execute("SELECT count(*) FROM facts")
+            facts_count = (await cur.fetchone())[0]
+            if facts_count > 0:
+                await db.execute(
+                    "INSERT INTO kiso_facts_fts(rowid, content) SELECT id, content FROM facts"
+                )
+                await db.commit()
+    except Exception:
+        pass  # FTS5 not compiled into this SQLite build — graceful degradation
 
 
 async def get_session(db: aiosqlite.Connection, session: str) -> dict | None:
@@ -346,6 +381,66 @@ async def get_facts(
             (session,),
         )
     return await _rows_to_dicts(cur)
+
+
+def _fts5_query(text: str) -> str:
+    """Extract plain word tokens from text for use as an FTS5 MATCH query.
+
+    Strips FTS5 special characters (quotes, parentheses, operators) so
+    arbitrary user messages can be passed safely without causing parse errors.
+    """
+    return " ".join(re.findall(r"\w+", text))
+
+
+async def search_facts(
+    db: aiosqlite.Connection,
+    query: str,
+    *,
+    session: str | None = None,
+    is_admin: bool = False,
+    limit: int = 15,
+) -> list[dict]:
+    """Return up to *limit* facts most relevant to *query* (FTS5 BM25 ranking).
+
+    Session scoping mirrors :func:`get_facts` — user-category facts are
+    filtered to the current session unless *is_admin* is ``True``.
+
+    Falls back to :func:`get_facts` when:
+    - FTS5 is not compiled into the SQLite build
+    - *query* contains no searchable tokens
+    - The FTS search returns no results (ensures context is always present)
+    """
+    fts_q = _fts5_query(query)
+    if not fts_q:
+        return await get_facts(db, session=session, is_admin=is_admin)
+
+    try:
+        if is_admin or session is None:
+            cur = await db.execute(
+                "SELECT f.* FROM facts f "
+                "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
+                "WHERE kiso_facts_fts MATCH ? "
+                "ORDER BY rank LIMIT ?",
+                (fts_q, limit),
+            )
+        else:
+            cur = await db.execute(
+                "SELECT f.* FROM facts f "
+                "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
+                "WHERE kiso_facts_fts MATCH ? "
+                "AND (f.category != 'user' OR f.session IS NULL OR f.session = ?) "
+                "ORDER BY rank LIMIT ?",
+                (fts_q, session, limit),
+            )
+        results = await _rows_to_dicts(cur)
+    except Exception:
+        return await get_facts(db, session=session, is_admin=is_admin)
+
+    # If FTS found no matches, fall back to the full filtered set so the planner
+    # always has some knowledge context (avoids silent empty-facts scenario).
+    if not results:
+        return await get_facts(db, session=session, is_admin=is_admin)
+    return results
 
 
 async def get_pending_items(db: aiosqlite.Connection, session: str) -> list[dict]:

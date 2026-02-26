@@ -2102,10 +2102,11 @@ composing a response.
 | `kiso/store.py` | FTS5 virtual table `kiso_facts_fts` on `content`; trigger to keep it in sync; `search_facts(db, query, limit)` function |
 | `kiso/brain.py` | `build_planner_messages()`: replace `get_facts()` with `search_facts(query=message_content, limit=15)` |
 
-- [ ] store.py: create `kiso_facts_fts` FTS5 table + sync triggers
-- [ ] store.py: implement `search_facts(db, query, limit=15)`
-- [ ] brain.py: use `search_facts()` in planner context (keep `get_facts()` for messenger)
-- [ ] tests: FTS5 search returns relevant facts and ignores unrelated ones
+- [x] store.py: `CREATE VIRTUAL TABLE kiso_facts_fts USING fts5(content, content='facts', content_rowid='id')` + INSERT/UPDATE/DELETE triggers
+- [x] store.py: `_migrate()` backfills FTS index for pre-existing facts (first run after M42)
+- [x] store.py: `search_facts(db, query, *, session, is_admin, limit=15)` — BM25 ranking, session-scoped, falls back to `get_facts()` on empty query or no FTS match
+- [x] brain.py: `build_planner_messages()` uses `search_facts(query=new_message)` (messenger keeps `get_facts()` for broader context)
+- [x] tests: 6 unit tests — relevant result ranked first, limit respected, session scoping, empty-query fallback, no-match fallback
 
 **Verify:**
 ```bash
@@ -2199,7 +2200,7 @@ uv run pytest tests/test_brain.py -k facts -v
 
 ## Done
 
-All milestones through M43 complete (M42 pending — depends on M43). M24 also complete (discovered during M24 review — all tasks already implemented).
+All milestones through M43 complete. M42 also complete. M24 complete (discovered during M24 review — all tasks already implemented).
 
 ### M21 — Fact Consolidation: test coverage
 

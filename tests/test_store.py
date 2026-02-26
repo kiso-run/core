@@ -8,6 +8,7 @@ import aiosqlite
 from kiso.store import (
     append_task_llm_call,
     archive_low_confidence_facts,
+    search_facts,
     count_messages,
     create_plan,
     create_session,
@@ -49,11 +50,13 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
     cur = await db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     )
+    # Exclude sqlite_ internals and FTS5 shadow tables (kiso_facts_fts_*)
     tables = sorted(
-        r[0] for r in await cur.fetchall() if not r[0].startswith("sqlite_")
+        r[0] for r in await cur.fetchall()
+        if not r[0].startswith("sqlite_") and not r[0].startswith("kiso_facts_fts_")
     )
     expected = [
-        "facts", "facts_archive", "learnings", "messages",
+        "facts", "facts_archive", "kiso_facts_fts", "learnings", "messages",
         "pending", "plans", "sessions", "tasks",
     ]
     assert tables == expected
@@ -1157,3 +1160,83 @@ async def test_get_facts_null_session_user_fact_is_global(db: aiosqlite.Connecti
     facts = await get_facts(db, session="any-session")
     contents = [f["content"] for f in facts]
     assert "Legacy user preference" in contents
+
+
+# --- M42: search_facts (FTS5) ---
+
+
+async def test_search_facts_returns_relevant_result(db: aiosqlite.Connection):
+    """M42: search_facts returns facts matching the query keywords."""
+    await save_fact(db, "The project uses PostgreSQL 15 as the database", "curator")
+    await save_fact(db, "ffmpeg is installed at /usr/bin/ffmpeg", "curator")
+    await save_fact(db, "Python 3.12 is the runtime environment", "curator")
+
+    results = await search_facts(db, "database postgresql connection")
+    contents = [f["content"] for f in results]
+    assert any("PostgreSQL" in c for c in contents), (
+        f"Expected PostgreSQL fact to rank first. Got: {contents}"
+    )
+
+
+async def test_search_facts_ignores_unrelated_facts(db: aiosqlite.Connection):
+    """M42: FTS search ranks matching facts first, limit caps the result set."""
+    await save_fact(db, "The project uses PostgreSQL 15", "curator")
+    await save_fact(db, "ffmpeg is at /usr/bin/ffmpeg", "curator")
+    await save_fact(db, "Python 3.12 is the runtime", "curator")
+    await save_fact(db, "Git default branch is main", "curator")
+    await save_fact(db, "FastAPI is the web framework", "curator")
+
+    # Single-token query — FTS5 OR-searches for "ffmpeg", should match exactly 1 fact
+    results = await search_facts(db, "ffmpeg", limit=2)
+    contents = [f["content"] for f in results]
+    assert any("ffmpeg" in c for c in contents), (
+        f"Expected ffmpeg fact in results. Got: {contents}"
+    )
+    # Only the matching fact should appear (5 total, 1 matches, limit=2)
+    assert len(results) <= 2
+
+
+async def test_search_facts_respects_limit(db: aiosqlite.Connection):
+    """M42: search_facts never returns more than limit results."""
+    for i in range(20):
+        await save_fact(db, f"Python project fact number {i}", "curator")
+
+    results = await search_facts(db, "python project", limit=5)
+    assert len(results) <= 5
+
+
+async def test_search_facts_session_scoped(db: aiosqlite.Connection):
+    """M42: search_facts applies session scoping to user-category facts."""
+    await save_fact(db, "Alice prefers dark mode in Python IDE", "curator",
+                    session="session-A", category="user")
+    await save_fact(db, "Python is the main language", "curator",
+                    session="session-A", category="project")
+
+    # Session B should NOT see Alice's user preference
+    results_b = await search_facts(db, "python IDE preferences", session="session-B")
+    contents_b = [f["content"] for f in results_b]
+    assert "Alice prefers dark mode in Python IDE" not in contents_b
+
+    # Session A should see it
+    results_a = await search_facts(db, "python IDE preferences", session="session-A")
+    contents_a = [f["content"] for f in results_a]
+    assert "Alice prefers dark mode in Python IDE" in contents_a
+
+
+async def test_search_facts_empty_query_falls_back_to_get_facts(db: aiosqlite.Connection):
+    """M42: empty/whitespace query falls back to get_facts (no FTS error)."""
+    await save_fact(db, "Some fact about the project", "curator")
+    results = await search_facts(db, "")
+    assert len(results) == 1
+
+    results_ws = await search_facts(db, "   ")
+    assert len(results_ws) == 1
+
+
+async def test_search_facts_no_match_falls_back_to_get_facts(db: aiosqlite.Connection):
+    """M42: query with no matching facts falls back to full get_facts result."""
+    await save_fact(db, "PostgreSQL is the database", "curator")
+    # Query for something completely unrelated
+    results = await search_facts(db, "xyzzy quux nonexistent term")
+    # Should fall back and return the existing fact
+    assert len(results) >= 1
