@@ -47,6 +47,7 @@ from kiso.sysenv import get_system_env, build_system_env_section
 from kiso.webhook import deliver_webhook
 from kiso.worker.search import SearcherError, _search_task
 from kiso.store import (
+    append_task_llm_call,
     archive_low_confidence_facts,
     count_messages,
     create_plan,
@@ -92,6 +93,20 @@ from kiso.worker.exec import _exec_task
 from kiso.worker.skill import _skill_task
 
 log = logging.getLogger(__name__)
+
+
+async def _append_calls(
+    db: aiosqlite.Connection, task_id: int, idx_before: int
+) -> None:
+    """Append individual LLM call entries (since idx_before) to the task row.
+
+    Called right after each LLM step (translator, reviewer, messenger,
+    searcher) so verbose panels appear incrementally in the CLI instead of
+    only when the task finishes.
+    """
+    usage = get_usage_since(idx_before)
+    for call in usage.get("calls") or []:
+        await append_task_llm_call(db, task_id, call)
 
 
 async def _deliver_webhook_if_configured(
@@ -322,12 +337,14 @@ async def _fast_path_chat(
         len(text), deploy_secrets=deploy_secrets,
     )
 
-    # Store messenger usage
+    # Append messenger call immediately (incremental rendering)
+    await _append_calls(db, task_id, usage_idx_before)
+
+    # Store messenger token totals
     step_usage = get_usage_since(usage_idx_before)
     await update_task_usage(
         db, task_id,
         step_usage["input_tokens"], step_usage["output_tokens"],
-        llm_calls=step_usage.get("calls"),
     )
 
     # Save assistant response to conversation history
@@ -500,6 +517,7 @@ async def _execute_plan(
                 sys_env = get_system_env(config)
                 sys_env_text = build_system_env_section(sys_env, session=session)
                 outputs_text = _format_plan_outputs_for_msg(plan_outputs)
+                idx_translate = get_usage_index()
                 try:
                     command = await run_exec_translator(
                         config, detail, sys_env_text,
@@ -518,6 +536,8 @@ async def _execute_plan(
                     _cleanup_plan_outputs(session)
                     return False, None, completed, remaining
 
+                # Append translator call immediately (incremental rendering)
+                await _append_calls(db, task_id, idx_translate)
                 await update_task_command(db, task_id, command)
 
                 if slog:
@@ -571,6 +591,7 @@ async def _execute_plan(
 
                 # Review exec tasks
                 await update_task_substatus(db, task_id, "reviewing")
+                idx_review = get_usage_index()
                 try:
                     review = await _review_task(
                         config, db, session, goal, task_row, user_message,
@@ -581,6 +602,9 @@ async def _execute_plan(
                     remaining = [dict(t) for t in tasks[i + 1:]]
                     _cleanup_plan_outputs(session)
                     return False, None, completed, remaining
+
+                # Append reviewer call immediately (incremental rendering)
+                await _append_calls(db, task_id, idx_review)
 
                 if review["status"] == "replan":
                     retry_hint = review.get("retry_hint")
@@ -608,9 +632,9 @@ async def _execute_plan(
                                       exec_retries, replan_reason)
                         else:
                             slog.info("Review → replan: %s", replan_reason)
-                    # Store per-step token usage even on replan
+                    # Store per-step token totals even on replan
                     step_usage = get_usage_since(usage_idx_before)
-                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
                     remaining = [dict(t) for t in tasks[i + 1:]]
                     _cleanup_plan_outputs(session)
                     return False, replan_reason, completed, remaining
@@ -618,9 +642,9 @@ async def _execute_plan(
                 # review ok → break out of retry loop
                 break
 
-            # Store per-step token usage (translator + exec + reviewer)
+            # Store per-step token totals (translator + exec + reviewer)
             step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
             if slog:
                 slog.info("Review → %s", review["status"])
@@ -631,6 +655,7 @@ async def _execute_plan(
                 await update_task_substatus(db, task_id, "composing")
                 t0 = time.perf_counter()
                 _msg_timeout = int(config.settings["planner_timeout"])
+                idx_msg = get_usage_index()
                 try:
                     text = await asyncio.wait_for(
                         _msg_task(
@@ -671,9 +696,12 @@ async def _execute_plan(
                     session_secrets=session_secrets,
                 )
 
-                # Store per-step token usage (messenger)
+                # Append messenger call immediately (incremental rendering)
+                await _append_calls(db, task_id, idx_msg)
+
+                # Store per-step token totals (messenger)
                 step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
                 completed.append(task_row)
             except (LLMError, MessengerError) as e:
@@ -763,6 +791,7 @@ async def _execute_plan(
 
             # Review skill tasks
             await update_task_substatus(db, task_id, "reviewing")
+            idx_review = get_usage_index()
             try:
                 review = await _review_task(
                     config, db, session, goal, task_row, user_message,
@@ -773,19 +802,22 @@ async def _execute_plan(
                 _cleanup_plan_outputs(session)
                 return False, None, completed, remaining
 
+            # Append reviewer call immediately (incremental rendering)
+            await _append_calls(db, task_id, idx_review)
+
             if review["status"] == "replan":
                 replan_reason = review["reason"]
                 if slog:
                     slog.info("Review → replan: %s", replan_reason)
                 step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
                 remaining = [dict(t) for t in tasks[i + 1:]]
                 _cleanup_plan_outputs(session)
                 return False, replan_reason, completed, remaining
 
-            # Store per-step token usage (skill + reviewer)
+            # Store per-step token totals (skill + reviewer)
             step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
             if slog:
                 slog.info("Review → %s", review["status"])
@@ -804,6 +836,7 @@ async def _execute_plan(
             while True:
                 t0 = time.perf_counter()
                 await update_task_substatus(db, task_id, "searching")
+                idx_search = get_usage_index()
                 try:
                     outputs_text = _format_plan_outputs_for_msg(plan_outputs)
                     full_context = outputs_text
@@ -840,6 +873,9 @@ async def _execute_plan(
                 if slog:
                     slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
 
+                # Append searcher call immediately (incremental rendering)
+                await _append_calls(db, task_id, idx_search)
+
                 # Accumulate plan output (replace on retry)
                 plan_output_entry = {
                     "index": i + 1,
@@ -855,6 +891,7 @@ async def _execute_plan(
 
                 # Review search tasks
                 await update_task_substatus(db, task_id, "reviewing")
+                idx_review = get_usage_index()
                 try:
                     review = await _review_task(
                         config, db, session, goal, task_row, user_message,
@@ -864,6 +901,9 @@ async def _execute_plan(
                     remaining = [dict(t) for t in tasks[i + 1:]]
                     _cleanup_plan_outputs(session)
                     return False, None, completed, remaining
+
+                # Append reviewer call immediately (incremental rendering)
+                await _append_calls(db, task_id, idx_review)
 
                 if review["status"] == "replan":
                     retry_hint = review.get("retry_hint")
@@ -888,7 +928,7 @@ async def _execute_plan(
                         else:
                             slog.info("Review → replan: %s", replan_reason)
                     step_usage = get_usage_since(usage_idx_before)
-                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
                     remaining = [dict(t) for t in tasks[i + 1:]]
                     _cleanup_plan_outputs(session)
                     return False, replan_reason, completed, remaining
@@ -896,9 +936,9 @@ async def _execute_plan(
                 # review ok → break out of retry loop
                 break
 
-            # Store per-step token usage (searcher + reviewer)
+            # Store per-step token totals (searcher + reviewer)
             step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"], llm_calls=step_usage.get("calls"))
+            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
             if slog:
                 slog.info("Review → %s", review["status"])

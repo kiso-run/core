@@ -948,6 +948,90 @@ def test_poll_status_shows_planner_spinner(capsys):
     assert "Planning..." in out
 
 
+def test_poll_status_spinner_emits_newline_when_not_at_col0(capsys):
+    """M44b: spinner must emit \\n before first frame when cursor is not at column 0."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    # First poll: plan + running task (triggers spinner)
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Work", "status": "running"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "echo ok",
+             "status": "running", "output": None},
+        ],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Second poll: done
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Work", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "echo ok",
+             "status": "done", "output": "ok"},
+        ],
+        "worker_running": False,
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False,
+                     caps=tty_caps, _at_col0=False)
+
+    raw = capsys.readouterr().out
+    # When _at_col0=False, the spinner emits an extra \n before the first \r frame,
+    # producing \n\n\r (task-header-newline + our extra newline + spinner \r).
+    assert "\n\n\r" in raw, (
+        f"Expected double-newline before first spinner frame (\\n\\n\\r). Got: {raw!r}"
+    )
+
+
+def test_poll_status_spinner_no_extra_newline_when_at_col0(capsys):
+    """M44b: spinner must NOT emit an extra \\n when cursor is already at column 0."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Work", "status": "running"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "echo ok",
+             "status": "running", "output": None},
+        ],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Work", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "echo ok",
+             "status": "done", "output": "ok"},
+        ],
+        "worker_running": False,
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        # _at_col0=True (default) — cursor already at column 0
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False,
+                     caps=tty_caps, _at_col0=True)
+
+    raw = capsys.readouterr().out
+    # With _at_col0=True, no extra \n is emitted — the task-header \n + spinner \r
+    # gives \n\r, but NOT \n\n\r.
+    assert "\r" in raw, "Expected spinner frame \\r in output"
+    assert "\n\n\r" not in raw, (
+        f"Unexpected double-newline before spinner frame. Got: {raw!r}"
+    )
+
+
 def test_chat_http_status_error_on_msg_post(capsys):
     """HTTPStatusError on /msg POST should print status code and continue."""
     from cli import _chat

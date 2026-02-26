@@ -43,6 +43,7 @@ from kiso.store import (
     update_task_review,
     update_task_substatus,
     update_task_usage,
+    save_learning,
 )
 
 
@@ -1303,3 +1304,109 @@ async def test_search_facts_unicode_content_and_query(db: aiosqlite.Connection):
     assert any("PostgreSQL" in c for c in contents), (
         f"Expected Italian PostgreSQL fact in results. Got: {contents}"
     )
+
+
+# --- M44b: save_learning fact poisoning filter ---
+
+
+async def test_save_learning_rejects_password_keyword(db: aiosqlite.Connection):
+    """Learning containing 'password' is rejected and returns 0."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "The admin password is hunter2", "sess1")
+    assert result == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 0
+
+
+async def test_save_learning_rejects_passwd_keyword(db: aiosqlite.Connection):
+    """Learning containing 'passwd' is rejected."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "Root passwd is toor", "sess1")
+    assert result == 0
+
+
+async def test_save_learning_rejects_token_keyword(db: aiosqlite.Connection):
+    """Learning containing 'token' is rejected."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "API token is abc123", "sess1")
+    assert result == 0
+
+
+async def test_save_learning_rejects_hex_string(db: aiosqlite.Connection):
+    """Learning containing a hex string ≥32 chars is rejected."""
+    await create_session(db, "sess1")
+    hex_str = "a" * 32  # exactly 32 hex chars
+    result = await save_learning(db, f"Secret key: {hex_str}", "sess1")
+    assert result == 0
+
+
+async def test_save_learning_allows_short_hex(db: aiosqlite.Connection):
+    """Hex string shorter than 32 chars is not treated as a secret."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "Color code: deadbeef (8 chars)", "sess1")
+    assert result != 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 1
+
+
+async def test_save_learning_accepts_benign_content(db: aiosqlite.Connection):
+    """Normal learning content is accepted and stored."""
+    await create_session(db, "sess1")
+    result = await save_learning(db, "User prefers concise answers", "sess1")
+    assert result != 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 1
+    assert learnings[0]["content"] == "User prefers concise answers"
+
+
+async def test_save_learning_case_insensitive_filter(db: aiosqlite.Connection):
+    """Keyword matching is case-insensitive (PASSWORD, Token, PASSWD)."""
+    await create_session(db, "sess1")
+    assert await save_learning(db, "The PASSWORD is secret", "sess1") == 0
+    assert await save_learning(db, "Bearer Token: xyz", "sess1") == 0
+    assert await save_learning(db, "PASSWD override", "sess1") == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 0
+
+
+# --- M44e: update_task_usage sentinel (preserves llm_calls when omitted) ---
+
+
+async def test_update_task_usage_sentinel_preserves_llm_calls(db: aiosqlite.Connection):
+    """Calling update_task_usage without llm_calls leaves the existing column intact."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    # Write an initial llm_calls value via append_task_llm_call
+    call = {"role": "translator", "model": "gpt", "input_tokens": 10, "output_tokens": 5}
+    await append_task_llm_call(db, task_id, call)
+
+    # Now update usage without passing llm_calls (should preserve existing data)
+    await update_task_usage(db, task_id, input_tokens=10, output_tokens=5)
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    import json as _json
+    stored = _json.loads(tasks[0]["llm_calls"])
+    assert len(stored) == 1
+    assert stored[0]["role"] == "translator"
+
+
+async def test_update_task_usage_with_explicit_calls_overwrites(db: aiosqlite.Connection):
+    """Passing llm_calls=[] explicitly clears the column (old behaviour)."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    call = {"role": "reviewer", "model": "gpt", "input_tokens": 20, "output_tokens": 10}
+    await append_task_llm_call(db, task_id, call)
+
+    # Explicitly pass empty list — should clear llm_calls
+    await update_task_usage(db, task_id, input_tokens=20, output_tokens=10, llm_calls=[])
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["llm_calls"] is None

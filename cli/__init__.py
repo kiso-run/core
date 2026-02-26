@@ -373,6 +373,7 @@ def _poll_status(
     verbose: bool,
     caps: "TermCaps",  # noqa: F821
     bot_name: str = "Bot",
+    _at_col0: bool = True,
 ) -> int:
     import time
 
@@ -410,6 +411,7 @@ def _poll_status(
     active_spinner_total: int = 0
     planning_phase = False
     seen_any_task = False  # for blank-line spacing between tasks
+    _spinner_active = False  # True while a spinner frame is live on screen
 
     while True:
         if counter % _POLL_EVERY == 0:
@@ -450,6 +452,8 @@ def _poll_status(
                         sys.stdout.flush()
                         active_spinner_task = None
                         planning_phase = False
+                        _spinner_active = False
+                        _at_col0 = True
                     print(f"\n{render_plan(plan['goal'], task_count, caps)}")
                     plan_detail = render_plan_detail(tasks, caps)
                     if plan_detail:
@@ -463,6 +467,8 @@ def _poll_status(
                         sys.stdout.flush()
                         active_spinner_task = None
                         planning_phase = False
+                        _spinner_active = False
+                        _at_col0 = True
                     print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
                     plan_detail = render_plan_detail(tasks, caps)
                     if plan_detail:
@@ -482,6 +488,8 @@ def _poll_status(
                     sys.stdout.flush()
                     active_spinner_task = None
                     planning_phase = False
+                    _spinner_active = False
+                    _at_col0 = True
                 llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
                 if llm_detail:
                     print(llm_detail)
@@ -520,6 +528,8 @@ def _poll_status(
                     sys.stdout.flush()
                     active_spinner_task = None
                     planning_phase = False
+                    _spinner_active = False
+                    _at_col0 = True
 
                 if quiet:
                     if ttype == "msg" and status == "done":
@@ -653,6 +663,8 @@ def _poll_status(
                 if active_spinner_task and caps.tty:
                     sys.stdout.write(f"\r{CLEAR_LINE}")
                     sys.stdout.flush()
+                    _spinner_active = False
+                    _at_col0 = True
                 # Show aggregate token usage (per-call breakdown already shown per step)
                 if not quiet:
                     usage_line = render_usage(plan, caps)
@@ -669,6 +681,8 @@ def _poll_status(
                     if active_spinner_task and caps.tty:
                         sys.stdout.write(f"\r{CLEAR_LINE}")
                         sys.stdout.flush()
+                        _spinner_active = False
+                        _at_col0 = True
                     print("error: worker stopped without producing a result")
                     break
             else:
@@ -679,6 +693,8 @@ def _poll_status(
                 if active_spinner_task and caps.tty:
                     sys.stdout.write(f"\r{CLEAR_LINE}")
                     sys.stdout.flush()
+                    _spinner_active = False
+                    _at_col0 = True
                 print("error: timed out waiting for response")
                 break
 
@@ -690,12 +706,22 @@ def _poll_status(
                     active_spinner_task, active_spinner_index,
                     active_spinner_total, caps, spinner_frame=frame,
                 )
+                if not _spinner_active and not _at_col0:
+                    sys.stdout.write('\n')
                 sys.stdout.write(f"\r{CLEAR_LINE}{line}")
                 sys.stdout.flush()
+                _spinner_active = True
+                _at_col0 = False
             elif planning_phase:
                 line = render_planner_spinner(caps, frame)
+                if not _spinner_active and not _at_col0:
+                    sys.stdout.write('\n')
                 sys.stdout.write(f"\r{CLEAR_LINE}{line}")
                 sys.stdout.flush()
+                _spinner_active = True
+                _at_col0 = False
+            else:
+                _spinner_active = False
 
         time.sleep(0.08)
         counter += 1

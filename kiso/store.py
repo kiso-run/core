@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import aiosqlite
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """\
 CREATE TABLE IF NOT EXISTS sessions (
@@ -510,19 +513,33 @@ async def update_task_command(
     await db.commit()
 
 
+_KEEP_LLM_CALLS = object()  # sentinel: don't touch the llm_calls column
+
+
 async def update_task_usage(
     db: aiosqlite.Connection,
     task_id: int,
     input_tokens: int,
     output_tokens: int,
-    llm_calls: list[dict] | None = None,
+    llm_calls: list[dict] | None | object = _KEEP_LLM_CALLS,
 ) -> None:
-    """Store per-step token usage on a task."""
-    calls_json = json.dumps(llm_calls) if llm_calls else None
-    await db.execute(
-        "UPDATE tasks SET input_tokens = ?, output_tokens = ?, llm_calls = ? WHERE id = ?",
-        (input_tokens, output_tokens, calls_json, task_id),
-    )
+    """Store per-step token usage on a task.
+
+    When *llm_calls* is omitted the existing ``llm_calls`` column is
+    preserved (only token totals are updated).  Pass an explicit list to
+    overwrite the column, or ``None`` to clear it.
+    """
+    if llm_calls is _KEEP_LLM_CALLS:
+        await db.execute(
+            "UPDATE tasks SET input_tokens = ?, output_tokens = ? WHERE id = ?",
+            (input_tokens, output_tokens, task_id),
+        )
+    else:
+        calls_json = json.dumps(llm_calls) if llm_calls else None
+        await db.execute(
+            "UPDATE tasks SET input_tokens = ?, output_tokens = ?, llm_calls = ? WHERE id = ?",
+            (input_tokens, output_tokens, calls_json, task_id),
+        )
     await db.commit()
 
 
@@ -578,9 +595,6 @@ async def update_plan_status(
     await db.commit()
 
 
-_KEEP_LLM_CALLS = object()  # sentinel: don't touch the llm_calls column
-
-
 async def update_plan_usage(
     db: aiosqlite.Connection,
     plan_id: int,
@@ -618,13 +632,31 @@ async def get_tasks_for_plan(db: aiosqlite.Connection, plan_id: int) -> list[dic
     )
     return await _rows_to_dicts(cur)
 
+# Patterns that indicate secret-like content (passwords, tokens, hex keys).
+# Matched case-insensitively; learnings matching any pattern are rejected.
+_SENSITIVE_PATTERN = re.compile(
+    r"\b(password|passwd|token)\b"
+    r"|[0-9a-fA-F]{32,}",
+    re.IGNORECASE,
+)
+
+
 async def save_learning(
     db: aiosqlite.Connection,
     content: str,
     session: str,
     user: str | None = None,
 ) -> int:
-    """Insert a learning row. Returns learning id."""
+    """Insert a learning row. Returns learning id, or 0 if content was rejected.
+
+    Learnings that match secret-like patterns (passwords, tokens, long hex
+    strings) are silently dropped with a warning log to prevent fact poisoning.
+    """
+    if _SENSITIVE_PATTERN.search(content):
+        log.warning(
+            "Learning rejected (contains secret-like content): %s", content[:80]
+        )
+        return 0
     cur = await db.execute(
         "INSERT INTO learnings (content, session, user) VALUES (?, ?, ?)",
         (content, session, user),
