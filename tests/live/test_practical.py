@@ -784,3 +784,100 @@ class TestFactConsolidation:
         assert any(kw in combined for kw in ("ffmpeg", "git", "fastapi")), (
             f"Tool/tech info lost in consolidation. Result: {combined[:400]}"
         )
+
+    async def test_consolidation_deduplicates_near_duplicates(
+        self, live_config, seeded_db, live_session,
+    ):
+        """Seed multiple near-identical facts → consolidated output has fewer entries.
+
+        When the same information is phrased differently across facts (a common
+        occurrence as the agent learns from different messages), the consolidation
+        LLM should merge them into a single canonical fact.  We verify the output
+        count is strictly less than the input count.
+        """
+        seed = [
+            # Three near-duplicate phrasings of the same fact
+            ("The project uses Python 3.12", "project"),
+            ("Python version 3.12 is used in this project", "project"),
+            ("This codebase targets Python 3.12", "project"),
+            # Two near-duplicates about the same tool
+            ("PostgreSQL 15 is the database", "project"),
+            ("The database backend is PostgreSQL version 15", "project"),
+            # One unique fact that must survive
+            ("ffmpeg is installed at /usr/bin/ffmpeg", "tool"),
+        ]
+        for content, category in seed:
+            await save_fact(
+                seeded_db, content, source="test",
+                session=live_session, category=category,
+            )
+
+        all_facts = await get_facts(seeded_db)
+        input_count = len(all_facts)
+        assert input_count >= 5
+
+        consolidated = await asyncio.wait_for(
+            run_fact_consolidation(live_config, all_facts, session=live_session),
+            timeout=TIMEOUT,
+        )
+
+        assert consolidated, "Consolidation returned an empty list"
+        assert len(consolidated) < input_count, (
+            f"Expected deduplication to reduce {input_count} facts, "
+            f"got {len(consolidated)}: {consolidated}"
+        )
+        # The surviving unique fact must still be present
+        combined = " ".join(f["content"].lower() for f in consolidated)
+        assert "ffmpeg" in combined, (
+            f"Unique tool fact lost during deduplication. Result: {combined[:400]}"
+        )
+
+    async def test_consolidation_resolves_contradictions(
+        self, live_config, seeded_db, live_session,
+    ):
+        """Seed contradictory facts → consolidated output does not contain both sides.
+
+        In a long-running session the agent may learn conflicting information
+        (e.g. "uses MySQL" followed by "switched to PostgreSQL").  The LLM
+        consolidator should resolve the contradiction — keeping only the most
+        coherent or recent-sounding fact — rather than emitting both.
+        """
+        seed = [
+            # Direct contradiction about the database technology
+            ("The project database is MySQL", "project"),
+            ("The project switched to PostgreSQL; MySQL is no longer used", "project"),
+            # A stable unrelated fact that must survive intact
+            ("Python 3.12 is the runtime", "project"),
+            ("The API framework is FastAPI", "project"),
+        ]
+        for content, category in seed:
+            await save_fact(
+                seeded_db, content, source="test",
+                session=live_session, category=category,
+            )
+
+        all_facts = await get_facts(seeded_db)
+
+        consolidated = await asyncio.wait_for(
+            run_fact_consolidation(live_config, all_facts, session=live_session),
+            timeout=TIMEOUT,
+        )
+
+        assert consolidated, "Consolidation returned an empty list"
+
+        combined = " ".join(f["content"].lower() for f in consolidated)
+
+        # Both "mysql" and "postgresql" must NOT coexist in output — contradiction
+        # should be resolved to one or the other.
+        mysql_present = "mysql" in combined
+        postgres_present = "postgresql" in combined or "postgres" in combined
+        assert not (mysql_present and postgres_present), (
+            f"Contradiction not resolved — both MySQL and PostgreSQL present. "
+            f"Result: {combined[:500]}"
+        )
+
+        # Stable facts that carry no contradiction must survive
+        assert "python" in combined or "3.12" in combined, (
+            f"Stable fact (Python version) lost during contradiction resolution. "
+            f"Result: {combined[:400]}"
+        )

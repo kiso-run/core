@@ -1827,20 +1827,20 @@ Fixes identified by post-v1.0 code audit. No new features, no API changes.
 - When `task_row["args"]` is malformed JSON, the exception is swallowed with `pass` — no log, no warning. The planner created bad data and the worker silently falls back to defaults.
 - **Fix**: Replace `pass` with `log.warning("Malformed search args JSON for task %d: %s", task_id, e)`.
 
-#### 3. Fact confidence not clamped to [0.0, 1.0] — MEDIUM
-- **File**: `kiso/brain.py` (fact consolidation output parsing)
-- LLM can return `confidence > 1.0` or `< 0.0`. Values are stored as-is, breaking semantic meaning of the confidence field.
-- **Fix**: Clamp with `max(0.0, min(1.0, val))` when reading confidence from LLM output.
+#### 3. ~~Fact confidence not clamped to [0.0, 1.0]~~ — DONE
+- **File**: `kiso/brain.py:894`
+- Clamping implemented: `max(0.0, min(1.0, float(item.get("confidence", 1.0))))`.
+- Unit test added: `test_brain.py::TestRunFactConsolidation::test_confidence_clamped_to_unit_interval`.
 
 #### 4. Connector discovery errors are silent — MEDIUM
 - **File**: `kiso/connectors.py`
 - `except Exception: continue` when reading a connector's `kiso.toml`. A corrupt or unreadable manifest causes the connector to silently disappear from the registry with no log entry.
 - **Fix**: Add `log.warning("Connector '%s': failed to read manifest: %s", name, e)` before `continue`.
 
-#### 5. Hardcoded 30% consolidation sanity threshold — LOW
-- **File**: `kiso/worker/loop.py` ~line 191
-- `if len(consolidated) < len(all_facts) * 0.3` is hardcoded. Should be a named constant or config setting.
-- **Fix**: Add `fact_consolidation_min_ratio = 0.3` to `SETTINGS_DEFAULTS` / `config.toml` and read it from config.
+#### 5. ~~Hardcoded 30% consolidation sanity threshold~~ — DONE
+- **File**: `kiso/worker/loop.py:191`, `kiso/config.py:29`
+- `fact_consolidation_min_ratio` added to `SETTINGS_DEFAULTS` and read from config in loop.py.
+- Unit test added: `test_worker.py::TestConsolidationSafety::test_consolidation_custom_min_ratio_respected`.
 
 #### 6. `setting_bool` silently coerces integers — LOW
 - **File**: `kiso/config.py`
@@ -1851,9 +1851,10 @@ Fixes identified by post-v1.0 code audit. No new features, no API changes.
 
 - `test_sysenv.py`: workspace with deeply nested dirs doesn't hang / is capped
 - `test_worker.py`: malformed search args → warning logged, task proceeds with defaults
-- `test_brain.py`: confidence values outside [0, 1] are clamped
+- ~~`test_brain.py`: confidence values outside [0, 1] are clamped~~ — **DONE** (`test_confidence_clamped_to_unit_interval`)
 - `test_connectors.py`: corrupt manifest → warning logged, connector skipped
 - `test_config.py`: `setting_bool` rejects integer values
+- ~~`test_worker.py`: custom `fact_consolidation_min_ratio` config value is respected~~ — **DONE** (`test_consolidation_custom_min_ratio_respected`)
 
 ### Changes
 
@@ -1873,9 +1874,9 @@ Fixes identified by post-v1.0 code audit. No new features, no API changes.
 - [ ] Fix silent JSON decode failure
 - [ ] Log connector manifest errors
 - [ ] Fix `setting_bool` int coercion
-- [ ] Add tests for above fixes
-- [ ] Clamp fact confidence — **do together with M43** (same code path)
-- [ ] Extract consolidation ratio to config — **do together with M43** (same code path)
+- [ ] Add tests for remaining fixes above
+- [x] Clamp fact confidence (`brain.py:894`) + test (`test_confidence_clamped_to_unit_interval`)
+- [x] Extract consolidation ratio to config (`config.py:29`, `loop.py:191`) + test (`test_consolidation_custom_min_ratio_respected`)
 - [ ] Update docs/config.md (consolidation ratio field)
 
 **Verify:**
@@ -2196,4 +2197,29 @@ uv run pytest tests/test_brain.py -k facts -v
 
 ## Done
 
-All milestones through M41 complete. M24 also complete (discovered during M24 review — all tasks already implemented). M21 L4 live test complete.
+All milestones through M41 complete. M24 also complete (discovered during M24 review — all tasks already implemented).
+
+### M21 — Fact Consolidation: test coverage
+
+**Unit tests** (`test_brain.py::TestRunFactConsolidation`):
+- happy path (structured dict output)
+- backward compat plain strings
+- defaults for missing category/confidence fields
+- invalid items skipped
+- LLM error → SummarizerError
+- invalid JSON → SummarizerError
+- non-array response → SummarizerError
+- confidence clamped to [0.0, 1.0] *(M37 fix #3)*
+
+**Worker integration tests** (`test_worker.py::TestConsolidationSafety`):
+- triggers when `len(facts) > knowledge_max_facts`
+- catastrophic shrinkage (< min_ratio) → originals preserved
+- custom `fact_consolidation_min_ratio` config value respected *(M37 fix #5)*
+- short facts (< 3 chars) filtered after consolidation
+- consolidation timeout → worker continues normally
+- consolidation LLM failure → worker continues normally
+
+**L4 live tests** (`tests/live/test_practical.py::TestFactConsolidation`):
+- `test_consolidation_preserves_topics`: diverse facts → key topics survive
+- `test_consolidation_deduplicates_near_duplicates`: near-identical facts → output count < input count
+- `test_consolidation_resolves_contradictions`: contradictory facts → only one version survives

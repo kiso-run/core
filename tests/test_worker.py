@@ -4299,6 +4299,45 @@ class TestConsolidationSafetyGuards:
         assert "This is a valid consolidated fact" in contents
         assert "Another valid fact here" in contents
 
+    async def test_consolidation_custom_min_ratio_respected(self, db, tmp_path):
+        """fact_consolidation_min_ratio is read from config, not hardcoded.
+
+        With ratio=0.5: 10 facts → 4 consolidated = 40% < 50% → skip (originals kept).
+        With ratio=0.3 (default): same 4/10=40% > 30% → consolidation accepted.
+        This verifies the config value is actually driving the safety threshold.
+        """
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            "knowledge_max_facts": 5,
+            "fact_consolidation_min_ratio": 0.5,  # stricter than default
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
+        for i in range(10):
+            await save_fact(db, f"Important fact number {i}", "curator")
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "hello", "user_role": "admin"})
+
+        # 4/10 = 40% — exceeds default 0.3 threshold but below custom 0.5 threshold
+        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=VALID_PLAN), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
+             patch("kiso.worker.loop.run_fact_consolidation", new_callable=AsyncMock,
+                   return_value=[
+                       {"content": f"Merged fact {i}", "category": "general", "confidence": 1.0}
+                       for i in range(4)
+                   ]), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+
+        # All 10 originals must be preserved (4 < 10 * 0.5 = 5)
+        facts = await get_facts(db)
+        assert len(facts) == 10
+
 
 # --- M34: Fact usage tracking ---
 
