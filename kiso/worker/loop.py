@@ -25,7 +25,6 @@ from kiso.brain import (
     ParaphraserError,
     PlanError,
     ReviewError,
-    SearcherError,
     SummarizerError,
     classify_message,
     run_curator,
@@ -35,7 +34,6 @@ from kiso.brain import (
     run_paraphraser,
     run_planner,
     run_reviewer,
-    run_searcher,
     run_summarizer,
 )
 from kiso.config import Config, setting_bool
@@ -47,6 +45,7 @@ from kiso.skills import (
 )
 from kiso.sysenv import get_system_env, build_system_env_section
 from kiso.webhook import deliver_webhook
+from kiso.worker.search import SearcherError, _search_task
 from kiso.store import (
     archive_low_confidence_facts,
     count_messages,
@@ -799,28 +798,6 @@ async def _execute_plan(
             completed.append(task_row)
 
         elif task_type == "search":
-            # Parse optional search parameters from args
-            search_params: dict = {}
-            if task_row.get("args"):
-                try:
-                    search_params = json.loads(task_row["args"])
-                except json.JSONDecodeError as e:
-                    log.warning("search task %r: malformed args JSON, using defaults: %s", task_row.get("id"), e)
-
-            # Validate search parameter types
-            max_results = search_params.get("max_results")
-            if max_results is not None:
-                try:
-                    max_results = max(1, min(int(max_results), 100))
-                except (TypeError, ValueError):
-                    max_results = None
-            lang = search_params.get("lang")
-            if not isinstance(lang, str):
-                lang = None
-            country = search_params.get("country")
-            if not isinstance(country, str):
-                country = None
-
             search_retries = 0
             search_extra_context = ""
 
@@ -832,12 +809,11 @@ async def _execute_plan(
                     full_context = outputs_text
                     if search_extra_context:
                         full_context = (full_context + "\n\n" + search_extra_context).strip()
-                    search_result = await run_searcher(
-                        config, detail, context=full_context,
-                        max_results=max_results,
-                        lang=lang,
-                        country=country,
+                    search_result = await _search_task(
+                        config, detail, task_row.get("args"),
+                        context=full_context,
                         session=session,
+                        task_id=task_id,
                     )
                 except SearcherError as e:
                     task_duration_ms = int((time.perf_counter() - t0) * 1000)

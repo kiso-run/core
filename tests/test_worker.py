@@ -5298,7 +5298,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_searcher = AsyncMock(return_value='{"results": [{"title": "Pizza Place"}]}')
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -5324,7 +5324,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_searcher = AsyncMock(return_value="results here")
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -5349,7 +5349,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_searcher = AsyncMock(return_value="results")
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -5375,7 +5375,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_searcher = AsyncMock(return_value="results")
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              caplog.at_level(logging.WARNING, logger="kiso.worker.loop"), \
@@ -5397,7 +5397,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_searcher = AsyncMock(return_value="results")
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -5421,7 +5421,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, side_effect=SearcherError("LLM down")), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, side_effect=SearcherError("LLM down")), \
              _patch_kiso_dir(tmp_path):
             success, reason, completed, remaining = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
@@ -5443,7 +5443,7 @@ class TestExecutePlanSearch:
 
         search_output = "Found 3 results: A, B, C"
         mock_messenger = AsyncMock(return_value="Here are the results")
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value=search_output), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value=search_output), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              _patch_kiso_dir(tmp_path):
@@ -5465,7 +5465,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value="search results"), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="search results"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -5487,7 +5487,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value="bad results"), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="bad results"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_kiso_dir(tmp_path):
             success, reason, completed, remaining = await _execute_plan(
@@ -5505,7 +5505,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value="results"), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("LLM down")), \
              _patch_kiso_dir(tmp_path):
             success, reason, completed, remaining = await _execute_plan(
@@ -5531,7 +5531,7 @@ class TestExecutePlanSearch:
             substatus_calls.append(substatus)
             await original_update(db, task_id, substatus)
 
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value="results"), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              patch("kiso.worker.loop.update_task_substatus", side_effect=capture_substatus), \
@@ -5554,7 +5554,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="search", detail="obscure query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        with patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value=""), \
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value=""), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="nothing found"), \
              _patch_kiso_dir(tmp_path):
@@ -5576,7 +5576,7 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_searcher = AsyncMock(return_value="some results")
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -5602,7 +5602,7 @@ class TestExecutePlanSearch:
 
         mock_searcher = AsyncMock(side_effect=["result1", "result2"])
         mock_messenger = AsyncMock(return_value="combined summary")
-        with patch("kiso.worker.loop.run_searcher", mock_searcher), \
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              _patch_kiso_dir(tmp_path):
@@ -6098,7 +6098,7 @@ class TestWorkerRetry:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.run_searcher", new_callable=AsyncMock, return_value="search results"), \
+             patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="search results"), \
              _patch_kiso_dir(tmp_path):
             success, reason, completed, remaining = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,

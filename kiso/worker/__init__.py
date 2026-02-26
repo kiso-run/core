@@ -18,6 +18,7 @@ from kiso.worker.utils import (
     _write_plan_outputs,
 )
 from kiso.worker.exec import _exec_task
+from kiso.worker.search import _parse_search_args, _search_task
 from kiso.worker.skill import _skill_task
 from kiso.worker.loop import (
     _apply_curator_result,
@@ -47,6 +48,9 @@ __all__ = [
     "_write_plan_outputs",
     # exec
     "_exec_task",
+    # search
+    "_parse_search_args",
+    "_search_task",
     # skill
     "_skill_task",
     # loop
