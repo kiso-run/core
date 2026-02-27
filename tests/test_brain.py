@@ -1477,6 +1477,11 @@ class TestDefaultMessengerPrompt:
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "{bot_name}" in prompt
 
+    def test_verbatim_instructions_rule(self):
+        """M46: messenger prompt must instruct to reproduce setup instructions verbatim."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "verbatim" in prompt
+
     def test_load_replaces_bot_name(self):
         config = _make_brain_config(settings={"bot_name": "TestBot"})
         msgs = build_messenger_messages(config, "", [], "say hi")

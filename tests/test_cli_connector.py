@@ -444,6 +444,9 @@ def test_connector_install_env_warning_includes_description(tmp_path, mock_admin
     assert "KISO_CONNECTOR_DISCORD_WEBHOOK_SECRET not set (optional)" in out
     assert "Any random string" in out
     assert "installed successfully" in out
+    # required/optional labels must be present so the planner can distinguish them
+    assert "(required)" in out
+    assert "(optional)" in out
 
 
 def test_connector_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
