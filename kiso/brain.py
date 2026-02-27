@@ -470,7 +470,7 @@ async def build_reviewer_messages(
     system_prompt = _load_system_prompt("reviewer")
 
     context = (
-        f"## Plan Goal\n{goal}\n\n"
+        f"## Plan Context\n{goal}\n\n"
         f"## Task Detail\n{detail}\n\n"
         f"## Expected Outcome\n{expect}\n\n"
         f"## Actual Output\n{fence_content(output, 'TASK_OUTPUT')}\n\n"
@@ -535,10 +535,11 @@ CURATOR_SCHEMA: dict = {
                                 "enum": ["promote", "ask", "discard"],
                             },
                             "fact": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
                             "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                             "reason": {"type": "string"},
                         },
-                        "required": ["learning_id", "verdict", "fact", "question", "reason"],
+                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason"],
                         "additionalProperties": False,
                     },
                 },
@@ -570,6 +571,10 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
             errors.append(f"Evaluation {i}: reason is required")
         if verdict == "promote" and not ev.get("fact"):
             errors.append(f"Evaluation {i}: promote verdict requires a non-empty fact")
+        if verdict == "promote" and ev.get("category") is not None:
+            valid_categories = {"project", "user", "tool", "general"}
+            if ev["category"] not in valid_categories:
+                errors.append(f"Evaluation {i}: category must be one of {sorted(valid_categories)}")
         if verdict == "ask" and not ev.get("question"):
             errors.append(f"Evaluation {i}: ask verdict requires a non-empty question")
     return errors

@@ -16,3 +16,5 @@ Confidence guidelines:
 - 0.7-0.9: inferred from context with high reliability
 - 0.4-0.6: reasonable assumption, may need verification
 - 0.1-0.3: uncertain, based on limited evidence
+
+When two facts contradict each other: keep the one with higher confidence. If confidence is equal, keep the more specific fact and discard the more general one.

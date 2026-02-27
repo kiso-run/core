@@ -10,6 +10,7 @@ import pytest
 import aiosqlite
 from kiso.brain import (
     ClassifierError,
+    CURATOR_SCHEMA,
     CuratorError,
     ExecTranslatorError,
     MessengerError,
@@ -346,7 +347,7 @@ class TestValidatePlan:
 class TestLoadSystemPrompt:
     def test_package_default_when_no_user_file(self):
         prompt = _load_system_prompt("planner")
-        assert "task planner" in prompt
+        assert "planner" in prompt
 
     def test_user_override_takes_priority(self, tmp_path):
         roles_dir = tmp_path / "roles"
@@ -799,7 +800,7 @@ class TestBuildReviewerMessages:
             user_message="list directory contents",
         )
         content = msgs[1]["content"]
-        assert "## Plan Goal" in content
+        assert "## Plan Context" in content
         assert "List files" in content
         assert "## Task Detail" in content
         assert "ls -la" in content
@@ -1058,11 +1059,11 @@ class TestBuildCuratorMessages:
 # --- M9: run_curator ---
 
 VALID_CURATOR = json.dumps({"evaluations": [
-    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "question": None, "reason": "Good"},
+    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good"},
 ]})
 
 INVALID_CURATOR = json.dumps({"evaluations": [
-    {"learning_id": 1, "verdict": "promote", "fact": None, "question": None, "reason": "Good"},
+    {"learning_id": 1, "verdict": "promote", "fact": None, "category": None, "question": None, "reason": "Good"},
 ]})
 
 
@@ -2020,3 +2021,371 @@ class TestReviewerPromptRetryHint:
     def test_reviewer_prompt_mentions_retry_hint(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "retry_hint" in prompt
+
+
+# --- M47: planner/reviewer/worker improvements ---
+
+
+class TestM47PlannerIdentityAndTwoLayer:
+    """47a: planner self-awareness — identity + two-layer environment."""
+
+    def test_planner_prompt_mentions_kiso_identity(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "planner of Kiso" in prompt
+
+    def test_planner_prompt_mentions_two_layers(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "OS layer" in prompt
+        assert "Kiso layer" in prompt
+
+    def test_planner_prompt_prefers_kiso_native_solution(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Kiso-native" in prompt
+
+    def test_planner_prompt_unambiguous_bias(self):
+        """Clarification rule flipped: proceed only if unambiguous, else ask."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "unambiguous" in prompt
+        assert "When in doubt, ask" in prompt
+
+    def test_planner_prompt_expect_scoping(self):
+        """expect must be task-scoped, not plan-goal-scoped."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "THIS specific task" in prompt
+        assert "overall plan goal" in prompt
+
+
+class TestM47ReviewerPlanContext:
+    """47b: reviewer receives Plan Context (not Plan Goal) and evaluates only expect."""
+
+    async def test_reviewer_messages_use_plan_context_label(self):
+        msgs = await build_reviewer_messages(
+            goal="Install Discord",
+            detail="run apt-get install -f",
+            expect="exits 0",
+            output="0 upgraded, 0 installed",
+            user_message="install discord",
+            success=True,
+        )
+        content = msgs[1]["content"]
+        assert "## Plan Context" in content
+        assert "## Plan Goal" not in content
+
+    def test_reviewer_prompt_plan_context_is_background(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "background" in prompt and "context" in prompt.lower()
+
+    def test_reviewer_prompt_sole_criterion_is_expect(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "sole criterion" in prompt
+
+    def test_reviewer_prompt_zero_changes_is_success(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "0 changes" in prompt or "nothing to do" in prompt
+
+
+class TestM47WorkerHintPriority:
+    """47d: worker gives priority to retry hint over literal task detail re-translation."""
+
+    def test_worker_prompt_hint_takes_priority(self):
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "hint" in prompt.lower()
+        assert "priority" in prompt.lower()
+
+    def test_retry_context_with_hint_is_visible_to_translator(self):
+        """Hint in retry context is present in the messages sent to the exec translator."""
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config,
+            detail="Fix remaining dependency issues with apt-get install -f",
+            sys_env_text="OS: Linux",
+            retry_context="Attempt 1 failed.\nHint: use apt install discord instead",
+        )
+        content = msgs[1]["content"]
+        assert "## Retry Context" in content
+        assert "apt install discord" in content
+
+    def test_retry_context_without_hint_still_works(self):
+        """Retry context without hint does not break translation."""
+        config = _make_brain_config()
+        msgs = build_exec_translator_messages(
+            config,
+            detail="list files",
+            sys_env_text="OS: Linux",
+            retry_context="Attempt 1 failed. Command not found.",
+        )
+        content = msgs[1]["content"]
+        assert "## Retry Context" in content
+        assert "## Task" in content
+
+
+# --- M47: edge cases ---
+
+
+class TestM47ReviewerPlanContextEdgeCases:
+    """Edge cases for reviewer Plan Context / expect evaluation."""
+
+    async def test_reviewer_messages_goal_text_present_as_context(self):
+        """Goal text is still present in the message — just under Plan Context label."""
+        msgs = await build_reviewer_messages(
+            goal="Install Discord on the system",
+            detail="run apt-get install -f",
+            expect="exits 0, no broken dependencies (0 changes acceptable)",
+            output="0 upgraded, 0 installed, 0 to remove",
+            user_message="install discord",
+            success=True,
+        )
+        content = msgs[1]["content"]
+        # Goal text is present for context
+        assert "Install Discord on the system" in content
+        # But under the right label
+        assert "## Plan Context" in content
+
+    async def test_reviewer_messages_structure_order(self):
+        """Plan Context comes before Task Detail which comes before Expected Outcome."""
+        msgs = await build_reviewer_messages(
+            goal="some goal",
+            detail="some detail",
+            expect="some expect",
+            output="some output",
+            user_message="user msg",
+        )
+        content = msgs[1]["content"]
+        plan_ctx_pos = content.index("## Plan Context")
+        task_detail_pos = content.index("## Task Detail")
+        expected_pos = content.index("## Expected Outcome")
+        assert plan_ctx_pos < task_detail_pos < expected_pos
+
+    async def test_reviewer_messages_no_success_flag(self):
+        """build_reviewer_messages works without success flag (no Command Status section)."""
+        msgs = await build_reviewer_messages(
+            goal="goal",
+            detail="detail",
+            expect="expect",
+            output="output",
+            user_message="msg",
+        )
+        content = msgs[1]["content"]
+        assert "## Plan Context" in content
+        assert "Command Status" not in content
+
+    async def test_reviewer_messages_with_success_false(self):
+        """Failed exit code is reported correctly."""
+        msgs = await build_reviewer_messages(
+            goal="goal",
+            detail="detail",
+            expect="expect",
+            output="error output",
+            user_message="msg",
+            success=False,
+        )
+        content = msgs[1]["content"]
+        assert "FAILED" in content or "non-zero" in content
+
+
+class TestM47PlannerExpectScopingEdgeCases:
+    """Edge cases for planner expect scoping guidance."""
+
+    def test_planner_prompt_maintenance_commands_mentioned(self):
+        """Prompt explicitly calls out maintenance commands as edge case for expect."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        # apt-get install -f or similar maintenance commands should be mentioned
+        assert "apt-get install -f" in prompt or "maintenance" in prompt or "cleanup" in prompt
+
+    def test_planner_prompt_clarification_rule_not_just_unclear(self):
+        """New rule is more than 'if unclear, ask' — requires unambiguous intent AND target."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        # Old rule was simply "if the request is unclear"
+        # New rule requires both intent and target to be unambiguous
+        assert "intent" in prompt
+        assert "target" in prompt
+
+
+# ---------------------------------------------------------------------------
+# M48: Prompt hygiene — ottimizzazioni trasversali ai role prompts
+# ---------------------------------------------------------------------------
+
+
+class TestM48ReviewerPromptHygiene:
+    """48a+48b: reviewer prompt alignment and exit code rule."""
+
+    def test_48a_you_receive_says_plan_context(self):
+        """48a: 'You receive' block must say 'The plan context', not 'The plan goal'."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "The plan context" in prompt
+
+    def test_48a_no_plan_goal_in_receive_block(self):
+        """48a: old 'The plan goal' bullet must be gone from 'You receive' section."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "The plan goal" not in prompt
+
+    def test_48b_exit_code_rule_present(self):
+        """48b: reviewer prompt must have an explicit rule about exit codes."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "exit code" in prompt.lower() or "non-zero" in prompt.lower()
+
+    def test_48b_nonzero_is_failure_signal(self):
+        """48b: non-zero exit code must be labeled as failure indicator."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "non-zero" in prompt.lower()
+
+    def test_48b_zero_not_sufficient_alone(self):
+        """48b: zero exit code is necessary but not sufficient — output must also satisfy expect."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "not sufficient" in prompt.lower()
+
+
+class TestM48PlannerMergedRules:
+    """48c: planner expect and detail rules are merged (no redundant duplicates)."""
+
+    def test_48c_expect_rule_is_nonnull_and_task_scoped(self):
+        """48c: single expect rule combines 'non-null' and 'task-specific' guidance."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "non-null" in prompt
+        assert "not the overall plan goal" in prompt or "task's output alone" in prompt
+
+    def test_48c_no_redundant_standalone_nonnull_rule(self):
+        """48c: old fragmented 'non-null expect field' standalone line must be gone."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "exec, skill, and search tasks MUST have a non-null expect field" not in prompt
+
+    def test_48c_detail_rule_is_selfcontained_and_specific(self):
+        """48c: single detail rule combines 'self-contained' and 'specific + commands/paths'."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "self-contained" in prompt
+        assert "cannot invent or guess" in prompt
+
+    def test_48c_no_redundant_standalone_specific_rule(self):
+        """48c: old fragmented 'exec task detail must be specific' standalone line must be gone."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "exec task detail must be specific" not in prompt
+
+    def test_48c_expect_rule_covers_exec_skill_search(self):
+        """48c: merged expect rule must apply to exec/skill/search."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        # Should mention all three types together
+        assert "exec/skill/search" in prompt or ("exec" in prompt and "skill" in prompt and "search" in prompt)
+
+    def test_48c_detail_rule_mentions_exec_commands_and_paths(self):
+        """48c: merged detail rule must mention commands/paths for exec tasks."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "commands" in prompt or "paths" in prompt
+
+
+class TestM48CuratorCategoryField:
+    """48d: curator category field — prompt, schema, and validation."""
+
+    def test_48d_curator_prompt_mentions_category(self):
+        """48d: curator prompt must instruct model to include category for promote."""
+        prompt = (_ROLES_DIR / "curator.md").read_text()
+        assert "category" in prompt
+
+    def test_48d_curator_prompt_lists_all_valid_categories(self):
+        """48d: curator prompt must list all valid category values."""
+        prompt = (_ROLES_DIR / "curator.md").read_text()
+        for cat in ("project", "user", "tool", "general"):
+            assert cat in prompt
+
+    def test_48d_curator_schema_has_category_field(self):
+        """48d: CURATOR_SCHEMA item must include 'category' property."""
+        item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
+        assert "category" in item_props
+
+    def test_48d_curator_schema_category_is_nullable(self):
+        """48d: category field must be nullable (anyOf [string|null])."""
+        item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
+        cat = item_props["category"]
+        types_in_anyof = [x.get("type") for x in cat.get("anyOf", [])]
+        assert "null" in types_in_anyof
+
+    def test_48d_curator_schema_category_enum_contains_all_values(self):
+        """48d: category enum must contain project/user/tool/general."""
+        item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
+        cat = item_props["category"]
+        enum_values = [x.get("enum", []) for x in cat.get("anyOf", []) if x.get("type") == "string"]
+        flat = [v for sub in enum_values for v in sub]
+        for v in ("project", "user", "tool", "general"):
+            assert v in flat
+
+    def test_48d_curator_schema_category_in_required_list(self):
+        """48d: category must be in the required field list of the item schema."""
+        required = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["required"]
+        assert "category" in required
+
+    def test_48d_validate_curator_accepts_valid_category(self):
+        """48d: validate_curator passes when promote has a valid category."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+    def test_48d_validate_curator_accepts_null_category(self):
+        """48d: validate_curator passes when category is null (defaults to general at runtime)."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": None, "question": None, "reason": "Good"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+    def test_48d_validate_curator_rejects_invalid_category(self):
+        """48d: validate_curator rejects unknown category string values."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "invalid_cat", "question": None, "reason": "Good"},
+        ]}
+        errors = validate_curator(result)
+        assert any("category" in e for e in errors)
+
+    def test_48d_validate_curator_ignores_category_for_ask(self):
+        """48d: validate_curator does not enforce category for ask verdicts."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "ask", "fact": None, "category": None, "question": "Which DB?", "reason": "Unclear"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+    def test_48d_validate_curator_ignores_category_for_discard(self):
+        """48d: validate_curator does not enforce category for discard verdicts."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "discard", "fact": None, "category": None, "question": None, "reason": "Transient"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+
+class TestM48SummarizerFactsTiebreaker:
+    """48e: summarizer-facts tiebreaker rule for contradictions."""
+
+    def test_48e_tiebreaker_rule_present(self):
+        """48e: summarizer-facts prompt must mention contradiction resolution."""
+        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
+        assert "contradict" in prompt.lower()
+
+    def test_48e_tiebreaker_higher_confidence_wins(self):
+        """48e: tiebreaker must prefer the higher-confidence fact."""
+        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
+        assert "higher confidence" in prompt.lower()
+
+    def test_48e_tiebreaker_specific_over_general(self):
+        """48e: equal-confidence tiebreaker must prefer more specific fact."""
+        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
+        assert "specific" in prompt.lower()
+
+
+class TestM48WorkerNoSudo:
+    """48f: worker must not add sudo unless explicitly mentioned."""
+
+    def test_48f_no_sudo_rule_present(self):
+        """48f: worker prompt must have a rule about sudo usage."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "sudo" in prompt.lower()
+
+    def test_48f_sudo_requires_explicit_mention(self):
+        """48f: sudo must require explicit mention in task detail or system environment."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "explicit" in prompt.lower() or "explicitly" in prompt.lower()
+
+    def test_48f_no_sudo_rule_says_do_not_add(self):
+        """48f: rule must say not to add sudo unprompted."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "not add" in prompt.lower() or "do not add" in prompt.lower() or "never add" in prompt.lower()

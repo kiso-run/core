@@ -3,6 +3,9 @@ evaluate each one and decide:
 
 - "promote": This is a durable, useful fact about the project/system/user.
   Provide the fact as a concise statement in the "fact" field.
+  Also set "category" to one of: "project" (tech stack, architecture, file structure),
+  "user" (preferences, habits, requirements), "tool" (available commands, system capabilities),
+  "general" (anything else).
 - "ask": This learning raises an important question that should be clarified.
   Provide the question in the "question" field.
 - "discard": This is transient, obvious, or not useful. Discard it.

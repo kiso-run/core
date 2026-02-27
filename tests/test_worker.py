@@ -2973,16 +2973,26 @@ class TestKnowledgeProcessing:
         assert "Python 3.12" in content
 
     async def test_apply_curator_promote_saves_session(self, db, tmp_path):
-        """Promoted fact has correct session attribution."""
+        """M48d: non-user facts are global (session=None); only 'user' category is session-scoped."""
         await create_session(db, "sess1")
         lid = await save_learning(db, "Uses Flask", "sess1")
         result = {"evaluations": [
+            # No category → defaults to "general" → global (session=None)
             {"learning_id": lid, "verdict": "promote", "fact": "Uses Flask", "question": None, "reason": "Good"},
         ]}
         await _apply_curator_result(db, "sess1", result)
         facts = await get_facts(db)
         assert len(facts) == 1
-        assert facts[0]["session"] == "sess1"
+        assert facts[0]["session"] is None  # general facts are global
+        # User facts are session-scoped:
+        lid2 = await save_learning(db, "Prefers tabs", "sess1")
+        result2 = {"evaluations": [
+            {"learning_id": lid2, "verdict": "promote", "fact": "Prefers tabs", "category": "user", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result2)
+        all_facts = await get_facts(db)
+        user_fact = next(f for f in all_facts if "tabs" in f["content"])
+        assert user_fact["session"] == "sess1"
 
     async def test_knowledge_processing_order(self, db, tmp_path):
         """Curator runs before summarizer (order verified via side effects)."""
@@ -6388,3 +6398,129 @@ class TestM44gRetryLLMCalls:
         # msg task: 1 call
         # total _append_calls = 5
         assert mock_append.call_count == 5
+
+
+# ---------------------------------------------------------------------------
+# M48d: _apply_curator_result — category + session scoping
+# ---------------------------------------------------------------------------
+
+
+class TestM48ApplyCuratorCategory:
+    """48d: _apply_curator_result uses category from evaluation and scopes session correctly."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_project_fact_has_no_session(self, db):
+        """Project facts must be global — not scoped to any session."""
+        lid = await save_learning(db, "Uses FastAPI", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Uses FastAPI", "category": "project", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] is None
+
+    async def test_user_fact_is_session_scoped(self, db):
+        """User facts must be scoped to the originating session."""
+        lid = await save_learning(db, "User prefers dark mode", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "User prefers dark mode", "category": "user", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] == "sess1"
+
+    async def test_tool_fact_has_no_session(self, db):
+        """Tool facts must be global (not session-scoped)."""
+        lid = await save_learning(db, "jq is available", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "jq is available", "category": "tool", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] is None
+
+    async def test_general_fact_has_no_session(self, db):
+        """General facts must be global (not session-scoped)."""
+        lid = await save_learning(db, "Team uses GitLab", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Team uses GitLab", "category": "general", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] is None
+
+    async def test_null_category_defaults_to_general_no_session(self, db):
+        """When category is null, defaults to 'general' and saves without session."""
+        lid = await save_learning(db, "Some fact", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Some fact", "category": None, "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session, category FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] is None
+        assert row[1] == "general"
+
+    async def test_missing_category_defaults_to_general_no_session(self, db):
+        """When category key is absent from evaluation, defaults to 'general' without session."""
+        lid = await save_learning(db, "Some fact", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Some fact", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session, category FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] is None
+        assert row[1] == "general"
+
+    async def test_category_value_persisted_in_db(self, db):
+        """The category from the evaluation must be saved to the facts table."""
+        lid = await save_learning(db, "Uses React", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Uses React", "category": "project", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT category FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[0] == "project"
+
+    async def test_user_category_value_persisted(self, db):
+        """User category must also be persisted correctly."""
+        lid = await save_learning(db, "Prefers vim", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": "Prefers vim", "category": "user", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT session, category FROM facts LIMIT 1")
+        row = await cur.fetchone()
+        assert row[1] == "user"
+        assert row[0] == "sess1"  # session-scoped
+
+    async def test_multiple_evaluations_mixed_categories(self, db):
+        """Multiple evaluations with different categories are handled independently."""
+        lid1 = await save_learning(db, "Uses Django", "sess1")
+        lid2 = await save_learning(db, "User likes light theme", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid1, "verdict": "promote", "fact": "Uses Django", "category": "project", "question": None, "reason": "Good"},
+            {"learning_id": lid2, "verdict": "promote", "fact": "User likes light theme", "category": "user", "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT content, session, category FROM facts ORDER BY id")
+        rows = await cur.fetchall()
+        assert len(rows) == 2
+        django_row = next(r for r in rows if r[0] == "Uses Django")
+        user_row = next(r for r in rows if "light theme" in r[0])
+        assert django_row[1] is None      # project: no session
+        assert django_row[2] == "project"
+        assert user_row[1] == "sess1"     # user: session-scoped
+        assert user_row[2] == "user"

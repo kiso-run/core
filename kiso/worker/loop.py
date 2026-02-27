@@ -979,7 +979,9 @@ async def _apply_curator_result(
         lid = ev["learning_id"]
         verdict = ev["verdict"]
         if verdict == "promote":
-            await save_fact(db, ev["fact"], source="curator", session=session)
+            category = ev.get("category") or "general"
+            fact_session = session if category == "user" else None
+            await save_fact(db, ev["fact"], source="curator", session=fact_session, category=category)
             await update_learning(db, lid, "promoted")
         elif verdict == "ask":
             await save_pending_item(db, ev["question"], scope=session, source="curator")

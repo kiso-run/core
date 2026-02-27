@@ -16,7 +16,7 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 | Allowed skill summaries + args schemas | yes | - | - | - | - | - | - | - |
 | Caller role (admin/user) | yes | - | - | - | - | - | - | - |
 | System environment | yes | - | yes | - | - | - | - | - |
-| Process goal | generates | yes | - | - | - | - | - | - |
+| Plan context (goal) | generates | yes (as background) | - | - | - | - | - | - |
 | Preceding plan outputs (fenced) | - | - | yes | yes | yes | - | - | - |
 | Current task detail | - | yes | yes | yes | yes | - | - | - |
 | Current task expect | - | yes | - | - | - | - | - | - |
@@ -133,6 +133,10 @@ Fix these and return the corrected plan.
 
 If exhausted: fail the message, notify user. No silent fallback.
 
+### Identity and Environment Awareness
+
+The planner knows it is the planning component of Kiso, not a generic task planner. Kiso operates on two layers: the **OS layer** (direct shell commands) and the **Kiso layer** (native primitives: skills, connectors, env vars, memory). The planner checks for a Kiso-native solution before reaching for OS-level commands, and only proceeds when both intent and target are unambiguous — otherwise it asks the user first.
+
 ### Prompt Design
 
 **System prompt** (`roles/planner.md`) includes:
@@ -174,13 +178,13 @@ All fields are always present in the JSON output (strict mode requires it). The 
 |---|---|---|
 | `type` | always | `exec`, `msg`, `skill`, `search`, `replan` |
 | `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. For `search` tasks, the search query. |
-| `expect` | `type` is `exec`, `skill`, or `search` | Semantic success criteria (e.g. "tests pass", not exact output). Required — all exec/skill/search tasks are reviewed. |
+| `expect` | `type` is `exec`, `skill`, or `search` | Success criteria for THIS task's output only — not the overall plan goal. Must be verifiable from the task's direct output. For maintenance commands, "0 changes" is a valid success state and should be stated explicitly. Required — all exec/skill/search tasks are reviewed. |
 | `skill` | `type` is `skill` | Skill name. Must be `null` for search tasks. |
 | `args` | `type` is `skill` (required); `type` is `search` (optional) | For skills: arguments as a JSON string validated against `kiso.toml` schema. For search: nullable — `null` or JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. |
 
 ### Output Fields
 
-- `goal`: high-level objective for the entire process. Persisted in `store.plans` (not on individual tasks). The reviewer uses it to evaluate individual tasks in context.
+- `goal`: high-level objective for the entire process. Persisted in `store.plans` (not on individual tasks). Passed to the reviewer as **Plan Context** (background only — not used as success criterion).
 - `secrets`: always present. `null` when no credentials; array of `{key, value}` pairs when the user mentioned them. Ephemeral — stored in worker memory only, never in DB. See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
 - `extend_replan`: always present. `null` normally; a positive integer (max 3) when the planner needs additional replan attempts beyond the default limit. The worker grants at most +3 extra attempts.
 
@@ -247,6 +251,12 @@ No "local fix" status — the planner replans with full context and decides whet
 {"status": "ok", "reason": null, "learn": "Project uses pytest for testing"}
 ```
 
+### Rules in the Default Prompt
+
+- **Plan Context**: provided as background only. The sole success criterion is the task's `expect` — not the overall plan goal.
+- **Exit code**: a non-zero exit code is a strong failure signal even if the output appears partially correct. A zero exit code is necessary but not sufficient — the output must also satisfy `expect`.
+- **Maintenance commands**: a command that exits 0 with "nothing to do" or "0 changes" satisfies an expect about resolving issues — there were none to resolve.
+
 ### Replan Flow
 
 See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) for the full replan sequence (notify user → call planner with completed/remaining/failure/replan_history → new plan → continue execution).
@@ -272,6 +282,8 @@ Uses the `worker` model (same LLM as `msg` tasks). Custom prompt can be placed a
 - Output ONLY the shell command(s), no explanation, no markdown fences
 - If multiple commands are needed, join with `&&` or `;`
 - Use only binaries listed as available in the system environment
+- If a Retry Context with a hint is provided, the hint takes priority over a literal re-translation of the task detail
+- Do NOT add `sudo` unless it is explicitly mentioned in the task detail or in the system environment
 - If the task cannot be accomplished, output `CANNOT_TRANSLATE` (triggers a failure, not a silent empty command)
 
 ### Error Handling
@@ -369,6 +381,8 @@ Brief narrative of what happened and current state.
 
 Categories: `project`, `user`, `tool`, `general`. Confidence: 1.0 for well-established facts, lower for uncertain or inferred ones. Backward-compatible: plain string items are normalized to `{content, category: "general", confidence: 1.0}`.
 
+**Contradiction resolution** (tiebreaker): when two facts contradict, keep the one with higher confidence. If confidence is equal, keep the more specific fact and discard the more general one.
+
 After consolidation, the worker runs decay and archive passes — see [flow.md — Post-Execution](flow.md#4-post-execution).
 
 ---
@@ -400,10 +414,11 @@ response_format = {
                             "learning_id": {"type": "integer"},
                             "verdict": {"type": "string", "enum": ["promote", "ask", "discard"]},
                             "fact": {"type": ["string", "null"]},
+                            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
                             "question": {"type": ["string", "null"]},
                             "reason": {"type": ["string", "null"]}
                         },
-                        "required": ["learning_id", "verdict", "fact", "question", "reason"],
+                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason"],
                         "additionalProperties": False
                     }
                 }
@@ -419,7 +434,7 @@ response_format = {
 
 | Verdict | Meaning | Effect |
 |---|---|---|
-| `promote` | Learning is a confirmed, important fact | `fact` field becomes a new entry in `store.facts`. Learning marked `promoted`. |
+| `promote` | Learning is a confirmed, important fact | `fact` + `category` become a new entry in `store.facts`. `category` determines session scoping: `"user"` facts are session-scoped; `"project"`, `"tool"`, `"general"` facts are global. Learning marked `promoted`. |
 | `ask` | Uncertain but potentially important | `question` field becomes a new entry in `store.pending` (scope = session). The planner will ask the user for confirmation. |
 | `discard` | Trivial, transient, or already covered | Learning marked `discarded`. `reason` explains why. |
 
