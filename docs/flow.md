@@ -66,7 +66,7 @@ If there are untrusted messages (`trusted=0`) in the context window, the worker 
 ### b) Builds Planner Context
 
 Only what the planner needs (see [llm-roles.md](llm-roles.md)):
-- Facts (global, from `store.facts`)
+- Facts (session-scoped, from `store.facts` — see [Knowledge / Fact scoping](#facts-are-session-scoped))
 - Pending items (global + session, from `store.pending`)
 - Session summary (from `store.sessions.summary`)
 - Last `context_messages` raw messages (default 7, from `store.messages`, trusted only)
@@ -251,9 +251,20 @@ The reviewer does **not** create facts directly. It creates learnings, which the
 
 Planner, Worker, and Curator receive facts in their context. Reviewer, Summarizer, and Paraphraser do **not** (see [llm-roles.md — Context per Role](llm-roles.md#context-per-role) for the full matrix).
 
-### Facts Are Global
+### Facts Are Session-Scoped
 
-See [database.md — facts](database.md#facts) for details. All facts are visible to all sessions — session column is provenance only.
+See [database.md — facts](database.md#facts) for the full schema.
+
+Facts have a `category` (`project`, `user`, `tool`, `general`) and an optional `session` column (provenance).
+
+**Visibility rules (M43)**:
+- `project`, `tool`, `general` facts: always global — visible in every session.
+- `user` facts: scoped to the session where they were created. Other sessions do not see them.
+- `user` facts with `session IS NULL` (legacy): treated as global.
+
+**Admin visibility (M44f)**: admin callers receive all facts from all sessions, but the planner context splits them into two priority tiers:
+- `## Known Facts` — current session + global facts (primary context).
+- `## Context from Other Sessions` — facts from other sessions, annotated with `[session:<name>]` (background memory).
 
 ### Consolidation
 
@@ -263,9 +274,10 @@ After consolidation, the worker runs a **decay pass** (reduces confidence for st
 
 ### Planner Context
 
-The planner receives facts grouped by category:
+Facts are grouped by category. For regular users:
 
 ```
+## Known Facts
 ### Project
 - Project uses Flask 2.3
 
@@ -274,6 +286,18 @@ The planner receives facts grouped by category:
 
 ### Tool
 - Tests run with: pytest tests/ -q
+```
+
+For admin callers, cross-session facts appear in a second block:
+
+```
+## Known Facts
+### User
+- Alice prefers verbose output
+
+## Context from Other Sessions
+### User
+- Bob prefers brief output [session:discord-bot]
 ```
 
 Unknown or uncategorized facts fall into `### General`.

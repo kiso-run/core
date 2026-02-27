@@ -431,6 +431,42 @@ class TestBuildPlannerMessages:
         gen_pos = content.index("### General")
         assert proj_pos < user_pos < tool_pos < gen_pos
 
+    async def test_admin_facts_hierarchy(self, db, config):
+        """M44f: admin context shows current-session+global facts in ## Known Facts (primary)
+        and other-session facts in ## Context from Other Sessions (background)."""
+        from kiso.store import save_fact
+        await create_session(db, "sess1")
+        await create_session(db, "sess-other")
+        await save_fact(db, "Alice prefers verbose", "curator", session="sess1", category="user")
+        await save_fact(db, "Bob prefers brief", "curator", session="sess-other", category="user")
+        await save_fact(db, "Uses Docker", "curator")  # no session — global
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        # Current session + global go into primary block, no session label
+        assert "## Known Facts" in content
+        assert "Alice prefers verbose" in content
+        assert "Uses Docker" in content
+        known_pos = content.index("## Known Facts")
+        assert "Alice prefers verbose" in content[known_pos:]
+        assert "Uses Docker" in content[known_pos:]
+        # Other sessions go into secondary block, with session label
+        assert "## Context from Other Sessions" in content
+        other_pos = content.index("## Context from Other Sessions")
+        assert "Bob prefers brief [session:sess-other]" in content[other_pos:]
+        # Current-session fact must NOT carry a session label
+        assert "Alice prefers verbose [session:" not in content
+
+    async def test_non_admin_facts_no_session_labels(self, db, config):
+        """M44f: non-admin planner context never shows session labels or the other-sessions block."""
+        from kiso.store import save_fact
+        await create_session(db, "sess1")
+        await save_fact(db, "Uses pytest", "curator", session="sess1", category="tool")
+        msgs, _installed = await build_planner_messages(db, config, "sess1", "user", "hello")
+        content = msgs[1]["content"]
+        assert "Uses pytest" in content
+        assert "[session:" not in content
+        assert "## Context from Other Sessions" not in content
+
     async def test_unknown_category_falls_back_to_general(self, db, config):
         """Facts with unknown categories appear under ### General."""
         await create_session(db, "sess1")
@@ -1733,6 +1769,18 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "HTTP download URL" in prompt
         assert "filesystem path" in prompt
+
+    def test_m45_plugin_install_uses_registry_not_search(self):
+        """M45: planner prompt must forbid web search for kiso plugin discovery."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "NEVER use" in prompt or "NEVER" in prompt
+        assert "registry" in prompt.lower()
+        assert "web search" in prompt.lower()
+
+    def test_m45_plugin_install_rule_is_mandatory(self):
+        """M45: plugin installation rule must be marked MANDATORY."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Plugin installation (MANDATORY)" in prompt
 
 
 # --- Classifier (fast path) ---

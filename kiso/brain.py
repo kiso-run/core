@@ -297,19 +297,41 @@ async def build_planner_messages(
         context_parts.append(f"## Session Summary\n{summary}")
 
     if facts:
-        # Group facts by category
-        categories: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
-        for f in facts:
-            cat = f.get("category", "general")
-            if cat not in categories:
-                cat = "general"
-            categories[cat].append(f"- {f['content']}")
-        facts_parts: list[str] = []
-        for cat in ("project", "user", "tool", "general"):
-            if categories[cat]:
-                facts_parts.append(f"### {cat.title()}\n" + "\n".join(categories[cat]))
-        if facts_parts:
-            context_parts.append("## Known Facts\n" + "\n".join(facts_parts))
+        # For admin: split current-session+global facts from other-session facts so
+        # the planner sees a clear priority hierarchy — current session is primary,
+        # other sessions are background context.
+        if is_admin:
+            primary = [f for f in facts if not f.get("session") or f.get("session") == session]
+            other   = [f for f in facts if f.get("session") and f.get("session") != session]
+        else:
+            primary = facts
+            other   = []
+
+        def _group_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
+            cats: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
+            for f in fact_list:
+                cat = f.get("category", "general")
+                if cat not in cats:
+                    cat = "general"
+                line = f"- {f['content']}"
+                if label_session and f.get("session"):
+                    line += f" [session:{f['session']}]"
+                cats[cat].append(line)
+            parts: list[str] = []
+            for cat in ("project", "user", "tool", "general"):
+                if cats[cat]:
+                    parts.append(f"### {cat.title()}\n" + "\n".join(cats[cat]))
+            return parts
+
+        if primary:
+            parts = _group_by_category(primary)
+            if parts:
+                context_parts.append("## Known Facts\n" + "\n".join(parts))
+
+        if other:
+            parts = _group_by_category(other, label_session=True)
+            if parts:
+                context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
 
     # System environment — semi-static context about the execution environment
     sys_env = get_system_env(config)

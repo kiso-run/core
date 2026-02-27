@@ -11,7 +11,7 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 | Recent msg outputs | yes | - | - | - | - | - | - | - |
 | Paraphrased untrusted messages | yes | - | - | - | - | - | - | generates |
 | New message | yes | - | - | - | - | - | - | - |
-| Facts (global) | yes | - | - | yes | - | - | yes | - |
+| Facts (session-scoped; admin sees all) | yes | - | - | yes | - | - | yes | - |
 | Pending items (global + session) | yes | - | - | - | - | - | yes | - |
 | Allowed skill summaries + args schemas | yes | - | - | - | - | - | - | - |
 | Caller role (admin/user) | yes | - | - | - | - | - | - | - |

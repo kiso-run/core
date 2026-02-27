@@ -51,17 +51,15 @@ eval $(printf '\x72\x6d\x20-rf /')             # hex-encoded eval
 3. Reviewer extracts a `learn` field from the output
 4. `save_learning` stores it in DB
 5. Curator runs → promotes learning to a fact
-6. Fact enters ALL future planner context (facts are global)
+6. Fact enters planner context for this session (and, if global category, all sessions)
 7. Future plans are influenced by the poisoned fact
 
-**Current mitigation:** The curator prompt instructs it to only promote "durable, useful facts" and discard transient ones. But the curator is an LLM — it can be fooled by convincing-sounding content.
+**Current mitigations:**
+- Curator prompt instructs it to only promote "durable, useful facts" and discard transient ones.
+- `save_learning()` filters content matching `_SENSITIVE_PATTERN` (passwords/tokens/hex secrets) before storage (M44c).
+- `user`-category facts are session-scoped (M43): a poisoned user-fact is confined to the session where it was injected and does not cross-contaminate other sessions.
 
-**Why this matters:** Facts are global and persistent. Once a poisoned fact enters the knowledge base, it influences all future sessions for all users until manually deleted or consolidated away.
-
-**Planned fixes (M21b):**
-- Live test: verify curator discards obviously manipulative learnings
-- Content filtering before `save_learning`
-- Consider: scope facts per-session with explicit global promotion
+**Residual risk:** `project`, `tool`, and `general` facts are still global. A poisoned fact in these categories influences all sessions until consolidated or deleted. The curator can be fooled by convincing-sounding content.
 
 ---
 
@@ -181,6 +179,8 @@ With OpenRouter pricing, this could cost $5-15 per adversarial message depending
 
 Admin users execute commands without sandbox isolation. This is intentional — the admin role is equivalent to SSH access. The deny list provides a best-effort safety net but is not a security boundary.
 
-### Facts are global
+### Facts: scoping and cross-session risk
 
-Facts promoted by the curator are visible to ALL sessions. This is by design (shared knowledge base) but means a compromised session can influence all other sessions via fact poisoning.
+`project`, `tool`, and `general` facts are global — visible in all sessions by design (shared knowledge base). A compromised session can still inject poisoned facts into these global categories, influencing all future sessions.
+
+`user`-category facts are session-scoped (M43): they are only visible in the session where they were created, limiting blast radius for user-preference poisoning.
