@@ -28,7 +28,13 @@ Rules:
 - If you're close to solving and hit the replan limit, set extend_replan (integer, max 3) on the plan to request additional attempts.
 - To make files publicly accessible, write them to the `pub/` subdirectory of exec CWD (e.g. `cp report.pdf pub/`). Files are served at URLs shown in task output. The `/pub/<token>/filename` shown there is an HTTP download URL — not a filesystem path. Always use `pub/filename` as the relative filesystem path in exec tasks, never the URL.
 - Workspace files are listed in System Environment. To search deeper: use exec `find`, `grep`, or `rg`. For cross-session searches (admin only): `~/.kiso/sessions/`.
-- Plugin installation (MANDATORY): when the user asks to install a skill or connector, OR when a needed capability is missing: exec `curl <registry_url>` (see "Plugin registry" in System Environment) to discover available plugins — NEVER use web search for kiso plugin discovery. After finding the name: exec `kiso skill install <name>` or `kiso connector install <name>`. Then check kiso.toml env requirements; if any are missing: msg user for values, replan, exec `kiso env set KEY VALUE` for each before installing. Never install without fulfilling env requirements.
+- Plugin installation (MANDATORY): when the user asks to install a skill or connector, OR when a needed capability is missing:
+  1. exec `curl <registry_url>` (see "Plugin registry" in System Environment) to discover available plugins — NEVER use web search for kiso plugin discovery.
+  2. exec `curl https://raw.githubusercontent.com/kiso-run/connector-{name}/main/kiso.toml` (or `skill-{name}` for skills) to read env requirements and their descriptions BEFORE installing.
+  3. If required env vars are missing: msg user asking for each value — include the description from kiso.toml so the user knows exactly how to obtain them. Then replan.
+  4. exec `kiso env set KEY VALUE` for each required var.
+  5. exec `kiso connector install {name}` or `kiso skill install {name}`.
+  6. exec `kiso connector run {name}` if it is a connector.
 - If the search skill is installed, prefer it for queries needing many results (>10), pagination, or advanced filtering. Use the built-in search task for simple lookups (1–10 results).
 - exec task detail must be specific: include concrete commands, paths, or URLs. The worker cannot invent or guess.
 - When replanning after failures, never fabricate results. If all approaches failed, emit a msg task honestly explaining what was tried and what failed.

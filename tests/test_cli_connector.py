@@ -404,6 +404,48 @@ def test_connector_install_official(tmp_path, mock_admin, capsys):
     assert "installed successfully" in out
 
 
+def test_connector_install_env_warning_includes_description(tmp_path, mock_admin, capsys):
+    """M46: install output includes env var description so the agent can relay it to the user."""
+    from cli.connector import _connector_install
+
+    connectors_dir = tmp_path / "connectors"
+    connectors_dir.mkdir()
+
+    def clone_with_env(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "connector"\nname = "discord"\n'
+            "[kiso.connector]\n"
+            'platform = "discord"\n'
+            "[kiso.connector.env]\n"
+            'bot_token = { required = true, description = "Get this from discord.com/developers" }\n'
+            'webhook_secret = { required = false, description = "Any random string" }\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'discord'\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return clone_with_env(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+    ):
+        args = argparse.Namespace(target="discord", name=None, no_deps=False, show_deps=False)
+        _connector_install(args)
+
+    out = capsys.readouterr().out
+    assert "KISO_CONNECTOR_DISCORD_BOT_TOKEN not set (required)" in out
+    assert "Get this from discord.com/developers" in out
+    assert "KISO_CONNECTOR_DISCORD_WEBHOOK_SECRET not set (optional)" in out
+    assert "Any random string" in out
+    assert "installed successfully" in out
+
+
 def test_connector_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
     from cli.connector import _connector_install
 

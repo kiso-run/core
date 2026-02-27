@@ -1782,6 +1782,22 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "Plugin installation (MANDATORY)" in prompt
 
+    def test_m46_plugin_install_checks_kiso_toml_before_install(self):
+        """M46: planner must curl kiso.toml from GitHub before installing to discover env requirements."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "raw.githubusercontent.com" in prompt
+        assert "kiso.toml" in prompt
+        # Step ordering: curl kiso.toml (step 2) must come before kiso connector install (step 5)
+        toml_pos = prompt.index("kiso.toml")
+        install_pos = prompt.index("kiso connector install")
+        assert toml_pos < install_pos
+
+    def test_m46_plugin_install_includes_env_description_in_msg(self):
+        """M46: planner rule must instruct to include env var descriptions from kiso.toml in the user message."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "description" in prompt
+        assert "how to obtain" in prompt.lower() or "descriptions from kiso.toml" in prompt
+
 
 # --- Classifier (fast path) ---
 

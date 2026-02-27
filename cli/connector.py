@@ -326,10 +326,14 @@ def _connector_install(args) -> None:
         connector_section = kiso_section.get("connector", {})
         env_decl = connector_section.get("env", {})
         connector_name = kiso_section.get("name", name)
-        for key in env_decl:
+        for key, decl in env_decl.items():
             var_name = _connector_env_var_name(connector_name, key)
             if not os.environ.get(var_name):
-                print(f"warning: {var_name} not set")
+                req = isinstance(decl, dict) and decl.get("required", False)
+                req_str = "required" if req else "optional"
+                desc = decl.get("description", "") if isinstance(decl, dict) else ""
+                desc_part = f" — {desc}" if desc else ""
+                print(f"warning: {var_name} not set ({req_str}){desc_part}")
 
         # Copy config.example.toml if config.toml doesn't exist
         example_config = connector_dir / "config.example.toml"
