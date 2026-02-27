@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from kiso._version import __version__
+
 
 class _ExitRepl(Exception):
     """Raised by /exit to break out of the REPL loop."""
@@ -59,7 +61,8 @@ def _save_readline_history() -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="kiso", description="Kiso agent bot")
+    parser = argparse.ArgumentParser(prog="kiso", description=f"Kiso agent bot v{__version__}")
+    parser.add_argument("-V", "--version", action="version", version=f"kiso {__version__}")
 
     # Chat-mode flags (top-level, not on a subcommand)
     parser.add_argument(
@@ -161,6 +164,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     env_sub.add_parser("reload", help="hot-reload .env into the server")
 
+    sub.add_parser("version", help="print version and exit")
+
     reset_parser = sub.add_parser("reset", help="reset/cleanup data")
     reset_sub = reset_parser.add_subparsers(dest="reset_command")
 
@@ -210,6 +215,8 @@ def main() -> None:
         from cli.reset import run_reset_command
 
         run_reset_command(args)
+    elif args.command == "version":
+        print(f"kiso {__version__}")
 
 
 def _msg_cmd(args: argparse.Namespace) -> None:

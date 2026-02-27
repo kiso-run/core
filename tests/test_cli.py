@@ -19,6 +19,7 @@ from cli import (
     _setup_readline,
     build_parser,
     main,
+    __version__,
 )
 from cli.render import TermCaps
 
@@ -2023,3 +2024,67 @@ def test_m41_shows_spinner_before_plan_created(capsys):
     assert "Planning..." in out
 
 
+
+# ---------------------------------------------------------------------------
+# M49: versioning — kiso/_version.py + kiso version command
+# ---------------------------------------------------------------------------
+
+
+class TestVersionFile:
+    def test_version_file_exists(self):
+        """kiso/_version.py must exist and define __version__."""
+        from kiso._version import __version__ as v
+        assert isinstance(v, str)
+        assert len(v) > 0
+
+    def test_version_format_semver(self):
+        """Version string must follow semver (MAJOR.MINOR.PATCH)."""
+        from kiso._version import __version__ as v
+        parts = v.split(".")
+        assert len(parts) == 3
+        for part in parts:
+            assert part.isdigit()
+
+    def test_cli_exposes_version(self):
+        """cli module must re-export __version__ from kiso._version."""
+        assert isinstance(__version__, str)
+        assert __version__ == __import__("kiso._version", fromlist=["__version__"]).__version__
+
+
+class TestVersionCommand:
+    def test_version_subcommand_exists(self):
+        """'kiso version' must be a registered subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["version"])
+        assert args.command == "version"
+
+    def test_version_command_prints_version(self, capsys):
+        """'kiso version' must print 'kiso {version}' to stdout."""
+        from kiso._version import __version__ as v
+        with patch("sys.argv", ["kiso", "version"]):
+            main()
+        out = capsys.readouterr().out
+        assert f"kiso {v}" in out
+
+    def test_version_flag_short_exits_zero(self, capsys):
+        """'kiso -V' must exit cleanly."""
+        with pytest.raises(SystemExit) as exc:
+            build_parser().parse_args(["-V"])
+        assert exc.value.code == 0
+
+    def test_version_flag_long_prints_version(self, capsys):
+        """'kiso --version' must print 'kiso {version}' and exit."""
+        from kiso._version import __version__ as v
+        with pytest.raises(SystemExit) as exc:
+            build_parser().parse_args(["--version"])
+        out = capsys.readouterr().out
+        assert f"kiso {v}" in out
+        assert exc.value.code == 0
+
+    def test_help_description_includes_version(self, capsys):
+        """'kiso --help' description must mention the current version."""
+        from kiso._version import __version__ as v
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--help"])
+        out = capsys.readouterr().out
+        assert v in out
