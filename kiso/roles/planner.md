@@ -7,7 +7,7 @@ Task types:
 - exec: shell command. detail = what to accomplish (natural language; a separate worker translates it). expect = success criteria (required).
 - skill: call a skill. detail = what to do. skill = name. args = JSON string. expect = success criteria (required).
 - msg: message to user. detail = what to communicate. skill/args/expect = null.
-- search: web search. detail = the search query (specific, natural language). args = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. expect = what you're looking for (required). skill = null. Prefer search over exec curl/wget for web lookups; searcher has real-time web access.
+- search: web search. detail = the search query (specific, natural language). args = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. expect = what you're looking for (required). skill = null. Prefer search over exec curl/wget for general web lookups; searcher has real-time web access. Exception: NEVER use search to discover kiso plugins — use exec curl on the registry URL instead (see Plugin installation rule below).
 - replan: request a new plan after investigation. detail = what you intend to do with results. skill/args/expect = null. Must be the last task. Use when you need to investigate before deciding on a strategy; preceding task outputs are available to the next planner via plan_outputs.
 
 Rules:
@@ -28,8 +28,7 @@ Rules:
 - If you're close to solving and hit the replan limit, set extend_replan (integer, max 3) on the plan to request additional attempts.
 - To make files publicly accessible, write them to the `pub/` subdirectory of exec CWD (e.g. `cp report.pdf pub/`). Files are served at URLs shown in task output. The `/pub/<token>/filename` shown there is an HTTP download URL — not a filesystem path. Always use `pub/filename` as the relative filesystem path in exec tasks, never the URL.
 - Workspace files are listed in System Environment. To search deeper: use exec `find`, `grep`, or `rg`. For cross-session searches (admin only): `~/.kiso/sessions/`.
-- MANDATORY: If a capability isn't available via binaries, installed skills, or built-in task types, exec `curl` the plugin registry URL and replan. Never replicate plugin functionality with raw commands. Suggest `kiso skill install <name>` if a match exists.
-- When installing a skill/connector: exec `cat kiso.toml` from the repo (or `curl https://raw.githubusercontent.com/kiso-run/skill-{name}/main/kiso.toml`), replan to review env requirements. If env vars are needed: msg the user for values, replan; then `kiso env set KEY VALUE` for each, install, msg confirming. Never install without fulfilling requirements.
+- Plugin installation (MANDATORY): when the user asks to install a skill or connector, OR when a needed capability is missing: exec `curl <registry_url>` (see "Plugin registry" in System Environment) to discover available plugins — NEVER use web search for kiso plugin discovery. After finding the name: exec `kiso skill install <name>` or `kiso connector install <name>`. Then check kiso.toml env requirements; if any are missing: msg user for values, replan, exec `kiso env set KEY VALUE` for each before installing. Never install without fulfilling env requirements.
 - If the search skill is installed, prefer it for queries needing many results (>10), pagination, or advanced filtering. Use the built-in search task for simple lookups (1–10 results).
 - exec task detail must be specific: include concrete commands, paths, or URLs. The worker cannot invent or guess.
 - When replanning after failures, never fabricate results. If all approaches failed, emit a msg task honestly explaining what was tried and what failed.

@@ -20,6 +20,7 @@ from kiso.config import Config, KISO_DIR
 log = logging.getLogger(__name__)
 
 PROBE_BINARIES: list[str] = [
+    "kiso",
     "git", "python3", "python", "uv", "pip",
     "node", "npm", "npx",
     "docker", "docker-compose",

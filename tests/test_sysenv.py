@@ -82,6 +82,10 @@ class TestCollectBinaries:
         found, missing = _collect_binaries()
         assert not set(found) & set(missing)
 
+    def test_kiso_in_probe_list(self):
+        """M45: 'kiso' must be in PROBE_BINARIES so the planner sees it as an available binary."""
+        assert "kiso" in PROBE_BINARIES
+
 
 # --- _collect_connectors ---
 
