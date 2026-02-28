@@ -143,34 +143,69 @@ import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if sys.argv[2] in d 
 " "$INSTANCES_JSON" "$name" 2>/dev/null
 }
 
-ask_instance_name() {
+# Transform a human-readable bot name into a valid instance identifier.
+# "My Jarvis!" → "my-jarvis", "Work Bot 2" → "work-bot-2"
+_derive_instance_name() {
+    local raw="${1,,}"                        # lowercase
+    raw="${raw//[ _]/-}"                      # spaces/underscores → hyphens
+    raw=$(printf '%s' "$raw" | tr -cd 'a-z0-9-')  # strip everything else
+    # Collapse consecutive hyphens
+    while [[ "$raw" == *--* ]]; do raw="${raw//--/-}"; done
+    raw="${raw#-}"                            # strip leading hyphen
+    raw="${raw%-}"                            # strip trailing hyphen
+    raw="${raw:0:32}"                         # max 32 chars
+    echo "${raw:-kiso}"                       # fallback if empty
+}
+
+# Ask for the bot display name first, then derive (and confirm) the instance identifier.
+# Sets globals BOT_NAME and INST_NAME.
+BOT_NAME=""
+INST_NAME=""
+ask_bot_and_instance_name() {
+    # Non-interactive: --name was passed directly
     if [[ -n "$ARG_NAME" ]]; then
         if ! validate_instance_name "$ARG_NAME"; then exit 1; fi
-        echo "$ARG_NAME"
+        if _instance_exists_in_json "$ARG_NAME"; then
+            red "Error: instance '$ARG_NAME' already exists."
+            exit 1
+        fi
+        INST_NAME="$ARG_NAME"
+        BOT_NAME="${ARG_NAME^}"   # capitalize as default display name
         return
     fi
-    local inst_name
+
     echo >&2
-    bold "Instance name" >&2
-    yellow "  This is your bot's identifier (used for the Docker container, data dir, and CLI)." >&2
-    yellow "  Lowercase alphanumeric + hyphens. Examples: kiso, jarvis, work-bot" >&2
+    bold "Bot name" >&2
+    yellow "  What do you want to call your bot? This is the name it will use in conversation." >&2
     echo >&2
+
+    local bot_name inst_name derived
     while true; do
-        read -rp "  Instance name [kiso]: " inst_name
-        inst_name="${inst_name:-kiso}"
-        inst_name="${inst_name,,}"  # ensure lowercase
-        if ! validate_instance_name "$inst_name" 2>&1; then
-            continue
-        fi
-        if _instance_exists_in_json "$inst_name"; then
-            yellow "  Instance '$inst_name' already exists."
-            yellow "  To reconfigure it, re-run install.sh and choose update."
-            yellow "  To remove it: kiso instance remove $inst_name"
-            continue
-        fi
-        echo "$inst_name"
-        return
+        read -rp "  Bot name [Kiso]: " bot_name
+        bot_name="${bot_name:-Kiso}"
+
+        derived="$(_derive_instance_name "$bot_name")"
+
+        echo >&2
+        yellow "  Instance identifier (used for Docker, data dir, and CLI):" >&2
+        while true; do
+            read -rp "  Identifier [$derived]: " inst_name
+            inst_name="${inst_name:-$derived}"
+            inst_name="${inst_name,,}"
+            if ! validate_instance_name "$inst_name" 2>&1 >&2; then continue; fi
+            if _instance_exists_in_json "$inst_name"; then
+                yellow "  '$inst_name' already exists. Choose a different name." >&2
+                yellow "  (To reconfigure it: re-run install.sh and choose update)" >&2
+                yellow "  (To remove it: kiso instance remove $inst_name)" >&2
+                continue
+            fi
+            break
+        done
+        break
     done
+
+    BOT_NAME="$bot_name"
+    INST_NAME="$inst_name"
 }
 
 ask_username() {
@@ -193,14 +228,6 @@ ask_username() {
         fi
         red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
     done
-}
-
-ask_bot_name() {
-    local default_display="$1"
-    local bot_name
-    read -rp "Bot display name [$default_display]: " bot_name
-    bot_name="${bot_name:-$default_display}"
-    echo "$bot_name"
 }
 
 ask_provider_name() {
@@ -450,15 +477,17 @@ fi
 
 # ── New instance flow ────────────────────────────────────────────────────────
 
-# ── 3b. Instance name ────────────────────────────────────────────────────────
+# ── 3b. Bot name + instance identifier ──────────────────────────────────────
 
-INST_NAME="$(ask_instance_name)"
+ask_bot_and_instance_name
 CONTAINER="kiso-$INST_NAME"
 INST_DIR="$KISO_DIR/instances/$INST_NAME"
 CONFIG="$INST_DIR/config.toml"
 ENV_FILE="$INST_DIR/.env"
 
+echo
 bold "Instance: $INST_NAME"
+echo "  Bot name:   $BOT_NAME"
 echo "  Container:  $CONTAINER"
 echo "  Data dir:   $INST_DIR"
 echo
@@ -543,9 +572,7 @@ if [[ "$NEED_CONFIG" == true ]]; then
     kiso_user="$(ask_username)"
     echo "  username: $kiso_user"
 
-    # Default display name = capitalized instance name
-    default_display="${INST_NAME^}"
-    bot_name="$(ask_bot_name "$default_display")"
+    bot_name="$BOT_NAME"
     echo "  bot name: $bot_name"
 
     provider_name="$(ask_provider_name)"
