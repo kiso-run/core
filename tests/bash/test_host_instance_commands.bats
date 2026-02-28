@@ -55,3 +55,21 @@ setup() {
     [ "$status" -eq 0 ]
     docker_was_called "logs kiso-jarvis -f"
 }
+
+@test "instance create: container fails to start → instances.json not written" {
+    cat > "$BATS_TEST_TMPDIR/bin/docker" <<EOF
+#!/bin/bash
+echo "\$@" >> "$BATS_TEST_TMPDIR/docker_calls"
+case "\$1" in
+    inspect) echo "exited" ;;
+    info)    echo "" ;;
+    *)       ;;
+esac
+exit 0
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/bin/docker"
+    run kiso_run instance create newbot
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"failed to start"* ]]
+    ! instance_exists newbot
+}

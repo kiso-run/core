@@ -285,6 +285,23 @@ import sys,json; d=json.load(sys.stdin); sys.exit(0 if sys.argv[1] in d else 1)
                     -v "$INST_DIR:/root/.kiso" \
                     kiso:latest
 
+                # Health check: wait up to 3s for the container to reach 'running'
+                _healthy=0
+                for _i in 1 2 3; do
+                    _st=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo "not found")
+                    if [[ "$_st" == "running" ]]; then
+                        _healthy=1
+                        break
+                    fi
+                    sleep 1
+                done
+                if [[ "$_healthy" -eq 0 ]]; then
+                    docker logs "$CONTAINER" --tail 20 >&2 || true
+                    docker rm -f "$CONTAINER" 2>/dev/null || true
+                    echo "Error: container '$CONTAINER' failed to start — see above." >&2
+                    exit 1
+                fi
+
                 python3 - "$INSTANCES_JSON" "$NAME" "$SERVER_PORT" "$CONN_BASE" <<'PY'
 import sys, json, pathlib
 path = pathlib.Path(sys.argv[1])
@@ -374,9 +391,18 @@ PY
             explore)
                 # kiso [--instance NAME] instance explore [SESSION]
                 INST=$(resolve_instance "$EXPLICIT_INSTANCE")
-                SESSION="${2:-$(hostname)@$(whoami)}"
                 CONTAINER="kiso-$INST"
                 require_running "$CONTAINER"
+                if [[ -n "${2:-}" ]]; then
+                    SESSION="$2"
+                    SESSION_DIR="$KISO_DIR/instances/$INST/sessions/$SESSION"
+                    if [[ ! -d "$SESSION_DIR" ]]; then
+                        echo "Error: session '$SESSION' not found in instance '$INST'." >&2
+                        exit 1
+                    fi
+                else
+                    SESSION="$(hostname)@$(whoami)"
+                fi
                 docker exec $TTY_FLAGS "${TERM_ENV[@]}" -e "SESSION=$SESSION" "$CONTAINER" \
                     bash -c 'cd ~/.kiso/sessions/$SESSION 2>/dev/null && exec bash || { echo "Session workspace not found: ~/.kiso/sessions/$SESSION"; exit 1; }'
                 ;;

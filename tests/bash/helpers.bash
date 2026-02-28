@@ -52,6 +52,10 @@ EOF
     printf '#!/bin/bash\necho "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678"\nexit 0\n' \
         > "$BATS_TEST_TMPDIR/bin/openssl"
     chmod +x "$BATS_TEST_TMPDIR/bin/openssl"
+
+    # sleep: instant (avoids delays in health-check retry loops)
+    printf '#!/bin/bash\nexit 0\n' > "$BATS_TEST_TMPDIR/bin/sleep"
+    chmod +x "$BATS_TEST_TMPDIR/bin/sleep"
 }
 
 # Populate instances.json with one or more instances.

@@ -7,9 +7,16 @@ setup() {
 }
 
 @test "explore with SESSION: docker exec gets -e SESSION=<name>" {
+    mkdir -p "$KISO_DIR/instances/jarvis/sessions/mysession"
     run kiso_run instance explore mysession
     [ "$status" -eq 0 ]
     docker_was_called "-e SESSION=mysession"
+}
+
+@test "explore: SESSION not found on host → error" {
+    run kiso_run instance explore nosuchsession
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not found"* ]]
 }
 
 @test "explore without SESSION: uses hostname@user default and passes it via -e SESSION" {
