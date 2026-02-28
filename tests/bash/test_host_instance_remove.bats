@@ -39,3 +39,11 @@ setup() {
     ! instance_exists mybot
     instance_exists other
 }
+
+@test "instance remove: instance dir already deleted → still removes from instances.json" {
+    # instances.json has mybot but the data directory was manually removed
+    rm -rf "$KISO_DIR/instances/mybot"
+    run kiso_run instance remove mybot --yes
+    [ "$status" -eq 0 ]
+    ! instance_exists mybot
+}

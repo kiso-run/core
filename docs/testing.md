@@ -6,11 +6,14 @@
 # Unit tests (fast, no network, no secrets)
 uv run pytest tests/ -q
 
+# Bash tests (kiso-host.sh + install.sh — requires bats-core)
+./run_bash_tests.sh
+
 # Live tests in Docker (safe — LLM-generated commands isolated in container)
 docker compose -f docker-compose.test.yml run --rm test-live
 
 # Everything
-uv run pytest tests/ -q && docker compose -f docker-compose.test.yml run --rm test-live
+uv run pytest tests/ -q && ./run_bash_tests.sh && docker compose -f docker-compose.test.yml run --rm test-live
 ```
 
 ## Stack
@@ -32,6 +35,10 @@ tests/
 ├── test_health.py           # GET /health endpoint
 ├── test_sandbox_docker.py   # sandbox integration tests (Docker-only, requires root)
 ├── test_{module}.py         # one file per source module
+├── bash/                    # bats tests for kiso-host.sh and install.sh
+│   ├── helpers.bash         # shared setup (mocks, helpers)
+│   ├── test_host_*.bats     # kiso-host.sh: name validation, instance commands, port detection, …
+│   └── test_install_*.bats  # install.sh: name validation, port allocation, register
 └── live/                    # live LLM integration tests
     ├── conftest.py          # live fixtures (live_config, seeded_db, mock_noop_infra)
     ├── test_roles.py        # L1 — single brain function in isolation
@@ -46,7 +53,8 @@ tests/
 
 | Suite | Count | What it tests | Where to run | Secrets |
 |---|---|---|---|---|
-| Unit tests | ~970 | All code, fully mocked | Host | No |
+| Unit tests | ~1 642 | All code, fully mocked | Host | No |
+| Bash tests | 50 | kiso-host.sh + install.sh (bats-core) | Host | No |
 | L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
 | L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
 | L3 e2e | 4 | Full pipeline, **executes LLM-generated commands** | **Docker** | `KISO_LLM_API_KEY` |
@@ -81,6 +89,18 @@ uv run pytest tests/ --cov=kiso --cov-fail-under=80 -q  # with coverage
 ```
 
 No network, no secrets, no side effects.
+
+### Bash tests — kiso-host.sh and install.sh
+
+```bash
+./run_bash_tests.sh          # all 50 bats tests
+bats tests/bash/             # same, direct invocation
+bats tests/bash/test_host_instance_commands.bats  # single file
+```
+
+Requires [bats-core](https://github.com/bats-core/bats-core): `npm install -g bats`.
+
+No network, no Docker daemon (all commands mocked via PATH injection). Tests cover name validation, instance resolution, instance lifecycle commands, port detection, explore SESSION validation, remove confirmation, and install.sh helper functions.
 
 ### Live tests — Docker (safe)
 

@@ -519,6 +519,27 @@ kiso env reload                                # hot-reload .env without restart
 
 Secrets are stored in `~/.kiso/instances/{name}/.env` and loaded into the process environment. `kiso env reload` calls `POST /admin/reload-env` to hot-reload without restarting the server. See [security.md — Deploy Secrets](security.md#deploy-secrets).
 
+## Version Information
+
+```bash
+kiso version           # print version string
+kiso version --stats   # version + LOC breakdown per area
+```
+
+`kiso version --stats` counts non-empty, non-comment Python lines (`.py` files only) across three areas:
+
+```
+kiso 0.1.0
+
+  core    4 950 loc   (kiso/)
+  cli     2 323 loc   (cli/)
+  tests  19 681 loc   (tests/)
+  ──────────────────
+  total  26 954 loc
+```
+
+Lines that are blank or start with `#` (after stripping whitespace) are excluded. Inline comments (`x = 1  # note`) count as LOC.
+
 ## Notes
 
 - Chat mode is a thin HTTP wrapper — all intelligence lives in the server.

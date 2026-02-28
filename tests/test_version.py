@@ -1,5 +1,6 @@
 """Tests for kiso._version.count_loc (M53)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,21 @@ class TestLocCounter:
         assert stats["core"] == 0
         assert stats["cli"] == 0
         assert stats["tests"] == 0
+
+    def test_unreadable_file_silently_skipped(self, tmp_path: Path) -> None:
+        if os.getuid() == 0:
+            pytest.skip("root bypasses file permissions")
+        (tmp_path / "kiso").mkdir()
+        readable = tmp_path / "kiso" / "readable.py"
+        readable.write_text("x = 1\n")
+        unreadable = tmp_path / "kiso" / "unreadable.py"
+        unreadable.write_text("y = 2\n")
+        os.chmod(unreadable, 0o000)
+        try:
+            stats = count_loc(tmp_path)
+            assert stats["core"] == 1  # only readable.py counted
+        finally:
+            os.chmod(unreadable, 0o644)
 
     def test_total_equals_sum(self, tmp_path: Path) -> None:
         for sub in ("kiso", "cli", "tests"):

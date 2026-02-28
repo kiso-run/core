@@ -89,18 +89,22 @@ All container lifecycle is managed via `kiso instance`:
 
 ```bash
 kiso instance list                        # all instances: name, port, status
-kiso instance create NAME                 # start a new container (config must exist)
+kiso instance create NAME                 # docker run + health check; writes instances.json only on success
 kiso instance start [NAME]                # docker start kiso-{NAME}
 kiso instance stop [NAME]                 # docker stop kiso-{NAME}
 kiso instance restart [NAME]              # docker restart kiso-{NAME}
 kiso instance status [NAME]               # container state + health endpoint
 kiso instance logs [NAME] [-f]            # docker logs kiso-{NAME}
 kiso instance shell [NAME]                # bash inside the container
-kiso instance explore [SESSION]           # shell in the session workspace
+kiso instance explore [SESSION]           # shell in the session workspace (validates SESSION dir on host)
 kiso instance remove [NAME] [--yes]       # docker rm + rm -rf instances/{NAME}/
 ```
 
 When only one instance is installed, the `[NAME]` argument is optional — the wrapper resolves it implicitly. With multiple instances, use `kiso --instance NAME` or pass `NAME` explicitly.
+
+**`kiso instance create NAME`** runs `docker run -d`, then polls `docker inspect` up to 3 times (1 s apart) to verify the container reaches `running` state. If the health check fails, docker logs are printed, the container is removed, and `instances.json` is left unchanged. Only on success is the instance registered.
+
+**`kiso instance explore [SESSION]`** validates that `~/.kiso/instances/{name}/sessions/{session}/` exists on the host before entering the container. If the directory is missing, the command exits with an error rather than dropping into an empty shell. When `SESSION` is omitted, the default `{hostname}@{user}` is used without host-side validation (useful for general debug access).
 
 ## Multi-instance CLI
 
