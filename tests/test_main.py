@@ -9,6 +9,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+import re
+
 from kiso.main import _init_kiso_dirs
 from kiso.store import (
     create_plan,
@@ -177,3 +179,32 @@ class TestInitKisoDirs:
             _init_kiso_dirs()
             _init_kiso_dirs()
         assert (tmp_path / "sys" / "bin").is_dir()
+
+
+# --- Dockerfile entrypoint consistency ---
+
+
+def test_dockerfile_uvicorn_module_is_importable():
+    """The uvicorn module:app string in Dockerfile CMD must be importable.
+
+    Catches renames like server.py → main.py where the Dockerfile CMD is
+    left pointing at the old name. No Docker needed — just string + import.
+    """
+    dockerfile = Path(__file__).parent.parent / "Dockerfile"
+    assert dockerfile.exists(), "Dockerfile not found at repo root"
+
+    text = dockerfile.read_text()
+    # Match: "uvicorn", "module.path:attr"
+    m = re.search(r'"uvicorn",\s*"([^"]+)"', text)
+    assert m, "Could not find uvicorn module:app argument in Dockerfile CMD"
+
+    module_ref = m.group(1)          # e.g. "kiso.main:app"
+    assert ":" in module_ref, f"Expected module:attr format, got {module_ref!r}"
+    module_path, attr = module_ref.split(":", 1)
+
+    import importlib
+    mod = importlib.import_module(module_path)
+    assert hasattr(mod, attr), (
+        f"Module '{module_path}' has no attribute '{attr}' — "
+        f"Dockerfile CMD is pointing at the wrong module"
+    )
