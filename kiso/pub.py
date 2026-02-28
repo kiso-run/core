@@ -7,9 +7,15 @@ from kiso.config import KISO_DIR, Config
 
 
 def pub_token(session: str, config: Config) -> str:
-    """Compute HMAC token for a session's pub/ directory."""
-    key = (config.tokens.get("cli") or "kiso").encode()
-    return hmac.new(key, session.encode(), hashlib.sha256).hexdigest()[:16]
+    """Compute HMAC token for a session's pub/ directory.
+
+    Raises ValueError if the CLI token is not configured (would produce a
+    predictable token derived from the literal string "kiso").
+    """
+    cli_token = config.tokens.get("cli")
+    if not cli_token:
+        raise ValueError("cli token not configured; cannot generate pub token")
+    return hmac.new(cli_token.encode(), session.encode(), hashlib.sha256).hexdigest()[:16]
 
 
 def resolve_pub_token(token: str, config: Config) -> str | None:

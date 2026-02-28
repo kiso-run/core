@@ -654,10 +654,12 @@ if [[ "$NEED_ENV" == true ]]; then
         green "  .env created"
     fi
 
-    set -a; source "$ENV_FILE"; set +a
-    if [[ -z "${KISO_LLM_API_KEY:-}" ]]; then
-        yellow "  warning: KISO_LLM_API_KEY is empty after loading .env"
+    # Safe read — extract only KISO_LLM_API_KEY without executing the file as a script
+    _api_key_check="$(grep -E '^KISO_LLM_API_KEY=' "$ENV_FILE" | cut -d= -f2- | head -1)"
+    if [[ -z "$_api_key_check" ]]; then
+        yellow "  warning: KISO_LLM_API_KEY is empty in $ENV_FILE"
     fi
+    unset _api_key_check
 
     if [[ -n "$ENV_BACKUP" ]]; then
         cp "$ENV_FILE" "$ENV_BACKUP"

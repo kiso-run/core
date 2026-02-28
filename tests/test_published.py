@@ -44,7 +44,7 @@ class TestPubToken:
         t = pub_token("sess1", config)
         assert all(c in "0123456789abcdef" for c in t)
 
-    def test_fallback_key_when_no_cli_token(self):
+    def test_raises_when_no_cli_token(self):
         cfg = Config(
             tokens={},
             providers={"p": Provider(base_url="http://x")},
@@ -53,8 +53,8 @@ class TestPubToken:
             settings={},
             raw={},
         )
-        t = pub_token("sess1", cfg)
-        assert len(t) == 16
+        with pytest.raises(ValueError, match="cli token not configured"):
+            pub_token("sess1", cfg)
 
 
 # --- resolve_pub_token ---
@@ -136,6 +136,20 @@ class TestGetPubEndpoint:
 
     async def test_path_traversal_blocked(self, client, _setup_session):
         resp = await client.get(f"/pub/{self._token}/../../etc/passwd")
+        assert resp.status_code == 404
+
+    async def test_path_traversal_sibling_dir_blocked(self, client, _setup_session):
+        """Sibling directory with same-prefix name must not be accessible.
+
+        /sessions/test-pub-session/pub-evil/secret starts with
+        /sessions/test-pub-session/pub — the old startswith() check would
+        pass this; is_relative_to() correctly rejects it.
+        """
+        sibling = self._session_dir / "pub-evil"
+        sibling.mkdir()
+        (sibling / "secret.txt").write_text("should not be served")
+
+        resp = await client.get(f"/pub/{self._token}/../pub-evil/secret.txt")
         assert resp.status_code == 404
 
     async def test_preserves_extension(self, client, _setup_session):

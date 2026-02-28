@@ -113,7 +113,11 @@ def _report_pub_files(session: str, config: Config) -> list[dict]:
     pub_dir = _session_workspace(session) / "pub"
     if not pub_dir.is_dir():
         return []
-    token = pub_token(session, config)
+    try:
+        token = pub_token(session, config)
+    except ValueError as exc:
+        log.warning("Cannot generate pub URLs: %s", exc)
+        return []
     _MAX_PUB_SCAN = 1000
     all_paths: list[Path] = []
     truncated = False

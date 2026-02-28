@@ -237,8 +237,8 @@ async def get_pub(token: str, filename: str, request: Request):
     pub_dir = KISO_DIR / "sessions" / session / "pub"
     file_path = (pub_dir / filename).resolve()
 
-    # Path traversal guard
-    if not str(file_path).startswith(str(pub_dir.resolve())):
+    # Path traversal guard — is_relative_to is immune to same-prefix sibling dirs
+    if not file_path.is_relative_to(pub_dir.resolve()):
         raise HTTPException(status_code=404, detail="Not found")
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Not found")
