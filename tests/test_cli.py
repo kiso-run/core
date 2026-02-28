@@ -2068,7 +2068,7 @@ class TestVersionCommand:
         assert exc.value.code == 0
 
     def test_version_flag_long_prints_version(self, capsys):
-        """'kiso --version' must print 'kiso {version}  (N loc)' and exit."""
+        """'kiso --version' must print 'kiso {version}  (N lines)' and exit."""
         import re
 
         from kiso._version import __version__ as v
@@ -2076,11 +2076,11 @@ class TestVersionCommand:
         with pytest.raises(SystemExit) as exc:
             build_parser().parse_args(["--version"])
         out = capsys.readouterr().out.strip()
-        assert re.fullmatch(rf"kiso {re.escape(v)}  \([\d ]+ loc\)", out), f"unexpected: {out!r}"
+        assert re.fullmatch(rf"kiso {re.escape(v)}  \([\d]+ lines\)", out), f"unexpected: {out!r}"
         assert exc.value.code == 0
 
     def test_version_plain_shows_loc(self, capsys):
-        """'kiso version' must print 'kiso {version}  (N loc)' with N > 0."""
+        """'kiso version' must print 'kiso {version}  (N lines)' with N > 0."""
         import re
 
         from kiso._version import __version__ as v
@@ -2088,7 +2088,7 @@ class TestVersionCommand:
         with patch("sys.argv", ["kiso", "version"]):
             main()
         out = capsys.readouterr().out.strip()
-        m = re.fullmatch(rf"kiso {re.escape(v)}  \(([\d ]+) loc\)", out)
+        m = re.fullmatch(rf"kiso {re.escape(v)}  \(([\d]+) lines\)", out)
         assert m is not None, f"unexpected output: {out!r}"
         total = int(m.group(1).replace(" ", ""))
         assert total > 0

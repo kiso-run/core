@@ -26,7 +26,7 @@ class _VersionAction(argparse.Action):
 
             root = Path(__file__).resolve().parent.parent
             total = count_loc(root)["total"]
-            print(f"kiso {__version__}  ({_fmt_loc(total)} loc)")
+            print(f"kiso {__version__}  ({_fmt_loc(total)} lines)")
         parser.exit()
 
 
@@ -299,11 +299,11 @@ def main() -> None:
 
             root = Path(__file__).resolve().parent.parent
             total = count_loc(root)["total"]
-            print(f"kiso {__version__}  ({_fmt_loc(total)} loc)")
+            print(f"kiso {__version__}  ({_fmt_loc(total)} lines)")
 
 
 def _fmt_loc(n: int) -> str:
-    return f"{n:,}".replace(",", " ")
+    return str(n)
 
 
 def _print_version_stats() -> None:
@@ -319,9 +319,9 @@ def _print_version_stats() -> None:
     rows = [("core", stats["core"], "kiso/"), ("cli", stats["cli"], "cli/"), ("tests", stats["tests"], "tests/")]
     print(f"kiso {__version__}\n")
     for label, n, path in rows:
-        print(f"  {label:<5}  {_fmt_loc(n):>{num_w}} loc   ({path})")
+        print(f"  {label:<5}  {_fmt_loc(n):>{num_w}} lines   ({path})")
     print(f"  {'─' * (num_w + 12)}")
-    print(f"  {'total':<5}  {_fmt_loc(stats['total']):>{num_w}} loc")
+    print(f"  {'total':<5}  {_fmt_loc(stats['total']):>{num_w}} lines")
 
 
 def _msg_cmd(args: argparse.Namespace) -> None:
