@@ -411,10 +411,10 @@ def test_render_banner_plain():
     assert "\033[" not in result
 
 
-def test_render_banner_custom_name_no_kanji():
+def test_render_banner_custom_name_instance_line():
     result = render_banner("Jarvis", "host@alice", _COLOR)
-    assert "Jarvis" in result
-    assert "基礎" not in result
+    assert "instance: Jarvis" in result
+    assert "host@alice" in result
 
 
 # ── render_cancel_start / done ───────────────────────────────

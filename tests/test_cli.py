@@ -43,12 +43,6 @@ def test_build_parser_returns_argument_parser():
 # ── subcommand routing ────────────────────────────────────────
 
 
-def test_serve_subcommand():
-    parser = build_parser()
-    args = parser.parse_args(["serve"])
-    assert args.command == "serve"
-
-
 def test_no_args_means_chat_mode():
     parser = build_parser()
     args = parser.parse_args([])
@@ -96,27 +90,6 @@ def test_defaults():
     assert args.session is None
     assert args.api == "http://localhost:8333"
     assert args.quiet is False
-
-
-# ── _serve calls uvicorn ──────────────────────────────────────
-
-
-def test_serve_calls_uvicorn():
-    mock_cfg = MagicMock()
-    mock_cfg.settings = {"host": "127.0.0.1", "port": 9000}
-
-    with (
-        patch("kiso.config.load_config", return_value=mock_cfg) as mock_load,
-        patch("uvicorn.run") as mock_run,
-    ):
-        from cli import _serve
-
-        _serve()
-
-        mock_load.assert_called_once()
-        mock_run.assert_called_once_with(
-            "kiso.main:app", host="127.0.0.1", port=9000
-        )
 
 
 # ── sessions parsing ──────────────────────────────────────────

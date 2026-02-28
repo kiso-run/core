@@ -85,7 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("serve", help="start the HTTP server")
     msg_parser = sub.add_parser("msg", help="send a message and print the response")
     msg_parser.add_argument("message", help="message text")
     skill_parser = sub.add_parser("skill", help="manage skills")
@@ -193,8 +192,6 @@ def main() -> None:
         _chat(args)
     elif args.command == "msg":
         _msg_cmd(args)
-    elif args.command == "serve":
-        _serve()
     elif args.command == "skill":
         from cli.skill import run_skill_command
 
@@ -307,7 +304,7 @@ def _chat(args: argparse.Namespace) -> None:
 
     bot_name = cfg.settings.get("bot_name", "Kiso")
     prompt = render_user_prompt(user, caps)
-    print(render_banner(bot_name, session, caps))
+    print(render_banner(bot_name, session, caps, __version__))
 
     # Tab-completion for slash commands
     _setup_readline()
@@ -750,19 +747,6 @@ def _poll_status(
         counter += 1
 
     return max_task_id
-
-
-def _serve() -> None:
-    import uvicorn
-
-    from kiso.config import SETTINGS_DEFAULTS, load_config
-
-    # Load config early to fail fast on errors
-    cfg = load_config()
-    host = cfg.settings.get("host", SETTINGS_DEFAULTS["host"])
-    port = cfg.settings.get("port", SETTINGS_DEFAULTS["port"])
-
-    uvicorn.run("kiso.main:app", host=str(host), port=int(port))
 
 
 def _handle_slash(
