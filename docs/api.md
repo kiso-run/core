@@ -66,7 +66,8 @@ If the session does not exist, it is created implicitly (with no webhook, no con
 ```json
 {
   "queued": true,
-  "session": "dev-backend"
+  "session": "dev-backend",
+  "message_id": 42
 }
 ```
 
@@ -107,13 +108,13 @@ For polling. Used by the CLI and clients without a webhook.
 
 | Param | Required | Description |
 |---|---|---|
-| `after` | no | ID of last seen task, returns only subsequent ones |
+| `after` | no | ID of last seen task; returns only tasks with id > after |
+| `verbose` | no | If `true`, include `messages` and `response` fields inside `llm_calls` for each task and plan. Default `false` (stripped for compactness). |
 
 **Response:**
 
 ```json
 {
-  "session": "dev-backend",
   "plan": {                    // current or most recent plan (null if none)
     "id": 3,
     "goal": "Add JWT auth with tests",

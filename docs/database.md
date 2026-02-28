@@ -156,8 +156,6 @@ id=2  content="Team: marco (backend)"   category="user"     confidence=1.0  sour
 id=3  content="snake_case conventions"  category="project"  confidence=0.6  source="manual"
 ```
 
-All entries are visible in every session, grouped by category in the planner context.
-
 ### facts_archive
 
 Soft-deleted facts moved from `facts` when their confidence drops below `fact_archive_threshold`. Kept for audit and potential recovery.
@@ -216,23 +214,8 @@ CREATE INDEX idx_pending_scope ON pending(scope, status);
 - Global pending items are visible to all sessions. Session-scoped ones only to that session.
 - Resolved pending items may become facts (via curator) or get absorbed into the session summary.
 
-### published
-
-Mapping for published file URLs. See [api.md](api.md) `GET /pub/{id}`.
-
-```sql
-CREATE TABLE published (
-    id         TEXT PRIMARY KEY,
-    session    TEXT NOT NULL,
-    filename   TEXT NOT NULL,
-    path       TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-`id` is a UUID4 (128-bit random, non-enumerable). `path` is the file's location on disk (inside `~/.kiso/instances/{name}/sessions/{session}/pub/` on the host). The URL `GET /pub/{id}` resolves to this file without exposing the session ID.
-
 ## What's NOT in the database
 
 - **Logs & audit**: plain text files (`session.log`, `server.log`) and JSONL (`audit/`). See [audit.md](audit.md).
 - **Secrets**: ephemeral (worker memory only) and deploy (env vars via `kiso env`) — never in DB. See [security.md](security.md#5-secrets).
+- **Published files**: served directly from the filesystem (`pub/` directory in the session workspace). The URL token is HMAC-SHA256 derived from the session ID — no DB table involved. See [api.md — GET /pub](api.md#get-pubtokenfilename).

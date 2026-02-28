@@ -12,7 +12,7 @@ Each instance has its own data directory. With an instance named `jarvis`:
 ~/.kiso/instances/jarvis/
 ├── config.toml          # static, human-readable, versionable
 ├── .env                 # deploy secrets (managed via `kiso env`)
-├── kiso.db              # dynamic, machine-managed
+├── store.db             # dynamic, machine-managed
 └── audit/               # LLM call logs, task execution logs
 ```
 
