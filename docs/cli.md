@@ -519,6 +519,73 @@ kiso env reload                                # hot-reload .env without restart
 
 Secrets are stored in `~/.kiso/instances/{name}/.env` and loaded into the process environment. `kiso env reload` calls `POST /admin/reload-env` to hot-reload without restarting the server. See [security.md — Deploy Secrets](security.md#deploy-secrets).
 
+## Token Usage Statistics
+
+```bash
+kiso stats                              # usage for last 30 days, grouped by model
+kiso stats --since 7                    # last 7 days
+kiso stats --session alice              # filter to a specific session
+kiso stats --by session                 # group by session instead of model
+kiso stats --by role                    # group by LLM role (planner, reviewer, …)
+kiso stats --all                        # loop over all instances (wrapper command)
+```
+
+`kiso stats` calls `GET /admin/stats` (admin token required) and prints a formatted table:
+
+```
+Token usage — last 30 days  (by model)
+
+  model                    calls    input   output   est. cost
+  ─────────────────────────────────────────────────────────────
+  google/gemini-flash        142   1 234 k    456 k      $0.42
+  anthropic/claude-sonnet     23      98 k     34 k      $1.81
+  ollama/llama3                5       2 k      1 k         —
+  ─────────────────────────────────────────────────────────────
+  total                      170   1 334 k    491 k      $2.23
+```
+
+- Token counts use space as thousands separator + `k` suffix (e.g. `1 234 k`).
+- `est. cost` is computed from a built-in price table (substring match on model name). The column is omitted entirely if no model in the table has a known price.
+- `—` means the model is not in the price table.
+- `--all` (wrapper only): iterates all instances in `instances.json` and prints a `── name ──` header before each. Instances that are not running show a `(not running)` message instead of an error.
+
+The API token must have the `cli` key in `config.toml`, and the Linux user must be configured as admin. See [security.md — Roles](security.md#roles).
+
+### REPL `/stats`
+
+Inside the interactive REPL, `/stats` fetches the last 7 days of usage for the **current session** only and prints a compact table inline.
+
+## Shell Completion
+
+```bash
+kiso completion bash    # print bash completion script
+kiso completion zsh     # print zsh completion script
+```
+
+To install permanently:
+
+```bash
+# bash
+kiso completion bash >> ~/.bash_completion
+
+# zsh
+kiso completion zsh > "${fpath[1]}/_kiso"
+```
+
+Or to activate for the current shell session only:
+
+```bash
+source <(kiso completion bash)
+```
+
+The wrapper (`kiso-host.sh`) fetches the completion script from inside a running Docker container via `docker exec`. If no instance is running, it falls back to the system-installed completion files. The completion scripts support:
+
+- All top-level commands including `stats`, `completion`, `instance`, etc.
+- `kiso stats --session` and `kiso reset session` → tab-complete session names from the active instance's DB
+- `kiso instance explore SESSION` → tab-complete session names
+- `kiso --instance NAME` → detected from command line; completion automatically queries that instance's DB
+- When multiple instances exist and no `--instance` is specified, session completion is silently skipped
+
 ## Version Information
 
 ```bash

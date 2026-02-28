@@ -12,7 +12,7 @@ class _ExitRepl(Exception):
     """Raised by /exit to break out of the REPL loop."""
 
 
-_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/sessions", "/status", "/verbose-off", "/verbose-on"]
+_SLASH_COMMANDS = ["/clear", "/exit", "/help", "/sessions", "/stats", "/status", "/verbose-off", "/verbose-on"]
 
 _verbose_mode = False
 
@@ -163,6 +163,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     env_sub.add_parser("reload", help="hot-reload .env into the server")
 
+    stats_p = sub.add_parser("stats", help="show token usage stats (admin only)")
+    stats_p.add_argument("--since", type=int, default=30, metavar="N", help="look back N days (default: 30)")
+    stats_p.add_argument("--session", default=None, metavar="NAME", help="filter by session name")
+    stats_p.add_argument("--by", default="model", choices=["model", "session", "role"], help="group by dimension (default: model)")
+
+    comp_p = sub.add_parser("completion", help="print shell completion script")
+    comp_p.add_argument("shell", choices=["bash", "zsh"], help="target shell")
+
     version_p = sub.add_parser("version", help="print version and exit")
     version_p.add_argument("--stats", action="store_true", help="show line count breakdown")
 
@@ -213,6 +221,14 @@ def main() -> None:
         from cli.reset import run_reset_command
 
         run_reset_command(args)
+    elif args.command == "stats":
+        from cli.stats import run_stats_command
+
+        run_stats_command(args)
+    elif args.command == "completion":
+        import importlib.resources
+        script = importlib.resources.files("kiso") / "completions" / f"kiso.{args.shell}"
+        print(script.read_text(encoding="utf-8"), end="")
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()
@@ -794,6 +810,9 @@ def _handle_slash(
     elif cmd == "/sessions":
         _slash_sessions(client, user, caps)
 
+    elif cmd == "/stats":
+        _slash_stats(client, user, session, caps)
+
     elif cmd == "/verbose-on":
         global _verbose_mode
         _verbose_mode = True
@@ -820,6 +839,7 @@ def _slash_help(caps: "TermCaps") -> None:  # noqa: F821
     print("  /help        — show this help")
     print("  /status      — server health + session info")
     print("  /sessions    — list your sessions")
+    print("  /stats       — token usage for this session (last 7 days)")
     print("  /verbose-on  — show full LLM input/output")
     print("  /verbose-off — hide LLM details (default)")
     print("  /clear       — clear the screen")
@@ -903,6 +923,31 @@ def _slash_sessions(client, user: str, caps: "TermCaps") -> None:  # noqa: F821
         parts.append(f"last activity: {_relative_time(s.get('updated_at'))}")
         print(f"  {name}  — {', '.join(parts)}")
 
+    print(render_separator(caps))
+
+
+def _slash_stats(client, user: str, session: str, caps: "TermCaps") -> None:  # noqa: F821
+    """Show token usage for the current session (last 7 days)."""
+    import httpx
+
+    from cli.render import render_separator
+    from cli.stats import print_stats
+
+    print(render_separator(caps))
+    try:
+        resp = client.get(
+            "/admin/stats",
+            params={"user": user, "since": 7, "session": session, "by": "model"},
+        )
+        resp.raise_for_status()
+        print_stats(resp.json())
+    except httpx.ConnectError:
+        print("  [stats unavailable — cannot connect]")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 403:
+            print("  [stats unavailable — admin access required]")
+        else:
+            print(f"  [stats error: {exc.response.status_code}]")
     print(render_separator(caps))
 
 

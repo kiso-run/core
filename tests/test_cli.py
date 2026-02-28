@@ -2068,3 +2068,55 @@ class TestVersionCommand:
             build_parser().parse_args(["--help"])
         out = capsys.readouterr().out
         assert v in out
+
+
+class TestCompletionSubcommand:
+    def test_completion_bash_contains_function(self, capsys):
+        """'kiso completion bash' must output the _kiso function and complete -F."""
+        with patch("sys.argv", ["kiso", "completion", "bash"]):
+            main()
+        out = capsys.readouterr().out
+        assert "_kiso" in out
+        assert "complete -F" in out
+
+    def test_completion_zsh_contains_compdef(self, capsys):
+        """'kiso completion zsh' must output the zsh #compdef header."""
+        with patch("sys.argv", ["kiso", "completion", "zsh"]):
+            main()
+        out = capsys.readouterr().out
+        assert "#compdef kiso" in out
+
+    def test_completion_stats_in_bash_script(self, capsys):
+        """bash completion script must include 'stats' in commands."""
+        with patch("sys.argv", ["kiso", "completion", "bash"]):
+            main()
+        out = capsys.readouterr().out
+        assert "stats" in out
+
+    def test_completion_stats_in_zsh_script(self, capsys):
+        """zsh completion script must include 'stats' in commands."""
+        with patch("sys.argv", ["kiso", "completion", "zsh"]):
+            main()
+        out = capsys.readouterr().out
+        assert "stats" in out
+
+
+class TestStatsSubcommand:
+    def test_stats_subcommand_exists(self):
+        """'kiso stats' must be a registered subcommand."""
+        args = build_parser().parse_args(["stats"])
+        assert args.command == "stats"
+
+    def test_stats_flags_registered(self):
+        """'kiso stats' must accept --since, --session, and --by flags."""
+        args = build_parser().parse_args(["stats", "--since", "7", "--session", "alice", "--by", "session"])
+        assert args.since == 7
+        assert args.session == "alice"
+        assert args.by == "session"
+
+    def test_stats_defaults(self):
+        """'kiso stats' defaults: since=30, session=None, by=model."""
+        args = build_parser().parse_args(["stats"])
+        assert args.since == 30
+        assert args.session is None
+        assert args.by == "model"

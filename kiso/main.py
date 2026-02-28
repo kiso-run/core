@@ -430,6 +430,52 @@ async def post_cancel(
     return {"cancelled": True, "plan_id": plan["id"]}
 
 
+@app.get("/admin/stats")
+async def get_stats(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    user: str = Query(...),
+    since: int = Query(30, description="Number of days to look back"),
+    session: str | None = Query(None),
+    by: str = Query("model"),
+):
+    """Return aggregated token-usage stats from the audit log (admin only).
+
+    *by* must be one of ``model``, ``session``, or ``role``.
+    """
+    config = request.app.state.config
+    resolved = resolve_user(config, user, auth.token_name)
+    if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if by not in ("model", "session", "role"):
+        raise HTTPException(status_code=400, detail="by must be model, session, or role")
+
+    from datetime import timedelta
+    from datetime import datetime as _dt, timezone as _tz
+
+    from kiso.stats import aggregate, read_audit_entries
+
+    since_dt = _dt.now(_tz.utc) - timedelta(days=since)
+    entries = read_audit_entries(KISO_DIR / "audit", since=since_dt)
+    if session:
+        entries = [e for e in entries if e.get("session") == session]
+
+    rows = aggregate(entries, by=by)
+    total = {
+        "calls": sum(r["calls"] for r in rows),
+        "errors": sum(r["errors"] for r in rows),
+        "input_tokens": sum(r["input_tokens"] for r in rows),
+        "output_tokens": sum(r["output_tokens"] for r in rows),
+    }
+    return {
+        "by": by,
+        "since_days": since,
+        "session_filter": session,
+        "rows": rows,
+        "total": total,
+    }
+
+
 @app.post("/admin/reload-env")
 async def post_reload_env(
     request: Request,

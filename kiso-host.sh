@@ -459,6 +459,56 @@ HELP
         esac
         ;;
 
+    # ── stats ────────────────────────────────────────────────────────────────
+    stats)
+        # Collect flags, detect --all
+        ALL_INSTANCES=0
+        STATS_FLAGS=()
+        for _arg in "${@:2}"; do
+            if [[ "$_arg" == "--all" ]]; then
+                ALL_INSTANCES=1
+            else
+                STATS_FLAGS+=("$_arg")
+            fi
+        done
+
+        if [[ "$ALL_INSTANCES" -eq 0 ]]; then
+            INST=$(resolve_instance "$EXPLICIT_INSTANCE")
+            CONTAINER="kiso-$INST"
+            SERVER_PORT=$(instance_server_port "$INST")
+            require_running "$CONTAINER"
+            docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" \
+                uv run kiso --user "$(whoami)" --api "http://localhost:$SERVER_PORT" \
+                stats "${STATS_FLAGS[@]+"${STATS_FLAGS[@]}"}"
+        else
+            # Aggregate stats for every instance
+            _inst_list=$(python3 -c "
+import json, pathlib, sys
+p = pathlib.Path('$INSTANCES_JSON')
+d = json.loads(p.read_text()) if p.exists() else {}
+print('\n'.join(d.keys()))
+" 2>/dev/null || true)
+            if [[ -z "$_inst_list" ]]; then
+                echo "No instances configured."
+                exit 0
+            fi
+            while IFS= read -r _inst; do
+                echo "── $_inst ──"
+                _c="kiso-$_inst"
+                _port=$(instance_server_port "$_inst")
+                if docker inspect --format '{{.State.Status}}' "$_c" 2>/dev/null | grep -q "^running$"; then
+                    docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$_c" \
+                        uv run kiso --user "$(whoami)" --api "http://localhost:$_port" \
+                        stats "${STATS_FLAGS[@]+"${STATS_FLAGS[@]}"}" 2>/dev/null \
+                        || echo "  (error reading stats)"
+                else
+                    echo "  (instance not running)"
+                fi
+                echo
+            done <<< "$_inst_list"
+        fi
+        ;;
+
     # ── reset (special: factory restart) ────────────────────────────────────
     reset)
         INST=$(resolve_instance "$EXPLICIT_INSTANCE")
@@ -475,12 +525,26 @@ HELP
 
     # ── completion ───────────────────────────────────────────────────────────
     completion)
-        case "${2:-bash}" in
+        _COMP_SHELL="${2:-bash}"
+        if [[ "$_COMP_SHELL" != "bash" && "$_COMP_SHELL" != "zsh" ]]; then
+            echo "Usage: kiso completion [bash|zsh]" >&2; exit 1
+        fi
+        # Resolve instance to get the bundled script from inside the container
+        _COMP_INST=$(resolve_instance "$EXPLICIT_INSTANCE" 2>/dev/null || true)
+        if [[ -n "$_COMP_INST" ]]; then
+            _COMP_CONTAINER="kiso-$_COMP_INST"
+            _COMP_STATUS=$(docker inspect --format '{{.State.Status}}' "$_COMP_CONTAINER" 2>/dev/null || echo "not found")
+            if [[ "$_COMP_STATUS" == "running" ]]; then
+                docker exec "$_COMP_CONTAINER" uv run kiso completion "$_COMP_SHELL"
+                exit 0
+            fi
+        fi
+        # Fallback: read from system-installed location
+        case "$_COMP_SHELL" in
             bash) cat "$HOME/.local/share/bash-completion/completions/kiso" 2>/dev/null \
-                    || { echo "Completion not installed. Run install.sh." >&2; exit 1; } ;;
+                    || { echo "Error: completion not available (no running instance and not installed)." >&2; exit 1; } ;;
             zsh)  cat "$HOME/.local/share/zsh/site-functions/_kiso" 2>/dev/null \
-                    || { echo "Completion not installed. Run install.sh." >&2; exit 1; } ;;
-            *)    echo "Usage: kiso completion [bash|zsh]" >&2; exit 1 ;;
+                    || { echo "Error: completion not available (no running instance and not installed)." >&2; exit 1; } ;;
         esac
         ;;
 
@@ -521,6 +585,13 @@ Sessions & secrets:
   kiso env delete KEY
   kiso env reload                hot-reload secrets into the server
 
+Token usage (admin only):
+  kiso stats                     token usage for the current instance (last 30 days)
+  kiso stats --since N           last N days
+  kiso stats --session NAME      filter by session
+  kiso stats --by model|session|role  group by dimension (default: model)
+  kiso stats --all               stats for every instance
+
 Reset (admin only — requires confirmation):
   kiso reset session [name]      clear one session
   kiso reset knowledge           clear facts + learnings
@@ -546,7 +617,7 @@ Config files:
   ~/.kiso/instances/{name}/kiso.db
 
 REPL slash commands:
-  /help  /status  /sessions  /verbose-on  /verbose-off  /clear  /exit
+  /help  /status  /sessions  /stats  /verbose-on  /verbose-off  /clear  /exit
 HELP
         ;;
 
