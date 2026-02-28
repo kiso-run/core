@@ -405,7 +405,7 @@ if [[ -f "$INSTANCES_JSON" ]]; then
     EXISTING_COUNT=$(python3 -c "import json; print(len(json.load(open('$INSTANCES_JSON'))))" 2>/dev/null || echo 0)
 fi
 
-MODE="new"  # "new" or "update-image"
+MODE="new"  # "new" | "update-instance"
 if [[ "$EXISTING_COUNT" -gt 0 ]]; then
     echo
     yellow "  Found $EXISTING_COUNT existing instance(s):"
@@ -416,51 +416,69 @@ for k,v in d.items():
     print(f'    {k}  →  port {v.get(\"server_port\",\"?\")}')
 " 2>/dev/null || true
     echo
+    if [[ "$EXISTING_COUNT" -eq 1 ]]; then
+        _inst=$(python3 -c "import json; print(list(json.load(open('$INSTANCES_JSON')).keys())[0])" 2>/dev/null || true)
+        _opt2="Update instance '$_inst'"
+    else
+        _opt2="Update an existing instance"
+    fi
     echo "  Options:"
-    echo "    1) Add a new instance"
-    echo "    2) Update Docker image (rebuild + restart all instances)"
+    echo "    1) Install another instance"
+    echo "    2) $_opt2"
     read -rp "  Choice [1]: " MODE_CHOICE
     MODE_CHOICE="${MODE_CHOICE:-1}"
     if [[ "$MODE_CHOICE" == "2" ]]; then
-        MODE="update-image"
+        MODE="update-instance"
     fi
 fi
 
 echo
 
-# ── Update-image mode ────────────────────────────────────────────────────────
+# ── Update-instance mode: select which instance ──────────────────────────────
 
-if [[ "$MODE" == "update-image" ]]; then
-    bold "Rebuilding Docker image..."
-    if ! docker build -t "$IMAGE" "$REPO_DIR"; then
-        yellow "  Build failed — pruning build cache and retrying without cache..."
-        docker builder prune -f &>/dev/null || true
-        if ! docker build --no-cache -t "$IMAGE" "$REPO_DIR"; then
-            red "Error: Docker build failed."; exit 1
+DO_RESET=false
+
+if [[ "$MODE" == "update-instance" ]]; then
+    if [[ "$EXISTING_COUNT" -eq 1 ]]; then
+        INST_NAME=$(python3 -c "
+import json; print(list(json.load(open('$INSTANCES_JSON')).keys())[0])
+" 2>/dev/null)
+    else
+        echo
+        yellow "  Which instance do you want to update?"
+        python3 -c "
+import json
+d=json.load(open('$INSTANCES_JSON'))
+for k,v in d.items():
+    print(f'    {k}  →  port {v.get(\"server_port\",\"?\")}')
+" 2>/dev/null
+        echo
+        read -rp "  Instance name: " INST_NAME
+        if ! _instance_exists_in_json "$INST_NAME"; then
+            red "Error: instance '$INST_NAME' not found."
+            exit 1
         fi
     fi
-    green "  image rebuilt: $IMAGE"
-
-    bold "Restarting all instances..."
-    if [[ -f "$INSTANCES_JSON" ]]; then
-        python3 -c "
-import json; d=json.load(open('$INSTANCES_JSON')); print('\n'.join(d.keys()))
-" 2>/dev/null | while IFS= read -r name; do
-            if docker inspect "kiso-$name" &>/dev/null; then
-                echo "  Restarting kiso-$name..."
-                docker restart "kiso-$name" || yellow "  Warning: could not restart kiso-$name"
-            fi
-        done
+    BOT_NAME="${INST_NAME^}"
+    echo
+    yellow "  Reset data? This wipes conversations, messages, learnings and facts."
+    yellow "  Config and API key are kept. Useful if something is broken or you want a fresh start."
+    if confirm "  Reset data for '$INST_NAME'?" "n"; then
+        DO_RESET=true
+        yellow "  Data will be reset after the reinstall."
+    else
+        green "  Data kept."
     fi
-    green "  done. All instances updated."
-    exit 0
+    echo
 fi
 
-# ── New instance flow ────────────────────────────────────────────────────────
+# ── New/update instance flow ─────────────────────────────────────────────────
 
 # ── 3b. Bot name + instance identifier ──────────────────────────────────────
 
-ask_bot_and_instance_name
+if [[ "$MODE" == "new" ]]; then
+    ask_bot_and_instance_name
+fi
 CONTAINER="kiso-$INST_NAME"
 INST_DIR="$KISO_DIR/instances/$INST_NAME"
 CONFIG="$INST_DIR/config.toml"
@@ -668,10 +686,23 @@ if [[ "$NEED_ENV" == true ]]; then
 fi
 echo
 
-# ── 5. Auto-detect ports ─────────────────────────────────────────────────────
+# ── 5. Ports ─────────────────────────────────────────────────────────────────
 
-SERVER_PORT="$(next_free_server_port)"
-CONN_BASE="$(next_free_connector_base)"
+if [[ "$MODE" == "update-instance" ]]; then
+    SERVER_PORT=$(python3 -c "
+import json
+d=json.load(open('$INSTANCES_JSON'))
+print(d.get('$INST_NAME', {}).get('server_port', 8333))
+" 2>/dev/null || echo 8333)
+    CONN_BASE=$(python3 -c "
+import json
+d=json.load(open('$INSTANCES_JSON'))
+print(d.get('$INST_NAME', {}).get('connector_port_base', 9000))
+" 2>/dev/null || echo 9000)
+else
+    SERVER_PORT="$(next_free_server_port)"
+    CONN_BASE="$(next_free_connector_base)"
+fi
 bold "Ports"
 echo "  Server:          $SERVER_PORT"
 echo "  Connector range: $((CONN_BASE+1))-$((CONN_BASE+10))"

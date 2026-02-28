@@ -80,8 +80,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.s
 
 Re-running `install.sh` on an existing installation offers two options:
 
-- **Add a new instance** — runs through full configuration for a new bot name
-- **Update Docker image** — rebuilds `kiso:latest` and restarts all running instances
+- **Install another instance** — full configuration wizard for a new bot name
+- **Update an existing instance** — same configuration wizard on the chosen instance, with an optional factory reset (wipes store.db, messages, learnings, facts; keeps config.toml and .env) before reinstalling
 
 ## Instance management
 
