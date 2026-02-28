@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
 from kiso.skills import build_skill_env, build_skill_input
 
-from kiso.worker.utils import _session_workspace, _truncate_output
+from kiso.worker.utils import _run_subprocess, _session_workspace
 
 
 async def _skill_task(
@@ -41,32 +40,14 @@ async def _skill_task(
         venv_python = Path("python3")
 
     run_py = skill_path / "run.py"
+    input_bytes = json.dumps(input_data).encode()
 
-    try:
-        skill_kwargs: dict = dict(
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(workspace),
-            env=env,
-        )
-        if sandbox_uid is not None:
-            skill_kwargs["user"] = sandbox_uid
-        proc = await asyncio.create_subprocess_exec(
-            str(venv_python), str(run_py), **skill_kwargs,
-        )
-        input_bytes = json.dumps(input_data).encode()
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(input=input_bytes), timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return "", "Timed out", False
-    except OSError as e:
-        return "", f"Skill executable not found: {e}", False
-
-    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
-    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
-    success = proc.returncode == 0
-    return stdout, stderr, success
+    return await _run_subprocess(
+        [str(venv_python), str(run_py)],
+        env=env,
+        timeout=timeout,
+        cwd=str(workspace),
+        stdin_data=input_bytes,
+        uid=sandbox_uid,
+        max_output_size=max_output_size,
+    )

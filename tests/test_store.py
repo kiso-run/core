@@ -63,6 +63,14 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
     assert tables == expected
 
 
+async def test_busy_timeout_is_set(db: aiosqlite.Connection):
+    """M66c: PRAGMA busy_timeout must be 5000 ms to prevent SQLITE_BUSY under load."""
+    cur = await db.execute("PRAGMA busy_timeout")
+    row = await cur.fetchone()
+    assert row is not None
+    assert int(row[0]) == 5000, f"Expected busy_timeout=5000, got {row[0]}"
+
+
 async def test_create_and_get_session(db: aiosqlite.Connection):
     result = await create_session(db, "sess1", connector="cli")
     assert result["session"] == "sess1"
@@ -1314,6 +1322,50 @@ async def test_search_facts_unicode_content_and_query(db: aiosqlite.Connection):
     )
 
 
+# --- M66f: FTS5 fallback logs on exception ---
+
+
+async def test_fts5_fallback_logs_debug(db: aiosqlite.Connection, caplog):
+    """M66f: FTS5 failure must log at DEBUG level and fall back to full scan."""
+    import logging
+    from unittest.mock import AsyncMock, patch
+
+    await save_fact(db, "A known fact", "curator")
+
+    # Simulate an FTS5 error on db.execute so the fallback path is triggered
+    original_execute = db.execute
+
+    async def _failing_execute(sql, *args, **kwargs):
+        if "kiso_facts_fts" in sql:
+            raise RuntimeError("FTS5 internal error")
+        return await original_execute(sql, *args, **kwargs)
+
+    with patch.object(db, "execute", side_effect=_failing_execute), \
+         caplog.at_level(logging.DEBUG, logger="kiso.store"):
+        results = await search_facts(db, "known fact")
+
+    # Fallback returns facts
+    assert len(results) == 1
+    assert results[0]["content"] == "A known fact"
+
+    # The exception was logged at DEBUG
+    assert any(
+        "FTS5" in record.message or "fts" in record.message.lower()
+        for record in caplog.records
+        if record.levelno == logging.DEBUG
+    ), f"Expected a DEBUG log mentioning FTS5; got records: {[r.message for r in caplog.records]}"
+
+
+async def test_fts5_fallback_on_empty_query_returns_all_facts(db: aiosqlite.Connection):
+    """Empty query after stripping FTS5 specials must still return facts (no log spam)."""
+    await save_fact(db, "fact one", "curator")
+    await save_fact(db, "fact two", "curator")
+
+    # Query of only FTS5 special chars → stripped to empty string → fallback
+    results = await search_facts(db, '"""')
+    assert len(results) == 2
+
+
 # --- M44b: save_learning fact poisoning filter ---
 
 
@@ -1466,3 +1518,49 @@ async def test_save_learning_hex_boundary_32_chars_rejected(db: aiosqlite.Connec
     assert result == 0
     learnings = await get_pending_learnings(db)
     assert len(learnings) == 0
+
+
+# --- M66b: update_task_review bumps updated_at ---
+
+
+async def test_update_task_review_bumps_updated_at(db: aiosqlite.Connection):
+    """update_task_review must update updated_at so /status polls see fresh data."""
+    import asyncio as _asyncio
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="cmd", expect="ok")
+    # Capture the initial updated_at
+    tasks_before = await get_tasks_for_plan(db, plan_id)
+    ts_before = tasks_before[0]["updated_at"]
+    # Sleep a tiny moment so CURRENT_TIMESTAMP advances in SQLite
+    await _asyncio.sleep(1.01)
+    await update_task_review(db, task_id, "ok", reason="looks good", learning="note")
+    tasks_after = await get_tasks_for_plan(db, plan_id)
+    ts_after = tasks_after[0]["updated_at"]
+    assert ts_after > ts_before, (
+        f"update_task_review must bump updated_at; before={ts_before!r} after={ts_after!r}"
+    )
+
+
+async def test_update_task_review_fields_written(db: aiosqlite.Connection):
+    """Verify all three review fields are written correctly."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="cmd", expect="ok")
+    await update_task_review(db, task_id, "replan", reason="failed", learning="hint")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["review_verdict"] == "replan"
+    assert tasks[0]["review_reason"] == "failed"
+    assert tasks[0]["review_learning"] == "hint"
+
+
+async def test_update_task_review_nulls_allowed(db: aiosqlite.Connection):
+    """Calling update_task_review with only verdict (no reason/learning) is valid."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="cmd", expect="ok")
+    await update_task_review(db, task_id, "ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["review_verdict"] == "ok"
+    assert tasks[0]["review_reason"] is None
+    assert tasks[0]["review_learning"] is None

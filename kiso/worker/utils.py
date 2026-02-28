@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -13,6 +14,63 @@ from kiso.pub import pub_token
 from kiso.security import fence_content
 
 log = logging.getLogger(__name__)
+
+
+async def _run_subprocess(
+    cmd,
+    *,
+    env: dict,
+    timeout: int | float,
+    cwd: str,
+    shell: bool = False,
+    stdin_data: bytes | None = None,
+    uid: int | None = None,
+    max_output_size: int = 0,
+) -> tuple[str, str, bool]:
+    """Run a subprocess with timeout and output handling.
+
+    Args:
+        cmd: Shell command string (shell=True) or list of args (shell=False).
+        env: Subprocess environment dict.
+        timeout: Seconds before the subprocess is killed.
+        cwd: Working directory for the subprocess.
+        shell: If True, use create_subprocess_shell; else create_subprocess_exec.
+        stdin_data: Optional bytes to pipe via stdin.
+        uid: If set, run the subprocess as this user ID.
+        max_output_size: If > 0, truncate stdout/stderr to this many characters.
+
+    Returns:
+        (stdout, stderr, success) where success is True iff returncode == 0.
+    """
+    kwargs: dict = dict(
+        cwd=cwd,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    if stdin_data is not None:
+        kwargs["stdin"] = asyncio.subprocess.PIPE
+    if uid is not None:
+        kwargs["user"] = uid
+
+    try:
+        if shell:
+            proc = await asyncio.create_subprocess_shell(cmd, **kwargs)
+        else:
+            proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(input=stdin_data), timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return "", "Timed out", False
+    except OSError as e:
+        return "", f"Executable not found: {e}", False
+
+    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
+    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
+    return stdout, stderr, proc.returncode == 0
 
 
 def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:

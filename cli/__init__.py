@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
+import typing
 
 from kiso._version import __version__
 
@@ -15,6 +17,44 @@ class _ExitRepl(Exception):
 _SLASH_COMMANDS = ["/clear", "/exit", "/help", "/sessions", "/stats", "/status", "/verbose-off", "/verbose-on"]
 
 _verbose_mode = False
+
+
+class _ClientContext(typing.NamedTuple):
+    """Shared client context built by ``_setup_client_context``."""
+    cfg: object
+    caps: object
+    client: object
+    user: str
+    session: str
+    bot_name: str
+
+
+def _setup_client_context(args: argparse.Namespace) -> _ClientContext:
+    """Load config, build httpx client, resolve user/session."""
+    import getpass
+    import socket
+
+    import httpx
+
+    from kiso.config import load_config
+    from cli.render import detect_caps
+
+    cfg = load_config()
+    caps = detect_caps()
+    token = cfg.tokens.get("cli")
+    if not token:
+        print("error: no 'cli' token in config.toml")
+        sys.exit(1)
+
+    user = args.user or getpass.getuser()
+    session = args.session or f"{socket.gethostname()}@{user}"
+    client = httpx.Client(
+        base_url=args.api,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30.0,
+    )
+    bot_name = cfg.settings.get("bot_name", "Kiso")
+    return _ClientContext(cfg=cfg, caps=caps, client=client, user=user, session=session, bot_name=bot_name)
 
 
 def _setup_readline() -> None:
@@ -259,37 +299,16 @@ def _print_version_stats() -> None:
 
 def _msg_cmd(args: argparse.Namespace) -> None:
     """Send a single message and print the response (non-interactive)."""
-    import getpass
-    import socket
-
     import httpx
 
-    from kiso.config import load_config
-    from cli.render import detect_caps
-
-    cfg = load_config()
-    caps = detect_caps()
-    token = cfg.tokens.get("cli")
-    if not token:
-        print("error: no 'cli' token in config.toml")
-        sys.exit(1)
-
-    user = args.user or getpass.getuser()
-    session = args.session or f"{socket.gethostname()}@{user}"
-    client = httpx.Client(
-        base_url=args.api,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30.0,
-    )
-
-    bot_name = cfg.settings.get("bot_name", "Kiso")
+    ctx = _setup_client_context(args)
     # Implicitly quiet when not a TTY
-    quiet = args.quiet or not caps.tty
+    quiet = args.quiet or not ctx.caps.tty
 
     try:
-        resp = client.post(
+        resp = ctx.client.post(
             "/msg",
-            json={"session": session, "user": user, "content": args.message},
+            json={"session": ctx.session, "user": ctx.user, "content": args.message},
         )
         resp.raise_for_status()
     except httpx.ConnectError:
@@ -302,50 +321,31 @@ def _msg_cmd(args: argparse.Namespace) -> None:
     data = resp.json()
     if data.get("untrusted"):
         print("warning: message was not trusted by the server.", file=sys.stderr)
-        client.close()
+        ctx.client.close()
         sys.exit(1)
 
     message_id = data["message_id"]
 
     try:
-        _poll_status(client, session, message_id, 0, quiet, False, caps, bot_name)
+        _poll_status(ctx.client, ctx.session, message_id, 0, quiet, False, ctx.caps, ctx.bot_name)
     except KeyboardInterrupt:
         try:
-            client.post(f"/sessions/{session}/cancel")
+            ctx.client.post(f"/sessions/{ctx.session}/cancel")
         except httpx.HTTPError:
             pass
         sys.exit(130)
     finally:
-        client.close()
+        ctx.client.close()
 
 
 def _chat(args: argparse.Namespace) -> None:
-    import getpass
-    import socket
-
     import httpx
 
-    from kiso.config import load_config
-    from cli.render import detect_caps, render_banner, render_cancel_start, render_user_prompt
+    from cli.render import render_banner, render_cancel_start, render_user_prompt
 
-    cfg = load_config()
-    caps = detect_caps()
-    token = cfg.tokens.get("cli")
-    if not token:
-        print("error: no 'cli' token in config.toml")
-        sys.exit(1)
-
-    user = args.user or getpass.getuser()
-    session = args.session or f"{socket.gethostname()}@{user}"
-    client = httpx.Client(
-        base_url=args.api,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30.0,
-    )
-
-    bot_name = cfg.settings.get("bot_name", "Kiso")
-    prompt = render_user_prompt(user, caps)
-    print(render_banner(bot_name, session, caps, __version__))
+    ctx = _setup_client_context(args)
+    prompt = render_user_prompt(ctx.user, ctx.caps)
+    print(render_banner(ctx.bot_name, ctx.session, ctx.caps, __version__))
 
     # Tab-completion for slash commands
     _setup_readline()
@@ -363,7 +363,7 @@ def _chat(args: argparse.Namespace) -> None:
                 continue
             if text.startswith("/"):
                 try:
-                    _handle_slash(text, client, session, user, caps, bot_name)
+                    _handle_slash(text, ctx.client, ctx.session, ctx.user, ctx.caps, ctx.bot_name)
                 except _ExitRepl:
                     break
                 continue
@@ -371,9 +371,9 @@ def _chat(args: argparse.Namespace) -> None:
                 break
 
             try:
-                resp = client.post(
+                resp = ctx.client.post(
                     "/msg",
-                    json={"session": session, "user": user, "content": text},
+                    json={"session": ctx.session, "user": ctx.user, "content": text},
                 )
                 resp.raise_for_status()
             except httpx.ConnectError:
@@ -392,21 +392,283 @@ def _chat(args: argparse.Namespace) -> None:
 
             try:
                 last_task_id = _poll_status(
-                    client, session, message_id, last_task_id,
-                    args.quiet, _verbose_mode, caps, bot_name,
+                    ctx.client, ctx.session, message_id, last_task_id,
+                    args.quiet, _verbose_mode, ctx.caps, ctx.bot_name,
                 )
             except KeyboardInterrupt:
-                print(f"\n{render_cancel_start(caps)}")
+                print(f"\n{render_cancel_start(ctx.caps)}")
                 try:
-                    client.post(f"/sessions/{session}/cancel")
+                    ctx.client.post(f"/sessions/{ctx.session}/cancel")
                 except httpx.HTTPError:
                     pass
     finally:
         _save_readline_history()
-        client.close()
+        ctx.client.close()
 
 
 _POLL_EVERY = 2  # poll API every 2 iterations (2 × 80ms ≈ 160ms)
+
+
+@dataclasses.dataclass
+class _PollRenderState:
+    """Mutable rendering state threaded through ``_poll_status``."""
+    seen: dict  # tid → (status, review_verdict, substatus, llm_call_count)
+    max_task_id: int = 0
+    shown_plan_id: int | None = None
+    shown_plan_llm_id: int | None = None
+    active_spinner_task: dict | None = None
+    active_spinner_index: int = 0
+    active_spinner_total: int = 0
+    planning_phase: bool = False
+    seen_any_task: bool = False
+    spinner_active: bool = False
+    at_col0: bool = True
+
+
+def _should_stop_polling(
+    plan: dict | None,
+    tasks: list,
+    message_id: int,
+    worker_running: bool,
+    seen: dict,
+    failed_stable_polls: int,
+) -> tuple[bool, int]:
+    """Determine if polling should stop after a status fetch.
+
+    Returns ``(should_break, new_failed_stable_polls)``.
+    """
+    if (
+        plan
+        and plan.get("message_id") == message_id
+        and plan.get("status") not in ("running", "replanning")
+    ):
+        if plan.get("status") == "failed" and worker_running:
+            # Worker still running after plan failed — could be replan or
+            # post-plan processing.  Wait until all tasks are rendered, then
+            # break after a short stability window to catch replans.
+            all_rendered = tasks and all(seen.get(t["id"]) is not None for t in tasks)
+            if all_rendered:
+                failed_stable_polls += 1
+                if failed_stable_polls >= 30:  # ~5s (30 × 160ms)
+                    return True, failed_stable_polls
+            else:
+                failed_stable_polls = 0
+        else:
+            return True, 0
+    else:
+        failed_stable_polls = 0
+    return False, failed_stable_polls
+
+
+def _render_plan_status(
+    data: dict,
+    message_id: int,
+    quiet: bool,
+    verbose: bool,
+    caps,
+    bot_name: str,
+    state: _PollRenderState,
+) -> list:
+    """Render plan + task updates to the terminal. Mutates *state* in-place.
+
+    Returns the filtered task list for the current plan (used by the caller
+    to drive stop-condition checks via ``_should_stop_polling``).
+    """
+    import json as _json
+
+    from cli.render import (
+        CLEAR_LINE,
+        render_command,
+        render_llm_calls,
+        render_llm_calls_verbose,
+        render_msg_output,
+        render_plan,
+        render_plan_detail,
+        render_review,
+        render_separator,
+        render_task_header,
+        render_task_output,
+    )
+
+    plan = data.get("plan")
+    all_tasks = data.get("tasks", [])
+    worker_running = data.get("worker_running", False)
+
+    current_plan_id = (
+        plan["id"] if plan and plan.get("message_id") == message_id else None
+    )
+    tasks = [
+        t for t in all_tasks
+        if current_plan_id is not None and t.get("plan_id") == current_plan_id
+    ]
+
+    def _clear_spinner() -> None:
+        if (state.active_spinner_task or state.planning_phase) and caps.tty:
+            sys.stdout.write(f"\r{CLEAR_LINE}")
+            sys.stdout.flush()
+            state.active_spinner_task = None
+            state.planning_phase = False
+            state.spinner_active = False
+            state.at_col0 = True
+
+    # Show plan goal / replan detection (only for current message)
+    if plan and not quiet and plan.get("message_id") == message_id:
+        pid = plan["id"]
+        task_count = len(tasks)
+        if state.shown_plan_id is None:
+            _clear_spinner()
+            print(f"\n{render_plan(plan['goal'], task_count, caps)}")
+            plan_detail = render_plan_detail(tasks, caps)
+            if plan_detail:
+                print(render_separator(caps))
+                print(plan_detail)
+            print(render_separator(caps))
+            state.shown_plan_id = pid
+        elif pid != state.shown_plan_id:
+            _clear_spinner()
+            print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
+            plan_detail = render_plan_detail(tasks, caps)
+            if plan_detail:
+                print(render_separator(caps))
+                print(plan_detail)
+            print(render_separator(caps))
+            state.shown_plan_id = pid
+            state.seen.clear()
+            state.seen_any_task = False
+
+    # Show plan-level LLM calls (planner step) once available
+    if (plan and not quiet and plan.get("message_id") == message_id
+            and plan.get("llm_calls")
+            and state.shown_plan_llm_id != plan.get("id")):
+        _clear_spinner()
+        llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
+        if llm_detail:
+            print(llm_detail)
+        if verbose:
+            verbose_detail = render_llm_calls_verbose(plan.get("llm_calls"), caps)
+            if verbose_detail:
+                print(verbose_detail)
+        state.shown_plan_llm_id = plan["id"]
+
+    total = len(tasks)
+
+    # Render tasks that changed status or review
+    for idx, task in enumerate(tasks, 1):
+        tid = task["id"]
+        status = task["status"]
+        review_verdict = task.get("review_verdict")
+        llm_call_count = len(_json.loads(task["llm_calls"])) if task.get("llm_calls") else 0
+        substatus = task.get("substatus") or ""
+        task_key = (status, review_verdict, substatus, llm_call_count)
+
+        if tid > state.max_task_id:
+            state.max_task_id = tid
+        if state.seen.get(tid) == task_key:
+            continue
+
+        prev_key = state.seen.get(tid)
+        state.seen[tid] = task_key
+        prev_status = prev_key[0] if prev_key else None
+        ttype = task.get("type", "")
+        output = task.get("output", "") or ""
+
+        # Clear spinner line before printing new content
+        _clear_spinner()
+
+        if quiet:
+            if ttype == "msg" and status == "done":
+                print(render_msg_output(output, caps, bot_name))
+                print(render_separator(caps))
+            continue
+
+        # If only review/llm_calls changed (status unchanged),
+        # show just the review line without re-rendering the task
+        if prev_status == status and prev_status is not None:
+            if ttype != "msg":
+                review_line = render_review(task, caps)
+                if review_line:
+                    print(review_line)
+                if verbose:
+                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+                    if verbose_detail:
+                        print(verbose_detail)
+            continue
+
+        # Msg tasks: only show via render_msg_output when done
+        if ttype == "msg":
+            if status == "done":
+                llm_detail = render_llm_calls(task.get("llm_calls"), caps)
+                if llm_detail:
+                    print(llm_detail)
+                if verbose:
+                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+                    if verbose_detail:
+                        print(verbose_detail)
+                print(render_msg_output(output, caps, bot_name))
+                print(render_separator(caps))
+            elif status == "running":
+                state.active_spinner_task = task
+                state.active_spinner_index = idx
+                state.active_spinner_total = total
+            continue
+
+        # Print header for non-msg tasks (blank line between tasks)
+        if state.seen_any_task:
+            print()
+        state.seen_any_task = True
+        print(render_task_header(task, idx, total, caps))
+
+        # Show translated command for exec tasks
+        task_command = task.get("command")
+        if task_command:
+            print(render_command(task_command, caps))
+
+        # Show output for completed/failed tasks
+        if status in ("done", "failed"):
+            stderr_text = task.get("stderr", "") or ""
+            if status == "failed" and stderr_text:
+                display_output = f"{output}\n{stderr_text}".strip() if output else stderr_text
+            else:
+                display_output = output
+        else:
+            display_output = ""
+        if display_output:
+            out = render_task_output(display_output, caps)
+            if out:
+                print(out)
+
+        # Show review verdict for completed exec/skill tasks
+        review_line = render_review(task, caps)
+        if review_line:
+            print(review_line)
+
+        # Verbose LLM detail AFTER compact review summary
+        if verbose and status in ("done", "failed"):
+            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+            if verbose_detail:
+                print(verbose_detail)
+
+        # Track running task for spinner
+        if status == "running":
+            state.active_spinner_task = task
+            state.active_spinner_index = idx
+            state.active_spinner_total = total
+
+    # Update planning_phase: spinner shown while worker is thinking but no
+    # task is executing.
+    any_task_running = any(t.get("status") == "running" for t in tasks)
+    has_matching_running_plan = (
+        plan
+        and plan.get("message_id") == message_id
+        and plan.get("status") in ("running", "replanning")
+    )
+    has_matching_plan = bool(plan and plan.get("message_id") == message_id)
+    state.planning_phase = bool(
+        (has_matching_running_plan and not any_task_running and not state.active_spinner_task)
+        or (worker_running and not has_matching_plan)
+    )
+
+    return tasks
 
 
 def _poll_status(
@@ -440,39 +702,20 @@ def _poll_status(
 
     from cli.render import (
         CLEAR_LINE,
-        render_command,
-        render_llm_calls,
-        render_llm_calls_verbose,
-        render_msg_output,
-        render_plan,
-        render_plan_detail,
         render_planner_spinner,
-        render_review,
-        render_separator,
-        render_step_usage,
         render_task_header,
-        render_task_output,
         render_usage,
         spinner_frames,
     )
 
     _MAX_POLL_SECONDS = 300  # safety net: 5 min max
 
-    seen: dict[int, tuple] = {}  # tid → (status, review_verdict, substatus, llm_call_count)
-    shown_plan_id: int | None = None
-    shown_plan_llm_id: int | None = None  # plan id whose llm_calls we've printed
-    max_task_id = base_task_id
+    state = _PollRenderState(seen={}, max_task_id=base_task_id, at_col0=_at_col0)
     counter = 0
     start_time = time.time()
-    no_plan_since_worker_stopped = 0  # consecutive polls with no plan and no worker
-    failed_stable_polls = 0  # polls with failed plan + all tasks rendered
+    no_plan_since_worker_stopped = 0
+    failed_stable_polls = 0
     frames = spinner_frames(caps)
-    active_spinner_task: dict | None = None
-    active_spinner_index: int = 0
-    active_spinner_total: int = 0
-    planning_phase = False
-    seen_any_task = False  # for blank-line spacing between tasks
-    _spinner_active = False  # True while a spinner frame is live on screen
 
     while True:
         if counter % _POLL_EVERY == 0:
@@ -489,244 +732,19 @@ def _poll_status(
 
             data = resp.json()
             plan = data.get("plan")
-            all_tasks = data.get("tasks", [])
-
-            # Only consider tasks belonging to the current plan
-            current_plan_id = (
-                plan["id"]
-                if plan and plan.get("message_id") == message_id
-                else None
-            )
-            tasks = [
-                t for t in all_tasks
-                if current_plan_id is not None and t.get("plan_id") == current_plan_id
-            ]
-
-            # Show plan goal / replan detection (only for current message)
-            if plan and not quiet and plan.get("message_id") == message_id:
-                pid = plan["id"]
-                task_count = len(tasks)
-                if shown_plan_id is None:
-                    # Clear spinner line before printing plan
-                    if (active_spinner_task or planning_phase) and caps.tty:
-                        sys.stdout.write(f"\r{CLEAR_LINE}")
-                        sys.stdout.flush()
-                        active_spinner_task = None
-                        planning_phase = False
-                        _spinner_active = False
-                        _at_col0 = True
-                    print(f"\n{render_plan(plan['goal'], task_count, caps)}")
-                    plan_detail = render_plan_detail(tasks, caps)
-                    if plan_detail:
-                        print(render_separator(caps))
-                        print(plan_detail)
-                    print(render_separator(caps))
-                    shown_plan_id = pid
-                elif pid != shown_plan_id:
-                    if (active_spinner_task or planning_phase) and caps.tty:
-                        sys.stdout.write(f"\r{CLEAR_LINE}")
-                        sys.stdout.flush()
-                        active_spinner_task = None
-                        planning_phase = False
-                        _spinner_active = False
-                        _at_col0 = True
-                    print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
-                    plan_detail = render_plan_detail(tasks, caps)
-                    if plan_detail:
-                        print(render_separator(caps))
-                        print(plan_detail)
-                    print(render_separator(caps))
-                    shown_plan_id = pid
-                    seen.clear()
-                    seen_any_task = False
-
-            # Show plan-level LLM calls (planner step) once available
-            if (plan and not quiet and plan.get("message_id") == message_id
-                    and plan.get("llm_calls")
-                    and shown_plan_llm_id != plan.get("id")):
-                if (active_spinner_task or planning_phase) and caps.tty:
-                    sys.stdout.write(f"\r{CLEAR_LINE}")
-                    sys.stdout.flush()
-                    active_spinner_task = None
-                    planning_phase = False
-                    _spinner_active = False
-                    _at_col0 = True
-                llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
-                if llm_detail:
-                    print(llm_detail)
-                if verbose:
-                    verbose_detail = render_llm_calls_verbose(plan.get("llm_calls"), caps)
-                    if verbose_detail:
-                        print(verbose_detail)
-                shown_plan_llm_id = plan["id"]
-
-            total = len(tasks)
-
-            # Render tasks that changed status or review
-            for idx, task in enumerate(tasks, 1):
-                tid = task["id"]
-                status = task["status"]
-                review_verdict = task.get("review_verdict")
-                import json as _json
-                llm_call_count = len(_json.loads(task["llm_calls"])) if task.get("llm_calls") else 0
-                substatus = task.get("substatus") or ""
-                task_key = (status, review_verdict, substatus, llm_call_count)
-
-                if tid > max_task_id:
-                    max_task_id = tid
-                if seen.get(tid) == task_key:
-                    continue
-
-                prev_key = seen.get(tid)
-                seen[tid] = task_key
-                prev_status = prev_key[0] if prev_key else None
-                ttype = task.get("type", "")
-                output = task.get("output", "") or ""
-
-                # Clear spinner line before printing new content
-                if (active_spinner_task or planning_phase) and caps.tty:
-                    sys.stdout.write(f"\r{CLEAR_LINE}")
-                    sys.stdout.flush()
-                    active_spinner_task = None
-                    planning_phase = False
-                    _spinner_active = False
-                    _at_col0 = True
-
-                if quiet:
-                    if ttype == "msg" and status == "done":
-                        print(render_msg_output(output, caps, bot_name))
-                        print(render_separator(caps))
-                    continue
-
-                # If only review/llm_calls changed (status unchanged),
-                # show just the review line without re-rendering the task
-                if prev_status == status and prev_status is not None:
-                    if ttype != "msg":
-                        review_line = render_review(task, caps)
-                        if review_line:
-                            print(review_line)
-                        if verbose:
-                            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-                            if verbose_detail:
-                                print(verbose_detail)
-                    continue
-
-                # Msg tasks: only show via render_msg_output when done
-                if ttype == "msg":
-                    if status == "done":
-                        # Per-call LLM breakdown first, then verbose detail
-                        llm_detail = render_llm_calls(task.get("llm_calls"), caps)
-                        if llm_detail:
-                            print(llm_detail)
-                        if verbose:
-                            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-                            if verbose_detail:
-                                print(verbose_detail)
-                        print(render_msg_output(output, caps, bot_name))
-                        print(render_separator(caps))
-                    elif status == "running":
-                        # Track for spinner while messenger LLM is composing
-                        active_spinner_task = task
-                        active_spinner_index = idx
-                        active_spinner_total = total
-                    continue
-
-                # Print header for non-msg tasks (blank line between tasks)
-                if seen_any_task:
-                    print()
-                seen_any_task = True
-                print(render_task_header(task, idx, total, caps))
-
-                # Show translated command for exec tasks
-                task_command = task.get("command")
-                if task_command:
-                    print(render_command(task_command, caps))
-
-                # Show output for completed/failed tasks
-                if status in ("done", "failed"):
-                    stderr_text = task.get("stderr", "") or ""
-                    if status == "failed" and stderr_text:
-                        display_output = f"{output}\n{stderr_text}".strip() if output else stderr_text
-                    else:
-                        display_output = output
-                else:
-                    display_output = ""
-                if display_output:
-                    out = render_task_output(display_output, caps)
-                    if out:
-                        print(out)
-
-                # Show review verdict for completed exec/skill tasks
-                review_line = render_review(task, caps)
-                if review_line:
-                    print(review_line)
-
-                # Verbose LLM detail AFTER compact review summary
-                if verbose and status in ("done", "failed"):
-                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-                    if verbose_detail:
-                        print(verbose_detail)
-
-                # Track running task for spinner
-                if status == "running":
-                    active_spinner_task = task
-                    active_spinner_index = idx
-                    active_spinner_total = total
-
-            # Done condition: plan matches our message and is no longer running
             worker_running = data.get("worker_running", False)
+            tasks = _render_plan_status(data, message_id, quiet, verbose, caps, bot_name, state)
 
-            # Detect planning phase: spinner shown while worker is thinking but
-            # no task is executing yet. This covers two sub-phases:
-            # 1. Pre-plan: worker running but plan not yet created (classifier +
-            #    planner LLM calls). This is the longest silent gap — up to 15s.
-            # 2. Post-plan: plan exists and is running but no task has started.
-            has_matching_running_plan = (
-                plan
-                and plan.get("message_id") == message_id
-                and plan.get("status") in ("running", "replanning")
+            should_break, failed_stable_polls = _should_stop_polling(
+                plan, tasks, message_id, worker_running, state.seen, failed_stable_polls
             )
-            has_matching_plan = bool(plan and plan.get("message_id") == message_id)
-            any_task_running = any(t.get("status") == "running" for t in tasks)
-            planning_phase = bool(
-                (has_matching_running_plan and not any_task_running and not active_spinner_task)
-                or (worker_running and not has_matching_plan)
-            )
-            should_break = False
-            if (
-                plan
-                and plan.get("message_id") == message_id
-                and plan.get("status") not in ("running", "replanning")
-            ):
-                if plan.get("status") == "failed" and worker_running:
-                    # Worker still running after plan failed — could be:
-                    # a) replan in progress (new plan being created)
-                    # b) post-plan processing (curator/summarizer)
-                    # Wait until all tasks are rendered, then break after
-                    # a short stability window to catch replans.
-                    all_rendered = tasks and all(
-                        seen.get(t["id"]) is not None for t in tasks
-                    )
-                    if all_rendered:
-                        failed_stable_polls += 1
-                        if failed_stable_polls >= 30:  # ~5s (30 × 160ms)
-                            should_break = True
-                    else:
-                        failed_stable_polls = 0
-                else:
-                    failed_stable_polls = 0
-                    should_break = True
-            else:
-                failed_stable_polls = 0
 
             if should_break:
-                # Clear any remaining spinner
-                if active_spinner_task and caps.tty:
+                if state.active_spinner_task and caps.tty:
                     sys.stdout.write(f"\r{CLEAR_LINE}")
                     sys.stdout.flush()
-                    _spinner_active = False
-                    _at_col0 = True
-                # Show aggregate token usage (per-call breakdown already shown per step)
+                    state.spinner_active = False
+                    state.at_col0 = True
                 if not quiet:
                     usage_line = render_usage(plan, caps)
                     if usage_line:
@@ -737,13 +755,12 @@ def _poll_status(
             has_matching_plan = plan and plan.get("message_id") == message_id
             if not worker_running and not has_matching_plan:
                 no_plan_since_worker_stopped += 1
-                # Wait a few polls to avoid race condition (worker just starting)
                 if no_plan_since_worker_stopped >= 3:
-                    if active_spinner_task and caps.tty:
+                    if state.active_spinner_task and caps.tty:
                         sys.stdout.write(f"\r{CLEAR_LINE}")
                         sys.stdout.flush()
-                        _spinner_active = False
-                        _at_col0 = True
+                        state.spinner_active = False
+                        state.at_col0 = True
                     print("error: worker stopped without producing a result")
                     break
             else:
@@ -751,43 +768,43 @@ def _poll_status(
 
             # Safety net: absolute timeout
             if time.time() - start_time > _MAX_POLL_SECONDS:
-                if active_spinner_task and caps.tty:
+                if state.active_spinner_task and caps.tty:
                     sys.stdout.write(f"\r{CLEAR_LINE}")
                     sys.stdout.flush()
-                    _spinner_active = False
-                    _at_col0 = True
+                    state.spinner_active = False
+                    state.at_col0 = True
                 print("error: timed out waiting for response")
                 break
 
         # Animate spinner on TTY
         if caps.tty:
             frame = frames[counter % len(frames)]
-            if active_spinner_task:
+            if state.active_spinner_task:
                 line = render_task_header(
-                    active_spinner_task, active_spinner_index,
-                    active_spinner_total, caps, spinner_frame=frame,
+                    state.active_spinner_task, state.active_spinner_index,
+                    state.active_spinner_total, caps, spinner_frame=frame,
                 )
-                if not _spinner_active and not _at_col0:
+                if not state.spinner_active and not state.at_col0:
                     sys.stdout.write('\n')
                 sys.stdout.write(f"\r{CLEAR_LINE}{line}")
                 sys.stdout.flush()
-                _spinner_active = True
-                _at_col0 = False
-            elif planning_phase:
+                state.spinner_active = True
+                state.at_col0 = False
+            elif state.planning_phase:
                 line = render_planner_spinner(caps, frame)
-                if not _spinner_active and not _at_col0:
+                if not state.spinner_active and not state.at_col0:
                     sys.stdout.write('\n')
                 sys.stdout.write(f"\r{CLEAR_LINE}{line}")
                 sys.stdout.flush()
-                _spinner_active = True
-                _at_col0 = False
+                state.spinner_active = True
+                state.at_col0 = False
             else:
-                _spinner_active = False
+                state.spinner_active = False
 
         time.sleep(0.08)
         counter += 1
 
-    return max_task_id
+    return state.max_task_id
 
 
 def _handle_slash(

@@ -180,3 +180,32 @@ class TestSessionLogger:
         slog.close()
 
         assert (tmp_path / "sessions" / "new-sess").is_dir()
+
+    def test_writes_debug(self, tmp_path):
+        slog = SessionLogger("test-sess", base_dir=tmp_path)
+        slog.debug("debug detail: %s", "value")
+        slog.close()
+
+        content = (tmp_path / "sessions" / "test-sess" / "session.log").read_text()
+        assert "DEBUG" in content
+        assert "debug detail: value" in content
+
+    def test_writes_exception(self, tmp_path):
+        slog = SessionLogger("test-sess", base_dir=tmp_path)
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            slog.exception("caught exception")
+        slog.close()
+
+        content = (tmp_path / "sessions" / "test-sess" / "session.log").read_text()
+        assert "ERROR" in content
+        assert "caught exception" in content
+        assert "ValueError" in content  # traceback included
+
+    def test_session_log_uses_rotating_handler(self, tmp_path):
+        """Session log must use RotatingFileHandler, not plain FileHandler."""
+        import logging.handlers
+        slog = SessionLogger("test-sess", base_dir=tmp_path)
+        assert isinstance(slog._handler, logging.handlers.RotatingFileHandler)
+        slog.close()

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from kiso.config import KISO_DIR
+from kiso.plugins import _validate_plugin_manifest_base
 
 log = logging.getLogger(__name__)
 
@@ -14,30 +15,7 @@ CONNECTORS_DIR = KISO_DIR / "connectors"
 
 def _validate_connector_manifest(manifest: dict, connector_dir: Path) -> list[str]:
     """Validate a kiso.toml manifest for connectors. Returns list of error strings."""
-    errors: list[str] = []
-
-    kiso = manifest.get("kiso")
-    if not isinstance(kiso, dict):
-        errors.append("missing [kiso] section")
-        return errors
-
-    if kiso.get("type") != "connector":
-        errors.append(f"kiso.type must be 'connector', got {kiso.get('type')!r}")
-
-    if not kiso.get("name") or not isinstance(kiso.get("name"), str):
-        errors.append("kiso.name is required and must be a string")
-
-    connector_section = kiso.get("connector")
-    if not isinstance(connector_section, dict):
-        errors.append("missing [kiso.connector] section")
-        return errors
-
-    if not (connector_dir / "run.py").exists():
-        errors.append("run.py is missing")
-    if not (connector_dir / "pyproject.toml").exists():
-        errors.append("pyproject.toml is missing")
-
-    return errors
+    return _validate_plugin_manifest_base(manifest, connector_dir, "connector")
 
 
 def _connector_env_var_name(connector_name: str, key: str) -> str:

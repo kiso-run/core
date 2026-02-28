@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.stats import aggregate, estimate_cost, read_audit_entries
+from kiso.stats import MODEL_PRICES, _find_price, aggregate, estimate_cost, read_audit_entries
 from cli.stats import print_stats, _fmt_k, _fmt_cost
 
 # ---------------------------------------------------------------------------
@@ -346,3 +346,60 @@ class TestFmtHelpers:
 
     def test_fmt_cost_normal(self) -> None:
         assert _fmt_cost(1.23) == "$1.23"
+
+
+# ---------------------------------------------------------------------------
+# _find_price — ordering / specificity tests (M65c)
+# ---------------------------------------------------------------------------
+
+
+class TestFindPriceOrdering:
+    """MODEL_PRICES uses first-match-wins: more specific keys must come first."""
+
+    def test_gemini_2_0_flash_not_matched_as_gemini_flash(self) -> None:
+        # "gemini-2.0-flash" must match its own entry, not the generic "gemini-flash"
+        price = _find_price("gemini-2.0-flash")
+        assert price == MODEL_PRICES["gemini-2.0-flash"]
+        assert price != MODEL_PRICES["gemini-flash"]
+
+    def test_gemini_2_5_flash_not_matched_as_gemini_flash(self) -> None:
+        price = _find_price("gemini-2.5-flash")
+        assert price == MODEL_PRICES["gemini-2.5-flash"]
+        assert price != MODEL_PRICES["gemini-flash"]
+
+    def test_gemini_flash_matches_generic(self) -> None:
+        # A model name that only contains "gemini-flash" (no version digit) uses generic entry
+        price = _find_price("some-provider/gemini-flash-latest")
+        assert price == MODEL_PRICES["gemini-flash"]
+
+    def test_gpt_4o_mini_not_matched_as_gpt_4o(self) -> None:
+        price = _find_price("gpt-4o-mini")
+        assert price == MODEL_PRICES["gpt-4o-mini"]
+        assert price != MODEL_PRICES["gpt-4o"]
+
+    def test_gpt_4o_not_matched_as_gpt_4(self) -> None:
+        price = _find_price("gpt-4o")
+        assert price == MODEL_PRICES["gpt-4o"]
+        assert price != MODEL_PRICES["gpt-4"]
+
+    def test_gemini_2_5_pro_not_matched_as_gemini_pro(self) -> None:
+        price = _find_price("gemini-2.5-pro")
+        assert price == MODEL_PRICES["gemini-2.5-pro"]
+        assert price != MODEL_PRICES["gemini-pro"]
+
+    def test_llama_3_3_not_matched_as_llama_3(self) -> None:
+        price = _find_price("llama-3.3-70b")
+        assert price == MODEL_PRICES["llama-3.3"]
+        assert price != MODEL_PRICES["llama-3"]
+
+    def test_model_prices_dict_order_preserved(self) -> None:
+        """dict preserves insertion order in Python ≥3.7; verify specific before generic."""
+        keys = list(MODEL_PRICES.keys())
+        # gemini-2.0-flash must appear before gemini-flash
+        assert keys.index("gemini-2.0-flash") < keys.index("gemini-flash")
+        # gpt-4o-mini must appear before gpt-4o
+        assert keys.index("gpt-4o-mini") < keys.index("gpt-4o")
+        # gpt-4o must appear before gpt-4
+        assert keys.index("gpt-4o") < keys.index("gpt-4")
+        # llama-3.3 must appear before llama-3
+        assert keys.index("llama-3.3") < keys.index("llama-3")

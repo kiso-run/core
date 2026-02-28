@@ -23,6 +23,7 @@ from kiso.skills import (
     discover_skills,
     validate_skill_args,
 )
+from kiso.plugins import _validate_plugin_manifest_base
 
 
 # --- Helpers ---
@@ -75,6 +76,50 @@ def _create_skill(tmp_path: Path, name: str, toml_content: str) -> Path:
     (skill_dir / "run.py").write_text("import json, sys\ndata = json.load(sys.stdin)\nprint(data['args'].get('text', 'ok'))")
     (skill_dir / "pyproject.toml").write_text("[project]\nname = \"test\"\nversion = \"0.1.0\"")
     return skill_dir
+
+
+# --- _validate_plugin_manifest_base ---
+
+class TestValidatePluginManifestBase:
+    def test_missing_kiso_section(self, tmp_path):
+        errors = _validate_plugin_manifest_base({}, tmp_path, "skill")
+        assert "missing [kiso] section" in errors
+
+    def test_wrong_type(self, tmp_path):
+        manifest = {"kiso": {"type": "connector", "name": "x", "skill": {}}}
+        (tmp_path / "run.py").write_text("")
+        (tmp_path / "pyproject.toml").write_text("")
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "skill")
+        assert any("kiso.type must be 'skill'" in e for e in errors)
+
+    def test_missing_plugin_section(self, tmp_path):
+        manifest = {"kiso": {"type": "skill", "name": "x"}}
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "skill")
+        assert "missing [kiso.skill] section" in errors
+
+    def test_missing_run_py(self, tmp_path):
+        manifest = {"kiso": {"type": "skill", "name": "x", "skill": {}}}
+        (tmp_path / "pyproject.toml").write_text("")
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "skill")
+        assert "run.py is missing" in errors
+
+    def test_missing_pyproject(self, tmp_path):
+        manifest = {"kiso": {"type": "skill", "name": "x", "skill": {}}}
+        (tmp_path / "run.py").write_text("")
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "skill")
+        assert "pyproject.toml is missing" in errors
+
+    def test_valid_returns_empty(self, tmp_path):
+        manifest = {"kiso": {"type": "connector", "name": "x", "connector": {}}}
+        (tmp_path / "run.py").write_text("")
+        (tmp_path / "pyproject.toml").write_text("")
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "connector")
+        assert errors == []
+
+    def test_connector_type_used_in_messages(self, tmp_path):
+        manifest = {"kiso": {"type": "skill", "name": "x", "connector": {}}}
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "connector")
+        assert any("'connector'" in e for e in errors)
 
 
 # --- _validate_manifest ---
@@ -418,6 +463,36 @@ class TestCheckDeps:
         skill = discover_skills(skills_dir)[0]
         result = check_deps(skill)
         assert result == []
+
+    def test_no_file_io_after_discover(self, tmp_path):
+        """check_deps must not re-read kiso.toml; it uses skill['deps'] from discover_skills."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["nonexistent_binary_xyz"]')
+        skill_dir = _create_skill(skills_dir, "search", toml)
+        skill = discover_skills(skills_dir)[0]
+
+        # Delete kiso.toml — check_deps must still work from in-memory deps
+        (skill_dir / "kiso.toml").unlink()
+        result = check_deps(skill)
+        assert "nonexistent_binary_xyz" in result
+
+    def test_discover_includes_deps_key(self, tmp_path):
+        """discover_skills must include 'deps' key with the manifest's [kiso.deps] section."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "search", FULL_TOML)
+        skill = discover_skills(skills_dir)[0]
+        assert "deps" in skill
+        assert skill["deps"].get("bin") == ["curl"]
+
+    def test_discover_deps_empty_when_absent(self, tmp_path):
+        """discover_skills returns empty deps dict when [kiso.deps] is not in kiso.toml."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "echo", MINIMAL_TOML)
+        skill = discover_skills(skills_dir)[0]
+        assert skill["deps"] == {}
 
 
 # --- build_planner_skill_list ---

@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 
 import aiosqlite
 
@@ -37,7 +38,16 @@ from kiso.brain import (
     run_summarizer,
 )
 from kiso.config import Config, setting_bool
-from kiso.llm import LLMBudgetExceeded, LLMError, clear_llm_budget, get_usage_index, get_usage_since, get_usage_summary, reset_usage_tracking, set_llm_budget
+from kiso.llm import (
+    LLMBudgetExceeded,
+    LLMError,
+    clear_llm_budget,
+    get_usage_index,
+    get_usage_since,
+    get_usage_summary,
+    reset_usage_tracking,
+    set_llm_budget,
+)
 from kiso.skills import (
     SkillError,
     discover_skills,
@@ -168,10 +178,20 @@ async def _post_plan_knowledge(
 
     Called after both normal and fast-path message processing to keep
     the knowledge base current regardless of which path was taken.
+
+    Execution order:
+      Phase 1 — Curator + Summarizer in parallel (independent LLM calls,
+                 no shared data between them).
+      Phase 2 — Fact consolidation (after Curator so promoted facts are visible).
+      Phase 3 — Decay + Archive in parallel (pure SQL, no LLM dependency).
     """
-    # 1. Curator — process pending learnings
-    learnings = await get_pending_learnings(db)
-    if learnings:
+
+    # --- Phase 1: Curator + Summarizer (independent, run concurrently) ----------
+
+    async def _run_curator() -> None:
+        learnings = await get_pending_learnings(db)
+        if not learnings:
+            return
         try:
             curator_result = await asyncio.wait_for(
                 run_curator(config, learnings, session=session),
@@ -183,9 +203,10 @@ async def _post_plan_knowledge(
         except CuratorError as e:
             log.error("Curator failed: %s", e)
 
-    # 2. Summarizer — compress when threshold reached
-    msg_count = await count_messages(db, session)
-    if msg_count >= int(config.settings["summarize_threshold"]):
+    async def _run_summarizer() -> None:
+        msg_count = await count_messages(db, session)
+        if msg_count < int(config.settings["summarize_threshold"]):
+            return
         try:
             sess = await get_session(db, session)
             current_summary = sess["summary"] if sess else ""
@@ -200,8 +221,10 @@ async def _post_plan_knowledge(
         except SummarizerError as e:
             log.error("Summarizer failed: %s", e)
 
-    # 3. Fact consolidation — uses full (admin-level) view so the count check
-    # reflects the true global fact table, not just the current session's view.
+    await asyncio.gather(_run_curator(), _run_summarizer())
+
+    # --- Phase 2: Fact consolidation (after Curator — sees promoted facts) ------
+
     max_facts = int(config.settings["knowledge_max_facts"])
     all_facts = await get_facts(db, is_admin=True)
     if len(all_facts) > max_facts:
@@ -241,24 +264,29 @@ async def _post_plan_knowledge(
         except SummarizerError as e:
             log.error("Fact consolidation failed: %s", e)
 
-    # 4. Decay stale facts
+    # --- Phase 3: Decay + Archive (pure SQL, run concurrently) ------------------
+
     decay_days = int(config.settings["fact_decay_days"])
     decay_rate = float(config.settings["fact_decay_rate"])
-    try:
-        decayed = await decay_facts(db, decay_days=decay_days, decay_rate=decay_rate)
-        if decayed:
-            log.info("Decayed %d stale facts", decayed)
-    except Exception as e:
-        log.error("Fact decay failed: %s", e)
-
-    # 5. Archive low-confidence facts
     archive_threshold = float(config.settings["fact_archive_threshold"])
-    try:
-        archived = await archive_low_confidence_facts(db, threshold=archive_threshold)
-        if archived:
-            log.info("Archived %d low-confidence facts", archived)
-    except Exception as e:
-        log.error("Fact archiving failed: %s", e)
+
+    async def _run_decay() -> None:
+        try:
+            decayed = await decay_facts(db, decay_days=decay_days, decay_rate=decay_rate)
+            if decayed:
+                log.info("Decayed %d stale facts", decayed)
+        except Exception as e:
+            log.error("Fact decay failed: %s", e)
+
+    async def _run_archive() -> None:
+        try:
+            archived = await archive_low_confidence_facts(db, threshold=archive_threshold)
+            if archived:
+                log.info("Archived %d low-confidence facts", archived)
+        except Exception as e:
+            log.error("Fact archiving failed: %s", e)
+
+    await asyncio.gather(_run_decay(), _run_archive())
 
     # Update token usage with post-plan processing tokens
     final_usage = get_usage_summary()
@@ -291,7 +319,7 @@ async def _fast_path_chat(
        consolidation) is handled by the caller after this returns,
        so chat-heavy sessions still trigger summarization.
     """
-    deploy_secrets = collect_deploy_secrets(config)
+    deploy_secrets = collect_deploy_secrets()
     plan_id = await create_plan(db, session, msg_id, "Chat response")
     task_id = await create_task(db, plan_id, session, "msg", content)
     await update_task(db, task_id, "running")
@@ -436,6 +464,466 @@ async def _review_task(
     return review
 
 
+# ---------------------------------------------------------------------------
+# M62a/62b: Dispatch pattern and handler infrastructure
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _PlanCtx:
+    """Shared execution context for task handlers within _execute_plan."""
+
+    db: aiosqlite.Connection
+    config: Config
+    session: str
+    goal: str
+    user_message: str
+    exec_timeout: int
+    deploy_secrets: dict[str, str]
+    session_secrets: dict[str, str]
+    max_output_size: int
+    max_worker_retries: int
+    installed_skills: list[dict]
+    slog: "SessionLogger | None"
+    sandbox_uid: "int | None"
+    plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
+
+
+@dataclass
+class _TaskHandlerResult:
+    """Outcome from a task handler in _execute_plan."""
+
+    stop: bool = False           # True → return early from _execute_plan
+    stop_success: bool = False   # success value when stop=True
+    stop_replan: "str | None" = None   # replan reason when stop=True
+    completed_row: "dict | None" = None  # if set, append to completed
+
+
+async def _store_step_usage(
+    db: aiosqlite.Connection, task_id: int, usage_idx_before: int
+) -> None:
+    """Store per-step token totals on the task row."""
+    step_usage = get_usage_since(usage_idx_before)
+    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+
+
+async def _run_review_step(
+    ctx: _PlanCtx, task_row: dict
+) -> "tuple[dict | None, str | None]":
+    """Run the reviewer LLM step and append calls.
+
+    Returns (review_dict, error_str). On ReviewError, review_dict is None and
+    error_str is the error message; on success, error_str is None.
+    """
+    task_id = task_row["id"]
+    await update_task_substatus(ctx.db, task_id, "reviewing")
+    idx = get_usage_index()
+    try:
+        review = await _review_task(
+            ctx.config, ctx.db, ctx.session, ctx.goal, task_row, ctx.user_message
+        )
+    except ReviewError as e:
+        log.error("Review failed for task %d: %s", task_id, e)
+        return None, str(e)
+    await _append_calls(ctx.db, task_id, idx)
+    return review, None
+
+
+async def _handle_replan_task(
+    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle a self-directed replan task."""
+    task_id = task_row["id"]
+    detail = task_row["detail"]
+    await update_task(ctx.db, task_id, "done", output="Replan requested by planner")
+    task_row = {**task_row, "output": "Replan requested by planner", "status": "done"}
+    if ctx.slog:
+        ctx.slog.info("Task %d: self-directed replan: %s", task_id, detail[:120])
+    return _TaskHandlerResult(
+        stop=True,
+        stop_success=False,
+        stop_replan=f"Self-directed replan: {detail}",
+        completed_row=task_row,
+    )
+
+
+async def _handle_msg_task(
+    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle a msg task (messenger LLM → user-facing text)."""
+    task_id = task_row["id"]
+    detail = task_row["detail"]
+    t0 = time.perf_counter()
+    try:
+        await update_task_substatus(ctx.db, task_id, "composing")
+        _msg_timeout = int(ctx.config.settings["planner_timeout"])
+        idx_msg = get_usage_index()
+        try:
+            text = await asyncio.wait_for(
+                _msg_task(
+                    ctx.config, ctx.db, ctx.session, detail,
+                    plan_outputs=ctx.plan_outputs,
+                    goal=ctx.goal,
+                ),
+                timeout=_msg_timeout,
+            )
+        except asyncio.TimeoutError:
+            raise MessengerError(f"Messenger timed out after {_msg_timeout}s")
+        task_duration_ms = int((time.perf_counter() - t0) * 1000)
+        await update_task(ctx.db, task_id, "done", output=text)
+        task_row = {**task_row, "output": text, "status": "done"}
+        audit.log_task(
+            ctx.session, task_id, "msg", detail, "done", task_duration_ms,
+            len(text), deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        if ctx.slog:
+            ctx.slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
+        ctx.plan_outputs.append({
+            "index": i + 1,
+            "type": "msg",
+            "detail": detail,
+            "output": text,
+            "status": "done",
+        })
+        is_final = i == len(tasks) - 1
+        await _deliver_webhook_if_configured(
+            ctx.db, ctx.config, ctx.session, task_id, text, is_final,
+            deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        await _append_calls(ctx.db, task_id, idx_msg)
+        await _store_step_usage(ctx.db, task_id, usage_idx_before)
+        return _TaskHandlerResult(completed_row=task_row)
+    except (LLMError, MessengerError) as e:
+        task_duration_ms = int((time.perf_counter() - t0) * 1000)
+        log.error("Msg task %d messenger error: %s", task_id, e)
+        await update_task(ctx.db, task_id, "failed", output=str(e))
+        audit.log_task(
+            ctx.session, task_id, "msg", detail, "failed",
+            task_duration_ms, 0,
+            deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        return _TaskHandlerResult(stop=True, stop_success=False)
+
+
+async def _handle_skill_task(
+    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle a skill task (external subprocess via skill plugin)."""
+    task_id = task_row["id"]
+    detail = task_row["detail"]
+    skill_name = task_row.get("skill")
+    args_raw = task_row.get("args") or "{}"
+    skill_info = next((s for s in ctx.installed_skills if s["name"] == skill_name), None)
+    t0 = time.perf_counter()
+
+    # Pre-flight: skill installed, args valid
+    setup_error: str | None = None
+    args: dict | None = None
+    if skill_info is None:
+        setup_error = f"Skill '{skill_name}' not installed"
+    else:
+        try:
+            args = json.loads(args_raw)
+        except json.JSONDecodeError as e:
+            setup_error = f"Invalid skill args JSON: {e}"
+        else:
+            validation_errors = validate_skill_args(args, skill_info["args_schema"])
+            if validation_errors:
+                setup_error = "Skill args validation failed: " + "; ".join(validation_errors)
+
+    if setup_error:
+        log.error("Skill setup failed for task %d: %s", task_id, setup_error)
+        await update_task(ctx.db, task_id, "failed", output=setup_error)
+        audit.log_task(
+            ctx.session, task_id, "skill", detail, "failed", 0, 0,
+            deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        return _TaskHandlerResult(stop=True, stop_success=False)
+
+    _write_plan_outputs(ctx.session, ctx.plan_outputs)
+    await update_task_substatus(ctx.db, task_id, "executing")
+    stdout, stderr, success = await _skill_task(
+        ctx.session, skill_info, args, ctx.plan_outputs,
+        ctx.session_secrets, ctx.exec_timeout,
+        sandbox_uid=ctx.sandbox_uid,
+        max_output_size=ctx.max_output_size,
+    )
+    stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
+    stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
+    status = "done" if success else "failed"
+    await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr)
+    task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+
+    task_duration_ms = int((time.perf_counter() - t0) * 1000)
+    audit.log_task(
+        ctx.session, task_id, "skill", detail, task_row["status"],
+        task_duration_ms, len(task_row.get("output") or ""),
+        deploy_secrets=ctx.deploy_secrets,
+        session_secrets=ctx.session_secrets,
+    )
+    if ctx.slog:
+        ctx.slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
+
+    ctx.plan_outputs.append({
+        "index": i + 1,
+        "type": "skill",
+        "detail": detail,
+        "output": task_row.get("output") or "",
+        "status": task_row["status"],
+    })
+
+    review, review_error = await _run_review_step(ctx, task_row)
+    if review_error is not None:
+        await _store_step_usage(ctx.db, task_id, usage_idx_before)
+        return _TaskHandlerResult(stop=True, stop_success=False)
+
+    if review["status"] == "replan":
+        replan_reason = review["reason"]
+        if ctx.slog:
+            ctx.slog.info("Review → replan: %s", replan_reason)
+        await _store_step_usage(ctx.db, task_id, usage_idx_before)
+        return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason)
+
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if ctx.slog:
+        ctx.slog.info("Review → %s", review["status"])
+    if task_row["status"] == "failed":
+        return _TaskHandlerResult(stop=True, stop_success=False)
+    return _TaskHandlerResult(completed_row=task_row)
+
+
+async def _handle_exec_task(
+    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle an exec task (shell command via translator + executor + reviewer)."""
+    task_id = task_row["id"]
+    detail = task_row["detail"]
+    _write_plan_outputs(ctx.session, ctx.plan_outputs)
+
+    retry_context = ""
+    exec_retries = 0
+    while True:
+        await update_task_substatus(ctx.db, task_id, "translating")
+        sys_env = get_system_env(ctx.config)
+        sys_env_text = build_system_env_section(sys_env, session=ctx.session)
+        outputs_text = _format_plan_outputs_for_msg(ctx.plan_outputs)
+        idx_translate = get_usage_index()
+        try:
+            command = await run_exec_translator(
+                ctx.config, detail, sys_env_text,
+                plan_outputs_text=outputs_text, session=ctx.session,
+                retry_context=retry_context,
+            )
+        except ExecTranslatorError as e:
+            log.error("Exec translation failed for task %d: %s", task_id, e)
+            await update_task(ctx.db, task_id, "failed", output="", stderr=str(e))
+            audit.log_task(
+                ctx.session, task_id, "exec", detail, "failed", 0, 0,
+                deploy_secrets=ctx.deploy_secrets,
+                session_secrets=ctx.session_secrets,
+            )
+            return _TaskHandlerResult(stop=True, stop_success=False)
+
+        await _append_calls(ctx.db, task_id, idx_translate)
+        await update_task_command(ctx.db, task_id, command)
+        if ctx.slog:
+            ctx.slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
+
+        await update_task_substatus(ctx.db, task_id, "executing")
+        t0 = time.perf_counter()
+        stdout, stderr, success = await _exec_task(
+            ctx.session, command, ctx.exec_timeout, sandbox_uid=ctx.sandbox_uid,
+            max_output_size=ctx.max_output_size,
+        )
+        task_duration_ms = int((time.perf_counter() - t0) * 1000)
+        stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
+        stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
+        status = "done" if success else "failed"
+
+        pub_urls = _report_pub_files(ctx.session, ctx.config)
+        if pub_urls:
+            pub_note = "\n\nPublished files:\n" + "\n".join(
+                f"- {u['filename']}: {u['url']}" for u in pub_urls
+            )
+            stdout += pub_note
+
+        await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr)
+        audit.log_task(
+            ctx.session, task_id, "exec", detail, status, task_duration_ms,
+            len(stdout), deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        if ctx.slog:
+            ctx.slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
+
+        task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+
+        plan_output_entry = {
+            "index": i + 1,
+            "type": "exec",
+            "detail": detail,
+            "output": stdout,
+            "status": status,
+        }
+        if exec_retries > 0 and ctx.plan_outputs and ctx.plan_outputs[-1]["index"] == i + 1:
+            ctx.plan_outputs[-1] = plan_output_entry
+        else:
+            ctx.plan_outputs.append(plan_output_entry)
+        _write_plan_outputs(ctx.session, ctx.plan_outputs)
+
+        review, review_error = await _run_review_step(ctx, task_row)
+        if review_error is not None:
+            await update_task(ctx.db, task_id, "failed")
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False)
+
+        if review["status"] == "replan":
+            retry_hint = review.get("retry_hint")
+            if retry_hint and exec_retries < ctx.max_worker_retries:
+                exec_retries += 1
+                await update_task_retry_count(ctx.db, task_id, exec_retries)
+                retry_context = (
+                    f"Attempt {exec_retries} failed.\n"
+                    f"Command: {command}\n"
+                    f"Output: {stdout[:500]}\n"
+                    f"Stderr: {stderr[:500]}\n"
+                    f"Hint: {retry_hint}"
+                )
+                if ctx.slog:
+                    ctx.slog.info("Task %d retry %d/%d: %s",
+                                  task_id, exec_retries, ctx.max_worker_retries, retry_hint)
+                continue
+
+            replan_reason = review["reason"]
+            log.info("Reviewer requests replan: %s", replan_reason)
+            if ctx.slog:
+                if exec_retries > 0:
+                    ctx.slog.info("Review → replan (retried %dx before escalating): %s",
+                                  exec_retries, replan_reason)
+                else:
+                    ctx.slog.info("Review → replan: %s", replan_reason)
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason)
+
+        # review ok → break out of retry loop
+        break
+
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if ctx.slog:
+        ctx.slog.info("Review → %s", review["status"])
+    return _TaskHandlerResult(completed_row=task_row)
+
+
+async def _handle_search_task(
+    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle a search task (searcher LLM + reviewer)."""
+    task_id = task_row["id"]
+    detail = task_row["detail"]
+    search_retries = 0
+    search_extra_context = ""
+
+    while True:
+        t0 = time.perf_counter()
+        await update_task_substatus(ctx.db, task_id, "searching")
+        idx_search = get_usage_index()
+        try:
+            outputs_text = _format_plan_outputs_for_msg(ctx.plan_outputs)
+            full_context = outputs_text
+            if search_extra_context:
+                full_context = (full_context + "\n\n" + search_extra_context).strip()
+            search_result = await _search_task(
+                ctx.config, detail, task_row.get("args"),
+                context=full_context,
+                session=ctx.session,
+                task_id=task_id,
+            )
+        except SearcherError as e:
+            task_duration_ms = int((time.perf_counter() - t0) * 1000)
+            log.error("Search failed for task %d: %s", task_id, e)
+            await update_task(ctx.db, task_id, "failed", output=str(e))
+            audit.log_task(
+                ctx.session, task_id, "search", detail, "failed", task_duration_ms, 0,
+                deploy_secrets=ctx.deploy_secrets,
+                session_secrets=ctx.session_secrets,
+            )
+            return _TaskHandlerResult(stop=True, stop_success=False)
+
+        task_duration_ms = int((time.perf_counter() - t0) * 1000)
+        await update_task(ctx.db, task_id, "done", output=search_result)
+        task_row = {**task_row, "output": search_result, "status": "done"}
+        audit.log_task(
+            ctx.session, task_id, "search", detail, "done", task_duration_ms,
+            len(search_result), deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        if ctx.slog:
+            ctx.slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
+
+        await _append_calls(ctx.db, task_id, idx_search)
+
+        plan_output_entry = {
+            "index": i + 1,
+            "type": "search",
+            "detail": detail,
+            "output": search_result,
+            "status": "done",
+        }
+        if search_retries > 0 and ctx.plan_outputs and ctx.plan_outputs[-1]["index"] == i + 1:
+            ctx.plan_outputs[-1] = plan_output_entry
+        else:
+            ctx.plan_outputs.append(plan_output_entry)
+
+        review, review_error = await _run_review_step(ctx, task_row)
+        if review_error is not None:
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False)
+
+        if review["status"] == "replan":
+            retry_hint = review.get("retry_hint")
+            if retry_hint and search_retries < ctx.max_worker_retries:
+                search_retries += 1
+                await update_task_retry_count(ctx.db, task_id, search_retries)
+                search_extra_context += (
+                    f"\n\n[Retry {search_retries}] Previous search was insufficient. "
+                    f"Hint: {retry_hint}"
+                )
+                if ctx.slog:
+                    ctx.slog.info("Task %d search retry %d/%d: %s",
+                                  task_id, search_retries, ctx.max_worker_retries, retry_hint)
+                continue
+
+            replan_reason = review["reason"]
+            if ctx.slog:
+                if search_retries > 0:
+                    ctx.slog.info("Review → replan (retried %dx before escalating): %s",
+                                  search_retries, replan_reason)
+                else:
+                    ctx.slog.info("Review → replan: %s", replan_reason)
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason)
+
+        # review ok → break out of retry loop
+        break
+
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if ctx.slog:
+        ctx.slog.info("Review → %s", review["status"])
+    return _TaskHandlerResult(completed_row=task_row)
+
+
+_TASK_HANDLERS: dict = {
+    "exec": _handle_exec_task,
+    "msg": _handle_msg_task,
+    "skill": _handle_skill_task,
+    "search": _handle_search_task,
+    "replan": _handle_replan_task,
+}
+
+
 async def _execute_plan(
     db: aiosqlite.Connection,
     config: Config,
@@ -458,12 +946,27 @@ async def _execute_plan(
     """
     tasks = await get_tasks_for_plan(db, plan_id)
     completed: list[dict] = []
-    plan_outputs: list[dict] = []
-    deploy_secrets = collect_deploy_secrets(config)
+    deploy_secrets = collect_deploy_secrets()
     max_output_size = int(config.settings["max_output_size"])
     max_worker_retries = int(config.settings["max_worker_retries"])
     # Cache installed skills for the whole plan execution (avoid rescanning per task)
     installed_skills = discover_skills()
+
+    ctx = _PlanCtx(
+        db=db,
+        config=config,
+        session=session,
+        goal=goal,
+        user_message=user_message,
+        exec_timeout=exec_timeout,
+        deploy_secrets=deploy_secrets,
+        session_secrets=session_secrets or {},
+        max_output_size=max_output_size,
+        max_worker_retries=max_worker_retries,
+        installed_skills=installed_skills,
+        slog=slog,
+        sandbox_uid=None,
+    )
 
     for i, task_row in enumerate(tasks):
         # --- Cancel check ---
@@ -508,6 +1011,7 @@ async def _execute_plan(
         sandbox_uid = _ensure_sandbox_user(session) if perm.role == "user" else None
         if sandbox_uid is not None:
             _session_workspace(session, sandbox_uid=sandbox_uid)
+        ctx.sandbox_uid = sandbox_uid
 
         await update_task(db, task_id, "running")
         if slog:
@@ -515,457 +1019,23 @@ async def _execute_plan(
 
         usage_idx_before = get_usage_index()
 
-        if task_type == "exec":
-            # Write plan_outputs.json before execution
-            _write_plan_outputs(session, plan_outputs)
-
-            retry_context = ""
-            exec_retries = 0
-
-            while True:
-                await update_task_substatus(db, task_id, "translating")
-                # Translate natural-language detail → shell command
-                sys_env = get_system_env(config)
-                sys_env_text = build_system_env_section(sys_env, session=session)
-                outputs_text = _format_plan_outputs_for_msg(plan_outputs)
-                idx_translate = get_usage_index()
-                try:
-                    command = await run_exec_translator(
-                        config, detail, sys_env_text,
-                        plan_outputs_text=outputs_text, session=session,
-                        retry_context=retry_context,
-                    )
-                except ExecTranslatorError as e:
-                    log.error("Exec translation failed for task %d: %s", task_id, e)
-                    await update_task(db, task_id, "failed", output="", stderr=str(e))
-                    audit.log_task(
-                        session, task_id, "exec", detail, "failed", 0, 0,
-                        deploy_secrets=deploy_secrets,
-                        session_secrets=session_secrets or {},
-                    )
-                    remaining = [dict(t) for t in tasks[i + 1:]]
-                    _cleanup_plan_outputs(session)
-                    return False, None, completed, remaining
-
-                # Append translator call immediately (incremental rendering)
-                await _append_calls(db, task_id, idx_translate)
-                await update_task_command(db, task_id, command)
-
-                if slog:
-                    slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
-
-                await update_task_substatus(db, task_id, "executing")
-                t0 = time.perf_counter()
-                stdout, stderr, success = await _exec_task(
-                    session, command, exec_timeout, sandbox_uid=sandbox_uid,
-                    max_output_size=max_output_size,
-                )
-                task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
-                stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
-                status = "done" if success else "failed"
-
-                # Report pub/ files if any were created
-                pub_urls = _report_pub_files(session, config)
-                if pub_urls:
-                    pub_note = "\n\nPublished files:\n" + "\n".join(
-                        f"- {u['filename']}: {u['url']}" for u in pub_urls
-                    )
-                    stdout += pub_note
-
-                await update_task(db, task_id, status, output=stdout, stderr=stderr)
-
-                audit.log_task(
-                    session, task_id, "exec", detail, status, task_duration_ms,
-                    len(stdout), deploy_secrets=deploy_secrets,
-                    session_secrets=session_secrets or {},
-                )
-                if slog:
-                    slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
-
-                # Refresh task_row with output
-                task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
-
-                # Accumulate plan output (replace on retry)
-                plan_output_entry = {
-                    "index": i + 1,
-                    "type": "exec",
-                    "detail": detail,
-                    "output": stdout,
-                    "status": status,
-                }
-                if exec_retries > 0 and plan_outputs and plan_outputs[-1]["index"] == i + 1:
-                    plan_outputs[-1] = plan_output_entry
-                else:
-                    plan_outputs.append(plan_output_entry)
-                _write_plan_outputs(session, plan_outputs)
-
-                # Review exec tasks
-                await update_task_substatus(db, task_id, "reviewing")
-                idx_review = get_usage_index()
-                try:
-                    review = await _review_task(
-                        config, db, session, goal, task_row, user_message,
-                    )
-                except ReviewError as e:
-                    log.error("Review failed for task %d: %s", task_id, e)
-                    await update_task(db, task_id, "failed")
-                    remaining = [dict(t) for t in tasks[i + 1:]]
-                    _cleanup_plan_outputs(session)
-                    return False, None, completed, remaining
-
-                # Append reviewer call immediately (incremental rendering)
-                await _append_calls(db, task_id, idx_review)
-
-                if review["status"] == "replan":
-                    retry_hint = review.get("retry_hint")
-                    if retry_hint and exec_retries < max_worker_retries:
-                        exec_retries += 1
-                        await update_task_retry_count(db, task_id, exec_retries)
-                        retry_context = (
-                            f"Attempt {exec_retries} failed.\n"
-                            f"Command: {command}\n"
-                            f"Output: {stdout[:500]}\n"
-                            f"Stderr: {stderr[:500]}\n"
-                            f"Hint: {retry_hint}"
-                        )
-                        if slog:
-                            slog.info("Task %d retry %d/%d: %s",
-                                      task_id, exec_retries, max_worker_retries, retry_hint)
-                        continue
-
-                    # No hint or retries exhausted → escalate to full replan
-                    replan_reason = review["reason"]
-                    log.info("Reviewer requests replan: %s", replan_reason)
-                    if slog:
-                        if exec_retries > 0:
-                            slog.info("Review → replan (retried %dx before escalating): %s",
-                                      exec_retries, replan_reason)
-                        else:
-                            slog.info("Review → replan: %s", replan_reason)
-                    # Store per-step token totals even on replan
-                    step_usage = get_usage_since(usage_idx_before)
-                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-                    remaining = [dict(t) for t in tasks[i + 1:]]
-                    _cleanup_plan_outputs(session)
-                    return False, replan_reason, completed, remaining
-
-                # review ok → break out of retry loop
-                break
-
-            # Store per-step token totals (translator + exec + reviewer)
-            step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-
-            if slog:
-                slog.info("Review → %s", review["status"])
-            completed.append(task_row)
-
-        elif task_type == "msg":
-            try:
-                await update_task_substatus(db, task_id, "composing")
-                t0 = time.perf_counter()
-                _msg_timeout = int(config.settings["planner_timeout"])
-                idx_msg = get_usage_index()
-                try:
-                    text = await asyncio.wait_for(
-                        _msg_task(
-                            config, db, session, detail,
-                            plan_outputs=plan_outputs,
-                            goal=goal,
-                        ),
-                        timeout=_msg_timeout,
-                    )
-                except asyncio.TimeoutError:
-                    raise MessengerError(f"Messenger timed out after {_msg_timeout}s")
-                task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                await update_task(db, task_id, "done", output=text)
-                task_row = {**task_row, "output": text, "status": "done"}
-
-                audit.log_task(
-                    session, task_id, "msg", detail, "done", task_duration_ms,
-                    len(text), deploy_secrets=deploy_secrets,
-                    session_secrets=session_secrets or {},
-                )
-                if slog:
-                    slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
-
-                # Accumulate plan output
-                plan_outputs.append({
-                    "index": i + 1,
-                    "type": "msg",
-                    "detail": detail,
-                    "output": text,
-                    "status": "done",
-                })
-
-                # Webhook delivery
-                is_final = i == len(tasks) - 1
-                await _deliver_webhook_if_configured(
-                    db, config, session, task_id, text, is_final,
-                    deploy_secrets=deploy_secrets,
-                    session_secrets=session_secrets,
-                )
-
-                # Append messenger call immediately (incremental rendering)
-                await _append_calls(db, task_id, idx_msg)
-
-                # Store per-step token totals (messenger)
-                step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-
-                completed.append(task_row)
-            except (LLMError, MessengerError) as e:
-                task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                log.error("Msg task %d messenger error: %s", task_id, e)
-                await update_task(db, task_id, "failed", output=str(e))
-                audit.log_task(
-                    session, task_id, "msg", detail, "failed",
-                    task_duration_ms, 0,
-                    deploy_secrets=deploy_secrets,
-                    session_secrets=session_secrets or {},
-                )
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-        elif task_type == "skill":
-            skill_name = task_row.get("skill")
-            args_raw = task_row.get("args") or "{}"
-
-            # Look up the skill (from plan-level cache)
-            skill_info = next((s for s in installed_skills if s["name"] == skill_name), None)
-
-            t0 = time.perf_counter()
-
-            # Pre-flight checks: skill installed, args valid
-            setup_error: str | None = None
-            if skill_info is None:
-                setup_error = f"Skill '{skill_name}' not installed"
-            else:
-                try:
-                    args = json.loads(args_raw)
-                except json.JSONDecodeError as e:
-                    setup_error = f"Invalid skill args JSON: {e}"
-                    args = None
-                else:
-                    validation_errors = validate_skill_args(args, skill_info["args_schema"])
-                    if validation_errors:
-                        setup_error = "Skill args validation failed: " + "; ".join(validation_errors)
-
-            if setup_error:
-                log.error("Skill setup failed for task %d: %s", task_id, setup_error)
-                await update_task(db, task_id, "failed", output=setup_error)
-                audit.log_task(
-                    session, task_id, "skill", detail, "failed", 0, 0,
-                    deploy_secrets=deploy_secrets,
-                    session_secrets=session_secrets or {},
-                )
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            # Write plan_outputs.json before skill execution
-            _write_plan_outputs(session, plan_outputs)
-
-            await update_task_substatus(db, task_id, "executing")
-            stdout, stderr, success = await _skill_task(
-                session, skill_info, args, plan_outputs,
-                session_secrets, exec_timeout,
-                sandbox_uid=sandbox_uid,
-                max_output_size=max_output_size,
-            )
-            stdout = sanitize_output(stdout, deploy_secrets, session_secrets or {})
-            stderr = sanitize_output(stderr, deploy_secrets, session_secrets or {})
-            status = "done" if success else "failed"
-            await update_task(db, task_id, status, output=stdout, stderr=stderr)
-            task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
-
-            task_duration_ms = int((time.perf_counter() - t0) * 1000)
-            audit.log_task(
-                session, task_id, "skill", detail, task_row["status"],
-                task_duration_ms, len(task_row.get("output") or ""),
-                deploy_secrets=deploy_secrets,
-                session_secrets=session_secrets or {},
-            )
-            if slog:
-                slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
-
-            # Accumulate plan output
-            plan_outputs.append({
-                "index": i + 1,
-                "type": "skill",
-                "detail": detail,
-                "output": task_row.get("output") or "",
-                "status": task_row["status"],
-            })
-
-            # Review skill tasks
-            await update_task_substatus(db, task_id, "reviewing")
-            idx_review = get_usage_index()
-            try:
-                review = await _review_task(
-                    config, db, session, goal, task_row, user_message,
-                )
-            except ReviewError as e:
-                log.error("Review failed for skill task %d: %s", task_id, e)
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            # Append reviewer call immediately (incremental rendering)
-            await _append_calls(db, task_id, idx_review)
-
-            if review["status"] == "replan":
-                replan_reason = review["reason"]
-                if slog:
-                    slog.info("Review → replan: %s", replan_reason)
-                step_usage = get_usage_since(usage_idx_before)
-                await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, replan_reason, completed, remaining
-
-            # Store per-step token totals (skill + reviewer)
-            step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-
-            if slog:
-                slog.info("Review → %s", review["status"])
-
-            if task_row["status"] == "failed":
-                remaining = [dict(t) for t in tasks[i + 1:]]
-                _cleanup_plan_outputs(session)
-                return False, None, completed, remaining
-
-            completed.append(task_row)
-
-        elif task_type == "search":
-            search_retries = 0
-            search_extra_context = ""
-
-            while True:
-                t0 = time.perf_counter()
-                await update_task_substatus(db, task_id, "searching")
-                idx_search = get_usage_index()
-                try:
-                    outputs_text = _format_plan_outputs_for_msg(plan_outputs)
-                    full_context = outputs_text
-                    if search_extra_context:
-                        full_context = (full_context + "\n\n" + search_extra_context).strip()
-                    search_result = await _search_task(
-                        config, detail, task_row.get("args"),
-                        context=full_context,
-                        session=session,
-                        task_id=task_id,
-                    )
-                except SearcherError as e:
-                    task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                    log.error("Search failed for task %d: %s", task_id, e)
-                    await update_task(db, task_id, "failed", output=str(e))
-                    audit.log_task(
-                        session, task_id, "search", detail, "failed", task_duration_ms, 0,
-                        deploy_secrets=deploy_secrets,
-                        session_secrets=session_secrets or {},
-                    )
-                    remaining = [dict(t) for t in tasks[i + 1:]]
-                    _cleanup_plan_outputs(session)
-                    return False, None, completed, remaining
-
-                task_duration_ms = int((time.perf_counter() - t0) * 1000)
-                await update_task(db, task_id, "done", output=search_result)
-                task_row = {**task_row, "output": search_result, "status": "done"}
-
-                audit.log_task(
-                    session, task_id, "search", detail, "done", task_duration_ms,
-                    len(search_result), deploy_secrets=deploy_secrets,
-                    session_secrets=session_secrets or {},
-                )
-                if slog:
-                    slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
-
-                # Append searcher call immediately (incremental rendering)
-                await _append_calls(db, task_id, idx_search)
-
-                # Accumulate plan output (replace on retry)
-                plan_output_entry = {
-                    "index": i + 1,
-                    "type": "search",
-                    "detail": detail,
-                    "output": search_result,
-                    "status": "done",
-                }
-                if search_retries > 0 and plan_outputs and plan_outputs[-1]["index"] == i + 1:
-                    plan_outputs[-1] = plan_output_entry
-                else:
-                    plan_outputs.append(plan_output_entry)
-
-                # Review search tasks
-                await update_task_substatus(db, task_id, "reviewing")
-                idx_review = get_usage_index()
-                try:
-                    review = await _review_task(
-                        config, db, session, goal, task_row, user_message,
-                    )
-                except ReviewError as e:
-                    log.error("Review failed for search task %d: %s", task_id, e)
-                    remaining = [dict(t) for t in tasks[i + 1:]]
-                    _cleanup_plan_outputs(session)
-                    return False, None, completed, remaining
-
-                # Append reviewer call immediately (incremental rendering)
-                await _append_calls(db, task_id, idx_review)
-
-                if review["status"] == "replan":
-                    retry_hint = review.get("retry_hint")
-                    if retry_hint and search_retries < max_worker_retries:
-                        search_retries += 1
-                        await update_task_retry_count(db, task_id, search_retries)
-                        search_extra_context += (
-                            f"\n\n[Retry {search_retries}] Previous search was insufficient. "
-                            f"Hint: {retry_hint}"
-                        )
-                        if slog:
-                            slog.info("Task %d search retry %d/%d: %s",
-                                      task_id, search_retries, max_worker_retries, retry_hint)
-                        continue
-
-                    # No hint or retries exhausted → escalate to full replan
-                    replan_reason = review["reason"]
-                    if slog:
-                        if search_retries > 0:
-                            slog.info("Review → replan (retried %dx before escalating): %s",
-                                      search_retries, replan_reason)
-                        else:
-                            slog.info("Review → replan: %s", replan_reason)
-                    step_usage = get_usage_since(usage_idx_before)
-                    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-                    remaining = [dict(t) for t in tasks[i + 1:]]
-                    _cleanup_plan_outputs(session)
-                    return False, replan_reason, completed, remaining
-
-                # review ok → break out of retry loop
-                break
-
-            # Store per-step token totals (searcher + reviewer)
-            step_usage = get_usage_since(usage_idx_before)
-            await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
-
-            if slog:
-                slog.info("Review → %s", review["status"])
-            completed.append(task_row)
-
-        elif task_type == "replan":
-            # Self-directed replan: mark task as done, trigger replan
-            replan_detail = task_row["detail"]
-            await update_task(db, task_id, "done", output="Replan requested by planner")
-            task_row = {**task_row, "output": "Replan requested by planner", "status": "done"}
-            completed.append(task_row)
+        # --- Dispatch to handler ---
+        handler = _TASK_HANDLERS.get(task_type)
+        if handler is None:
+            log.error("Unknown task type %r for task %d", task_type, task_id)
+            await update_task(db, task_id, "failed", output=f"Unknown task type: {task_type}")
             remaining = [dict(t) for t in tasks[i + 1:]]
             _cleanup_plan_outputs(session)
-            if slog:
-                slog.info("Task %d: self-directed replan: %s", task_id, replan_detail[:120])
-            return False, f"Self-directed replan: {replan_detail}", completed, remaining
+            return False, None, completed, remaining
+
+        result = await handler(ctx, task_row, i, tasks, usage_idx_before)
+        if result.completed_row is not None:
+            completed.append(result.completed_row)
+
+        if result.stop:
+            remaining = [dict(t) for t in tasks[i + 1:]]
+            _cleanup_plan_outputs(session)
+            return result.stop_success, result.stop_replan, completed, remaining
 
     _cleanup_plan_outputs(session)
     return True, None, completed, []
@@ -1023,6 +1093,249 @@ async def run_worker(
                 continue
     finally:
         slog.close()
+
+
+# ---------------------------------------------------------------------------
+# M62c: Extracted planning loop
+# ---------------------------------------------------------------------------
+
+async def _run_planning_loop(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    msg_id: int,
+    content: str,
+    plan_id: int,
+    plan: dict,
+    user_role: str,
+    user_skills: "str | list[str] | None",
+    exec_timeout: int,
+    session_secrets: dict,
+    cancel_event: "asyncio.Event | None",
+    planner_timeout: int,
+    max_replan_depth: int,
+    username: "str | None",
+    slog: "SessionLogger | None",
+) -> int:
+    """Execute plan with replan loop. Returns the final plan_id."""
+    replan_history: list[dict] = []
+    current_plan_id = plan_id
+    current_goal = plan["goal"]
+    replan_depth = 0
+
+    while True:
+        success, replan_reason, completed, remaining = await _execute_plan(
+            db, config, session, current_plan_id, current_goal,
+            content, exec_timeout, session_secrets=session_secrets,
+            username=username, cancel_event=cancel_event, slog=slog,
+        )
+
+        if success:
+            await update_plan_status(db, current_plan_id, "done")
+            log.info("Plan %d done", current_plan_id)
+            if slog:
+                slog.info("Plan %d done", current_plan_id)
+            all_facts = await get_facts(db, is_admin=True)
+            if all_facts:
+                await update_fact_usage(db, [f["id"] for f in all_facts])
+            break
+
+        # --- Cancel handling ---
+        if replan_reason == "cancelled":
+            await update_plan_status(db, current_plan_id, "cancelled")
+            cancel_detail = _build_cancel_summary(completed, remaining, current_goal)
+            try:
+                cancel_text = await _msg_task(config, db, session, cancel_detail, goal=current_goal)
+            except (LLMError, MessengerError):
+                cancel_text = cancel_detail
+            cancel_task_id = await create_task(db, current_plan_id, session, "msg", cancel_detail)
+            await update_task(db, cancel_task_id, status="done", output=cancel_text)
+            await save_message(db, session, None, "system", cancel_text, trusted=True, processed=True)
+            await _deliver_webhook_if_configured(
+                db, config, session, 0, cancel_text, True,
+                deploy_secrets=collect_deploy_secrets(),
+                session_secrets=session_secrets,
+            )
+            if cancel_event is not None:
+                cancel_event.clear()
+            break
+
+        if replan_reason is None:
+            # Failed without replan request (LLM error, review error, etc.)
+            await update_plan_status(db, current_plan_id, "failed")
+            log.info("Plan %d failed (no replan)", current_plan_id)
+            if slog:
+                slog.info("Plan %d failed", current_plan_id)
+            fail_detail = _build_failure_summary(completed, remaining, current_goal)
+            try:
+                fail_text = await _msg_task(config, db, session, fail_detail, goal=current_goal)
+            except (LLMError, MessengerError):
+                fail_text = fail_detail
+            fail_task_id = await create_task(db, current_plan_id, session, "msg", fail_detail)
+            await update_task(db, fail_task_id, status="done", output=fail_text)
+            await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
+            await _deliver_webhook_if_configured(
+                db, config, session, 0, fail_text, True,
+                deploy_secrets=collect_deploy_secrets(),
+                session_secrets=session_secrets,
+            )
+            break
+
+        # Replan requested
+        replan_depth += 1
+        if replan_depth > max_replan_depth:
+            await update_plan_status(db, current_plan_id, "failed")
+            remaining_tasks = await get_tasks_for_plan(db, current_plan_id)
+            for t in remaining_tasks:
+                if t["status"] == "pending":
+                    await update_task(db, t["id"], "failed", output="Max replan depth reached")
+            log.warning("Max replan depth (%d) reached for session=%s", max_replan_depth, session)
+            replan_detail = _build_failure_summary(
+                completed, remaining, current_goal,
+                reason=f"Max replan depth ({max_replan_depth}) reached. "
+                       f"Last failure: {replan_reason}",
+            )
+            try:
+                replan_text = await _msg_task(config, db, session, replan_detail, goal=current_goal)
+            except (LLMError, MessengerError):
+                replan_text = replan_detail
+            replan_task_id = await create_task(db, current_plan_id, session, "msg", replan_detail)
+            await update_task(db, replan_task_id, status="done", output=replan_text)
+            await save_message(db, session, None, "system", replan_text, trusted=True, processed=True)
+            await _deliver_webhook_if_configured(
+                db, config, session, 0, replan_text, True,
+                deploy_secrets=collect_deploy_secrets(),
+                session_secrets=session_secrets,
+            )
+            break
+
+        # Detect self-directed replan
+        is_self_directed = replan_reason.startswith("Self-directed replan:")
+
+        # Set "replanning" status so the CLI knows to keep polling
+        await update_plan_status(db, current_plan_id, "replanning")
+
+        # Mark remaining tasks
+        current_tasks = await get_tasks_for_plan(db, current_plan_id)
+        for t in current_tasks:
+            if t["status"] == "pending":
+                await update_task(db, t["id"], "failed", output="Superseded by replan")
+
+        # Build replan history
+        tried = [f"[{t['type']}] {t['detail']}" for t in completed]
+        replan_history.append({
+            "goal": current_goal,
+            "failure": replan_reason,
+            "what_was_tried": tried,
+        })
+
+        # Notify user about replan (as a visible msg task + webhook)
+        if is_self_directed:
+            msg_text = f"Investigating... ({replan_depth}/{max_replan_depth})"
+        else:
+            msg_text = (
+                f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
+                f"{replan_reason}"
+            )
+        replan_notify_id = await create_task(db, current_plan_id, session, "msg", msg_text)
+        await update_task(db, replan_notify_id, status="done", output=msg_text)
+        await save_message(db, session, None, "system", msg_text, trusted=True, processed=True)
+        await _deliver_webhook_if_configured(
+            db, config, session, replan_notify_id, msg_text, False,
+            deploy_secrets=collect_deploy_secrets(),
+            session_secrets=session_secrets,
+        )
+
+        # --- Cancel check before replan ---
+        if cancel_event is not None and cancel_event.is_set():
+            await update_plan_status(db, current_plan_id, "cancelled")
+            break
+
+        # Call planner with enriched context
+        replan_context = _build_replan_context(completed, remaining, replan_reason, replan_history)
+        enriched_message = f"{content}\n\n{replan_context}"
+
+        replan_usage_idx = get_usage_index()
+        try:
+            new_plan = await asyncio.wait_for(
+                run_planner(
+                    db, config, session, user_role, enriched_message,
+                    user_skills=user_skills,
+                ),
+                timeout=planner_timeout,
+            )
+        except asyncio.TimeoutError:
+            log.error("Replan timed out after %ds", planner_timeout)
+            e_str = f"Replan timed out after {planner_timeout}s"
+            await update_plan_status(db, current_plan_id, "failed")
+            fail_detail = _build_failure_summary(
+                completed, remaining, current_goal, reason=f"Replan timed out: {e_str}",
+            )
+            try:
+                fail_text = await _msg_task(config, db, session, fail_detail, goal=current_goal)
+            except (LLMError, MessengerError):
+                fail_text = fail_detail
+            fail_task_id = await create_task(db, current_plan_id, session, "msg", fail_detail)
+            await update_task(db, fail_task_id, status="done", output=fail_text)
+            await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
+            break
+        except PlanError as e:
+            log.error("Replan failed: %s", e)
+            await update_plan_status(db, current_plan_id, "failed")
+            fail_detail = _build_failure_summary(
+                completed, remaining, current_goal, reason=f"Replan failed: {e}",
+            )
+            try:
+                fail_text = await _msg_task(config, db, session, fail_detail, goal=current_goal)
+            except (LLMError, MessengerError):
+                fail_text = fail_detail
+            fail_task_id = await create_task(db, current_plan_id, session, "msg", fail_detail)
+            await update_task(db, fail_task_id, status="done", output=fail_text)
+            await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
+            break
+
+        # Finalize old plan status
+        if is_self_directed:
+            await update_plan_status(db, current_plan_id, "done")
+        else:
+            await update_plan_status(db, current_plan_id, "failed")
+
+        # Create new plan with parent_id
+        new_plan_id = await create_plan(
+            db, session, msg_id, new_plan["goal"],
+            parent_id=current_plan_id,
+        )
+        await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
+        log.info("Replan %d (parent=%d): goal=%r, %d tasks",
+                 new_plan_id, current_plan_id, new_plan["goal"], len(new_plan["tasks"]))
+        if slog:
+            slog.info("Replan %d: %s (%d tasks, attempt %d/%d)",
+                      new_plan_id, new_plan["goal"], len(new_plan["tasks"]),
+                      replan_depth, max_replan_depth)
+
+        # Store replanner usage immediately
+        replan_planner_usage = get_usage_since(replan_usage_idx)
+        if replan_planner_usage["input_tokens"] or replan_planner_usage["output_tokens"]:
+            await update_plan_usage(
+                db, new_plan_id,
+                replan_planner_usage["input_tokens"],
+                replan_planner_usage["output_tokens"],
+                replan_planner_usage["model"],
+                llm_calls=replan_planner_usage.get("calls"),
+            )
+
+        # Handle extend_replan: planner can request up to +3 extra attempts
+        extend = new_plan.get("extend_replan")
+        if extend and isinstance(extend, int) and extend > 0:
+            extend = min(extend, 3)  # cap at +3
+            max_replan_depth += extend
+            log.info("Planner requested %d extra replan attempts (new limit: %d)",
+                     extend, max_replan_depth)
+
+        current_plan_id = new_plan_id
+        current_goal = new_plan["goal"]
+
+    return current_plan_id
 
 
 async def _process_message(
@@ -1110,7 +1423,7 @@ async def _process_message(
         await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
         await _deliver_webhook_if_configured(
             db, config, session, 0, error_text, True,
-            deploy_secrets=collect_deploy_secrets(config),
+            deploy_secrets=collect_deploy_secrets(),
         )
         return
     except PlanError as e:
@@ -1122,7 +1435,7 @@ async def _process_message(
         await update_task(db, fail_task_id, status="done", output=error_text)
         await update_plan_status(db, fail_plan_id, "failed")
         await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
-        deploy_secrets = collect_deploy_secrets(config)
+        deploy_secrets = collect_deploy_secrets()
         await _deliver_webhook_if_configured(
             db, config, session, 0, error_text, True,
             deploy_secrets=deploy_secrets,
@@ -1141,7 +1454,7 @@ async def _process_message(
             log.info("%d secrets extracted", len(session_secrets))
 
     # Sanitize secrets from task detail/args before DB storage
-    deploy_secrets = collect_deploy_secrets(config)
+    deploy_secrets = collect_deploy_secrets()
     for t in plan["tasks"]:
         t["detail"] = sanitize_output(t["detail"], deploy_secrets, session_secrets)
         if t.get("args"):
@@ -1164,286 +1477,14 @@ async def _process_message(
         )
 
     # Execute with replan loop
-    replan_history: list[dict] = []
-    current_plan_id = plan_id
-    current_goal = plan["goal"]
-    replan_depth = 0
+    current_plan_id = await _run_planning_loop(
+        db, config, session, msg_id, content,
+        plan_id, plan, user_role, user_skills, exec_timeout,
+        session_secrets, cancel_event, planner_timeout, max_replan_depth,
+        username, slog,
+    )
 
-    while True:
-        success, replan_reason, completed, remaining = await _execute_plan(
-            db, config, session, current_plan_id, current_goal,
-            content, exec_timeout, session_secrets=session_secrets,
-            username=username, cancel_event=cancel_event, slog=slog,
-        )
-
-        if success:
-            await update_plan_status(db, current_plan_id, "done")
-            log.info("Plan %d done", current_plan_id)
-            if slog:
-                slog.info("Plan %d done", current_plan_id)
-            # Bump fact usage for all facts (they contributed to a successful plan)
-            all_facts = await get_facts(db, is_admin=True)
-            if all_facts:
-                await update_fact_usage(db, [f["id"] for f in all_facts])
-            break
-
-        # --- Cancel handling ---
-        if replan_reason == "cancelled":
-            await update_plan_status(db, current_plan_id, "cancelled")
-            cancel_detail = _build_cancel_summary(
-                completed, remaining, current_goal,
-            )
-            try:
-                cancel_text = await _msg_task(
-                    config, db, session, cancel_detail,
-                    goal=current_goal,
-                )
-            except (LLMError, MessengerError):
-                cancel_text = cancel_detail  # fallback to raw summary
-            cancel_task_id = await create_task(
-                db, current_plan_id, session, "msg", cancel_detail,
-            )
-            await update_task(
-                db, cancel_task_id, status="done", output=cancel_text,
-            )
-            await save_message(
-                db, session, None, "system", cancel_text,
-                trusted=True, processed=True,
-            )
-            # Webhook
-            await _deliver_webhook_if_configured(
-                db, config, session, 0, cancel_text, True,
-                deploy_secrets=collect_deploy_secrets(config),
-                session_secrets=session_secrets,
-            )
-            if cancel_event is not None:
-                cancel_event.clear()  # reset for next message
-            break
-
-        if replan_reason is None:
-            # Failed without replan request (LLM error, review error, etc.)
-            await update_plan_status(db, current_plan_id, "failed")
-            log.info("Plan %d failed (no replan)", current_plan_id)
-            if slog:
-                slog.info("Plan %d failed", current_plan_id)
-            # Recovery msg task so the user gets LLM-generated feedback
-            fail_detail = _build_failure_summary(
-                completed, remaining, current_goal,
-            )
-            try:
-                fail_text = await _msg_task(config, db, session, fail_detail,
-                                            goal=current_goal)
-            except (LLMError, MessengerError):
-                fail_text = fail_detail
-            fail_task_id = await create_task(
-                db, current_plan_id, session, "msg", fail_detail,
-            )
-            await update_task(db, fail_task_id, status="done", output=fail_text)
-            await save_message(
-                db, session, None, "system", fail_text,
-                trusted=True, processed=True,
-            )
-            await _deliver_webhook_if_configured(
-                db, config, session, 0, fail_text, True,
-                deploy_secrets=collect_deploy_secrets(config),
-                session_secrets=session_secrets,
-            )
-            break
-
-        # Replan requested
-        replan_depth += 1
-        if replan_depth > max_replan_depth:
-            await update_plan_status(db, current_plan_id, "failed")
-            # Mark remaining tasks as failed
-            remaining_tasks = await get_tasks_for_plan(db, current_plan_id)
-            for t in remaining_tasks:
-                if t["status"] == "pending":
-                    await update_task(db, t["id"], "failed",
-                                      output="Max replan depth reached")
-            log.warning("Max replan depth (%d) reached for session=%s",
-                        max_replan_depth, session)
-            # Recovery msg task so the user gets LLM-generated feedback
-            replan_detail = _build_failure_summary(
-                completed, remaining, current_goal,
-                reason=f"Max replan depth ({max_replan_depth}) reached. "
-                       f"Last failure: {replan_reason}",
-            )
-            try:
-                replan_text = await _msg_task(config, db, session, replan_detail,
-                                              goal=current_goal)
-            except (LLMError, MessengerError):
-                replan_text = replan_detail
-            replan_task_id = await create_task(
-                db, current_plan_id, session, "msg", replan_detail,
-            )
-            await update_task(
-                db, replan_task_id, status="done", output=replan_text,
-            )
-            await save_message(
-                db, session, None, "system", replan_text,
-                trusted=True, processed=True,
-            )
-            await _deliver_webhook_if_configured(
-                db, config, session, 0, replan_text, True,
-                deploy_secrets=collect_deploy_secrets(config),
-                session_secrets=session_secrets,
-            )
-            break
-
-        # Detect self-directed replan
-        is_self_directed = replan_reason.startswith("Self-directed replan:")
-
-        # Set "replanning" status so the CLI knows to keep polling
-        await update_plan_status(db, current_plan_id, "replanning")
-
-        # Mark remaining tasks
-        current_tasks = await get_tasks_for_plan(db, current_plan_id)
-        for t in current_tasks:
-            if t["status"] == "pending":
-                await update_task(db, t["id"], "failed",
-                                  output="Superseded by replan")
-
-        # Build replan history
-        tried = [
-            f"[{t['type']}] {t['detail']}" for t in completed
-        ]
-        replan_history.append({
-            "goal": current_goal,
-            "failure": replan_reason,
-            "what_was_tried": tried,
-        })
-
-        # Notify user about replan (as a visible msg task + webhook)
-        if is_self_directed:
-            msg_text = f"Investigating... ({replan_depth}/{max_replan_depth})"
-        else:
-            msg_text = (
-                f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
-                f"{replan_reason}"
-            )
-        replan_notify_id = await create_task(
-            db, current_plan_id, session, "msg", msg_text,
-        )
-        await update_task(db, replan_notify_id, status="done", output=msg_text)
-        await save_message(
-            db, session, None, "system", msg_text,
-            trusted=True, processed=True,
-        )
-        await _deliver_webhook_if_configured(
-            db, config, session, replan_notify_id, msg_text, False,
-            deploy_secrets=collect_deploy_secrets(config),
-            session_secrets=session_secrets,
-        )
-
-        # --- Cancel check before replan ---
-        if cancel_event is not None and cancel_event.is_set():
-            await update_plan_status(db, current_plan_id, "cancelled")
-            break
-
-        # Call planner with enriched context
-        replan_context = _build_replan_context(
-            completed, remaining, replan_reason, replan_history,
-        )
-        enriched_message = f"{content}\n\n{replan_context}"
-
-        replan_usage_idx = get_usage_index()
-        try:
-            new_plan = await asyncio.wait_for(
-                run_planner(
-                    db, config, session, user_role, enriched_message,
-                    user_skills=user_skills,
-                ),
-                timeout=planner_timeout,
-            )
-        except asyncio.TimeoutError:
-            log.error("Replan timed out after %ds", planner_timeout)
-            e = f"Replan timed out after {planner_timeout}s"
-            await update_plan_status(db, current_plan_id, "failed")
-            fail_detail = _build_failure_summary(
-                completed, remaining, current_goal,
-                reason=f"Replan timed out: {e}",
-            )
-            try:
-                fail_text = await _msg_task(config, db, session, fail_detail,
-                                            goal=current_goal)
-            except (LLMError, MessengerError):
-                fail_text = fail_detail
-            fail_task_id = await create_task(
-                db, current_plan_id, session, "msg", fail_detail,
-            )
-            await update_task(db, fail_task_id, status="done", output=fail_text)
-            await save_message(
-                db, session, None, "system", fail_text,
-                trusted=True, processed=True,
-            )
-            break
-        except PlanError as e:
-            log.error("Replan failed: %s", e)
-            # Finalize plan status from "replanning" to "failed"
-            await update_plan_status(db, current_plan_id, "failed")
-            # Recovery msg task so the CLI displays feedback to the user
-            fail_detail = _build_failure_summary(
-                completed, remaining, current_goal,
-                reason=f"Replan failed: {e}",
-            )
-            try:
-                fail_text = await _msg_task(config, db, session, fail_detail,
-                                            goal=current_goal)
-            except (LLMError, MessengerError):
-                fail_text = fail_detail
-            fail_task_id = await create_task(
-                db, current_plan_id, session, "msg", fail_detail,
-            )
-            await update_task(db, fail_task_id, status="done", output=fail_text)
-            await save_message(
-                db, session, None, "system", fail_text,
-                trusted=True, processed=True,
-            )
-            break
-
-        # Finalize old plan status from "replanning" to its final state
-        if is_self_directed:
-            await update_plan_status(db, current_plan_id, "done")
-        else:
-            await update_plan_status(db, current_plan_id, "failed")
-
-        # Create new plan with parent_id
-        new_plan_id = await create_plan(
-            db, session, msg_id, new_plan["goal"],
-            parent_id=current_plan_id,
-        )
-        await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
-        log.info("Replan %d (parent=%d): goal=%r, %d tasks",
-                 new_plan_id, current_plan_id,
-                 new_plan["goal"], len(new_plan["tasks"]))
-        if slog:
-            slog.info("Replan %d: %s (%d tasks, attempt %d/%d)",
-                       new_plan_id, new_plan["goal"], len(new_plan["tasks"]),
-                       replan_depth, max_replan_depth)
-
-        # Store replanner usage immediately
-        replan_planner_usage = get_usage_since(replan_usage_idx)
-        if replan_planner_usage["input_tokens"] or replan_planner_usage["output_tokens"]:
-            await update_plan_usage(
-                db, new_plan_id,
-                replan_planner_usage["input_tokens"],
-                replan_planner_usage["output_tokens"],
-                replan_planner_usage["model"],
-                llm_calls=replan_planner_usage.get("calls"),
-            )
-
-        # Handle extend_replan: planner can request up to +3 extra attempts
-        extend = new_plan.get("extend_replan")
-        if extend and isinstance(extend, int) and extend > 0:
-            extend = min(extend, 3)  # cap at +3
-            max_replan_depth += extend
-            log.info("Planner requested %d extra replan attempts (new limit: %d)",
-                     extend, max_replan_depth)
-
-        current_plan_id = new_plan_id
-        current_goal = new_plan["goal"]
-
-    # --- Store token usage on the plan (before post-plan processing) ---
+    # --- Store token usage on the final plan ---
     # Only update totals; llm_calls is preserved (planner-only, set earlier).
     usage = get_usage_summary()
     if current_plan_id and (usage["input_tokens"] or usage["output_tokens"]):

@@ -19,7 +19,9 @@ from kiso.brain import (
     ReviewError,
     SummarizerError,
     _load_system_prompt,
+    _prompt_cache,
     _ROLES_DIR,
+    invalidate_prompt_cache,
     _strip_fences,
     build_classifier_messages,
     build_curator_messages,
@@ -59,6 +61,14 @@ from kiso.store import (
     save_message,
     init_db,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_prompt_cache():
+    """Ensure the prompt cache is clean before and after every test."""
+    invalidate_prompt_cache()
+    yield
+    invalidate_prompt_cache()
 
 
 # --- validate_plan ---
@@ -362,6 +372,48 @@ class TestLoadSystemPrompt:
         with patch("kiso.brain.KISO_DIR", tmp_path):
             with pytest.raises(FileNotFoundError, match="No prompt found for role 'nonexistent'"):
                 _load_system_prompt("nonexistent")
+
+
+# --- _load_system_prompt — cache (M65b) ---
+
+class TestLoadSystemPromptCache:
+    def test_result_is_cached_on_second_call(self, tmp_path):
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        role_file = roles_dir / "planner.md"
+        role_file.write_text("v1")
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            first = _load_system_prompt("planner")
+        # Overwrite file — cached value should still be returned
+        role_file.write_text("v2")
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            second = _load_system_prompt("planner")
+        assert first == "v1"
+        assert second == "v1"  # still cached
+
+    def test_invalidate_prompt_cache_clears_cache(self, tmp_path):
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        role_file = roles_dir / "planner.md"
+        role_file.write_text("v1")
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            _load_system_prompt("planner")
+        assert "planner" in _prompt_cache
+        invalidate_prompt_cache()
+        assert "planner" not in _prompt_cache
+
+    def test_after_invalidation_file_is_reread(self, tmp_path):
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        role_file = roles_dir / "planner.md"
+        role_file.write_text("v1")
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            _load_system_prompt("planner")
+        role_file.write_text("v2")
+        invalidate_prompt_cache()
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            result = _load_system_prompt("planner")
+        assert result == "v2"
 
 
 # --- build_planner_messages ---
@@ -779,8 +831,24 @@ class TestValidateReview:
 # --- build_reviewer_messages ---
 
 class TestBuildReviewerMessages:
+    def test_is_sync_function(self):
+        """M66e: build_reviewer_messages must be a plain def, not async def."""
+        import inspect
+        assert not inspect.iscoroutinefunction(build_reviewer_messages), (
+            "build_reviewer_messages has no awaits and must be a regular function"
+        )
+
+    def test_returns_list_directly(self):
+        """Calling without await returns a list immediately (not a coroutine)."""
+        import inspect
+        result = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m"
+        )
+        assert not inspect.iscoroutine(result), "Must not return a coroutine"
+        assert isinstance(result, list)
+
     async def test_basic_structure(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="Test goal",
             detail="echo hello",
             expect="prints hello",
@@ -792,7 +860,7 @@ class TestBuildReviewerMessages:
         assert msgs[1]["role"] == "user"
 
     async def test_contains_all_context(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="List files",
             detail="ls -la",
             expect="shows files",
@@ -812,7 +880,7 @@ class TestBuildReviewerMessages:
         assert "list directory contents" in content
 
     async def test_output_fenced(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e",
             output="some output",
             user_message="msg",
@@ -822,7 +890,7 @@ class TestBuildReviewerMessages:
         assert "some output" in content
 
     async def test_uses_reviewer_system_prompt(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
         )
         assert "task reviewer" in msgs[0]["content"]
@@ -832,7 +900,7 @@ class TestBuildReviewerMessages:
         roles_dir.mkdir()
         (roles_dir / "reviewer.md").write_text("My custom reviewer")
         with patch("kiso.brain.KISO_DIR", tmp_path):
-            msgs = await build_reviewer_messages(
+            msgs = build_reviewer_messages(
                 goal="g", detail="d", expect="e", output="o", user_message="m",
             )
         assert msgs[0]["content"] == "My custom reviewer"
@@ -840,7 +908,7 @@ class TestBuildReviewerMessages:
     # --- 21e: success param in reviewer context ---
 
     async def test_success_true_shows_succeeded(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
             success=True,
         )
@@ -849,7 +917,7 @@ class TestBuildReviewerMessages:
         assert "succeeded (exit code 0)" in content
 
     async def test_success_false_shows_failed(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
             success=False,
         )
@@ -858,7 +926,7 @@ class TestBuildReviewerMessages:
         assert "FAILED (non-zero exit code)" in content
 
     async def test_success_none_no_command_status(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
             success=None,
         )
@@ -866,7 +934,7 @@ class TestBuildReviewerMessages:
         assert "## Command Status" not in content
 
     async def test_success_default_no_command_status(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
         )
         content = msgs[1]["content"]
@@ -1403,7 +1471,7 @@ class TestPlannerMessagesFencing:
 
 class TestReviewerMessagesFencing:
     async def test_reviewer_messages_fence_output(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e",
             output="some task output",
             user_message="user msg",
@@ -1414,7 +1482,7 @@ class TestReviewerMessagesFencing:
         assert "some task output" in content
 
     async def test_reviewer_messages_fence_user_message(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e",
             output="output",
             user_message="the original user message",
@@ -2059,7 +2127,7 @@ class TestM47ReviewerPlanContext:
     """47b: reviewer receives Plan Context (not Plan Goal) and evaluates only expect."""
 
     async def test_reviewer_messages_use_plan_context_label(self):
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="Install Discord",
             detail="run apt-get install -f",
             expect="exits 0",
@@ -2127,7 +2195,7 @@ class TestM47ReviewerPlanContextEdgeCases:
 
     async def test_reviewer_messages_goal_text_present_as_context(self):
         """Goal text is still present in the message — just under Plan Context label."""
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="Install Discord on the system",
             detail="run apt-get install -f",
             expect="exits 0, no broken dependencies (0 changes acceptable)",
@@ -2143,7 +2211,7 @@ class TestM47ReviewerPlanContextEdgeCases:
 
     async def test_reviewer_messages_structure_order(self):
         """Plan Context comes before Task Detail which comes before Expected Outcome."""
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="some goal",
             detail="some detail",
             expect="some expect",
@@ -2158,7 +2226,7 @@ class TestM47ReviewerPlanContextEdgeCases:
 
     async def test_reviewer_messages_no_success_flag(self):
         """build_reviewer_messages works without success flag (no Command Status section)."""
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="goal",
             detail="detail",
             expect="expect",
@@ -2171,7 +2239,7 @@ class TestM47ReviewerPlanContextEdgeCases:
 
     async def test_reviewer_messages_with_success_false(self):
         """Failed exit code is reported correctly."""
-        msgs = await build_reviewer_messages(
+        msgs = build_reviewer_messages(
             goal="goal",
             detail="detail",
             expect="expect",

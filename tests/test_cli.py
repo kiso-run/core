@@ -11,12 +11,15 @@ import pytest
 from cli import (
     _ExitRepl,
     _POLL_EVERY,
+    _PollRenderState,
     _SLASH_COMMANDS,
     _handle_slash,
     _msg_cmd,
     _poll_status,
+    _render_plan_status,
     _save_readline_history,
     _setup_readline,
+    _should_stop_polling,
     build_parser,
     main,
     __version__,
@@ -2120,3 +2123,236 @@ class TestStatsSubcommand:
         assert args.since == 30
         assert args.session is None
         assert args.by == "model"
+
+
+# ── _should_stop_polling ──────────────────────────────────────
+
+
+class TestShouldStopPolling:
+    def test_plan_done_returns_true(self):
+        plan = {"id": 1, "message_id": 1, "status": "done"}
+        should_break, new_fp = _should_stop_polling(plan, [], 1, False, {}, 0)
+        assert should_break is True
+        assert new_fp == 0
+
+    def test_plan_running_returns_false(self):
+        plan = {"id": 1, "message_id": 1, "status": "running"}
+        should_break, new_fp = _should_stop_polling(plan, [], 1, False, {}, 0)
+        assert should_break is False
+
+    def test_plan_replanning_returns_false(self):
+        plan = {"id": 1, "message_id": 1, "status": "replanning"}
+        should_break, new_fp = _should_stop_polling(plan, [], 1, False, {}, 0)
+        assert should_break is False
+
+    def test_plan_none_returns_false(self):
+        should_break, new_fp = _should_stop_polling(None, [], 1, False, {}, 0)
+        assert should_break is False
+        assert new_fp == 0
+
+    def test_plan_different_message_id_returns_false(self):
+        plan = {"id": 1, "message_id": 99, "status": "done"}
+        should_break, new_fp = _should_stop_polling(plan, [], 1, False, {}, 5)
+        assert should_break is False
+        assert new_fp == 0  # reset because plan doesn't match
+
+    def test_failed_plan_worker_running_not_all_rendered(self):
+        """Don't break if plan failed but tasks not yet rendered."""
+        plan = {"id": 1, "message_id": 1, "status": "failed"}
+        tasks = [{"id": 5}]
+        seen = {}  # task 5 not rendered
+        should_break, new_fp = _should_stop_polling(plan, tasks, 1, True, seen, 5)
+        assert should_break is False
+        assert new_fp == 0  # reset
+
+    def test_failed_plan_worker_running_all_rendered_increments(self):
+        """Increment counter when plan failed + all rendered + worker running."""
+        plan = {"id": 1, "message_id": 1, "status": "failed"}
+        tasks = [{"id": 5}]
+        seen = {5: ("done", None, "", 0)}
+        should_break, new_fp = _should_stop_polling(plan, tasks, 1, True, seen, 5)
+        assert should_break is False
+        assert new_fp == 6
+
+    def test_failed_plan_worker_running_reaches_threshold(self):
+        """Break after 30 consecutive stable polls with failed plan."""
+        plan = {"id": 1, "message_id": 1, "status": "failed"}
+        tasks = [{"id": 5}]
+        seen = {5: ("done", None, "", 0)}
+        should_break, new_fp = _should_stop_polling(plan, tasks, 1, True, seen, 29)
+        assert should_break is True
+        assert new_fp == 30
+
+    def test_failed_plan_worker_stopped_returns_true(self):
+        """Break immediately if plan failed and worker is no longer running."""
+        plan = {"id": 1, "message_id": 1, "status": "failed"}
+        should_break, new_fp = _should_stop_polling(plan, [], 1, False, {}, 0)
+        assert should_break is True
+        assert new_fp == 0
+
+    def test_failed_plan_worker_running_empty_tasks_does_not_break(self):
+        """Plan failed, worker running, but no tasks yet → wait (all_rendered is falsy)."""
+        plan = {"id": 1, "message_id": 1, "status": "failed"}
+        # tasks=[] → 'tasks and all(...)' evaluates to [] (falsy) → reset fp
+        should_break, new_fp = _should_stop_polling(plan, [], 1, True, {}, 10)
+        assert should_break is False
+        assert new_fp == 0  # counter reset because not all_rendered
+
+    def test_fp_accumulates_across_calls(self):
+        """Multiple consecutive calls with same stable state accumulate fp correctly."""
+        plan = {"id": 1, "message_id": 1, "status": "failed"}
+        tasks = [{"id": 5}]
+        seen = {5: ("done", None, "", 0)}
+        fp = 0
+        for i in range(1, 31):
+            should_break, fp = _should_stop_polling(plan, tasks, 1, True, seen, fp)
+            if i < 30:
+                assert should_break is False, f"Should not break at iteration {i}"
+            else:
+                assert should_break is True
+
+
+# ── _render_plan_status ───────────────────────────────────────
+
+
+class TestRenderPlanStatus:
+    def _caps(self):
+        return TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+
+    def _state(self):
+        return _PollRenderState(seen={})
+
+    def test_renders_plan_goal(self, capsys):
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "Do the thing",
+                "llm_calls": None}
+        data = {"plan": plan, "tasks": [], "worker_running": True}
+        state = self._state()
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        out = capsys.readouterr().out
+        assert "Do the thing" in out
+        assert state.shown_plan_id == 1
+
+    def test_quiet_mode_skips_plan_output(self, capsys):
+        plan = {"id": 1, "message_id": 1, "status": "done", "goal": "Secret goal",
+                "llm_calls": None}
+        data = {"plan": plan, "tasks": [], "worker_running": False}
+        state = self._state()
+        _render_plan_status(data, 1, True, False, self._caps(), "Bot", state)
+        out = capsys.readouterr().out
+        assert "Secret goal" not in out
+
+    def test_quiet_mode_shows_done_msg_task(self, capsys):
+        plan = {"id": 1, "message_id": 1, "status": "done", "goal": "g", "llm_calls": None}
+        task = {"id": 5, "plan_id": 1, "type": "msg", "status": "done",
+                "output": "Hello!", "review_verdict": None, "substatus": None,
+                "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [task], "worker_running": False}
+        state = self._state()
+        _render_plan_status(data, 1, True, False, self._caps(), "Bot", state)
+        out = capsys.readouterr().out
+        assert "Hello!" in out
+
+    def test_replan_clears_seen_and_updates_shown_plan_id(self, capsys):
+        plan2 = {"id": 2, "message_id": 1, "status": "replanning", "goal": "Second plan",
+                 "llm_calls": None}
+        data2 = {"plan": plan2, "tasks": [], "worker_running": True}
+        state = self._state()
+        state.seen = {5: ("done", None, "", 0)}
+        state.shown_plan_id = 1  # already showed plan 1
+        _render_plan_status(data2, 1, False, False, self._caps(), "Bot", state)
+        assert state.shown_plan_id == 2
+        assert state.seen == {}  # cleared on replan
+
+    def test_updates_max_task_id(self, capsys):
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g", "llm_calls": None}
+        task = {"id": 7, "plan_id": 1, "type": "exec", "status": "running",
+                "output": "", "review_verdict": None, "substatus": None,
+                "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [task], "worker_running": True}
+        state = self._state()
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        assert state.max_task_id == 7
+
+    def test_ignores_tasks_from_different_plan(self, capsys):
+        plan = {"id": 1, "message_id": 1, "status": "done", "goal": "g", "llm_calls": None}
+        other_task = {"id": 99, "plan_id": 2, "type": "msg", "status": "done",
+                      "output": "other!", "review_verdict": None, "substatus": None,
+                      "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [other_task], "worker_running": False}
+        state = self._state()
+        tasks = _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        assert tasks == []  # task filtered out (belongs to plan 2)
+        assert state.max_task_id == 0  # unchanged
+
+    def test_returns_filtered_task_list(self, capsys):
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g", "llm_calls": None}
+        task = {"id": 3, "plan_id": 1, "type": "exec", "status": "done",
+                "output": "ok", "review_verdict": None, "substatus": None,
+                "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [task], "worker_running": False}
+        state = self._state()
+        tasks = _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        assert len(tasks) == 1
+        assert tasks[0]["id"] == 3
+
+    def test_plan_from_different_message_id_not_rendered(self, capsys):
+        """Plan with wrong message_id is not rendered and tasks are filtered out."""
+        plan = {"id": 1, "message_id": 99, "status": "done", "goal": "Other goal",
+                "llm_calls": None}
+        task = {"id": 5, "plan_id": 1, "type": "msg", "status": "done",
+                "output": "hidden", "review_verdict": None, "substatus": None,
+                "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [task], "worker_running": False}
+        state = self._state()
+        tasks = _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        out = capsys.readouterr().out
+        assert "Other goal" not in out
+        assert "hidden" not in out
+        assert tasks == []  # filtered out (current_plan_id = None → no tasks match)
+
+    def test_task_already_seen_not_re_rendered(self, capsys):
+        """Task with same key in seen is skipped on second call."""
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g", "llm_calls": None}
+        task = {"id": 3, "plan_id": 1, "type": "exec", "status": "done",
+                "output": "file.txt", "review_verdict": None, "substatus": None,
+                "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [task], "worker_running": True}
+        state = self._state()
+        # First call: task is new, rendered — output contains task type and output
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        out1 = capsys.readouterr().out
+        assert "exec" in out1
+        assert "file.txt" in out1
+        # Second call: same data, task key unchanged → not re-rendered
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        out2 = capsys.readouterr().out
+        assert "file.txt" not in out2
+
+    def test_planning_phase_set_when_worker_running_no_plan(self, capsys):
+        """planning_phase=True when worker running but no matching plan yet."""
+        data = {"plan": None, "tasks": [], "worker_running": True}
+        state = self._state()
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        assert state.planning_phase is True
+
+    def test_planning_phase_false_when_plan_done(self, capsys):
+        """planning_phase=False when plan is done."""
+        plan = {"id": 1, "message_id": 1, "status": "done", "goal": "g", "llm_calls": None}
+        data = {"plan": plan, "tasks": [], "worker_running": False}
+        state = self._state()
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        assert state.planning_phase is False
+
+    def test_non_quiet_exec_task_renders_header(self, capsys):
+        """Exec task in non-quiet mode prints a task header."""
+        plan = {"id": 1, "message_id": 1, "status": "done", "goal": "g", "llm_calls": None}
+        task = {"id": 2, "plan_id": 1, "type": "exec", "status": "done",
+                "detail": "ls -la", "output": "file.txt",
+                "review_verdict": None, "substatus": None,
+                "llm_calls": None, "command": None}
+        data = {"plan": plan, "tasks": [task], "worker_running": False}
+        state = self._state()
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        out = capsys.readouterr().out
+        assert "exec" in out  # task type shown in header
+        assert "file.txt" in out

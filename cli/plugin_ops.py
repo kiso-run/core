@@ -5,7 +5,12 @@ from __future__ import annotations
 import getpass
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
+import tomllib
+from pathlib import Path
 
 from kiso.config import KISO_DIR, load_config
 
@@ -98,3 +103,150 @@ def search_entries(entries: list[dict], query: str | None) -> list[dict]:
     if by_name:
         return by_name
     return [e for e in entries if q in e.get("description", "").lower()]
+
+
+def _plugin_install(
+    plugin_type: str,
+    official_prefix: str,
+    parent_dir: Path,
+    validate_fn,
+    check_deps_fn,
+    args,
+    post_install=None,
+) -> None:
+    """Shared install logic for skills and connectors.
+
+    Args:
+        plugin_type: "skill" or "connector" — used in user-facing messages.
+        official_prefix: Git repo name prefix ("skill-" or "connector-").
+        parent_dir: Directory where the plugin is installed (SKILLS_DIR/CONNECTORS_DIR).
+        validate_fn: callable(manifest, plugin_dir) -> list[str] — manifest validator.
+        check_deps_fn: callable(plugin_info) -> list[str] — binary deps checker.
+        args: argparse Namespace with .target, .name, .show_deps, .no_deps.
+        post_install: optional callable(manifest, plugin_dir, name) for type-specific
+            post-install steps (env var warnings, config copy, usage guide, etc.).
+    """
+    from kiso.sysenv import invalidate_cache
+
+    target = args.target
+    if is_url(target):
+        git_url = target
+        name = args.name or url_to_name(target)
+        is_official = False
+    else:
+        git_url = f"https://github.com/{OFFICIAL_ORG}/{official_prefix}{target}.git"
+        name = target
+        is_official = True
+
+    # --show-deps: clone to temp, show deps.sh, then cleanup without installing
+    if args.show_deps:
+        tmpdir = tempfile.mkdtemp()
+        try:
+            result = subprocess.run(
+                ["git", "clone", git_url, tmpdir],
+                capture_output=True, text=True, env=_GIT_ENV,
+            )
+            if result.returncode != 0:
+                if is_official and is_repo_not_found(result.stderr):
+                    print(f"error: {plugin_type} '{name}' not found in {OFFICIAL_ORG} org")
+                else:
+                    print(f"error: git clone failed: {result.stderr.strip()}")
+                sys.exit(1)
+            deps_path = Path(tmpdir) / "deps.sh"
+            if deps_path.exists():
+                print(deps_path.read_text())
+            else:
+                print(f"No deps.sh in this {plugin_type}.")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        return
+
+    plugin_dir = parent_dir / name
+
+    if plugin_dir.exists():
+        print(f"error: {plugin_type} '{name}' is already installed at {plugin_dir}")
+        sys.exit(1)
+
+    try:
+        parent_dir.mkdir(parents=True, exist_ok=True)
+
+        result = subprocess.run(
+            ["git", "clone", git_url, str(plugin_dir)],
+            capture_output=True, text=True, env=_GIT_ENV,
+        )
+        if result.returncode != 0:
+            if is_official and is_repo_not_found(result.stderr):
+                print(f"error: {plugin_type} '{name}' not found in {OFFICIAL_ORG} org")
+            else:
+                print(f"error: git clone failed: {result.stderr.strip()}")
+            raise RuntimeError("git clone failed")
+
+        # Mark as installing (prevents discovery during install)
+        (plugin_dir / ".installing").touch()
+
+        # Validate manifest
+        toml_path = plugin_dir / "kiso.toml"
+        if not toml_path.exists():
+            print("error: kiso.toml not found in cloned repo")
+            raise RuntimeError("missing kiso.toml")
+
+        with open(toml_path, "rb") as f:
+            manifest = tomllib.load(f)
+
+        errors = validate_fn(manifest, plugin_dir)
+        if errors:
+            for e in errors:
+                print(f"error: {e}")
+            raise RuntimeError("manifest validation failed")
+
+        # Unofficial repo warning
+        if not is_official:
+            print(f"WARNING: This is an unofficial {plugin_type} repo.")
+            deps_path = plugin_dir / "deps.sh"
+            if deps_path.exists():
+                print("\ndeps.sh contents:")
+                print(deps_path.read_text())
+            answer = input("Continue? [y/N] ").strip().lower()
+            if answer != "y":
+                print("Installation cancelled.")
+                raise RuntimeError("cancelled")
+
+        # uv sync first (deps.sh may need packages installed by uv)
+        subprocess.run(
+            ["uv", "sync"],
+            cwd=str(plugin_dir),
+            capture_output=True, text=True,
+        )
+
+        # Run deps.sh if present and not --no-deps
+        deps_path = plugin_dir / "deps.sh"
+        if deps_path.exists() and not args.no_deps:
+            result = subprocess.run(
+                ["bash", str(deps_path)],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                print(f"warning: deps.sh failed: {result.stderr.strip()}")
+
+        # Check binary deps
+        plugin_info = {"path": str(plugin_dir)}
+        missing = check_deps_fn(plugin_info)
+        if missing:
+            print(f"warning: missing binaries: {', '.join(missing)}")
+
+        # Type-specific post-install steps (env var check, config copy, etc.)
+        if post_install is not None:
+            post_install(manifest, plugin_dir, name)
+
+        # Remove installing marker
+        installing = plugin_dir / ".installing"
+        if installing.exists():
+            installing.unlink()
+
+        print(f"{plugin_type.capitalize()} '{name}' installed successfully.")
+        invalidate_cache()
+
+    except Exception:
+        if plugin_dir.exists():
+            shutil.rmtree(plugin_dir, ignore_errors=True)
+        sys.exit(1)

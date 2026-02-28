@@ -34,11 +34,22 @@ from kiso.worker import (
     _apply_curator_result,
     _build_cancel_summary, _build_exec_env, _build_failure_summary,
     _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
-    _report_pub_files, _skill_task, _session_workspace,
+    _report_pub_files, _run_subprocess, _skill_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
+)
+from kiso.worker.loop import (
+    _PlanCtx,
+    _TASK_HANDLERS,
+    _TaskHandlerResult,
+    _handle_exec_task,
+    _handle_msg_task,
+    _handle_replan_task,
+    _handle_search_task,
+    _handle_skill_task,
+    _run_planning_loop,
 )
 
 from contextlib import contextmanager
@@ -119,6 +130,91 @@ def _make_config(**overrides) -> Config:
     return Config(**defaults)
 
 
+# --- _run_subprocess ---
+
+class TestRunSubprocess:
+    async def test_success_shell(self, tmp_path):
+        """Shell subprocess returns stdout/stderr and success=True on exit 0."""
+        stdout, stderr, success = await _run_subprocess(
+            "echo hello",
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=5,
+            cwd=str(tmp_path),
+            shell=True,
+        )
+        assert stdout.strip() == "hello"
+        assert success is True
+
+    async def test_nonzero_exit_returns_false(self, tmp_path):
+        """Non-zero exit code → success=False."""
+        _, _, success = await _run_subprocess(
+            "exit 1",
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=5,
+            cwd=str(tmp_path),
+            shell=True,
+        )
+        assert success is False
+
+    async def test_timeout_kills_process(self, tmp_path):
+        """TimeoutError → process killed, returns Timed out."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_proc = MagicMock()
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        mock_proc.communicate = _hang
+
+        with patch("kiso.worker.utils.asyncio.create_subprocess_shell", AsyncMock(return_value=mock_proc)):
+            _, stderr, success = await _run_subprocess(
+                "sleep 999",
+                env={},
+                timeout=0.01,
+                cwd=str(tmp_path),
+                shell=True,
+            )
+
+        assert success is False
+        assert "Timed out" in stderr
+        mock_proc.kill.assert_called_once()
+        mock_proc.wait.assert_awaited_once()
+
+    async def test_oserror_returns_error(self, tmp_path):
+        """OSError (e.g. executable not found) → success=False, error in stderr."""
+        from unittest.mock import AsyncMock, patch
+
+        with patch(
+            "kiso.worker.utils.asyncio.create_subprocess_exec",
+            AsyncMock(side_effect=OSError("No such file")),
+        ):
+            _, stderr, success = await _run_subprocess(
+                ["/nonexistent/binary"],
+                env={},
+                timeout=5,
+                cwd=str(tmp_path),
+            )
+
+        assert success is False
+        assert "No such file" in stderr
+
+    async def test_exec_mode_with_stdin(self, tmp_path):
+        """Non-shell mode with stdin_data passes data to the process."""
+        import sys as _sys
+        stdout, _, success = await _run_subprocess(
+            [_sys.executable, "-c", "import sys; print(sys.stdin.read().strip())"],
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=5,
+            cwd=str(tmp_path),
+            stdin_data=b"hello from stdin",
+        )
+        assert success is True
+        assert "hello from stdin" in stdout
+
+
 # --- _exec_task ---
 
 class TestExecTask:
@@ -181,7 +277,7 @@ class TestExecTask:
 
         mock_proc.communicate = _hang
 
-        with patch("kiso.worker.exec.asyncio.create_subprocess_shell", AsyncMock(return_value=mock_proc)), \
+        with patch("kiso.worker.utils.asyncio.create_subprocess_shell", AsyncMock(return_value=mock_proc)), \
              _patch_kiso_dir(tmp_path):
             _, stderr, success = await _exec_task("test-sess", "sleep 999", 0.01)
 
@@ -2382,7 +2478,7 @@ class TestSkillTask:
             "name": "s", "summary": "s", "args_schema": {}, "env": {},
             "session_secrets": [], "path": str(tmp_path), "version": "0.1.0", "description": "",
         }
-        with patch("kiso.worker.skill.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)), \
+        with patch("kiso.worker.utils.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)), \
              _patch_kiso_dir(tmp_path):
             _, stderr, success = await _skill_task("sess1", skill, {}, None, None, 0.01)
 
@@ -6595,3 +6691,477 @@ class TestM48ApplyCuratorCategory:
         assert django_row[2] == "project"
         assert user_row[1] == "sess1"     # user: session-scoped
         assert user_row[2] == "user"
+
+
+# ---------------------------------------------------------------------------
+# M62: Tests for task handlers (62a) and planning loop (62c)
+# ---------------------------------------------------------------------------
+
+def _make_ctx(db, config=None, plan_outputs=None, installed_skills=None) -> _PlanCtx:
+    """Build a minimal _PlanCtx for handler tests."""
+    from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
+    if config is None:
+        config = _make_config()
+    return _PlanCtx(
+        db=db,
+        config=config,
+        session="sess1",
+        goal="Test goal",
+        user_message="test message",
+        exec_timeout=5,
+        deploy_secrets={},
+        session_secrets={},
+        max_output_size=1024 * 1024,
+        max_worker_retries=1,
+        installed_skills=installed_skills or [],
+        slog=None,
+        sandbox_uid=None,
+        plan_outputs=plan_outputs if plan_outputs is not None else [],
+    )
+
+
+async def _make_task_row(db, plan_id, task_type, detail="Test task", **kwargs):
+    """Create a task in the DB and return its row dict."""
+    from kiso.store import get_tasks_for_plan
+    task_id = await create_task(db, plan_id, "sess1", task_type, detail, **kwargs)
+    tasks = await get_tasks_for_plan(db, plan_id)
+    return next(t for t in tasks if t["id"] == task_id)
+
+
+class TestTaskHandlers:
+    """Unit tests for the individual task handler functions (M62a)."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    @pytest.fixture()
+    async def plan_id(self, db):
+        pid = await create_plan(db, "sess1", 0, "Test plan")
+        yield pid
+
+    async def test_task_handlers_dict_has_all_types(self):
+        """_TASK_HANDLERS covers all 5 task types."""
+        assert set(_TASK_HANDLERS.keys()) == {"exec", "msg", "skill", "search", "replan"}
+
+    # --- _handle_replan_task ---
+
+    async def test_handle_replan_task_returns_stop_with_reason(self, db, plan_id):
+        """replan handler marks task done and returns stop with Self-directed replan reason."""
+        task_row = await _make_task_row(db, plan_id, "replan", "Need to check logs first")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        result = await _handle_replan_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert "Self-directed replan" in result.stop_replan
+        assert "Need to check logs first" in result.stop_replan
+        assert result.completed_row is not None
+        assert result.completed_row["status"] == "done"
+
+    # --- _handle_msg_task ---
+
+    async def test_handle_msg_task_success(self, db, plan_id, tmp_path):
+        """msg handler calls messenger and returns completed_row."""
+        task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="Hello!"), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_msg_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is False
+        assert result.completed_row is not None
+        assert result.completed_row["status"] == "done"
+        assert result.completed_row["output"] == "Hello!"
+        # plan_outputs accumulates the result
+        assert len(ctx.plan_outputs) == 1
+        assert ctx.plan_outputs[0]["type"] == "msg"
+
+    async def test_handle_msg_task_messenger_error_returns_stop(self, db, plan_id, tmp_path):
+        """msg handler returns stop=True on LLMError."""
+        task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("API down")), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_msg_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.completed_row is None
+
+    # --- _handle_skill_task ---
+
+    async def test_handle_skill_task_not_installed_returns_stop(self, db, plan_id, tmp_path):
+        """skill handler returns stop=True when skill is not installed."""
+        task_row = await _make_task_row(
+            db, plan_id, "skill", "Search for something",
+            skill="missing-skill", args="{}"
+        )
+        ctx = _make_ctx(db, installed_skills=[])  # no skills installed
+        tasks = [task_row]
+        with _patch_kiso_dir(tmp_path):
+            result = await _handle_skill_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.completed_row is None
+
+    async def test_handle_skill_task_invalid_json_args_returns_stop(self, db, plan_id, tmp_path):
+        """skill handler returns stop=True when args JSON is malformed."""
+        skill_info = {
+            "name": "test-skill",
+            "summary": "A test skill",
+            "args_schema": {},
+            "env": {},
+            "session_secrets": [],
+            "path": "/fake/path",
+        }
+        task_row = await _make_task_row(
+            db, plan_id, "skill", "Run test skill",
+            skill="test-skill", args="{invalid json}"
+        )
+        ctx = _make_ctx(db, installed_skills=[skill_info])
+        tasks = [task_row]
+        with _patch_kiso_dir(tmp_path):
+            result = await _handle_skill_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is True
+        assert result.completed_row is None
+
+    # --- _handle_exec_task ---
+
+    async def test_handle_exec_task_translator_error_returns_stop(self, db, plan_id, tmp_path):
+        """exec handler returns stop=True when translator raises ExecTranslatorError."""
+        task_row = await _make_task_row(db, plan_id, "exec", "list files")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        with patch(
+            "kiso.worker.loop.run_exec_translator",
+            new_callable=AsyncMock,
+            side_effect=ExecTranslatorError("LLM failed"),
+        ), _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.completed_row is None
+
+    async def test_handle_exec_task_success(self, db, plan_id, tmp_path):
+        """exec handler runs command, reviews, and returns completed_row on success."""
+        task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        with _patch_translator(), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                   return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is False
+        assert result.completed_row is not None
+        assert result.completed_row["status"] == "done"
+
+    # --- _handle_search_task ---
+
+    async def test_handle_search_task_success(self, db, plan_id, tmp_path):
+        """search handler runs search, reviews, and returns completed_row."""
+        task_row = await _make_task_row(db, plan_id, "search", "find Python docs")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        with patch(
+            "kiso.worker.loop._search_task",
+            new_callable=AsyncMock,
+            return_value="Found: https://docs.python.org",
+        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                 return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_search_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is False
+        assert result.completed_row is not None
+        assert result.completed_row["status"] == "done"
+        assert len(ctx.plan_outputs) == 1
+        assert ctx.plan_outputs[0]["type"] == "search"
+
+    async def test_handle_search_task_error_returns_stop(self, db, plan_id, tmp_path):
+        """search handler returns stop=True on SearcherError."""
+        from kiso.worker.search import SearcherError
+        task_row = await _make_task_row(db, plan_id, "search", "find something")
+        ctx = _make_ctx(db)
+        tasks = [task_row]
+        with patch(
+            "kiso.worker.loop._search_task",
+            new_callable=AsyncMock,
+            side_effect=SearcherError("Search API down"),
+        ), _patch_kiso_dir(tmp_path):
+            result = await _handle_search_task(ctx, task_row, 0, tasks, 0)
+
+        assert result.stop is True
+        assert result.completed_row is None
+
+
+class TestRunPlanningLoop:
+    """Tests for _run_planning_loop (M62c)."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_success_returns_plan_id(self, db, tmp_path):
+        """On success, _run_planning_loop returns the plan_id."""
+        plan = VALID_PLAN
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        msg_id = 0
+        config = _make_config()
+
+        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Done!"), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", msg_id, "hello",
+                plan_id, plan, "admin", None, 5,
+                {}, None, 10, 3, None, None,
+            )
+
+        assert returned_id == plan_id
+
+        from kiso.store import get_plan_for_session
+        p = await get_plan_for_session(db, "sess1")
+        assert p["status"] == "done"
+
+    async def test_failure_no_replan_path(self, db, tmp_path):
+        """On _execute_plan failure (no replan), loop handles failure and breaks."""
+        plan = {
+            "goal": "Do something",
+            "secrets": None,
+            "tasks": [
+                {"type": "msg", "detail": "Say hi", "skill": None, "args": None, "expect": None},
+            ],
+        }
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = _make_config()
+
+        # Messenger fails → _execute_plan returns (False, None, ...)
+        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   side_effect=LLMError("API down")), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 5,
+                {}, None, 10, 3, None, None,
+            )
+
+        assert returned_id == plan_id
+        from kiso.store import get_plan_for_session
+        p = await get_plan_for_session(db, "sess1")
+        assert p["status"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# M66a: _post_plan_knowledge parallelismo
+# ---------------------------------------------------------------------------
+
+
+class TestPostPlanKnowledgeParallel:
+    """Tests that Curator+Summarizer run concurrently and Consolidation sees
+    Curator's results (correct phase ordering)."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _cfg(self, **extra):
+        return _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            **extra,
+        })
+
+    async def test_curator_error_does_not_prevent_summarizer(self, db, tmp_path):
+        """CuratorError in phase-1 must not prevent Summarizer from running."""
+        await save_learning(db, "a learning", "sess1")
+        await save_message(db, "sess1", "alice", "user", "hi", processed=True)
+        config = self._cfg(summarize_threshold=1)
+
+        summarizer_called = []
+
+        async def _ok_summarizer(*a, **kw):
+            summarizer_called.append(True)
+            return "new summary"
+
+        with patch("kiso.worker.loop.run_curator",
+                   new_callable=AsyncMock, side_effect=CuratorError("boom")), \
+             patch("kiso.worker.loop.run_summarizer", side_effect=_ok_summarizer):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert summarizer_called, "Summarizer must run even if Curator fails"
+
+    async def test_summarizer_error_does_not_prevent_curator(self, db, tmp_path):
+        """SummarizerError in phase-1 must not prevent Curator from running."""
+        await save_learning(db, "a learning", "sess1")
+        await save_message(db, "sess1", "alice", "user", "hi", processed=True)
+        config = self._cfg(summarize_threshold=1)
+
+        curator_called = []
+        curator_result = {"evaluations": [{"learning_id": 1, "verdict": "discard",
+                                           "fact": None, "category": None,
+                                           "question": None, "reason": "r"}]}
+
+        async def _ok_curator(*a, **kw):
+            curator_called.append(True)
+            return curator_result
+
+        with patch("kiso.worker.loop.run_curator", side_effect=_ok_curator), \
+             patch("kiso.worker.loop.run_summarizer",
+                   new_callable=AsyncMock, side_effect=SummarizerError("boom")):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert curator_called, "Curator must run even if Summarizer fails"
+
+    async def test_consolidation_runs_after_curator_promotes_fact(self, db, tmp_path):
+        """Fact consolidation (Phase 2) must see facts promoted by Curator (Phase 1)."""
+        # Add a learning that curator will promote to a fact
+        lid = await save_learning(db, "promoted fact content", "sess1")
+        promote_result = {
+            "evaluations": [{
+                "learning_id": lid,
+                "verdict": "promote",
+                "fact": "promoted fact content",
+                "category": "general",
+                "question": None,
+                "reason": "good fact",
+            }]
+        }
+        # Set knowledge_max_facts=0 so consolidation always triggers
+        config = self._cfg(knowledge_max_facts=0, summarize_threshold=99999)
+
+        consolidation_input: list[list] = []
+
+        async def _capture_consolidation(cfg, facts, **kw):
+            consolidation_input.append([f["content"] for f in facts])
+            return facts  # return as-is (no actual consolidation)
+
+        with patch("kiso.worker.loop.run_curator",
+                   new_callable=AsyncMock, return_value=promote_result), \
+             patch("kiso.worker.loop.run_fact_consolidation",
+                   side_effect=_capture_consolidation):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert consolidation_input, "Consolidation must be called"
+        seen = consolidation_input[0]
+        assert "promoted fact content" in seen, (
+            "Consolidation must see fact promoted by Curator in Phase 1; got: %s" % seen
+        )
+
+    async def test_decay_error_does_not_prevent_archive(self, db, tmp_path):
+        """Exception in decay must not prevent archive from running."""
+        config = self._cfg(summarize_threshold=99999)
+        archive_called = []
+
+        with patch("kiso.worker.loop.decay_facts",
+                   new_callable=AsyncMock, side_effect=RuntimeError("disk full")), \
+             patch("kiso.worker.loop.archive_low_confidence_facts",
+                   new_callable=AsyncMock,
+                   side_effect=lambda *a, **kw: archive_called.append(True) or 0):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert archive_called, "Archive must run even if decay fails"
+
+    async def test_archive_error_does_not_prevent_decay(self, db, tmp_path):
+        """Exception in archive must not prevent decay from running."""
+        config = self._cfg(summarize_threshold=99999)
+        decay_called = []
+
+        with patch("kiso.worker.loop.decay_facts",
+                   new_callable=AsyncMock,
+                   side_effect=lambda *a, **kw: decay_called.append(True) or 0), \
+             patch("kiso.worker.loop.archive_low_confidence_facts",
+                   new_callable=AsyncMock, side_effect=RuntimeError("oom")):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert decay_called, "Decay must run even if archive fails"
+
+    async def test_curator_timeout_does_not_prevent_summarizer(self, db, tmp_path):
+        """Curator timeout (phase-1) must not block summarizer from running."""
+        await save_learning(db, "slow learning", "sess1")
+        await save_message(db, "sess1", "alice", "user", "hi", processed=True)
+        config = self._cfg(summarize_threshold=1)
+
+        summarizer_called = []
+
+        async def _instant_summarizer(*a, **kw):
+            summarizer_called.append(True)
+            return "summary"
+
+        async def _slow_curator(*a, **kw):
+            await asyncio.sleep(999)
+            return {"evaluations": []}
+
+        with patch("kiso.worker.loop.run_curator", side_effect=_slow_curator), \
+             patch("kiso.worker.loop.run_summarizer", side_effect=_instant_summarizer):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=1)
+
+        assert summarizer_called, (
+            "Summarizer must complete even when Curator times out — "
+            "they run concurrently in phase 1"
+        )
+
+
+# --- M66i: _PlanCtx type annotations + long import line ---
+
+
+class TestPlanCtxTypeAnnotations:
+    def test_deploy_secrets_typed_as_str_str_dict(self):
+        """deploy_secrets field must be annotated dict[str, str], not bare dict."""
+        import dataclasses
+        import typing
+        hints = typing.get_type_hints(_PlanCtx)
+        assert hints["deploy_secrets"] == dict[str, str]
+
+    def test_session_secrets_typed_as_str_str_dict(self):
+        """session_secrets field must be annotated dict[str, str], not bare dict."""
+        import dataclasses
+        import typing
+        hints = typing.get_type_hints(_PlanCtx)
+        assert hints["session_secrets"] == dict[str, str]
+
+    def test_installed_skills_typed_as_list_dict(self):
+        """installed_skills field must be annotated list[dict], not bare list."""
+        import typing
+        hints = typing.get_type_hints(_PlanCtx)
+        assert hints["installed_skills"] == list[dict]
+
+    def test_plan_outputs_typed_as_list_dict(self):
+        """plan_outputs field must be annotated list[dict], not bare list."""
+        import typing
+        hints = typing.get_type_hints(_PlanCtx)
+        assert hints["plan_outputs"] == list[dict]
+
+    def test_llm_import_line_length(self):
+        """The kiso.llm import in loop.py must not be a single long line (> 100 chars)."""
+        from pathlib import Path
+        loop_src = (Path(__file__).parent.parent / "kiso" / "worker" / "loop.py").read_text()
+        for line in loop_src.splitlines():
+            if "from kiso.llm import" in line:
+                assert len(line) <= 100, (
+                    f"kiso.llm import line is too long ({len(line)} chars): {line!r}"
+                )

@@ -11,6 +11,10 @@
     {
       "name": "browser",
       "description": "Headless WebKit browser automation — navigate pages, snapshot interactive elements, click, fill forms, take screenshots"
+    },
+    {
+      "name": "moltbook",
+      "description": "Moltbook social network for AI agents — publish posts, browse feed, comment, upvote, send DMs, check notifications"
     }
   ],
   "connectors": [

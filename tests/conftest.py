@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 
 from kiso.config import load_config
-from kiso.main import app
+from kiso.main import app, _init_app_state
 from kiso.store import init_db
 
 
@@ -142,8 +142,7 @@ async def client(tmp_path: Path, test_config_path: Path):
     doesn't trigger lifespan events).
     """
     db_conn = await init_db(tmp_path / "client_test.db")
-    app.state.config = load_config(test_config_path)
-    app.state.db = db_conn
+    _init_app_state(app, load_config(test_config_path), db_conn)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

@@ -11,7 +11,7 @@ import pytest
 
 import re
 
-from kiso.main import _init_kiso_dirs
+from kiso.main import _init_kiso_dirs, _init_app_state, _load_env_file
 from kiso.store import (
     create_plan,
     create_session,
@@ -208,3 +208,89 @@ def test_dockerfile_uvicorn_module_is_importable():
         f"Module '{module_path}' has no attribute '{attr}' — "
         f"Dockerfile CMD is pointing at the wrong module"
     )
+
+
+# --- _init_app_state (M65h) ---
+
+class TestInitAppState:
+    def test_sets_config_and_db_on_app_state(self, test_config_path, tmp_path):
+        """_init_app_state sets both config and db on the FastAPI app state."""
+        from fastapi import FastAPI
+        from kiso.config import load_config
+        from kiso.main import app, _init_app_state
+
+        cfg = load_config(test_config_path)
+        sentinel_db = object()  # just a marker
+        _init_app_state(app, cfg, sentinel_db)
+
+        assert app.state.config is cfg
+        assert app.state.db is sentinel_db
+
+    def test_overwrites_previous_state(self, test_config_path, tmp_path):
+        """Calling _init_app_state twice replaces state each time."""
+        from kiso.config import load_config
+        from kiso.main import app, _init_app_state
+
+        cfg = load_config(test_config_path)
+        db1, db2 = object(), object()
+
+        _init_app_state(app, cfg, db1)
+        assert app.state.db is db1
+
+        _init_app_state(app, cfg, db2)
+        assert app.state.db is db2
+
+
+# --- M66g: import json module-level + encoding ---
+
+
+class TestStripLlmVerboseModuleJson:
+    def test_uses_module_level_json(self):
+        """json must be imported at module level, not inside _strip_llm_verbose."""
+        import kiso.main as main_mod
+
+        # The module attribute 'json' must be the stdlib json module
+        assert main_mod.json is json
+
+    def test_no_local_import_in_source(self):
+        """_strip_llm_verbose must not contain a local 'import json' statement."""
+        import inspect
+        import kiso.main as main_mod
+
+        source = inspect.getsource(main_mod._strip_llm_verbose)
+        assert "import json" not in source
+
+
+class TestLoadEnvFile:
+    def test_reads_utf8_values(self, tmp_path):
+        """_load_env_file must correctly read UTF-8 encoded env files."""
+        env_file = tmp_path / ".env"
+        env_file.write_text('GREETING=héllo wörld\n', encoding="utf-8")
+        result = _load_env_file(env_file)
+        assert result["GREETING"] == "héllo wörld"
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        """Non-existent file returns an empty dict."""
+        result = _load_env_file(tmp_path / "no-such-file.env")
+        assert result == {}
+
+    def test_skips_comments_and_blanks(self, tmp_path):
+        """Lines starting with # and blank lines are ignored."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "# comment\n\nKEY=val\n  # indented\n",
+            encoding="utf-8",
+        )
+        result = _load_env_file(env_file)
+        assert result == {"KEY": "val"}
+
+    def test_strips_quoted_values(self, tmp_path):
+        """Single and double quoted values are unquoted."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            'A="double"\nB=\'single\'\n',
+            encoding="utf-8",
+        )
+        result = _load_env_file(env_file)
+        assert result["A"] == "double"
+        assert result["B"] == "single"

@@ -1,6 +1,6 @@
 # Logging
 
-Plain text log files. Append-only, human-readable, `tail -f` friendly.
+Plain text log files, human-readable, `tail -f` friendly.
 
 ## Server Log
 
@@ -72,4 +72,4 @@ Everything that happens in a session, including full task output inline.
 [2026-02-13 10:30:24] planner: 3 new tasks (goal: "Add JWT auth using Flask patterns")
 ```
 
-One file per session, full output inline. `grep` and `tail` are all you need.
+Session log is rotated at 2 MB (up to 2 backups: `session.log.1`, `session.log.2`). Server log is rotated at 5 MB (up to 3 backups). Full output inline — `grep` and `tail` are all you need.

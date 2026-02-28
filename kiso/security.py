@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import re
 import secrets
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 from kiso.config import Config, LLM_API_KEY_ENV
+
+log = logging.getLogger(__name__)
 
 
 def escape_fence_delimiters(content: str) -> str:
@@ -89,8 +92,8 @@ def build_secret_variants(value: str) -> list[str]:
     variants = {value}
     try:
         variants.add(base64.b64encode(value.encode()).decode())
-    except Exception:
-        pass
+    except Exception as exc:
+        log.error("build_secret_variants: base64 encoding failed: %s", exc)
     encoded = quote(value, safe="")
     if encoded != value:
         variants.add(encoded)
@@ -112,7 +115,7 @@ def sanitize_output(
     return output
 
 
-def collect_deploy_secrets(config=None) -> dict[str, str]:
+def collect_deploy_secrets() -> dict[str, str]:
     """Collect KISO_SKILL_*, KISO_CONNECTOR_* env vars + LLM API key."""
     secrets: dict[str, str] = {}
     for k, v in os.environ.items():

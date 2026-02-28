@@ -15,6 +15,9 @@ _SERVER_LOG = "server.log"
 _SERVER_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 _SERVER_BACKUP_COUNT = 3
 
+_SESSION_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
+_SESSION_BACKUP_COUNT = 2
+
 
 def setup_logging(level: int = logging.INFO) -> None:
     """Configure the ``kiso`` root logger.
@@ -64,7 +67,11 @@ class SessionLogger:
         fmt = logging.Formatter(_LOG_FMT, datefmt=_LOG_DATEFMT)
         log_dir = base / "sessions" / session
         log_dir.mkdir(parents=True, exist_ok=True)
-        self._handler = logging.FileHandler(log_dir / "session.log")
+        self._handler = logging.handlers.RotatingFileHandler(
+            log_dir / "session.log",
+            maxBytes=_SESSION_MAX_BYTES,
+            backupCount=_SESSION_BACKUP_COUNT,
+        )
         self._handler.setFormatter(fmt)
         self._logger.addHandler(self._handler)
 
@@ -76,6 +83,12 @@ class SessionLogger:
 
     def error(self, msg: str, *args: object) -> None:
         self._logger.error(msg, *args)
+
+    def debug(self, msg: str, *args: object) -> None:
+        self._logger.debug(msg, *args)
+
+    def exception(self, msg: str, *args: object) -> None:
+        self._logger.exception(msg, *args)
 
     def close(self) -> None:
         """Remove handler and close the log file."""

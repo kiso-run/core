@@ -12,6 +12,7 @@ from pathlib import Path
 import tomllib
 
 from kiso.config import KISO_DIR
+from kiso.plugins import _validate_plugin_manifest_base
 
 log = logging.getLogger(__name__)
 
@@ -28,22 +29,15 @@ class SkillError(Exception):
 
 def _validate_manifest(manifest: dict, skill_dir: Path) -> list[str]:
     """Validate a kiso.toml manifest. Returns list of error strings."""
-    errors: list[str] = []
+    errors = _validate_plugin_manifest_base(manifest, skill_dir, "skill")
 
+    # Base already checked [kiso] and [kiso.skill] sections; if either is
+    # missing it returned early, so re-check before accessing fields.
     kiso = manifest.get("kiso")
     if not isinstance(kiso, dict):
-        errors.append("missing [kiso] section")
         return errors
-
-    if kiso.get("type") != "skill":
-        errors.append(f"kiso.type must be 'skill', got {kiso.get('type')!r}")
-
-    if not kiso.get("name") or not isinstance(kiso.get("name"), str):
-        errors.append("kiso.name is required and must be a string")
-
     skill_section = kiso.get("skill")
     if not isinstance(skill_section, dict):
-        errors.append("missing [kiso.skill] section")
         return errors
 
     if not skill_section.get("summary") or not isinstance(skill_section.get("summary"), str):
@@ -77,12 +71,6 @@ def _validate_manifest(manifest: dict, skill_dir: Path) -> list[str]:
     # Validate usage_guide (required string)
     if not skill_section.get("usage_guide") or not isinstance(skill_section.get("usage_guide"), str):
         errors.append("kiso.skill.usage_guide is required and must be a string")
-
-    # Check required files
-    if not (skill_dir / "run.py").exists():
-        errors.append("run.py is missing")
-    if not (skill_dir / "pyproject.toml").exists():
-        errors.append("pyproject.toml is missing")
 
     return errors
 
@@ -169,6 +157,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
             "version": kiso.get("version", "0.0.0"),
             "description": kiso.get("description", ""),
             "usage_guide": usage_guide,
+            "deps": kiso.get("deps", {}),
         })
 
     return skills
@@ -176,16 +165,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
 
 def check_deps(skill: dict) -> list[str]:
     """Check [kiso.deps].bin entries with `which`. Returns list of missing binaries."""
-    skill_dir = Path(skill["path"])
-    toml_path = skill_dir / "kiso.toml"
-
-    if not toml_path.exists():
-        return []
-
-    with open(toml_path, "rb") as f:
-        manifest = tomllib.load(f)
-
-    deps = manifest.get("kiso", {}).get("deps", {})
+    deps = skill.get("deps", {})
     bins = deps.get("bin", [])
     if not isinstance(bins, list):
         return []

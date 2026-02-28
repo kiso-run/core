@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from kiso.security import check_command_deny_list
 
-from kiso.worker.utils import _build_exec_env, _session_workspace, _truncate_output
+from kiso.worker.utils import _build_exec_env, _run_subprocess, _session_workspace
 
 
 async def _exec_task(
@@ -25,25 +23,12 @@ async def _exec_task(
     workspace = _session_workspace(session)
     clean_env = _build_exec_env()
 
-    try:
-        kwargs: dict = dict(
-            cwd=str(workspace),
-            env=clean_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        if sandbox_uid is not None:
-            kwargs["user"] = sandbox_uid
-        proc = await asyncio.create_subprocess_shell(detail, **kwargs)
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return "", "Timed out", False
-
-    stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
-    stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
-    success = proc.returncode == 0
-    return stdout, stderr, success
+    return await _run_subprocess(
+        detail,
+        env=clean_env,
+        timeout=timeout,
+        cwd=str(workspace),
+        shell=True,
+        uid=sandbox_uid,
+        max_output_size=max_output_size,
+    )

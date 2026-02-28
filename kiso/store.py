@@ -5,10 +5,88 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import TypedDict
 import aiosqlite
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Typed dicts for store entities (returned as plain dicts from aiosqlite rows)
+# ---------------------------------------------------------------------------
+
+class SessionDict(TypedDict):
+    session: str
+    connector: str | None
+    webhook: str | None
+    description: str | None
+    summary: str
+    created_at: str
+    updated_at: str
+
+
+class MessageDict(TypedDict):
+    id: int
+    session: str
+    user: str | None
+    role: str
+    content: str
+    trusted: bool
+    processed: bool
+    timestamp: str
+
+
+class PlanDict(TypedDict):
+    id: int
+    session: str
+    message_id: int
+    parent_id: int | None
+    goal: str
+    status: str
+    total_input_tokens: int
+    total_output_tokens: int
+    model: str | None
+    llm_calls: str | None
+    created_at: str
+
+
+class TaskDict(TypedDict):
+    id: int
+    plan_id: int
+    session: str
+    type: str
+    detail: str
+    skill: str | None
+    args: str | None
+    expect: str | None
+    command: str | None
+    status: str
+    substatus: str | None
+    output: str | None
+    stderr: str | None
+    retry_count: int
+    review_verdict: str | None
+    review_reason: str | None
+    review_learning: str | None
+    input_tokens: int
+    output_tokens: int
+    llm_calls: str | None
+    created_at: str
+    updated_at: str
+
+
+class FactDict(TypedDict):
+    id: int
+    content: str
+    source: str
+    session: str | None
+    category: str
+    confidence: float
+    last_used: str | None
+    use_count: int
+    created_at: str
+
 
 SCHEMA = """\
 CREATE TABLE IF NOT EXISTS sessions (
@@ -148,9 +226,11 @@ async def _rows_to_dicts(cur: aiosqlite.Cursor) -> list[dict]:
 
 
 async def init_db(db_path: Path) -> aiosqlite.Connection:
-    """Create tables, enable WAL, set row_factory, return connection."""
+    """Create tables, enable WAL, set busy_timeout, set row_factory, return connection."""
     db = await aiosqlite.connect(db_path)
     await db.execute("PRAGMA journal_mode=WAL")
+    # Prevent SQLITE_BUSY errors when concurrent coroutines commit close together.
+    await db.execute("PRAGMA busy_timeout = 5000")
     db.row_factory = aiosqlite.Row
     await db.executescript(SCHEMA)
     await db.commit()
@@ -158,7 +238,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     return db
 
 
-async def get_session(db: aiosqlite.Connection, session: str) -> dict | None:
+async def get_session(db: aiosqlite.Connection, session: str) -> SessionDict | None:
     """Return session row as dict, or None."""
     cur = await db.execute("SELECT * FROM sessions WHERE session = ?", (session,))
     row = await cur.fetchone()
@@ -171,7 +251,7 @@ async def create_session(
     connector: str | None = None,
     webhook: str | None = None,
     description: str | None = None,
-) -> dict:
+) -> SessionDict:
     """Create a session if it doesn't exist (idempotent). Return session dict."""
     existing = await get_session(db, session)
     if existing:
@@ -190,7 +270,7 @@ async def upsert_session(
     connector: str | None = None,
     webhook: str | None = None,
     description: str | None = None,
-) -> tuple[dict, bool]:
+) -> tuple[SessionDict, bool]:
     """Create or update a session. Returns (session_dict, created).
 
     If session exists: update connector, webhook, description, updated_at.
@@ -251,7 +331,7 @@ async def get_unprocessed_messages(db: aiosqlite.Connection) -> list[dict]:
     return await _rows_to_dicts(cur)
 
 
-async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list[dict]:
+async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list[SessionDict]:
     """Return sessions where user has sent messages."""
     cur = await db.execute(
         "SELECT DISTINCT s.session, s.connector, s.description, s.updated_at "
@@ -262,7 +342,7 @@ async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list
     return await _rows_to_dicts(cur)
 
 
-async def get_all_sessions(db: aiosqlite.Connection) -> list[dict]:
+async def get_all_sessions(db: aiosqlite.Connection) -> list[SessionDict]:
     """Return all sessions."""
     cur = await db.execute(
         "SELECT session, connector, description, updated_at "
@@ -273,7 +353,7 @@ async def get_all_sessions(db: aiosqlite.Connection) -> list[dict]:
 
 async def get_tasks_for_session(
     db: aiosqlite.Connection, session: str, after: int = 0
-) -> list[dict]:
+) -> list[TaskDict]:
     """Return tasks for a session, optionally after a given id."""
     cur = await db.execute(
         "SELECT * FROM tasks WHERE session = ? AND id > ? ORDER BY id",
@@ -282,7 +362,7 @@ async def get_tasks_for_session(
     return await _rows_to_dicts(cur)
 
 
-async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> dict | None:
+async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> PlanDict | None:
     """Return the latest plan for a session, or None."""
     cur = await db.execute(
         "SELECT * FROM plans WHERE session = ? ORDER BY id DESC LIMIT 1",
@@ -294,7 +374,7 @@ async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> dict |
 
 async def get_recent_messages(
     db: aiosqlite.Connection, session: str, limit: int = 5
-) -> list[dict]:
+) -> list[MessageDict]:
     """Return the most recent messages for a session (trusted only), oldest first."""
     cur = await db.execute(
         "SELECT * FROM messages WHERE session = ? AND trusted = 1 "
@@ -311,7 +391,7 @@ async def get_facts(
     *,
     session: str | None = None,
     is_admin: bool = False,
-) -> list[dict]:
+) -> list[FactDict]:
     """Return facts filtered by session scope.
 
     - project / tool / general facts are always global and returned unconditionally.
@@ -380,7 +460,8 @@ async def search_facts(
                 (fts_q, session, limit),
             )
         results = await _rows_to_dicts(cur)
-    except Exception:
+    except Exception as exc:
+        log.debug("FTS5 search failed, falling back to full scan: %s", exc, exc_info=True)
         return await get_facts(db, session=session, is_admin=is_admin)
 
     # If FTS found no matches, fall back to the full filtered set so the planner
@@ -441,7 +522,8 @@ async def update_task_review(
 ) -> None:
     """Persist review verdict on a task row."""
     await db.execute(
-        "UPDATE tasks SET review_verdict=?, review_reason=?, review_learning=? WHERE id=?",
+        "UPDATE tasks SET review_verdict=?, review_reason=?, review_learning=?, "
+        "updated_at = CURRENT_TIMESTAMP WHERE id=?",
         (verdict, reason, learning, task_id),
     )
     await db.commit()

@@ -6,13 +6,13 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from kiso.config import KISO_DIR
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
+    _plugin_install,
     fetch_registry,
     is_repo_not_found,
     is_url,
@@ -31,6 +31,32 @@ _is_repo_not_found = is_repo_not_found
 _require_admin = require_admin
 _fetch_registry = fetch_registry
 _search_entries = search_entries
+
+
+def _skill_post_install(manifest: dict, skill_dir: Path, name: str) -> None:
+    """Skill-specific post-install steps: env var warnings, usage guide, git exclude."""
+    kiso_section = manifest.get("kiso", {})
+    skill_section = kiso_section.get("skill", {})
+    env_decl = skill_section.get("env", {})
+    skill_name = kiso_section.get("name", name)
+    for key in env_decl:
+        var_name = _env_var_name(skill_name, key)
+        if not os.environ.get(var_name):
+            print(f"warning: {var_name} not set")
+
+    # Create usage_guide.local.md from toml default if not already present
+    usage_guide = skill_section.get("usage_guide", "")
+    override_path = skill_dir / "usage_guide.local.md"
+    if usage_guide and not override_path.exists():
+        override_path.write_text(usage_guide + "\n")
+
+    # Add usage_guide.local.md to .git/info/exclude so git pull won't conflict
+    exclude_path = skill_dir / ".git" / "info" / "exclude"
+    if exclude_path.exists():
+        exclude_content = exclude_path.read_text()
+        if "usage_guide.local.md" not in exclude_content:
+            with open(exclude_path, "a") as f:
+                f.write("\nusage_guide.local.md\n")
 
 
 def run_skill_command(args) -> None:
@@ -86,155 +112,15 @@ def _skill_search(args) -> None:
 def _skill_install(args) -> None:
     """Install a skill from official repo or git URL."""
     _require_admin()
-
-    target = args.target
-    if _is_url(target):
-        git_url = target
-        name = args.name or url_to_name(target)
-        is_official = False
-    else:
-        git_url = f"https://github.com/{OFFICIAL_ORG}/{OFFICIAL_PREFIX}{target}.git"
-        name = target
-        is_official = True
-
-    # --show-deps: clone to temp, show deps.sh, cleanup
-    if args.show_deps:
-        tmpdir = tempfile.mkdtemp()
-        try:
-            result = subprocess.run(
-                ["git", "clone", git_url, tmpdir],
-                capture_output=True, text=True, env=_GIT_ENV,
-            )
-            if result.returncode != 0:
-                if is_official and _is_repo_not_found(result.stderr):
-                    print(f"error: skill '{name}' not found in {OFFICIAL_ORG} org")
-                else:
-                    print(f"error: git clone failed: {result.stderr.strip()}")
-                sys.exit(1)
-            deps_path = Path(tmpdir) / "deps.sh"
-            if deps_path.exists():
-                print(deps_path.read_text())
-            else:
-                print("No deps.sh in this skill.")
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-        return
-
-    skill_dir = SKILLS_DIR / name
-
-    # Check if already installed
-    if skill_dir.exists():
-        print(f"error: skill '{name}' is already installed at {skill_dir}")
-        sys.exit(1)
-
-    try:
-        # Ensure parent dir exists, then clone (creates skill_dir)
-        SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-
-        result = subprocess.run(
-            ["git", "clone", git_url, str(skill_dir)],
-            capture_output=True, text=True, env=_GIT_ENV,
-        )
-        if result.returncode != 0:
-            if is_official and _is_repo_not_found(result.stderr):
-                print(f"error: skill '{name}' not found in {OFFICIAL_ORG} org")
-            else:
-                print(f"error: git clone failed: {result.stderr.strip()}")
-            raise RuntimeError("git clone failed")
-
-        # Mark as installing (after clone succeeds)
-        (skill_dir / ".installing").touch()
-
-        # Validate manifest
-        toml_path = skill_dir / "kiso.toml"
-        if not toml_path.exists():
-            print("error: kiso.toml not found in cloned repo")
-            raise RuntimeError("missing kiso.toml")
-
-        import tomllib
-
-        with open(toml_path, "rb") as f:
-            manifest = tomllib.load(f)
-
-        errors = _validate_manifest(manifest, skill_dir)
-        if errors:
-            for e in errors:
-                print(f"error: {e}")
-            raise RuntimeError("manifest validation failed")
-
-        # Unofficial repo warning
-        if not is_official:
-            print("WARNING: This is an unofficial skill repo.")
-            deps_path = skill_dir / "deps.sh"
-            if deps_path.exists():
-                print("\ndeps.sh contents:")
-                print(deps_path.read_text())
-            answer = input("Continue? [y/N] ").strip().lower()
-            if answer != "y":
-                print("Installation cancelled.")
-                raise RuntimeError("cancelled")
-
-        # uv sync first (deps.sh may need packages installed by uv)
-        subprocess.run(
-            ["uv", "sync"],
-            cwd=str(skill_dir),
-            capture_output=True, text=True,
-        )
-
-        # Run deps.sh if present and not --no-deps
-        deps_path = skill_dir / "deps.sh"
-        if deps_path.exists() and not args.no_deps:
-            result = subprocess.run(
-                ["bash", str(deps_path)],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                print(f"warning: deps.sh failed: {result.stderr.strip()}")
-
-        # Check binary deps
-        skill_info = {"path": str(skill_dir)}
-        missing = check_deps(skill_info)
-        if missing:
-            print(f"warning: missing binaries: {', '.join(missing)}")
-
-        # Check env vars
-        kiso_section = manifest.get("kiso", {})
-        skill_section = kiso_section.get("skill", {})
-        env_decl = skill_section.get("env", {})
-        skill_name = kiso_section.get("name", name)
-        for key in env_decl:
-            var_name = _env_var_name(skill_name, key)
-            if not os.environ.get(var_name):
-                print(f"warning: {var_name} not set")
-
-        # Create usage_guide.local.md from toml default
-        usage_guide = skill_section.get("usage_guide", "")
-        override_path = skill_dir / "usage_guide.local.md"
-        if usage_guide and not override_path.exists():
-            override_path.write_text(usage_guide + "\n")
-
-        # Add usage_guide.local.md to .git/info/exclude so git pull won't conflict
-        exclude_path = skill_dir / ".git" / "info" / "exclude"
-        if exclude_path.exists():
-            exclude_content = exclude_path.read_text()
-            if "usage_guide.local.md" not in exclude_content:
-                with open(exclude_path, "a") as f:
-                    f.write("\nusage_guide.local.md\n")
-
-        # Remove installing marker
-        installing = skill_dir / ".installing"
-        if installing.exists():
-            installing.unlink()
-
-        print(f"Skill '{name}' installed successfully.")
-        from kiso.sysenv import invalidate_cache
-        invalidate_cache()
-
-    except Exception:
-        # Cleanup on failure
-        if skill_dir.exists():
-            shutil.rmtree(skill_dir, ignore_errors=True)
-        sys.exit(1)
+    _plugin_install(
+        plugin_type="skill",
+        official_prefix=OFFICIAL_PREFIX,
+        parent_dir=SKILLS_DIR,
+        validate_fn=_validate_manifest,
+        check_deps_fn=check_deps,
+        args=args,
+        post_install=_skill_post_install,
+    )
 
 
 def _skill_update(args) -> None:

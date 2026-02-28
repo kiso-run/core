@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import mimetypes
 import os
@@ -113,7 +114,7 @@ def _load_env_file(path: Path) -> dict[str, str]:
     if not path.is_file():
         return {}
     result: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -131,18 +132,23 @@ def _load_env_file(path: Path) -> dict[str, str]:
     return result
 
 
+def _init_app_state(app: FastAPI, config, db) -> None:
+    """Set minimal app state. Called from lifespan and test fixtures."""
+    app.state.config = config
+    app.state.db = db
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
     config = load_config()
-    app.state.config = config
     _init_kiso_dirs()
     await _llm_mod.init_http_client(timeout=int(config.settings["exec_timeout"]))
     log.info("Server starting — host=%s port=%s",
              config.settings["host"],
              config.settings["port"])
     db = await init_db(KISO_DIR / "store.db")
-    app.state.db = db
+    _init_app_state(app, config, db)
 
     # Startup recovery: mark stale running plans/tasks as failed
     plans_recovered, tasks_recovered = await recover_stale_running(db)
@@ -360,19 +366,18 @@ async def get_status(
 
 def _strip_llm_verbose(tasks: list[dict], plan: dict | None) -> None:
     """Remove messages/response from llm_calls to keep default response compact."""
-    import json as _json
     for obj in ([plan] if plan else []) + tasks:
         raw = obj.get("llm_calls")
         if not raw:
             continue
         try:
-            calls = _json.loads(raw)
+            calls = json.loads(raw)
         except (ValueError, TypeError):
             continue
         for c in calls:
             c.pop("messages", None)
             c.pop("response", None)
-        obj["llm_calls"] = _json.dumps(calls)
+        obj["llm_calls"] = json.dumps(calls)
 
 
 @app.get("/sessions/{session}/info")

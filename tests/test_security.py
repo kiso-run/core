@@ -222,6 +222,16 @@ class TestBuildSecretVariants:
         # URL-encoded form is identical, so not duplicated
         assert len(variants) == 2
 
+    def test_base64_error_logs_and_returns_plaintext(self):
+        """If base64 encoding raises, log.error is called and plaintext is still returned."""
+        import base64 as _b64
+        from unittest.mock import patch
+        with patch.object(_b64, "b64encode", side_effect=ValueError("encoding failed")):
+            with patch("kiso.security.log") as mock_log:
+                variants = build_secret_variants("mysecret")
+        mock_log.error.assert_called_once()
+        assert "mysecret" in variants  # plaintext always included
+
 
 class TestSanitizeOutput:
     def test_strips_plaintext(self):
@@ -297,6 +307,29 @@ class TestCollectDeploySecrets:
         with patch.dict(os.environ, {}, clear=True):
             secrets = collect_deploy_secrets()
         assert "KISO_LLM_API_KEY" not in secrets
+
+    def test_accepts_no_arguments(self):
+        """M66d: collect_deploy_secrets takes no parameters (config param removed)."""
+        import inspect
+        sig = inspect.signature(collect_deploy_secrets)
+        assert len(sig.parameters) == 0, (
+            "collect_deploy_secrets must have no parameters; "
+            f"found: {list(sig.parameters)}"
+        )
+
+    def test_empty_env_returns_empty_dict(self):
+        """No KISO_SKILL_*/KISO_CONNECTOR_* env vars → empty dict."""
+        with patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=True):
+            secrets = collect_deploy_secrets()
+        assert secrets == {}
+
+    def test_non_kiso_prefixed_vars_excluded(self):
+        """Non-kiso-prefixed vars must not appear in secrets."""
+        env = {"MY_SECRET": "oops", "KISO_SKILL_X": "ok", "PATH": "/bin"}
+        with patch.dict(os.environ, env, clear=True):
+            secrets = collect_deploy_secrets()
+        assert "MY_SECRET" not in secrets
+        assert "KISO_SKILL_X" in secrets
 
 
 # --- Random boundary fencing ---

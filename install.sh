@@ -149,8 +149,7 @@ _derive_instance_name() {
     local raw="${1,,}"                        # lowercase
     raw="${raw//[ _]/-}"                      # spaces/underscores → hyphens
     raw=$(printf '%s' "$raw" | tr -cd 'a-z0-9-')  # strip everything else
-    # Collapse consecutive hyphens
-    while [[ "$raw" == *--* ]]; do raw="${raw//--/-}"; done
+    raw=$(printf '%s' "$raw" | tr -s '-')          # collapse consecutive hyphens
     raw="${raw#-}"                            # strip leading hyphen
     raw="${raw%-}"                            # strip trailing hyphen
     raw="${raw:0:32}"                         # max 32 chars
@@ -279,8 +278,8 @@ ask_models() {
         "paraphraser|prompt injection defense|deepseek/deepseek-v3.2"
     )
 
-    # Non-interactive: use defaults
-    if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]]; then
+    # Non-interactive: use defaults (explicit args or no TTY — e.g. curl pipe)
+    if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]] || [[ ! -t 0 ]]; then
         local result=""
         for entry in "${roles[@]}"; do
             IFS='|' read -r role _ default <<< "$entry"
@@ -549,6 +548,8 @@ fi
 
 bold "Configuring..."
 mkdir -p "$INST_DIR"
+
+base_url=""  # set inside NEED_CONFIG block; used later for NEED_ENV prompt
 
 if [[ "$NEED_CONFIG" == true ]]; then
     kiso_user="$(ask_username)"

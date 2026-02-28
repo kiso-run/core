@@ -9,7 +9,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -19,9 +18,11 @@ from kiso.connectors import (
     _validate_connector_manifest,
     discover_connectors,
 )
+from kiso.skills import check_deps
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
+    _plugin_install,
     fetch_registry,
     is_repo_not_found,
     is_url,
@@ -33,6 +34,30 @@ from cli.plugin_ops import (
 log = logging.getLogger(__name__)
 
 OFFICIAL_PREFIX = "connector-"
+
+
+def _connector_post_install(manifest: dict, connector_dir: Path, name: str) -> None:
+    """Connector-specific post-install steps: env var warnings, config copy."""
+    kiso_section = manifest.get("kiso", {})
+    connector_section = kiso_section.get("connector", {})
+    env_decl = connector_section.get("env", {})
+    connector_name = kiso_section.get("name", name)
+    for key, decl in env_decl.items():
+        var_name = _connector_env_var_name(connector_name, key)
+        if not os.environ.get(var_name):
+            req = isinstance(decl, dict) and decl.get("required", False)
+            req_str = "required" if req else "optional"
+            desc = decl.get("description", "") if isinstance(decl, dict) else ""
+            desc_part = f" — {desc}" if desc else ""
+            print(f"warning: {var_name} not set ({req_str}){desc_part}")
+
+    # Copy config.example.toml if config.toml doesn't exist
+    example_config = connector_dir / "config.example.toml"
+    actual_config = connector_dir / "config.toml"
+    if example_config.exists() and not actual_config.exists():
+        shutil.copy2(example_config, actual_config)
+        print(f"note: copied config.example.toml → config.toml (edit before running)")
+
 
 # Supervisor restart settings
 SUPERVISOR_MAX_FAILURES = 5
@@ -212,151 +237,15 @@ def _connector_search(args) -> None:
 def _connector_install(args) -> None:
     """Install a connector from official repo or git URL."""
     require_admin()
-
-    target = args.target
-    if is_url(target):
-        git_url = target
-        name = args.name or url_to_name(target)
-        is_official = False
-    else:
-        git_url = f"https://github.com/{OFFICIAL_ORG}/{OFFICIAL_PREFIX}{target}.git"
-        name = target
-        is_official = True
-
-    # --show-deps: clone to temp, show deps.sh, cleanup
-    if args.show_deps:
-        tmpdir = tempfile.mkdtemp()
-        try:
-            result = subprocess.run(
-                ["git", "clone", git_url, tmpdir],
-                capture_output=True, text=True, env=_GIT_ENV,
-            )
-            if result.returncode != 0:
-                if is_official and is_repo_not_found(result.stderr):
-                    print(f"error: connector '{name}' not found in {OFFICIAL_ORG} org")
-                else:
-                    print(f"error: git clone failed: {result.stderr.strip()}")
-                sys.exit(1)
-            deps_path = Path(tmpdir) / "deps.sh"
-            if deps_path.exists():
-                print(deps_path.read_text())
-            else:
-                print("No deps.sh in this connector.")
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-        return
-
-    connector_dir = CONNECTORS_DIR / name
-
-    if connector_dir.exists():
-        print(f"error: connector '{name}' is already installed at {connector_dir}")
-        sys.exit(1)
-
-    try:
-        # Ensure parent dir exists, then clone (creates connector_dir)
-        CONNECTORS_DIR.mkdir(parents=True, exist_ok=True)
-
-        result = subprocess.run(
-            ["git", "clone", git_url, str(connector_dir)],
-            capture_output=True, text=True, env=_GIT_ENV,
-        )
-        if result.returncode != 0:
-            if is_official and is_repo_not_found(result.stderr):
-                print(f"error: connector '{name}' not found in {OFFICIAL_ORG} org")
-            else:
-                print(f"error: git clone failed: {result.stderr.strip()}")
-            raise RuntimeError("git clone failed")
-
-        # Mark as installing (after clone succeeds)
-        (connector_dir / ".installing").touch()
-
-        # Validate manifest
-        toml_path = connector_dir / "kiso.toml"
-        if not toml_path.exists():
-            print("error: kiso.toml not found in cloned repo")
-            raise RuntimeError("missing kiso.toml")
-
-        import tomllib
-
-        with open(toml_path, "rb") as f:
-            manifest = tomllib.load(f)
-
-        errors = _validate_connector_manifest(manifest, connector_dir)
-        if errors:
-            for e in errors:
-                print(f"error: {e}")
-            raise RuntimeError("manifest validation failed")
-
-        # Unofficial repo warning
-        if not is_official:
-            print("WARNING: This is an unofficial connector repo.")
-            deps_path = connector_dir / "deps.sh"
-            if deps_path.exists():
-                print("\ndeps.sh contents:")
-                print(deps_path.read_text())
-            answer = input("Continue? [y/N] ").strip().lower()
-            if answer != "y":
-                print("Installation cancelled.")
-                raise RuntimeError("cancelled")
-
-        # Run deps.sh if present and not --no-deps
-        deps_path = connector_dir / "deps.sh"
-        if deps_path.exists() and not args.no_deps:
-            result = subprocess.run(
-                ["bash", str(deps_path)],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                print(f"warning: deps.sh failed: {result.stderr.strip()}")
-
-        # uv sync
-        subprocess.run(
-            ["uv", "sync"],
-            cwd=str(connector_dir),
-            capture_output=True, text=True,
-        )
-
-        # Check binary deps (parity with skill install)
-        from kiso.skills import check_deps
-        connector_info = {"path": str(connector_dir)}
-        missing = check_deps(connector_info)
-        if missing:
-            print(f"warning: missing binaries: {', '.join(missing)}")
-
-        # Check env vars
-        kiso_section = manifest.get("kiso", {})
-        connector_section = kiso_section.get("connector", {})
-        env_decl = connector_section.get("env", {})
-        connector_name = kiso_section.get("name", name)
-        for key, decl in env_decl.items():
-            var_name = _connector_env_var_name(connector_name, key)
-            if not os.environ.get(var_name):
-                req = isinstance(decl, dict) and decl.get("required", False)
-                req_str = "required" if req else "optional"
-                desc = decl.get("description", "") if isinstance(decl, dict) else ""
-                desc_part = f" — {desc}" if desc else ""
-                print(f"warning: {var_name} not set ({req_str}){desc_part}")
-
-        # Copy config.example.toml if config.toml doesn't exist
-        example_config = connector_dir / "config.example.toml"
-        actual_config = connector_dir / "config.toml"
-        if example_config.exists() and not actual_config.exists():
-            shutil.copy2(example_config, actual_config)
-            print(f"note: copied config.example.toml → config.toml (edit before running)")
-
-        # Remove installing marker
-        installing = connector_dir / ".installing"
-        if installing.exists():
-            installing.unlink()
-
-        print(f"Connector '{name}' installed successfully.")
-        from kiso.sysenv import invalidate_cache
-        invalidate_cache()
-
-    except Exception:
-        if connector_dir.exists():
-            shutil.rmtree(connector_dir, ignore_errors=True)
-        sys.exit(1)
+    _plugin_install(
+        plugin_type="connector",
+        official_prefix=OFFICIAL_PREFIX,
+        parent_dir=CONNECTORS_DIR,
+        validate_fn=_validate_connector_manifest,
+        check_deps_fn=check_deps,
+        args=args,
+        post_install=_connector_post_install,
+    )
 
 
 def _connector_update(args) -> None:

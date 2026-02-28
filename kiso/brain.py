@@ -39,7 +39,6 @@ async def _retry_llm_with_validation(
     error_class: type[Exception],
     error_noun: str,
     session: str = "",
-    validate_kwargs: dict | None = None,
 ) -> dict:
     """Generic retry loop: call LLM, parse JSON, validate, retry on errors.
 
@@ -48,18 +47,16 @@ async def _retry_llm_with_validation(
         role: LLM model route name (e.g. "planner", "reviewer", "curator").
         messages: Initial message list (mutated in-place with retries).
         schema: JSON schema for structured output.
-        validate_fn: Callable(parsed_dict, **validate_kwargs) → list[str] errors.
+        validate_fn: Callable(parsed_dict) → list[str] errors.
         error_class: Exception type to raise on exhaustion.
         error_noun: Human noun for error messages (e.g. "Plan", "Review").
         session: Session name for LLM call tracking.
-        validate_kwargs: Extra kwargs passed to validate_fn.
 
     Returns:
         The validated parsed dict.
     """
     max_retries = int(config.settings["max_validation_retries"])
     last_errors: list[str] = []
-    vkw = validate_kwargs or {}
 
     for attempt in range(1, max_retries + 1):
         if last_errors:
@@ -80,7 +77,7 @@ async def _retry_llm_with_validation(
         except json.JSONDecodeError as e:
             raise error_class(f"{error_noun} returned invalid JSON: {e}")
 
-        errors = validate_fn(result, **vkw)
+        errors = validate_fn(result)
         if not errors:
             log.info("%s accepted (attempt %d)", error_noun, attempt)
             return result
@@ -182,19 +179,35 @@ class PlanError(Exception):
 
 
 _ROLES_DIR = Path(__file__).parent / "roles"
+_prompt_cache: dict[str, str] = {}
 
 
 def _load_system_prompt(role: str) -> str:
-    """Load system prompt: user override first, then package default."""
+    """Load system prompt: user override first, then package default.
+
+    Results are cached in-process. Call :func:`invalidate_prompt_cache` to
+    force a reload (e.g. after the user edits a role file).
+    """
+    if role in _prompt_cache:
+        return _prompt_cache[role]
     # User override
     user_path = KISO_DIR / "roles" / f"{role}.md"
     if user_path.exists():
-        return user_path.read_text()
+        text = user_path.read_text()
+        _prompt_cache[role] = text
+        return text
     # Package default
     pkg_path = _ROLES_DIR / f"{role}.md"
     if pkg_path.exists():
-        return pkg_path.read_text()
+        text = pkg_path.read_text()
+        _prompt_cache[role] = text
+        return text
     raise FileNotFoundError(f"No prompt found for role '{role}'")
+
+
+def invalidate_prompt_cache() -> None:
+    """Clear the in-process system-prompt cache."""
+    _prompt_cache.clear()
 
 
 def validate_plan(
@@ -395,9 +408,9 @@ async def run_planner(
     max_tasks = int(config.settings["max_plan_tasks"])
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,
-        validate_plan, PlanError, "Plan",
+        lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks),
+        PlanError, "Plan",
         session=session,
-        validate_kwargs={"installed_skills": installed_names, "max_tasks": max_tasks},
     )
     log.info("Plan: goal=%r, %d tasks", plan["goal"], len(plan["tasks"]))
     return plan
@@ -458,7 +471,7 @@ def validate_review(review: dict) -> list[str]:
     return errors
 
 
-async def build_reviewer_messages(
+def build_reviewer_messages(
     goal: str,
     detail: str,
     expect: str,
@@ -502,7 +515,7 @@ async def run_reviewer(
     Returns dict with keys: status ("ok" | "replan"), reason, learn.
     Raises ReviewError if all retries exhausted.
     """
-    messages = await build_reviewer_messages(goal, detail, expect, output, user_message, success=success)
+    messages = build_reviewer_messages(goal, detail, expect, output, user_message, success=success)
     review = await _retry_llm_with_validation(
         config, "reviewer", messages, REVIEW_SCHEMA,
         validate_review, ReviewError, "Review",
@@ -600,11 +613,12 @@ async def run_curator(config: Config, learnings: list[dict], session: str = "") 
     Raises CuratorError if all retries exhausted.
     """
     messages = build_curator_messages(learnings)
+    expected = len(learnings)
     result = await _retry_llm_with_validation(
         config, "curator", messages, CURATOR_SCHEMA,
-        validate_curator, CuratorError, "Curator",
+        lambda r: validate_curator(r, expected_count=expected),
+        CuratorError, "Curator",
         session=session,
-        validate_kwargs={"expected_count": len(learnings)},
     )
     log.info("Curator: %d evaluations", len(result["evaluations"]))
     return result
