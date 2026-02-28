@@ -163,7 +163,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     env_sub.add_parser("reload", help="hot-reload .env into the server")
 
-    sub.add_parser("version", help="print version and exit")
+    version_p = sub.add_parser("version", help="print version and exit")
+    version_p.add_argument("--stats", action="store_true", help="show line count breakdown")
 
     reset_parser = sub.add_parser("reset", help="reset/cleanup data")
     reset_sub = reset_parser.add_subparsers(dest="reset_command")
@@ -213,7 +214,31 @@ def main() -> None:
 
         run_reset_command(args)
     elif args.command == "version":
-        print(f"kiso {__version__}")
+        if getattr(args, "stats", False):
+            _print_version_stats()
+        else:
+            print(f"kiso {__version__}")
+
+
+def _print_version_stats() -> None:
+    """Print kiso version followed by a LOC breakdown per area."""
+    from pathlib import Path
+
+    from kiso._version import count_loc
+
+    root = Path(__file__).resolve().parent.parent
+    stats = count_loc(root)
+
+    def _fmt(n: int) -> str:
+        return f"{n:,}".replace(",", " ")
+
+    num_w = max(len(_fmt(v)) for v in stats.values())
+    rows = [("core", stats["core"], "kiso/"), ("cli", stats["cli"], "cli/"), ("tests", stats["tests"], "tests/")]
+    print(f"kiso {__version__}\n")
+    for label, n, path in rows:
+        print(f"  {label:<5}  {_fmt(n):>{num_w}} loc   ({path})")
+    print(f"  {'─' * (num_w + 12)}")
+    print(f"  {'total':<5}  {_fmt(stats['total']):>{num_w}} loc")
 
 
 def _msg_cmd(args: argparse.Namespace) -> None:
