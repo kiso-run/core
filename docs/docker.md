@@ -1,104 +1,165 @@
 # Docker
 
-Kiso runs in Docker. The container provides a controlled environment with Python, `uv`, and common tools. All user data lives in a single volume.
+Kiso runs in Docker. The container provides a controlled environment with Python, `uv`, and common tools. All user data lives in a volume that survives container restarts, rebuilds, and upgrades.
 
-## Volume
+## Multi-instance architecture
 
-One volume, mounted at `~/.kiso/`:
+Each instance is a named Docker container (`kiso-{name}`) with its own port, data directory, and isolated environment. The core Python image is the same for all instances — only configuration and data differ.
 
 ```
-~/.kiso/                    # single volume
-├── config.toml
-├── .env                    # deploy secrets (managed via `kiso env`)
-├── store.db
-├── server.log
-├── audit/                  # LLM call logs, task execution logs (see audit.md)
-├── roles/
-├── skills/
-├── connectors/
-└── sessions/
+~/.kiso/
+├── instances.json             # instance registry
+└── instances/
+    ├── jarvis/                # data for container kiso-jarvis
+    │   ├── config.toml
+    │   ├── .env
+    │   ├── kiso.db
+    │   ├── server.log
+    │   ├── audit/
+    │   ├── roles/
+    │   ├── skills/
+    │   ├── connectors/
+    │   └── sessions/
+    └── work/                  # data for container kiso-work
+        ├── config.toml
+        └── ...
 ```
 
-Everything persists across container restarts: config, database, logs, installed skills/connectors, session data.
+**`instances.json`** is the registry of all instances and their ports:
+
+```json
+{
+  "jarvis": { "server_port": 8333, "connector_port_base": 9000, "connectors": { "discord": 9001 } },
+  "work":   { "server_port": 8334, "connector_port_base": 9100, "connectors": {} }
+}
+```
+
+## Why native Docker (no compose at runtime)
+
+Production instances are started with plain `docker run`, not docker-compose. This gives the wrapper precise control over port ranges — each instance gets an auto-detected server port and a dedicated connector port range, without the indirection of a compose file per instance. The `docker-compose.yml` in the repo is kept only as a development helper.
+
+## Ports
+
+Each instance gets two dedicated port ranges, auto-detected at install time:
+
+| Range | Role |
+|---|---|
+| `8333+` | Server API — one port per instance (sequential) |
+| `9001–9010`, `9101–9110`, … | Connector webhooks — 10-port block per instance, multiples of 100 |
+
+The port block for connectors means: instance with base `9000` uses ports `9001–9010`; instance with base `9100` uses `9101–9110`; and so on.
+
+**Internal = external port**: connector ports are the same inside and outside the container (no asymmetric NAT). A connector process listening on `9001` inside the container is reachable at `localhost:9001` on the host — no extra configuration needed.
+
+Port registration in `docker run`:
+
+```bash
+docker run -d --name kiso-jarvis \
+  -p 8333:8333 \
+  -p 9001-9010:9001-9010 \
+  -v ~/.kiso/instances/jarvis:/root/.kiso \
+  --env-file ~/.kiso/instances/jarvis/.env \
+  --restart unless-stopped \
+  kiso:latest
+```
+
+## Installation
+
+`install.sh` handles the full setup: prompts for configuration, builds the Docker image, starts the container, and registers the instance.
+
+```bash
+# First install
+bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
+
+# From the repo
+./install.sh
+
+# Non-interactive (CI / automated)
+./install.sh --name jarvis --user marco --api-key sk-or-... --provider openrouter
+```
+
+Re-running `install.sh` on an existing installation offers two options:
+
+- **Add a new instance** — runs through full configuration for a new bot name
+- **Update Docker image** — rebuilds `kiso:latest` and restarts all running instances
+
+## Instance management
+
+All container lifecycle is managed via `kiso instance`:
+
+```bash
+kiso instance list                        # all instances: name, port, status
+kiso instance create NAME                 # start a new container (config must exist)
+kiso instance start [NAME]                # docker start kiso-{NAME}
+kiso instance stop [NAME]                 # docker stop kiso-{NAME}
+kiso instance restart [NAME]              # docker restart kiso-{NAME}
+kiso instance status [NAME]               # container state + health endpoint
+kiso instance logs [NAME] [-f]            # docker logs kiso-{NAME}
+kiso instance shell [NAME]                # bash inside the container
+kiso instance explore [SESSION]           # shell in the session workspace
+kiso instance remove [NAME] [--yes]       # docker rm + rm -rf instances/{NAME}/
+```
+
+When only one instance is installed, the `[NAME]` argument is optional — the wrapper resolves it implicitly. With multiple instances, use `kiso --instance NAME` or pass `NAME` explicitly.
+
+## Multi-instance CLI
+
+All chat and management commands accept an optional `--instance NAME` (or `-i NAME`) flag:
+
+```bash
+kiso --instance jarvis                    # chat with the jarvis bot
+kiso --instance work msg "deploy to prod"
+kiso --instance jarvis skill install search
+kiso --instance work connector install discord
+```
+
+With a single instance, `--instance` can be omitted everywhere.
+
+## Instance names
+
+Instance names are the bot's identifier: used for the Docker container name, data directory, and `--instance` flag. Rules:
+
+- Lowercase alphanumeric + hyphens only: `^[a-z0-9][a-z0-9-]*$`
+- No leading or trailing hyphens
+- Max 32 characters
+
+Valid: `kiso`, `jarvis`, `work-bot`, `bot2`. Invalid: `MyBot`, `-bot`, `bot_`, `bot name`.
 
 ## Dockerfile
+
+The image is built once and shared by all instances. The `CMD` starts the HTTP server directly via uvicorn — no dependency on the Python CLI at container startup.
 
 ```dockerfile
 FROM python:3.12-slim
 
-# System tools
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends git curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install kiso
-COPY . /opt/kiso
-RUN cd /opt/kiso && uv sync
-
-# Data directory
-VOLUME /root/.kiso
+WORKDIR /opt/kiso
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY kiso/ kiso/
+COPY cli/ cli/
+RUN uv sync --frozen --no-dev
 
 EXPOSE 8333
 
-HEALTHCHECK --interval=30s --timeout=5s \
-  CMD curl -f http://localhost:8333/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8333/health || exit 1
 
-CMD ["uv", "run", "kiso", "serve"]
+CMD ["uv", "run", "uvicorn", "kiso.server:app", "--host", "0.0.0.0", "--port", "8333"]
 ```
 
-## docker-compose.yml
+## Pre-installing skills and connectors
 
-```yaml
-services:
-  kiso:
-    build: .
-    container_name: kiso
-    ports:
-      - "8333:8333"
-    volumes:
-      - ${KISO_DATA:-~/.kiso}:/root/.kiso
-    env_file:
-      - path: .env
-        required: false
-    restart: unless-stopped
-```
-
-By default, `~/.kiso/` on the host is bind-mounted into the container. You can edit `config.toml` directly on the host and restart. Override with `KISO_DATA=/path/to/data docker compose up -d`.
-
-## CLI Wrapper
-
-`install.sh` installs a `kiso` wrapper in `~/.local/bin/` (source: `kiso-host.sh`). The wrapper intercepts Docker management commands and proxies everything else to `kiso` inside the container.
-
-| Command | Runs |
-|---|---|
-| `kiso` | `docker exec -it kiso kiso` (interactive chat REPL) |
-| `kiso --session NAME` | chat on a specific session (new name = fresh session) |
-| `kiso msg "text"` | send one message, print the response, exit |
-| `kiso skill ...` | `docker exec kiso kiso skill ...` (manage skills) |
-| `kiso connector ...` | `docker exec kiso kiso connector ...` (manage connectors) |
-| `kiso sessions` | list your sessions |
-| `kiso env ...` | manage deploy secrets |
-| `kiso up` | `docker compose up -d` |
-| `kiso down` | `docker compose down` |
-| `kiso restart` | `docker restart kiso` |
-| `kiso status` | container state + health check |
-| `kiso health` | `curl http://localhost:8333/health` |
-| `kiso logs` | `docker logs -f kiso` |
-| `kiso shell` | `docker exec -it kiso bash` |
-| `kiso explore [session]` | open a shell in the session workspace |
-
-`install.sh` writes a self-contained `~/.kiso/docker-compose.yml` (uses `image:` instead of `build:`) so `kiso up` and `kiso down` work from any directory — even if the repo is deleted after install.
-
-## Pre-installing Skills and Connectors
-
-**Build time** (in Dockerfile): baked into image, immutable, updates require rebuild.
+**Build time** (baked into image): immutable, updates require rebuild.
 
 ```dockerfile
-FROM your-registry/kiso:latest
-RUN kiso skill install search && kiso connector install discord
+FROM kiso:latest
+RUN kiso skill install search
 ```
 
 **Runtime** (in volume): mutable, updatable without rebuild.
@@ -107,46 +168,27 @@ RUN kiso skill install search && kiso connector install discord
 kiso skill install search
 ```
 
-Both can coexist — volume contents take precedence (Docker mount behavior).
+Volume contents take precedence over build-time installs (Docker mount behavior).
 
-## Ports
-
-| Port | Service |
-|---|---|
-| `8333` | Kiso API (configurable via `config.toml`) |
-| `9001+` | Connector webhooks (per-connector, configurable) |
-
-Expose connector ports as needed:
-
-```yaml
-services:
-  kiso:
-    ports:
-      - "8333:8333"
-      - "9001:9001"   # discord connector webhook
-```
-
-## Environment Variables
+## Environment variables
 
 Two ways to provide deploy secrets:
 
-**1. `kiso env`** (recommended): manages `~/.kiso/.env` on the host (bind-mounted). Secrets persist across container restarts and can be hot-reloaded without restart via `kiso env reload`. See [cli.md — Deploy Secret Management](cli.md#deploy-secret-management).
+**1. `kiso env`** (recommended): manages `~/.kiso/instances/{name}/.env`. Secrets persist across restarts and can be hot-reloaded via `kiso env reload`.
 
 ```bash
 kiso env set KISO_LLM_API_KEY sk-or-...
 kiso env reload
 ```
 
-**2. Docker env vars** (`docker run -e` or a `.env` file in the project directory): passed directly to the container process.
+**2. `--env-file`** at container start: set at `docker run` time, requires container restart to update.
 
-Both methods work. Docker env vars are applied at container start; `kiso env` manages secrets at runtime. If the same variable is set in both, the Docker env var takes precedence (standard behavior).
+## Task persistence
 
-## deps.sh and System Packages
+Tasks in `kiso.db` (volume) survive container crashes. In-flight tasks are marked `failed` on next startup. Unprocessed messages (`processed=0`) are re-enqueued — see [flow.md — Message Recovery on Startup](flow.md#message-recovery-on-startup).
 
-`deps.sh` runs inside the container as root (isolated, no sudo needed, idempotent). See [skills.md — deps.sh](skills.md#depssh).
+## deps.sh and system packages
 
-**Important difference between build-time and runtime installs**: system packages installed at runtime live in the container filesystem (not the volume) — lost on container recreation. Python packages (`uv sync` into `.venv`) persist in the volume. For heavy system deps, prefer build-time installation.
+`deps.sh` runs inside the container as root (isolated, no sudo needed, idempotent). System packages installed at runtime live in the container filesystem — lost on container recreation. Python packages (`uv sync` into `.venv`) persist in the volume.
 
-## Task Persistence
-
-Tasks in `store.db` (volume) survive container crashes. In-flight tasks marked `failed` on next startup. Unprocessed messages (`processed=0`) are re-enqueued on startup — see [flow.md — Message Recovery on Startup](flow.md#message-recovery-on-startup).
+See [skills.md — deps.sh](skills.md#depssh).

@@ -6,20 +6,24 @@
 
 **SQLite** for everything dynamic: sessions, messages, tasks, facts, learnings, pending items, published files.
 
+Each instance has its own data directory. With an instance named `jarvis`:
+
 ```
-~/.kiso/
+~/.kiso/instances/jarvis/
 ├── config.toml          # static, human-readable, versionable
 ├── .env                 # deploy secrets (managed via `kiso env`)
-├── store.db             # dynamic, machine-managed
+├── kiso.db              # dynamic, machine-managed
 └── audit/               # LLM call logs, task execution logs
 ```
 
+See [docker.md](docker.md) for the full directory layout and instance registry.
+
 ## First run
 
-On first start, if `~/.kiso/config.toml` does not exist, kiso writes a complete template with all fields pre-set to their defaults, then exits with instructions:
+On first start, if `config.toml` does not exist in the instance directory, kiso writes a complete template with all fields pre-set to their defaults, then exits with instructions:
 
 ```
-Config created at ~/.kiso/config.toml
+Config created at /root/.kiso/config.toml
   1. Set your token in [tokens]
   2. Configure [providers] and [users]
   3. Restart kiso

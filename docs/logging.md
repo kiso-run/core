@@ -5,7 +5,7 @@ Plain text log files. Append-only, human-readable, `tail -f` friendly.
 ## Server Log
 
 ```
-~/.kiso/server.log
+~/.kiso/instances/{name}/server.log
 ```
 
 Server-level events: startup, shutdown, auth failures, errors, worker spawn/shutdown.
@@ -21,7 +21,7 @@ Server-level events: startup, shutdown, auth failures, errors, worker spawn/shut
 ## Session Log
 
 ```
-~/.kiso/sessions/{session}/session.log
+~/.kiso/instances/{name}/sessions/{session}/session.log
 ```
 
 Everything that happens in a session, including full task output inline.

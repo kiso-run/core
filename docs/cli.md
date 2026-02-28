@@ -25,13 +25,14 @@ kiso msg "hello" --session dev                 # specific session
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--instance NAME` / `-i NAME` | implicit (if one instance) | Which bot instance to connect to |
 | `--session SESSION` | `{hostname}@{username}` | Session identifier |
-| `--api URL` | `http://localhost:8333` | Server URL |
+| `--api URL` | `http://localhost:{instance_port}` | Server URL (auto-set per instance) |
 | `--quiet` / `-q` | off | Only show `msg` task content (hide decision flow) |
 
 By default, the CLI shows the **full decision flow** — planning, task execution, review verdicts, replans, and bot messages. This is the primary way to understand what kiso is doing and why. Use `--quiet` to suppress everything except the final bot responses.
 
-The API token is read from `~/.kiso/config.toml`: the CLI always uses the token named `cli` from the `[tokens]` section.
+The API token is read from `~/.kiso/instances/{name}/config.toml`: the CLI always uses the token named `cli` from the `[tokens]` section.
 
 ### Default Session
 
@@ -520,9 +521,9 @@ Secrets are stored in `~/.kiso/.env` and loaded into the process environment. `k
 
 ## Notes
 
-- `kiso serve` starts the HTTP server (used in Docker CMD, not typically run directly).
 - Chat mode is a thin HTTP wrapper — all intelligence lives in the server.
 - Works against a remote server (`--api`) — useful for running kiso on a VPS.
+- Instance management (`kiso instance *`) and installation (`install.sh`) are documented in [docker.md](docker.md).
 
 ## Code Organization
 

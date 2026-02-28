@@ -2,25 +2,32 @@
 # zsh completion for kiso
 
 _kiso() {
-    local -a commands skill_cmds connector_cmds env_cmds
+    local -a commands instance_cmds skill_cmds connector_cmds env_cmds reset_cmds
 
     commands=(
-        'up:start the container'
-        'down:stop the container'
-        'restart:restart the container'
-        'shell:open a bash shell inside the container'
-        'explore:open a shell in the session workspace'
-        'logs:follow container logs'
-        'status:show container state and health'
-        'health:hit the /health endpoint'
-        'help:show help'
+        'instance:manage bot instances (create, start, stop, logs, ...)'
         'skill:manage skills'
         'connector:manage connectors'
-        'sessions:manage sessions'
+        'sessions:list sessions'
         'env:manage deploy secrets'
-        'completion:print shell completion script'
         'msg:send a message and print the response'
         'reset:reset/cleanup data'
+        'completion:print shell completion script'
+        'version:print version and exit'
+        'help:show help'
+    )
+
+    instance_cmds=(
+        'create:create and start a new bot instance'
+        'start:start a stopped instance'
+        'stop:stop a running instance'
+        'restart:restart an instance'
+        'list:show all instances with ports and status'
+        'status:container state + health check'
+        'logs:follow container logs'
+        'shell:open a bash shell inside the container'
+        'explore:open a shell in the session workspace'
+        'remove:remove instance and all its data'
     )
 
     skill_cmds=(
@@ -37,8 +44,8 @@ _kiso() {
         'install:install a connector'
         'update:update a connector'
         'remove:remove a connector'
-        'run:run a connector'
-        'stop:stop a connector'
+        'run:start a connector daemon'
+        'stop:stop a connector daemon'
         'status:show connector status'
     )
 
@@ -50,52 +57,81 @@ _kiso() {
         'reload:hot-reload secrets'
     )
 
-    # Handle subcommands
-    case "$words[2]" in
+    reset_cmds=(
+        'session:reset one session'
+        'knowledge:reset all knowledge'
+        'all:reset all data'
+        'factory:factory reset'
+    )
+
+    # Find the active top-level subcommand (skip --instance/-i and their values)
+    local active_cmd="" i
+    for (( i=2; i<=CURRENT-1; i++ )); do
+        case "$words[i]" in
+            --instance|-i) (( i++ )) ;;
+            --instance=*) ;;
+            -*) ;;
+            *) active_cmd="$words[i]"; break ;;
+        esac
+    done
+
+    case "$active_cmd" in
+        instance)
+            # Find instance sub-subcommand
+            local sub_active="" j
+            for (( j=i+1; j<=CURRENT-1; j++ )); do
+                [[ "$words[j]" != -* ]] && { sub_active="$words[j]"; break; }
+            done
+            if [[ -z "$sub_active" ]]; then
+                _describe -t instance-commands 'instance command' instance_cmds
+            else
+                case "$sub_active" in
+                    remove)
+                        _arguments '--yes[skip confirmation]' '-y[skip confirmation]'
+                        compadd -- $(_kiso_instance_names)
+                        ;;
+                    start|stop|restart|status|logs|shell)
+                        compadd -- $(_kiso_instance_names)
+                        ;;
+                esac
+            fi
+            return
+            ;;
         skill)
-            if (( CURRENT == 3 )); then
+            if (( CURRENT == i+2 )); then
                 _describe -t skill-commands 'skill command' skill_cmds
-            elif (( CURRENT >= 4 )); then
-                case "$words[3]" in
+            elif (( CURRENT >= i+3 )); then
+                case "$words[i+2]" in
                     install) _arguments '--name[skill name]:name' '--no-deps[skip dependencies]' ;;
                 esac
             fi
             return
             ;;
         connector)
-            if (( CURRENT == 3 )); then
+            if (( CURRENT == i+2 )); then
                 _describe -t connector-commands 'connector command' connector_cmds
-            elif (( CURRENT >= 4 )); then
-                case "$words[3]" in
+            elif (( CURRENT >= i+3 )); then
+                case "$words[i+2]" in
                     install) _arguments '--name[connector name]:name' '--no-deps[skip dependencies]' ;;
                 esac
             fi
             return
             ;;
         env)
-            if (( CURRENT == 3 )); then
+            if (( CURRENT == i+2 )); then
                 _describe -t env-commands 'env command' env_cmds
             fi
             return
             ;;
         reset)
-            if (( CURRENT == 3 )); then
-                local -a reset_cmds=(
-                    'session:reset one session'
-                    'knowledge:reset all knowledge'
-                    'all:reset all data'
-                    'factory:factory reset'
-                )
+            if (( CURRENT == i+2 )); then
                 _describe -t reset-commands 'reset command' reset_cmds
-            elif (( CURRENT >= 4 )); then
-                case "$words[3]" in
+            elif (( CURRENT >= i+3 )); then
+                case "$words[i+2]" in
                     session)
-                        # Dynamic session name completion from DB
                         local -a session_names
-                        session_names=(${(f)"$(docker exec kiso sqlite3 /root/.kiso/store.db 'SELECT session FROM sessions' 2>/dev/null)"})
-                        if (( ${#session_names} )); then
-                            compadd -- "${session_names[@]}"
-                        fi
+                        session_names=(${(f)"$(_kiso_sessions)"})
+                        (( ${#session_names} )) && compadd -- "${session_names[@]}"
                         _arguments '--yes[skip confirmation]' '-y[skip confirmation]'
                         ;;
                     knowledge|all|factory)
@@ -106,28 +142,63 @@ _kiso() {
             return
             ;;
         sessions)
-            if (( CURRENT == 3 )); then
+            if (( CURRENT == i+2 )); then
                 local -a session_flags=('--all:show all sessions' '-a:show all sessions')
                 _describe -t flags 'flag' session_flags
             fi
             return
             ;;
         completion)
-            if (( CURRENT == 3 )); then
+            if (( CURRENT == i+2 )); then
                 local -a shells=('bash:bash completion' 'zsh:zsh completion')
                 _describe -t shells 'shell' shells
             fi
             return
             ;;
-        up|down|restart|shell|explore|logs|status|health|help|msg)
-            return
-            ;;
     esac
 
-    # Top-level completion
-    if (( CURRENT == 2 )); then
-        _describe -t commands 'kiso command' commands
+    # Top-level
+    if [[ -z "$active_cmd" ]]; then
+        if [[ "$words[CURRENT]" == -* ]]; then
+            _arguments \
+                '--instance[instance name]:name:->inst' \
+                '-i[instance name]:name:->inst' \
+                '--session[session name]:session' \
+                '--api[server URL]:url' \
+                '--quiet[only show bot messages]' \
+                '-q[only show bot messages]' \
+                '--version[print version and exit]' \
+                '-V[print version and exit]'
+        else
+            _describe -t commands 'kiso command' commands
+        fi
     fi
+}
+
+# List instance names from ~/.kiso/instances.json
+_kiso_instance_names() {
+    python3 -c "
+import json, pathlib, os
+p = pathlib.Path(os.path.expanduser('~/.kiso/instances.json'))
+if p.exists():
+    d = json.loads(p.read_text())
+    print('\n'.join(d.keys()))
+" 2>/dev/null
+}
+
+# List sessions from the (implicit) active instance DB
+_kiso_sessions() {
+    local inst
+    inst=$(python3 -c "
+import json, pathlib, os
+p = pathlib.Path(os.path.expanduser('~/.kiso/instances.json'))
+if p.exists():
+    d = json.loads(p.read_text())
+    if len(d) == 1:
+        print(list(d.keys())[0])
+" 2>/dev/null)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" sqlite3 /root/.kiso/kiso.db \
+        "SELECT session FROM sessions" 2>/dev/null
 }
 
 _kiso "$@"

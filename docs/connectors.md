@@ -1,11 +1,11 @@
 # Connectors
 
-A connector bridges an external platform (Discord, Telegram, Slack, email, etc.) and kiso's API. Lives in `~/.kiso/connectors/{name}/`.
+A connector bridges an external platform (Discord, Telegram, Slack, email, etc.) and kiso's API. Lives in `~/.kiso/instances/{instance}/connectors/{name}/`.
 
 ## Structure
 
 ```
-~/.kiso/connectors/
+~/.kiso/instances/{instance}/connectors/
 ├── discord/
 │   ├── kiso.toml            # manifest (required)
 │   ├── pyproject.toml       # python dependencies (required, uv-managed)
@@ -51,9 +51,9 @@ Same convention as skills: `KISO_CONNECTOR_{NAME}_{KEY}`. See [skills.md — Env
 Structural, non-secret, deployment-specific configuration. The repo ships `config.example.toml`, the real `config.toml` is gitignored and created by the user post-install.
 
 ```toml
-kiso_api = "http://localhost:8333"
+kiso_api = "http://localhost:8333"   # matches the instance's server port
 session_prefix = "discord"
-webhook_port = 9001
+webhook_port = 9001                  # auto-assigned from the instance's connector range
 
 [channel_map]
 general = "discord-general"
@@ -61,6 +61,8 @@ dev = "discord-dev"
 ```
 
 No secrets. Deploy secrets come from env vars declared in `kiso.toml`.
+
+`webhook_port` is auto-assigned by the wrapper when the connector is installed (`kiso connector install`). The assigned port is from the instance's connector range (see [docker.md — Ports](docker.md#ports)) and is the same inside and outside the container.
 
 ## What a Connector Does
 
@@ -140,7 +142,7 @@ kiso connector stop discord            # stop the daemon
 kiso connector status discord          # check if running
 ```
 
-Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/connectors/{name}/connector.log`.
+Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/instances/{instance}/connectors/{name}/connector.log`.
 
 Under the hood: `.venv/bin/python ~/.kiso/connectors/{name}/run.py &` with a management loop that monitors the PID and respawns with backoff.
 
