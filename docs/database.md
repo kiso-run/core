@@ -53,13 +53,17 @@ A plan is the planner's output for a single message: a goal and a list of tasks.
 
 ```sql
 CREATE TABLE plans (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session    TEXT NOT NULL,
-    message_id INTEGER NOT NULL,    -- which message triggered this plan
-    parent_id  INTEGER,             -- previous plan if this is a replan (null for first plan)
-    goal       TEXT NOT NULL,       -- from planner output
-    status     TEXT NOT NULL DEFAULT 'running',  -- running | done | failed | cancelled
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session             TEXT NOT NULL,
+    message_id          INTEGER NOT NULL,    -- which message triggered this plan
+    parent_id           INTEGER,             -- previous plan if this is a replan (null for first plan)
+    goal                TEXT NOT NULL,       -- from planner output
+    status              TEXT NOT NULL DEFAULT 'running',  -- running | done | failed | cancelled
+    total_input_tokens  INTEGER NOT NULL DEFAULT 0,       -- cumulative LLM input tokens for this plan
+    total_output_tokens INTEGER NOT NULL DEFAULT 0,       -- cumulative LLM output tokens for this plan
+    model               TEXT,                             -- model used for the planner call
+    llm_calls           TEXT,                             -- JSON array of per-call LLM stats
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_plans_session ON plans(session, id);
 ```
@@ -68,6 +72,8 @@ CREATE INDEX idx_plans_session ON plans(session, id);
 - `parent_id` links replan chains: replan creates a new plan pointing to the previous one.
 - Status lifecycle: `running` → `done` | `failed` | `cancelled`.
 - On startup, any plans left in `running` status are marked as `failed`.
+- `total_input_tokens` / `total_output_tokens`: accumulated across all tasks in the plan. Updated as tasks complete.
+- `llm_calls`: JSON array of `{role, model, input_tokens, output_tokens}` objects, one per LLM call in the plan lifecycle.
 
 ### tasks
 
@@ -75,19 +81,28 @@ All tasks across all sessions. Each task belongs to a plan.
 
 ```sql
 CREATE TABLE tasks (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id    INTEGER NOT NULL,    -- which plan this task belongs to
-    session    TEXT NOT NULL,
-    type       TEXT NOT NULL,       -- exec | msg | skill
-    detail     TEXT NOT NULL,       -- what to do
-    skill      TEXT,                -- skill name (if type=skill)
-    args       TEXT,                -- JSON string of skill args (parsed before execution)
-    expect     TEXT,                -- success criteria (required for exec and skill tasks)
-    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
-    output     TEXT,                -- stdout / generated text
-    stderr     TEXT,                -- stderr (exec/skill only)
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id         INTEGER NOT NULL,   -- which plan this task belongs to
+    session         TEXT NOT NULL,
+    type            TEXT NOT NULL,      -- exec | msg | skill
+    detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg)
+    skill           TEXT,               -- skill name (if type=skill)
+    args            TEXT,               -- JSON string of skill args (parsed before execution)
+    expect          TEXT,               -- success criteria (required for exec and skill tasks)
+    command         TEXT,               -- translated shell command (exec only, set after LLM translation)
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
+    substatus       TEXT,               -- free-text detail on current status (e.g. "reviewing")
+    output          TEXT,               -- stdout / generated text
+    stderr          TEXT,               -- stderr (exec/skill only)
+    retry_count     INTEGER NOT NULL DEFAULT 0,
+    review_verdict  TEXT,               -- "pass" | "fail" | "replan" (set after reviewer runs)
+    review_reason   TEXT,               -- reviewer rationale
+    review_learning TEXT,               -- learning extracted by reviewer (promoted to facts by curator)
+    input_tokens    INTEGER NOT NULL DEFAULT 0,
+    output_tokens   INTEGER NOT NULL DEFAULT 0,
+    llm_calls       TEXT,               -- JSON array of per-call LLM stats (atomic append via json_insert)
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_tasks_plan ON tasks(plan_id, id);
 CREATE INDEX idx_tasks_session ON tasks(session, id);
@@ -96,6 +111,8 @@ CREATE INDEX idx_tasks_status ON tasks(session, status);
 
 - `plan_id` replaces the old `message_id` + `goal` — the plan owns the goal, tasks reference the plan.
 - `exec` and `skill` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
+- `command`: for `exec` tasks, the planner writes a natural-language `detail`; the exec translator LLM converts it to a shell command stored here before execution.
+- `llm_calls`: appended atomically via SQLite `json_insert` — no read-modify-write race condition between concurrent coroutines.
 - Status lifecycle: `pending` → `running` → `done` | `failed` | `cancelled`.
 - On startup, any tasks left in `running` status are marked as `failed` (container crashed mid-execution).
 - On cancel, remaining `pending` tasks are marked `cancelled`.
@@ -120,7 +137,11 @@ CREATE TABLE facts (
 );
 ```
 
-**Facts are global** — visible to all sessions. The `session` column is provenance only (which session generated it, not where it's visible).
+**Facts visibility depends on category** (M43):
+- `project`, `tool`, `general`: global — visible to all sessions.
+- `user`: session-scoped — visible only in the originating session (and to admin sessions).
+
+The `session` column serves dual purpose: provenance (who created it) and, for `user`-category facts, access scope.
 
 Facts are **certain truths** that have passed evaluation by the curator. They are not created directly by the reviewer — the reviewer produces learnings (see below), and the curator promotes confirmed learnings to facts. See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle).
 

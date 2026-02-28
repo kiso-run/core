@@ -831,6 +831,59 @@ def test_connector_stop_nonexistent(tmp_path, mock_admin, capsys):
     assert "not installed" in out
 
 
+# ── _write_status ────────────────────────────────────────────
+
+
+def test_write_status_creates_file(tmp_path):
+    """_write_status writes a valid JSON file with the expected fields."""
+    import json
+    from cli.connector import _write_status
+
+    connector_dir = tmp_path / "discord"
+    connector_dir.mkdir()
+    _write_status(connector_dir, restarts=2, consecutive_failures=1,
+                  backoff=4.0, gave_up=False, last_exit_code=1)
+
+    status_file = connector_dir / ".status.json"
+    assert status_file.exists()
+    data = json.loads(status_file.read_text())
+    assert data["restarts"] == 2
+    assert data["consecutive_failures"] == 1
+    assert data["backoff"] == 4.0
+    assert data["gave_up"] is False
+    assert data["last_exit_code"] == 1
+    assert "timestamp" in data
+
+
+def test_write_status_no_tmp_file_remains(tmp_path):
+    """After _write_status completes, no .tmp file is left behind."""
+    from cli.connector import _write_status
+
+    connector_dir = tmp_path / "discord"
+    connector_dir.mkdir()
+    _write_status(connector_dir, restarts=0, consecutive_failures=0,
+                  backoff=1.0, gave_up=False, last_exit_code=None)
+
+    assert not (connector_dir / ".status.tmp").exists()
+
+
+def test_write_status_overwrites_existing(tmp_path):
+    """Repeated calls overwrite the previous status file."""
+    import json
+    from cli.connector import _write_status
+
+    connector_dir = tmp_path / "discord"
+    connector_dir.mkdir()
+    _write_status(connector_dir, restarts=1, consecutive_failures=0,
+                  backoff=1.0, gave_up=False, last_exit_code=0)
+    _write_status(connector_dir, restarts=5, consecutive_failures=3,
+                  backoff=16.0, gave_up=True, last_exit_code=2)
+
+    data = json.loads((connector_dir / ".status.json").read_text())
+    assert data["restarts"] == 5
+    assert data["gave_up"] is True
+
+
 # ── _connector_status ────────────────────────────────────────
 
 
