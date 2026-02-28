@@ -1070,7 +1070,7 @@ async def _process_message(
                 db, config, session, msg_id, content, slog=slog,
             )
             # Bump fact usage for fast path (facts contributed to chat response)
-            all_facts = await get_facts(db)
+            all_facts = await get_facts(db, is_admin=True)
             if all_facts:
                 await update_fact_usage(db, [f["id"] for f in all_facts])
             # Run post-plan knowledge processing (summarizer, curator, etc.)
@@ -1182,7 +1182,7 @@ async def _process_message(
             if slog:
                 slog.info("Plan %d done", current_plan_id)
             # Bump fact usage for all facts (they contributed to a successful plan)
-            all_facts = await get_facts(db)
+            all_facts = await get_facts(db, is_admin=True)
             if all_facts:
                 await update_fact_usage(db, [f["id"] for f in all_facts])
             break

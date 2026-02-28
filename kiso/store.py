@@ -155,56 +155,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     await db.executescript(SCHEMA)
     await db.commit()
 
-    # --- Migrations for existing databases ---
-    await _migrate(db)
-
     return db
-
-
-async def _migrate(db: aiosqlite.Connection) -> None:
-    """Add columns that may be missing from older schemas."""
-    migrations = [
-        ("tasks", "command", "ALTER TABLE tasks ADD COLUMN command TEXT"),
-        ("tasks", "input_tokens", "ALTER TABLE tasks ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0"),
-        ("tasks", "output_tokens", "ALTER TABLE tasks ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0"),
-        ("plans", "total_input_tokens", "ALTER TABLE plans ADD COLUMN total_input_tokens INTEGER NOT NULL DEFAULT 0"),
-        ("plans", "total_output_tokens", "ALTER TABLE plans ADD COLUMN total_output_tokens INTEGER NOT NULL DEFAULT 0"),
-        ("plans", "model", "ALTER TABLE plans ADD COLUMN model TEXT"),
-        ("tasks", "llm_calls", "ALTER TABLE tasks ADD COLUMN llm_calls TEXT"),
-        ("plans", "llm_calls", "ALTER TABLE plans ADD COLUMN llm_calls TEXT"),
-        ("tasks", "substatus", "ALTER TABLE tasks ADD COLUMN substatus TEXT"),
-        ("tasks", "retry_count", "ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"),
-        ("facts", "category", "ALTER TABLE facts ADD COLUMN category TEXT DEFAULT 'general'"),
-        ("facts", "confidence", "ALTER TABLE facts ADD COLUMN confidence REAL DEFAULT 1.0"),
-        ("facts", "last_used", "ALTER TABLE facts ADD COLUMN last_used TEXT"),
-        ("facts", "use_count", "ALTER TABLE facts ADD COLUMN use_count INTEGER DEFAULT 0"),
-    ]
-    _known = frozenset(t for t, _, _ in migrations)
-    for table, column, sql in migrations:
-        assert table in _known, f"Unknown table in migration: {table!r}"
-        cur = await db.execute(f"PRAGMA table_info({table})")
-        columns = {row[1] for row in await cur.fetchall()}
-        if column not in columns:
-            await db.execute(sql)
-    await db.commit()
-
-    # Rebuild FTS index for pre-existing facts (first run after M42).
-    # The triggers keep the index current for new rows; existing rows need a
-    # one-time backfill.  We check by comparing counts — if the FTS index is
-    # empty while facts exist, it has not been populated yet.
-    try:
-        cur = await db.execute("SELECT count(*) FROM kiso_facts_fts")
-        fts_count = (await cur.fetchone())[0]
-        if fts_count == 0:
-            cur = await db.execute("SELECT count(*) FROM facts")
-            facts_count = (await cur.fetchone())[0]
-            if facts_count > 0:
-                await db.execute(
-                    "INSERT INTO kiso_facts_fts(rowid, content) SELECT id, content FROM facts"
-                )
-                await db.commit()
-    except Exception:
-        pass  # FTS5 not compiled into this SQLite build — graceful degradation
 
 
 async def get_session(db: aiosqlite.Connection, session: str) -> dict | None:
@@ -361,25 +312,18 @@ async def get_facts(
     session: str | None = None,
     is_admin: bool = False,
 ) -> list[dict]:
-    """Return facts filtered by session scope (M43).
+    """Return facts filtered by session scope.
 
     - project / tool / general facts are always global and returned unconditionally.
     - user-category facts are visible only in the session where they were created.
-    - Facts with ``session IS NULL`` are legacy global facts and are always included.
     - Admin users bypass all filtering and receive every fact.
-
-    When *session* is ``None`` and *is_admin* is ``False`` the query returns all
-    non-user facts plus user facts with no session (legacy global rows).  This
-    preserves backward-compatible behaviour for callers that do not yet supply a
-    session (e.g. system operations like fact consolidation that use ``is_admin=True``
-    explicitly).
     """
     if is_admin or session is None:
         cur = await db.execute("SELECT * FROM facts ORDER BY id")
     else:
         cur = await db.execute(
             "SELECT * FROM facts "
-            "WHERE category != 'user' OR session IS NULL OR session = ? "
+            "WHERE category != 'user' OR session = ? "
             "ORDER BY id",
             (session,),
         )
@@ -405,8 +349,8 @@ async def search_facts(
 ) -> list[dict]:
     """Return up to *limit* facts most relevant to *query* (FTS5 BM25 ranking).
 
-    Session scoping mirrors :func:`get_facts` — user-category facts are
-    filtered to the current session unless *is_admin* is ``True``.
+    Session scoping: user-category facts are filtered to the current session
+    unless *is_admin* is ``True``.
 
     Falls back to :func:`get_facts` when:
     - FTS5 is not compiled into the SQLite build
@@ -431,7 +375,7 @@ async def search_facts(
                 "SELECT f.* FROM facts f "
                 "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
                 "WHERE kiso_facts_fts MATCH ? "
-                "AND (f.category != 'user' OR f.session IS NULL OR f.session = ?) "
+                "AND (f.category != 'user' OR f.session = ?) "
                 "ORDER BY rank LIMIT ?",
                 (fts_q, session, limit),
             )

@@ -1149,19 +1149,6 @@ async def test_get_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
     assert "Bob prefers brief output" in contents
 
 
-async def test_get_facts_null_session_user_fact_is_global(db: aiosqlite.Connection):
-    """M43: user fact with session=NULL (legacy) is visible to any session."""
-    # Insert a legacy user fact with no session (as if written before M43)
-    await db.execute(
-        "INSERT INTO facts (content, source, category, confidence) VALUES (?, ?, ?, ?)",
-        ("Legacy user preference", "curator", "user", 1.0),
-    )
-    await db.commit()
-
-    facts = await get_facts(db, session="any-session")
-    contents = [f["content"] for f in facts]
-    assert "Legacy user preference" in contents
-
 
 # --- M42: search_facts (FTS5) ---
 
