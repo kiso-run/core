@@ -1,7 +1,11 @@
+# Development / local-run helper only.
+# Production instances are managed by install.sh (docker run) and kiso-host.sh.
+# Use: docker compose up  (mounts ~/.kiso as the data dir for quick dev iteration)
+
 services:
   kiso:
     build: .
-    container_name: kiso
+    container_name: kiso-dev
     ports:
       - "8333:8333"
     volumes:
@@ -9,4 +13,4 @@ services:
     env_file:
       - path: .env
         required: false
-    restart: unless-stopped
+    restart: "no"

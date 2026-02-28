@@ -8,16 +8,19 @@ set -euo pipefail
 #
 # When run via curl, clones the repo to a temp dir, builds, cleans up.
 # When run from the repo, uses the repo directly.
+#
+# Each call creates or reconfigures one named instance. Multiple instances
+# can be installed on the same machine; each gets its own Docker container,
+# data directory, and port.
 
 KISO_REPO="https://github.com/kiso-run/core.git"
 KISO_DIR="$HOME/.kiso"
-CONFIG="$KISO_DIR/config.toml"
-ENV_FILE="$KISO_DIR/.env"
-RUNTIME_COMPOSE="$KISO_DIR/docker-compose.yml"
+INSTANCES_JSON="$KISO_DIR/instances.json"
+IMAGE="kiso:latest"
 WRAPPER_DST="$HOME/.local/bin/kiso"
-CONTAINER="kiso"
 CLEANUP_DIR=""
 USERNAME_RE='^[a-z_][a-z0-9_-]{0,31}$'
+INSTANCE_NAME_RE='^[a-z0-9][a-z0-9-]*$'
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ trap cleanup EXIT
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
+ARG_NAME=""
 ARG_USER=""
 ARG_API_KEY=""
 ARG_BASE_URL=""
@@ -65,6 +69,9 @@ RESET_REQUESTED=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --name)
+            if [[ $# -lt 2 ]]; then red "Error: --name requires a value"; exit 1; fi
+            ARG_NAME="$2"; shift 2 ;;
         --user)
             if [[ $# -lt 2 ]]; then red "Error: --user requires a value"; exit 1; fi
             ARG_USER="$2"; shift 2 ;;
@@ -108,6 +115,62 @@ generate_token() {
     fi
 }
 
+validate_instance_name() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        red "Error: instance name cannot be empty."; return 1
+    fi
+    if [[ ${#name} -gt 32 ]]; then
+        red "Error: instance name too long (max 32 chars)."; return 1
+    fi
+    if [[ ! "$name" =~ $INSTANCE_NAME_RE ]]; then
+        red "Error: instance name must be lowercase alphanumeric + hyphens, no leading/trailing hyphen."
+        red "  Valid: kiso, my-bot, bot2"
+        return 1
+    fi
+    if [[ "$name" == *- ]]; then
+        red "Error: instance name cannot end with a hyphen."; return 1
+    fi
+    return 0
+}
+
+_instance_exists_in_json() {
+    local name="$1"
+    [[ -f "$INSTANCES_JSON" ]] && python3 -c "
+import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if sys.argv[2] in d else 1)
+" "$INSTANCES_JSON" "$name" 2>/dev/null
+}
+
+ask_instance_name() {
+    if [[ -n "$ARG_NAME" ]]; then
+        if ! validate_instance_name "$ARG_NAME"; then exit 1; fi
+        echo "$ARG_NAME"
+        return
+    fi
+    local inst_name
+    echo >&2
+    bold "Instance name" >&2
+    yellow "  This is your bot's identifier (used for the Docker container, data dir, and CLI)." >&2
+    yellow "  Lowercase alphanumeric + hyphens. Examples: kiso, jarvis, work-bot" >&2
+    echo >&2
+    while true; do
+        read -rp "  Instance name [kiso]: " inst_name
+        inst_name="${inst_name:-kiso}"
+        inst_name="${inst_name,,}"  # ensure lowercase
+        if ! validate_instance_name "$inst_name" 2>&1; then
+            continue
+        fi
+        if _instance_exists_in_json "$inst_name"; then
+            yellow "  Instance '$inst_name' already exists."
+            yellow "  To reconfigure it, re-run install.sh and choose update."
+            yellow "  To remove it: kiso instance remove $inst_name"
+            continue
+        fi
+        echo "$inst_name"
+        return
+    done
+}
+
 ask_username() {
     local default_user kiso_user
     default_user="$(whoami)"
@@ -131,9 +194,10 @@ ask_username() {
 }
 
 ask_bot_name() {
+    local default_display="$1"
     local bot_name
-    read -rp "Bot name [Kiso]: " bot_name
-    bot_name="${bot_name:-Kiso}"
+    read -rp "Bot display name [$default_display]: " bot_name
+    bot_name="${bot_name:-$default_display}"
     echo "$bot_name"
 }
 
@@ -213,17 +277,56 @@ ask_models() {
     printf '%b' "$result"
 }
 
+# ── Port auto-detection ────────────────────────────────────────────────────────
+
+next_free_server_port() {
+    local port=8333
+    local used=""
+    [[ -f "$INSTANCES_JSON" ]] && used=$(python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+print('\n'.join(str(v['server_port']) for v in d.values() if 'server_port' in v))
+" "$INSTANCES_JSON" 2>/dev/null || true)
+    while true; do
+        if echo "$used" | grep -q "^${port}$"; then ((port++)); continue; fi
+        if ss -tln 2>/dev/null | awk '{print $4}' | grep -q ":${port}$"; then ((port++)); continue; fi
+        break
+    done
+    echo "$port"
+}
+
+next_free_connector_base() {
+    local base=9000
+    local used=""
+    [[ -f "$INSTANCES_JSON" ]] && used=$(python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+print('\n'.join(str(v.get('connector_port_base',0)) for v in d.values()))
+" "$INSTANCES_JSON" 2>/dev/null || true)
+    while echo "$used" | grep -q "^${base}$"; do ((base+=100)); done
+    echo "$base"
+}
+
+register_instance() {
+    local name="$1" sport="$2" cbase="$3"
+    mkdir -p "$KISO_DIR"
+    python3 - "$INSTANCES_JSON" "$name" "$sport" "$cbase" <<'PY'
+import sys, json, pathlib
+path = pathlib.Path(sys.argv[1])
+name, sport, cbase = sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+path.parent.mkdir(parents=True, exist_ok=True)
+d = json.loads(path.read_text()) if path.exists() else {}
+d[name] = {"server_port": sport, "connector_port_base": cbase, "connectors": {}}
+path.write_text(json.dumps(d, indent=2) + "\n")
+PY
+}
+
 # ── 1. Check prerequisites ───────────────────────────────────────────────────
 
 bold "Checking prerequisites..."
 
 if ! command -v docker &>/dev/null; then
     red "Error: docker is not installed. Install Docker first."
-    exit 1
-fi
-
-if ! docker compose version &>/dev/null; then
-    red "Error: docker compose is not available. Install Docker Compose v2."
     exit 1
 fi
 
@@ -240,14 +343,14 @@ if ! command -v git &>/dev/null; then
     exit 1
 fi
 
-green "  docker, docker compose, git found"
+green "  docker, git found"
 echo
 
 # ── 2. Locate or clone the repo ─────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
-if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/docker-compose.yml" && -f "$SCRIPT_DIR/Dockerfile" ]]; then
+if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/Dockerfile" ]]; then
     REPO_DIR="$SCRIPT_DIR"
     bold "Using repo at $REPO_DIR"
 else
@@ -258,12 +361,103 @@ else
     green "  cloned to temp dir"
 fi
 
-REPO_COMPOSE="$REPO_DIR/docker-compose.yml"
 WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 
-# ── 3. Check existing state ─────────────────────────────────────────────────
+# ── 3. Check for existing installations ─────────────────────────────────────
 
 bold "Checking existing installation..."
+
+# Detect old single-instance layout (config.toml directly in ~/.kiso/)
+OLD_CONFIG="$KISO_DIR/config.toml"
+if [[ -f "$OLD_CONFIG" && ! -f "$INSTANCES_JSON" ]]; then
+    echo
+    yellow "  Detected old single-instance layout (~/.kiso/config.toml)."
+    yellow "  To migrate to multi-instance, run:"
+    yellow "    mkdir -p ~/.kiso/instances/kiso"
+    yellow "    mv ~/.kiso/config.toml ~/.kiso/instances/kiso/"
+    yellow "    mv ~/.kiso/.env ~/.kiso/instances/kiso/ 2>/dev/null || true"
+    yellow "    mv ~/.kiso/kiso.db ~/.kiso/instances/kiso/ 2>/dev/null || true"
+    yellow "  Then re-run install.sh."
+    echo
+    if ! confirm "  Continue with fresh install (old config untouched)?"; then
+        echo "Aborted. Migrate manually and re-run install.sh."
+        exit 0
+    fi
+fi
+
+# If existing instances, offer to add new or update image
+EXISTING_COUNT=0
+if [[ -f "$INSTANCES_JSON" ]]; then
+    EXISTING_COUNT=$(python3 -c "import json; print(len(json.load(open('$INSTANCES_JSON'))))" 2>/dev/null || echo 0)
+fi
+
+MODE="new"  # "new" or "update-image"
+if [[ "$EXISTING_COUNT" -gt 0 ]]; then
+    echo
+    yellow "  Found $EXISTING_COUNT existing instance(s):"
+    python3 -c "
+import json
+d=json.load(open('$INSTANCES_JSON'))
+for k,v in d.items():
+    print(f'    {k}  →  port {v.get(\"server_port\",\"?\")}')
+" 2>/dev/null || true
+    echo
+    echo "  Options:"
+    echo "    1) Add a new instance"
+    echo "    2) Update Docker image (rebuild + restart all instances)"
+    read -rp "  Choice [1]: " MODE_CHOICE
+    MODE_CHOICE="${MODE_CHOICE:-1}"
+    if [[ "$MODE_CHOICE" == "2" ]]; then
+        MODE="update-image"
+    fi
+fi
+
+echo
+
+# ── Update-image mode ────────────────────────────────────────────────────────
+
+if [[ "$MODE" == "update-image" ]]; then
+    bold "Rebuilding Docker image..."
+    if ! docker build -t "$IMAGE" "$REPO_DIR"; then
+        yellow "  Build failed — pruning build cache and retrying without cache..."
+        docker builder prune -f &>/dev/null || true
+        if ! docker build --no-cache -t "$IMAGE" "$REPO_DIR"; then
+            red "Error: Docker build failed."; exit 1
+        fi
+    fi
+    green "  image rebuilt: $IMAGE"
+
+    bold "Restarting all instances..."
+    if [[ -f "$INSTANCES_JSON" ]]; then
+        python3 -c "
+import json; d=json.load(open('$INSTANCES_JSON')); print('\n'.join(d.keys()))
+" 2>/dev/null | while IFS= read -r name; do
+            if docker inspect "kiso-$name" &>/dev/null; then
+                echo "  Restarting kiso-$name..."
+                docker restart "kiso-$name" || yellow "  Warning: could not restart kiso-$name"
+            fi
+        done
+    fi
+    green "  done. All instances updated."
+    exit 0
+fi
+
+# ── New instance flow ────────────────────────────────────────────────────────
+
+# ── 3b. Instance name ────────────────────────────────────────────────────────
+
+INST_NAME="$(ask_instance_name)"
+CONTAINER="kiso-$INST_NAME"
+INST_DIR="$KISO_DIR/instances/$INST_NAME"
+CONFIG="$INST_DIR/config.toml"
+ENV_FILE="$INST_DIR/.env"
+
+bold "Instance: $INST_NAME"
+echo "  Container:  $CONTAINER"
+echo "  Data dir:   $INST_DIR"
+echo
+
+# ── 3c. Check per-instance existing state ───────────────────────────────────
 
 NEED_CONFIG=true
 NEED_ENV=true
@@ -289,7 +483,6 @@ if [[ -f "$ENV_FILE" ]]; then
     fi
 else
     yellow "  $ENV_FILE not found — will ask for API key."
-    yellow "  (API key is stored in .env, separate from config.toml)"
 fi
 echo
 
@@ -307,10 +500,8 @@ if docker inspect "$CONTAINER" &>/dev/null; then
     fi
 fi
 
-# ── 3b. Back up files that should survive ──────────────────────────────────
+# ── 3d. Back up files that should survive ───────────────────────────────────
 
-# Belt-and-suspenders: back up .env and config.toml before Docker operations
-# so we can restore them if anything (stale VOLUME metadata, etc.) wipes them.
 ENV_BACKUP=""
 CONFIG_BACKUP=""
 if [[ -f "$ENV_FILE" ]]; then
@@ -322,23 +513,16 @@ if [[ "$NEED_CONFIG" == false && -f "$CONFIG" ]]; then
     cp "$CONFIG" "$CONFIG_BACKUP"
 fi
 
-# ── 3c. Clean root-owned files ────────────────────────────────────────────
+# ── 3e. Clean root-owned files in instance dir ───────────────────────────────
 
-# The container runs as root, so files it creates (store.db, session.log,
-# workspace files, sys/, reference/) are owned by root and cannot be deleted
-# by the host user.  Use a throwaway container to remove them.
-if [[ "$NEED_BUILD" == true && -d "$KISO_DIR" ]]; then
-    # Check if any root-owned files exist
-    if find "$KISO_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
+if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
+    if find "$INST_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
         bold "Cleaning root-owned files from previous install..."
-        docker run --rm -v "${KISO_DIR}:/mnt/kiso" alpine sh -c '
-            # Remove directories that contain root-owned runtime data
+        docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine sh -c '
             for d in sessions audit sys reference skills/*/; do
                 rm -rf "/mnt/kiso/$d" 2>/dev/null
             done
-            # Remove root-owned files (but never config.toml, .env, docker-compose.yml)
-            rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
-            # Fix ownership on remaining files so host user can manage them
+            rm -f /mnt/kiso/kiso.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
             chown -R '"$(id -u):$(id -g)"' /mnt/kiso/ 2>/dev/null
         ' && green "  cleaned" || yellow "  warning: could not clean all root-owned files"
     fi
@@ -347,13 +531,15 @@ fi
 # ── 4. Configure ─────────────────────────────────────────────────────────────
 
 bold "Configuring..."
-mkdir -p "$KISO_DIR"
+mkdir -p "$INST_DIR"
 
 if [[ "$NEED_CONFIG" == true ]]; then
     kiso_user="$(ask_username)"
     echo "  username: $kiso_user"
 
-    bot_name="$(ask_bot_name)"
+    # Default display name = capitalized instance name
+    default_display="${INST_NAME^}"
+    bot_name="$(ask_bot_name "$default_display")"
     echo "  bot name: $bot_name"
 
     provider_name="$(ask_provider_name)"
@@ -408,6 +594,8 @@ max_queue_size               = 50
 # Server
 host                         = "0.0.0.0"
 port                         = 8333
+
+# Worker
 worker_idle_timeout          = 300    # seconds
 
 # Webhooks
@@ -433,7 +621,6 @@ PREVIEW
 fi
 echo
 
-# Ensure base_url is set for the API key prompt (may not be set if config was kept)
 base_url="${base_url:-https://openrouter.ai/api/v1}"
 
 if [[ "$NEED_ENV" == true ]]; then
@@ -441,7 +628,6 @@ if [[ "$NEED_ENV" == true ]]; then
 
     if [[ -f "$ENV_FILE" ]]; then
         bold "Updating $ENV_FILE..."
-        # Preserve all existing entries; update only KISO_LLM_API_KEY
         tmpfile="$(mktemp)"
         grep -v '^KISO_LLM_API_KEY=' "$ENV_FILE" > "$tmpfile" || true
         printf 'KISO_LLM_API_KEY=%s\n' "$api_key" >> "$tmpfile"
@@ -453,77 +639,62 @@ if [[ "$NEED_ENV" == true ]]; then
         green "  .env created"
     fi
 
-    # Verify the env var is loadable
     set -a; source "$ENV_FILE"; set +a
     if [[ -z "${KISO_LLM_API_KEY:-}" ]]; then
         yellow "  warning: KISO_LLM_API_KEY is empty after loading .env"
     fi
 
-    # Refresh backup so Docker-wipe restore has the newly-written content
     if [[ -n "$ENV_BACKUP" ]]; then
         cp "$ENV_FILE" "$ENV_BACKUP"
     fi
 fi
 echo
 
-# ── 5. Build and start ──────────────────────────────────────────────────────
+# ── 5. Auto-detect ports ─────────────────────────────────────────────────────
+
+SERVER_PORT="$(next_free_server_port)"
+CONN_BASE="$(next_free_connector_base)"
+bold "Ports"
+echo "  Server:          $SERVER_PORT"
+echo "  Connector range: $((CONN_BASE+1))-$((CONN_BASE+10))"
+echo
+
+# ── 6. Build and start ──────────────────────────────────────────────────────
 
 if [[ "$NEED_BUILD" == true ]]; then
-    # Remove dangling images that may carry stale VOLUME metadata from old builds
     docker image prune -f &>/dev/null || true
 
     bold "Building Docker image..."
-    if ! docker compose -f "$REPO_COMPOSE" build; then
+    if ! docker build -t "$IMAGE" "$REPO_DIR"; then
         yellow "  Build failed — pruning build cache and retrying without cache..."
         docker builder prune -f &>/dev/null || true
-        if ! docker compose -f "$REPO_COMPOSE" build --no-cache; then
+        if ! docker build --no-cache -t "$IMAGE" "$REPO_DIR"; then
             echo
             red "Error: Docker build failed."
-            red "  This is usually caused by corrupted Docker cache or storage."
-            red ""
-            red "  Try these steps manually:"
-            red "    1. docker builder prune --all -f"
-            red "    2. docker system prune -f"
-            red "    3. ./install.sh"
-            red ""
-            red "  If it still fails, restart Docker and try again:"
-            red "    sudo systemctl restart docker"
+            red "  Try:"
+            red "    docker builder prune --all -f"
+            red "    docker system prune -f"
+            red "    ./install.sh"
+            red "  Or restart Docker: sudo systemctl restart docker"
             exit 1
         fi
     fi
+    green "  image: $IMAGE"
 
-    # Get the built image name (e.g. "core-kiso")
-    IMAGE_NAME=$(docker compose -f "$REPO_COMPOSE" images --format json 2>/dev/null | grep -o '"Image":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-    if [[ -z "$IMAGE_NAME" ]]; then
-        IMAGE_NAME="$(basename "$REPO_DIR")-kiso"
-    fi
-    green "  image: $IMAGE_NAME"
-
-    # Write runtime compose (self-contained, no dependency on repo)
-    bold "Writing $RUNTIME_COMPOSE..."
-    cat > "$RUNTIME_COMPOSE" <<EOF
-services:
-  kiso:
-    image: $IMAGE_NAME
-    container_name: kiso
-    ports:
-      - "8333:8333"
-    volumes:
-      - ${KISO_DIR}:/root/.kiso
-    env_file:
-      - path: ${KISO_DIR}/.env
-        required: false
-    restart: unless-stopped
-EOF
-    green "  runtime compose created"
-
-    bold "Starting container..."
-    docker compose -f "$RUNTIME_COMPOSE" up -d
+    bold "Starting container $CONTAINER..."
+    docker run -d \
+        --name "$CONTAINER" \
+        --restart unless-stopped \
+        -p "${SERVER_PORT}:8333" \
+        -p "$((CONN_BASE+1))-$((CONN_BASE+10)):$((CONN_BASE+1))-$((CONN_BASE+10))" \
+        --env-file "$ENV_FILE" \
+        -v "$INST_DIR:/root/.kiso" \
+        "$IMAGE"
 
     bold "Waiting for healthcheck..."
     elapsed=0
     while [[ $elapsed -lt 30 ]]; do
-        if curl -sf http://localhost:8333/health &>/dev/null; then
+        if curl -sf "http://localhost:$SERVER_PORT/health" &>/dev/null; then
             echo
             green "  healthy!"
             break
@@ -536,13 +707,23 @@ EOF
     if [[ $elapsed -ge 30 ]]; then
         echo
         yellow "  Healthcheck timed out (30s). Container may still be starting."
-        yellow "  Check with: docker logs kiso"
+        yellow "  Check with: kiso instance logs $INST_NAME"
     fi
 else
     green "  Skipping build (container kept)."
+    SERVER_PORT=$(python3 -c "
+import json
+d=json.load(open('$INSTANCES_JSON'))
+print(d.get('$INST_NAME', {}).get('server_port', 8333))
+" 2>/dev/null || echo 8333)
+    CONN_BASE=$(python3 -c "
+import json
+d=json.load(open('$INSTANCES_JSON'))
+print(d.get('$INST_NAME', {}).get('connector_port_base', 9000))
+" 2>/dev/null || echo 9000)
 fi
 
-# ── 5a. Factory reset if requested ──────────────────────────────────────────
+# ── 6a. Factory reset if requested ───────────────────────────────────────────
 
 if [[ "$RESET_REQUESTED" == true ]]; then
     bold "Running factory reset..."
@@ -551,25 +732,28 @@ if [[ "$RESET_REQUESTED" == true ]]; then
     green "  factory reset complete"
 fi
 
-# ── 5b. Restore files if Docker wiped them ──────────────────────────────────
+# ── 6b. Restore files if Docker wiped them ──────────────────────────────────
 
-# Old Docker images (before commit 4caab64) had a VOLUME directive that could
-# cause .env to disappear on rebuild.  Stale layers / anonymous volumes may
-# still trigger this.  Restore from backup if needed.
 if [[ -n "$ENV_BACKUP" && ! -s "$ENV_FILE" ]]; then
-    yellow "  .env was unexpectedly removed or emptied during build — restoring from backup"
+    yellow "  .env was unexpectedly removed or emptied — restoring from backup"
     cp "$ENV_BACKUP" "$ENV_FILE"
     green "  .env restored"
 fi
 if [[ -n "$CONFIG_BACKUP" && ! -s "$CONFIG" ]]; then
-    yellow "  config.toml was unexpectedly removed or emptied during build — restoring from backup"
+    yellow "  config.toml was unexpectedly removed or emptied — restoring from backup"
     cp "$CONFIG_BACKUP" "$CONFIG"
     green "  config.toml restored"
 fi
 [[ -n "$ENV_BACKUP" ]] && rm -f "$ENV_BACKUP"
 [[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP"
 
-# ── 6. Install wrapper ─────────────────────────────────────────────────────
+# ── 6c. Register instance ─────────────────────────────────────────────────────
+
+register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE"
+green "  registered in $INSTANCES_JSON"
+
+# ── 7. Install wrapper ─────────────────────────────────────────────────────
+
 echo
 bold "Installing kiso wrapper..."
 mkdir -p "$(dirname "$WRAPPER_DST")"
@@ -577,7 +761,8 @@ cp "$WRAPPER_SRC" "$WRAPPER_DST"
 chmod +x "$WRAPPER_DST"
 green "  installed to $WRAPPER_DST"
 
-# ── 6b. Install completions ──────────────────────────────────────────────
+# ── 7b. Install completions ──────────────────────────────────────────────────
+
 echo
 bold "Installing shell completions..."
 BASH_COMP_DIR="$HOME/.local/share/bash-completion/completions"
@@ -588,7 +773,6 @@ cp "$REPO_DIR/completions/kiso.bash" "$BASH_COMP_DIR/kiso"
 cp "$REPO_DIR/completions/kiso.zsh"  "$ZSH_COMP_DIR/_kiso"
 green "  completions installed"
 
-# Hint for zsh fpath
 if command -v zsh &>/dev/null; then
     if ! zsh -c 'echo "$fpath"' 2>/dev/null | grep -q "$HOME/.local/share/zsh/site-functions"; then
         yellow ""
@@ -599,12 +783,10 @@ if command -v zsh &>/dev/null; then
     fi
 fi
 
-# Ensure ~/.local/bin is in PATH — add to bashrc/zshrc if missing
 PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
 _needs_source=false
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     _needs_source=true
-    # Append to the appropriate shell profile
     if [[ -f "$HOME/.zshrc" ]]; then
         _profile="$HOME/.zshrc"
     else
@@ -616,24 +798,26 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     fi
 fi
 
-# ── 7. Summary ──────────────────────────────────────────────────────────────
+# ── 8. Summary ──────────────────────────────────────────────────────────────
 
 echo
-green "  kiso is running!"
+green "  $INST_NAME is running!"
 echo
 echo "  Quick start:"
-echo "    kiso                    start chatting"
-echo "    kiso msg \"hello\"        send a message, get a response"
-echo "    kiso help               show all commands"
+echo "    kiso                           start chatting"
+[[ "$EXISTING_COUNT" -gt 0 ]] && \
+echo "    kiso --instance $INST_NAME      (specify instance if multiple exist)"
+echo "    kiso msg \"hello\"               send a message, get a response"
+echo "    kiso help                      show all commands"
 echo
-echo "  Useful commands:"
-echo "    kiso status             check if running + healthy"
-echo "    kiso logs               follow container logs"
-echo "    kiso restart            restart the container"
-echo "    kiso down / kiso up     stop / start"
+echo "  Manage this instance:"
+echo "    kiso instance status $INST_NAME"
+echo "    kiso instance logs $INST_NAME"
+echo "    kiso instance start/stop/restart $INST_NAME"
 echo
 echo "  Config:   $CONFIG"
-echo "  API:      http://localhost:8333"
+echo "  API:      http://localhost:$SERVER_PORT"
+echo "  Registry: $INSTANCES_JSON"
 echo
 
 if [[ "$_needs_source" == true ]]; then
