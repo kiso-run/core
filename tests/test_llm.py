@@ -816,9 +816,29 @@ class TestSharedHttpClient:
 
         prev = llm_mod._http_client
         try:
-            init_http_client(timeout=30.0)
+            await init_http_client(timeout=30.0)
             assert llm_mod._http_client is not None
             await close_http_client()
             assert llm_mod._http_client is None
         finally:
+            llm_mod._http_client = prev
+
+    @pytest.mark.asyncio
+    async def test_init_http_client_twice_closes_old(self):
+        """Calling init_http_client twice closes the previous client first."""
+        import kiso.llm as llm_mod
+
+        prev = llm_mod._http_client
+        try:
+            await init_http_client(timeout=30.0)
+            first_client = llm_mod._http_client
+            first_client.aclose = AsyncMock()
+
+            await init_http_client(timeout=60.0)
+            second_client = llm_mod._http_client
+
+            assert second_client is not first_client
+            first_client.aclose.assert_awaited_once()
+        finally:
+            await close_http_client()
             llm_mod._http_client = prev

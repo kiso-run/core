@@ -114,6 +114,15 @@ Internally, `kiso stats` calls `GET /admin/stats` which reads the JSONL files vi
 
 See [cli.md — Token Usage Statistics](cli.md#token-usage-statistics) for usage examples and output format.
 
+## File Permissions
+
+Audit files are created with restrictive permissions:
+
+- **Directory** (`audit/`): `0700` — owner read/write/execute only. Created lazily on first write, once per server process.
+- **Log files** (`YYYY-MM-DD.jsonl`): `0600` — owner read/write only.
+
+Writes are protected by `fcntl.flock(LOCK_EX)` so concurrent worker tasks don't interleave entries.
+
 ## Retention
 
 No automatic cleanup. Files accumulate in `~/.kiso/instances/{name}/audit/`. Admins manage retention externally (logrotate, cron, etc.).

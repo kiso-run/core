@@ -12,6 +12,7 @@ import pytest
 from kiso.skills import (
     MAX_ARGS_DEPTH,
     MAX_ARGS_SIZE,
+    _SKILLS_CACHE_TTL,
     _check_args_depth,
     _coerce_value,
     _env_var_name,
@@ -795,3 +796,38 @@ class TestDiscoverSkillsCache:
             invalidate_skills_cache()
             result_fresh = discover_skills()
         assert len(result_fresh) == 2
+
+    def test_cache_expires_after_ttl(self, tmp_path):
+        """After TTL, discover_skills re-scans disk without explicit invalidation."""
+        import kiso.skills as skills_mod
+
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "echo", MINIMAL_TOML)
+
+        with patch("kiso.skills.KISO_DIR", tmp_path):
+            discover_skills()
+            assert skills_mod._skills_cache is not None
+
+            # Add a new skill while cache is warm, then fast-forward past TTL
+            _create_skill(skills_dir, "newskill", MINIMAL_TOML.replace(
+                'name = "echo"', 'name = "newskill"'
+            ))
+            skills_mod._skills_cache_at = skills_mod._skills_cache_at - (_SKILLS_CACHE_TTL + 1)
+
+            result = discover_skills()
+        assert len(result) == 2  # re-scanned after TTL expiry
+
+    def test_empty_skills_dir_cached(self, tmp_path):
+        """Empty skills dir result (empty list) is also cached."""
+        import kiso.skills as skills_mod
+
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+
+        with patch("kiso.skills.KISO_DIR", tmp_path):
+            result1 = discover_skills()
+            result2 = discover_skills()
+
+        assert result1 == []
+        assert result1 is result2  # same object from cache

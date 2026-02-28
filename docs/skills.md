@@ -268,7 +268,9 @@ When the worker encounters a `skill` task:
 
 ## Discovery
 
-Rescanned from `/root/.kiso/skills/` (container-internal) before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). No restart needed. The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
+Scanned from `/root/.kiso/skills/` (container-internal) before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
+
+**Caching**: the skill list is cached in-memory per server process with a 60-second TTL. Newly installed or removed skills are visible to the server within 60 seconds — no restart needed. The CLI and server are separate processes, so an explicit cache invalidation from the CLI has no effect on the running server; the TTL handles it automatically.
 
 ## Why Subprocesses
 

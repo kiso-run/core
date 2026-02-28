@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import tomllib
@@ -18,15 +19,20 @@ log = logging.getLogger(__name__)
 # Supported arg types in kiso.toml [kiso.skill.args]
 _ARG_TYPES = {"string", "int", "float", "bool"}
 
-# Module-level cache for the default skills directory.
+# TTL-based module-level cache for the default skills directory.
 # Only active when discover_skills() is called without a custom skills_dir.
+# TTL ensures newly installed/removed skills are visible within 60 seconds
+# even across process boundaries (CLI and server run as separate processes).
+_SKILLS_CACHE_TTL = 60  # seconds
 _skills_cache: list[dict] | None = None
+_skills_cache_at: float = 0.0
 
 
 def invalidate_skills_cache() -> None:
-    """Clear the skills cache. Call after install/remove/update."""
-    global _skills_cache
+    """Clear the skills cache. Forces immediate re-scan on next call."""
+    global _skills_cache, _skills_cache_at
     _skills_cache = None
+    _skills_cache_at = 0.0
 
 MAX_ARGS_SIZE = 64 * 1024  # 64 KB
 MAX_ARGS_DEPTH = 5
@@ -112,13 +118,18 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
 
     Skips directories with .installing marker.
 
-    Results are cached at module level when using the default skills directory.
-    Call invalidate_skills_cache() after install/remove/update to force re-scan.
+    Results are cached (TTL = 60s) when using the default skills directory.
+    The cache is process-local — CLI and server are separate processes.
+    The TTL ensures newly installed skills are visible within 60 seconds
+    without requiring a server restart. Call invalidate_skills_cache() to
+    force an immediate re-scan within the same process.
     """
-    global _skills_cache
+    global _skills_cache, _skills_cache_at
     use_cache = skills_dir is None
-    if use_cache and _skills_cache is not None:
-        return _skills_cache
+    if use_cache:
+        now = time.monotonic()
+        if _skills_cache is not None and (now - _skills_cache_at) < _SKILLS_CACHE_TTL:
+            return _skills_cache
 
     skills_dir = skills_dir or (KISO_DIR / "skills")
     if not skills_dir.is_dir():
@@ -186,6 +197,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
 
     if use_cache:
         _skills_cache = skills
+        _skills_cache_at = time.monotonic()
     return skills
 
 

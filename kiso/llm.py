@@ -21,9 +21,15 @@ STRUCTURED_ROLES = {"planner", "reviewer", "curator"}
 _http_client: httpx.AsyncClient | None = None
 
 
-def init_http_client(timeout: float) -> None:
-    """Create the shared HTTP client. Called once at server startup."""
+async def init_http_client(timeout: float) -> None:
+    """Create the shared HTTP client. Called at server startup.
+
+    If a client already exists (e.g. re-initialisation), it is closed first
+    to avoid leaking the underlying TCP connection pool.
+    """
     global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
     _http_client = httpx.AsyncClient(timeout=timeout)
 
 

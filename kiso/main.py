@@ -137,7 +137,7 @@ async def lifespan(app: FastAPI):
     config = load_config()
     app.state.config = config
     _init_kiso_dirs()
-    _llm_mod.init_http_client(timeout=int(config.settings["exec_timeout"]))
+    await _llm_mod.init_http_client(timeout=int(config.settings["exec_timeout"]))
     log.info("Server starting — host=%s port=%s",
              config.settings["host"],
              config.settings["port"])
