@@ -2055,6 +2055,18 @@ class TestVersionCommand:
             build_parser().parse_args(["-V"])
         assert exc.value.code == 0
 
+    def test_version_flag_stats_shows_breakdown(self, capsys):
+        """'kiso -V --stats' must show per-area LOC breakdown and exit."""
+        with patch("sys.argv", ["kiso", "-V", "--stats"]):
+            with pytest.raises(SystemExit) as exc:
+                build_parser().parse_args(["-V", "--stats"])
+        out = capsys.readouterr().out
+        assert "core" in out
+        assert "cli" in out
+        assert "tests" in out
+        assert "total" in out
+        assert exc.value.code == 0
+
     def test_version_flag_long_prints_version(self, capsys):
         """'kiso --version' must print 'kiso {version}  (N loc)' and exit."""
         import re

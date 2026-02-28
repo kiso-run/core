@@ -17,13 +17,16 @@ class _VersionAction(argparse.Action):
         super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
 
     def __call__(self, parser, namespace, values, option_string=None):
-        from pathlib import Path
+        if "--stats" in sys.argv:
+            _print_version_stats()
+        else:
+            from pathlib import Path
 
-        from kiso._version import count_loc
+            from kiso._version import count_loc
 
-        root = Path(__file__).resolve().parent.parent
-        total = count_loc(root)["total"]
-        print(f"kiso {__version__}  ({_fmt_loc(total)} loc)")
+            root = Path(__file__).resolve().parent.parent
+            total = count_loc(root)["total"]
+            print(f"kiso {__version__}  ({_fmt_loc(total)} loc)")
         parser.exit()
 
 
