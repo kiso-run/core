@@ -400,24 +400,6 @@ WRAPPER_SRC="$REPO_DIR/kiso-host.sh"
 
 bold "Checking existing installation..."
 
-# Detect old single-instance layout (config.toml directly in ~/.kiso/)
-OLD_CONFIG="$KISO_DIR/config.toml"
-if [[ -f "$OLD_CONFIG" && ! -f "$INSTANCES_JSON" ]]; then
-    echo
-    yellow "  Detected old single-instance layout (~/.kiso/config.toml)."
-    yellow "  To migrate to multi-instance, run:"
-    yellow "    mkdir -p ~/.kiso/instances/kiso"
-    yellow "    mv ~/.kiso/config.toml ~/.kiso/instances/kiso/"
-    yellow "    mv ~/.kiso/.env ~/.kiso/instances/kiso/ 2>/dev/null || true"
-    yellow "    mv ~/.kiso/kiso.db ~/.kiso/instances/kiso/ 2>/dev/null || true"
-    yellow "  Then re-run install.sh."
-    echo
-    if ! confirm "  Continue with fresh install (old config untouched)?"; then
-        echo "Aborted. Migrate manually and re-run install.sh."
-        exit 0
-    fi
-fi
-
 # If existing instances, offer to add new or update image
 EXISTING_COUNT=0
 if [[ -f "$INSTANCES_JSON" ]]; then
