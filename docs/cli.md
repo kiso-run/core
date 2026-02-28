@@ -404,9 +404,9 @@ See [skills.md — Install Flow](skills.md#install-flow) for the full 10-step se
 
 | Source | Installed as |
 |---|---|
-| `kiso skill install search` | `~/.kiso/skills/search/` |
-| `kiso skill install git@github.com:foo/bar.git` | `~/.kiso/skills/github-com_foo_bar/` |
-| `kiso skill install <url> --name custom` | `~/.kiso/skills/custom/` |
+| `kiso skill install search` | `~/.kiso/instances/{instance}/skills/search/` |
+| `kiso skill install git@github.com:foo/bar.git` | `~/.kiso/instances/{instance}/skills/github-com_foo_bar/` |
+| `kiso skill install <url> --name custom` | `~/.kiso/instances/{instance}/skills/custom/` |
 
 URL to name: see [skills.md — Naming Convention](skills.md#naming-convention) for the full algorithm.
 
@@ -517,7 +517,7 @@ kiso env delete KISO_SKILL_SEARCH_API_KEY      # remove a deploy secret
 kiso env reload                                # hot-reload .env without restart
 ```
 
-Secrets are stored in `~/.kiso/.env` and loaded into the process environment. `kiso env reload` calls `POST /admin/reload-env` to hot-reload without restarting the server. See [security.md — Deploy Secrets](security.md#deploy-secrets).
+Secrets are stored in `~/.kiso/instances/{name}/.env` and loaded into the process environment. `kiso env reload` calls `POST /admin/reload-env` to hot-reload without restarting the server. See [security.md — Deploy Secrets](security.md#deploy-secrets).
 
 ## Notes
 

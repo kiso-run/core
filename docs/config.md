@@ -176,7 +176,7 @@ base_url = "http://localhost:11434/v1"
 ```
 
 - `base_url`: **required**. No implicit default.
-- API key: set `KISO_LLM_API_KEY` in `~/.kiso/.env`. Optional for local providers (e.g. Ollama).
+- API key: set `KISO_LLM_API_KEY` in `~/.kiso/instances/{name}/.env`. Optional for local providers (e.g. Ollama).
 
 **Structured output requirement**: Planner, Reviewer, and Curator require `response_format` with strict `json_schema`. If the provider doesn't support it, the call fails with a clear error — no fallback. Worker, Summarizer, and Paraphraser produce free-form text and work with any provider.
 

@@ -91,15 +91,15 @@ Only admins can install connectors.
 # official (resolves from kiso-run org)
 kiso connector install discord
 # → clones git@github.com:kiso-run/connector-discord.git
-# → ~/.kiso/connectors/discord/
+# → ~/.kiso/instances/{instance}/connectors/discord/
 
 # unofficial (full git URL)
 kiso connector install git@github.com:someone/my-connector.git
-# → ~/.kiso/connectors/github-com_someone_my-connector/
+# → ~/.kiso/instances/{instance}/connectors/github-com_someone_my-connector/
 
 # unofficial with custom name
 kiso connector install git@github.com:someone/my-connector.git --name custom
-# → ~/.kiso/connectors/custom/
+# → ~/.kiso/instances/{instance}/connectors/custom/
 ```
 
 ### Unofficial Repo Warning
@@ -144,7 +144,7 @@ kiso connector status discord          # check if running
 
 Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/instances/{instance}/connectors/{name}/connector.log`.
 
-Under the hood: `.venv/bin/python ~/.kiso/connectors/{name}/run.py &` with a management loop that monitors the PID and respawns with backoff.
+Under the hood: `.venv/bin/python /root/.kiso/connectors/{name}/run.py &` (container-internal path) with a management loop that monitors the PID and respawns with backoff.
 
 ### Restart Policy
 

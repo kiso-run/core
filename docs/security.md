@@ -111,8 +111,8 @@ The planner receives the user's allowed skill list and only sees those skills in
 
 ### Exec Sandbox
 
-- **admin exec**: runs with `cwd=~/.kiso/sessions/{session}`. Can access any path in the container. Full permissions.
-- **user exec**: runs with `cwd=~/.kiso/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `~/.kiso/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
+- **admin exec**: runs with `cwd=/root/.kiso/sessions/{session}` (container-internal). Can access any path in the container. Full permissions.
+- **user exec**: runs with `cwd=/root/.kiso/sessions/{session}` (container-internal). **Restricted to the session workspace** — cannot read or write outside `/root/.kiso/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
 Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
@@ -194,7 +194,7 @@ API keys and tokens that skills/connectors need to function. Belong to the *depl
 
 **Lifecycle**: set by admin via `kiso env set`. Persistent across restarts.
 
-**Storage**: `~/.kiso/.env` file, loaded into process environment at startup. Hot-reloadable via `POST /admin/reload-env`. **Never** in config files, never in the database.
+**Storage**: `~/.kiso/instances/{name}/.env` file, loaded into process environment at startup. Hot-reloadable via `POST /admin/reload-env`. **Never** in config files, never in the database.
 
 **Naming**: `KISO_SKILL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, and `KISO_LLM_API_KEY` for the LLM provider.
 
@@ -478,7 +478,7 @@ Malformed TOML or file-system errors (permission denied, missing file) are caugh
 
 ### Audit Log Integrity
 
-Audit logs (`~/.kiso/audit/`) are plain JSONL without tamper protection. For environments requiring tamper evidence:
+Audit logs (`~/.kiso/instances/{name}/audit/`) are plain JSONL without tamper protection. For environments requiring tamper evidence:
 - Forward logs to a remote syslog server
 - Implement log signing (HMAC per entry)
 - Set up log rotation to prevent disk exhaustion

@@ -83,7 +83,7 @@ Add `KISO_LLM_API_KEY` as a repository secret, then use it in your workflow:
 - **Timeouts**: Every LLM call wrapped in `asyncio.wait_for(...)` to prevent hangs. L1/L2: 90s, L3: 120s, L4: 120s.
 - **Infrastructure isolation**: E2e and practical tests mock filesystem/security/webhook infrastructure (`mock_noop_infra` fixture) while letting real LLM calls flow through.
 - **Deterministic failure**: The replan test uses a manually-built failing plan (`ls /absolutely_nonexistent_dir_xyz`) rather than relying on the LLM to produce one.
-- **Temporary directories**: CLI install tests use `tmp_path` for `SKILLS_DIR` to avoid polluting `~/.kiso/skills/`.
+- **Temporary directories**: CLI install tests use `tmp_path` for `SKILLS_DIR` to avoid polluting `~/.kiso/instances/{instance}/skills/`.
 
 ## Troubleshooting
 
