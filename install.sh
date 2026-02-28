@@ -56,7 +56,7 @@ cleanup() {
     [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP"
     [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP"
 }
-trap cleanup EXIT
+[[ "${KISO_INSTALL_LIB:-}" != "1" ]] && trap cleanup EXIT
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -67,29 +67,31 @@ ARG_BASE_URL=""
 ARG_PROVIDER=""
 RESET_REQUESTED=false
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --name)
-            if [[ $# -lt 2 ]]; then red "Error: --name requires a value"; exit 1; fi
-            ARG_NAME="$2"; shift 2 ;;
-        --user)
-            if [[ $# -lt 2 ]]; then red "Error: --user requires a value"; exit 1; fi
-            ARG_USER="$2"; shift 2 ;;
-        --api-key)
-            if [[ $# -lt 2 ]]; then red "Error: --api-key requires a value"; exit 1; fi
-            ARG_API_KEY="$2"; shift 2 ;;
-        --base-url)
-            if [[ $# -lt 2 ]]; then red "Error: --base-url requires a value"; exit 1; fi
-            ARG_BASE_URL="$2"; shift 2 ;;
-        --provider)
-            if [[ $# -lt 2 ]]; then red "Error: --provider requires a value"; exit 1; fi
-            ARG_PROVIDER="$2"; shift 2 ;;
-        --reset)
-            RESET_REQUESTED=true; shift ;;
-        *)
-            red "Unknown option: $1"; exit 1 ;;
-    esac
-done
+if [[ "${KISO_INSTALL_LIB:-}" != "1" ]]; then
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name)
+                if [[ $# -lt 2 ]]; then red "Error: --name requires a value"; exit 1; fi
+                ARG_NAME="$2"; shift 2 ;;
+            --user)
+                if [[ $# -lt 2 ]]; then red "Error: --user requires a value"; exit 1; fi
+                ARG_USER="$2"; shift 2 ;;
+            --api-key)
+                if [[ $# -lt 2 ]]; then red "Error: --api-key requires a value"; exit 1; fi
+                ARG_API_KEY="$2"; shift 2 ;;
+            --base-url)
+                if [[ $# -lt 2 ]]; then red "Error: --base-url requires a value"; exit 1; fi
+                ARG_BASE_URL="$2"; shift 2 ;;
+            --provider)
+                if [[ $# -lt 2 ]]; then red "Error: --provider requires a value"; exit 1; fi
+                ARG_PROVIDER="$2"; shift 2 ;;
+            --reset)
+                RESET_REQUESTED=true; shift ;;
+            *)
+                red "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -320,6 +322,10 @@ d[name] = {"server_port": sport, "connector_port_base": cbase, "connectors": {}}
 path.write_text(json.dumps(d, indent=2) + "\n")
 PY
 }
+
+# ── Source-only mode (for testing) ──────────────────────────────────────────
+# When KISO_INSTALL_LIB=1: functions are defined, main execution is skipped.
+[[ "${KISO_INSTALL_LIB:-}" == "1" ]] && return 0
 
 # ── 1. Check prerequisites ───────────────────────────────────────────────────
 
