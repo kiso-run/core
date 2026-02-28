@@ -37,7 +37,7 @@ tests/
 ├── test_{module}.py         # one file per source module
 ├── bash/                    # bats tests for kiso-host.sh and install.sh
 │   ├── helpers.bash         # shared setup (mocks, helpers)
-│   ├── test_host_*.bats     # kiso-host.sh: name validation, instance commands, port detection, …
+│   ├── test_host_*.bats     # kiso-host.sh: name validation, instance commands, port detection, stats, completion, …
 │   └── test_install_*.bats  # install.sh: name validation, port allocation, register
 └── live/                    # live LLM integration tests
     ├── conftest.py          # live fixtures (live_config, seeded_db, mock_noop_infra)
@@ -53,8 +53,8 @@ tests/
 
 | Suite | Count | What it tests | Where to run | Secrets |
 |---|---|---|---|---|
-| Unit tests | ~1 642 | All code, fully mocked | Host | No |
-| Bash tests | 50 | kiso-host.sh + install.sh (bats-core) | Host | No |
+| Unit tests | ~1 670 | All code, fully mocked | Host | No |
+| Bash tests | 60 | kiso-host.sh + install.sh (bats-core) | Host | No |
 | L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
 | L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
 | L3 e2e | 4 | Full pipeline, **executes LLM-generated commands** | **Docker** | `KISO_LLM_API_KEY` |

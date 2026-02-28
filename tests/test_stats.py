@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from kiso.stats import aggregate, estimate_cost, read_audit_entries
+from cli.stats import print_stats, _fmt_k, _fmt_cost
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,6 +84,19 @@ class TestReadAuditEntries:
         result = read_audit_entries(tmp_path, since=since)
         assert len(result) == 1  # included because timestamp is unparseable
 
+    def test_unreadable_file_silently_skipped(self, tmp_path: Path) -> None:
+        good = tmp_path / "good.jsonl"
+        bad = tmp_path / "bad.jsonl"
+        _write_jsonl(good, [_entry()])
+        _write_jsonl(bad, [_entry()])
+        bad.chmod(0o000)
+        try:
+            result = read_audit_entries(tmp_path)
+            # Good file still readable; result must have at least 1 entry
+            assert len(result) >= 1
+        finally:
+            bad.chmod(0o644)
+
 
 # ---------------------------------------------------------------------------
 # aggregate — unit tests
@@ -138,6 +152,11 @@ class TestAggregate:
         rows = aggregate(entries, "role")
         planner = next(r for r in rows if r["key"] == "planner")
         assert planner["calls"] == 2
+
+    def test_missing_field_falls_back_to_unknown(self) -> None:
+        e = {k: v for k, v in _entry().items() if k != "model"}  # no 'model' key
+        rows = aggregate([e], "model")
+        assert rows[0]["key"] == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -238,3 +257,92 @@ class TestStatsEndpoint:
         data = resp.json()
         assert data["total"]["calls"] == 1
         assert data["session_filter"] == "alice"
+
+
+# ---------------------------------------------------------------------------
+# print_stats — unit tests (cli.stats)
+# ---------------------------------------------------------------------------
+
+
+class TestPrintStats:
+    def _data(self, rows, total=None, by="model", since=30, session_filter=None):
+        if total is None:
+            total = {
+                "calls": sum(r["calls"] for r in rows),
+                "errors": 0,
+                "input_tokens": sum(r["input_tokens"] for r in rows),
+                "output_tokens": sum(r["output_tokens"] for r in rows),
+            }
+        return {"by": by, "since_days": since, "rows": rows, "total": total, "session_filter": session_filter}
+
+    def test_empty_rows_prints_no_data(self, capsys) -> None:
+        print_stats(self._data([], total={"calls": 0, "errors": 0, "input_tokens": 0, "output_tokens": 0}))
+        out = capsys.readouterr().out
+        assert "(no data)" in out
+
+    def test_all_unknown_models_omits_cost_column(self, capsys) -> None:
+        rows = [{"key": "unknown-xyz", "calls": 1, "errors": 0, "input_tokens": 100, "output_tokens": 50}]
+        print_stats(self._data(rows))
+        out = capsys.readouterr().out
+        assert "est. cost" not in out
+
+    def test_known_model_shows_cost_column(self, capsys) -> None:
+        rows = [{"key": "gemini-flash", "calls": 1, "errors": 0, "input_tokens": 100, "output_tokens": 50}]
+        print_stats(self._data(rows))
+        out = capsys.readouterr().out
+        assert "est. cost" in out
+
+    def test_single_row_renders_correctly(self, capsys) -> None:
+        rows = [{"key": "gemini-flash", "calls": 3, "errors": 0, "input_tokens": 500, "output_tokens": 200}]
+        print_stats(self._data(rows))
+        out = capsys.readouterr().out
+        assert "gemini-flash" in out
+        assert "total" in out
+        assert "3" in out
+
+    def test_session_filter_shown_in_header(self, capsys) -> None:
+        rows = [{"key": "gemini-flash", "calls": 1, "errors": 0, "input_tokens": 100, "output_tokens": 50}]
+        print_stats(self._data(rows, session_filter="alice"))
+        out = capsys.readouterr().out
+        assert "[session: alice]" in out
+
+    def test_mixed_known_unknown_models(self, capsys) -> None:
+        rows = [
+            {"key": "gemini-flash", "calls": 1, "errors": 0, "input_tokens": 100, "output_tokens": 50},
+            {"key": "unknown-model-xyz", "calls": 2, "errors": 0, "input_tokens": 200, "output_tokens": 80},
+        ]
+        print_stats(self._data(rows))
+        out = capsys.readouterr().out
+        # Cost column shown (at least one known model)
+        assert "est. cost" in out
+        # Unknown model shows dash
+        assert "—" in out
+
+
+# ---------------------------------------------------------------------------
+# _fmt_k and _fmt_cost — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestFmtHelpers:
+    def test_fmt_k_below_1000(self) -> None:
+        assert _fmt_k(0) == "0"
+        assert _fmt_k(999) == "999"
+
+    def test_fmt_k_1000(self) -> None:
+        assert _fmt_k(1000) == "1 k"
+
+    def test_fmt_k_large(self) -> None:
+        assert _fmt_k(1_234_000) == "1 234 k"
+
+    def test_fmt_cost_none(self) -> None:
+        assert _fmt_cost(None) == "—"
+
+    def test_fmt_cost_zero(self) -> None:
+        assert _fmt_cost(0.0) == "$0.00"
+
+    def test_fmt_cost_small(self) -> None:
+        assert _fmt_cost(0.005) == "<$0.01"
+
+    def test_fmt_cost_normal(self) -> None:
+        assert _fmt_cost(1.23) == "$1.23"

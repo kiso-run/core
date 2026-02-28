@@ -148,6 +148,52 @@ If no plan is currently executing: `200 OK` with `"cancelled": false`. Idempoten
 
 Queued messages on the session are not affected — they are processed normally after cancellation. See [flow.md — Cancel](flow.md#cancel).
 
+## GET /admin/stats
+
+Returns aggregated token-usage statistics from the audit log. Admin only.
+
+**Query parameters:**
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `user` | yes | — | Username (used for admin check) |
+| `since` | no | `30` | Look back this many days |
+| `session` | no | — | Filter entries to this session only |
+| `by` | no | `model` | Group dimension: `model`, `session`, or `role` |
+
+**Response** `200 OK`:
+
+```json
+{
+  "by": "model",
+  "since_days": 30,
+  "session_filter": null,
+  "rows": [
+    {
+      "key": "google/gemini-flash",
+      "calls": 142,
+      "errors": 0,
+      "input_tokens": 1234567,
+      "output_tokens": 456789
+    }
+  ],
+  "total": {
+    "calls": 142,
+    "errors": 0,
+    "input_tokens": 1234567,
+    "output_tokens": 456789
+  }
+}
+```
+
+Rows are sorted by `input_tokens + output_tokens` descending.
+
+**`400 Bad Request`** if `by` is not one of `model`, `session`, `role`.
+
+**`403 Forbidden`** if the token does not belong to an admin user.
+
+Data is read from `~/.kiso/instances/{name}/audit/*.jsonl`. See [audit.md](audit.md) for the log format.
+
 ## POST /admin/reload-env
 
 Hot-reloads deploy secrets from `~/.kiso/instances/{name}/.env` without restarting the server. Admin only.

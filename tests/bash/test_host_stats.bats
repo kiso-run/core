@@ -68,3 +68,19 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"not running"* ]]
 }
+
+@test "kiso stats --all: no instances shows message and exits 0" {
+    # Start with empty instances.json
+    create_instances
+    run kiso_run stats --all
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No instances"* ]]
+}
+
+@test "kiso stats --instance: uses specified instance" {
+    create_instances jarvis 8333 9000 mybot 8334 9100
+    run kiso_run --instance jarvis stats
+    [ "$status" -eq 0 ]
+    docker_was_called "exec"
+    [[ "$output" == *"Token usage"* ]]
+}

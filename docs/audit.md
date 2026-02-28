@@ -92,6 +92,28 @@ Audit entries never contain raw secret values. Before logging, known secret valu
 
 This is the same sanitization applied to task output (see [security.md — Leak Prevention](security.md#leak-prevention)). Best-effort — encoded variants beyond these three are not guaranteed to be caught.
 
+## Querying the Audit Log
+
+The `kiso stats` command aggregates the LLM audit entries and prints a formatted summary:
+
+```bash
+kiso stats                     # last 30 days, grouped by model
+kiso stats --since 7           # last 7 days
+kiso stats --by session        # group by session instead of model
+kiso stats --session alice     # filter to a single session
+kiso stats --all               # iterate all instances
+```
+
+Internally, `kiso stats` calls `GET /admin/stats` which reads the JSONL files via `kiso.stats.read_audit_entries()`. Only entries with `type == "llm"` contribute to the aggregation. The mapping of JSONL fields to aggregation dimensions:
+
+| `--by` | JSONL field used as key |
+|--------|------------------------|
+| `model` | `model` |
+| `session` | `session` |
+| `role` | `role` |
+
+See [cli.md — Token Usage Statistics](cli.md#token-usage-statistics) for usage examples and output format.
+
 ## Retention
 
 No automatic cleanup. Files accumulate in `~/.kiso/instances/{name}/audit/`. Admins manage retention externally (logrotate, cron, etc.).

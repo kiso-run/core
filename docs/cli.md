@@ -551,9 +551,17 @@ Token usage — last 30 days  (by model)
 
 The API token must have the `cli` key in `config.toml`, and the Linux user must be configured as admin. See [security.md — Roles](security.md#roles).
 
+**Error handling:**
+
+| Situation | Output |
+|-----------|--------|
+| No `cli` token in `config.toml` | `error: no 'cli' token in config.toml` |
+| Server not reachable | `error: cannot connect to http://localhost:PORT` |
+| User is not admin | `error: 403 — Admin access required` |
+
 ### REPL `/stats`
 
-Inside the interactive REPL, `/stats` fetches the last 7 days of usage for the **current session** only and prints a compact table inline.
+Inside the interactive REPL, `/stats` fetches the last 7 days of usage for the **current session** only and prints a compact table inline. If the server is unreachable or the user lacks admin access, a brief inline error is shown instead.
 
 ## Shell Completion
 
