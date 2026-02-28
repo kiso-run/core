@@ -60,6 +60,8 @@ async def _skill_task(
             proc.communicate(input=input_bytes), timeout=timeout,
         )
     except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
         return "", "Timed out", False
     except OSError as e:
         return "", f"Skill executable not found: {e}", False

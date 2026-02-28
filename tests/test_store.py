@@ -863,6 +863,27 @@ async def test_append_task_llm_call_corrupted_json(db: aiosqlite.Connection):
     assert stored[0]["role"] == "searcher"
 
 
+async def test_append_task_llm_call_atomic_no_data_loss(db: aiosqlite.Connection):
+    """Concurrent appends must not lose data (atomic json_insert, no read-modify-write)."""
+    import asyncio
+    import json as _json
+
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    task_id = tasks[0]["id"]
+
+    # Fire 10 concurrent appends — all must be preserved
+    calls = [{"i": i} for i in range(10)]
+    await asyncio.gather(*[append_task_llm_call(db, task_id, c) for c in calls])
+
+    tasks = await get_tasks_for_plan(db, plan_id)
+    stored = _json.loads(tasks[0]["llm_calls"])
+    assert len(stored) == 10
+    assert {c["i"] for c in stored} == set(range(10))
+
+
 # --- M33: retry_count column ---
 
 

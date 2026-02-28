@@ -44,7 +44,7 @@ SUPERVISOR_STABLE_THRESHOLD = 60.0  # seconds — if child ran this long, reset 
 
 def _write_status(connector_dir: Path, restarts: int, consecutive_failures: int,
                    backoff: float, gave_up: bool, last_exit_code: int | None) -> None:
-    """Write supervisor status to .status.json."""
+    """Write supervisor status to .status.json atomically (write-tmp + replace)."""
     status = {
         "restarts": restarts,
         "consecutive_failures": consecutive_failures,
@@ -54,7 +54,9 @@ def _write_status(connector_dir: Path, restarts: int, consecutive_failures: int,
         "timestamp": time.time(),
     }
     status_file = connector_dir / ".status.json"
-    status_file.write_text(json.dumps(status))
+    tmp_file = status_file.with_suffix(".tmp")
+    tmp_file.write_text(json.dumps(status))
+    tmp_file.replace(status_file)
 
 
 def _supervisor_main(connector_name: str) -> None:

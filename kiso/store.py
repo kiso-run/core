@@ -512,19 +512,19 @@ async def update_task_retry_count(
 async def append_task_llm_call(
     db: aiosqlite.Connection, task_id: int, call_data: dict
 ) -> None:
-    """Append a single LLM call entry to the task's llm_calls JSON array."""
-    cur = await db.execute(
-        "SELECT llm_calls FROM tasks WHERE id = ?", (task_id,),
-    )
-    row = await cur.fetchone()
-    try:
-        existing = json.loads(row["llm_calls"]) if row and row["llm_calls"] else []
-    except (json.JSONDecodeError, TypeError):
-        existing = []
-    existing.append(call_data)
+    """Append a single LLM call entry to the task's llm_calls JSON array.
+
+    Uses SQLite's json_insert for an atomic append — no read-modify-write
+    race condition between concurrent coroutines on the same task row.
+    Corrupted or NULL llm_calls are treated as an empty array.
+    """
     await db.execute(
-        "UPDATE tasks SET llm_calls = ? WHERE id = ?",
-        (json.dumps(existing), task_id),
+        "UPDATE tasks "
+        "SET llm_calls = json_insert("
+        "    CASE WHEN json_valid(llm_calls) THEN llm_calls ELSE '[]' END,"
+        "    '$[#]', json(?)"
+        ") WHERE id = ?",
+        (json.dumps(call_data), task_id),
     )
     await db.commit()
 

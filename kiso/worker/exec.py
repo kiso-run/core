@@ -39,6 +39,8 @@ async def _exec_task(
             proc.communicate(), timeout=timeout
         )
     except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
         return "", "Timed out", False
 
     stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)

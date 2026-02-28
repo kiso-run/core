@@ -168,6 +168,28 @@ class TestExecTask:
         # Command may fail (dir doesn't exist) but should NOT be blocked by deny list
         assert "Command blocked" not in stderr
 
+    async def test_timeout_kills_process(self, tmp_path):
+        """On timeout, the subprocess is killed and waited — no zombie processes."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_proc = MagicMock()
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        mock_proc.communicate = _hang
+
+        with patch("kiso.worker.exec.asyncio.create_subprocess_shell", AsyncMock(return_value=mock_proc)), \
+             _patch_kiso_dir(tmp_path):
+            _, stderr, success = await _exec_task("test-sess", "sleep 999", 0.01)
+
+        assert success is False
+        assert "Timed out" in stderr
+        mock_proc.kill.assert_called_once()
+        mock_proc.wait.assert_awaited_once()
+
 
 # --- _msg_task ---
 
@@ -2342,6 +2364,32 @@ class TestSkillTask:
         assert success is True
         expected = str(tmp_path / "sessions" / "sess1")
         assert stdout.strip() == expected
+
+    async def test_timeout_kills_process(self, tmp_path):
+        """On timeout, the skill subprocess is killed and waited — no zombie processes."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_proc = MagicMock()
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        mock_proc.communicate = _hang
+
+        skill = {
+            "name": "s", "summary": "s", "args_schema": {}, "env": {},
+            "session_secrets": [], "path": str(tmp_path), "version": "0.1.0", "description": "",
+        }
+        with patch("kiso.worker.skill.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)), \
+             _patch_kiso_dir(tmp_path):
+            _, stderr, success = await _skill_task("sess1", skill, {}, None, None, 0.01)
+
+        assert success is False
+        assert "Timed out" in stderr
+        mock_proc.kill.assert_called_once()
+        mock_proc.wait.assert_awaited_once()
 
 
 # --- M7: _execute_plan with real skill ---
