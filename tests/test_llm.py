@@ -15,9 +15,11 @@ from kiso.llm import (
     LLMError,
     call_llm,
     clear_llm_budget,
+    close_http_client,
     get_llm_call_count,
     get_provider,
     get_usage_index,
+    init_http_client,
     get_usage_since,
     get_usage_summary,
     reset_usage_tracking,
@@ -758,3 +760,65 @@ class TestUsageTracking:
         call = delta["calls"][0]
         assert call["messages"] == [{"role": "user", "content": "test prompt"}]
         assert call["response"] == "test response"
+
+
+# --- Shared HTTP client (M61a) ---
+
+
+class TestSharedHttpClient:
+    @pytest.mark.asyncio
+    async def test_shared_client_used_when_set(self):
+        """When _http_client is set, call_llm uses it directly without creating a new one."""
+        import kiso.llm as llm_mod
+
+        config = _make_config()
+        mock_client = AsyncMock()
+        mock_client.post.return_value = _ok_response("shared client response")
+
+        prev = llm_mod._http_client
+        try:
+            llm_mod._http_client = mock_client
+            with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+                 patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                # Shared client was used — AsyncClient constructor NOT called
+                mock_cls.assert_not_called()
+            assert result == "shared client response"
+        finally:
+            llm_mod._http_client = prev
+
+    @pytest.mark.asyncio
+    async def test_fallback_per_call_client_when_none(self):
+        """When _http_client is None, call_llm creates a per-call AsyncClient."""
+        import kiso.llm as llm_mod
+
+        config = _make_config()
+        prev = llm_mod._http_client
+        try:
+            llm_mod._http_client = None
+            with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+                 patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("fallback response")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                mock_cls.assert_called_once()
+            assert result == "fallback response"
+        finally:
+            llm_mod._http_client = prev
+
+    @pytest.mark.asyncio
+    async def test_init_and_close_http_client(self):
+        """init_http_client sets _http_client; close_http_client clears it."""
+        import kiso.llm as llm_mod
+
+        prev = llm_mod._http_client
+        try:
+            init_http_client(timeout=30.0)
+            assert llm_mod._http_client is not None
+            await close_http_client()
+            assert llm_mod._http_client is None
+        finally:
+            llm_mod._http_client = prev

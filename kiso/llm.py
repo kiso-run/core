@@ -15,6 +15,25 @@ from kiso.config import Config, LLM_API_KEY_ENV, Provider
 # Roles that require structured output (response_format with json_schema).
 STRUCTURED_ROLES = {"planner", "reviewer", "curator"}
 
+# Shared long-lived HTTP client, initialized by main.py lifespan.
+# When set, call_llm reuses the connection pool instead of opening a new
+# TCP/TLS connection per call. Falls back to a per-call client when None.
+_http_client: httpx.AsyncClient | None = None
+
+
+def init_http_client(timeout: float) -> None:
+    """Create the shared HTTP client. Called once at server startup."""
+    global _http_client
+    _http_client = httpx.AsyncClient(timeout=timeout)
+
+
+async def close_http_client() -> None:
+    """Close the shared HTTP client. Called at server shutdown."""
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+
 
 class LLMError(Exception):
     """Any LLM call failure."""
@@ -173,17 +192,20 @@ async def call_llm(
     t0 = time.perf_counter()
 
     llm_timeout = int(config.settings["exec_timeout"])
-    async with httpx.AsyncClient(timeout=llm_timeout) as client:
-        try:
-            resp = await client.post(url, headers=headers, json=payload)
-        except httpx.TimeoutException:
-            duration_ms = int((time.perf_counter() - t0) * 1000)
-            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-            raise LLMError(f"LLM call timed out ({role}, {model_name})")
-        except httpx.RequestError as e:
-            duration_ms = int((time.perf_counter() - t0) * 1000)
-            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-            raise LLMError(f"LLM request failed: {e}")
+    try:
+        if _http_client is not None:
+            resp = await _http_client.post(url, headers=headers, json=payload)
+        else:
+            async with httpx.AsyncClient(timeout=llm_timeout) as _client:
+                resp = await _client.post(url, headers=headers, json=payload)
+    except httpx.TimeoutException:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+        raise LLMError(f"LLM call timed out ({role}, {model_name})")
+    except httpx.RequestError as e:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+        raise LLMError(f"LLM request failed: {e}")
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
 

@@ -18,6 +18,16 @@ log = logging.getLogger(__name__)
 # Supported arg types in kiso.toml [kiso.skill.args]
 _ARG_TYPES = {"string", "int", "float", "bool"}
 
+# Module-level cache for the default skills directory.
+# Only active when discover_skills() is called without a custom skills_dir.
+_skills_cache: list[dict] | None = None
+
+
+def invalidate_skills_cache() -> None:
+    """Clear the skills cache. Call after install/remove/update."""
+    global _skills_cache
+    _skills_cache = None
+
 MAX_ARGS_SIZE = 64 * 1024  # 64 KB
 MAX_ARGS_DEPTH = 5
 
@@ -101,7 +111,15 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
     version, description.
 
     Skips directories with .installing marker.
+
+    Results are cached at module level when using the default skills directory.
+    Call invalidate_skills_cache() after install/remove/update to force re-scan.
     """
+    global _skills_cache
+    use_cache = skills_dir is None
+    if use_cache and _skills_cache is not None:
+        return _skills_cache
+
     skills_dir = skills_dir or (KISO_DIR / "skills")
     if not skills_dir.is_dir():
         return []
@@ -166,6 +184,8 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
             "usage_guide": usage_guide,
         })
 
+    if use_cache:
+        _skills_cache = skills
     return skills
 
 

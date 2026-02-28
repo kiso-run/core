@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.audit import _write_entry, log_llm_call, log_task, log_review, log_webhook
+from kiso.audit import _audit_dir_ready, _ensure_audit_dir, _write_entry, log_llm_call, log_task, log_review, log_webhook
 
 
 # --- _write_entry ---
@@ -380,3 +380,64 @@ class TestLockRelease:
         assert len(lines) == 1
         entry = json.loads(lines[0])
         assert entry["type"] == "success"
+
+
+# --- _ensure_audit_dir (M61c) ---
+
+
+class TestEnsureAuditDir:
+    def test_creates_dir_and_sets_permissions(self, tmp_path):
+        """_ensure_audit_dir creates the directory with 0o700 permissions."""
+        import os
+        import stat
+
+        audit_dir = tmp_path / "audit"
+        guard = set()
+        _ensure_audit_dir.__globals__  # touch to confirm it exists
+        # Call directly with the guard patched to an empty set
+        with patch("kiso.audit._audit_dir_ready", guard):
+            _ensure_audit_dir(audit_dir)
+
+        assert audit_dir.is_dir()
+        mode = stat.S_IMODE(os.stat(audit_dir).st_mode)
+        assert mode == 0o700
+
+    def test_mkdir_called_only_once(self, tmp_path):
+        """Multiple _ensure_audit_dir calls only mkdir once."""
+        from unittest.mock import call
+        from unittest.mock import patch as _patch
+
+        audit_dir = tmp_path / "audit_once"
+        guard: set = set()
+        mkdir_calls = []
+
+        orig_mkdir = audit_dir.__class__.mkdir
+
+        with patch("kiso.audit._audit_dir_ready", guard), \
+             patch("kiso.audit.os.chmod"):
+            # First call: dir doesn't exist yet — use real mkdir
+            _ensure_audit_dir(audit_dir)
+            call_count_after_first = len(guard)
+
+            # Second call: dir already in guard — should be a no-op
+            with patch.object(type(audit_dir), "mkdir") as mock_mkdir, \
+                 patch("kiso.audit.os.chmod") as mock_chmod:
+                _ensure_audit_dir(audit_dir)
+                mock_mkdir.assert_not_called()
+                mock_chmod.assert_not_called()
+
+        assert call_count_after_first == 1  # added exactly once
+
+    def test_write_entry_only_inits_dir_once(self, tmp_path):
+        """N consecutive _write_entry calls trigger mkdir+chmod only once."""
+        import kiso.audit as audit_mod
+
+        guard: set = set()
+        with patch("kiso.audit.KISO_DIR", tmp_path), \
+             patch("kiso.audit._audit_dir_ready", guard), \
+             patch("kiso.audit.os.chmod") as mock_chmod:
+            for _ in range(5):
+                _write_entry({"type": "perf_test"})
+
+        # chmod called exactly once for the audit dir
+        assert mock_chmod.call_count == 1

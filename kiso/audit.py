@@ -17,6 +17,19 @@ log = logging.getLogger(__name__)
 # Fields exempt from secret masking (structural, never user-supplied).
 _MASK_EXEMPT = frozenset({"timestamp", "type"})
 
+# Tracks audit directories already initialised in this process.
+# Avoids mkdir + chmod on every write once the directory exists.
+_audit_dir_ready: set[Path] = set()
+
+
+def _ensure_audit_dir(audit_dir: Path) -> None:
+    """Create audit dir and set permissions, at most once per process per path."""
+    if audit_dir in _audit_dir_ready:
+        return
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(audit_dir, 0o700)
+    _audit_dir_ready.add(audit_dir)
+
 
 def _write_entry(
     entry: dict,
@@ -42,8 +55,7 @@ def _write_entry(
                     entry[key] = sanitize_output(value, ds, ss)
 
         audit_dir = KISO_DIR / "audit"
-        audit_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(audit_dir, 0o700)
+        _ensure_audit_dir(audit_dir)
 
         today = now.strftime("%Y-%m-%d")
         path = audit_dir / f"{today}.jsonl"

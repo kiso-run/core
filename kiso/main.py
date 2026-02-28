@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.config import KISO_DIR, load_config, setting_bool
+import kiso.llm as _llm_mod
 from kiso.log import setup_logging
 from kiso.pub import pub_token, resolve_pub_token
 from kiso.store import (
@@ -136,6 +137,7 @@ async def lifespan(app: FastAPI):
     config = load_config()
     app.state.config = config
     _init_kiso_dirs()
+    _llm_mod.init_http_client(timeout=int(config.settings["exec_timeout"]))
     log.info("Server starting — host=%s port=%s",
              config.settings["host"],
              config.settings["port"])
@@ -214,6 +216,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
     _workers.clear()
+    await _llm_mod.close_http_client()
     await app.state.db.close()
     log.info("Server shut down")
 
