@@ -526,4 +526,17 @@ If `content` exceeds this limit, it is truncated with a `[truncated]` suffix bef
 
 ### Published File Security
 
-Published file IDs are UUID4 (128-bit random). Enumeration is computationally infeasible. For additional security, consider requiring authentication on `GET /pub/{id}` via a configurable setting.
+The `token` in `GET /pub/{token}/{filename}` is a 16-hex-char HMAC-SHA256 prefix keyed on the server's `cli` token from `config.toml`:
+
+```
+token = HMAC-SHA256(key=cli_token, msg=session_id)[:16]
+```
+
+An attacker cannot enumerate sessions without knowing the `cli` token (256-bit secret). The session ID is never exposed in the URL.
+
+**Path traversal protection**: `(pub_dir / filename).resolve()` is checked with `Path.is_relative_to(pub_dir)`. This correctly rejects:
+- `../../etc/passwd` — resolves outside `pub/`
+- `../pub-evil/secret` — resolves to a same-prefix sibling directory
+- Symlinks inside `pub/` that point outside `pub/`
+
+**Token required**: if the `cli` token is not set in `config.toml`, no pub URLs are generated (the worker returns an empty list with a warning rather than using a predictable fallback key).

@@ -5234,6 +5234,29 @@ class TestReportPubFiles:
         assert len(result) == 1
         assert result[0]["filename"] == "sub/nested.txt"
 
+    def test_empty_when_no_cli_token(self, tmp_path, caplog):
+        """No cli token → returns [] with a warning, does not raise."""
+        import logging
+        cfg_no_token = Config(
+            tokens={},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={},
+            settings={},
+            raw={},
+        )
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "file.txt").write_text("content")
+
+        with _patch_kiso_dir(tmp_path), \
+             caplog.at_level(logging.WARNING, logger="kiso.worker.utils"):
+            result = _report_pub_files("test-session", cfg_no_token)
+
+        assert result == []
+        assert any("cli token" in r.message for r in caplog.records)
+
     def test_pub_scan_cap_truncates_and_warns(self, tmp_path, config, caplog):
         """M37: pub/ listing capped at 1000 entries with a warning."""
         import logging

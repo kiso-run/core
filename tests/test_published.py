@@ -178,6 +178,25 @@ class TestGetPubEndpoint:
         assert resp.status_code == 200
         assert resp.text == "nested content"
 
+    async def test_path_traversal_symlink_blocked(self, client, _setup_session):
+        """Symlink inside pub/ pointing outside pub/ must not be followed.
+
+        resolve() follows the symlink; is_relative_to() rejects the result
+        because the real target is outside pub/.
+        """
+        outside = self._session_dir / "outside_secret.txt"
+        outside.write_text("should not be served")
+        link = self._pub_dir / "link.txt"
+        link.symlink_to(outside)
+
+        resp = await client.get(f"/pub/{self._token}/link.txt")
+        assert resp.status_code == 404
+
+    async def test_path_traversal_absolute_filename_blocked(self, client, _setup_session):
+        """An absolute path as filename component must be rejected."""
+        resp = await client.get(f"/pub/{self._token}//etc/passwd")
+        assert resp.status_code == 404
+
     async def test_no_auth_required(self, client, _setup_session):
         test_file = self._pub_dir / "open.txt"
         test_file.write_text("public")
