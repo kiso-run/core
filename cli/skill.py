@@ -228,9 +228,7 @@ def _skill_install(args) -> None:
 
         print(f"Skill '{name}' installed successfully.")
         from kiso.sysenv import invalidate_cache
-        from kiso.skills import invalidate_skills_cache
         invalidate_cache()
-        invalidate_skills_cache()
 
     except Exception:
         # Cleanup on failure
@@ -296,9 +294,7 @@ def _skill_update(args) -> None:
 
         print(f"Skill '{name}' updated.")
         from kiso.sysenv import invalidate_cache
-        from kiso.skills import invalidate_skills_cache
         invalidate_cache()
-        invalidate_skills_cache()
 
 
 def _skill_remove(args) -> None:
@@ -314,6 +310,4 @@ def _skill_remove(args) -> None:
     shutil.rmtree(skill_dir)
     print(f"Skill '{name}' removed.")
     from kiso.sysenv import invalidate_cache
-    from kiso.skills import invalidate_skills_cache
     invalidate_cache()
-    invalidate_skills_cache()

@@ -12,7 +12,6 @@ import pytest
 from kiso.skills import (
     MAX_ARGS_DEPTH,
     MAX_ARGS_SIZE,
-    _SKILLS_CACHE_TTL,
     _check_args_depth,
     _coerce_value,
     _env_var_name,
@@ -22,7 +21,6 @@ from kiso.skills import (
     build_skill_input,
     check_deps,
     discover_skills,
-    invalidate_skills_cache,
     validate_skill_args,
 )
 
@@ -739,95 +737,25 @@ class TestBuildSkillEnv:
         assert env["KISO_SKILL_SEARCH_TOKEN"] == "tok1"
 
 
-# --- discover_skills cache (M61b) ---
+# --- discover_skills no-cache behaviour (M61b reverted) ---
 
 
-class TestDiscoverSkillsCache:
-    def setup_method(self):
-        """Clear cache before each test to avoid cross-test pollution."""
-        invalidate_skills_cache()
-
-    def teardown_method(self):
-        invalidate_skills_cache()
-
-    def test_cache_returns_same_object_on_second_call(self, tmp_path):
-        """Second call with no custom dir returns cached list (same object)."""
-        import kiso.skills as skills_mod
+class TestDiscoverSkillsNoCache:
+    def test_always_rescans_disk(self, tmp_path):
+        """discover_skills() rescans on every call — newly installed skills
+        are immediately visible without cache invalidation or server restart."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
         _create_skill(skills_dir, "echo", MINIMAL_TOML)
 
         with patch("kiso.skills.KISO_DIR", tmp_path):
             result1 = discover_skills()
-            result2 = discover_skills()
-        assert result1 is result2
+            assert len(result1) == 1
 
-    def test_custom_dir_bypasses_cache(self, tmp_path):
-        """Passing a custom skills_dir never reads or writes the module cache."""
-        import kiso.skills as skills_mod
-
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        _create_skill(skills_dir, "echo", MINIMAL_TOML)
-
-        result1 = discover_skills(skills_dir)
-        result2 = discover_skills(skills_dir)
-        # Custom-dir calls do NOT populate the module cache
-        assert skills_mod._skills_cache is None
-        # But results are equal in content
-        assert len(result1) == len(result2) == 1
-
-    def test_invalidate_clears_cache(self, tmp_path):
-        """After invalidate_skills_cache(), next call re-scans disk."""
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        _create_skill(skills_dir, "echo", MINIMAL_TOML)
-
-        with patch("kiso.skills.KISO_DIR", tmp_path):
-            result1 = discover_skills()
-            # Add a new skill to disk while cache is warm
+            # Simulate installing a second skill while server is running
             _create_skill(skills_dir, "newskill", MINIMAL_TOML.replace(
                 'name = "echo"', 'name = "newskill"'
             ))
-            # Without invalidation, cache returns stale result
-            result_stale = discover_skills()
-            assert len(result_stale) == 1  # still cached
-
-            invalidate_skills_cache()
-            result_fresh = discover_skills()
-        assert len(result_fresh) == 2
-
-    def test_cache_expires_after_ttl(self, tmp_path):
-        """After TTL, discover_skills re-scans disk without explicit invalidation."""
-        import kiso.skills as skills_mod
-
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        _create_skill(skills_dir, "echo", MINIMAL_TOML)
-
-        with patch("kiso.skills.KISO_DIR", tmp_path):
-            discover_skills()
-            assert skills_mod._skills_cache is not None
-
-            # Add a new skill while cache is warm, then fast-forward past TTL
-            _create_skill(skills_dir, "newskill", MINIMAL_TOML.replace(
-                'name = "echo"', 'name = "newskill"'
-            ))
-            skills_mod._skills_cache_at = skills_mod._skills_cache_at - (_SKILLS_CACHE_TTL + 1)
-
-            result = discover_skills()
-        assert len(result) == 2  # re-scanned after TTL expiry
-
-    def test_empty_skills_dir_cached(self, tmp_path):
-        """Empty skills dir result (empty list) is also cached."""
-        import kiso.skills as skills_mod
-
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-
-        with patch("kiso.skills.KISO_DIR", tmp_path):
-            result1 = discover_skills()
             result2 = discover_skills()
 
-        assert result1 == []
-        assert result1 is result2  # same object from cache
+        assert len(result2) == 2  # immediately visible, no cache to invalidate
