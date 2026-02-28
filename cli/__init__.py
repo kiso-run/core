@@ -273,7 +273,17 @@ def main() -> None:
         if getattr(args, "stats", False):
             _print_version_stats()
         else:
-            print(f"kiso {__version__}")
+            from pathlib import Path
+
+            from kiso._version import count_loc
+
+            root = Path(__file__).resolve().parent.parent
+            total = count_loc(root)["total"]
+            print(f"kiso {__version__}  ({_fmt_loc(total)} loc)")
+
+
+def _fmt_loc(n: int) -> str:
+    return f"{n:,}".replace(",", " ")
 
 
 def _print_version_stats() -> None:
@@ -285,16 +295,13 @@ def _print_version_stats() -> None:
     root = Path(__file__).resolve().parent.parent
     stats = count_loc(root)
 
-    def _fmt(n: int) -> str:
-        return f"{n:,}".replace(",", " ")
-
-    num_w = max(len(_fmt(v)) for v in stats.values())
+    num_w = max(len(_fmt_loc(v)) for v in stats.values())
     rows = [("core", stats["core"], "kiso/"), ("cli", stats["cli"], "cli/"), ("tests", stats["tests"], "tests/")]
     print(f"kiso {__version__}\n")
     for label, n, path in rows:
-        print(f"  {label:<5}  {_fmt(n):>{num_w}} loc   ({path})")
+        print(f"  {label:<5}  {_fmt_loc(n):>{num_w}} loc   ({path})")
     print(f"  {'─' * (num_w + 12)}")
-    print(f"  {'total':<5}  {_fmt(stats['total']):>{num_w}} loc")
+    print(f"  {'total':<5}  {_fmt_loc(stats['total']):>{num_w}} loc")
 
 
 def _msg_cmd(args: argparse.Namespace) -> None:

@@ -2064,6 +2064,30 @@ class TestVersionCommand:
         assert f"kiso {v}" in out
         assert exc.value.code == 0
 
+    def test_version_plain_shows_loc(self, capsys):
+        """'kiso version' must print 'kiso {version}  (N loc)' with N > 0."""
+        import re
+
+        from kiso._version import __version__ as v
+
+        with patch("sys.argv", ["kiso", "version"]):
+            main()
+        out = capsys.readouterr().out.strip()
+        m = re.fullmatch(rf"kiso {re.escape(v)}  \(([\d ]+) loc\)", out)
+        assert m is not None, f"unexpected output: {out!r}"
+        total = int(m.group(1).replace(" ", ""))
+        assert total > 0
+
+    def test_version_stats_unchanged(self, capsys):
+        """'kiso version --stats' must show per-area rows and a total line."""
+        with patch("sys.argv", ["kiso", "version", "--stats"]):
+            main()
+        out = capsys.readouterr().out
+        assert "core" in out
+        assert "cli" in out
+        assert "tests" in out
+        assert "total" in out
+
     def test_help_description_includes_version(self, capsys):
         """'kiso --help' description must mention the current version."""
         from kiso._version import __version__ as v
