@@ -2056,12 +2056,15 @@ class TestVersionCommand:
         assert exc.value.code == 0
 
     def test_version_flag_long_prints_version(self, capsys):
-        """'kiso --version' must print 'kiso {version}' and exit."""
+        """'kiso --version' must print 'kiso {version}  (N loc)' and exit."""
+        import re
+
         from kiso._version import __version__ as v
+
         with pytest.raises(SystemExit) as exc:
             build_parser().parse_args(["--version"])
-        out = capsys.readouterr().out
-        assert f"kiso {v}" in out
+        out = capsys.readouterr().out.strip()
+        assert re.fullmatch(rf"kiso {re.escape(v)}  \([\d ]+ loc\)", out), f"unexpected: {out!r}"
         assert exc.value.code == 0
 
     def test_version_plain_shows_loc(self, capsys):

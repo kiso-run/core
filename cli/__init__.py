@@ -10,6 +10,23 @@ import typing
 from kiso._version import __version__
 
 
+class _VersionAction(argparse.Action):
+    """Custom -V/--version action that prints version + total LOC and exits."""
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
+        super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        from pathlib import Path
+
+        from kiso._version import count_loc
+
+        root = Path(__file__).resolve().parent.parent
+        total = count_loc(root)["total"]
+        print(f"kiso {__version__}  ({_fmt_loc(total)} loc)")
+        parser.exit()
+
+
 class _ExitRepl(Exception):
     """Raised by /exit to break out of the REPL loop."""
 
@@ -102,7 +119,7 @@ def _save_readline_history() -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kiso", description=f"Kiso agent bot v{__version__}")
-    parser.add_argument("-V", "--version", action="version", version=f"kiso {__version__}")
+    parser.add_argument("-V", "--version", action=_VersionAction)
 
     # Chat-mode flags (top-level, not on a subcommand)
     parser.add_argument(
