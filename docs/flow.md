@@ -260,7 +260,7 @@ Facts have a `category` (`project`, `user`, `tool`, `general`) and an optional `
 **Visibility rules (M43)**:
 - `project`, `tool`, `general` facts: always global — visible in every session.
 - `user` facts: scoped to the session where they were created. Other sessions do not see them.
-- `user` facts with `session IS NULL` (legacy): treated as global.
+- `user` facts: not visible outside their originating session.
 
 **Admin visibility (M44f)**: admin callers receive all facts from all sessions, but the planner context splits them into two priority tiers:
 - `## Known Facts` — current session + global facts (primary context).

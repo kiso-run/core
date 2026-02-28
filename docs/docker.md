@@ -121,6 +121,8 @@ With a single instance, `--instance` can be omitted everywhere.
 
 ## Instance names
 
+During installation, `install.sh` asks for a **bot display name** (e.g. "My Jarvis") and automatically derives a valid instance identifier from it (e.g. `my-jarvis`). The derived identifier can be confirmed or overridden before the install proceeds.
+
 Instance names are the bot's identifier: used for the Docker container name, data directory, and `--instance` flag. Rules:
 
 - Lowercase alphanumeric + hyphens only: `^[a-z0-9][a-z0-9-]*$`
