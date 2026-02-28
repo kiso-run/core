@@ -13,7 +13,7 @@ Each instance is a named Docker container (`kiso-{name}`) with its own port, dat
     ├── jarvis/                # data for container kiso-jarvis
     │   ├── config.toml
     │   ├── .env
-    │   ├── kiso.db
+    │   ├── store.db
     │   ├── server.log
     │   ├── audit/
     │   ├── roles/
@@ -185,7 +185,7 @@ kiso env reload
 
 ## Task persistence
 
-Tasks in `kiso.db` (volume) survive container crashes. In-flight tasks are marked `failed` on next startup. Unprocessed messages (`processed=0`) are re-enqueued — see [flow.md — Message Recovery on Startup](flow.md#message-recovery-on-startup).
+Tasks in `store.db` (volume) survive container crashes. In-flight tasks are marked `failed` on next startup. Unprocessed messages (`processed=0`) are re-enqueued — see [flow.md — Message Recovery on Startup](flow.md#message-recovery-on-startup).
 
 ## deps.sh and system packages
 

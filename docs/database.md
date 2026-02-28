@@ -1,6 +1,6 @@
 # Database
 
-Single SQLite file: `~/.kiso/store.db`. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
+Single SQLite file per instance: `~/.kiso/instances/{name}/store.db`. **All queries use parameterized statements** — never string concatenation. Input values (session IDs, user names, content) are always passed as query parameters.
 
 ## Tables
 
@@ -209,7 +209,7 @@ CREATE TABLE published (
 );
 ```
 
-`id` is a UUID4 (128-bit random, non-enumerable). `path` is the file's location on disk (inside `~/.kiso/sessions/{session}/pub/`). The URL `GET /pub/{id}` resolves to this file without exposing the session ID.
+`id` is a UUID4 (128-bit random, non-enumerable). `path` is the file's location on disk (inside `~/.kiso/instances/{name}/sessions/{session}/pub/` on the host). The URL `GET /pub/{id}` resolves to this file without exposing the session ID.
 
 ## What's NOT in the database
 

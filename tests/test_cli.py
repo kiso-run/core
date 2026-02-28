@@ -81,6 +81,13 @@ def test_subcommand_parsed(cmd: str):
     assert args.command == cmd
 
 
+def test_serve_subcommand_removed():
+    """'kiso serve' is no longer a valid subcommand — server is started by Docker CMD."""
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["serve"])
+
+
 # ── defaults ──────────────────────────────────────────────────
 
 

@@ -1,11 +1,11 @@
 # Audit Trail
 
-All LLM calls, task executions, and webhook deliveries are logged to `~/.kiso/audit/`. JSONL format, one file per day.
+All LLM calls, task executions, and webhook deliveries are logged to `~/.kiso/instances/{name}/audit/`. JSONL format, one file per day.
 
 ## Structure
 
 ```
-~/.kiso/audit/
+~/.kiso/instances/{name}/audit/
 ├── 2024-01-15.jsonl
 ├── 2024-01-16.jsonl
 └── ...
@@ -94,4 +94,4 @@ This is the same sanitization applied to task output (see [security.md — Leak 
 
 ## Retention
 
-No automatic cleanup. Files accumulate in `~/.kiso/audit/`. Admins manage retention externally (logrotate, cron, etc.).
+No automatic cleanup. Files accumulate in `~/.kiso/instances/{name}/audit/`. Admins manage retention externally (logrotate, cron, etc.).

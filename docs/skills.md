@@ -1,11 +1,12 @@
 # Skills
 
-A skill is a git-cloned package in `~/.kiso/skills/{name}/`. Runs as a subprocess in a `uv`-managed venv.
+A skill is a git-cloned package in `~/.kiso/instances/{instance}/skills/{name}/` on the host (mounted at `/root/.kiso/skills/{name}/` inside the container). Runs as a subprocess in a `uv`-managed venv.
 
 ## Structure
 
 ```
-~/.kiso/skills/
+~/.kiso/instances/{instance}/skills/    # host path
+/root/.kiso/skills/                     # container-internal path (equivalent)
 ├── search/
 │   ├── kiso.toml           # manifest (required) — identity, args schema, deps
 │   ├── pyproject.toml      # python dependencies (required, uv-managed)
@@ -175,15 +176,15 @@ Only admins can install skills.
 # official (resolves from kiso-run org)
 kiso skill install search
 # → clones git@github.com:kiso-run/skill-search.git
-# → ~/.kiso/skills/search/
+# → ~/.kiso/instances/{instance}/skills/search/
 
 # unofficial (full git URL)
 kiso skill install git@github.com:someone/my-skill.git
-# → ~/.kiso/skills/github-com_someone_my-skill/
+# → ~/.kiso/instances/{instance}/skills/github-com_someone_my-skill/
 
 # unofficial with custom name
 kiso skill install git@github.com:someone/my-skill.git --name custom
-# → ~/.kiso/skills/custom/
+# → ~/.kiso/instances/{instance}/skills/custom/
 ```
 
 ### Unofficial Repo Warning
@@ -214,8 +215,8 @@ https://gitlab.com/team/cool-skill.git        → gitlab-com_team_cool-skill
 ### Install Flow
 
 ```
-1. touch ~/.kiso/skills/{name}/.installing (prevents discovery during install)
-2. git clone → ~/.kiso/skills/{name}/
+1. touch ~/.kiso/instances/{instance}/skills/{name}/.installing (prevents discovery during install)
+2. git clone → ~/.kiso/instances/{instance}/skills/{name}/
 3. Validate kiso.toml (exists? type=skill? has name? has [kiso.skill.args]?)
 4. Validate run.py and pyproject.toml exist — fail if missing
 5. If unofficial repo → warn user, ask confirmation (see security.md)
@@ -226,7 +227,7 @@ https://gitlab.com/team/cool-skill.git        → gitlab-com_team_cool-skill
 8. Check [kiso.deps].bin (verify with `which`)
 9. Check [kiso.skill.env] vars
    ⚠ KISO_SKILL_SEARCH_API_KEY not set (warn, don't block)
-10. rm ~/.kiso/skills/{name}/.installing
+10. rm ~/.kiso/instances/{instance}/skills/{name}/.installing
 ```
 
 ### Update / Remove
@@ -259,7 +260,7 @@ When the worker encounters a `skill` task:
 
 1. Parses `args` from JSON string, validates against the schema in `kiso.toml`
 2. Builds input JSON (parsed args as object + session + workspace path + scoped ephemeral secrets as dict + plan outputs from preceding tasks)
-3. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/search/run.py` with `cwd=~/.kiso/sessions/{session}`
+3. Pipes input JSON to stdin: `.venv/bin/python /root/.kiso/skills/search/run.py` with `cwd=/root/.kiso/sessions/{session}` (container-internal paths)
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values — plaintext, base64, URL-encoded)
 6. Stores task result in DB (status, output)
@@ -267,7 +268,7 @@ When the worker encounters a `skill` task:
 
 ## Discovery
 
-Rescanned from `~/.kiso/skills/` before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). No restart needed. The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
+Rescanned from `/root/.kiso/skills/` (container-internal) before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). No restart needed. The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a skill or a plain `exec` task.
 
 ## Why Subprocesses
 

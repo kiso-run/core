@@ -1,6 +1,6 @@
 # LLM Roles
 
-Each LLM call has its own role. Each role has its own model (from `config.toml`), its own system prompt (from `~/.kiso/roles/{role}.md`), and receives **only the context it needs**.
+Each LLM call has its own role. Each role has its own model (from `config.toml`), its own system prompt (from `~/.kiso/instances/{name}/roles/{role}.md` on the host, `/root/.kiso/roles/{role}.md` inside the container), and receives **only the context it needs**.
 
 ## Context per Role
 
@@ -275,7 +275,7 @@ See [flow.md — Replan Flow](flow.md#g-replan-flow-if-reviewer-returns-replan) 
 
 The planner writes `exec` task details as natural-language descriptions (e.g., "List all Python files in the project directory"). The exec translator receives this description along with the system environment context (available binaries, OS, shell, working directory) and preceding task outputs, then produces the exact shell command (e.g., `find . -name "*.py" -type f`).
 
-Uses the `worker` model (same LLM as `msg` tasks). Custom prompt can be placed at `~/.kiso/roles/exec_translator.md`.
+Uses the `worker` model (same LLM as `msg` tasks). Custom prompt can be placed at `~/.kiso/instances/{name}/roles/exec_translator.md`.
 
 ### Rules in the Default Prompt
 
@@ -343,7 +343,7 @@ The planner prompt instructs it to prefer the search skill for bulk queries when
 
 ### System Prompt
 
-Custom prompt: `~/.kiso/roles/searcher.md` (user override) or `kiso/roles/searcher.md` (package default). Same override mechanism as all other roles.
+Custom prompt: `~/.kiso/instances/{name}/roles/searcher.md` (user override) or `kiso/roles/searcher.md` (package default). Same override mechanism as all other roles.
 
 ---
 

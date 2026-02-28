@@ -150,7 +150,7 @@ Queued messages on the session are not affected — they are processed normally 
 
 ## POST /admin/reload-env
 
-Hot-reloads deploy secrets from `~/.kiso/.env` without restarting the server. Admin only.
+Hot-reloads deploy secrets from `~/.kiso/instances/{name}/.env` without restarting the server. Admin only.
 
 **Response** `200 OK`:
 

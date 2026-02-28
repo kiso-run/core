@@ -98,7 +98,7 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 
 | Type | Execution |
 |---|---|
-| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=~/.kiso/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
+| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=/root/.kiso/sessions/{session}` (container-internal path), timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `messenger` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
 | `search` | Calls LLM with `searcher` role (`google/gemini-2.5-flash-lite:online`). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
 | `skill` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python ~/.kiso/skills/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
@@ -189,7 +189,7 @@ The worker always provides preceding outputs — no conditional logic. The plann
 
 ### Public File Serving
 
-Files written to `pub/` inside the session workspace (`~/.kiso/sessions/{session}/pub/`) are served directly via an HMAC-based URL:
+Files written to `pub/` inside the session workspace (`~/.kiso/instances/{name}/sessions/{session}/pub/`) are served directly via an HMAC-based URL:
 
 ```
 GET /pub/{token}/{filename}
