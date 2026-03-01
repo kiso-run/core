@@ -6,12 +6,19 @@ KISO (基礎) = foundation in Japanese.
 
 ## Philosophy
 
-- **Minimal, barebone, essential** — the core does only what's strictly necessary; everything else you install separately
-- One config file, one database file, easily customizable role behaviors
-- No separate user management — authentication piggybacks on the Linux user system
-- Skills and connectors installable via git, each isolated in its own venv (managed by `uv`)
-- Runs in Docker — controlled environment, reproducible deps, no host pollution
-- **No magic** — if something isn't configured, Kiso errors out. No implicit fallbacks, no guessing, no behavior that isn't explicitly described
+Kiso installs and configures in one command. It's built to be trusted with real users running real tasks.
+
+**Security designed in, not bolted on.** Most bots protect the inbound channel. Kiso protects execution: OS-level sandbox (real Linux users, not path filtering), four-layer prompt injection defense (paraphrasing → random boundary fencing → prompt hierarchy → structured output), ephemeral secrets that never touch disk, SSRF protection on webhooks.
+
+**Real multi-user enforcement.** Admin and user roles are enforced at the OS level — user commands literally run as a restricted Linux user with scoped permissions on their workspace. Not filtered in application code.
+
+**Review gates on every risky step.** A reviewer evaluates each exec, skill, and search task before the next one runs. Automatic and non-blocking, but structurally sound — errors don't cascade.
+
+**Knowledge that doesn't rot.** Curated facts (user/project/tool/general) with confidence scores, decay, consolidation, and session scoping. A curator evaluates learnings before promoting them. Memory stays signal, not noise.
+
+**Fail loud.** Missing config → explicit error with the exact field name. No silent defaults, no undocumented fallbacks.
+
+One config file, one database, git-installable skills and connectors each in their own isolated venv, runs in Docker.
 
 ## Project Structure
 
@@ -56,8 +63,8 @@ kiso/                               # installable python package
 │       └── .venv/                  # created by uv on install
 └── sessions/                       # per-session data
     └── {session_id}/
-        ├── session.log             # execution log
         ├── pub/                    # published/downloadable files
+        ├── uploads/                # files received from connectors or the user
         └── ...                     # working files (exec cwd)
 ```
 
