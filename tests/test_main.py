@@ -316,26 +316,17 @@ class TestReloadConfig:
         assert "bad toml" in resp.json()["detail"]
         mock_cache.assert_not_called()
 
-    async def test_reload_updates_app_state(self, client: httpx.AsyncClient, test_config_path):
-        """After a successful reload, app.state.config is replaced with the new config."""
-        from kiso.main import app
-        from kiso.config import load_config
-
-        original_cfg = app.state.config
-        new_cfg = load_config(test_config_path)
-        assert new_cfg is not original_cfg
-
-        with (
-            patch("kiso.main.reload_config", return_value=new_cfg),
-            patch("kiso.main.invalidate_prompt_cache"),
-        ):
-            await client.post(
+    async def test_reload_forbidden_untrusted_user(self, client: httpx.AsyncClient):
+        """User not present in config (untrusted) gets 403."""
+        with patch("kiso.main.reload_config") as mock_reload:
+            resp = await client.post(
                 "/admin/reload-config",
-                params={"user": "testadmin"},
+                params={"user": "nobody"},
                 headers=AUTH_HEADER,
             )
 
-        assert app.state.config is new_cfg
+        assert resp.status_code == 403
+        mock_reload.assert_not_called()
 
 
 class TestLoadEnvFile:
