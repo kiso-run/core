@@ -57,6 +57,22 @@ print(val)
 instance_server_port() { _instance_field "$1" "server_port"; }
 instance_connector_base() { _instance_field "$1" "connector_port_base"; }
 
+# Read the container-internal port from config.toml (the port the server binds
+# to inside the container — always 8333 unless the user edited config.toml).
+# This is distinct from the external host port stored in instances.json.
+instance_internal_port() {
+    local cfg="$KISO_DIR/instances/$1/config.toml"
+    if [[ -f "$cfg" ]]; then
+        python3 -c "
+import re, sys
+m = re.search(r'^\s*port\s*=\s*(\d+)', open(sys.argv[1]).read(), re.MULTILINE)
+print(m.group(1) if m else 8333)
+" "$cfg" 2>/dev/null || echo 8333
+    else
+        echo 8333
+    fi
+}
+
 # ── port auto-detection ──────────────────────────────────────────────────────
 
 _next_free_server_port() {
@@ -475,10 +491,10 @@ HELP
         if [[ "$ALL_INSTANCES" -eq 0 ]]; then
             INST=$(resolve_instance "$EXPLICIT_INSTANCE")
             CONTAINER="kiso-$INST"
-            SERVER_PORT=$(instance_server_port "$INST")
+            INTERNAL_PORT=$(instance_internal_port "$INST")
             require_running "$CONTAINER"
             docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" \
-                uv run kiso --user "$(whoami)" --api "http://localhost:$SERVER_PORT" \
+                uv run kiso --user "$(whoami)" --api "http://localhost:$INTERNAL_PORT" \
                 stats "${STATS_FLAGS[@]+"${STATS_FLAGS[@]}"}"
         else
             # Aggregate stats for every instance
@@ -495,10 +511,10 @@ print('\n'.join(d.keys()))
             while IFS= read -r _inst; do
                 echo "── $_inst ──"
                 _c="kiso-$_inst"
-                _port=$(instance_server_port "$_inst")
+                _iport=$(instance_internal_port "$_inst")
                 if docker inspect --format '{{.State.Status}}' "$_c" 2>/dev/null | grep -q "^running$"; then
                     docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$_c" \
-                        uv run kiso --user "$(whoami)" --api "http://localhost:$_port" \
+                        uv run kiso --user "$(whoami)" --api "http://localhost:$_iport" \
                         stats "${STATS_FLAGS[@]+"${STATS_FLAGS[@]}"}" 2>/dev/null \
                         || echo "  (error reading stats)"
                 else
@@ -513,10 +529,10 @@ print('\n'.join(d.keys()))
     reset)
         INST=$(resolve_instance "$EXPLICIT_INSTANCE")
         CONTAINER="kiso-$INST"
-        SERVER_PORT=$(instance_server_port "$INST")
+        INTERNAL_PORT=$(instance_internal_port "$INST")
         require_running "$CONTAINER"
         docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" \
-            uv run kiso --user "$(whoami)" --api "http://localhost:$SERVER_PORT" "$@"
+            uv run kiso --user "$(whoami)" --api "http://localhost:$INTERNAL_PORT" "$@"
         if [[ "${2:-}" == "factory" ]]; then
             echo "Restarting container..."
             docker restart "$CONTAINER"
@@ -614,7 +630,7 @@ Config files:
   ~/.kiso/instances.json              instance registry
   ~/.kiso/instances/{name}/config.toml
   ~/.kiso/instances/{name}/.env
-  ~/.kiso/instances/{name}/kiso.db
+  ~/.kiso/instances/{name}/store.db
 
 REPL slash commands:
   /help  /status  /sessions  /stats  /verbose-on  /verbose-off  /clear  /exit
@@ -625,12 +641,12 @@ HELP
     *)
         INST=$(resolve_instance "$EXPLICIT_INSTANCE")
         CONTAINER="kiso-$INST"
-        SERVER_PORT=$(instance_server_port "$INST")
+        INTERNAL_PORT=$(instance_internal_port "$INST")
         require_running "$CONTAINER"
 
         docker exec $TTY_FLAGS "${TERM_ENV[@]}" -w /opt/kiso "$CONTAINER" \
             uv run kiso --user "$(whoami)" --session "$(hostname)@$(whoami)" \
-            --api "http://localhost:$SERVER_PORT" "$@"
+            --api "http://localhost:$INTERNAL_PORT" "$@"
 
         # Post-install hook: assign connector ports when a new connector was installed
         if [[ "${1:-}" == "connector" && "${2:-}" == "install" ]]; then
