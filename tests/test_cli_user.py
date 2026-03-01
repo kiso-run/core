@@ -434,6 +434,34 @@ class TestUserEdit:
         assert exc.value.code == 1
         assert "--skills" in capsys.readouterr().out
 
+    def test_edit_wildcard_skills(self, tmp_path):
+        """--skills '*' is stored as the literal string '*', not a list."""
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            _user_edit(_args(username="alice", role=None, skills="*"))
+
+        assert _read_users(config_path)["alice"]["skills"] == "*"
+
+    def test_edit_promote_to_admin_preserves_skills(self, tmp_path):
+        """Promoting a user to admin leaves the skills key intact."""
+        config_path = _make_config(tmp_path)  # alice has skills: ["skill1", "skill2"]
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            _user_edit(_args(username="alice", role="admin", skills=None))
+
+        alice = _read_users(config_path)["alice"]
+        assert alice["role"] == "admin"
+        assert alice["skills"] == ["skill1", "skill2"]
+
 
 # ---------------------------------------------------------------------------
 # remove
