@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
+import jsonschema as _jsonschema
 import pytest
 
 import aiosqlite
@@ -12,6 +13,8 @@ from kiso.brain import (
     ClassifierError,
     CURATOR_SCHEMA,
     CuratorError,
+    PLAN_SCHEMA,
+    REVIEW_SCHEMA,
     ExecTranslatorError,
     MessengerError,
     ParaphraserError,
@@ -828,6 +831,115 @@ class TestValidateReview:
         assert len(errors) >= 1
 
 
+# --- M83: JSON-Schema validation for PLAN_SCHEMA and REVIEW_SCHEMA ---
+
+
+_PLAN_SCHEMA_INNER = PLAN_SCHEMA["json_schema"]["schema"]
+_REVIEW_SCHEMA_INNER = REVIEW_SCHEMA["json_schema"]["schema"]
+_MSG_TASK_DICT = {"type": "msg", "detail": "Hello", "skill": None, "args": None, "expect": None}
+
+
+class TestM83PlanSchema:
+    """M83: PLAN_SCHEMA inner schema accepts valid plans and rejects invalid ones."""
+
+    def _valid(self, instance):
+        _jsonschema.validate(instance=instance, schema=_PLAN_SCHEMA_INNER)
+
+    def _invalid(self, instance):
+        with pytest.raises(_jsonschema.ValidationError):
+            _jsonschema.validate(instance=instance, schema=_PLAN_SCHEMA_INNER)
+
+    def _plan(self, **overrides):
+        base = {"goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}], "extend_replan": None}
+        base.update(overrides)
+        return base
+
+    # Valid ---
+
+    def test_valid_minimal(self):
+        self._valid(self._plan())
+
+    def test_valid_secrets_array(self):
+        self._valid(self._plan(secrets=[{"key": "K", "value": "V"}]))
+
+    def test_valid_extend_replan_integer(self):
+        self._valid(self._plan(extend_replan=3))
+
+    @pytest.mark.parametrize("t", ["exec", "msg", "skill", "search", "replan"])
+    def test_valid_task_type(self, t):
+        self._valid(self._plan(tasks=[{"type": t, "detail": "x", "skill": None, "args": None, "expect": None}]))
+
+    # Invalid ---
+
+    def test_missing_goal(self):
+        d = self._plan()
+        del d["goal"]
+        self._invalid(d)
+
+    def test_missing_extend_replan(self):
+        d = self._plan()
+        del d["extend_replan"]
+        self._invalid(d)
+
+    def test_extra_top_level_field(self):
+        self._invalid(self._plan(unexpected="boom"))
+
+    def test_task_invalid_type_enum(self):
+        self._invalid(self._plan(tasks=[{"type": "fly", "detail": "x", "skill": None, "args": None, "expect": None}]))
+
+    def test_task_missing_required_field(self):
+        # missing "expect"
+        self._invalid(self._plan(tasks=[{"type": "msg", "detail": "x", "skill": None, "args": None}]))
+
+    def test_task_extra_field(self):
+        self._invalid(self._plan(tasks=[{**_MSG_TASK_DICT, "extra": "x"}]))
+
+    def test_extend_replan_wrong_type(self):
+        self._invalid(self._plan(extend_replan="three"))
+
+
+class TestM83ReviewSchema:
+    """M83: REVIEW_SCHEMA inner schema accepts valid reviews and rejects invalid ones."""
+
+    def _valid(self, instance):
+        _jsonschema.validate(instance=instance, schema=_REVIEW_SCHEMA_INNER)
+
+    def _invalid(self, instance):
+        with pytest.raises(_jsonschema.ValidationError):
+            _jsonschema.validate(instance=instance, schema=_REVIEW_SCHEMA_INNER)
+
+    # Valid ---
+
+    def test_valid_ok_nulls(self):
+        self._valid({"status": "ok", "reason": None, "learn": None, "retry_hint": None})
+
+    def test_valid_replan_full(self):
+        self._valid({"status": "replan", "reason": "wrong path", "learn": ["Fact 1"], "retry_hint": "try /opt"})
+
+    def test_valid_learn_exactly_5(self):
+        self._valid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e"], "retry_hint": None})
+
+    # Invalid ---
+
+    def test_missing_status(self):
+        self._invalid({"reason": None, "learn": None, "retry_hint": None})
+
+    def test_status_not_in_enum(self):
+        self._invalid({"status": "maybe", "reason": None, "learn": None, "retry_hint": None})
+
+    def test_missing_retry_hint(self):
+        self._invalid({"status": "ok", "reason": None, "learn": None})
+
+    def test_extra_field(self):
+        self._invalid({"status": "ok", "reason": None, "learn": None, "retry_hint": None, "extra": "x"})
+
+    def test_learn_exceeds_max_items(self):
+        self._invalid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e", "f"], "retry_hint": None})
+
+    def test_learn_non_string_item(self):
+        self._invalid({"status": "ok", "reason": None, "learn": [42], "retry_hint": None})
+
+
 # --- build_reviewer_messages ---
 
 class TestBuildReviewerMessages:
@@ -1024,8 +1136,6 @@ class TestRunReviewer:
 
     async def test_passes_review_schema(self, config):
         """run_reviewer passes REVIEW_SCHEMA as response_format."""
-        from kiso.brain import REVIEW_SCHEMA
-
         captured_kwargs = {}
 
         async def _capture(cfg, role, messages, **kw):
@@ -1925,6 +2035,81 @@ class TestM73cPlannerUserManagement:
         assert "System Environment" in prompt
 
 
+# --- M82: planner ask-then-add workflow (functional) ---
+
+
+_MSG_PLAN_FOR_USER = json.dumps({
+    "goal": "Relay user management request to admin",
+    "secrets": None,
+    "extend_replan": None,
+    "tasks": [{
+        "type": "msg",
+        "detail": "I cannot add users directly. Please ask your admin to run: kiso user add bob --role user",
+        "skill": None,
+        "args": None,
+        "expect": None,
+    }],
+})
+
+
+@pytest.mark.asyncio
+class TestM82PlannerAskThenAdd:
+    """M82: functional tests for the ask-then-add protection workflow.
+
+    When Caller Role=user, a kiso user management request must result in a
+    msg task (not exec).  The protection is prompt-based; these tests verify:
+    1. build_planner_messages correctly injects Caller Role: user into context.
+    2. run_planner accepts a msg-only plan returned by the LLM for this scenario.
+    3. The LLM actually sees the Caller Role and the original request together.
+    """
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3, context_messages=5),
+            raw={},
+        )
+
+    async def test_caller_role_user_in_messages(self, db, config):
+        """build_planner_messages injects '## Caller Role\\nuser' for role=user."""
+        msgs, _ = await build_planner_messages(db, config, "sess1", "user", "add user bob")
+        assert "## Caller Role\nuser" in msgs[1]["content"]
+
+    async def test_run_planner_accepts_msg_only_plan(self, db, config):
+        """run_planner with user_role='user' returns the msg plan without errors."""
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=_MSG_PLAN_FOR_USER):
+            plan = await run_planner(db, config, "sess1", "user", "add user bob to kiso")
+        assert plan["tasks"][0]["type"] == "msg"
+        assert len(plan["tasks"]) == 1
+
+    async def test_llm_sees_caller_role_and_request_together(self, db, config):
+        """LLM receives both '## Caller Role\\nuser' and the kiso user add request."""
+        captured: list[dict] = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.extend(messages)
+            return _MSG_PLAN_FOR_USER
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_planner(db, config, "sess1", "user", "kiso user add charlie")
+
+        user_msg = next((m for m in captured if m["role"] == "user"), None)
+        assert user_msg is not None, "No user message found in LLM call"
+        assert "## Caller Role\nuser" in user_msg["content"]
+        assert "kiso user add charlie" in user_msg["content"]
+
+
 # --- Classifier (fast path) ---
 
 
@@ -2049,7 +2234,6 @@ class TestClassifierPromptContent:
 class TestRetryHintInSchema:
     def test_retry_hint_in_review_schema(self):
         """REVIEW_SCHEMA includes retry_hint property."""
-        from kiso.brain import REVIEW_SCHEMA
         props = REVIEW_SCHEMA["json_schema"]["schema"]["properties"]
         assert "retry_hint" in props
         required = REVIEW_SCHEMA["json_schema"]["schema"]["required"]
