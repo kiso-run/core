@@ -3,57 +3,26 @@
 These tests exercise the full main() → build_parser() → dispatch → function
 pipeline instead of calling internal functions directly.  The only patches
 used are:
-  - sys.argv          — to supply the command line without spawning a subprocess
-  - cli.user.require_admin  — OS-level admin check (irrelevant to CLI correctness)
+  - sys.argv                    — to supply the command line without spawning a subprocess
+  - cli.user.require_admin      — OS-level admin check (irrelevant to CLI correctness)
   - cli.user.CONFIG_PATH_DEFAULT — to point at a test-local config.toml
-  - cli.user._call_reload — network call to a live server (not part of CLI logic)
 """
 
 from __future__ import annotations
 
 import json
 import sys
-import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import tomli_w
+
+from tests._cli_user_helpers import make_user_config, read_users
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Helper
 # ---------------------------------------------------------------------------
-
-_USERS = {
-    "boss": {"role": "admin"},
-    "alice": {"role": "user", "skills": ["skill1", "skill2"]},
-}
-
-_CONFIG = {
-    "tokens": {"cli": "test-token"},
-    "providers": {"openrouter": {"base_url": "https://example.com"}},
-    "users": _USERS,
-    "models": {
-        "planner": "m", "reviewer": "m", "curator": "m", "worker": "m",
-        "summarizer": "m", "paraphraser": "m", "messenger": "m", "searcher": "m",
-    },
-    "settings": {},
-}
-
-
-def _make_config(tmp_path: Path, users: dict | None = None) -> Path:
-    p = tmp_path / "config.toml"
-    raw = {**_CONFIG, "users": users if users is not None else _USERS}
-    with open(p, "wb") as f:
-        tomli_w.dump(raw, f)
-    return p
-
-
-def _read_users(path: Path) -> dict:
-    with open(path, "rb") as f:
-        return tomllib.load(f)["users"]
-
 
 def _run(argv: list[str], config_path: Path) -> None:
     """Call main() with patched sys.argv and config path."""
@@ -63,7 +32,6 @@ def _run(argv: list[str], config_path: Path) -> None:
         patch.object(sys, "argv", ["kiso", *argv]),
         patch("cli.user.require_admin"),
         patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
-        patch("cli.user._call_reload"),
     ):
         main()
 
@@ -74,7 +42,7 @@ def _run(argv: list[str], config_path: Path) -> None:
 
 class TestIntegrationUserList:
     def test_list_shows_users(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "list"], config_path)
         out = capsys.readouterr().out
         assert "boss" in out
@@ -82,14 +50,14 @@ class TestIntegrationUserList:
         assert "alice" in out
 
     def test_list_json(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "list", "--json"], config_path)
         data = json.loads(capsys.readouterr().out)
         assert data["boss"]["role"] == "admin"
         assert data["alice"]["skills"] == ["skill1", "skill2"]
 
     def test_list_no_subcommand_exits(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         with pytest.raises(SystemExit) as exc:
             _run(["user"], config_path)
         assert exc.value.code == 1
@@ -102,27 +70,27 @@ class TestIntegrationUserList:
 
 class TestIntegrationUserAdd:
     def test_add_admin_no_reload(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "add", "newguy", "--role", "admin", "--no-reload"], config_path)
-        users = _read_users(config_path)
+        users = read_users(config_path)
         assert "newguy" in users
         assert users["newguy"]["role"] == "admin"
         assert "added" in capsys.readouterr().out
 
     def test_add_user_with_skills_no_reload(self, tmp_path):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "add", "bob", "--role", "user", "--skills", "read,write", "--no-reload"], config_path)
-        assert _read_users(config_path)["bob"]["skills"] == ["read", "write"]
+        assert read_users(config_path)["bob"]["skills"] == ["read", "write"]
 
     def test_add_existing_fails(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         with pytest.raises(SystemExit) as exc:
             _run(["user", "add", "boss", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
         assert "already exists" in capsys.readouterr().out
 
     def test_add_invalid_username_fails(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         with pytest.raises(SystemExit) as exc:
             _run(["user", "add", "INVALID!", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
@@ -135,18 +103,18 @@ class TestIntegrationUserAdd:
 
 class TestIntegrationUserEdit:
     def test_edit_role(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "edit", "alice", "--role", "admin", "--no-reload"], config_path)
-        assert _read_users(config_path)["alice"]["role"] == "admin"
+        assert read_users(config_path)["alice"]["role"] == "admin"
         assert "updated" in capsys.readouterr().out
 
     def test_edit_skills(self, tmp_path):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "edit", "alice", "--skills", "x,y", "--no-reload"], config_path)
-        assert _read_users(config_path)["alice"]["skills"] == ["x", "y"]
+        assert read_users(config_path)["alice"]["skills"] == ["x", "y"]
 
     def test_edit_nonexistent_fails(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         with pytest.raises(SystemExit) as exc:
             _run(["user", "edit", "nobody", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
@@ -159,13 +127,13 @@ class TestIntegrationUserEdit:
 
 class TestIntegrationUserRemove:
     def test_remove_user(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(["user", "remove", "alice", "--no-reload"], config_path)
-        assert "alice" not in _read_users(config_path)
+        assert "alice" not in read_users(config_path)
         assert "removed" in capsys.readouterr().out
 
     def test_remove_last_admin_fails(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path, users={"boss": {"role": "admin"}})
+        config_path = make_user_config(tmp_path, users={"boss": {"role": "admin"}})
         with pytest.raises(SystemExit) as exc:
             _run(["user", "remove", "boss", "--no-reload"], config_path)
         assert exc.value.code == 1
@@ -178,16 +146,16 @@ class TestIntegrationUserRemove:
 
 class TestIntegrationUserAlias:
     def test_set_alias(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path)
+        config_path = make_user_config(tmp_path)
         _run(
             ["user", "alias", "alice", "--connector", "discord", "--id", "alice#1234", "--no-reload"],
             config_path,
         )
-        assert _read_users(config_path)["alice"]["aliases"]["discord"] == "alice#1234"
+        assert read_users(config_path)["alice"]["aliases"]["discord"] == "alice#1234"
         assert "set" in capsys.readouterr().out
 
     def test_remove_alias(self, tmp_path, capsys):
-        config_path = _make_config(tmp_path, users={
+        config_path = make_user_config(tmp_path, users={
             "boss": {"role": "admin"},
             "alice": {"role": "user", "skills": ["s1"], "aliases": {"discord": "alice#1234"}},
         })
@@ -195,5 +163,5 @@ class TestIntegrationUserAlias:
             ["user", "alias", "alice", "--connector", "discord", "--remove", "--no-reload"],
             config_path,
         )
-        assert "aliases" not in _read_users(config_path)["alice"]
+        assert "aliases" not in read_users(config_path)["alice"]
         assert "removed" in capsys.readouterr().out

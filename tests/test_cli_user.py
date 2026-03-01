@@ -3,54 +3,23 @@
 from __future__ import annotations
 
 import argparse
-import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import tomli_w
+
+from tests._cli_user_helpers import make_user_config as _make_config
+from tests._cli_user_helpers import read_users as _read_users
 
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
-_MINIMAL_USERS = {
-    "boss": {"role": "admin"},
-    "alice": {"role": "user", "skills": ["skill1", "skill2"]},
-}
-
-_MINIMAL_CONFIG = {
-    "tokens": {"cli": "test-token"},
-    "providers": {"openrouter": {"base_url": "https://example.com"}},
-    "users": _MINIMAL_USERS,
-    "models": {
-        "planner": "m", "reviewer": "m", "curator": "m", "worker": "m",
-        "summarizer": "m", "paraphraser": "m", "messenger": "m", "searcher": "m",
-    },
-    "settings": {},
-}
-
-
-def _make_config(tmp_path: Path, users: dict | None = None) -> Path:
-    p = tmp_path / "config.toml"
-    raw = {**_MINIMAL_CONFIG}
-    if users is not None:
-        raw = {**raw, "users": users}
-    with open(p, "wb") as f:
-        tomli_w.dump(raw, f)
-    return p
-
-
 def _args(**kwargs) -> argparse.Namespace:
     defaults = {"api": "http://localhost:8333"}
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
-
-
-def _read_users(path: Path) -> dict:
-    with open(path, "rb") as f:
-        return tomllib.load(f)["users"]
 
 
 # ---------------------------------------------------------------------------
