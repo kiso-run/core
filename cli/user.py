@@ -21,7 +21,7 @@ def run_user_command(args) -> None:
     """Dispatch to the appropriate user subcommand."""
     cmd = getattr(args, "user_command", None)
     if cmd is None:
-        print("usage: kiso user {list,add,remove,alias}")
+        print("usage: kiso user {list,add,edit,remove,alias}")
         sys.exit(1)
     elif cmd == "list":
         _user_list(args)
@@ -47,6 +47,29 @@ def _write_raw(raw: dict, path: Path | None = None) -> None:
     p = path or CONFIG_PATH_DEFAULT
     with open(p, "wb") as f:
         tomli_w.dump(raw, f)
+
+
+def _parse_skills(skills_arg: str) -> list[str]:
+    """Parse a comma-separated skills string; exits on empty result."""
+    skills_list = [s.strip() for s in skills_arg.split(",") if s.strip()]
+    if not skills_list:
+        print("error: --skills contains no valid skill names")
+        sys.exit(1)
+    return skills_list
+
+
+def _other_admins(users: dict, exclude: str) -> list[str]:
+    """Return admin usernames other than *exclude*."""
+    return [
+        name for name, udata in users.items()
+        if udata.get("role") == "admin" and name != exclude
+    ]
+
+
+def _maybe_reload(args) -> None:
+    """Call _call_reload unless --no-reload was passed."""
+    if not getattr(args, "no_reload", False):
+        _call_reload(args)
 
 
 def _call_reload(args) -> None:
@@ -87,9 +110,7 @@ def _user_list(args) -> None:
     raw = _read_raw()
     users = raw.get("users", {})
 
-    use_json = getattr(args, "json", False)
-
-    if use_json:
+    if getattr(args, "json", False):
         print(json.dumps(users, indent=2))
         return
 
@@ -164,18 +185,13 @@ def _user_add(args) -> None:
         if skills_arg == "*":
             user_entry["skills"] = "*"
         else:
-            skills_list = [s.strip() for s in skills_arg.split(",") if s.strip()]
-            if not skills_list:
-                print("error: --skills contains no valid skill names")
-                sys.exit(1)
-            user_entry["skills"] = skills_list
+            user_entry["skills"] = _parse_skills(skills_arg)
     if aliases:
         user_entry["aliases"] = aliases
 
     raw["users"][username] = user_entry
     _write_raw(raw)
-    if not getattr(args, "no_reload", False):
-        _call_reload(args)
+    _maybe_reload(args)
     print(f"User '{username}' added.")
 
 
@@ -200,33 +216,17 @@ def _user_edit(args) -> None:
 
     entry = users[username]
     current_role = entry.get("role")
-
-    if new_role is not None and new_role not in ("admin", "user"):
-        print("error: --role must be 'admin' or 'user'")
-        sys.exit(1)
-
     final_role = new_role if new_role is not None else current_role
 
     # Guard: demoting the only admin
     if current_role == "admin" and final_role == "user":
-        remaining_admins = [
-            name for name, udata in users.items()
-            if udata.get("role") == "admin" and name != username
-        ]
-        if not remaining_admins:
+        if not _other_admins(users, username):
             print("error: cannot demote the last admin")
             sys.exit(1)
 
     # Skills handling
     if skills_arg is not None:
-        if skills_arg == "*":
-            new_skills = "*"
-        else:
-            skills_list = [s.strip() for s in skills_arg.split(",") if s.strip()]
-            if not skills_list:
-                print("error: --skills contains no valid skill names")
-                sys.exit(1)
-            new_skills = skills_list
+        new_skills = "*" if skills_arg == "*" else _parse_skills(skills_arg)
     else:
         new_skills = entry.get("skills")
 
@@ -237,14 +237,9 @@ def _user_edit(args) -> None:
     entry["role"] = final_role
     if final_role == "user":
         entry["skills"] = new_skills
-    elif "skills" in entry and new_role == "admin":
-        # Promoted to admin — silently keep existing skills (harmless)
-        pass
 
-    raw["users"][username] = entry
     _write_raw(raw)
-    if not getattr(args, "no_reload", False):
-        _call_reload(args)
+    _maybe_reload(args)
     print(f"User '{username}' updated.")
 
 
@@ -261,18 +256,13 @@ def _user_remove(args) -> None:
         print(f"error: user '{username}' does not exist")
         sys.exit(1)
 
-    remaining_admins = [
-        name for name, udata in users.items()
-        if udata.get("role") == "admin" and name != username
-    ]
-    if users[username].get("role") == "admin" and not remaining_admins:
+    if users[username].get("role") == "admin" and not _other_admins(users, username):
         print("error: cannot remove the last admin")
         sys.exit(1)
 
     del raw["users"][username]
     _write_raw(raw)
-    if not getattr(args, "no_reload", False):
-        _call_reload(args)
+    _maybe_reload(args)
     print(f"User '{username}' removed.")
 
 
@@ -319,6 +309,5 @@ def _user_alias(args) -> None:
         action = "set"
 
     _write_raw(raw)
-    if not getattr(args, "no_reload", False):
-        _call_reload(args)
+    _maybe_reload(args)
     print(f"Alias '{connector}' {action} for user '{username}'.")
