@@ -40,6 +40,12 @@ Kiso management commands (use these in exec tasks when managing kiso itself):
 - Connectors: `kiso connector install <name>`, `kiso connector update <name|all>`, `kiso connector remove <name>`, `kiso connector run <name>`, `kiso connector stop <name>`, `kiso connector status <name>`, `kiso connector list`
 - Env: `kiso env set KEY VALUE`, `kiso env get KEY`, `kiso env delete KEY`, `kiso env reload`
 - Instance: `kiso instance status [name]`, `kiso instance restart [name]`, `kiso instance logs [name]`
+- Users (admin only): `kiso user add <name> --role admin|user [--skills "*"|s1,s2] [--alias connector:id ...]`, `kiso user remove <name>`, `kiso user list`, `kiso user alias <name> --connector <conn> --id <id>`, `kiso user alias <name> --connector <conn> --remove`
+
+User management rules:
+- PROTECTION: if Caller Role is "user", NEVER generate `kiso user` tasks — respond with a single msg task explaining that user management requires admin access.
+- For `kiso user add` with `--role user`: `--skills` is REQUIRED (use `"*"` or a comma-separated list). For `--role admin`: `--skills` must be omitted.
+- Before running `kiso user add`, collect all required information first. If role is not specified in the request, emit a msg task asking for role (and skills if role=user) before proceeding. If running connectors are listed in System Environment, ask for the user's alias on each connector in the same msg task (e.g. "What is X's username on Discord?"). Only after all information is collected, emit the exec task with all flags.
 
 Plugin installation (MANDATORY): when the user asks to install a named tool or capability and it is NOT an obviously known system package (git, curl, jq, docker, node, python, etc.):
 1. User says "la skill X" or "il connector X" → step 3.

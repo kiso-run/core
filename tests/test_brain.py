@@ -977,7 +977,7 @@ class TestRunReviewer:
     async def test_review_with_learning(self, config):
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_REVIEW_WITH_LEARN):
             review = await run_reviewer(config, "goal", "detail", "expect", "output", "msg")
-        assert review["learn"] == "Uses Python 3.12"
+        assert review["learn"] == ["Uses Python 3.12"]
 
     async def test_retry_on_invalid_then_valid(self, config):
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -1815,9 +1815,9 @@ class TestExecTranslatorPromptContent:
 
 class TestPlannerPromptContent:
     def test_planner_prompt_contains_reference_docs_instruction(self):
-        """The default planner prompt should mention Reference docs."""
+        """The default planner prompt should mention reference docs."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Reference docs" in prompt
+        assert "reference doc" in prompt.lower()
         assert "plan_outputs" in prompt
 
     def test_planner_prompt_contains_replan_task_type(self):
@@ -1839,10 +1839,11 @@ class TestPlannerPromptContent:
         assert "CRITICAL:" in prompt
 
     def test_m40_pub_path_distinction_documented(self):
-        """M40: pub/ filesystem path vs /pub/ HTTP URL must be explicitly distinguished."""
+        """M40: pub/ filesystem path vs served URL must be explicitly distinguished."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "HTTP download URL" in prompt
         assert "filesystem path" in prompt
+        # Files served at URLs — must not use the URL as a path
+        assert "never use the URL" in prompt.lower() or "served at url" in prompt.lower()
 
     def test_m45_plugin_install_uses_registry_not_search(self):
         """M45: planner prompt must forbid web search for kiso plugin discovery."""
@@ -1861,9 +1862,10 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "raw.githubusercontent.com" in prompt
         assert "kiso.toml" in prompt
-        # Step ordering: curl kiso.toml (step 2) must come before kiso connector install (step 5)
+        # Step ordering: curl kiso.toml (step 3) must come before "kiso connector install {name}" (step 6).
+        # Use the {name} placeholder variant to skip the management-commands listing at the top.
         toml_pos = prompt.index("kiso.toml")
-        install_pos = prompt.index("kiso connector install")
+        install_pos = prompt.index("kiso connector install {name}")
         assert toml_pos < install_pos
 
     def test_m46_plugin_install_includes_env_description_in_msg(self):
@@ -1871,6 +1873,56 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "description" in prompt
         assert "how to obtain" in prompt.lower() or "descriptions from kiso.toml" in prompt
+
+
+class TestM73cPlannerUserManagement:
+    """M73c: planner prompt rules for kiso user subcommand."""
+
+    def test_kiso_user_commands_listed(self):
+        """kiso user commands must appear in the Kiso management commands section."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "kiso user add" in prompt
+        assert "kiso user remove" in prompt
+        assert "kiso user list" in prompt
+        assert "kiso user alias" in prompt
+
+    def test_user_management_admin_only_label(self):
+        """The user commands must be labelled as admin only."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        # The label "admin only" must appear in proximity to user commands
+        idx = prompt.index("kiso user add")
+        section = prompt[max(0, idx - 100):idx + 50]
+        assert "admin only" in section
+
+    def test_protection_rule_blocks_non_admin(self):
+        """Planner must refuse kiso user tasks when Caller Role is 'user'."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Caller Role" in prompt
+        assert "NEVER" in prompt
+        # The protection must reference kiso user and the user role together
+        protection_idx = prompt.index("PROTECTION")
+        protection_text = prompt[protection_idx:protection_idx + 200]
+        assert "kiso user" in protection_text
+        assert "user" in protection_text.lower()
+
+    def test_skills_required_for_role_user(self):
+        """Prompt must document that --skills is required when role=user."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "--skills" in prompt
+        assert "--role user" in prompt
+
+    def test_ask_for_role_before_add(self):
+        """Planner must ask for role if not specified before running kiso user add."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "role is not specified" in prompt or "role not specified" in prompt or \
+               "role" in prompt and "msg task" in prompt
+
+    def test_ask_for_connector_aliases(self):
+        """Planner must ask for connector aliases when connectors are running."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "connector" in prompt.lower()
+        # The alias workflow rule must mention System Environment as the source
+        assert "System Environment" in prompt
 
 
 # --- Classifier (fast path) ---
@@ -2099,12 +2151,11 @@ class TestM47PlannerIdentityAndTwoLayer:
 
     def test_planner_prompt_mentions_kiso_identity(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "planner of Kiso" in prompt
+        assert "Kiso planner" in prompt
 
     def test_planner_prompt_mentions_two_layers(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "OS layer" in prompt
-        assert "Kiso layer" in prompt
+        assert "two layers" in prompt
 
     def test_planner_prompt_prefers_kiso_native_solution(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -2119,7 +2170,7 @@ class TestM47PlannerIdentityAndTwoLayer:
     def test_planner_prompt_expect_scoping(self):
         """expect must be task-scoped, not plan-goal-scoped."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "THIS specific task" in prompt
+        assert "THIS task's output" in prompt
         assert "overall plan goal" in prompt
 
 
@@ -2145,7 +2196,7 @@ class TestM47ReviewerPlanContext:
 
     def test_reviewer_prompt_sole_criterion_is_expect(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "sole criterion" in prompt
+        assert "Sole criterion" in prompt
 
     def test_reviewer_prompt_zero_changes_is_success(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
@@ -2278,9 +2329,9 @@ class TestM48ReviewerPromptHygiene:
     """48a+48b: reviewer prompt alignment and exit code rule."""
 
     def test_48a_you_receive_says_plan_context(self):
-        """48a: 'You receive' block must say 'The plan context', not 'The plan goal'."""
+        """48a: reviewer prompt must refer to 'Plan Context', not 'Plan Goal'."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "The plan context" in prompt
+        assert "Plan Context" in prompt
 
     def test_48a_no_plan_goal_in_receive_block(self):
         """48a: old 'The plan goal' bullet must be gone from 'You receive' section."""
