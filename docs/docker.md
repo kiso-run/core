@@ -159,7 +159,7 @@ EXPOSE 8333
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8333/health || exit 1
 
-CMD ["uv", "run", "uvicorn", "kiso.server:app", "--host", "0.0.0.0", "--port", "8333"]
+CMD ["uv", "run", "uvicorn", "kiso.main:app", "--host", "0.0.0.0", "--port", "8333"]
 ```
 
 ## Pre-installing skills and connectors

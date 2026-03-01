@@ -27,45 +27,40 @@ kiso/                               # installable python package
 ├── main.py                         # FastAPI, /msg, /status, /pub, /health
 ├── llm.py                          # LLM client, routes calls to configured providers
 ├── brain.py                        # planner + reviewer + curator
-├── worker.py                       # consumes tasks from queue, one per session
-├── store.py                        # SQLite: sessions, messages, plans, tasks, facts, learnings, pending, published
-├── skills.py                       # skill discovery and loading
-├── config.py                       # loads and validates ~/.kiso/config.toml
-└── cli.py                          # interactive client + management commands
+├── worker/                         # per-session asyncio worker package
+│   ├── loop.py                     # message processing, plan orchestration
+│   ├── exec.py / skill.py / search.py  # task handlers
+│   └── utils.py                    # subprocess execution, workspace management
+├── store.py                        # SQLite: sessions, messages, plans, tasks, facts, learnings
+├── skills.py / connectors.py       # plugin discovery
+├── security.py / auth.py           # permission enforcement
+└── config.py                       # config loading and validation
 
 ~/.kiso/                            # user data (outside the repo)
-├── config.toml                     # providers, tokens, models, settings
-├── .env                            # deploy secrets (managed via `kiso env`)
-├── store.db                        # SQLite database
-├── server.log                      # server-level log
-├── audit/                          # LLM call logs, task execution logs
-├── roles/                          # system prompt for each LLM role
-│   ├── planner.md
-│   ├── reviewer.md
-│   ├── worker.md
-│   ├── summarizer.md
-│   └── curator.md
-├── skills/                         # bot capabilities (git clone)
-│   └── {name}/
-│       ├── kiso.toml               # manifest: identity, args schema, deps
-│       ├── pyproject.toml          # python dependencies (uv-managed)
-│       ├── run.py                  # entry point
-│       ├── deps.sh                 # system deps installer (optional)
-│       └── .venv/                  # created by uv on install
-├── connectors/                     # platform bridges (git clone)
-│   └── {name}/
-│       ├── kiso.toml               # manifest: identity, env vars, deps
-│       ├── pyproject.toml          # python dependencies (uv-managed)
-│       ├── run.py                  # entry point
-│       ├── config.example.toml     # example config (in repo)
-│       ├── config.toml             # actual config (gitignored, no secrets)
-│       ├── deps.sh                 # system deps installer (optional)
-│       └── .venv/                  # created by uv on install
-└── sessions/                       # per-session data
-    └── {session_id}/
-        ├── pub/                    # published/downloadable files
-        ├── uploads/                # files received from connectors or the user
-        └── ...                     # working files (exec cwd)
+├── instances.json                  # instance registry (name → ports)
+└── instances/
+    └── {name}/                     # per-instance data (see docker.md for full layout)
+        ├── config.toml             # providers, tokens, models, settings
+        ├── .env                    # deploy secrets (managed via `kiso env`)
+        ├── store.db                # SQLite database
+        ├── audit/                  # LLM call logs, task execution logs
+        ├── roles/                  # system prompt overrides per LLM role
+        ├── skills/                 # bot capabilities (git clone)
+        │   └── {name}/
+        │       ├── kiso.toml       # manifest: identity, args schema, deps
+        │       ├── run.py          # entry point
+        │       └── .venv/          # created by uv on install
+        ├── connectors/             # platform bridges (git clone)
+        │   └── {name}/
+        │       ├── kiso.toml       # manifest: identity, env vars, deps
+        │       ├── run.py          # entry point
+        │       ├── config.toml     # connector config (gitignored)
+        │       └── .venv/          # created by uv on install
+        └── sessions/               # per-session workspaces
+            └── {session_id}/
+                ├── pub/            # published/downloadable files
+                ├── uploads/        # files received from connectors or the user
+                └── ...             # working files (exec cwd)
 ```
 
 ## Packages

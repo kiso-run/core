@@ -556,7 +556,7 @@ if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
             for d in sessions audit sys reference skills/*/; do
                 rm -rf "/mnt/kiso/$d" 2>/dev/null
             done
-            rm -f /mnt/kiso/kiso.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
+            rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
             chown -R '"$(id -u):$(id -g)"' /mnt/kiso/ 2>/dev/null
         ' && green "  cleaned" || yellow "  warning: could not clean all root-owned files"
     fi

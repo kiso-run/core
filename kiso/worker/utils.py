@@ -82,10 +82,13 @@ def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
     uploads_dir = workspace / "uploads"
     uploads_dir.mkdir(exist_ok=True)
     if sandbox_uid is not None:
-        os.chown(workspace, sandbox_uid, sandbox_uid)
-        os.chown(pub_dir, sandbox_uid, sandbox_uid)
-        os.chown(uploads_dir, sandbox_uid, sandbox_uid)
-        os.chmod(workspace, 0o700)
+        try:
+            os.chown(workspace, sandbox_uid, sandbox_uid)
+            os.chown(pub_dir, sandbox_uid, sandbox_uid)
+            os.chown(uploads_dir, sandbox_uid, sandbox_uid)
+            os.chmod(workspace, 0o700)
+        except OSError as exc:
+            log.warning("Cannot set workspace ownership for %s: %s", session, exc)
     return workspace
 
 

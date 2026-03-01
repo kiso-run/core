@@ -90,7 +90,7 @@ max_plan_tasks            = 20
 
 # --- execution ---
 exec_timeout              = 120      # seconds; also used for post-plan LLM calls
-planner_timeout           = 60       # seconds for planner LLM call
+planner_timeout           = 120      # seconds for planner + messenger LLM calls
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 1
 
@@ -144,7 +144,7 @@ webhook_max_payload       = 1048576
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
 | `exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used for post-plan LLM calls (curator, summarizer, fact consolidation), LLM HTTP calls, and graceful shutdown per worker. |
-| `planner_timeout` | `60` | Seconds before a planner LLM call (initial plan or replan) is cancelled. Increase if using a slow model; decrease for faster failure feedback. |
+| `planner_timeout` | `120` | Seconds before a planner or messenger LLM call is cancelled. Increase if using a slow model; decrease for faster failure feedback. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or skill task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `1` | Max worker-level retries per exec/search task before escalating to a full replan. |
 | `max_llm_calls_per_message` | `200` | Budget cap on LLM calls per user message. Prevents runaway replan loops. |
