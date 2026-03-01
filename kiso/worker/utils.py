@@ -79,9 +79,12 @@ def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
     workspace.mkdir(parents=True, exist_ok=True)
     pub_dir = workspace / "pub"
     pub_dir.mkdir(exist_ok=True)
+    uploads_dir = workspace / "uploads"
+    uploads_dir.mkdir(exist_ok=True)
     if sandbox_uid is not None:
         os.chown(workspace, sandbox_uid, sandbox_uid)
         os.chown(pub_dir, sandbox_uid, sandbox_uid)
+        os.chown(uploads_dir, sandbox_uid, sandbox_uid)
         os.chmod(workspace, 0o700)
     return workspace
 

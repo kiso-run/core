@@ -203,6 +203,12 @@ GET /pub/{token}/{filename}
 
 After exec task execution, the worker scans `pub/` and appends published file URLs to the task output. No DB registration needed — presence on disk is sufficient.
 
+### Uploads Directory
+
+Each session workspace contains an `uploads/` subdirectory (`~/.kiso/instances/{name}/sessions/{session}/uploads/`) created automatically alongside `pub/` when the workspace is first initialised.
+
+It is reserved for files that arrive from outside kiso — for example an attachment forwarded by a connector (email, Discord, Telegram) or a file explicitly sent by the user. No upload logic exists yet; the directory is created so connectors and future features have a stable, well-known path to write to without needing to create it themselves.
+
 ### Cancel
 
 A plan in execution can be cancelled via `POST /sessions/{session}/cancel` (see [api.md](api.md#post-sessionssessioncancel)).

@@ -20,6 +20,9 @@ Each instance is a named Docker container (`kiso-{name}`) with its own port, dat
     │   ├── skills/
     │   ├── connectors/
     │   └── sessions/
+    │       └── {session}/
+    │           ├── pub/       # files served via /pub/{token}/{filename}
+    │           └── uploads/   # files received from connectors or the user
     └── work/                  # data for container kiso-work
         ├── config.toml
         └── ...

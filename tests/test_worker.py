@@ -3443,10 +3443,18 @@ class TestPerSessionSandbox:
             ws = _session_workspace("sess1", sandbox_uid=1234)
 
         pub = ws / "pub"
-        assert mock_chown.call_count == 2
+        uploads = ws / "uploads"
+        assert mock_chown.call_count == 3
         mock_chown.assert_any_call(ws, 1234, 1234)
         mock_chown.assert_any_call(pub, 1234, 1234)
+        mock_chown.assert_any_call(uploads, 1234, 1234)
         mock_chmod.assert_called_once_with(ws, 0o700)
+
+    def test_workspace_creates_uploads_dir(self, tmp_path):
+        """_session_workspace must create an uploads/ subdirectory."""
+        with _patch_kiso_dir(tmp_path):
+            ws = _session_workspace("sess1")
+        assert (ws / "uploads").is_dir()
 
     def test_workspace_no_chown_without_sandbox_uid(self, tmp_path):
         """_session_workspace skips chown/chmod when sandbox_uid is None."""
