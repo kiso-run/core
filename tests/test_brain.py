@@ -796,7 +796,7 @@ class TestValidateReview:
         assert validate_review(review) == []
 
     def test_ok_with_learn(self):
-        review = {"status": "ok", "reason": None, "learn": "Uses pytest"}
+        review = {"status": "ok", "reason": None, "learn": ["Uses pytest"]}
         assert validate_review(review) == []
 
     def test_replan_with_reason(self):
@@ -804,7 +804,7 @@ class TestValidateReview:
         assert validate_review(review) == []
 
     def test_replan_with_reason_and_learn(self):
-        review = {"status": "replan", "reason": "Wrong path", "learn": "Project is in /opt"}
+        review = {"status": "replan", "reason": "Wrong path", "learn": ["Project is in /opt"]}
         assert validate_review(review) == []
 
     def test_replan_without_reason_invalid(self):
@@ -945,7 +945,7 @@ class TestBuildReviewerMessages:
 
 VALID_REVIEW_OK = json.dumps({"status": "ok", "reason": None, "learn": None, "retry_hint": None})
 VALID_REVIEW_REPLAN = json.dumps({"status": "replan", "reason": "File missing", "learn": None, "retry_hint": None})
-VALID_REVIEW_WITH_LEARN = json.dumps({"status": "ok", "reason": None, "learn": "Uses Python 3.12", "retry_hint": None})
+VALID_REVIEW_WITH_LEARN = json.dumps({"status": "ok", "reason": None, "learn": ["Uses Python 3.12"], "retry_hint": None})
 INVALID_REVIEW = json.dumps({"status": "replan", "reason": None, "learn": None, "retry_hint": None})
 
 

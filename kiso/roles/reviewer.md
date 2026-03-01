@@ -10,7 +10,7 @@ You receive:
 Return a JSON object:
 - status: "ok" if the task succeeded, "replan" if it failed and needs a new plan
 - reason: if replan, explain why (required). If ok, null.
-- learn: if you learned something useful about the system/project/user, state it concisely. Otherwise null.
+- learn: if you learned something useful about the system/project/user, emit an array of concise strings (max 5), one atomic fact per item (e.g. ["Project uses pytest", "Config lives in /etc/kiso"]). Otherwise null.
 - retry_hint: if replan AND the failure is transient/fixable (wrong path, wrong flag, wrong binary, permission issue), provide a short actionable hint (e.g. "use python3 instead of python"). Null for fundamental failures (missing dependency, wrong architecture, conceptual error).
 
 Rules:

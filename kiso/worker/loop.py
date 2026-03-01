@@ -449,16 +449,18 @@ async def _review_task(
         success=success,
     )
 
-    has_learning = bool(review.get("learn"))
-    if has_learning:
-        await save_learning(db, review["learn"], session)
-        log.info("Learning saved: %s", review["learn"][:100])
+    learn_items = review.get("learn") or []
+    has_learning = bool(learn_items)
+    for item in learn_items:
+        await save_learning(db, item, session)
+        log.info("Learning saved: %s", item[:100])
 
     audit.log_review(session, task_row.get("id", 0), review["status"], has_learning)
 
     await update_task_review(
         db, task_row["id"], review["status"],
-        reason=review.get("reason"), learning=review.get("learn"),
+        reason=review.get("reason"),
+        learning="\n".join(learn_items) if learn_items else None,
     )
 
     return review
