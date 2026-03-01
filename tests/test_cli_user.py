@@ -293,6 +293,118 @@ class TestUserAdd:
 
 
 # ---------------------------------------------------------------------------
+# edit
+# ---------------------------------------------------------------------------
+
+class TestUserEdit:
+    def test_edit_role_to_admin(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            _user_edit(_args(username="alice", role="admin", skills=None))
+
+        users = _read_users(config_path)
+        assert users["alice"]["role"] == "admin"
+        assert "updated" in capsys.readouterr().out
+
+    def test_edit_skills(self, tmp_path):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            _user_edit(_args(username="alice", role=None, skills="read,write"))
+
+        assert _read_users(config_path)["alice"]["skills"] == ["read", "write"]
+
+    def test_edit_no_args_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            with pytest.raises(SystemExit) as exc:
+                _user_edit(_args(username="alice", role=None, skills=None))
+
+        assert exc.value.code == 1
+        assert "at least one" in capsys.readouterr().out
+
+    def test_edit_nonexistent_user_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            with pytest.raises(SystemExit) as exc:
+                _user_edit(_args(username="nobody", role="admin", skills=None))
+
+        assert exc.value.code == 1
+        assert "does not exist" in capsys.readouterr().out
+
+    def test_edit_demote_last_admin_fails(self, tmp_path, capsys):
+        """Cannot demote the only admin to user."""
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "alice": {"role": "user", "skills": "*"},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            with pytest.raises(SystemExit) as exc:
+                _user_edit(_args(username="boss", role="user", skills="*"))
+
+        assert exc.value.code == 1
+        assert "last admin" in capsys.readouterr().out
+
+    def test_edit_demote_admin_when_another_exists(self, tmp_path):
+        """Demoting admin when another admin exists is allowed."""
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "boss2": {"role": "admin"},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            _user_edit(_args(username="boss", role="user", skills="read"))
+
+        assert _read_users(config_path)["boss"]["role"] == "user"
+
+    def test_edit_role_user_without_skills_fails(self, tmp_path, capsys):
+        """Setting role=user on a user with no skills and no --skills fails."""
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "bob": {"role": "admin"},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_edit
+            with pytest.raises(SystemExit) as exc:
+                _user_edit(_args(username="bob", role="user", skills=None))
+
+        assert exc.value.code == 1
+        assert "--skills" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
 # remove
 # ---------------------------------------------------------------------------
 

@@ -250,6 +250,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip hot-reload after writing config (useful when server is not running)",
     )
 
+    user_edit_p = user_sub.add_parser("edit", help="edit role or skills of an existing user")
+    user_edit_p.add_argument("username", help="username to edit")
+    user_edit_p.add_argument(
+        "--role", default=None, choices=["admin", "user"], help="new role"
+    )
+    user_edit_p.add_argument(
+        "--skills", default=None, metavar="SKILLS",
+        help="new skills: '*' or comma-separated names",
+    )
+    user_edit_p.add_argument(
+        "--no-reload", action="store_true", dest="no_reload",
+        help="skip hot-reload after writing config",
+    )
+
     user_remove_p = user_sub.add_parser("remove", help="remove a user")
     user_remove_p.add_argument("username", help="username to remove")
     user_remove_p.add_argument(

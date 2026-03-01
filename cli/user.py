@@ -26,6 +26,8 @@ def run_user_command(args) -> None:
         _user_list(args)
     elif cmd == "add":
         _user_add(args)
+    elif cmd == "edit":
+        _user_edit(args)
     elif cmd == "remove":
         _user_remove(args)
     elif cmd == "alias":
@@ -168,6 +170,75 @@ def _user_add(args) -> None:
     if not getattr(args, "no_reload", False):
         _call_reload(args)
     print(f"User '{username}' added.")
+
+
+def _user_edit(args) -> None:
+    """Edit role and/or skills of an existing user."""
+    require_admin()
+
+    username = args.username
+    new_role = args.role
+    skills_arg = args.skills
+
+    if new_role is None and skills_arg is None:
+        print("error: at least one of --role or --skills must be provided")
+        sys.exit(1)
+
+    raw = _read_raw()
+    users = raw.get("users", {})
+
+    if username not in users:
+        print(f"error: user '{username}' does not exist")
+        sys.exit(1)
+
+    entry = users[username]
+    current_role = entry.get("role")
+
+    if new_role is not None and new_role not in ("admin", "user"):
+        print("error: --role must be 'admin' or 'user'")
+        sys.exit(1)
+
+    final_role = new_role if new_role is not None else current_role
+
+    # Guard: demoting the only admin
+    if current_role == "admin" and final_role == "user":
+        remaining_admins = [
+            name for name, udata in users.items()
+            if udata.get("role") == "admin" and name != username
+        ]
+        if not remaining_admins:
+            print("error: cannot demote the last admin")
+            sys.exit(1)
+
+    # Skills handling
+    if skills_arg is not None:
+        if skills_arg == "*":
+            new_skills = "*"
+        else:
+            skills_list = [s.strip() for s in skills_arg.split(",") if s.strip()]
+            if not skills_list:
+                print("error: --skills contains no valid skill names")
+                sys.exit(1)
+            new_skills = skills_list
+    else:
+        new_skills = entry.get("skills")
+
+    if final_role == "user" and not new_skills:
+        print("error: --skills required when role is 'user' and no existing skills are set")
+        sys.exit(1)
+
+    entry["role"] = final_role
+    if final_role == "user":
+        entry["skills"] = new_skills
+    elif "skills" in entry and new_role == "admin":
+        # Promoted to admin — silently keep existing skills (harmless)
+        pass
+
+    raw["users"][username] = entry
+    _write_raw(raw)
+    if not getattr(args, "no_reload", False):
+        _call_reload(args)
+    print(f"User '{username}' updated.")
 
 
 def _user_remove(args) -> None:
