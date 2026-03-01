@@ -1116,6 +1116,20 @@ class TestReviewTask:
         count = (await cur.fetchone())[0]
         assert count == 0
 
+    async def test_learn_string_wrapped(self, db):
+        """If reviewer returns learn as a plain string (malformed), wrap it in a list."""
+        config = _make_config()
+        review_str_learn = {"status": "ok", "reason": None, "learn": "Uses Flask"}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_str_learn):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute("SELECT content FROM learnings WHERE session = 'sess1'")
+        rows = await cur.fetchall()
+        assert len(rows) == 1
+        assert rows[0][0] == "Uses Flask"
+
     async def test_includes_stderr_in_output(self, db):
         config = _make_config()
         tid = await self._make_task(db, "ls", "files")

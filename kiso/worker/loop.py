@@ -449,7 +449,14 @@ async def _review_task(
         success=success,
     )
 
-    learn_items = review.get("learn") or []
+    learn_raw = review.get("learn")
+    if isinstance(learn_raw, list):
+        learn_items = learn_raw
+    elif isinstance(learn_raw, str):
+        log.warning("Reviewer returned learn as string, expected list; wrapping: %r", learn_raw[:100])
+        learn_items = [learn_raw]
+    else:
+        learn_items = []
     has_learning = bool(learn_items)
     for item in learn_items:
         await save_learning(db, item, session)
