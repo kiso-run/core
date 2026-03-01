@@ -113,6 +113,37 @@ class TestUserList:
         out = capsys.readouterr().out
         assert "skills:  *" in out
 
+    def test_json_output(self, tmp_path, capsys):
+        """--json prints valid JSON with all user data."""
+        import json as _json
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+        ):
+            from cli.user import _user_list
+            _user_list(_args(json=True))
+
+        data = _json.loads(capsys.readouterr().out)
+        assert "boss" in data
+        assert data["boss"]["role"] == "admin"
+        assert "alice" in data
+        assert data["alice"]["skills"] == ["skill1", "skill2"]
+
+    def test_json_empty(self, tmp_path, capsys):
+        """--json on empty config prints '{}'."""
+        import json as _json
+        config_path = _make_config(tmp_path, users={})
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+        ):
+            from cli.user import _user_list
+            _user_list(_args(json=True))
+
+        data = _json.loads(capsys.readouterr().out)
+        assert data == {}
+
 
 # ---------------------------------------------------------------------------
 # add

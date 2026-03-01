@@ -226,7 +226,11 @@ def build_parser() -> argparse.ArgumentParser:
     user_parser = sub.add_parser("user", help="manage users")
     user_sub = user_parser.add_subparsers(dest="user_command")
 
-    user_sub.add_parser("list", help="list all users")
+    user_list_p = user_sub.add_parser("list", help="list all users")
+    user_list_p.add_argument(
+        "--json", action="store_true", dest="json",
+        help="output as JSON (machine-readable)",
+    )
 
     user_add_p = user_sub.add_parser("add", help="add a user")
     user_add_p.add_argument("username", help="username")

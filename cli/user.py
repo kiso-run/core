@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import json
 import sys
 import tomllib
 from pathlib import Path
@@ -79,12 +80,18 @@ def _call_reload(args) -> None:
         sys.exit(1)
 
 
-def _user_list(args) -> None:  # noqa: ARG001
+def _user_list(args) -> None:
     """List all users with their role, skills, and aliases."""
     require_admin()
 
     raw = _read_raw()
     users = raw.get("users", {})
+
+    use_json = getattr(args, "json", False)
+
+    if use_json:
+        print(json.dumps(users, indent=2))
+        return
 
     if not users:
         print("No users configured.")
