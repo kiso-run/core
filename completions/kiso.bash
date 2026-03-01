@@ -55,7 +55,9 @@ _kiso() {
             elif (( skill_pos >= 2 )); then
                 local skill_sub="${words[i+1]}"
                 case "$skill_sub" in
-                    install) COMPREPLY=($(compgen -W "--name --no-deps" -- "$cur")) ;;
+                    install) COMPREPLY=($(compgen -W "--name --show-deps --no-deps" -- "$cur")) ;;
+                    update)  COMPREPLY=($(compgen -W "all $(_kiso_skill_names)" -- "$cur")) ;;
+                    remove)  COMPREPLY=($(compgen -W "$(_kiso_skill_names)" -- "$cur")) ;;
                 esac
             fi
             return
@@ -67,7 +69,9 @@ _kiso() {
             elif (( conn_pos >= 2 )); then
                 local conn_sub="${words[i+1]}"
                 case "$conn_sub" in
-                    install) COMPREPLY=($(compgen -W "--name --no-deps" -- "$cur")) ;;
+                    install) COMPREPLY=($(compgen -W "--name --show-deps --no-deps" -- "$cur")) ;;
+                    update)  COMPREPLY=($(compgen -W "all $(_kiso_connector_names)" -- "$cur")) ;;
+                    remove|run|stop|status) COMPREPLY=($(compgen -W "$(_kiso_connector_names)" -- "$cur")) ;;
                 esac
             fi
             return
@@ -136,6 +140,24 @@ _kiso() {
     fi
 }
 
+# Detect active instance name: from --instance/-i flag, or the only instance if there's one.
+_kiso_active_instance() {
+    local k
+    for (( k=1; k<${#COMP_WORDS[@]}-1; k++ )); do
+        case "${COMP_WORDS[k]}" in
+            --instance|-i) echo "${COMP_WORDS[k+1]}"; return ;;
+        esac
+    done
+    python3 -c "
+import json, pathlib, os
+p = pathlib.Path(os.path.expanduser('~/.kiso/instances.json'))
+if p.exists():
+    d = json.loads(p.read_text())
+    if len(d) == 1:
+        print(list(d.keys())[0])
+" 2>/dev/null || true
+}
+
 # List instance names from ~/.kiso/instances.json
 _kiso_instance_names() {
     python3 -c "
@@ -148,28 +170,25 @@ if p.exists():
 }
 
 # List sessions from the active instance DB.
-# Detects --instance/-i NAME from the current command line (COMP_WORDS is a
-# bash completion global available in helper functions during completion).
 _kiso_sessions() {
-    local inst=""
-    local k
-    for (( k=1; k<${#COMP_WORDS[@]}-1; k++ )); do
-        case "${COMP_WORDS[k]}" in
-            --instance|-i) inst="${COMP_WORDS[k+1]}"; break ;;
-        esac
-    done
-    if [[ -z "$inst" ]]; then
-        inst=$(python3 -c "
-import json, pathlib, os
-p = pathlib.Path(os.path.expanduser('~/.kiso/instances.json'))
-if p.exists():
-    d = json.loads(p.read_text())
-    if len(d) == 1:
-        print(list(d.keys())[0])
-" 2>/dev/null || true)
-    fi
-    [[ -n "$inst" ]] && docker exec "kiso-$inst" sqlite3 /root/.kiso/kiso.db \
+    local inst
+    inst=$(_kiso_active_instance)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" sqlite3 /root/.kiso/store.db \
         "SELECT session FROM sessions" 2>/dev/null || true
+}
+
+# List installed skill names from the active instance.
+_kiso_skill_names() {
+    local inst
+    inst=$(_kiso_active_instance)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/skills/ 2>/dev/null | tr '\n' ' ' || true
+}
+
+# List installed connector names from the active instance.
+_kiso_connector_names() {
+    local inst
+    inst=$(_kiso_active_instance)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/connectors/ 2>/dev/null | tr '\n' ' ' || true
 }
 
 complete -F _kiso kiso

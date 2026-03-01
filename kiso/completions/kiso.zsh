@@ -108,7 +108,19 @@ _kiso() {
                 _describe -t skill-commands 'skill command' skill_cmds
             elif (( CURRENT >= i+3 )); then
                 case "$words[i+2]" in
-                    install) _arguments '--name[skill name]:name' '--no-deps[skip dependencies]' ;;
+                    install)
+                        _arguments '--name[skill name]:name' '--show-deps[show dependencies]' '--no-deps[skip dependencies]'
+                        ;;
+                    update)
+                        local -a skill_names
+                        skill_names=(${(f)"$(_kiso_skill_names)"})
+                        compadd -- all "${skill_names[@]}"
+                        ;;
+                    remove)
+                        local -a skill_names
+                        skill_names=(${(f)"$(_kiso_skill_names)"})
+                        (( ${#skill_names} )) && compadd -- "${skill_names[@]}"
+                        ;;
                 esac
             fi
             return
@@ -118,7 +130,19 @@ _kiso() {
                 _describe -t connector-commands 'connector command' connector_cmds
             elif (( CURRENT >= i+3 )); then
                 case "$words[i+2]" in
-                    install) _arguments '--name[connector name]:name' '--no-deps[skip dependencies]' ;;
+                    install)
+                        _arguments '--name[connector name]:name' '--show-deps[show dependencies]' '--no-deps[skip dependencies]'
+                        ;;
+                    update)
+                        local -a conn_names
+                        conn_names=(${(f)"$(_kiso_connector_names)"})
+                        compadd -- all "${conn_names[@]}"
+                        ;;
+                    remove|run|stop|status)
+                        local -a conn_names
+                        conn_names=(${(f)"$(_kiso_connector_names)"})
+                        (( ${#conn_names} )) && compadd -- "${conn_names[@]}"
+                        ;;
                 esac
             fi
             return
@@ -204,6 +228,24 @@ _kiso() {
     fi
 }
 
+# Detect active instance name: from --instance/-i flag, or the only instance if there's one.
+_kiso_active_instance() {
+    local k
+    for (( k=1; k<${#words}; k++ )); do
+        case "$words[k]" in
+            --instance|-i) echo "$words[k+1]"; return ;;
+        esac
+    done
+    python3 -c "
+import json, pathlib, os
+p = pathlib.Path(os.path.expanduser('~/.kiso/instances.json'))
+if p.exists():
+    d = json.loads(p.read_text())
+    if len(d) == 1:
+        print(list(d.keys())[0])
+" 2>/dev/null
+}
+
 # List instance names from ~/.kiso/instances.json
 _kiso_instance_names() {
     python3 -c "
@@ -216,27 +258,25 @@ if p.exists():
 }
 
 # List sessions from the active instance DB.
-# Detects --instance/-i NAME from $words (zsh completion global).
 _kiso_sessions() {
-    local inst=""
-    local k
-    for (( k=1; k<${#words}; k++ )); do
-        case "$words[k]" in
-            --instance|-i) inst="$words[k+1]"; break ;;
-        esac
-    done
-    if [[ -z "$inst" ]]; then
-        inst=$(python3 -c "
-import json, pathlib, os
-p = pathlib.Path(os.path.expanduser('~/.kiso/instances.json'))
-if p.exists():
-    d = json.loads(p.read_text())
-    if len(d) == 1:
-        print(list(d.keys())[0])
-" 2>/dev/null)
-    fi
-    [[ -n "$inst" ]] && docker exec "kiso-$inst" sqlite3 /root/.kiso/kiso.db \
+    local inst
+    inst=$(_kiso_active_instance)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" sqlite3 /root/.kiso/store.db \
         "SELECT session FROM sessions" 2>/dev/null
+}
+
+# List installed skill names from the active instance.
+_kiso_skill_names() {
+    local inst
+    inst=$(_kiso_active_instance)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/skills/ 2>/dev/null
+}
+
+# List installed connector names from the active instance.
+_kiso_connector_names() {
+    local inst
+    inst=$(_kiso_active_instance)
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/connectors/ 2>/dev/null
 }
 
 _kiso "$@"
