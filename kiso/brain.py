@@ -160,7 +160,10 @@ REVIEW_SCHEMA: dict = {
                     "enum": ["ok", "replan"],
                 },
                 "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "learn": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "learn": {"anyOf": [
+                    {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+                    {"type": "null"},
+                ]},
                 "retry_hint": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             },
             "required": ["status", "reason", "learn", "retry_hint"],
