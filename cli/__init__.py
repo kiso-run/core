@@ -316,7 +316,11 @@ def _print_version_stats() -> None:
     stats = count_loc(root)
 
     num_w = max(len(_fmt_loc(v)) for v in stats.values())
-    rows = [("core", stats["core"], "kiso/"), ("cli", stats["cli"], "cli/"), ("tests", stats["tests"], "tests/")]
+    rows = [(l, n, p) for l, n, p in [
+        ("core", stats["core"], "kiso/"),
+        ("cli", stats["cli"], "cli/"),
+        ("tests", stats["tests"], "tests/"),
+    ] if n > 0]
     print(f"kiso {__version__}\n")
     for label, n, path in rows:
         print(f"  {label:<5}  {_fmt_loc(n):>{num_w}} lines   ({path})")
