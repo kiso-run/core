@@ -165,7 +165,8 @@ def _user_add(args) -> None:
 
     raw["users"][username] = user_entry
     _write_raw(raw)
-    _call_reload(args)
+    if not getattr(args, "no_reload", False):
+        _call_reload(args)
     print(f"User '{username}' added.")
 
 
@@ -192,7 +193,8 @@ def _user_remove(args) -> None:
 
     del raw["users"][username]
     _write_raw(raw)
-    _call_reload(args)
+    if not getattr(args, "no_reload", False):
+        _call_reload(args)
     print(f"User '{username}' removed.")
 
 
@@ -239,5 +241,6 @@ def _user_alias(args) -> None:
         action = "set"
 
     _write_raw(raw)
-    _call_reload(args)
+    if not getattr(args, "no_reload", False):
+        _call_reload(args)
     print(f"Alias '{connector}' {action} for user '{username}'.")

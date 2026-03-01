@@ -245,15 +245,27 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="CONNECTOR:ID",
         help="connector alias in 'connector:platform_id' format (repeatable)",
     )
+    user_add_p.add_argument(
+        "--no-reload", action="store_true", dest="no_reload",
+        help="skip hot-reload after writing config (useful when server is not running)",
+    )
 
     user_remove_p = user_sub.add_parser("remove", help="remove a user")
     user_remove_p.add_argument("username", help="username to remove")
+    user_remove_p.add_argument(
+        "--no-reload", action="store_true", dest="no_reload",
+        help="skip hot-reload after writing config",
+    )
 
     user_alias_p = user_sub.add_parser("alias", help="manage connector aliases for a user")
     user_alias_p.add_argument("username", help="username")
     user_alias_p.add_argument("--connector", required=True, help="connector name")
     user_alias_p.add_argument("--id", default=None, metavar="PLATFORM_ID", help="platform user ID")
     user_alias_p.add_argument("--remove", action="store_true", help="remove the alias")
+    user_alias_p.add_argument(
+        "--no-reload", action="store_true", dest="no_reload",
+        help="skip hot-reload after writing config",
+    )
 
     stats_p = sub.add_parser("stats", help="show token usage stats (admin only)")
     stats_p.add_argument("--since", type=int, default=30, metavar="N", help="look back N days (default: 30)")

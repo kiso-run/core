@@ -277,6 +277,20 @@ class TestUserAdd:
 
         assert _read_users(config_path)["bob"]["skills"] == ["read", "write"]
 
+    def test_add_no_reload_skips_reload(self, tmp_path):
+        """--no-reload writes config but does not call _call_reload."""
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload") as mock_reload,
+        ):
+            from cli.user import _user_add
+            _user_add(_args(username="bob", role="admin", skills=None, alias=None, no_reload=True))
+
+        mock_reload.assert_not_called()
+        assert "bob" in _read_users(config_path)
+
 
 # ---------------------------------------------------------------------------
 # remove
