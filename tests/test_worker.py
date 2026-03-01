@@ -700,7 +700,7 @@ class TestRunWorker:
             ],
         }
 
-        review_with_learning = {"status": "ok", "reason": None, "learn": "Project uses pytest"}
+        review_with_learning = {"status": "ok", "reason": None, "learn": ["Project uses pytest"]}
 
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
@@ -1094,7 +1094,7 @@ class TestReviewTask:
 
     async def test_stores_learning(self, db):
         config = _make_config()
-        review_with_learn = {"status": "ok", "reason": None, "learn": "Uses Flask"}
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Flask"]}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
@@ -1172,7 +1172,7 @@ class TestReviewTask:
 
     async def test_review_replan_fields_persisted(self, db):
         config = _make_config()
-        replan_with_learn = {"status": "replan", "reason": "Bad output", "learn": "Needs retry"}
+        replan_with_learn = {"status": "replan", "reason": "Bad output", "learn": ["Needs retry"]}
         tid = await self._make_task(db, "bad cmd", "ok")
         task_row = {"id": tid, "detail": "bad cmd", "expect": "ok", "output": "", "stderr": "err"}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=replan_with_learn):
@@ -1693,7 +1693,7 @@ class TestExecutePlanAudit:
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        review_with_learn = {"status": "ok", "reason": None, "learn": "Uses Flask"}
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Flask"]}
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \

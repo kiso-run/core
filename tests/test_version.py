@@ -33,7 +33,6 @@ class TestLocCounter:
         stats = count_loc(tmp_path)
         assert stats["core"] == 0
         assert stats["cli"] == 0
-        assert stats["tests"] == 0
 
     def test_unreadable_file_silently_skipped(self, tmp_path: Path) -> None:
         if os.getuid() == 0:
@@ -51,14 +50,12 @@ class TestLocCounter:
             os.chmod(unreadable, 0o644)
 
     def test_total_equals_sum(self, tmp_path: Path) -> None:
-        for sub in ("kiso", "cli", "tests"):
+        for sub in ("kiso", "cli"):
             (tmp_path / sub).mkdir()
         (tmp_path / "kiso" / "a.py").write_text("x = 1\n")
         (tmp_path / "cli" / "b.py").write_text("y = 2\n")
-        (tmp_path / "tests" / "c.py").write_text("z = 3\n")
         stats = count_loc(tmp_path)
         assert stats["core"] == 1
         assert stats["cli"] == 1
-        assert stats["tests"] == 1
-        assert stats["total"] == stats["core"] + stats["cli"] + stats["tests"]
-        assert stats["total"] == 3
+        assert stats["total"] == stats["core"] + stats["cli"]
+        assert stats["total"] == 2
