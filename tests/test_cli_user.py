@@ -1,0 +1,488 @@
+"""Tests for the kiso user CLI subcommand."""
+
+from __future__ import annotations
+
+import argparse
+import tomllib
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+import tomli_w
+
+
+# ---------------------------------------------------------------------------
+# Fixtures / helpers
+# ---------------------------------------------------------------------------
+
+_MINIMAL_USERS = {
+    "boss": {"role": "admin"},
+    "alice": {"role": "user", "skills": ["skill1", "skill2"]},
+}
+
+_MINIMAL_CONFIG = {
+    "tokens": {"cli": "test-token"},
+    "providers": {"openrouter": {"base_url": "https://example.com"}},
+    "users": _MINIMAL_USERS,
+    "models": {
+        "planner": "m", "reviewer": "m", "curator": "m", "worker": "m",
+        "summarizer": "m", "paraphraser": "m", "messenger": "m", "searcher": "m",
+    },
+    "settings": {},
+}
+
+
+def _make_config(tmp_path: Path, users: dict | None = None) -> Path:
+    p = tmp_path / "config.toml"
+    raw = {**_MINIMAL_CONFIG}
+    if users is not None:
+        raw = {**raw, "users": users}
+    with open(p, "wb") as f:
+        tomli_w.dump(raw, f)
+    return p
+
+
+def _args(**kwargs) -> argparse.Namespace:
+    defaults = {"api": "http://localhost:8333"}
+    defaults.update(kwargs)
+    return argparse.Namespace(**defaults)
+
+
+def _read_users(path: Path) -> dict:
+    with open(path, "rb") as f:
+        return tomllib.load(f)["users"]
+
+
+# ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+
+class TestUserList:
+    def test_shows_all_users(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+        ):
+            from cli.user import _user_list
+            _user_list(_args())
+
+        out = capsys.readouterr().out
+        assert "boss" in out
+        assert "admin" in out
+        assert "alice" in out
+        assert "skill1" in out
+
+    def test_shows_aliases(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin", "aliases": {"discord": "boss#1234"}},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+        ):
+            from cli.user import _user_list
+            _user_list(_args())
+
+        out = capsys.readouterr().out
+        assert "discord:boss#1234" in out
+
+    def test_empty_config_prints_no_users(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path, users={})
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+        ):
+            from cli.user import _user_list
+            _user_list(_args())
+
+        assert "No users configured" in capsys.readouterr().out
+
+    def test_wildcard_skills_shown(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "bob": {"role": "user", "skills": "*"},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+        ):
+            from cli.user import _user_list
+            _user_list(_args())
+
+        out = capsys.readouterr().out
+        assert "skills:  *" in out
+
+
+# ---------------------------------------------------------------------------
+# add
+# ---------------------------------------------------------------------------
+
+class TestUserAdd:
+    def test_add_admin(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            _user_add(_args(username="newadmin", role="admin", skills=None, alias=None))
+
+        users = _read_users(config_path)
+        assert "newadmin" in users
+        assert users["newadmin"]["role"] == "admin"
+        assert "skills" not in users["newadmin"]
+        assert "User 'newadmin' added" in capsys.readouterr().out
+
+    def test_add_user_with_skill_list(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            _user_add(_args(username="bob", role="user", skills="read,write", alias=None))
+
+        users = _read_users(config_path)
+        assert users["bob"]["skills"] == ["read", "write"]
+
+    def test_add_user_with_wildcard_skills(self, tmp_path):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            _user_add(_args(username="bob", role="user", skills="*", alias=None))
+
+        assert _read_users(config_path)["bob"]["skills"] == "*"
+
+    def test_add_with_alias(self, tmp_path):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            _user_add(_args(
+                username="bob", role="user", skills="*",
+                alias=["discord:bob#5678"],
+            ))
+
+        users = _read_users(config_path)
+        assert users["bob"]["aliases"]["discord"] == "bob#5678"
+
+    def test_add_invalid_username(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            with pytest.raises(SystemExit) as exc:
+                _user_add(_args(username="INVALID USER!", role="admin", skills=None, alias=None))
+
+        assert exc.value.code == 1
+        assert "invalid username" in capsys.readouterr().out
+
+    def test_add_missing_role_rejected(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            with pytest.raises(SystemExit) as exc:
+                _user_add(_args(username="bob", role=None, skills=None, alias=None))
+
+        assert exc.value.code == 1
+        assert "--role" in capsys.readouterr().out
+
+    def test_add_existing_user_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            with pytest.raises(SystemExit) as exc:
+                _user_add(_args(username="boss", role="admin", skills=None, alias=None))
+
+        assert exc.value.code == 1
+        assert "already exists" in capsys.readouterr().out
+
+    def test_add_user_without_skills_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            with pytest.raises(SystemExit) as exc:
+                _user_add(_args(username="bob", role="user", skills=None, alias=None))
+
+        assert exc.value.code == 1
+        assert "--skills" in capsys.readouterr().out
+
+    def test_add_bad_alias_format_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            with pytest.raises(SystemExit) as exc:
+                _user_add(_args(
+                    username="bob", role="user", skills="*",
+                    alias=["no-colon-here"],
+                ))
+
+        assert exc.value.code == 1
+        assert "format" in capsys.readouterr().out
+
+    def test_add_empty_skills_segments_fails(self, tmp_path, capsys):
+        """Skills like ',' or 'a,,b' produce empty segments and must be rejected."""
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            with pytest.raises(SystemExit) as exc:
+                _user_add(_args(username="bob", role="user", skills=",", alias=None))
+
+        assert exc.value.code == 1
+        assert "no valid skill" in capsys.readouterr().out
+
+    def test_add_strips_whitespace_from_skills(self, tmp_path):
+        """Skills like 'a , b' are normalized to ['a', 'b']."""
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_add
+            _user_add(_args(username="bob", role="user", skills=" read , write ", alias=None))
+
+        assert _read_users(config_path)["bob"]["skills"] == ["read", "write"]
+
+
+# ---------------------------------------------------------------------------
+# remove
+# ---------------------------------------------------------------------------
+
+class TestUserRemove:
+    def test_remove_user(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_remove
+            _user_remove(_args(username="alice"))
+
+        users = _read_users(config_path)
+        assert "alice" not in users
+        assert "User 'alice' removed" in capsys.readouterr().out
+
+    def test_remove_nonexistent_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_remove
+            with pytest.raises(SystemExit) as exc:
+                _user_remove(_args(username="nobody"))
+
+        assert exc.value.code == 1
+        assert "does not exist" in capsys.readouterr().out
+
+    def test_remove_last_admin_fails(self, tmp_path, capsys):
+        """Removing the only admin is rejected to prevent lockout."""
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "alice": {"role": "user", "skills": "*"},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_remove
+            with pytest.raises(SystemExit) as exc:
+                _user_remove(_args(username="boss"))
+
+        assert exc.value.code == 1
+        assert "last admin" in capsys.readouterr().out
+
+    def test_remove_non_last_admin_ok(self, tmp_path):
+        """Removing an admin when another admin exists is allowed."""
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "boss2": {"role": "admin"},
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_remove
+            _user_remove(_args(username="boss"))
+
+        users = _read_users(config_path)
+        assert "boss" not in users
+        assert "boss2" in users
+
+
+# ---------------------------------------------------------------------------
+# alias
+# ---------------------------------------------------------------------------
+
+class TestUserAlias:
+    def test_add_alias(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            _user_alias(_args(
+                username="alice", connector="discord", id="alice#9999", remove=False,
+            ))
+
+        users = _read_users(config_path)
+        assert users["alice"]["aliases"]["discord"] == "alice#9999"
+        assert "set" in capsys.readouterr().out
+
+    def test_update_alias(self, tmp_path):
+        """Adding an alias for a connector that already exists updates it."""
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "alice": {
+                "role": "user", "skills": ["skill1"],
+                "aliases": {"discord": "alice#old"},
+            },
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            _user_alias(_args(
+                username="alice", connector="discord", id="alice#new", remove=False,
+            ))
+
+        assert _read_users(config_path)["alice"]["aliases"]["discord"] == "alice#new"
+
+    def test_remove_alias(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path, users={
+            "boss": {"role": "admin"},
+            "alice": {
+                "role": "user", "skills": ["skill1"],
+                "aliases": {"discord": "alice#1234"},
+            },
+        })
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            _user_alias(_args(
+                username="alice", connector="discord", id=None, remove=True,
+            ))
+
+        users = _read_users(config_path)
+        assert "aliases" not in users["alice"]
+        assert "removed" in capsys.readouterr().out
+
+    def test_remove_nonexistent_alias_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            with pytest.raises(SystemExit) as exc:
+                _user_alias(_args(
+                    username="alice", connector="discord", id=None, remove=True,
+                ))
+
+        assert exc.value.code == 1
+        assert "no alias" in capsys.readouterr().out
+
+    def test_alias_nonexistent_user_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            with pytest.raises(SystemExit) as exc:
+                _user_alias(_args(
+                    username="nobody", connector="discord", id="x#1", remove=False,
+                ))
+
+        assert exc.value.code == 1
+        assert "does not exist" in capsys.readouterr().out
+
+    def test_alias_missing_id_fails(self, tmp_path, capsys):
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            with pytest.raises(SystemExit) as exc:
+                _user_alias(_args(
+                    username="alice", connector="discord", id=None, remove=False,
+                ))
+
+        assert exc.value.code == 1
+        assert "--id" in capsys.readouterr().out
+
+    def test_alias_invalid_connector_name_fails(self, tmp_path, capsys):
+        """Connector names with special chars are rejected before writing config."""
+        config_path = _make_config(tmp_path)
+        with (
+            patch("cli.user.require_admin"),
+            patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
+            patch("cli.user._call_reload"),
+        ):
+            from cli.user import _user_alias
+            with pytest.raises(SystemExit) as exc:
+                _user_alias(_args(
+                    username="alice", connector="bad connector!", id="x#1", remove=False,
+                ))
+
+        assert exc.value.code == 1
+        assert "invalid connector" in capsys.readouterr().out
+
+
+class TestRunUserCommandDispatch:
+    def test_no_subcommand_prints_usage(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            from cli.user import run_user_command
+            run_user_command(_args(user_command=None))
+
+        assert exc.value.code == 1
+        assert "usage" in capsys.readouterr().out

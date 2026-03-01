@@ -223,6 +223,38 @@ def build_parser() -> argparse.ArgumentParser:
 
     env_sub.add_parser("reload", help="hot-reload .env into the server")
 
+    user_parser = sub.add_parser("user", help="manage users")
+    user_sub = user_parser.add_subparsers(dest="user_command")
+
+    user_sub.add_parser("list", help="list all users")
+
+    user_add_p = user_sub.add_parser("add", help="add a user")
+    user_add_p.add_argument("username", help="username")
+    user_add_p.add_argument(
+        "--role", required=True, choices=["admin", "user"], help="user role"
+    )
+    user_add_p.add_argument(
+        "--skills",
+        default=None,
+        metavar="SKILLS",
+        help="allowed skills: '*' or comma-separated names (required for role=user)",
+    )
+    user_add_p.add_argument(
+        "--alias",
+        action="append",
+        metavar="CONNECTOR:ID",
+        help="connector alias in 'connector:platform_id' format (repeatable)",
+    )
+
+    user_remove_p = user_sub.add_parser("remove", help="remove a user")
+    user_remove_p.add_argument("username", help="username to remove")
+
+    user_alias_p = user_sub.add_parser("alias", help="manage connector aliases for a user")
+    user_alias_p.add_argument("username", help="username")
+    user_alias_p.add_argument("--connector", required=True, help="connector name")
+    user_alias_p.add_argument("--id", default=None, metavar="PLATFORM_ID", help="platform user ID")
+    user_alias_p.add_argument("--remove", action="store_true", help="remove the alias")
+
     stats_p = sub.add_parser("stats", help="show token usage stats (admin only)")
     stats_p.add_argument("--since", type=int, default=30, metavar="N", help="look back N days (default: 30)")
     stats_p.add_argument("--session", default=None, metavar="NAME", help="filter by session name")
@@ -277,6 +309,10 @@ def main() -> None:
         from cli.env import run_env_command
 
         run_env_command(args)
+    elif args.command == "user":
+        from cli.user import run_user_command
+
+        run_user_command(args)
     elif args.command == "reset":
         from cli.reset import run_reset_command
 

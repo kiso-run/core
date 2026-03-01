@@ -505,6 +505,45 @@ kiso reset knowledge -y
 kiso reset factory --yes
 ```
 
+## User Management
+
+Only admins can add, remove, or manage users.
+
+```bash
+kiso user list                                                    # list all users with role, skills, aliases
+kiso user add <username> --role admin|user                        # add an admin (no skills needed)
+kiso user add <username> --role user --skills "*"                 # add a user with all skills
+kiso user add <username> --role user --skills "search,aider"      # add a user with specific skills
+kiso user add <username> --role user --skills "*" \
+    --alias discord:bob#1234 --alias slack:U0123456               # add with connector aliases
+kiso user remove <username>                                       # remove a user
+kiso user alias <username> --connector discord --id "bob#1234"    # set a connector alias
+kiso user alias <username> --connector discord --remove           # remove a connector alias
+```
+
+Changes are written to `config.toml` and the running server is hot-reloaded automatically (via `POST /admin/reload-config`). No restart needed.
+
+**Note**: `tomli_w` rewrites the entire `config.toml` without preserving comments. Values are preserved faithfully, but inline comments are removed on the first user management operation.
+
+### `kiso user add` options
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--role admin\|user` | yes | User role. No default — must be explicit. |
+| `--skills` | if `role=user` | `"*"` for all skills, or comma-separated names (e.g. `"search,aider"`). Ignored for admins. |
+| `--alias CONNECTOR:ID` | no | Connector alias in `connector:platform_id` format. Repeatable. |
+
+**Error handling:**
+
+| Situation | Output |
+|-----------|--------|
+| Username fails `NAME_RE` validation | `error: invalid username '...'` |
+| Username already exists | `error: user '...' already exists` |
+| `--role` omitted | `error: --role must be 'admin' or 'user'` |
+| `role=user` without `--skills` | `error: --skills required for role=user` |
+| Alias in wrong format | `error: alias '...' must be in 'connector:platform_id' format` |
+| Removing last admin | `error: cannot remove the last admin` |
+
 ## Deploy Secret Management
 
 Only admins can manage deploy secrets.
@@ -634,7 +673,8 @@ cli/
 ├── render.py      ← terminal renderer (task display, markdown, spinner, colors)
 ├── reset.py       ← kiso reset subcommands (session, knowledge, all, factory)
 ├── session.py     ← kiso sessions subcommand
-└── skill.py       ← kiso skill subcommands (install, update, remove, list, search)
+├── skill.py       ← kiso skill subcommands (install, update, remove, list, search)
+└── user.py        ← kiso user subcommands (list, add, remove, alias)
 ```
 
 Server-side code (`kiso/`) has no dependency on `cli/`. The CLI depends on `kiso/` only for config path constants and store access (direct SQLite for `reset` and `env` commands).
