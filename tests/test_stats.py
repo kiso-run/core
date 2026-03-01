@@ -347,6 +347,9 @@ class TestFmtHelpers:
     def test_fmt_cost_normal(self) -> None:
         assert _fmt_cost(1.23) == "$1.23"
 
+    def test_fmt_cost_large(self) -> None:
+        assert _fmt_cost(12.345) == "$12.35"
+
 
 # ---------------------------------------------------------------------------
 # _find_price — ordering / specificity tests (M65c)
