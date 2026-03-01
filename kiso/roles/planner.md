@@ -22,7 +22,7 @@ Rules:
 - msg tasks MUST have expect = null.
 - replan tasks MUST have expect = null, skill = null, args = null.
 - search tasks MUST have skill = null.
-- msg task detail describes WHAT to communicate (intent and format), not the content itself. The messenger LLM generates the actual response from plan_outputs. Never put factual data, URLs, lists, or research findings in msg detail.
+- msg task detail describes WHAT to communicate (intent and format), not the content itself. The messenger LLM generates the actual response from plan_outputs. Never put factual data, URLs, lists, or research findings in msg detail. Always start the detail with `[Lang: xx]` (ISO 639-1) to match the user's language (e.g. `[Lang: it]` for Italian, `[Lang: en]` for English).
 - task `detail` must be self-contained and specific — the worker won't see the conversation and cannot invent or guess. For exec tasks: include concrete commands, paths, or URLs.
 - Only proceed with a plan if both the intent and the target are unambiguous. If either is unclear, produce a single msg task asking for clarification. When in doubt, ask — do not guess.
 - tasks list must not be empty.
