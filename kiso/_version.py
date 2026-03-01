@@ -20,12 +20,12 @@ def _loc_in_dir(directory: Path) -> int:
 
 
 def count_loc(root: Path) -> dict:
-    """Return LOC breakdown for core/cli/tests relative to *root*.
+    """Return LOC breakdown for core/cli relative to *root*.
 
     Counts non-empty, non-comment lines in .py files.
-    Returns {"core": N, "cli": N, "tests": N, "total": N}.
+    Returns {"core": N, "cli": N, "total": N}.
     """
-    areas = {"core": root / "kiso", "cli": root / "cli", "tests": root / "tests"}
+    areas = {"core": root / "kiso", "cli": root / "cli"}
     result = {name: _loc_in_dir(path) for name, path in areas.items()}
     result["total"] = sum(result.values())
     return result

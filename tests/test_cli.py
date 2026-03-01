@@ -2063,7 +2063,6 @@ class TestVersionCommand:
         out = capsys.readouterr().out
         assert "core" in out
         assert "cli" in out
-        assert "tests" in out
         assert "total" in out
         assert exc.value.code == 0
 
@@ -2094,13 +2093,12 @@ class TestVersionCommand:
         assert total > 0
 
     def test_version_stats_unchanged(self, capsys):
-        """'kiso version --stats' must show per-area rows and a total line."""
+        """'kiso version --stats' must show core, cli and total lines."""
         with patch("sys.argv", ["kiso", "version", "--stats"]):
             main()
         out = capsys.readouterr().out
         assert "core" in out
         assert "cli" in out
-        assert "tests" in out
         assert "total" in out
 
     def test_help_description_includes_version(self, capsys):
