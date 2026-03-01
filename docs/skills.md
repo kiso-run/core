@@ -147,6 +147,9 @@ No async, no imports from kiso, no shared state. JSON in, text out.
 
 - `session_secrets`: **only** the keys declared in `kiso.toml`, not the full session credentials.
 - `plan_outputs`: outputs from preceding tasks in the same plan. See [flow.md — Task Output Chaining](flow.md#task-output-chaining). Empty array if this is the first task. Skills can use it or ignore it.
+- `workspace`: the session directory. Always contains two subdirectories:
+  - `pub/` — write files here to make them publicly accessible via a URL (see [flow.md — Public File Serving](flow.md#public-file-serving))
+  - `uploads/` — files received from the outside (email attachments, Discord files, etc.) are written here by connectors; skills can read from it
 
 ### Output (stdout)
 

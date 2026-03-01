@@ -77,6 +77,18 @@ No secrets. Deploy secrets come from env vars declared in `kiso.toml`.
 6. Sends responses back to the platform
 7. **Polling fallback**: if no webhook callback arrives within a reasonable timeout after sending a message, polls `GET /status/{session}?after={last_task_id}` to recover missed responses. This is a **protocol requirement** — connectors must implement it for reliability.
 
+## File Attachments
+
+When a platform message includes file attachments (images, documents, audio, etc.), the connector should write them to the session's `uploads/` directory before — or alongside — posting the message:
+
+```
+~/.kiso/instances/{instance}/sessions/{session}/uploads/{filename}
+```
+
+The directory always exists (created automatically when the session workspace is initialised). The connector can derive the path from the `session` ID it chose on registration. Skills and exec tasks can then read from `uploads/` via the `workspace` input field.
+
+No upload API exists yet — write directly to the filesystem (connectors run inside the container and share the same paths).
+
 ## deps.sh
 
 Same as skills: optional, idempotent, installs system-level deps inside the container. See [skills.md — deps.sh](skills.md#depssh).
