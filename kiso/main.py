@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
-from kiso.config import KISO_DIR, load_config, setting_bool
+from kiso.brain import invalidate_prompt_cache
+from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool
 import kiso.llm as _llm_mod
 from kiso.log import setup_logging
 from kiso.pub import pub_token, resolve_pub_token
@@ -482,6 +483,25 @@ async def get_stats(
         "rows": rows,
         "total": total,
     }
+
+
+@app.post("/admin/reload-config")
+async def post_reload_config(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    user: str = Query(...),
+):
+    config = request.app.state.config
+    resolved = resolve_user(config, user, auth.token_name)
+    if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        new_config = reload_config()
+        request.app.state.config = new_config
+        invalidate_prompt_cache()
+        return {"reloaded": True}
+    except ConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/admin/reload-env")

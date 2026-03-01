@@ -195,6 +195,28 @@ Rows are sorted by `input_tokens + output_tokens` descending.
 
 Data is read from `~/.kiso/instances/{name}/audit/*.jsonl`. See [audit.md](audit.md) for the log format.
 
+## POST /admin/reload-config
+
+Hot-reloads `config.toml` into the running server without restarting the container. Admin only. Use after editing users, settings, or any other config field via `kiso user` commands or direct file edit.
+
+**Query parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `user` | yes | Username (used for admin check) |
+
+**Response** `200 OK`:
+
+```json
+{
+  "reloaded": true
+}
+```
+
+**`400 Bad Request`** if `config.toml` is invalid (TOML parse error or validation failure). The running server continues with the previous config unchanged.
+
+**`403 Forbidden`** if the token does not belong to an admin user.
+
 ## POST /admin/reload-env
 
 Hot-reloads deploy secrets from `~/.kiso/instances/{name}/.env` without restarting the server. Admin only.

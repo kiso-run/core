@@ -11,6 +11,7 @@ import pytest
 
 import re
 
+from kiso.config import ConfigError
 from kiso.main import _init_kiso_dirs, _init_app_state, _load_env_file
 from kiso.store import (
     create_plan,
@@ -259,6 +260,82 @@ class TestStripLlmVerboseModuleJson:
 
         source = inspect.getsource(main_mod._strip_llm_verbose)
         assert "import json" not in source
+
+
+# --- POST /admin/reload-config (M73a) ---
+
+
+class TestReloadConfig:
+    async def test_reload_ok_admin(self, client: httpx.AsyncClient, test_config_path):
+        """Admin can reload config; response is {reloaded: true} and cache is invalidated."""
+        from kiso.main import app
+        from kiso.config import load_config
+
+        new_cfg = load_config(test_config_path)
+        with (
+            patch("kiso.main.reload_config", return_value=new_cfg) as mock_reload,
+            patch("kiso.main.invalidate_prompt_cache") as mock_cache,
+        ):
+            resp = await client.post(
+                "/admin/reload-config",
+                params={"user": "testadmin"},
+                headers=AUTH_HEADER,
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"reloaded": True}
+        mock_reload.assert_called_once()
+        mock_cache.assert_called_once()
+        assert app.state.config is new_cfg
+
+    async def test_reload_forbidden_non_admin(self, client: httpx.AsyncClient):
+        """Non-admin user gets 403."""
+        with patch("kiso.main.reload_config") as mock_reload:
+            resp = await client.post(
+                "/admin/reload-config",
+                params={"user": "testuser"},
+                headers=AUTH_HEADER,
+            )
+
+        assert resp.status_code == 403
+        mock_reload.assert_not_called()
+
+    async def test_reload_400_on_config_error(self, client: httpx.AsyncClient):
+        """ConfigError from reload_config raises 400 with error detail."""
+        with (
+            patch("kiso.main.reload_config", side_effect=ConfigError("bad toml")),
+            patch("kiso.main.invalidate_prompt_cache") as mock_cache,
+        ):
+            resp = await client.post(
+                "/admin/reload-config",
+                params={"user": "testadmin"},
+                headers=AUTH_HEADER,
+            )
+
+        assert resp.status_code == 400
+        assert "bad toml" in resp.json()["detail"]
+        mock_cache.assert_not_called()
+
+    async def test_reload_updates_app_state(self, client: httpx.AsyncClient, test_config_path):
+        """After a successful reload, app.state.config is replaced with the new config."""
+        from kiso.main import app
+        from kiso.config import load_config
+
+        original_cfg = app.state.config
+        new_cfg = load_config(test_config_path)
+        assert new_cfg is not original_cfg
+
+        with (
+            patch("kiso.main.reload_config", return_value=new_cfg),
+            patch("kiso.main.invalidate_prompt_cache"),
+        ):
+            await client.post(
+                "/admin/reload-config",
+                params={"user": "testadmin"},
+                headers=AUTH_HEADER,
+            )
+
+        assert app.state.config is new_cfg
 
 
 class TestLoadEnvFile:
