@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 KISO_DIR = Path.home() / ".kiso"
 CONFIG_PATH = KISO_DIR / "config.toml"
@@ -183,6 +186,30 @@ def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
             return False
     # Anything else (int, list, dict …) — fall through to default
     return default
+
+
+def setting_int(settings: dict, key: str, *, lo: int | None = None, hi: int | None = None) -> int:
+    """Read an integer setting, clamping to [lo, hi] with a warning if out of range."""
+    val = int(settings[key])
+    if lo is not None and val < lo:
+        log.warning("Setting %s=%d is below minimum %d, clamping to %d", key, val, lo, lo)
+        val = lo
+    if hi is not None and val > hi:
+        log.warning("Setting %s=%d is above maximum %d, clamping to %d", key, val, hi, hi)
+        val = hi
+    return val
+
+
+def setting_float(settings: dict, key: str, *, lo: float | None = None, hi: float | None = None) -> float:
+    """Read a float setting, clamping to [lo, hi] with a warning if out of range."""
+    val = float(settings[key])
+    if lo is not None and val < lo:
+        log.warning("Setting %s=%f is below minimum %f, clamping to %f", key, val, lo, lo)
+        val = lo
+    if hi is not None and val > hi:
+        log.warning("Setting %s=%f is above maximum %f, clamping to %f", key, val, hi, hi)
+        val = hi
+    return val
 
 
 def _die(msg: str) -> None:

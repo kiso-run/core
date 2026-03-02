@@ -1496,6 +1496,66 @@ class TestRunFactConsolidation:
         assert result[1]["confidence"] == 0.0   # clamped from -5.0
         assert result[2]["confidence"] == 0.7   # unchanged
 
+    async def test_item_count_cap_truncates_oversized_result(self, config):
+        """M87e: LLM returning more than _MAX_CONSOLIDATION_ITEMS items is truncated."""
+        from kiso.brain import _MAX_CONSOLIDATION_ITEMS
+        facts = [{"id": 1, "content": "test"}]
+        oversized = [{"content": f"fact {i}", "category": "general"} for i in range(_MAX_CONSOLIDATION_ITEMS + 50)]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=json.dumps(oversized)):
+            result = await run_fact_consolidation(config, facts)
+        assert len(result) == _MAX_CONSOLIDATION_ITEMS
+
+    async def test_unknown_category_normalized_to_general(self, config):
+        """M87e: unrecognized category strings are normalized to 'general'."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([
+            {"content": "fact with bad category", "category": "injected"},
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert result[0]["category"] == "general"
+
+    async def test_null_category_normalized_to_general(self, config):
+        """M87e: null category is normalized to 'general'."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([
+            {"content": "fact with null category", "category": None},
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert result[0]["category"] == "general"
+
+    async def test_empty_and_whitespace_content_filtered(self, config):
+        """M87e: items with empty or whitespace-only content are filtered out."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([
+            {"content": "valid fact"},
+            {"content": ""},
+            {"content": "  "},
+            {"content": "ab"},
+            " ",
+            "",
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert len(result) == 1
+        assert result[0]["content"] == "valid fact"
+
+    async def test_valid_categories_preserved(self, config):
+        """M87e: all four valid categories are accepted as-is."""
+        from kiso.brain import _VALID_FACT_CATEGORIES
+        facts = [{"id": 1, "content": "test"}]
+        items = [{"content": f"fact for {cat}", "category": cat} for cat in sorted(_VALID_FACT_CATEGORIES)]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=json.dumps(items)):
+            result = await run_fact_consolidation(config, facts)
+        result_cats = {r["category"] for r in result}
+        assert result_cats == _VALID_FACT_CATEGORIES
+
 
 # --- M9: _load_system_prompt for curator/summarizer ---
 

@@ -20,7 +20,7 @@ from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.brain import invalidate_prompt_cache
-from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool
+from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool, setting_int
 import kiso.llm as _llm_mod
 from kiso.log import setup_logging
 from kiso.pub import pub_token, resolve_pub_token
@@ -55,21 +55,31 @@ class WorkerEntry(NamedTuple):
 
 def _init_kiso_dirs() -> None:
     """Ensure ~/.kiso/ subdirectories exist and sync reference docs."""
-    (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
-    (KISO_DIR / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
-    (KISO_DIR / "reference").mkdir(parents=True, exist_ok=True)
+    try:
+        (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
+        (KISO_DIR / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
+        (KISO_DIR / "reference").mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.warning("Failed to create kiso directories: %s", e)
+        return
 
     # Sync bundled reference docs to ~/.kiso/reference/
     import importlib.resources
-    ref_pkg = importlib.resources.files("kiso") / "reference"
-    dest = KISO_DIR / "reference"
-    for src_file in ref_pkg.iterdir():
-        if src_file.name.endswith(".md"):
-            target = dest / src_file.name
-            content = src_file.read_text(encoding="utf-8")
-            # Only write if changed (avoid unnecessary writes)
-            if not target.exists() or target.read_text(encoding="utf-8") != content:
-                target.write_text(content, encoding="utf-8")
+    try:
+        ref_pkg = importlib.resources.files("kiso") / "reference"
+        dest = KISO_DIR / "reference"
+        for src_file in ref_pkg.iterdir():
+            if src_file.name.endswith(".md"):
+                target = dest / src_file.name
+                try:
+                    content = src_file.read_text(encoding="utf-8")
+                    # Only write if changed (avoid unnecessary writes)
+                    if not target.exists() or target.read_text(encoding="utf-8") != content:
+                        target.write_text(content, encoding="utf-8")
+                except OSError as e:
+                    log.warning("Failed to sync reference file %s: %s", src_file.name, e)
+    except (FileNotFoundError, OSError, TypeError) as e:
+        log.warning("Failed to sync reference docs: %s", e)
 
 # Per-session workers: session → WorkerEntry
 _workers: dict[str, WorkerEntry] = {}
@@ -95,7 +105,7 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     entry = _workers.get(session)
     if entry and not entry.task.done():
         return entry.queue
-    maxsize = int(config.settings["max_queue_size"])
+    maxsize = setting_int(config.settings, "max_queue_size", lo=1)
     queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
     cancel_event = asyncio.Event()
     task = asyncio.create_task(
@@ -192,7 +202,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     config = load_config()
     _init_kiso_dirs()
-    await _llm_mod.init_http_client(timeout=int(config.settings["exec_timeout"]))
+    await _llm_mod.init_http_client(timeout=setting_int(config.settings, "exec_timeout", lo=1))
     log.info("Server starting — host=%s port=%s",
              config.settings["host"],
              config.settings["port"])
@@ -212,7 +222,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Graceful shutdown with timeout
-    shutdown_timeout = int(config.settings["exec_timeout"])
+    shutdown_timeout = setting_int(config.settings, "exec_timeout", lo=1)
     for session, entry in list(_workers.items()):
         entry.cancel_event.set()
     for session, entry in list(_workers.items()):
@@ -312,7 +322,7 @@ async def post_msg(
     config = request.app.state.config
     resolved = resolve_user(config, body.user, auth.token_name)
 
-    max_msg = int(config.settings["max_message_size"])
+    max_msg = setting_int(config.settings, "max_message_size", lo=1)
     if len(body.content) > max_msg:
         raise HTTPException(status_code=413, detail="Message content too large")
 

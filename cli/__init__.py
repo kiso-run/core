@@ -760,7 +760,10 @@ def _render_plan_status(
         tid = task["id"]
         status = task["status"]
         review_verdict = task.get("review_verdict")
-        llm_call_count = len(_json.loads(task["llm_calls"])) if task.get("llm_calls") else 0
+        try:
+            llm_call_count = len(_json.loads(task["llm_calls"])) if task.get("llm_calls") else 0
+        except (ValueError, TypeError):
+            llm_call_count = 0
         substatus = task.get("substatus") or ""
         task_key = (status, review_verdict, substatus, llm_call_count)
 

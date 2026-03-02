@@ -46,7 +46,7 @@ from kiso.brain import (
     run_reviewer,
     run_summarizer,
 )
-from kiso.config import Config, setting_bool
+from kiso.config import Config, setting_bool, setting_float, setting_int
 from kiso.llm import (
     LLMBudgetExceeded,
     LLMError,
@@ -158,7 +158,7 @@ async def _deliver_webhook_if_configured(
     wh_success, wh_status, wh_attempts = await deliver_webhook(
         webhook_url, session, task_id, content, final,
         secret=str(config.settings["webhook_secret"]),
-        max_payload=int(config.settings["webhook_max_payload"]),
+        max_payload=setting_int(config.settings, "webhook_max_payload", lo=1),
     )
     audit.log_webhook(
         session, task_id, webhook_url, wh_status, wh_attempts,
@@ -215,12 +215,14 @@ async def _post_plan_knowledge(
             log.warning("Curator timed out after %ds", exec_timeout)
         except CuratorError as e:
             log.error("Curator failed: %s", e)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             log.exception("Unexpected error in curator/apply phase for session=%s", session)
 
     async def _run_summarizer() -> None:
         msg_count = await count_messages(db, session)
-        if msg_count < int(config.settings["summarize_threshold"]):
+        if msg_count < setting_int(config.settings, "summarize_threshold", lo=1):
             return
         try:
             sess = await get_session(db, session)
@@ -240,7 +242,7 @@ async def _post_plan_knowledge(
 
     # --- Phase 2: Fact consolidation (after Curator — sees promoted facts) ------
 
-    max_facts = int(config.settings["knowledge_max_facts"])
+    max_facts = setting_int(config.settings, "knowledge_max_facts", lo=1)
     all_facts = await get_facts(db, is_admin=True)
     if len(all_facts) > max_facts:
         try:
@@ -249,7 +251,7 @@ async def _post_plan_knowledge(
                 timeout=exec_timeout,
             )
             if consolidated:
-                min_ratio = float(config.settings["fact_consolidation_min_ratio"])
+                min_ratio = setting_float(config.settings, "fact_consolidation_min_ratio", lo=0.0, hi=1.0)
                 if len(consolidated) < len(all_facts) * min_ratio:
                     log.warning("Fact consolidation shrank %d → %d (< %.0f%%), skipping",
                                 len(all_facts), len(consolidated), min_ratio * 100)
@@ -284,15 +286,17 @@ async def _post_plan_knowledge(
 
     # --- Phase 3: Decay + Archive (pure SQL, run concurrently) ------------------
 
-    decay_days = int(config.settings["fact_decay_days"])
-    decay_rate = float(config.settings["fact_decay_rate"])
-    archive_threshold = float(config.settings["fact_archive_threshold"])
+    decay_days = setting_int(config.settings, "fact_decay_days", lo=1)
+    decay_rate = setting_float(config.settings, "fact_decay_rate", lo=0.0, hi=1.0)
+    archive_threshold = setting_float(config.settings, "fact_archive_threshold", lo=0.0, hi=1.0)
 
     async def _run_decay() -> None:
         try:
             decayed = await decay_facts(db, decay_days=decay_days, decay_rate=decay_rate)
             if decayed:
                 log.info("Decayed %d stale facts", decayed)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             log.error("Fact decay failed: %s", e)
 
@@ -301,6 +305,8 @@ async def _post_plan_knowledge(
             archived = await archive_low_confidence_facts(db, threshold=archive_threshold)
             if archived:
                 log.info("Archived %d low-confidence facts", archived)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             log.error("Fact archiving failed: %s", e)
 
@@ -355,7 +361,7 @@ async def _fast_path_chat(
 
     usage_idx_before = get_usage_index()
     t0 = time.perf_counter()
-    _msg_timeout = int(config.settings["planner_timeout"])
+    _msg_timeout = setting_int(config.settings, "planner_timeout", lo=1)
     try:
         try:
             text = await asyncio.wait_for(
@@ -587,7 +593,7 @@ async def _handle_msg_task(
     t0 = time.perf_counter()
     try:
         await update_task_substatus(ctx.db, task_id, "composing")
-        _msg_timeout = int(ctx.config.settings["planner_timeout"])
+        _msg_timeout = setting_int(ctx.config.settings, "planner_timeout", lo=1)
         idx_msg = get_usage_index()
         try:
             text = await asyncio.wait_for(
@@ -979,8 +985,8 @@ async def _execute_plan(
     tasks = await get_tasks_for_plan(db, plan_id)
     completed: list[dict] = []
     deploy_secrets = collect_deploy_secrets()
-    max_output_size = int(config.settings["max_output_size"])
-    max_worker_retries = int(config.settings["max_worker_retries"])
+    max_output_size = setting_int(config.settings, "max_output_size", lo=0)
+    max_worker_retries = setting_int(config.settings, "max_worker_retries", lo=0)
     # Cache installed skills for the whole plan execution (avoid rescanning per task)
     installed_skills = discover_skills()
 
@@ -1113,10 +1119,10 @@ async def run_worker(
     cancel_event: asyncio.Event | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
-    idle_timeout = int(config.settings["worker_idle_timeout"])
-    exec_timeout = int(config.settings["exec_timeout"])
-    planner_timeout = int(config.settings["planner_timeout"])
-    max_replan_depth = int(config.settings["max_replan_depth"])
+    idle_timeout = setting_int(config.settings, "worker_idle_timeout", lo=1)
+    exec_timeout = setting_int(config.settings, "exec_timeout", lo=1)
+    planner_timeout = setting_int(config.settings, "planner_timeout", lo=1)
+    max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
     try:
@@ -1419,7 +1425,7 @@ async def _process_message(
         slog.info("Message received: user=%s, %d chars", username or "?", len(content))
 
     # Per-message LLM call budget and usage tracking
-    max_llm_calls = int(config.settings["max_llm_calls_per_message"])
+    max_llm_calls = setting_int(config.settings, "max_llm_calls_per_message", lo=1)
     set_llm_budget(max_llm_calls)
     reset_usage_tracking()
 

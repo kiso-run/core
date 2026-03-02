@@ -40,6 +40,10 @@ CURATOR_VERDICTS: frozenset[str] = frozenset({
     CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
 })
 
+# Fact consolidation constants
+_MAX_CONSOLIDATION_ITEMS = 200
+_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user"})
+
 
 def _strip_fences(text: str) -> str:
     """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
@@ -958,22 +962,37 @@ async def run_fact_consolidation(
     if not isinstance(result, list):
         raise SummarizerError("Consolidation must return a JSON array")
 
+    if len(result) > _MAX_CONSOLIDATION_ITEMS:
+        log.warning(
+            "Consolidation returned %d items (cap %d), truncating",
+            len(result), _MAX_CONSOLIDATION_ITEMS,
+        )
+        result = result[:_MAX_CONSOLIDATION_ITEMS]
+
     # Normalize items: dicts with content key, or plain strings (backward compat)
     normalized: list[dict] = []
     for item in result:
         if isinstance(item, dict) and isinstance(item.get("content"), str):
+            content = item["content"].strip()
+            if len(content) < 3:
+                continue
             try:
                 confidence = max(0.0, min(1.0, float(item.get("confidence", 1.0))))
             except (ValueError, TypeError):
                 confidence = 1.0
+            raw_category = item.get("category") or "general"
+            category = raw_category if raw_category in _VALID_FACT_CATEGORIES else "general"
             normalized.append({
-                "content": item["content"],
-                "category": item.get("category", "general"),
+                "content": content,
+                "category": category,
                 "confidence": confidence,
             })
         elif isinstance(item, str):
+            content = item.strip()
+            if len(content) < 3:
+                continue
             normalized.append({
-                "content": item,
+                "content": content,
                 "category": "general",
                 "confidence": 1.0,
             })

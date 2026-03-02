@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config, setting_bool
+from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config, setting_bool, setting_float, setting_int
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -505,3 +505,46 @@ def test_m84e_valid_settings_no_error(tmp_path: Path):
     cfg = load_config(_write(tmp_path, VALID))
     assert cfg.settings["max_plan_tasks"] == 20
     assert cfg.settings["fast_path_enabled"] is True
+
+
+# --- M87c: setting_int / setting_float helpers ---
+
+
+class TestSettingInt:
+    def test_nominal_value_returned(self):
+        assert setting_int({"key": 42}, "key") == 42
+
+    def test_below_min_clamped(self):
+        assert setting_int({"key": -5}, "key", lo=0) == 0
+
+    def test_above_max_clamped(self):
+        assert setting_int({"key": 9999}, "key", hi=100) == 100
+
+    def test_exact_min_not_clamped(self):
+        assert setting_int({"key": 1}, "key", lo=1, hi=10) == 1
+
+    def test_exact_max_not_clamped(self):
+        assert setting_int({"key": 10}, "key", lo=1, hi=10) == 10
+
+    def test_no_bounds_no_clamp(self):
+        assert setting_int({"key": 0}, "key") == 0
+
+
+class TestSettingFloat:
+    def test_nominal_value_returned(self):
+        assert setting_float({"key": 0.5}, "key") == pytest.approx(0.5)
+
+    def test_below_min_clamped(self):
+        assert setting_float({"key": -1.0}, "key", lo=0.0) == pytest.approx(0.0)
+
+    def test_above_max_clamped(self):
+        assert setting_float({"key": 2.0}, "key", hi=1.0) == pytest.approx(1.0)
+
+    def test_exact_min_not_clamped(self):
+        assert setting_float({"key": 0.0}, "key", lo=0.0, hi=1.0) == pytest.approx(0.0)
+
+    def test_exact_max_not_clamped(self):
+        assert setting_float({"key": 1.0}, "key", lo=0.0, hi=1.0) == pytest.approx(1.0)
+
+    def test_no_bounds_no_clamp(self):
+        assert setting_float({"key": 99.9}, "key") == pytest.approx(99.9)

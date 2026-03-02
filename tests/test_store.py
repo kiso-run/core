@@ -1611,3 +1611,89 @@ async def test_save_facts_batch_session_stored(db: aiosqlite.Connection):
     by_content = {r["content"]: r for r in rows}
     assert by_content["User fact"]["session"] == "s1"
     assert by_content["Global fact"]["session"] is None
+
+
+# --- M87f: additional edge cases ---
+
+
+async def test_decay_facts_multiple_independent(db: aiosqlite.Connection):
+    """Multiple stale facts are each decayed by the correct amount independently."""
+    fid1 = await save_fact(db, "Fact high", "curator", confidence=0.9)
+    fid2 = await save_fact(db, "Fact low", "curator", confidence=0.5)
+    for fid in (fid1, fid2):
+        await db.execute(
+            "UPDATE facts SET created_at = datetime('now', '-10 days') WHERE id = ?", (fid,)
+        )
+    await db.commit()
+    affected = await decay_facts(db, decay_days=7, decay_rate=0.1)
+    assert affected == 2
+    rows = await get_facts(db, is_admin=True)
+    by_id = {r["id"]: r for r in rows}
+    assert by_id[fid1]["confidence"] == pytest.approx(0.8)
+    assert by_id[fid2]["confidence"] == pytest.approx(0.4)
+
+
+async def test_decay_facts_zero_rate_no_confidence_change(db: aiosqlite.Connection):
+    """decay_rate=0.0 matches stale rows but leaves confidence unchanged."""
+    fid = await save_fact(db, "Stale fact", "curator", confidence=0.7)
+    await db.execute(
+        "UPDATE facts SET created_at = datetime('now', '-10 days') WHERE id = ?", (fid,)
+    )
+    await db.commit()
+    affected = await decay_facts(db, decay_days=7, decay_rate=0.0)
+    assert affected == 1
+    facts = await get_facts(db)
+    assert facts[0]["confidence"] == pytest.approx(0.7)
+
+
+async def test_archive_preserves_all_fields(db: aiosqlite.Connection):
+    """archive_low_confidence_facts copies all fields to facts_archive correctly."""
+    fid = await save_fact(
+        db, "Weak fact", "curator", session="sess1", category="tool", confidence=0.1
+    )
+    archived = await archive_low_confidence_facts(db, threshold=0.3)
+    assert archived == 1
+    cur = await db.execute("SELECT * FROM facts_archive")
+    row = dict(zip([d[0] for d in cur.description], await cur.fetchone()))  # type: ignore[arg-type]
+    assert row["original_id"] == fid
+    assert row["content"] == "Weak fact"
+    assert row["source"] == "curator"
+    assert row["session"] == "sess1"
+    assert row["category"] == "tool"
+    assert row["confidence"] == pytest.approx(0.1)
+    assert row["archived_at"] is not None
+
+
+async def test_archive_table_empty_when_nothing_below_threshold(db: aiosqlite.Connection):
+    """When no facts are below threshold, facts_archive remains empty."""
+    await save_fact(db, "Strong fact", "curator", confidence=0.9)
+    archived = await archive_low_confidence_facts(db, threshold=0.3)
+    assert archived == 0
+    cur = await db.execute("SELECT COUNT(*) FROM facts_archive")
+    count = (await cur.fetchone())[0]
+    assert count == 0
+
+
+async def test_save_facts_batch_custom_confidence(db: aiosqlite.Connection):
+    """save_facts_batch persists non-default confidence values exactly."""
+    await save_facts_batch(db, [{"content": "Precise fact", "source": "test", "confidence": 0.75}])
+    rows = await get_facts(db, is_admin=True)
+    assert rows[0]["confidence"] == pytest.approx(0.75)
+
+
+async def test_save_facts_batch_mixed_complete_and_minimal(db: aiosqlite.Connection):
+    """save_facts_batch handles a mix of fully-specified and minimal dicts in one call."""
+    facts = [
+        {"content": "Full", "source": "s", "category": "project", "confidence": 0.6, "session": "sx"},
+        {"content": "Minimal", "source": "s"},
+    ]
+    await save_facts_batch(db, facts)
+    rows = await get_facts(db, is_admin=True)
+    assert len(rows) == 2
+    by_content = {r["content"]: r for r in rows}
+    assert by_content["Full"]["category"] == "project"
+    assert by_content["Full"]["confidence"] == pytest.approx(0.6)
+    assert by_content["Full"]["session"] == "sx"
+    assert by_content["Minimal"]["category"] == "general"
+    assert by_content["Minimal"]["confidence"] == pytest.approx(1.0)
+    assert by_content["Minimal"]["session"] is None

@@ -7102,6 +7102,8 @@ class TestPostPlanKnowledgeParallel:
 
     async def test_consolidation_runs_after_curator_promotes_fact(self, db, tmp_path):
         """Fact consolidation (Phase 2) must see facts promoted by Curator (Phase 1)."""
+        # Pre-insert a fact so that after curator promotes another, total > max_facts
+        await save_fact(db, "existing fact", "test")
         # Add a learning that curator will promote to a fact
         lid = await save_learning(db, "promoted fact content", "sess1")
         promote_result = {
@@ -7114,8 +7116,8 @@ class TestPostPlanKnowledgeParallel:
                 "reason": "good fact",
             }]
         }
-        # Set knowledge_max_facts=0 so consolidation always triggers
-        config = self._cfg(knowledge_max_facts=0, summarize_threshold=99999)
+        # Set knowledge_max_facts=1 so consolidation triggers when there are 2 facts
+        config = self._cfg(knowledge_max_facts=1, summarize_threshold=99999)
 
         consolidation_input: list[list] = []
 
