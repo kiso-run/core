@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.resources
 import json
 import logging
 from pathlib import Path
@@ -223,7 +222,7 @@ class TestInitKisoDirs:
         mock_ref_pkg.iterdir.return_value = [mock_file]
 
         mock_kiso_pkg = MagicMock()
-        mock_kiso_pkg.__truediv__ = MagicMock(return_value=mock_ref_pkg)
+        mock_kiso_pkg.__truediv__.return_value = mock_ref_pkg
 
         with patch("kiso.main.KISO_DIR", tmp_path), \
              patch("importlib.resources.files", return_value=mock_kiso_pkg):

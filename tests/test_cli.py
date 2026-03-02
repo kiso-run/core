@@ -1960,6 +1960,43 @@ def test_poll_status_shows_review_on_llm_count_change(capsys, plain_caps):
     assert "success" in out
 
 
+def test_poll_status_corrupted_llm_calls_does_not_crash(capsys, plain_caps):
+    """Corrupted llm_calls value in DB → poll loop renders without raising.
+
+    Guards the 87a try/except: a non-JSON string in task["llm_calls"] must be
+    treated as llm_call_count=0 instead of crashing the entire render loop.
+    """
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "llm_calls": "not-valid-json"},
+        ],
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "done"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "done",
+             "output": "ok", "llm_calls": "not-valid-json"},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    assert "exec: ls" in out  # rendered normally despite corrupted llm_calls
+    assert "ok" in out
+
+
 # ── M41: CLI polling UX gaps ───────────────────────────────────────────────────
 
 
