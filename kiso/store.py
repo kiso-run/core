@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS facts (
     use_count  INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_facts_cat_sess ON facts(category, session);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS kiso_facts_fts USING fts5(
     content,
@@ -738,6 +739,33 @@ async def save_fact(
     )
     await db.commit()
     return cur.lastrowid  # type: ignore[return-value]
+
+
+async def save_facts_batch(
+    db: aiosqlite.Connection,
+    facts: list[dict],
+) -> None:
+    """Insert multiple facts in one transaction.
+
+    Each dict must have ``content`` and ``source``; optionally ``session``,
+    ``category`` (default ``"general"``), and ``confidence`` (default ``1.0``).
+    """
+    rows = [
+        (
+            f["content"],
+            f["source"],
+            f.get("session"),
+            f.get("category", "general"),
+            float(f.get("confidence", 1.0)),
+        )
+        for f in facts
+    ]
+    await db.executemany(
+        "INSERT INTO facts (content, source, session, category, confidence) "
+        "VALUES (?, ?, ?, ?, ?)",
+        rows,
+    )
+    await db.commit()
 
 
 async def save_pending_item(

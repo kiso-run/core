@@ -72,9 +72,11 @@ from kiso.store import (
     get_untrusted_messages,
     mark_message_processed,
     save_fact,
+    save_facts_batch,
     save_learning,
     save_message,
     save_pending_item,
+    search_facts,
     update_fact_usage,
     update_learning,
     update_plan_status,
@@ -248,17 +250,20 @@ async def _post_plan_knowledge(
                     ]
                     if consolidated:
                         await delete_facts(db, [f["id"] for f in all_facts])
-                        for fact in consolidated:
-                            category = fact.get("category", "general")
-                            await save_fact(
-                                db, fact["content"], source="consolidation",
-                                category=category,
-                                confidence=fact.get("confidence", 1.0),
-                                # Preserve session scoping: user facts belong to the
-                                # session that triggered consolidation; all other
-                                # categories are global (session=None).
-                                session=session if category == "user" else None,
-                            )
+                        # Preserve session scoping: user facts belong to the
+                        # session that triggered consolidation; all other
+                        # categories are global (session=None).
+                        fact_rows = []
+                        for f in consolidated:
+                            category = f.get("category", "general")
+                            fact_rows.append({
+                                "content": f["content"],
+                                "source": "consolidation",
+                                "category": category,
+                                "confidence": f.get("confidence", 1.0),
+                                "session": session if category == "user" else None,
+                            })
+                        await save_facts_batch(db, fact_rows)
                     else:
                         log.warning("All consolidated facts filtered out, preserving originals")
         except asyncio.TimeoutError:
@@ -497,6 +502,11 @@ class _PlanCtx:
     slog: "SessionLogger | None"
     sandbox_uid: "int | None"
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
+    # Derived from installed_skills for O(1) lookup by name (populated in __post_init__)
+    installed_skills_by_name: dict[str, dict] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.installed_skills_by_name = {s["name"]: s for s in self.installed_skills}
 
 
 @dataclass
@@ -626,7 +636,7 @@ async def _handle_skill_task(
     detail = task_row["detail"]
     skill_name = task_row.get("skill")
     args_raw = task_row.get("args") or "{}"
-    skill_info = next((s for s in ctx.installed_skills if s["name"] == skill_name), None)
+    skill_info = ctx.installed_skills_by_name.get(skill_name)
     t0 = time.perf_counter()
 
     # Pre-flight: skill installed, args valid
@@ -1119,6 +1129,20 @@ async def run_worker(
         slog.close()
 
 
+async def _bump_fact_usage(
+    db: aiosqlite.Connection,
+    content: str,
+    session: str,
+    user_role: str,
+) -> None:
+    """Search for facts relevant to *content* and increment their use counters."""
+    used_facts = await search_facts(
+        db, content, session=session, is_admin=user_role == "admin",
+    )
+    if used_facts:
+        await update_fact_usage(db, [f["id"] for f in used_facts])
+
+
 # ---------------------------------------------------------------------------
 # M62c: Extracted planning loop
 # ---------------------------------------------------------------------------
@@ -1159,9 +1183,7 @@ async def _run_planning_loop(
             log.info("Plan %d done", current_plan_id)
             if slog:
                 slog.info("Plan %d done", current_plan_id)
-            all_facts = await get_facts(db, is_admin=True)
-            if all_facts:
-                await update_fact_usage(db, [f["id"] for f in all_facts])
+            await _bump_fact_usage(db, content, session, user_role)
             break
 
         # --- Cancel handling ---
@@ -1407,9 +1429,7 @@ async def _process_message(
                 db, config, session, msg_id, content, slog=slog,
             )
             # Bump fact usage for fast path (facts contributed to chat response)
-            all_facts = await get_facts(db, is_admin=True)
-            if all_facts:
-                await update_fact_usage(db, [f["id"] for f in all_facts])
+            await _bump_fact_usage(db, content, session, user_role)
             # Run post-plan knowledge processing (summarizer, curator, etc.)
             await _post_plan_knowledge(
                 db, config, session, fast_plan_id, exec_timeout,

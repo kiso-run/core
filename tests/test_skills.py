@@ -21,6 +21,7 @@ from kiso.skills import (
     build_skill_input,
     check_deps,
     discover_skills,
+    invalidate_skills_cache,
     validate_skill_args,
 )
 from kiso.plugins import _validate_plugin_manifest_base
@@ -812,25 +813,48 @@ class TestBuildSkillEnv:
         assert env["KISO_SKILL_SEARCH_TOKEN"] == "tok1"
 
 
-# --- discover_skills no-cache behaviour (M61b reverted) ---
+# --- discover_skills TTL cache behaviour (M85a) ---
 
 
-class TestDiscoverSkillsNoCache:
-    def test_always_rescans_disk(self, tmp_path):
-        """discover_skills() rescans on every call — newly installed skills
-        are immediately visible without cache invalidation or server restart."""
+class TestDiscoverSkillsCache:
+    def test_cached_within_ttl(self, tmp_path):
+        """discover_skills() returns cached result within TTL window."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
         _create_skill(skills_dir, "echo", MINIMAL_TOML)
 
         with patch("kiso.skills.KISO_DIR", tmp_path):
+            invalidate_skills_cache()
             result1 = discover_skills()
             assert len(result1) == 1
 
-            # Simulate installing a second skill while server is running
+            # Install a second skill — without invalidation, still see cached result
             _create_skill(skills_dir, "newskill", MINIMAL_TOML.replace(
                 'name = "echo"', 'name = "newskill"'
             ))
             result2 = discover_skills()
+            assert len(result2) == 1  # still cached
 
-        assert len(result2) == 2  # immediately visible, no cache to invalidate
+            # After invalidation, new skill is visible
+            invalidate_skills_cache()
+            result3 = discover_skills()
+            assert len(result3) == 2
+
+    def test_invalidate_clears_cache(self, tmp_path):
+        """invalidate_skills_cache() causes the next call to rescan."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "echo", MINIMAL_TOML)
+
+        with patch("kiso.skills.KISO_DIR", tmp_path):
+            invalidate_skills_cache()
+            discover_skills()  # populate cache
+
+            _create_skill(skills_dir, "newskill", MINIMAL_TOML.replace(
+                'name = "echo"', 'name = "newskill"'
+            ))
+
+            invalidate_skills_cache()
+            result = discover_skills()
+
+        assert len(result) == 2

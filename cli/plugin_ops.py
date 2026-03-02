@@ -245,6 +245,8 @@ def _plugin_install(
 
         print(f"{plugin_type.capitalize()} '{name}' installed successfully.")
         invalidate_cache()
+        from kiso.skills import invalidate_skills_cache
+        invalidate_skills_cache()
 
     except Exception:
         if plugin_dir.exists():

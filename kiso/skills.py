@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import tomllib
@@ -18,6 +19,21 @@ log = logging.getLogger(__name__)
 
 # Supported arg types in kiso.toml [kiso.skill.args]
 _ARG_TYPES = {"string", "int", "float", "bool"}
+
+# TTL cache for discover_skills() — keyed by resolved skills dir path.
+# Avoids repeated filesystem scans on every planner/executor call.
+# Cleared by invalidate_skills_cache() after install/remove.
+_SKILLS_TTL: float = 30.0
+_skills_cache: dict[Path, tuple[float, list[dict]]] = {}
+
+
+def invalidate_skills_cache() -> None:
+    """Clear the discover_skills() TTL cache.
+
+    Call after installing or removing a skill so the next
+    discover_skills() call rescans the directory.
+    """
+    _skills_cache.clear()
 
 MAX_ARGS_SIZE = 64 * 1024  # 64 KB
 MAX_ARGS_DEPTH = 5
@@ -90,18 +106,23 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
 
     Skips directories with .installing marker.
 
-    No caching: skills are scanned on every call so that newly installed or
-    removed skills are immediately visible to the server without a restart.
-    The scan is fast (TOML parse of a handful of files) — negligible compared
-    to the LLM call that follows.
+    Results are cached per directory for _SKILLS_TTL seconds to avoid
+    repeated filesystem scans on every planner call. Call
+    invalidate_skills_cache() after installing or removing a skill.
     """
-    skills_dir = skills_dir or (KISO_DIR / "skills")
-    if not skills_dir.is_dir():
+    resolved_dir = skills_dir or (KISO_DIR / "skills")
+
+    now = time.monotonic()
+    cached = _skills_cache.get(resolved_dir)
+    if cached is not None and now - cached[0] < _SKILLS_TTL:
+        return cached[1]
+
+    if not resolved_dir.is_dir():
         return []
 
     skills: list[dict] = []
     seen_names: set[str] = set()
-    for entry in sorted(skills_dir.iterdir()):
+    for entry in sorted(resolved_dir.iterdir()):
         if not entry.is_dir():
             continue
 
@@ -160,6 +181,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
             "deps": kiso.get("deps", {}),
         })
 
+    _skills_cache[resolved_dir] = (now, skills)
     return skills
 
 

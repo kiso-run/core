@@ -197,3 +197,5 @@ def _skill_remove(args) -> None:
     print(f"Skill '{name}' removed.")
     from kiso.sysenv import invalidate_cache
     invalidate_cache()
+    from kiso.skills import invalidate_skills_cache
+    invalidate_skills_cache()
