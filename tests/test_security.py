@@ -183,6 +183,28 @@ class TestCheckCommandDenyList:
         """Writing to a project .env (not .kiso/) is allowed."""
         assert check_command_deny_list("echo KEY=val > /tmp/myproject/.env") is None
 
+    # --- M84j: deny list bypass fixes ---
+
+    def test_rm_rf_home_slash_blocked(self):
+        """M84j: rm -rf ~/ (trailing slash) must be blocked."""
+        assert check_command_deny_list("rm -rf ~/") is not None
+
+    def test_rm_rf_home_env_slash_blocked(self):
+        """M84j: rm -rf $HOME/ (trailing slash) must be blocked."""
+        assert check_command_deny_list("rm -rf $HOME/") is not None
+
+    def test_rm_r_home_blocked(self):
+        """M84j: rm -r ~ (without -f) must also be blocked."""
+        assert check_command_deny_list("rm -r ~") is not None
+
+    def test_rm_r_root_blocked(self):
+        """M84j: rm -r / must be blocked."""
+        assert check_command_deny_list("rm -r /") is not None
+
+    def test_fork_bomb_named_function_blocked(self):
+        """M84j: named-function fork bomb variant must be blocked."""
+        assert check_command_deny_list("a(){ a|a& }; a") is not None
+
 
 # --- Secret sanitization ---
 

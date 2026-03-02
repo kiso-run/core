@@ -115,6 +115,22 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("msg task must have expect = null" in e for e in errors)
 
+    def test_msg_with_non_null_skill(self):
+        """M84i: msg task with skill != null must fail validation."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "done", "expect": None, "skill": "my-skill", "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("msg task must have skill = null" in e for e in errors)
+
+    def test_msg_with_non_null_args(self):
+        """M84i: msg task with args != null must fail validation."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": '{"key": "val"}'},
+        ]}
+        errors = validate_plan(plan)
+        assert any("msg task must have args = null" in e for e in errors)
+
     def test_last_task_not_msg(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "ls", "expect": "ok"},
@@ -755,6 +771,23 @@ class TestRunPlanner:
                     return_value="not json at all"):
             with pytest.raises(PlanError, match="invalid JSON"):
                 await run_planner(db, config, "sess1", "admin", "hello")
+
+    async def test_invalid_json_retries_before_raising(self, db, config):
+        """M84b: JSON parse error should retry, not raise immediately."""
+        call_count = 0
+
+        async def _bad_then_good(cfg, role, messages, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "not json at all"
+            return VALID_PLAN
+
+        with patch("kiso.brain.call_llm", side_effect=_bad_then_good):
+            plan = await run_planner(db, config, "sess1", "admin", "hello")
+
+        assert call_count == 2, "Expected retry after JSON error"
+        assert plan["goal"] == "Say hello"
 
     async def test_retry_appends_error_feedback(self, db, config):
         """On retry, error feedback and previous assistant response are appended."""
@@ -1433,6 +1466,20 @@ class TestRunFactConsolidation:
                     return_value='{"not": "array"}'):
             with pytest.raises(SummarizerError, match="must return a JSON array"):
                 await run_fact_consolidation(config, facts)
+
+    async def test_confidence_non_numeric_string_falls_back(self, config):
+        """M84d: non-numeric confidence string must fall back to 1.0 without crashing."""
+        facts = [{"id": 1, "content": "test"}]
+        llm_response = json.dumps([
+            {"content": "Uses Python", "confidence": "high"},
+            {"content": "Uses Linux", "confidence": None},
+        ])
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=llm_response):
+            result = await run_fact_consolidation(config, facts)
+        assert len(result) == 2
+        assert result[0]["confidence"] == 1.0
+        assert result[1]["confidence"] == 1.0
 
     async def test_confidence_clamped_to_unit_interval(self, config):
         """M37: confidence values outside [0.0, 1.0] are clamped."""

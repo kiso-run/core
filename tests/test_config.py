@@ -468,3 +468,40 @@ def test_m37_missing_consolidation_ratio_uses_default(tmp_path: Path):
     text = VALID.replace("fact_consolidation_min_ratio = 0.3\n", "")
     cfg = load_config(_write(tmp_path, text))
     assert cfg.settings["fact_consolidation_min_ratio"] == 0.3
+
+
+# --- M84e: settings type validation ---
+
+
+def test_m84e_setting_wrong_type_int_exits(tmp_path: Path, capsys):
+    """M84e: setting an int key to a string must exit with type error."""
+    text = VALID.replace("max_plan_tasks            = 20",
+                         'max_plan_tasks            = "twenty"')
+    with pytest.raises(SystemExit):
+        load_config(_write(tmp_path, text))
+    err = _die_msg(capsys)
+    assert "type errors" in err
+    assert "max_plan_tasks" in err
+
+
+def test_m84e_setting_wrong_type_bool_exits(tmp_path: Path, capsys):
+    """M84e: setting a bool key to an int must exit with type error."""
+    text = VALID.replace("fast_path_enabled         = true",
+                         "fast_path_enabled         = 1")
+    with pytest.raises(SystemExit):
+        load_config(_write(tmp_path, text))
+    assert "fast_path_enabled" in _die_msg(capsys)
+
+
+def test_m84e_unknown_setting_key_ignored(tmp_path: Path):
+    """M84e: unknown settings keys are allowed (forward-compatible)."""
+    text = VALID + 'unknown_future_key = "hello"\n'
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.settings["unknown_future_key"] == "hello"
+
+
+def test_m84e_valid_settings_no_error(tmp_path: Path):
+    """M84e: correct types must not trigger any error."""
+    cfg = load_config(_write(tmp_path, VALID))
+    assert cfg.settings["max_plan_tasks"] == 20
+    assert cfg.settings["fast_path_enabled"] is True

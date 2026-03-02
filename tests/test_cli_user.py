@@ -640,3 +640,22 @@ class TestRunUserCommandDispatch:
 
         assert exc.value.code == 1
         assert "usage" in capsys.readouterr().out
+
+
+# --- M84h: _read_raw FileNotFoundError ---
+
+
+class TestReadRaw:
+    def test_returns_empty_dict_when_file_missing(self, tmp_path):
+        """M84h: _read_raw must return {} when config.toml does not exist."""
+        from cli.user import _read_raw
+        result = _read_raw(tmp_path / "nonexistent.toml")
+        assert result == {}
+
+    def test_returns_parsed_content_when_file_exists(self, tmp_path):
+        """_read_raw returns parsed TOML when the file is present."""
+        from cli.user import _read_raw
+        p = tmp_path / "config.toml"
+        p.write_bytes(b'[tokens]\ncli = "tok"\n')
+        result = _read_raw(p)
+        assert result["tokens"]["cli"] == "tok"

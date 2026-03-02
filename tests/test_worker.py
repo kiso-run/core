@@ -2833,6 +2833,46 @@ class TestApplyCuratorResult:
         facts = await get_facts(db)
         assert len(facts) == 0
 
+    async def test_missing_learning_id_skipped(self, db):
+        """M84f: evaluation without learning_id is skipped without crashing."""
+        result = {"evaluations": [{"verdict": "promote", "fact": "x"}]}
+        await _apply_curator_result(db, "sess1", result)  # must not raise
+        facts = await get_facts(db)
+        assert len(facts) == 0
+
+    async def test_missing_verdict_skipped(self, db):
+        """M84f: evaluation without verdict is skipped without crashing."""
+        lid = await save_learning(db, "Something", "sess1")
+        result = {"evaluations": [{"learning_id": lid, "fact": "x"}]}
+        await _apply_curator_result(db, "sess1", result)  # must not raise
+        # Learning status should remain unchanged (pending)
+        cur = await db.execute("SELECT status FROM learnings WHERE id = ?", (lid,))
+        assert (await cur.fetchone())[0] == "pending"
+
+    async def test_promote_with_null_fact_discards(self, db):
+        """M84f: promote verdict with null fact falls back to discard."""
+        lid = await save_learning(db, "Something", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote", "fact": None, "question": None},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT status FROM learnings WHERE id = ?", (lid,))
+        assert (await cur.fetchone())[0] == "discarded"
+        facts = await get_facts(db)
+        assert len(facts) == 0
+
+    async def test_ask_with_null_question_discards(self, db):
+        """M84f: ask verdict with null question falls back to discard."""
+        lid = await save_learning(db, "Something", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "ask", "fact": None, "question": None},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        cur = await db.execute("SELECT status FROM learnings WHERE id = ?", (lid,))
+        assert (await cur.fetchone())[0] == "discarded"
+        items = await get_pending_items(db, "sess1")
+        assert len(items) == 0
+
 
 # --- M9: Knowledge processing in run_worker ---
 
