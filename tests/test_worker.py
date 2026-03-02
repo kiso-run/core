@@ -42,6 +42,10 @@ from kiso.worker import (
 )
 from kiso.worker.loop import (
     _PlanCtx,
+    _SUBSTATUS_COMPOSING,
+    _SUBSTATUS_EXECUTING,
+    _SUBSTATUS_REVIEWING,
+    _SUBSTATUS_TRANSLATING,
     _TASK_HANDLERS,
     _TaskHandlerResult,
     _bump_fact_usage,
@@ -6817,8 +6821,7 @@ class TestTaskHandlers:
         """replan handler marks task done and returns stop with Self-directed replan reason."""
         task_row = await _make_task_row(db, plan_id, "replan", "Need to check logs first")
         ctx = _make_ctx(db)
-        tasks = [task_row]
-        result = await _handle_replan_task(ctx, task_row, 0, tasks, 0)
+        result = await _handle_replan_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.stop_success is False
@@ -6833,10 +6836,9 @@ class TestTaskHandlers:
         """msg handler calls messenger and returns completed_row."""
         task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
         ctx = _make_ctx(db)
-        tasks = [task_row]
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="Hello!"), \
              _patch_kiso_dir(tmp_path):
-            result = await _handle_msg_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_msg_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is False
         assert result.completed_row is not None
@@ -6850,10 +6852,9 @@ class TestTaskHandlers:
         """msg handler returns stop=True on LLMError."""
         task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
         ctx = _make_ctx(db)
-        tasks = [task_row]
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("API down")), \
              _patch_kiso_dir(tmp_path):
-            result = await _handle_msg_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_msg_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.stop_success is False
@@ -6868,9 +6869,8 @@ class TestTaskHandlers:
             skill="missing-skill", args="{}"
         )
         ctx = _make_ctx(db, installed_skills=[])  # no skills installed
-        tasks = [task_row]
         with _patch_kiso_dir(tmp_path):
-            result = await _handle_skill_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_skill_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.stop_success is False
@@ -6891,9 +6891,8 @@ class TestTaskHandlers:
             skill="test-skill", args="{invalid json}"
         )
         ctx = _make_ctx(db, installed_skills=[skill_info])
-        tasks = [task_row]
         with _patch_kiso_dir(tmp_path):
-            result = await _handle_skill_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_skill_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.completed_row is None
@@ -6904,13 +6903,12 @@ class TestTaskHandlers:
         """exec handler returns stop=True when translator raises ExecTranslatorError."""
         task_row = await _make_task_row(db, plan_id, "exec", "list files")
         ctx = _make_ctx(db)
-        tasks = [task_row]
         with patch(
             "kiso.worker.loop.run_exec_translator",
             new_callable=AsyncMock,
             side_effect=ExecTranslatorError("LLM failed"),
         ), _patch_kiso_dir(tmp_path):
-            result = await _handle_exec_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.stop_success is False
@@ -6920,12 +6918,11 @@ class TestTaskHandlers:
         """exec handler runs command, reviews, and returns completed_row on success."""
         task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
         ctx = _make_ctx(db)
-        tasks = [task_row]
         with _patch_translator(), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
-            result = await _handle_exec_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is False
         assert result.completed_row is not None
@@ -6937,7 +6934,6 @@ class TestTaskHandlers:
         """search handler runs search, reviews, and returns completed_row."""
         task_row = await _make_task_row(db, plan_id, "search", "find Python docs")
         ctx = _make_ctx(db)
-        tasks = [task_row]
         with patch(
             "kiso.worker.loop._search_task",
             new_callable=AsyncMock,
@@ -6945,7 +6941,7 @@ class TestTaskHandlers:
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                  return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
-            result = await _handle_search_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_search_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is False
         assert result.completed_row is not None
@@ -6958,16 +6954,36 @@ class TestTaskHandlers:
         from kiso.worker.search import SearcherError
         task_row = await _make_task_row(db, plan_id, "search", "find something")
         ctx = _make_ctx(db)
-        tasks = [task_row]
         with patch(
             "kiso.worker.loop._search_task",
             new_callable=AsyncMock,
             side_effect=SearcherError("Search API down"),
         ), _patch_kiso_dir(tmp_path):
-            result = await _handle_search_task(ctx, task_row, 0, tasks, 0)
+            result = await _handle_search_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.completed_row is None
+
+
+class TestSubstatusConstants:
+    """Verify _SUBSTATUS_* constant values (M88b)."""
+
+    def test_substatus_constant_values(self):
+        """All four substatus constants have the expected string values."""
+        assert _SUBSTATUS_TRANSLATING == "translating"
+        assert _SUBSTATUS_EXECUTING == "executing"
+        assert _SUBSTATUS_REVIEWING == "reviewing"
+        assert _SUBSTATUS_COMPOSING == "composing"
+
+    def test_substatus_constants_are_distinct(self):
+        """No two substatus constants share the same value."""
+        values = [
+            _SUBSTATUS_TRANSLATING,
+            _SUBSTATUS_EXECUTING,
+            _SUBSTATUS_REVIEWING,
+            _SUBSTATUS_COMPOSING,
+        ]
+        assert len(values) == len(set(values))
 
 
 class TestRunPlanningLoop:

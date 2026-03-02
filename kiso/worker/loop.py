@@ -119,9 +119,9 @@ _MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
 
 # Task substatus labels written to the DB during execution
 _SUBSTATUS_TRANSLATING = "translating"
-_SUBSTATUS_EXECUTING   = "executing"
-_SUBSTATUS_REVIEWING   = "reviewing"
-_SUBSTATUS_COMPOSING   = "composing"
+_SUBSTATUS_EXECUTING = "executing"
+_SUBSTATUS_REVIEWING = "reviewing"
+_SUBSTATUS_COMPOSING = "composing"
 
 
 async def _append_calls(
@@ -573,7 +573,7 @@ async def _run_review_step(
 
 
 async def _handle_replan_task(
-    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+    ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
     """Handle a self-directed replan task."""
     task_id = task_row["id"]
@@ -1071,7 +1071,8 @@ async def _execute_plan(
             _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
-        result = await handler(ctx, task_row, i, i == len(tasks) - 1, usage_idx_before)
+        is_final = i == len(tasks) - 1
+        result = await handler(ctx, task_row, i, is_final, usage_idx_before)
         if result.completed_row is not None:
             completed.append(result.completed_row)
 
