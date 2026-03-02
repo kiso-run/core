@@ -30,6 +30,7 @@ from kiso.store import (
     get_untrusted_messages,
     mark_message_processed,
     save_fact,
+    save_facts_batch,
     save_message,
     save_pending_item,
     update_fact_usage,
@@ -1564,3 +1565,49 @@ async def test_update_task_review_nulls_allowed(db: aiosqlite.Connection):
     assert tasks[0]["review_verdict"] == "ok"
     assert tasks[0]["review_reason"] is None
     assert tasks[0]["review_learning"] is None
+
+
+# --- M85c: save_facts_batch ---
+
+
+async def test_save_facts_batch_inserts_all_rows(db: aiosqlite.Connection):
+    """save_facts_batch inserts every row in one transaction."""
+    facts = [
+        {"content": "Fact A", "source": "test", "category": "general", "confidence": 1.0},
+        {"content": "Fact B", "source": "test", "category": "project", "confidence": 0.8},
+        {"content": "Fact C", "source": "test"},
+    ]
+    await save_facts_batch(db, facts)
+    rows = await get_facts(db, is_admin=True)
+    assert len(rows) == 3
+    contents = {r["content"] for r in rows}
+    assert contents == {"Fact A", "Fact B", "Fact C"}
+
+
+async def test_save_facts_batch_defaults(db: aiosqlite.Connection):
+    """save_facts_batch applies category='general' and confidence=1.0 as defaults."""
+    await save_facts_batch(db, [{"content": "Plain fact", "source": "test"}])
+    rows = await get_facts(db, is_admin=True)
+    assert rows[0]["category"] == "general"
+    assert rows[0]["confidence"] == 1.0
+    assert rows[0]["session"] is None
+
+
+async def test_save_facts_batch_empty_is_noop(db: aiosqlite.Connection):
+    """save_facts_batch with an empty list inserts no rows."""
+    await save_facts_batch(db, [])
+    rows = await get_facts(db, is_admin=True)
+    assert rows == []
+
+
+async def test_save_facts_batch_session_stored(db: aiosqlite.Connection):
+    """save_facts_batch stores session value as given by the caller."""
+    facts = [
+        {"content": "User fact", "source": "consolidation", "category": "user", "session": "s1"},
+        {"content": "Global fact", "source": "consolidation", "category": "general", "session": None},
+    ]
+    await save_facts_batch(db, facts)
+    rows = await get_facts(db, is_admin=True)
+    by_content = {r["content"]: r for r in rows}
+    assert by_content["User fact"]["session"] == "s1"
+    assert by_content["Global fact"]["session"] is None

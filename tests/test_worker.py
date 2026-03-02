@@ -44,6 +44,7 @@ from kiso.worker.loop import (
     _PlanCtx,
     _TASK_HANDLERS,
     _TaskHandlerResult,
+    _bump_fact_usage,
     _handle_exec_task,
     _handle_msg_task,
     _handle_replan_task,
@@ -7227,3 +7228,65 @@ class TestPlanCtxTypeAnnotations:
                 assert len(line) <= 100, (
                     f"kiso.llm import line is too long ({len(line)} chars): {line!r}"
                 )
+
+
+# --- M85b: _bump_fact_usage ---
+
+
+class TestBumpFactUsage:
+    async def test_updates_matching_facts(self, db):
+        """_bump_fact_usage bumps use_count for facts matching the query."""
+        fid = await save_fact(db, "PostgreSQL database connection", "test", category="project")
+        await save_fact(db, "Unrelated cooking recipe", "test", category="general")
+
+        await _bump_fact_usage(db, "postgresql database", "sess1", "admin")
+
+        facts = await get_facts(db, is_admin=True)
+        by_id = {f["id"]: f for f in facts}
+        # The matching fact should have its usage bumped
+        assert by_id[fid]["use_count"] >= 1
+
+    async def test_noop_when_db_empty(self, db):
+        """_bump_fact_usage does not crash when the facts table is empty."""
+        await _bump_fact_usage(db, "some content", "sess1", "admin")
+        facts = await get_facts(db, is_admin=True)
+        assert facts == []
+
+    async def test_respects_user_role_for_session_scoping(self, db):
+        """_bump_fact_usage passes is_admin=True for admin, False for user."""
+        # User-category facts are session-scoped for non-admin users
+        fid = await save_fact(
+            db, "Alice user preferences python", "test",
+            category="user", session="sess1",
+        )
+        # non-admin user in a different session should NOT see this fact
+        await _bump_fact_usage(db, "Alice python preferences", "sess_other", "user")
+
+        facts = await get_facts(db, is_admin=True)
+        assert facts[0]["use_count"] == 0  # not bumped — wrong session for non-admin
+
+
+# --- M85d: _PlanCtx.installed_skills_by_name ---
+
+
+class TestPlanCtxSkillsDict:
+    def test_post_init_builds_dict(self, db):
+        """_PlanCtx.__post_init__ derives installed_skills_by_name from installed_skills."""
+        skills = [
+            {"name": "alpha", "summary": "A"},
+            {"name": "beta", "summary": "B"},
+        ]
+        ctx = _make_ctx(db, installed_skills=skills)
+        assert ctx.installed_skills_by_name == {
+            "alpha": {"name": "alpha", "summary": "A"},
+            "beta": {"name": "beta", "summary": "B"},
+        }
+
+    def test_empty_skills_gives_empty_dict(self, db):
+        ctx = _make_ctx(db, installed_skills=[])
+        assert ctx.installed_skills_by_name == {}
+
+    def test_missing_skill_returns_none(self, db):
+        """Dict lookup for unknown skill name returns None (not KeyError)."""
+        ctx = _make_ctx(db, installed_skills=[{"name": "echo", "summary": "x"}])
+        assert ctx.installed_skills_by_name.get("unknown") is None
