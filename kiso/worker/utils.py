@@ -100,7 +100,7 @@ async def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
     path = kiso_dir / "plan_outputs.json"
     content = json.dumps(plan_outputs, indent=2, ensure_ascii=False)
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, path.write_text, content)
+    await loop.run_in_executor(None, path.write_text, content, "utf-8")
 
 
 def _cleanup_plan_outputs(session: str) -> None:

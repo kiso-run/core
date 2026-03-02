@@ -7,6 +7,7 @@ import aiosqlite
 
 from kiso.store import (
     append_task_llm_call,
+    upsert_session,
     archive_low_confidence_facts,
     search_facts,
     count_messages,
@@ -92,6 +93,35 @@ async def test_create_session_idempotent(db: aiosqlite.Connection):
 
 async def test_get_session_missing(db: aiosqlite.Connection):
     assert await get_session(db, "nonexistent") is None
+
+
+# --- upsert_session (M89b) ---
+
+async def test_upsert_session_creates_new(db: aiosqlite.Connection):
+    """First upsert creates the session and returns created=True."""
+    sess, created = await upsert_session(db, "new-sess", connector="cli")
+    assert created is True
+    assert sess["session"] == "new-sess"
+    assert sess["connector"] == "cli"
+
+
+async def test_upsert_session_updates_existing(db: aiosqlite.Connection):
+    """Second upsert updates fields and returns created=False."""
+    await upsert_session(db, "sess1", connector="cli", webhook=None)
+    sess, created = await upsert_session(db, "sess1", connector="web", webhook="https://x.com")
+    assert created is False
+    assert sess["connector"] == "web"
+    assert sess["webhook"] == "https://x.com"
+
+
+async def test_upsert_session_created_flag_idempotent(db: aiosqlite.Connection):
+    """created=True only on first call, False on all subsequent calls."""
+    _, c1 = await upsert_session(db, "s", connector="a")
+    _, c2 = await upsert_session(db, "s", connector="b")
+    _, c3 = await upsert_session(db, "s", connector="c")
+    assert c1 is True
+    assert c2 is False
+    assert c3 is False
 
 
 async def test_save_message_returns_id(db: aiosqlite.Connection):
@@ -235,6 +265,47 @@ async def test_get_facts_returns_all(db: aiosqlite.Connection):
     assert len(facts) == 2
     assert facts[0]["content"] == "Fact 1"
     assert facts[1]["content"] == "Fact 2"
+
+
+async def test_get_facts_limit_caps_results(db: aiosqlite.Connection):
+    """M89c: limit parameter returns at most N facts (no-session path)."""
+    for i in range(5):
+        await db.execute("INSERT INTO facts (content, source) VALUES (?, ?)", (f"Fact {i}", "curator"))
+    await db.commit()
+    facts = await get_facts(db, limit=3)
+    assert len(facts) == 3
+
+
+async def test_get_facts_limit_with_session(db: aiosqlite.Connection):
+    """M89c: limit parameter works on the session-scoped query path."""
+    for i in range(5):
+        await db.execute(
+            "INSERT INTO facts (content, source, category, session) VALUES (?, ?, ?, ?)",
+            (f"Fact {i}", "curator", "general", "sess1"),
+        )
+    await db.commit()
+    facts = await get_facts(db, session="sess1", limit=2)
+    assert len(facts) == 2
+
+
+async def test_get_facts_limit_none_returns_all(db: aiosqlite.Connection):
+    """M89c: limit=None (default) returns all rows."""
+    for i in range(4):
+        await db.execute("INSERT INTO facts (content, source) VALUES (?, ?)", (f"Fact {i}", "curator"))
+    await db.commit()
+    facts = await get_facts(db, limit=None)
+    assert len(facts) == 4
+
+
+# --- idx_messages_user index (M89a) ---
+
+async def test_idx_messages_user_exists(db: aiosqlite.Connection):
+    """M89a: idx_messages_user index must be present in schema."""
+    cur = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_messages_user'"
+    )
+    row = await cur.fetchone()
+    assert row is not None, "idx_messages_user index missing from schema"
 
 
 # --- get_pending_items ---

@@ -40,8 +40,9 @@ CURATOR_VERDICTS: frozenset[str] = frozenset({
     CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
 })
 
-# Fact consolidation constants
+# Fact constants
 _MAX_CONSOLIDATION_ITEMS = 200
+_MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user"})
 
 
@@ -790,7 +791,7 @@ async def run_messenger(
     """
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
-    facts = await get_facts(db, session=session, limit=50)
+    facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
     )

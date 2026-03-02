@@ -395,28 +395,18 @@ async def get_facts(
     - project / tool / general facts are always global and returned unconditionally.
     - user-category facts are visible only in the session where they were created.
     - Admin users bypass all filtering and receive every fact.
-    - limit caps the number of rows returned (None = no cap).
+    - limit caps the number of rows returned (None = no cap, uses LIMIT -1 internally).
     """
+    limit_val = limit if limit is not None else -1
     if is_admin or session is None:
-        if limit is not None:
-            cur = await db.execute("SELECT * FROM facts ORDER BY id LIMIT ?", (limit,))
-        else:
-            cur = await db.execute("SELECT * FROM facts ORDER BY id")
+        cur = await db.execute("SELECT * FROM facts ORDER BY id LIMIT ?", (limit_val,))
     else:
-        if limit is not None:
-            cur = await db.execute(
-                "SELECT * FROM facts "
-                "WHERE category != 'user' OR session = ? "
-                "ORDER BY id LIMIT ?",
-                (session, limit),
-            )
-        else:
-            cur = await db.execute(
-                "SELECT * FROM facts "
-                "WHERE category != 'user' OR session = ? "
-                "ORDER BY id",
-                (session,),
-            )
+        cur = await db.execute(
+            "SELECT * FROM facts "
+            "WHERE category != 'user' OR session = ? "
+            "ORDER BY id LIMIT ?",
+            (session, limit_val),
+        )
     return await _rows_to_dicts(cur)
 
 
