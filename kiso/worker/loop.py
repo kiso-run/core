@@ -117,6 +117,12 @@ log = logging.getLogger(__name__)
 
 _MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
 
+# Task substatus labels written to the DB during execution
+_SUBSTATUS_TRANSLATING = "translating"
+_SUBSTATUS_EXECUTING   = "executing"
+_SUBSTATUS_REVIEWING   = "reviewing"
+_SUBSTATUS_COMPOSING   = "composing"
+
 
 async def _append_calls(
     db: aiosqlite.Connection, task_id: int, idx_before: int
@@ -347,7 +353,7 @@ async def _fast_path_chat(
     plan_id = await create_plan(db, session, msg_id, "Chat response")
     task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, content)
     await update_task(db, task_id, "running")
-    await update_task_substatus(db, task_id, "composing")
+    await update_task_substatus(db, task_id, _SUBSTATUS_COMPOSING)
 
     # Store classifier usage on the plan header
     classifier_usage = get_usage_since(0)
@@ -553,7 +559,7 @@ async def _run_review_step(
     error_str is the error message; on success, error_str is None.
     """
     task_id = task_row["id"]
-    await update_task_substatus(ctx.db, task_id, "reviewing")
+    await update_task_substatus(ctx.db, task_id, _SUBSTATUS_REVIEWING)
     idx = get_usage_index()
     try:
         review = await _review_task(
@@ -585,14 +591,14 @@ async def _handle_replan_task(
 
 
 async def _handle_msg_task(
-    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+    ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
     """Handle a msg task (messenger LLM → user-facing text)."""
     task_id = task_row["id"]
     detail = task_row["detail"]
     t0 = time.perf_counter()
     try:
-        await update_task_substatus(ctx.db, task_id, "composing")
+        await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
         _msg_timeout = setting_int(ctx.config.settings, "planner_timeout", lo=1)
         idx_msg = get_usage_index()
         try:
@@ -623,7 +629,6 @@ async def _handle_msg_task(
             "output": text,
             "status": "done",
         })
-        is_final = i == len(tasks) - 1
         await _deliver_webhook_if_configured(
             ctx.db, ctx.config, ctx.session, task_id, text, is_final,
             deploy_secrets=ctx.deploy_secrets,
@@ -646,7 +651,7 @@ async def _handle_msg_task(
 
 
 async def _handle_skill_task(
-    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+    ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
     """Handle a skill task (external subprocess via skill plugin)."""
     task_id = task_row["id"]
@@ -682,7 +687,7 @@ async def _handle_skill_task(
         return _TaskHandlerResult(stop=True, stop_success=False)
 
     _write_plan_outputs(ctx.session, ctx.plan_outputs)
-    await update_task_substatus(ctx.db, task_id, "executing")
+    await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
     stdout, stderr, success = await _skill_task(
         ctx.session, skill_info, args, ctx.plan_outputs,
         ctx.session_secrets, ctx.exec_timeout,
@@ -734,7 +739,7 @@ async def _handle_skill_task(
 
 
 async def _handle_exec_task(
-    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+    ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
     """Handle an exec task (shell command via translator + executor + reviewer)."""
     task_id = task_row["id"]
@@ -744,7 +749,7 @@ async def _handle_exec_task(
     retry_context = ""
     exec_retries = 0
     while True:
-        await update_task_substatus(ctx.db, task_id, "translating")
+        await update_task_substatus(ctx.db, task_id, _SUBSTATUS_TRANSLATING)
         sys_env = get_system_env(ctx.config)
         sys_env_text = build_system_env_section(sys_env, session=ctx.session)
         outputs_text = _format_plan_outputs_for_msg(ctx.plan_outputs)
@@ -770,7 +775,7 @@ async def _handle_exec_task(
         if ctx.slog:
             ctx.slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
 
-        await update_task_substatus(ctx.db, task_id, "executing")
+        await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
         stdout, stderr, success = await _exec_task(
             ctx.session, command, ctx.exec_timeout, sandbox_uid=ctx.sandbox_uid,
@@ -856,7 +861,7 @@ async def _handle_exec_task(
 
 
 async def _handle_search_task(
-    ctx: _PlanCtx, task_row: dict, i: int, tasks: list, usage_idx_before: int,
+    ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
     """Handle a search task (searcher LLM + reviewer)."""
     task_id = task_row["id"]
@@ -1066,7 +1071,7 @@ async def _execute_plan(
             _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
-        result = await handler(ctx, task_row, i, tasks, usage_idx_before)
+        result = await handler(ctx, task_row, i, i == len(tasks) - 1, usage_idx_before)
         if result.completed_row is not None:
             completed.append(result.completed_row)
 
