@@ -1996,6 +1996,18 @@ class TestWritePlanOutputs:
         assert path.exists()
         assert json.loads(path.read_text()) == []
 
+    async def test_non_ascii_content_written_as_utf8(self, tmp_path):
+        """M89d: non-ASCII content in plan outputs is preserved via utf-8 encoding."""
+        outputs = [{"index": 1, "type": "msg", "detail": "saluta", "output": "Héllo wörld — 日本語", "status": "done"}]
+        with _patch_kiso_dir(tmp_path):
+            await _write_plan_outputs("sess1", outputs)
+
+        path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
+        raw = path.read_bytes()
+        assert "Héllo wörld — 日本語".encode("utf-8") in raw
+        data = json.loads(raw.decode("utf-8"))
+        assert data[0]["output"] == "Héllo wörld — 日本語"
+
 
 # --- _cleanup_plan_outputs ---
 

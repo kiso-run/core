@@ -2799,3 +2799,13 @@ class TestM48WorkerNoSudo:
         """48f: rule must say not to add sudo unprompted."""
         prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "not add" in prompt.lower() or "do not add" in prompt.lower() or "never add" in prompt.lower()
+
+
+# --- M89c: _MAX_MESSENGER_FACTS constant ---
+
+
+class TestMessengerFactsConstant:
+    def test_max_messenger_facts_value(self):
+        """M89c: _MAX_MESSENGER_FACTS must equal 50 (messenger context cap)."""
+        from kiso.brain import _MAX_MESSENGER_FACTS
+        assert _MAX_MESSENGER_FACTS == 50
