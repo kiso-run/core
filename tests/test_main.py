@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import json
+import logging
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -180,6 +182,54 @@ class TestInitKisoDirs:
             _init_kiso_dirs()
             _init_kiso_dirs()
         assert (tmp_path / "sys" / "bin").is_dir()
+
+    # -- 87b: error paths --
+
+    def test_mkdir_oserror_logs_warning_and_returns(self, tmp_path, caplog):
+        """OSError on mkdir → warning logged, function returns without raising.
+
+        Guards the early-return path: if directory creation fails the function
+        must not crash the server startup sequence.
+        """
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("pathlib.Path.mkdir", side_effect=OSError("permission denied")):
+            with caplog.at_level(logging.WARNING, logger="kiso.main"):
+                _init_kiso_dirs()  # must not raise
+        assert "Failed to create kiso directories" in caplog.text
+
+    def test_sync_ref_pkg_error_logs_warning(self, tmp_path, caplog):
+        """OSError from importlib.resources → warning logged, function does not raise.
+
+        Guards the outer try/except around the entire reference-sync block.
+        Dirs are already created at this point; the error is non-fatal.
+        """
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("importlib.resources.files", side_effect=OSError("package not found")):
+            with caplog.at_level(logging.WARNING, logger="kiso.main"):
+                _init_kiso_dirs()  # must not raise
+        assert "Failed to sync reference docs" in caplog.text
+
+    def test_per_file_oserror_logged_and_continues(self, tmp_path, caplog):
+        """OSError on a single file read → per-file warning, function does not raise.
+
+        Guards the inner per-file try/except: a single unreadable file must not
+        abort the sync of the remaining files.
+        """
+        mock_file = MagicMock()
+        mock_file.name = "failing.md"
+        mock_file.read_text.side_effect = OSError("perm denied")
+
+        mock_ref_pkg = MagicMock()
+        mock_ref_pkg.iterdir.return_value = [mock_file]
+
+        mock_kiso_pkg = MagicMock()
+        mock_kiso_pkg.__truediv__ = MagicMock(return_value=mock_ref_pkg)
+
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("importlib.resources.files", return_value=mock_kiso_pkg):
+            with caplog.at_level(logging.WARNING, logger="kiso.main"):
+                _init_kiso_dirs()  # must not raise
+        assert "Failed to sync reference file failing.md" in caplog.text
 
 
 # --- Dockerfile entrypoint consistency ---

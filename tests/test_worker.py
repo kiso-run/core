@@ -7292,3 +7292,51 @@ class TestPlanCtxSkillsDict:
         """Dict lookup for unknown skill name returns None (not KeyError)."""
         ctx = _make_ctx(db, installed_skills=[{"name": "echo", "summary": "x"}])
         assert ctx.installed_skills_by_name.get("unknown") is None
+
+
+# ---------------------------------------------------------------------------
+# M87d: CancelledError re-raise in background coroutines
+# ---------------------------------------------------------------------------
+
+
+class TestCancelledErrorPropagation:
+    """Regression tests for M87d.
+
+    ``asyncio.CancelledError`` is a ``BaseException`` in Python 3.8+, so
+    ``except Exception`` would not catch it even without the explicit
+    ``except asyncio.CancelledError: raise``.  These tests guard against future
+    regressions where a broad handler is accidentally widened to
+    ``except BaseException``, which would silently swallow task cancellation
+    and leave workers in a stuck state.
+    """
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_cancelled_error_propagates_from_decay(self, db):
+        """CancelledError raised by decay_facts must propagate out of _post_plan_knowledge."""
+        with patch("kiso.worker.loop.decay_facts", side_effect=asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
+                await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
+
+    async def test_cancelled_error_propagates_from_archive(self, db):
+        """CancelledError raised by archive_low_confidence_facts must propagate."""
+        with patch("kiso.worker.loop.archive_low_confidence_facts",
+                   side_effect=asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
+                await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
+
+    async def test_cancelled_error_propagates_from_curator(self, db):
+        """CancelledError raised by run_curator must propagate, not be swallowed.
+
+        A learning is pre-inserted so that _run_curator proceeds past the
+        early-return guard and actually calls run_curator.
+        """
+        await save_learning(db, "a learning to process", "sess1")
+        with patch("kiso.worker.loop.run_curator", side_effect=asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
+                await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
