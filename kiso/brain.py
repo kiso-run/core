@@ -790,7 +790,7 @@ async def run_messenger(
     """
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
-    facts = await get_facts(db, session=session)
+    facts = await get_facts(db, session=session, limit=50)
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
     )

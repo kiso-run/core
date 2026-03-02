@@ -92,14 +92,15 @@ def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
     return workspace
 
 
-def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
+async def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
     """Write plan_outputs.json to the session workspace's .kiso/ directory."""
     workspace = _session_workspace(session)
     kiso_dir = workspace / ".kiso"
     kiso_dir.mkdir(exist_ok=True)
-    (kiso_dir / "plan_outputs.json").write_text(
-        json.dumps(plan_outputs, indent=2, ensure_ascii=False)
-    )
+    path = kiso_dir / "plan_outputs.json"
+    content = json.dumps(plan_outputs, indent=2, ensure_ascii=False)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, path.write_text, content)
 
 
 def _cleanup_plan_outputs(session: str) -> None:
@@ -110,8 +111,8 @@ def _cleanup_plan_outputs(session: str) -> None:
         outputs_file.unlink()
 
 
-def _ensure_sandbox_user(session: str) -> int | None:
-    """Create or reuse a per-session Linux user. Returns UID or None on failure."""
+def _ensure_sandbox_user_sync(session: str) -> int | None:
+    """Synchronous helper: create or reuse a per-session Linux user."""
     import hashlib
     import subprocess
 
@@ -131,6 +132,12 @@ def _ensure_sandbox_user(session: str) -> int | None:
     except (subprocess.CalledProcessError, KeyError, FileNotFoundError) as exc:
         log.warning("Cannot create sandbox user '%s': %s", username, exc)
         return None
+
+
+async def _ensure_sandbox_user(session: str) -> int | None:
+    """Create or reuse a per-session Linux user. Returns UID or None on failure."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _ensure_sandbox_user_sync, session)
 
 
 def _truncate_output(text: str, limit: int) -> str:

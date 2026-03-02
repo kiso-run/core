@@ -686,7 +686,7 @@ async def _handle_skill_task(
         )
         return _TaskHandlerResult(stop=True, stop_success=False)
 
-    _write_plan_outputs(ctx.session, ctx.plan_outputs)
+    await _write_plan_outputs(ctx.session, ctx.plan_outputs)
     await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
     stdout, stderr, success = await _skill_task(
         ctx.session, skill_info, args, ctx.plan_outputs,
@@ -744,7 +744,7 @@ async def _handle_exec_task(
     """Handle an exec task (shell command via translator + executor + reviewer)."""
     task_id = task_row["id"]
     detail = task_row["detail"]
-    _write_plan_outputs(ctx.session, ctx.plan_outputs)
+    await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
     retry_context = ""
     exec_retries = 0
@@ -815,7 +815,7 @@ async def _handle_exec_task(
             ctx.plan_outputs[-1] = plan_output_entry
         else:
             ctx.plan_outputs.append(plan_output_entry)
-        _write_plan_outputs(ctx.session, ctx.plan_outputs)
+        await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
         review, review_error = await _run_review_step(ctx, task_row)
         if review_error is not None:
@@ -1051,7 +1051,7 @@ async def _execute_plan(
             _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
-        sandbox_uid = _ensure_sandbox_user(session) if perm.role == "user" else None
+        sandbox_uid = await _ensure_sandbox_user(session) if perm.role == "user" else None
         if sandbox_uid is not None:
             _session_workspace(session, sandbox_uid=sandbox_uid)
         ctx.sandbox_uid = sandbox_uid

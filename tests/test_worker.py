@@ -1963,12 +1963,12 @@ class TestSaveLearning:
 # --- _write_plan_outputs ---
 
 class TestWritePlanOutputs:
-    def test_writes_json_file(self, tmp_path):
+    async def test_writes_json_file(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
             outputs = [
                 {"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"},
             ]
-            _write_plan_outputs("sess1", outputs)
+            await _write_plan_outputs("sess1", outputs)
 
         path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
         assert path.exists()
@@ -1976,10 +1976,10 @@ class TestWritePlanOutputs:
         assert len(data) == 1
         assert data[0]["output"] == "hi\n"
 
-    def test_overwrites_previous(self, tmp_path):
+    async def test_overwrites_previous(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "1", "status": "done"}])
-            _write_plan_outputs("sess1", [
+            await _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "1", "status": "done"}])
+            await _write_plan_outputs("sess1", [
                 {"index": 1, "type": "exec", "detail": "a", "output": "1", "status": "done"},
                 {"index": 2, "type": "exec", "detail": "b", "output": "2", "status": "done"},
             ])
@@ -1988,9 +1988,9 @@ class TestWritePlanOutputs:
         data = json.loads(path.read_text())
         assert len(data) == 2
 
-    def test_empty_outputs(self, tmp_path):
+    async def test_empty_outputs(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            _write_plan_outputs("sess1", [])
+            await _write_plan_outputs("sess1", [])
 
         path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
         assert path.exists()
@@ -2000,9 +2000,9 @@ class TestWritePlanOutputs:
 # --- _cleanup_plan_outputs ---
 
 class TestCleanupPlanOutputs:
-    def test_removes_file(self, tmp_path):
+    async def test_removes_file(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "x", "status": "done"}])
+            await _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "x", "status": "done"}])
             path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
             assert path.exists()
             _cleanup_plan_outputs("sess1")
@@ -3454,7 +3454,7 @@ class TestPermissionRevalidation:
 
 
 class TestPerSessionSandbox:
-    def test_ensure_sandbox_user_creates_user(self):
+    async def test_ensure_sandbox_user_creates_user(self):
         """When user doesn't exist, useradd is called and UID returned."""
         call_count = [0]
 
@@ -3467,30 +3467,30 @@ class TestPerSessionSandbox:
         with patch("kiso.worker.utils.pwd") as mock_pwd, \
              patch("subprocess.run") as mock_run:
             mock_pwd.getpwnam.side_effect = _getpwnam_side_effect
-            uid = _ensure_sandbox_user("test-session")
+            uid = await _ensure_sandbox_user("test-session")
 
         assert uid == 50001
         mock_run.assert_called_once()
         args = mock_run.call_args
         assert "useradd" in args[0][0]
 
-    def test_ensure_sandbox_user_reuses_existing(self):
+    async def test_ensure_sandbox_user_reuses_existing(self):
         """When user already exists, no useradd call is made."""
         with patch("kiso.worker.utils.pwd") as mock_pwd, \
              patch("subprocess.run") as mock_run:
             mock_pwd.getpwnam.return_value = type("pw", (), {"pw_uid": 50001})()
-            uid = _ensure_sandbox_user("test-session")
+            uid = await _ensure_sandbox_user("test-session")
 
         assert uid == 50001
         mock_run.assert_not_called()
 
-    def test_ensure_sandbox_user_creation_fails(self):
+    async def test_ensure_sandbox_user_creation_fails(self):
         """When useradd fails, returns None."""
         import subprocess
         with patch("kiso.worker.utils.pwd") as mock_pwd, \
              patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "useradd")):
             mock_pwd.getpwnam.side_effect = KeyError("no-user")
-            uid = _ensure_sandbox_user("test-session")
+            uid = await _ensure_sandbox_user("test-session")
 
         assert uid is None
 

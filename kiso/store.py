@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session, id);
 CREATE INDEX IF NOT EXISTS idx_messages_unprocessed ON messages(processed) WHERE processed = 0;
+CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user);
 
 CREATE TABLE IF NOT EXISTS plans (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,11 +255,8 @@ async def create_session(
     description: str | None = None,
 ) -> SessionDict:
     """Create a session if it doesn't exist (idempotent). Return session dict."""
-    existing = await get_session(db, session)
-    if existing:
-        return existing
     await db.execute(
-        "INSERT INTO sessions (session, connector, webhook, description) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO sessions (session, connector, webhook, description) VALUES (?, ?, ?, ?)",
         (session, connector, webhook, description),
     )
     await db.commit()
@@ -277,21 +275,19 @@ async def upsert_session(
     If session exists: update connector, webhook, description, updated_at.
     If not: insert new row.
     """
-    existing = await get_session(db, session)
-    if existing:
+    cur = await db.execute(
+        "INSERT OR IGNORE INTO sessions (session, connector, webhook, description) VALUES (?, ?, ?, ?)",
+        (session, connector, webhook, description),
+    )
+    created = cur.rowcount == 1
+    if not created:
         await db.execute(
             "UPDATE sessions SET connector = ?, webhook = ?, description = ?, "
             "updated_at = CURRENT_TIMESTAMP WHERE session = ?",
             (connector, webhook, description, session),
         )
-        await db.commit()
-        return (await get_session(db, session)), False  # type: ignore[return-value]
-    await db.execute(
-        "INSERT INTO sessions (session, connector, webhook, description) VALUES (?, ?, ?, ?)",
-        (session, connector, webhook, description),
-    )
     await db.commit()
-    return (await get_session(db, session)), True  # type: ignore[return-value]
+    return (await get_session(db, session)), created  # type: ignore[return-value]
 
 
 async def save_message(
@@ -392,22 +388,35 @@ async def get_facts(
     *,
     session: str | None = None,
     is_admin: bool = False,
+    limit: int | None = None,
 ) -> list[FactDict]:
     """Return facts filtered by session scope.
 
     - project / tool / general facts are always global and returned unconditionally.
     - user-category facts are visible only in the session where they were created.
     - Admin users bypass all filtering and receive every fact.
+    - limit caps the number of rows returned (None = no cap).
     """
     if is_admin or session is None:
-        cur = await db.execute("SELECT * FROM facts ORDER BY id")
+        if limit is not None:
+            cur = await db.execute("SELECT * FROM facts ORDER BY id LIMIT ?", (limit,))
+        else:
+            cur = await db.execute("SELECT * FROM facts ORDER BY id")
     else:
-        cur = await db.execute(
-            "SELECT * FROM facts "
-            "WHERE category != 'user' OR session = ? "
-            "ORDER BY id",
-            (session,),
-        )
+        if limit is not None:
+            cur = await db.execute(
+                "SELECT * FROM facts "
+                "WHERE category != 'user' OR session = ? "
+                "ORDER BY id LIMIT ?",
+                (session, limit),
+            )
+        else:
+            cur = await db.execute(
+                "SELECT * FROM facts "
+                "WHERE category != 'user' OR session = ? "
+                "ORDER BY id",
+                (session,),
+            )
     return await _rows_to_dicts(cur)
 
 
