@@ -244,6 +244,14 @@ def invalidate_prompt_cache() -> None:
     _prompt_cache.clear()
 
 
+def _build_messages(system_prompt: str, user_content: str) -> list[dict]:
+    """Assemble the canonical [system, user] message pair used by all LLM roles."""
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def validate_plan(
     plan: dict,
     installed_skills: list[str] | None = None,
@@ -416,10 +424,7 @@ async def build_planner_messages(
 
     context_block = "\n\n".join(context_parts)
 
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": context_block},
-    ], installed_names
+    return _build_messages(system_prompt, context_block), installed_names
 
 
 async def run_planner(
@@ -463,11 +468,7 @@ class ClassifierError(Exception):
 
 def build_classifier_messages(content: str) -> list[dict]:
     """Build the message list for the classifier LLM call."""
-    system_prompt = _load_system_prompt("classifier")
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": content},
-    ]
+    return _build_messages(_load_system_prompt("classifier"), content)
 
 
 async def classify_message(
@@ -530,10 +531,7 @@ def build_reviewer_messages(
         status_text = "succeeded (exit code 0)" if success else "FAILED (non-zero exit code)"
         context += f"\n\n## Command Status\n{status_text}"
 
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": context},
-    ]
+    return _build_messages(system_prompt, context)
 
 
 async def run_reviewer(
@@ -636,10 +634,7 @@ def build_curator_messages(learnings: list[dict]) -> list[dict]:
         f"{i}. [id={l['id']}] {l['content']}"
         for i, l in enumerate(learnings, 1)
     )
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"## Learnings\n{items}"},
-    ]
+    return _build_messages(system_prompt, f"## Learnings\n{items}")
 
 
 async def run_curator(config: Config, learnings: list[dict], session: str = "") -> dict:
@@ -677,10 +672,7 @@ def build_summarizer_messages(
     if current_summary:
         parts.append(f"## Current Summary\n{current_summary}")
     parts.append(f"## Messages\n{msgs_text}")
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n\n".join(parts)},
-    ]
+    return _build_messages(system_prompt, "\n\n".join(parts))
 
 
 async def run_summarizer(
@@ -714,10 +706,7 @@ def build_paraphraser_messages(messages: list[dict]) -> list[dict]:
         user = m.get("user") or "unknown"
         content = m.get("content", "")
         lines.append(f"[{user}]: {content}")
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n".join(lines)},
-    ]
+    return _build_messages(system_prompt, "\n".join(lines))
 
 
 async def run_paraphraser(config: Config, messages: list[dict], session: str = "") -> str:
@@ -777,11 +766,7 @@ def build_messenger_messages(
     if plan_outputs_text:
         context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
     context_parts.append(f"## Task\n{detail}")
-
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n\n".join(context_parts)},
-    ]
+    return _build_messages(system_prompt, "\n\n".join(context_parts))
 
 
 async def run_messenger(
@@ -845,10 +830,7 @@ def build_searcher_messages(
         parts.append("## Search Parameters\n" + "\n".join(params))
     if context:
         parts.append(f"## Context\n{context}")
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n\n".join(parts)},
-    ]
+    return _build_messages(system_prompt, "\n\n".join(parts))
 
 
 async def run_searcher(
@@ -894,11 +876,7 @@ def build_exec_translator_messages(
     if retry_context:
         context_parts.append(f"## Retry Context\n{retry_context}")
     context_parts.append(f"## Task\n{detail}")
-
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n\n".join(context_parts)},
-    ]
+    return _build_messages(system_prompt, "\n\n".join(context_parts))
 
 
 async def run_exec_translator(
