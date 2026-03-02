@@ -205,7 +205,7 @@ async def lifespan(app: FastAPI):
 
     # Graceful shutdown with timeout
     shutdown_timeout = int(config.settings["exec_timeout"])
-    for session, entry in _workers.items():
+    for session, entry in list(_workers.items()):
         entry.cancel_event.set()
     for session, entry in list(_workers.items()):
         try:

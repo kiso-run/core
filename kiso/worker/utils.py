@@ -143,6 +143,11 @@ def _truncate_output(text: str, limit: int) -> str:
 def _build_exec_env() -> dict[str, str]:
     """Build the exec subprocess environment.
 
+    The env dict is constructed from scratch (not via dict(os.environ)) so
+    dangerous loader variables like LD_PRELOAD, LD_LIBRARY_PATH, PYTHONPATH
+    are never inherited from the parent process. Only the vars explicitly
+    listed below are passed to the child:
+
     - PATH: prepend sys/bin if it exists
     - HOME: set to KISO_DIR (for tools that need ~)
     - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists

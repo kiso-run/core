@@ -202,6 +202,8 @@ async def _post_plan_knowledge(
             log.warning("Curator timed out after %ds", exec_timeout)
         except CuratorError as e:
             log.error("Curator failed: %s", e)
+        except Exception:
+            log.exception("Unexpected error in curator/apply phase for session=%s", session)
 
     async def _run_summarizer() -> None:
         msg_count = await count_messages(db, session)
@@ -690,7 +692,7 @@ async def _handle_skill_task(
         return _TaskHandlerResult(stop=True, stop_success=False)
 
     if review["status"] == "replan":
-        replan_reason = review["reason"]
+        replan_reason = review.get("reason", "")
         if ctx.slog:
             ctx.slog.info("Review → replan: %s", replan_reason)
         await _store_step_usage(ctx.db, task_id, usage_idx_before)
@@ -806,7 +808,7 @@ async def _handle_exec_task(
                                   task_id, exec_retries, ctx.max_worker_retries, retry_hint)
                 continue
 
-            replan_reason = review["reason"]
+            replan_reason = review.get("reason", "")
             log.info("Reviewer requests replan: %s", replan_reason)
             if ctx.slog:
                 if exec_retries > 0:
@@ -905,7 +907,7 @@ async def _handle_search_task(
                                   task_id, search_retries, ctx.max_worker_retries, retry_hint)
                 continue
 
-            replan_reason = review["reason"]
+            replan_reason = review.get("reason", "")
             if ctx.slog:
                 if search_retries > 0:
                     ctx.slog.info("Review → replan (retried %dx before escalating): %s",
@@ -1055,15 +1057,28 @@ async def _apply_curator_result(
 ) -> None:
     """Apply curator evaluations: promote facts, create pending questions, discard."""
     for ev in result.get("evaluations", []):
-        lid = ev["learning_id"]
-        verdict = ev["verdict"]
+        lid = ev.get("learning_id")
+        verdict = ev.get("verdict")
+        if lid is None or verdict is None:
+            log.warning("Curator evaluation missing learning_id or verdict, skipping: %s", ev)
+            continue
         if verdict == "promote":
+            fact_content = ev.get("fact")
+            if not fact_content:
+                log.warning("Curator promote verdict has no fact content for learning_id=%s", lid)
+                await update_learning(db, lid, "discarded")
+                continue
             category = ev.get("category") or "general"
             fact_session = session if category == "user" else None
-            await save_fact(db, ev["fact"], source="curator", session=fact_session, category=category)
+            await save_fact(db, fact_content, source="curator", session=fact_session, category=category)
             await update_learning(db, lid, "promoted")
         elif verdict == "ask":
-            await save_pending_item(db, ev["question"], scope=session, source="curator")
+            question = ev.get("question")
+            if not question:
+                log.warning("Curator ask verdict has no question for learning_id=%s", lid)
+                await update_learning(db, lid, "discarded")
+                continue
+            await save_pending_item(db, question, scope=session, source="curator")
             await update_learning(db, lid, "promoted")
         elif verdict == "discard":
             await update_learning(db, lid, "discarded")

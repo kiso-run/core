@@ -75,7 +75,11 @@ async def _retry_llm_with_validation(
         try:
             result = json.loads(_strip_fences(raw))
         except json.JSONDecodeError as e:
-            raise error_class(f"{error_noun} returned invalid JSON: {e}")
+            log.warning("%s returned invalid JSON (attempt %d/%d): %s",
+                        error_noun, attempt, max_retries, e)
+            last_errors = [f"returned invalid JSON — ensure the response is valid JSON: {e}"]
+            messages.append({"role": "assistant", "content": raw})
+            continue
 
         errors = validate_fn(result)
         if not errors:
@@ -241,8 +245,10 @@ def validate_plan(
             continue
         if t in ("exec", "skill", "search") and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
-        if t == "msg" and task.get("expect") is not None:
-            errors.append(f"Task {i}: msg task must have expect = null")
+        if t == "msg":
+            for field in ("expect", "skill", "args"):
+                if task.get(field) is not None:
+                    errors.append(f"Task {i}: msg task must have {field} = null")
         if t == "search":
             if task.get("skill") is not None:
                 errors.append(f"Task {i}: search task must have skill = null")
@@ -933,10 +939,14 @@ async def run_fact_consolidation(
     normalized: list[dict] = []
     for item in result:
         if isinstance(item, dict) and isinstance(item.get("content"), str):
+            try:
+                confidence = max(0.0, min(1.0, float(item.get("confidence", 1.0))))
+            except (ValueError, TypeError):
+                confidence = 1.0
             normalized.append({
                 "content": item["content"],
                 "category": item.get("category", "general"),
-                "confidence": max(0.0, min(1.0, float(item.get("confidence", 1.0)))),
+                "confidence": confidence,
             })
         elif isinstance(item, str):
             normalized.append({

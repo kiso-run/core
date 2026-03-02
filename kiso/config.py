@@ -290,6 +290,23 @@ def _build_config(path: Path, on_error) -> Config:
     settings = dict(SETTINGS_DEFAULTS)
     settings.update(settings_raw)
 
+    # Validate that overridden settings have the correct type
+    type_errors: list[str] = []
+    for key in settings_raw.keys() & SETTINGS_DEFAULTS.keys():
+        val = settings_raw[key]
+        default = SETTINGS_DEFAULTS[key]
+        # bool is a subclass of int — check it first to avoid false positives
+        if isinstance(default, bool):
+            if not isinstance(val, bool):
+                type_errors.append(f"{key}: expected bool, got {type(val).__name__}")
+        elif not isinstance(val, type(default)):
+            type_errors.append(f"{key}: expected {type(default).__name__}, got {type(val).__name__}")
+    if type_errors:
+        on_error(
+            f"[settings] type errors in {path}:\n"
+            + "\n".join(f"  {e}" for e in type_errors)
+        )
+
     return Config(
         tokens=tokens,
         providers=providers,

@@ -36,10 +36,13 @@ def run_user_command(args) -> None:
 
 
 def _read_raw(path: Path | None = None) -> dict:
-    """Read and parse config.toml. Returns the raw dict."""
+    """Read and parse config.toml. Returns the raw dict, or {} if the file doesn't exist."""
     p = path or CONFIG_PATH_DEFAULT
-    with open(p, "rb") as f:
-        return tomllib.load(f)
+    try:
+        with open(p, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        return {}
 
 
 def _write_raw(raw: dict, path: Path | None = None) -> None:

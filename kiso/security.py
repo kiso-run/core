@@ -32,18 +32,22 @@ class CommandDeniedError(Exception):
     """Raised when a command matches the deny list."""
 
 
-# Target patterns: bare /, ~, $HOME (with optional trailing /)
-_ROOT_TARGET = r"\s+(/\s*$|~\s*$|\$HOME\s*$)"
+# Target patterns: /, ~, $HOME (bare or with trailing /)
+_ROOT_TARGET = r"\s+(/\s*$|~/?\s*$|\$HOME/?\s*$)"
 
 DENY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\brm\s+.*-[^\s]*r[^\s]*f" + _ROOT_TARGET), "rm -rf targeting / or ~ or $HOME"),
     (re.compile(r"\brm\s+.*-[^\s]*f[^\s]*r" + _ROOT_TARGET), "rm -rf targeting / or ~ or $HOME"),
+    # rm -r without -f also dangerous when targeting root/home
+    (re.compile(r"\brm\s+.*-[^\s]*r\b" + _ROOT_TARGET), "rm -r targeting / or ~ or $HOME"),
     (re.compile(r"\bdd\s+.*\bif="), "dd if= (disk write)"),
     (re.compile(r"\bmkfs\b"), "mkfs (format filesystem)"),
     (re.compile(r"\bchmod\s+.*-R\s+777" + _ROOT_TARGET), "chmod -R 777 targeting / or ~ or $HOME"),
     (re.compile(r"\bchown\s+.*-R\b"), "chown -R (recursive ownership change)"),
     (re.compile(r"\b(shutdown|reboot)\b"), "shutdown/reboot"),
+    # Fork bomb: classic :(){ :|:& } and named-function variants
     (re.compile(r":\(\)\s*\{.*\|.*&"), "fork bomb"),
+    (re.compile(r"\b\w+\(\)\s*\{[^}]*\|\s*\w+[^}]*&"), "fork bomb (named function variant)"),
     (re.compile(r"base64.*\|\s*(sh|bash|zsh)"), "base64 decode piped to shell"),
     (re.compile(r"\bpython[23]?\s+-c\b"), "python one-liner execution"),
     (re.compile(r"\bperl\s+-e\b"), "perl one-liner execution"),

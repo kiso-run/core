@@ -420,7 +420,11 @@ def _msg_cmd(args: argparse.Namespace) -> None:
         ctx.client.close()
         sys.exit(1)
 
-    message_id = data["message_id"]
+    message_id = data.get("message_id")
+    if message_id is None:
+        print("error: server response missing message_id", file=sys.stderr)
+        ctx.client.close()
+        sys.exit(1)
 
     try:
         _poll_status(ctx.client, ctx.session, message_id, 0, quiet, False, ctx.caps, ctx.bot_name)
@@ -484,7 +488,10 @@ def _chat(args: argparse.Namespace) -> None:
                 print("warning: message was not trusted by the server.")
                 continue
 
-            message_id = data["message_id"]
+            message_id = data.get("message_id")
+            if message_id is None:
+                print("warning: server response missing message_id, skipping poll")
+                continue
 
             try:
                 last_task_id = _poll_status(
@@ -981,8 +988,8 @@ def _slash_status(client, session: str, caps: "TermCaps") -> None:  # noqa: F821
         resp = client.get(f"/sessions/{session}/info")
         resp.raise_for_status()
         info = resp.json()
-        print(f"  Session: {info['session']}")
-        print(f"  Messages: {info['message_count']}")
+        print(f"  Session: {info.get('session', session)}")
+        print(f"  Messages: {info.get('message_count', '?')}")
     except (httpx.HTTPError, httpx.ConnectError):
         print(f"  Session: {session} (info unavailable)")
 
