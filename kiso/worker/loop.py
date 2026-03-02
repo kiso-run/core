@@ -19,6 +19,15 @@ from kiso.security import (
     sanitize_output,
 )
 from kiso.brain import (
+    CURATOR_VERDICT_ASK,
+    CURATOR_VERDICT_DISCARD,
+    CURATOR_VERDICT_PROMOTE,
+    REVIEW_STATUS_REPLAN,
+    TASK_TYPE_EXEC,
+    TASK_TYPE_MSG,
+    TASK_TYPE_REPLAN,
+    TASK_TYPE_SEARCH,
+    TASK_TYPE_SKILL,
     ClassifierError,
     CuratorError,
     ExecTranslatorError,
@@ -105,6 +114,8 @@ from kiso.worker.exec import _exec_task
 from kiso.worker.skill import _skill_task
 
 log = logging.getLogger(__name__)
+
+_MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
 
 
 async def _append_calls(
@@ -328,7 +339,7 @@ async def _fast_path_chat(
     """
     deploy_secrets = collect_deploy_secrets()
     plan_id = await create_plan(db, session, msg_id, "Chat response")
-    task_id = await create_task(db, plan_id, session, "msg", content)
+    task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, content)
     await update_task(db, task_id, "running")
     await update_task_substatus(db, task_id, "composing")
 
@@ -365,7 +376,7 @@ async def _fast_path_chat(
         await update_task(db, task_id, "failed", output=error_text)
         await update_plan_status(db, plan_id, "failed")
         audit.log_task(
-            session, task_id, "msg", content, "failed", task_duration_ms, 0,
+            session, task_id, TASK_TYPE_MSG, content, "failed", task_duration_ms, 0,
             deploy_secrets=deploy_secrets,
         )
         await save_message(
@@ -379,7 +390,7 @@ async def _fast_path_chat(
     await update_plan_status(db, plan_id, "done")
 
     audit.log_task(
-        session, task_id, "msg", content, "done", task_duration_ms,
+        session, task_id, TASK_TYPE_MSG, content, "done", task_duration_ms,
         len(text), deploy_secrets=deploy_secrets,
     )
 
@@ -467,7 +478,7 @@ async def _review_task(
     has_learning = bool(learn_items)
     for item in learn_items:
         await save_learning(db, item, session)
-        log.info("Learning saved: %s", item[:100])
+        log.debug("Learning saved: %s", item[:100])
 
     audit.log_review(session, task_row.get("id", 0), review["status"], has_learning)
 
@@ -593,7 +604,7 @@ async def _handle_msg_task(
         await update_task(ctx.db, task_id, "done", output=text)
         task_row = {**task_row, "output": text, "status": "done"}
         audit.log_task(
-            ctx.session, task_id, "msg", detail, "done", task_duration_ms,
+            ctx.session, task_id, TASK_TYPE_MSG, detail, "done", task_duration_ms,
             len(text), deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
@@ -601,7 +612,7 @@ async def _handle_msg_task(
             ctx.slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
         ctx.plan_outputs.append({
             "index": i + 1,
-            "type": "msg",
+            "type": TASK_TYPE_MSG,
             "detail": detail,
             "output": text,
             "status": "done",
@@ -620,7 +631,7 @@ async def _handle_msg_task(
         log.error("Msg task %d messenger error: %s", task_id, e)
         await update_task(ctx.db, task_id, "failed", output=str(e))
         audit.log_task(
-            ctx.session, task_id, "msg", detail, "failed",
+            ctx.session, task_id, TASK_TYPE_MSG, detail, "failed",
             task_duration_ms, 0,
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
@@ -701,7 +712,7 @@ async def _handle_skill_task(
         await _store_step_usage(ctx.db, task_id, usage_idx_before)
         return _TaskHandlerResult(stop=True, stop_success=False)
 
-    if review["status"] == "replan":
+    if review["status"] == REVIEW_STATUS_REPLAN:
         replan_reason = review.get("reason", "")
         if ctx.slog:
             ctx.slog.info("Review → replan: %s", replan_reason)
@@ -801,7 +812,7 @@ async def _handle_exec_task(
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
             return _TaskHandlerResult(stop=True, stop_success=False)
 
-        if review["status"] == "replan":
+        if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
             if retry_hint and exec_retries < ctx.max_worker_retries:
                 exec_retries += 1
@@ -903,7 +914,7 @@ async def _handle_search_task(
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
             return _TaskHandlerResult(stop=True, stop_success=False)
 
-        if review["status"] == "replan":
+        if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
             if retry_hint and search_retries < ctx.max_worker_retries:
                 search_retries += 1
@@ -937,11 +948,11 @@ async def _handle_search_task(
 
 
 _TASK_HANDLERS: dict = {
-    "exec": _handle_exec_task,
-    "msg": _handle_msg_task,
-    "skill": _handle_skill_task,
-    "search": _handle_search_task,
-    "replan": _handle_replan_task,
+    TASK_TYPE_EXEC: _handle_exec_task,
+    TASK_TYPE_MSG: _handle_msg_task,
+    TASK_TYPE_SKILL: _handle_skill_task,
+    TASK_TYPE_SEARCH: _handle_search_task,
+    TASK_TYPE_REPLAN: _handle_replan_task,
 }
 
 
@@ -1072,7 +1083,7 @@ async def _apply_curator_result(
         if lid is None or verdict is None:
             log.warning("Curator evaluation missing learning_id or verdict, skipping: %s", ev)
             continue
-        if verdict == "promote":
+        if verdict == CURATOR_VERDICT_PROMOTE:
             fact_content = ev.get("fact")
             if not fact_content:
                 log.warning("Curator promote verdict has no fact content for learning_id=%s", lid)
@@ -1082,7 +1093,7 @@ async def _apply_curator_result(
             fact_session = session if category == "user" else None
             await save_fact(db, fact_content, source="curator", session=fact_session, category=category)
             await update_learning(db, lid, "promoted")
-        elif verdict == "ask":
+        elif verdict == CURATOR_VERDICT_ASK:
             question = ev.get("question")
             if not question:
                 log.warning("Curator ask verdict has no question for learning_id=%s", lid)
@@ -1090,7 +1101,7 @@ async def _apply_curator_result(
                 continue
             await save_pending_item(db, question, scope=session, source="curator")
             await update_learning(db, lid, "promoted")
-        elif verdict == "discard":
+        elif verdict == CURATOR_VERDICT_DISCARD:
             await update_learning(db, lid, "discarded")
 
 
@@ -1194,7 +1205,7 @@ async def _run_planning_loop(
                 cancel_text = await _msg_task(config, db, session, cancel_detail, goal=current_goal)
             except (LLMError, MessengerError):
                 cancel_text = cancel_detail
-            cancel_task_id = await create_task(db, current_plan_id, session, "msg", cancel_detail)
+            cancel_task_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, cancel_detail)
             await update_task(db, cancel_task_id, status="done", output=cancel_text)
             await save_message(db, session, None, "system", cancel_text, trusted=True, processed=True)
             await _deliver_webhook_if_configured(
@@ -1217,7 +1228,7 @@ async def _run_planning_loop(
                 fail_text = await _msg_task(config, db, session, fail_detail, goal=current_goal)
             except (LLMError, MessengerError):
                 fail_text = fail_detail
-            fail_task_id = await create_task(db, current_plan_id, session, "msg", fail_detail)
+            fail_task_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, fail_detail)
             await update_task(db, fail_task_id, status="done", output=fail_text)
             await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
             await _deliver_webhook_if_configured(
@@ -1245,7 +1256,7 @@ async def _run_planning_loop(
                 replan_text = await _msg_task(config, db, session, replan_detail, goal=current_goal)
             except (LLMError, MessengerError):
                 replan_text = replan_detail
-            replan_task_id = await create_task(db, current_plan_id, session, "msg", replan_detail)
+            replan_task_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, replan_detail)
             await update_task(db, replan_task_id, status="done", output=replan_text)
             await save_message(db, session, None, "system", replan_text, trusted=True, processed=True)
             await _deliver_webhook_if_configured(
@@ -1283,7 +1294,7 @@ async def _run_planning_loop(
                 f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
                 f"{replan_reason}"
             )
-        replan_notify_id = await create_task(db, current_plan_id, session, "msg", msg_text)
+        replan_notify_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, msg_text)
         await update_task(db, replan_notify_id, status="done", output=msg_text)
         await save_message(db, session, None, "system", msg_text, trusted=True, processed=True)
         await _deliver_webhook_if_configured(
@@ -1321,7 +1332,7 @@ async def _run_planning_loop(
                 fail_text = await _msg_task(config, db, session, fail_detail, goal=current_goal)
             except (LLMError, MessengerError):
                 fail_text = fail_detail
-            fail_task_id = await create_task(db, current_plan_id, session, "msg", fail_detail)
+            fail_task_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, fail_detail)
             await update_task(db, fail_task_id, status="done", output=fail_text)
             await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
             break
@@ -1335,7 +1346,7 @@ async def _run_planning_loop(
                 fail_text = await _msg_task(config, db, session, fail_detail, goal=current_goal)
             except (LLMError, MessengerError):
                 fail_text = fail_detail
-            fail_task_id = await create_task(db, current_plan_id, session, "msg", fail_detail)
+            fail_task_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, fail_detail)
             await update_task(db, fail_task_id, status="done", output=fail_text)
             await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
             break
@@ -1373,7 +1384,7 @@ async def _run_planning_loop(
         # Handle extend_replan: planner can request up to +3 extra attempts
         extend = new_plan.get("extend_replan")
         if extend and isinstance(extend, int) and extend > 0:
-            extend = min(extend, 3)  # cap at +3
+            extend = min(extend, _MAX_EXTEND_REPLAN)
             max_replan_depth += extend
             log.info("Planner requested %d extra replan attempts (new limit: %d)",
                      extend, max_replan_depth)
@@ -1461,7 +1472,7 @@ async def _process_message(
         log.error("Planner timed out after %ds for session=%s msg=%d", planner_timeout, session, msg_id)
         error_text = f"Planning timed out after {planner_timeout}s"
         fail_plan_id = await create_plan(db, session, msg_id, "Failed")
-        fail_task_id = await create_task(db, fail_plan_id, session, "msg", error_text)
+        fail_task_id = await create_task(db, fail_plan_id, session, TASK_TYPE_MSG, error_text)
         await update_task(db, fail_task_id, status="done", output=error_text)
         await update_plan_status(db, fail_plan_id, "failed")
         await save_message(db, session, None, "system", error_text, trusted=True, processed=True)
@@ -1475,7 +1486,7 @@ async def _process_message(
         error_text = f"Planning failed: {e}"
         # Create a failed plan + msg task so the CLI can detect the failure
         fail_plan_id = await create_plan(db, session, msg_id, "Failed")
-        fail_task_id = await create_task(db, fail_plan_id, session, "msg", error_text)
+        fail_task_id = await create_task(db, fail_plan_id, session, TASK_TYPE_MSG, error_text)
         await update_task(db, fail_task_id, status="done", output=error_text)
         await update_plan_status(db, fail_plan_id, "failed")
         await save_message(db, session, None, "system", error_text, trusted=True, processed=True)

@@ -188,7 +188,7 @@ class TestUserAdd:
                 _user_add(_args(username="INVALID USER!", role="admin", skills=None, alias=None))
 
         assert exc.value.code == 1
-        assert "invalid username" in capsys.readouterr().out
+        assert "invalid username" in capsys.readouterr().err
 
     def test_add_missing_role_rejected(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -202,7 +202,7 @@ class TestUserAdd:
                 _user_add(_args(username="bob", role=None, skills=None, alias=None))
 
         assert exc.value.code == 1
-        assert "--role" in capsys.readouterr().out
+        assert "--role" in capsys.readouterr().err
 
     def test_add_existing_user_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -216,7 +216,7 @@ class TestUserAdd:
                 _user_add(_args(username="boss", role="admin", skills=None, alias=None))
 
         assert exc.value.code == 1
-        assert "already exists" in capsys.readouterr().out
+        assert "already exists" in capsys.readouterr().err
 
     def test_add_user_without_skills_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -230,7 +230,7 @@ class TestUserAdd:
                 _user_add(_args(username="bob", role="user", skills=None, alias=None))
 
         assert exc.value.code == 1
-        assert "--skills" in capsys.readouterr().out
+        assert "--skills" in capsys.readouterr().err
 
     def test_add_bad_alias_format_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -247,7 +247,7 @@ class TestUserAdd:
                 ))
 
         assert exc.value.code == 1
-        assert "format" in capsys.readouterr().out
+        assert "format" in capsys.readouterr().err
 
     def test_add_empty_skills_segments_fails(self, tmp_path, capsys):
         """Skills like ',' or 'a,,b' produce empty segments and must be rejected."""
@@ -262,7 +262,7 @@ class TestUserAdd:
                 _user_add(_args(username="bob", role="user", skills=",", alias=None))
 
         assert exc.value.code == 1
-        assert "no valid skill" in capsys.readouterr().out
+        assert "no valid skill" in capsys.readouterr().err
 
     def test_add_strips_whitespace_from_skills(self, tmp_path):
         """Skills like 'a , b' are normalized to ['a', 'b']."""
@@ -335,7 +335,7 @@ class TestUserEdit:
                 _user_edit(_args(username="alice", role=None, skills=None))
 
         assert exc.value.code == 1
-        assert "at least one" in capsys.readouterr().out
+        assert "at least one" in capsys.readouterr().err
 
     def test_edit_nonexistent_user_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -349,7 +349,7 @@ class TestUserEdit:
                 _user_edit(_args(username="nobody", role="admin", skills=None))
 
         assert exc.value.code == 1
-        assert "does not exist" in capsys.readouterr().out
+        assert "does not exist" in capsys.readouterr().err
 
     def test_edit_demote_last_admin_fails(self, tmp_path, capsys):
         """Cannot demote the only admin to user."""
@@ -367,7 +367,7 @@ class TestUserEdit:
                 _user_edit(_args(username="boss", role="user", skills="*"))
 
         assert exc.value.code == 1
-        assert "last admin" in capsys.readouterr().out
+        assert "last admin" in capsys.readouterr().err
 
     def test_edit_demote_admin_when_another_exists(self, tmp_path):
         """Demoting admin when another admin exists is allowed."""
@@ -401,7 +401,7 @@ class TestUserEdit:
                 _user_edit(_args(username="bob", role="user", skills=None))
 
         assert exc.value.code == 1
-        assert "--skills" in capsys.readouterr().out
+        assert "--skills" in capsys.readouterr().err
 
     def test_edit_wildcard_skills(self, tmp_path):
         """--skills '*' is stored as the literal string '*', not a list."""
@@ -463,7 +463,7 @@ class TestUserRemove:
                 _user_remove(_args(username="nobody"))
 
         assert exc.value.code == 1
-        assert "does not exist" in capsys.readouterr().out
+        assert "does not exist" in capsys.readouterr().err
 
     def test_remove_last_admin_fails(self, tmp_path, capsys):
         """Removing the only admin is rejected to prevent lockout."""
@@ -481,7 +481,7 @@ class TestUserRemove:
                 _user_remove(_args(username="boss"))
 
         assert exc.value.code == 1
-        assert "last admin" in capsys.readouterr().out
+        assert "last admin" in capsys.readouterr().err
 
     def test_remove_non_last_admin_ok(self, tmp_path):
         """Removing an admin when another admin exists is allowed."""
@@ -580,7 +580,7 @@ class TestUserAlias:
                 ))
 
         assert exc.value.code == 1
-        assert "no alias" in capsys.readouterr().out
+        assert "no alias" in capsys.readouterr().err
 
     def test_alias_nonexistent_user_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -596,7 +596,7 @@ class TestUserAlias:
                 ))
 
         assert exc.value.code == 1
-        assert "does not exist" in capsys.readouterr().out
+        assert "does not exist" in capsys.readouterr().err
 
     def test_alias_missing_id_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -612,7 +612,7 @@ class TestUserAlias:
                 ))
 
         assert exc.value.code == 1
-        assert "--id" in capsys.readouterr().out
+        assert "--id" in capsys.readouterr().err
 
     def test_alias_invalid_connector_name_fails(self, tmp_path, capsys):
         """Connector names with special chars are rejected before writing config."""
@@ -629,7 +629,7 @@ class TestUserAlias:
                 ))
 
         assert exc.value.code == 1
-        assert "invalid connector" in capsys.readouterr().out
+        assert "invalid connector" in capsys.readouterr().err
 
 
 class TestRunUserCommandDispatch:

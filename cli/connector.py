@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import shutil
 import signal
@@ -22,6 +21,7 @@ from kiso.skills import check_deps
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
+    _list_plugins,
     _plugin_install,
     fetch_registry,
     is_repo_not_found,
@@ -30,8 +30,6 @@ from cli.plugin_ops import (
     search_entries,
     url_to_name,
 )
-
-log = logging.getLogger(__name__)
 
 OFFICIAL_PREFIX = "connector-"
 
@@ -206,18 +204,7 @@ def run_connector_command(args) -> None:
 
 def _connector_list(args) -> None:
     """List installed connectors."""
-    connectors = discover_connectors()
-    if not connectors:
-        print("No connectors installed.")
-        return
-
-    max_name = max(len(c["name"]) for c in connectors)
-    max_ver = max(len(c["version"]) for c in connectors)
-    for c in connectors:
-        name = c["name"].ljust(max_name)
-        ver = c["version"].ljust(max_ver)
-        desc = c.get("description", "")
-        print(f"  {name}  {ver}  — {desc}")
+    _list_plugins(discover_connectors, "connectors")
 
 
 def _connector_search(args) -> None:

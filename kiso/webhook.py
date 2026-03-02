@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 # Retry delays (seconds) for webhook delivery: 1s → 3s → 9s
 _WEBHOOK_BACKOFF = [1, 3, 9]
+_WEBHOOK_HTTP_TIMEOUT = 10.0
 
 
 def validate_webhook_url(
@@ -106,7 +107,7 @@ async def deliver_webhook(
 
     last_status = 0
 
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=_WEBHOOK_HTTP_TIMEOUT, follow_redirects=False) as client:
         for attempt, delay in enumerate(_WEBHOOK_BACKOFF):
             try:
                 resp = await client.post(url, content=raw_body, headers=headers)

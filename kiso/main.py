@@ -139,6 +139,54 @@ def _init_app_state(app: FastAPI, config, db) -> None:
     app.state.db = db
 
 
+async def _startup_recovery(db, config) -> None:
+    """Mark stale running plans/tasks as failed and re-enqueue unprocessed messages."""
+    from collections import defaultdict
+
+    # Mark stale running plans/tasks as failed
+    plans_recovered, tasks_recovered = await recover_stale_running(db)
+    if plans_recovered or tasks_recovered:
+        log.info(
+            "Startup recovery: %d stale plans, %d stale tasks marked failed",
+            plans_recovered, tasks_recovered,
+        )
+
+    # Re-enqueue unprocessed trusted messages
+    unprocessed = await get_unprocessed_trusted_messages(db)
+    if not unprocessed:
+        return
+
+    by_session: dict[str, list[dict]] = defaultdict(list)
+    for msg in unprocessed:
+        by_session[msg["session"]].append(msg)
+
+    recovered_count = 0
+    for sess_id, msgs in by_session.items():
+        queue = _ensure_worker(sess_id, db, config)
+        for msg in msgs:
+            # Re-resolve user role/skills from current config
+            resolved = resolve_user(config, msg["user"] or "", "")
+            user_role = resolved.user.role if resolved.user else "user"
+            user_skills = resolved.user.skills if resolved.user else None
+            try:
+                queue.put_nowait({
+                    "id": msg["id"],
+                    "content": msg["content"],
+                    "user_role": user_role,
+                    "user_skills": user_skills,
+                    "username": msg["user"],
+                })
+                recovered_count += 1
+            except asyncio.QueueFull:
+                log.warning(
+                    "Queue full for session=%s during startup recovery — "
+                    "message %d remains unprocessed in DB and will retry on next restart",
+                    sess_id, msg["id"],
+                )
+    if recovered_count:
+        log.info("Startup recovery: re-enqueued %d unprocessed messages", recovered_count)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -151,47 +199,7 @@ async def lifespan(app: FastAPI):
     db = await init_db(KISO_DIR / "store.db")
     _init_app_state(app, config, db)
 
-    # Startup recovery: mark stale running plans/tasks as failed
-    plans_recovered, tasks_recovered = await recover_stale_running(db)
-    if plans_recovered or tasks_recovered:
-        log.info(
-            "Startup recovery: %d stale plans, %d stale tasks marked failed",
-            plans_recovered, tasks_recovered,
-        )
-
-    # Startup recovery: re-enqueue unprocessed trusted messages
-    unprocessed = await get_unprocessed_trusted_messages(db)
-    if unprocessed:
-        from collections import defaultdict
-        by_session: dict[str, list[dict]] = defaultdict(list)
-        for msg in unprocessed:
-            by_session[msg["session"]].append(msg)
-
-        recovered_count = 0
-        for sess_id, msgs in by_session.items():
-            queue = _ensure_worker(sess_id, db, config)
-            for msg in msgs:
-                # Re-resolve user role/skills from current config
-                resolved = resolve_user(config, msg["user"] or "", "")
-                user_role = resolved.user.role if resolved.user else "user"
-                user_skills = resolved.user.skills if resolved.user else None
-                try:
-                    queue.put_nowait({
-                        "id": msg["id"],
-                        "content": msg["content"],
-                        "user_role": user_role,
-                        "user_skills": user_skills,
-                        "username": msg["user"],
-                    })
-                    recovered_count += 1
-                except asyncio.QueueFull:
-                    log.warning(
-                        "Queue full for session=%s during startup recovery — "
-                        "message %d remains unprocessed in DB and will retry on next restart",
-                        sess_id, msg["id"],
-                    )
-        if recovered_count:
-            log.info("Startup recovery: re-enqueued %d unprocessed messages", recovered_count)
+    await _startup_recovery(db, config)
 
     # Webhook secret length warning
     webhook_secret = config.settings["webhook_secret"]

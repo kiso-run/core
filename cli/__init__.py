@@ -63,7 +63,7 @@ def _setup_client_context(args: argparse.Namespace) -> _ClientContext:
     caps = detect_caps()
     token = cfg.tokens.get("cli")
     if not token:
-        print("error: no 'cli' token in config.toml")
+        print("error: no 'cli' token in config.toml", file=sys.stderr)
         sys.exit(1)
 
     user = args.user or getpass.getuser()
@@ -477,10 +477,10 @@ def _chat(args: argparse.Namespace) -> None:
                 )
                 resp.raise_for_status()
             except httpx.ConnectError:
-                print(f"error: cannot connect to {args.api}")
+                print(f"error: cannot connect to {args.api}", file=sys.stderr)
                 continue
             except httpx.HTTPStatusError as exc:
-                print(f"error: {exc.response.status_code} — {exc.response.text}")
+                print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
                 continue
 
             data = resp.json()
@@ -563,6 +563,110 @@ def _should_stop_polling(
     return False, failed_stable_polls
 
 
+def _render_msg_task(
+    task: dict,
+    quiet: bool,
+    verbose: bool,
+    caps,
+    bot_name: str,
+    state: _PollRenderState,
+    idx: int,
+    total: int,
+) -> None:
+    """Render a msg task: spinner when running, message output when done."""
+    from cli.render import (
+        render_llm_calls,
+        render_llm_calls_verbose,
+        render_msg_output,
+        render_separator,
+    )
+
+    status = task["status"]
+    output = task.get("output", "") or ""
+
+    if quiet:
+        if status == "done":
+            print(render_msg_output(output, caps, bot_name))
+            print(render_separator(caps))
+        return
+
+    if status == "done":
+        llm_detail = render_llm_calls(task.get("llm_calls"), caps)
+        if llm_detail:
+            print(llm_detail)
+        if verbose:
+            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+            if verbose_detail:
+                print(verbose_detail)
+        print(render_msg_output(output, caps, bot_name))
+        print(render_separator(caps))
+    elif status == "running":
+        state.active_spinner_task = task
+        state.active_spinner_index = idx
+        state.active_spinner_total = total
+
+
+def _render_other_task(
+    task: dict,
+    quiet: bool,
+    verbose: bool,
+    caps,
+    state: _PollRenderState,
+    idx: int,
+    total: int,
+) -> None:
+    """Render an exec/skill/search/replan task: header, output, review."""
+    from cli.render import (
+        render_command,
+        render_llm_calls_verbose,
+        render_review,
+        render_task_header,
+        render_task_output,
+    )
+
+    if quiet:
+        return
+
+    status = task["status"]
+    output = task.get("output", "") or ""
+
+    if state.seen_any_task:
+        print()
+    state.seen_any_task = True
+    print(render_task_header(task, idx, total, caps))
+
+    task_command = task.get("command")
+    if task_command:
+        print(render_command(task_command, caps))
+
+    if status in ("done", "failed"):
+        stderr_text = task.get("stderr", "") or ""
+        if status == "failed" and stderr_text:
+            display_output = f"{output}\n{stderr_text}".strip() if output else stderr_text
+        else:
+            display_output = output
+    else:
+        display_output = ""
+    if display_output:
+        out = render_task_output(display_output, caps)
+        if out:
+            print(out)
+
+    review_line = render_review(task, caps)
+    if review_line:
+        print(review_line)
+
+    if verbose and status in ("done", "failed"):
+        verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+        if verbose_detail:
+            print(verbose_detail)
+
+    if status == "running":
+        state.active_spinner_task = task
+        state.active_spinner_index = idx
+        state.active_spinner_total = total
+
+
 def _render_plan_status(
     data: dict,
     message_id: int,
@@ -581,16 +685,12 @@ def _render_plan_status(
 
     from cli.render import (
         CLEAR_LINE,
-        render_command,
         render_llm_calls,
         render_llm_calls_verbose,
-        render_msg_output,
         render_plan,
         render_plan_detail,
         render_review,
         render_separator,
-        render_task_header,
-        render_task_output,
     )
 
     plan = data.get("plan")
@@ -678,16 +778,10 @@ def _render_plan_status(
         # Clear spinner line before printing new content
         _clear_spinner()
 
-        if quiet:
-            if ttype == "msg" and status == "done":
-                print(render_msg_output(output, caps, bot_name))
-                print(render_separator(caps))
-            continue
-
         # If only review/llm_calls changed (status unchanged),
         # show just the review line without re-rendering the task
         if prev_status == status and prev_status is not None:
-            if ttype != "msg":
+            if not quiet and ttype != "msg":
                 review_line = render_review(task, caps)
                 if review_line:
                     print(review_line)
@@ -697,65 +791,11 @@ def _render_plan_status(
                         print(verbose_detail)
             continue
 
-        # Msg tasks: only show via render_msg_output when done
         if ttype == "msg":
-            if status == "done":
-                llm_detail = render_llm_calls(task.get("llm_calls"), caps)
-                if llm_detail:
-                    print(llm_detail)
-                if verbose:
-                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-                    if verbose_detail:
-                        print(verbose_detail)
-                print(render_msg_output(output, caps, bot_name))
-                print(render_separator(caps))
-            elif status == "running":
-                state.active_spinner_task = task
-                state.active_spinner_index = idx
-                state.active_spinner_total = total
+            _render_msg_task(task, quiet, verbose, caps, bot_name, state, idx, total)
             continue
 
-        # Print header for non-msg tasks (blank line between tasks)
-        if state.seen_any_task:
-            print()
-        state.seen_any_task = True
-        print(render_task_header(task, idx, total, caps))
-
-        # Show translated command for exec tasks
-        task_command = task.get("command")
-        if task_command:
-            print(render_command(task_command, caps))
-
-        # Show output for completed/failed tasks
-        if status in ("done", "failed"):
-            stderr_text = task.get("stderr", "") or ""
-            if status == "failed" and stderr_text:
-                display_output = f"{output}\n{stderr_text}".strip() if output else stderr_text
-            else:
-                display_output = output
-        else:
-            display_output = ""
-        if display_output:
-            out = render_task_output(display_output, caps)
-            if out:
-                print(out)
-
-        # Show review verdict for completed exec/skill tasks
-        review_line = render_review(task, caps)
-        if review_line:
-            print(review_line)
-
-        # Verbose LLM detail AFTER compact review summary
-        if verbose and status in ("done", "failed"):
-            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-            if verbose_detail:
-                print(verbose_detail)
-
-        # Track running task for spinner
-        if status == "running":
-            state.active_spinner_task = task
-            state.active_spinner_index = idx
-            state.active_spinner_total = total
+        _render_other_task(task, quiet, verbose, caps, state, idx, total)
 
     # Update planning_phase: spinner shown while worker is thinking but no
     # task is executing.
@@ -864,7 +904,7 @@ def _poll_status(
                         sys.stdout.flush()
                         state.spinner_active = False
                         state.at_col0 = True
-                    print("error: worker stopped without producing a result")
+                    print("error: worker stopped without producing a result", file=sys.stderr)
                     break
             else:
                 no_plan_since_worker_stopped = 0
@@ -876,7 +916,7 @@ def _poll_status(
                     sys.stdout.flush()
                     state.spinner_active = False
                     state.at_col0 = True
-                print("error: timed out waiting for response")
+                print("error: timed out waiting for response", file=sys.stderr)
                 break
 
         # Animate spinner on TTY

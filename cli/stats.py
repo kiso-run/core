@@ -3,45 +3,22 @@
 from __future__ import annotations
 
 import getpass
-import sys
+
+from cli._http import cli_get
 
 
 def run_stats_command(args) -> None:
     """Print token usage stats from the kiso server (admin only)."""
-    import httpx
-
-    from kiso.config import load_config
-
-    cfg = load_config()
-    token = cfg.tokens.get("cli")
-    if not token:
-        print("error: no 'cli' token in config.toml")
-        sys.exit(1)
-
     user = getpass.getuser()
-    since = getattr(args, "since", 30)
-    session = getattr(args, "session", None)
-    by = getattr(args, "by", "model")
+    since = args.since
+    session = args.session
+    by = args.by
 
     params: dict = {"user": user, "since": since, "by": by}
     if session:
         params["session"] = session
 
-    try:
-        resp = httpx.get(
-            f"{args.api}/admin/stats",
-            params=params,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-    except httpx.ConnectError:
-        print(f"error: cannot connect to {args.api}")
-        sys.exit(1)
-    except httpx.HTTPStatusError as exc:
-        print(f"error: {exc.response.status_code} — {exc.response.text}")
-        sys.exit(1)
-
+    resp = cli_get(args, "/admin/stats", params=params)
     print_stats(resp.json())
 
 

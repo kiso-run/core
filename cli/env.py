@@ -101,7 +101,7 @@ def _env_get(args) -> None:
             print(_parse_value(line))
             return
 
-    print(f"error: '{key}' not found")
+    print(f"error: '{key}' not found", file=sys.stderr)
     sys.exit(1)
 
 
@@ -129,7 +129,7 @@ def _env_delete(args) -> None:
     new_lines = [line for line in lines if _parse_key(line) != key]
 
     if len(new_lines) == len(lines):
-        print(f"error: '{key}' not found")
+        print(f"error: '{key}' not found", file=sys.stderr)
         sys.exit(1)
 
     _write_lines(new_lines)
@@ -140,33 +140,9 @@ def _env_reload(args) -> None:
     """Hot-reload .env into the running server."""
     require_admin()
 
-    import httpx
-
-    from kiso.config import load_config
-
-    cfg = load_config()
-    token = cfg.tokens.get("cli")
-    if not token:
-        print("error: no 'cli' token in config.toml")
-        sys.exit(1)
+    from cli._http import cli_post
 
     user = getpass.getuser()
-    api = args.api
-
-    try:
-        resp = httpx.post(
-            f"{api}/admin/reload-env",
-            params={"user": user},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-    except httpx.ConnectError:
-        print(f"error: cannot connect to {api}")
-        sys.exit(1)
-    except httpx.HTTPStatusError as exc:
-        print(f"error: {exc.response.status_code} — {exc.response.text}")
-        sys.exit(1)
-
+    resp = cli_post(args, "/admin/reload-env", params={"user": user})
     data = resp.json()
     print(f"Reloaded. {data.get('keys_loaded', 0)} keys loaded.")

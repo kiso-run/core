@@ -12,6 +12,7 @@ from kiso.config import KISO_DIR
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
+    _list_plugins,
     _plugin_install,
     fetch_registry,
     is_repo_not_found,
@@ -79,20 +80,7 @@ def run_skill_command(args) -> None:
 
 def _skill_list(args) -> None:
     """List installed skills."""
-    skills = discover_skills()
-    if not skills:
-        print("No skills installed.")
-        return
-
-    # Column-align by max name/version width
-    max_name = max(len(s["name"]) for s in skills)
-    max_ver = max(len(s["version"]) for s in skills)
-    for s in skills:
-        name = s["name"].ljust(max_name)
-        ver = s["version"].ljust(max_ver)
-        summary = s.get("summary", s.get("description", ""))
-        print(f"  {name}  {ver}  — {summary}")
-
+    _list_plugins(discover_skills, "skills")
 
 
 def _skill_search(args) -> None:

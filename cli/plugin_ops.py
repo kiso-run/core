@@ -252,3 +252,19 @@ def _plugin_install(
         if plugin_dir.exists():
             shutil.rmtree(plugin_dir, ignore_errors=True)
         sys.exit(1)
+
+
+def _list_plugins(discover_fn, item_type: str) -> None:
+    """List installed plugins (skills or connectors) in aligned columns."""
+    items = discover_fn()
+    if not items:
+        print(f"No {item_type} installed.")
+        return
+
+    max_name = max(len(item["name"]) for item in items)
+    max_ver = max(len(item["version"]) for item in items)
+    for item in items:
+        name = item["name"].ljust(max_name)
+        ver = item["version"].ljust(max_ver)
+        desc = item.get("summary", item.get("description", ""))
+        print(f"  {name}  {ver}  — {desc}")

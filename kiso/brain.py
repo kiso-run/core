@@ -17,6 +17,29 @@ from kiso.sysenv import get_system_env, build_system_env_section
 
 log = logging.getLogger(__name__)
 
+# Task type constants
+TASK_TYPE_EXEC = "exec"
+TASK_TYPE_MSG = "msg"
+TASK_TYPE_SKILL = "skill"
+TASK_TYPE_SEARCH = "search"
+TASK_TYPE_REPLAN = "replan"
+TASK_TYPES: frozenset[str] = frozenset({
+    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_SKILL, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
+})
+
+# Review status constants
+REVIEW_STATUS_OK = "ok"
+REVIEW_STATUS_REPLAN = "replan"
+REVIEW_STATUSES: frozenset[str] = frozenset({REVIEW_STATUS_OK, REVIEW_STATUS_REPLAN})
+
+# Curator verdict constants
+CURATOR_VERDICT_PROMOTE = "promote"
+CURATOR_VERDICT_ASK = "ask"
+CURATOR_VERDICT_DISCARD = "discard"
+CURATOR_VERDICTS: frozenset[str] = frozenset({
+    CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
+})
+
 
 def _strip_fences(text: str) -> str:
     """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
@@ -240,19 +263,19 @@ def validate_plan(
     replan_count = 0
     for i, task in enumerate(tasks, 1):
         t = task.get("type")
-        if t not in ("exec", "msg", "skill", "search", "replan"):
+        if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in ("exec", "skill", "search") and task.get("expect") is None:
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_SKILL, TASK_TYPE_SEARCH) and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
-        if t == "msg":
+        if t == TASK_TYPE_MSG:
             for field in ("expect", "skill", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
-        if t == "search":
+        if t == TASK_TYPE_SEARCH:
             if task.get("skill") is not None:
                 errors.append(f"Task {i}: search task must have skill = null")
-        if t == "replan":
+        if t == TASK_TYPE_REPLAN:
             replan_count += 1
             if task.get("expect") is not None:
                 errors.append(f"Task {i}: replan task must have expect = null")
@@ -262,7 +285,7 @@ def validate_plan(
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
                 errors.append(f"Task {i}: replan task can only be the last task")
-        if t == "skill":
+        if t == TASK_TYPE_SKILL:
             skill_name = task.get("skill")
             if not skill_name:
                 errors.append(f"Task {i}: skill task must have a non-null skill name")
@@ -273,7 +296,7 @@ def validate_plan(
         errors.append("A plan can have at most one replan task")
 
     last = tasks[-1]
-    if last.get("type") not in ("msg", "replan"):
+    if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")
 
     return errors
@@ -472,10 +495,10 @@ def validate_review(review: dict) -> list[str]:
     """Validate review semantics. Returns list of error strings."""
     errors: list[str] = []
     status = review.get("status")
-    if status not in ("ok", "replan"):
+    if status not in REVIEW_STATUSES:
         errors.append(f"status must be 'ok' or 'replan', got {status!r}")
         return errors
-    if status == "replan" and not review.get("reason"):
+    if status == REVIEW_STATUS_REPLAN and not review.get("reason"):
         errors.append("replan status requires a non-null, non-empty reason")
     return errors
 
@@ -591,13 +614,13 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
         verdict = ev.get("verdict")
         if not ev.get("reason"):
             errors.append(f"Evaluation {i}: reason is required")
-        if verdict == "promote" and not ev.get("fact"):
+        if verdict == CURATOR_VERDICT_PROMOTE and not ev.get("fact"):
             errors.append(f"Evaluation {i}: promote verdict requires a non-empty fact")
-        if verdict == "promote" and ev.get("category") is not None:
+        if verdict == CURATOR_VERDICT_PROMOTE and ev.get("category") is not None:
             valid_categories = {"project", "user", "tool", "general"}
             if ev["category"] not in valid_categories:
                 errors.append(f"Evaluation {i}: category must be one of {sorted(valid_categories)}")
-        if verdict == "ask" and not ev.get("question"):
+        if verdict == CURATOR_VERDICT_ASK and not ev.get("question"):
             errors.append(f"Evaluation {i}: ask verdict requires a non-empty question")
     return errors
 

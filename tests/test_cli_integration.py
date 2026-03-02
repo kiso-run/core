@@ -87,14 +87,14 @@ class TestIntegrationUserAdd:
         with pytest.raises(SystemExit) as exc:
             _run(["user", "add", "boss", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
-        assert "already exists" in capsys.readouterr().out
+        assert "already exists" in capsys.readouterr().err
 
     def test_add_invalid_username_fails(self, tmp_path, capsys):
         config_path = make_user_config(tmp_path)
         with pytest.raises(SystemExit) as exc:
             _run(["user", "add", "INVALID!", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
-        assert "invalid username" in capsys.readouterr().out
+        assert "invalid username" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ class TestIntegrationUserEdit:
         with pytest.raises(SystemExit) as exc:
             _run(["user", "edit", "nobody", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
-        assert "does not exist" in capsys.readouterr().out
+        assert "does not exist" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ class TestIntegrationUserRemove:
         with pytest.raises(SystemExit) as exc:
             _run(["user", "remove", "boss", "--no-reload"], config_path)
         assert exc.value.code == 1
-        assert "last admin" in capsys.readouterr().out
+        assert "last admin" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

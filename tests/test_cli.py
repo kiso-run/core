@@ -305,8 +305,8 @@ def test_chat_missing_cli_token(capsys):
     ):
         _chat(_make_args())
 
-    out = capsys.readouterr().out
-    assert "no 'cli' token" in out
+    err = capsys.readouterr().err
+    assert "no 'cli' token" in err
 
 
 def test_chat_default_session():
@@ -353,8 +353,8 @@ def test_chat_connection_error(capsys):
     ):
         _chat(_make_args())
 
-    out = capsys.readouterr().out
-    assert "cannot connect" in out
+    err = capsys.readouterr().err
+    assert "cannot connect" in err
 
 
 def test_chat_untrusted_message(capsys):
@@ -628,8 +628,8 @@ def test_poll_status_exits_when_worker_stopped(capsys, plain_caps):
     with patch("time.sleep"):
         _poll_status(mock_client, "sess", 99, 0, quiet=False, verbose=False, caps=plain_caps)
 
-    out = capsys.readouterr().out
-    assert "worker stopped" in out
+    err = capsys.readouterr().err
+    assert "worker stopped" in err
 
 
 def test_poll_status_ignores_plan_from_other_message(capsys, plain_caps):
@@ -870,8 +870,8 @@ def test_poll_status_timeout_exit(capsys, plain_caps):
     with patch("time.sleep"), patch("time.time", side_effect=fake_time):
         _poll_status(mock_client, "sess", 1, 0, quiet=False, verbose=False, caps=plain_caps)
 
-    out = capsys.readouterr().out
-    assert "timed out" in out
+    err = capsys.readouterr().err
+    assert "timed out" in err
 
 
 def test_poll_status_worker_grace_period(capsys, plain_caps):
@@ -893,8 +893,8 @@ def test_poll_status_worker_grace_period(capsys, plain_caps):
     with patch("time.sleep"):
         _poll_status(mock_client, "sess", 99, 0, quiet=False, verbose=False, caps=plain_caps)
 
-    out = capsys.readouterr().out
-    assert "worker stopped" in out
+    err = capsys.readouterr().err
+    assert "worker stopped" in err
     # At least 3 GET calls (one per poll cycle that checks)
     assert mock_client.get.call_count >= 3
 
@@ -1084,8 +1084,8 @@ def test_chat_http_status_error_on_msg_post(capsys):
     ):
         _chat(_make_args())
 
-    out = capsys.readouterr().out
-    assert "401" in out
+    err = capsys.readouterr().err
+    assert "401" in err
 
 
 def test_chat_empty_input_continues(capsys):

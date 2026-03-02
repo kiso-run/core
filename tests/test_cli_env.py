@@ -73,6 +73,12 @@ class TestParseValue:
     def test_empty_value(self):
         assert _parse_value("KEY=") == ""
 
+    def test_quoted_value_with_equals_inside(self):
+        assert _parse_value('KEY="a=b"') == "a=b"
+
+    def test_hash_in_value_not_a_comment(self):
+        assert _parse_value("KEY=val#notcomment") == "val#notcomment"
+
 
 # ── _read_lines / _write_lines ─────────────────────────
 
@@ -185,7 +191,7 @@ class TestEnvGet:
         ):
             run_env_command(_make_args("get", key="MISSING"))
 
-        assert "not found" in capsys.readouterr().out
+        assert "not found" in capsys.readouterr().err
 
     def test_empty_file_exits(self, tmp_path, capsys):
         env_file = tmp_path / ".env"
@@ -253,7 +259,7 @@ class TestEnvDelete:
         ):
             run_env_command(_make_args("delete", key="NOPE"))
 
-        assert "not found" in capsys.readouterr().out
+        assert "not found" in capsys.readouterr().err
 
 
 # ── env reload ──────────────────────────────────────────
@@ -269,12 +275,11 @@ class TestEnvReload:
     def test_successful_reload(self, capsys):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"reloaded": True, "keys_loaded": 5}
-        mock_resp.raise_for_status = MagicMock()
 
         with (
             _mock_admin(),
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.post", return_value=mock_resp),
+            patch("httpx.request", return_value=mock_resp),
             patch("getpass.getuser", return_value="admin"),
         ):
             run_env_command(_make_args("reload"))
@@ -291,19 +296,19 @@ class TestEnvReload:
         ):
             run_env_command(_make_args("reload"))
 
-        assert "no 'cli' token" in capsys.readouterr().out
+        assert "no 'cli' token" in capsys.readouterr().err
 
     def test_connection_error(self, capsys):
         with (
             _mock_admin(),
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.post", side_effect=httpx.ConnectError("refused")),
+            patch("httpx.request", side_effect=httpx.ConnectError("refused")),
             patch("getpass.getuser", return_value="admin"),
             pytest.raises(SystemExit, match="1"),
         ):
             run_env_command(_make_args("reload"))
 
-        assert "cannot connect" in capsys.readouterr().out
+        assert "cannot connect" in capsys.readouterr().err
 
     def test_http_error(self, capsys):
         mock_resp = MagicMock()
@@ -313,11 +318,11 @@ class TestEnvReload:
         with (
             _mock_admin(),
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.post", side_effect=httpx.HTTPStatusError(
+            patch("httpx.request", side_effect=httpx.HTTPStatusError(
                 "err", request=MagicMock(), response=mock_resp)),
             patch("getpass.getuser", return_value="admin"),
             pytest.raises(SystemExit, match="1"),
         ):
             run_env_command(_make_args("reload"))
 
-        assert "403" in capsys.readouterr().out
+        assert "403" in capsys.readouterr().err

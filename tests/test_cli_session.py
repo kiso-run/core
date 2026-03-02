@@ -81,17 +81,16 @@ class TestRunSessionsCommand:
         ):
             run_sessions_command(_make_args())
 
-        out = capsys.readouterr().out
-        assert "no 'cli' token" in out
+        err = capsys.readouterr().err
+        assert "no 'cli' token" in err
 
     def test_no_sessions(self, capsys):
         mock_resp = MagicMock()
         mock_resp.json.return_value = []
-        mock_resp.raise_for_status = MagicMock()
 
         with (
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.get", return_value=mock_resp),
+            patch("httpx.request", return_value=mock_resp),
             patch("getpass.getuser", return_value="alice"),
         ):
             run_sessions_command(_make_args())
@@ -111,11 +110,10 @@ class TestRunSessionsCommand:
             {"session": "dev-backend", "connector": None,
              "description": None, "updated_at": one_hour_ago},
         ]
-        mock_resp.raise_for_status = MagicMock()
 
         with (
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.get", return_value=mock_resp),
+            patch("httpx.request", return_value=mock_resp),
             patch("getpass.getuser", return_value="marco"),
         ):
             run_sessions_command(_make_args())
@@ -134,11 +132,10 @@ class TestRunSessionsCommand:
             {"session": "discord_dev", "connector": "discord",
              "description": None, "updated_at": now},
         ]
-        mock_resp.raise_for_status = MagicMock()
 
         with (
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.get", return_value=mock_resp),
+            patch("httpx.request", return_value=mock_resp),
             patch("getpass.getuser", return_value="admin"),
         ):
             run_sessions_command(_make_args(show_all=True))
@@ -150,29 +147,27 @@ class TestRunSessionsCommand:
     def test_passes_all_flag(self):
         mock_resp = MagicMock()
         mock_resp.json.return_value = []
-        mock_resp.raise_for_status = MagicMock()
 
         with (
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.get", return_value=mock_resp) as mock_get,
+            patch("httpx.request", return_value=mock_resp) as mock_req,
             patch("getpass.getuser", return_value="admin"),
         ):
             run_sessions_command(_make_args(show_all=True))
 
-        call_kwargs = mock_get.call_args
-        assert call_kwargs[1]["params"]["all"] == "true"
+        assert mock_req.call_args.kwargs["params"]["all"] == "true"
 
     def test_connection_error(self, capsys):
         with (
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.get", side_effect=httpx.ConnectError("refused")),
+            patch("httpx.request", side_effect=httpx.ConnectError("refused")),
             patch("getpass.getuser", return_value="alice"),
             pytest.raises(SystemExit, match="1"),
         ):
             run_sessions_command(_make_args())
 
-        out = capsys.readouterr().out
-        assert "cannot connect" in out
+        err = capsys.readouterr().err
+        assert "cannot connect" in err
 
     def test_http_error(self, capsys):
         mock_resp = MagicMock()
@@ -181,12 +176,12 @@ class TestRunSessionsCommand:
 
         with (
             patch("kiso.config.load_config", return_value=_mock_config()),
-            patch("httpx.get", side_effect=httpx.HTTPStatusError(
+            patch("httpx.request", side_effect=httpx.HTTPStatusError(
                 "err", request=MagicMock(), response=mock_resp)),
             patch("getpass.getuser", return_value="alice"),
             pytest.raises(SystemExit, match="1"),
         ):
             run_sessions_command(_make_args())
 
-        out = capsys.readouterr().out
-        assert "403" in out
+        err = capsys.readouterr().err
+        assert "403" in err

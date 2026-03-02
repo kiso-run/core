@@ -3,41 +3,17 @@
 from __future__ import annotations
 
 import getpass
-import sys
 from datetime import datetime, timezone
+
+from cli._http import cli_get
 
 
 def run_sessions_command(args) -> None:
     """List sessions from the kiso server."""
-    import httpx
-
-    from kiso.config import load_config
-
-    cfg = load_config()
-    token = cfg.tokens.get("cli")
-    if not token:
-        print("error: no 'cli' token in config.toml")
-        sys.exit(1)
-
     user = getpass.getuser()
-    api = args.api
-    show_all = getattr(args, "show_all", False)
+    show_all = args.show_all
 
-    try:
-        resp = httpx.get(
-            f"{api}/sessions",
-            params={"user": user, "all": str(show_all).lower()},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-    except httpx.ConnectError:
-        print(f"error: cannot connect to {api}")
-        sys.exit(1)
-    except httpx.HTTPStatusError as exc:
-        print(f"error: {exc.response.status_code} — {exc.response.text}")
-        sys.exit(1)
-
+    resp = cli_get(args, "/sessions", params={"user": user, "all": str(show_all).lower()})
     sessions = resp.json()
     if not sessions:
         print("No sessions found.")

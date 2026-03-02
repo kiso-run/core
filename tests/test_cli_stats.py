@@ -38,7 +38,7 @@ class TestRunStatsCommand:
 
         with (
             patch("kiso.config.load_config", return_value=_mock_cfg()),
-            patch("httpx.get", return_value=mock_resp),
+            patch("httpx.request", return_value=mock_resp),
             patch("cli.stats.print_stats") as mock_print,
         ):
             run_stats_command(_make_args())
@@ -53,18 +53,18 @@ class TestRunStatsCommand:
                 run_stats_command(_make_args())
 
         assert exc.value.code == 1
-        assert "no 'cli' token" in capsys.readouterr().out
+        assert "no 'cli' token" in capsys.readouterr().err
 
     def test_connect_error_exits(self, capsys):
         with (
             patch("kiso.config.load_config", return_value=_mock_cfg()),
-            patch("httpx.get", side_effect=httpx.ConnectError("refused")),
+            patch("httpx.request", side_effect=httpx.ConnectError("refused")),
         ):
             with pytest.raises(SystemExit) as exc:
                 run_stats_command(_make_args())
 
         assert exc.value.code == 1
-        assert "cannot connect" in capsys.readouterr().out
+        assert "cannot connect" in capsys.readouterr().err
 
     def test_http_error_exits(self, capsys):
         mock_resp = MagicMock()
@@ -72,7 +72,7 @@ class TestRunStatsCommand:
         mock_resp.text = "Forbidden"
         with (
             patch("kiso.config.load_config", return_value=_mock_cfg()),
-            patch("httpx.get", side_effect=httpx.HTTPStatusError(
+            patch("httpx.request", side_effect=httpx.HTTPStatusError(
                 "403", request=MagicMock(), response=mock_resp,
             )),
         ):
@@ -80,7 +80,7 @@ class TestRunStatsCommand:
                 run_stats_command(_make_args())
 
         assert exc.value.code == 1
-        assert "403" in capsys.readouterr().out
+        assert "403" in capsys.readouterr().err
 
     def test_session_filter_included_in_params(self):
         mock_resp = MagicMock()
@@ -88,12 +88,12 @@ class TestRunStatsCommand:
 
         with (
             patch("kiso.config.load_config", return_value=_mock_cfg()),
-            patch("httpx.get", return_value=mock_resp) as mock_get,
+            patch("httpx.request", return_value=mock_resp) as mock_req,
             patch("cli.stats.print_stats"),
         ):
             run_stats_command(_make_args(session="alice"))
 
-        assert mock_get.call_args.kwargs["params"]["session"] == "alice"
+        assert mock_req.call_args.kwargs["params"]["session"] == "alice"
 
     def test_no_session_filter_omitted_from_params(self):
         mock_resp = MagicMock()
@@ -101,9 +101,9 @@ class TestRunStatsCommand:
 
         with (
             patch("kiso.config.load_config", return_value=_mock_cfg()),
-            patch("httpx.get", return_value=mock_resp) as mock_get,
+            patch("httpx.request", return_value=mock_resp) as mock_req,
             patch("cli.stats.print_stats"),
         ):
             run_stats_command(_make_args(session=None))
 
-        assert "session" not in mock_get.call_args.kwargs["params"]
+        assert "session" not in mock_req.call_args.kwargs["params"]
