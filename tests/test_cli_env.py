@@ -274,7 +274,7 @@ def _mock_config(has_cli_token=True):
 class TestEnvReload:
     def test_successful_reload(self, capsys):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"reloaded": True, "keys_loaded": 5}
+        mock_resp.json.return_value = {"reloaded": True, "keys_applied": 5, "keys_skipped": 1}
 
         with (
             _mock_admin(),
@@ -286,7 +286,7 @@ class TestEnvReload:
 
         out = capsys.readouterr().out
         assert "Reloaded" in out
-        assert "5 keys" in out
+        assert "5 keys applied" in out
 
     def test_missing_cli_token(self, capsys):
         with (

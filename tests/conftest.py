@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 
 from kiso.config import load_config
-from kiso.main import app, _init_app_state
+from kiso.main import app, _init_app_state, _rate_limiter
 from kiso.store import init_db
 
 
@@ -110,6 +110,14 @@ webhook_max_payload       = 1048576
 
 AUTH_HEADER = {"Authorization": "Bearer test-secret-token"}
 DISCORD_AUTH_HEADER = {"Authorization": "Bearer discord-bot-token"}
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Clear rate-limiter state between tests to prevent interference."""
+    _rate_limiter.reset()
+    yield
+    _rate_limiter.reset()
 
 
 @pytest.fixture()

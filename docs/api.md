@@ -226,7 +226,8 @@ Hot-reloads deploy secrets from `~/.kiso/instances/{name}/.env` without restarti
 ```json
 {
   "reloaded": true,
-  "keys_loaded": 5
+  "keys_applied": 5,
+  "keys_skipped": 0
 }
 ```
 

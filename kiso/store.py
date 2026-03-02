@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session, id);
 CREATE INDEX IF NOT EXISTS idx_messages_unprocessed ON messages(processed) WHERE processed = 0;
 CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user);
+CREATE INDEX IF NOT EXISTS idx_messages_session_user ON messages(session, user);
 
 CREATE TABLE IF NOT EXISTS plans (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -337,6 +338,15 @@ async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list
         (username,),
     )
     return await _rows_to_dicts(cur)
+
+
+async def session_owned_by(db: aiosqlite.Connection, session: str, username: str) -> bool:
+    """Return True if *username* has posted at least one message in *session*."""
+    cur = await db.execute(
+        "SELECT 1 FROM messages WHERE session = ? AND user = ? LIMIT 1",
+        (session, username),
+    )
+    return await cur.fetchone() is not None
 
 
 async def get_all_sessions(db: aiosqlite.Connection) -> list[SessionDict]:

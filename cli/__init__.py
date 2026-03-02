@@ -427,7 +427,7 @@ def _msg_cmd(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        _poll_status(ctx.client, ctx.session, message_id, 0, quiet, False, ctx.caps, ctx.bot_name)
+        _poll_status(ctx.client, ctx.session, message_id, 0, quiet, False, ctx.caps, ctx.bot_name, user=ctx.user)
     except KeyboardInterrupt:
         try:
             ctx.client.post(f"/sessions/{ctx.session}/cancel")
@@ -496,7 +496,7 @@ def _chat(args: argparse.Namespace) -> None:
             try:
                 last_task_id = _poll_status(
                     ctx.client, ctx.session, message_id, last_task_id,
-                    args.quiet, _verbose_mode, ctx.caps, ctx.bot_name,
+                    args.quiet, _verbose_mode, ctx.caps, ctx.bot_name, user=ctx.user,
                 )
             except KeyboardInterrupt:
                 print(f"\n{render_cancel_start(ctx.caps)}")
@@ -827,6 +827,7 @@ def _poll_status(
     caps: "TermCaps",  # noqa: F821
     bot_name: str = "Bot",
     _at_col0: bool = True,
+    user: str = "",
 ) -> int:
     """Poll ``/status`` and render task progress to the terminal.
 
@@ -843,6 +844,9 @@ def _poll_status(
             function is called.  Pass ``False`` when the caller has printed
             text without a trailing newline (e.g. an inline prompt) so the
             spinner always opens on a fresh line instead of overwriting it.
+        user: username forwarded as the ``user`` query param to ``/status``.
+            Always pass an explicit value; the empty-string default is only
+            provided to avoid breaking legacy test call sites.
     """
     import time
 
@@ -868,7 +872,7 @@ def _poll_status(
             try:
                 resp = client.get(
                     f"/status/{session}",
-                    params={"after": base_task_id, "verbose": str(verbose).lower()},
+                    params={"after": base_task_id, "verbose": str(verbose).lower(), "user": user},
                 )
                 resp.raise_for_status()
             except Exception:
@@ -968,7 +972,7 @@ def _handle_slash(
         _slash_help(caps)
 
     elif cmd == "/status":
-        _slash_status(client, session, caps)
+        _slash_status(client, session, user, caps)
 
     elif cmd == "/sessions":
         _slash_sessions(client, user, caps)
@@ -1010,7 +1014,7 @@ def _slash_help(caps: "TermCaps") -> None:  # noqa: F821
     print(render_separator(caps))
 
 
-def _slash_status(client, session: str, caps: "TermCaps") -> None:  # noqa: F821
+def _slash_status(client, session: str, user: str, caps: "TermCaps") -> None:  # noqa: F821
     """Show server health, session message count, and worker state."""
     import httpx
 
@@ -1038,7 +1042,7 @@ def _slash_status(client, session: str, caps: "TermCaps") -> None:  # noqa: F821
 
     # Worker status
     try:
-        resp = client.get(f"/status/{session}")
+        resp = client.get(f"/status/{session}", params={"user": user})
         resp.raise_for_status()
         data = resp.json()
         running = "running" if data.get("worker_running") else "idle"

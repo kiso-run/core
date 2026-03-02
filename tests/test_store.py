@@ -7,6 +7,7 @@ import aiosqlite
 
 from kiso.store import (
     append_task_llm_call,
+    session_owned_by,
     upsert_session,
     archive_low_confidence_facts,
     search_facts,
@@ -306,6 +307,43 @@ async def test_idx_messages_user_exists(db: aiosqlite.Connection):
     )
     row = await cur.fetchone()
     assert row is not None, "idx_messages_user index missing from schema"
+
+
+async def test_idx_messages_session_user_exists(db: aiosqlite.Connection):
+    """M90: idx_messages_session_user composite index must be present in schema."""
+    cur = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_messages_session_user'"
+    )
+    row = await cur.fetchone()
+    assert row is not None, "idx_messages_session_user index missing from schema"
+
+
+# --- session_owned_by (M90c) ---
+
+
+async def test_session_owned_by_true_when_user_has_messages(db: aiosqlite.Connection):
+    """Returns True when the user has at least one message in the session."""
+    await create_session(db, "sess-a")
+    await save_message(db, "sess-a", "alice", "user", "hello", trusted=True, processed=True)
+    assert await session_owned_by(db, "sess-a", "alice") is True
+
+
+async def test_session_owned_by_false_when_no_messages(db: aiosqlite.Connection):
+    """Returns False when the user has no messages in the session."""
+    await create_session(db, "sess-b")
+    assert await session_owned_by(db, "sess-b", "alice") is False
+
+
+async def test_session_owned_by_false_for_different_user(db: aiosqlite.Connection):
+    """Returns False for a user who has not posted, even if another user has."""
+    await create_session(db, "sess-c")
+    await save_message(db, "sess-c", "alice", "user", "hi", trusted=True, processed=True)
+    assert await session_owned_by(db, "sess-c", "bob") is False
+
+
+async def test_session_owned_by_false_for_nonexistent_session(db: aiosqlite.Connection):
+    """Returns False for a session that does not exist at all."""
+    assert await session_owned_by(db, "no-such-session", "alice") is False
 
 
 # --- get_pending_items ---

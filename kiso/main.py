@@ -8,6 +8,7 @@ import logging
 import mimetypes
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import NamedTuple
@@ -32,6 +33,7 @@ from kiso.store import (
     get_session,
     get_sessions_for_user,
     get_tasks_for_session,
+    session_owned_by,
     get_unprocessed_trusted_messages,
     init_db,
     recover_stale_running,
@@ -44,6 +46,40 @@ from kiso.worker import run_worker
 log = logging.getLogger(__name__)
 
 SESSION_RE = re.compile(r"^[a-zA-Z0-9_@.\-]{1,255}$")
+
+# Allowed prefixes for /admin/reload-env; all other keys are skipped.
+_ENV_KEY_PREFIXES = ("KISO_", "OPENAI_", "ANTHROPIC_", "OLLAMA_")
+_ENV_VALUE_MAX_LEN = 1024
+
+
+class _RateLimiter:
+    """Token-bucket rate limiter backed by asyncio.Lock (no external deps)."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        # key → (tokens, last_refill_monotonic)
+        self._buckets: dict[str, tuple[float, float]] = {}
+
+    def reset(self) -> None:
+        """Clear all bucket state (used in tests)."""
+        self._buckets.clear()
+
+    async def check(self, key: str, limit: int, window: float = 60.0) -> bool:
+        """Return True if the request is allowed, False if rate-limited."""
+        now = time.monotonic()
+        async with self._lock:
+            tokens, last = self._buckets.get(key, (float(limit), now))
+            elapsed = now - last
+            tokens = min(float(limit), tokens + elapsed * (limit / window))
+            if tokens < 1.0:
+                self._buckets[key] = (tokens, now)
+                return False
+            tokens -= 1.0
+            self._buckets[key] = (tokens, now)
+            return True
+
+
+_rate_limiter = _RateLimiter()
 
 
 class WorkerEntry(NamedTuple):
@@ -257,6 +293,10 @@ async def health():
 @app.get("/pub/{token}/{filename:path}")
 async def get_pub(token: str, filename: str, request: Request):
     """Serve a file from a session's pub/ directory. No authentication required."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not await _rate_limiter.check(f"pub:{client_ip}", limit=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     config = request.app.state.config
     session = resolve_pub_token(token, config)
     if session is None:
@@ -318,6 +358,9 @@ async def post_msg(
     if not SESSION_RE.match(body.session):
         raise HTTPException(status_code=400, detail="Invalid session ID")
 
+    if not await _rate_limiter.check(f"msg:{body.user}", limit=20):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     db = request.app.state.db
     config = request.app.state.config
     resolved = resolve_user(config, body.user, auth.token_name)
@@ -360,10 +403,17 @@ async def get_status(
     session: str,
     request: Request,
     auth: AuthInfo = Depends(require_auth),
+    user: str = Query(...),
     after: int = Query(0),
     verbose: bool = Query(False),
 ):
     db = request.app.state.db
+    config = request.app.state.config
+    resolved = resolve_user(config, user, auth.token_name)
+    is_admin = resolved.trusted and resolved.user and resolved.user.role == "admin"
+    if not is_admin and not await session_owned_by(db, session, resolved.username):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     tasks = await get_tasks_for_session(db, session, after=after)
     plan = await get_plan_for_session(db, session)
 
@@ -443,6 +493,9 @@ async def post_cancel(
     if not SESSION_RE.match(session):
         raise HTTPException(status_code=400, detail="Invalid session ID")
 
+    if not await _rate_limiter.check(f"cancel:{session}", limit=20):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     db = request.app.state.db
 
     entry = _workers.get(session)
@@ -474,6 +527,8 @@ async def get_stats(
     resolved = resolve_user(config, user, auth.token_name)
     if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    if not await _rate_limiter.check(f"admin:{user}", limit=5):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
     if by not in ("model", "session", "role"):
         raise HTTPException(status_code=400, detail="by must be model, session, or role")
 
@@ -513,6 +568,8 @@ async def post_reload_config(
     resolved = resolve_user(config, user, auth.token_name)
     if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    if not await _rate_limiter.check(f"admin:{user}", limit=5):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
     try:
         new_config = reload_config()
         request.app.state.config = new_config
@@ -533,9 +590,22 @@ async def post_reload_env(
 
     if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    if not await _rate_limiter.check(f"admin:{user}", limit=5):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
     env_vars = _load_env_file(KISO_DIR / ".env")
+    applied = 0
+    skipped = 0
     for key, value in env_vars.items():
+        if not any(key.startswith(p) for p in _ENV_KEY_PREFIXES):
+            skipped += 1
+            continue
+        if len(value) > _ENV_VALUE_MAX_LEN or "\n" in value or "\r" in value:
+            skipped += 1
+            continue
         os.environ[key] = value
+        log.info("reload-env: applied %s", key)
+        applied += 1
 
-    return {"reloaded": True, "keys_loaded": len(env_vars)}
+    log.info("reload-env: %d applied, %d skipped", applied, skipped)
+    return {"reloaded": True, "keys_applied": applied, "keys_skipped": skipped}

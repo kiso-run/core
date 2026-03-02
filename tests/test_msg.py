@@ -56,7 +56,7 @@ async def test_implicit_session_create(client: httpx.AsyncClient):
     }, headers=AUTH_HEADER)
     assert resp.status_code == 202
     # session should now be accessible via /status
-    status_resp = await client.get("/status/new-sess", headers=AUTH_HEADER)
+    status_resp = await client.get("/status/new-sess", params={"user": "testadmin"}, headers=AUTH_HEADER)
     assert status_resp.status_code == 200
 
 

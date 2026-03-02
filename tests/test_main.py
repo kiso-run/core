@@ -93,7 +93,7 @@ async def test_status_default_strips_verbose_fields(client: httpx.AsyncClient):
     """GET /status/{session} default strips messages/response from llm_calls."""
     session = await _seed_status_data(client)
 
-    resp = await client.get(f"/status/{session}", headers=AUTH_HEADER)
+    resp = await client.get(f"/status/{session}", params={"user": "testadmin"}, headers=AUTH_HEADER)
     assert resp.status_code == 200
     data = resp.json()
 
@@ -119,7 +119,7 @@ async def test_status_verbose_includes_verbose_fields(client: httpx.AsyncClient)
     session = await _seed_status_data(client)
 
     resp = await client.get(
-        f"/status/{session}", params={"verbose": "true"}, headers=AUTH_HEADER
+        f"/status/{session}", params={"user": "testadmin", "verbose": "true"}, headers=AUTH_HEADER
     )
     assert resp.status_code == 200
     data = resp.json()
