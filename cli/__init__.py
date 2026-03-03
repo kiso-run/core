@@ -699,6 +699,7 @@ def _render_plan_status(
     from cli.render import (
         CLEAR_LINE,
         render_llm_calls,
+        render_llm_calls_verbose,
         render_plan,
         render_plan_detail,
         render_review,

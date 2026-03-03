@@ -2609,3 +2609,29 @@ def test_poll_verbose_replan_resets_shown(capsys, plain_caps):
     # Both verbose panels appear (replan reset prevents dedup from skipping the second)
     assert "first plan call" in out
     assert "replan call" in out
+
+
+class TestPlanLevelVerbose:
+    """Plan-level verbose rendering (llm_calls on the plan object itself)."""
+
+    def test_plan_verbose_calls_rendered(self, capsys):
+        """verbose=True + plan with llm_calls → render_llm_calls_verbose is called."""
+        import json as _json
+        from cli.render import TermCaps
+        caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+        plan = {
+            "id": 1, "message_id": 1, "status": "running", "goal": "g",
+            "llm_calls": _json.dumps([{
+                "role": "planner", "model": "gpt-4", "input_tokens": 100,
+                "output_tokens": 50, "messages": [
+                    {"role": "user", "content": "plan this"},
+                    {"role": "assistant", "content": "ok"},
+                ],
+            }]),
+        }
+        data = {"plan": plan, "tasks": [], "worker_running": True}
+        state = _PollRenderState(seen={}, verbose_shown={})
+        _render_plan_status(data, 1, False, True, caps, "Bot", state)
+        out = capsys.readouterr().out
+        assert "planner" in out
+        assert "plan this" in out
