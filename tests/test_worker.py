@@ -6814,6 +6814,7 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_skills=None) -> _Pla
         session_secrets={},
         max_output_size=1024 * 1024,
         max_worker_retries=1,
+        messenger_timeout=30,
         installed_skills=installed_skills or [],
         slog=None,
         sandbox_uid=None,
@@ -7202,7 +7203,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", msg_id, "hello",
-                plan_id, plan, "admin", None, 5,
+                plan_id, plan, "admin", None, 5, 30,
                 {}, None, 10, 3, None, None,
             )
 
@@ -7231,7 +7232,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 5,
+                plan_id, plan, "admin", None, 5, 30,
                 {}, None, 10, 3, None, None,
             )
 
@@ -7548,3 +7549,169 @@ class TestCancelledErrorPropagation:
         with patch("kiso.worker.loop.run_curator", side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
                 await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
+
+
+# ---------------------------------------------------------------------------
+# M92a: no local imports in loop.py
+# ---------------------------------------------------------------------------
+
+
+class TestNoLocalImports:
+    """M92a: verify deferred imports were hoisted to module level."""
+
+    def test_no_local_sysenv_import_in_loop(self):
+        """from kiso.sysenv import invalidate_cache must not appear inside a function body."""
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "kiso" / "worker" / "loop.py").read_text()
+        # Find all occurrences after 'def ' or 'async def '
+        import re
+        # Check that no 'from kiso.sysenv import' appears indented (inside a function)
+        for line in src.splitlines():
+            if "from kiso.sysenv import" in line:
+                assert not line.startswith("    "), (
+                    f"Found local 'from kiso.sysenv import' inside function: {line!r}"
+                )
+
+    def test_no_local_stats_import_in_main(self):
+        """from kiso.stats import must not appear inside a function body in main.py."""
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "kiso" / "main.py").read_text()
+        for line in src.splitlines():
+            if "from kiso.stats import" in line:
+                assert not line.startswith("    "), (
+                    f"Found local 'from kiso.stats import' inside function: {line!r}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# M92c: pre-replan cancel sends cancel message and clears event
+# ---------------------------------------------------------------------------
+
+
+class TestPreReplanCancelFix:
+    """M92c: cancel_event set between replan attempts must call _handle_loop_cancel."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_cancel_between_replans_saves_system_message(self, db, tmp_path):
+        """When cancel fires after the replan notification is saved (but before the second
+        planner call), a system cancel message is saved and cancel_event is cleared."""
+        config = _make_config()
+        msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
+
+        cancel_event = asyncio.Event()
+
+        fail_plan = {
+            "goal": "Fail then cancel",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
+            ],
+        }
+
+        # Set cancel_event when the replan notification is persisted so it fires
+        # at the pre-replan cancel check (line 1357 in loop.py), before the second
+        # planner call.
+        async def _save_and_maybe_cancel(db, session, user, role, content, **kwargs):
+            result = await save_message(db, session, user, role, content, **kwargs)
+            if role == "system" and "Replanning" in (content or ""):
+                cancel_event.set()
+            return result
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
+
+        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=fail_plan), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                   return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.loop.save_message", side_effect=_save_and_maybe_cancel), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
+                timeout=10,
+            )
+
+        # Plan should be cancelled
+        cur = await db.execute("SELECT status FROM plans WHERE session = 'sess1' ORDER BY id")
+        rows = await cur.fetchall()
+        assert rows[0]["status"] == "cancelled"
+
+        # A system message should have been saved (cancel summary)
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        system_msgs = [r["content"] for r in await cur.fetchall()]
+        assert len(system_msgs) > 0
+
+        # cancel_event must be cleared
+        assert not cancel_event.is_set()
+
+
+# ---------------------------------------------------------------------------
+# M92d: messenger_timeout config setting
+# ---------------------------------------------------------------------------
+
+
+class TestMessengerTimeout:
+    """M92d: messenger_timeout config key controls msg task timeout independently."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_fast_path_uses_messenger_timeout(self, db, tmp_path):
+        """_fast_path_chat records the timeout duration (1s) in the failed task output."""
+        from kiso.worker.loop import _fast_path_chat
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
+
+        async def _slow_messenger(*args, **kwargs):
+            await asyncio.sleep(10)
+            return "too slow"
+
+        config = _make_config()
+
+        with patch("kiso.worker.loop._msg_task", side_effect=_slow_messenger), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(
+                _fast_path_chat(db, config, "sess1", msg_id, "hi", messenger_timeout=1),
+                timeout=5,
+            )
+
+        # _fast_path_chat catches MessengerError internally and records it in the task output
+        cur = await db.execute("SELECT output FROM tasks WHERE status = 'failed'")
+        row = await cur.fetchone()
+        assert row is not None
+        assert "1s" in (row["output"] or "")
+
+    async def test_handle_msg_task_uses_ctx_messenger_timeout(self, db, plan_id, tmp_path):
+        """_handle_msg_task times out according to ctx.messenger_timeout."""
+        task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
+        ctx = _make_ctx(db)
+        ctx.messenger_timeout = 1  # very short
+
+        async def _slow_llm(*args, **kwargs):
+            await asyncio.sleep(10)
+            return "too slow"
+
+        with patch("kiso.brain.call_llm", side_effect=_slow_llm), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_msg_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+
+    @pytest.fixture()
+    async def plan_id(self, db):
+        pid = await create_plan(db, "sess1", 0, "Test plan")
+        yield pid

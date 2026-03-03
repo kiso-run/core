@@ -2809,3 +2809,58 @@ class TestMessengerFactsConstant:
         """M89c: _MAX_MESSENGER_FACTS must equal 50 (messenger context cap)."""
         from kiso.brain import _MAX_MESSENGER_FACTS
         assert _MAX_MESSENGER_FACTS == 50
+
+
+# --- M92b: _group_facts_by_category ---
+
+
+class TestGroupFactsByCategory:
+    """Unit tests for the extracted _group_facts_by_category helper (M92b)."""
+
+    def _fact(self, content, category="general", session=None):
+        return {"content": content, "category": category, "session": session}
+
+    def test_empty_returns_empty_list(self):
+        from kiso.brain import _group_facts_by_category
+        assert _group_facts_by_category([]) == []
+
+    def test_all_four_categories_grouped(self):
+        from kiso.brain import _group_facts_by_category
+        facts = [
+            self._fact("proj note", "project"),
+            self._fact("user pref", "user"),
+            self._fact("tool info", "tool"),
+            self._fact("general note", "general"),
+        ]
+        parts = _group_facts_by_category(facts)
+        assert len(parts) == 4
+        assert any("Project" in p for p in parts)
+        assert any("User" in p for p in parts)
+        assert any("Tool" in p for p in parts)
+        assert any("General" in p for p in parts)
+
+    def test_unknown_category_falls_to_general(self):
+        from kiso.brain import _group_facts_by_category
+        facts = [self._fact("unknown cat fact", category="obscure")]
+        parts = _group_facts_by_category(facts)
+        assert len(parts) == 1
+        assert "General" in parts[0]
+        assert "unknown cat fact" in parts[0]
+
+    def test_label_session_appends_session_tag(self):
+        from kiso.brain import _group_facts_by_category
+        facts = [self._fact("fact with session", "project", session="sess-abc")]
+        parts = _group_facts_by_category(facts, label_session=True)
+        assert "[session:sess-abc]" in parts[0]
+
+    def test_label_session_false_no_tag(self):
+        from kiso.brain import _group_facts_by_category
+        facts = [self._fact("fact", "project", session="sess-abc")]
+        parts = _group_facts_by_category(facts, label_session=False)
+        assert "[session:" not in parts[0]
+
+    def test_facts_without_session_not_labelled(self):
+        from kiso.brain import _group_facts_by_category
+        facts = [self._fact("global fact", "project")]
+        parts = _group_facts_by_category(facts, label_session=True)
+        assert "[session:" not in parts[0]

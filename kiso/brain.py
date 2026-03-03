@@ -315,6 +315,24 @@ def validate_plan(
     return errors
 
 
+def _group_facts_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
+    """Group facts by category and return formatted section parts."""
+    cats: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
+    for f in fact_list:
+        cat = f.get("category", "general")
+        if cat not in cats:
+            cat = "general"
+        line = f"- {f['content']}"
+        if label_session and f.get("session"):
+            line += f" [session:{f['session']}]"
+        cats[cat].append(line)
+    parts: list[str] = []
+    for cat in ("project", "user", "tool", "general"):
+        if cats[cat]:
+            parts.append(f"### {cat.title()}\n" + "\n".join(cats[cat]))
+    return parts
+
+
 async def build_planner_messages(
     db: aiosqlite.Connection,
     config: Config,
@@ -365,29 +383,13 @@ async def build_planner_messages(
             primary = facts
             other   = []
 
-        def _group_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
-            cats: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
-            for f in fact_list:
-                cat = f.get("category", "general")
-                if cat not in cats:
-                    cat = "general"
-                line = f"- {f['content']}"
-                if label_session and f.get("session"):
-                    line += f" [session:{f['session']}]"
-                cats[cat].append(line)
-            parts: list[str] = []
-            for cat in ("project", "user", "tool", "general"):
-                if cats[cat]:
-                    parts.append(f"### {cat.title()}\n" + "\n".join(cats[cat]))
-            return parts
-
         if primary:
-            parts = _group_by_category(primary)
+            parts = _group_facts_by_category(primary)
             if parts:
                 context_parts.append("## Known Facts\n" + "\n".join(parts))
 
         if other:
-            parts = _group_by_category(other, label_session=True)
+            parts = _group_facts_by_category(other, label_session=True)
             if parts:
                 context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
 

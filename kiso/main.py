@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime as _dt, timedelta, timezone as _tz
 import json
 import logging
 import mimetypes
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
+from kiso.stats import aggregate, read_audit_entries
 from kiso.brain import invalidate_prompt_cache
 from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool, setting_int
 import kiso.llm as _llm_mod
@@ -531,11 +533,6 @@ async def get_stats(
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     if by not in ("model", "session", "role"):
         raise HTTPException(status_code=400, detail="by must be model, session, or role")
-
-    from datetime import timedelta
-    from datetime import datetime as _dt, timezone as _tz
-
-    from kiso.stats import aggregate, read_audit_entries
 
     since_dt = _dt.now(_tz.utc) - timedelta(days=since)
     entries = read_audit_entries(KISO_DIR / "audit", since=since_dt)

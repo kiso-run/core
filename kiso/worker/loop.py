@@ -62,7 +62,7 @@ from kiso.skills import (
     discover_skills,
     validate_skill_args,
 )
-from kiso.sysenv import get_system_env, build_system_env_section
+from kiso.sysenv import get_system_env, build_system_env_section, invalidate_cache
 from kiso.webhook import deliver_webhook
 from kiso.worker.search import SearcherError, _search_task
 from kiso.store import (
@@ -334,6 +334,7 @@ async def _fast_path_chat(
     session: str,
     msg_id: int,
     content: str,
+    messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
 ) -> int:
     """Fast path for chat messages: skip planner, go straight to messenger.
@@ -367,15 +368,14 @@ async def _fast_path_chat(
 
     usage_idx_before = get_usage_index()
     t0 = time.perf_counter()
-    _msg_timeout = setting_int(config.settings, "planner_timeout", lo=1)
     try:
         try:
             text = await asyncio.wait_for(
                 _msg_task(config, db, session, content, goal=content),
-                timeout=_msg_timeout,
+                timeout=messenger_timeout,
             )
         except asyncio.TimeoutError:
-            raise MessengerError(f"Messenger timed out after {_msg_timeout}s")
+            raise MessengerError(f"Messenger timed out after {messenger_timeout}s")
     except (LLMError, MessengerError) as e:
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
         log.error("Fast path messenger failed: %s", e)
@@ -521,6 +521,7 @@ class _PlanCtx:
     session_secrets: dict[str, str]
     max_output_size: int
     max_worker_retries: int
+    messenger_timeout: int
     installed_skills: list[dict]
     slog: "SessionLogger | None"
     sandbox_uid: "int | None"
@@ -605,7 +606,6 @@ async def _handle_msg_task(
     t0 = time.perf_counter()
     try:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
-        _msg_timeout = setting_int(ctx.config.settings, "planner_timeout", lo=1)
         idx_msg = get_usage_index()
         try:
             text = await asyncio.wait_for(
@@ -614,10 +614,10 @@ async def _handle_msg_task(
                     plan_outputs=ctx.plan_outputs,
                     goal=ctx.goal,
                 ),
-                timeout=_msg_timeout,
+                timeout=ctx.messenger_timeout,
             )
         except asyncio.TimeoutError:
-            raise MessengerError(f"Messenger timed out after {_msg_timeout}s")
+            raise MessengerError(f"Messenger timed out after {ctx.messenger_timeout}s")
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
         await update_task(ctx.db, task_id, "done", output=text)
         task_row = {**task_row, "output": text, "status": "done"}
@@ -960,6 +960,7 @@ async def _execute_plan(
     goal: str,
     user_message: str,
     exec_timeout: int,
+    messenger_timeout: int = 120,
     session_secrets: dict[str, str] | None = None,
     username: str | None = None,
     cancel_event: asyncio.Event | None = None,
@@ -991,6 +992,7 @@ async def _execute_plan(
         session_secrets=session_secrets or {},
         max_output_size=max_output_size,
         max_worker_retries=max_worker_retries,
+        messenger_timeout=messenger_timeout,
         installed_skills=installed_skills,
         slog=slog,
         sandbox_uid=None,
@@ -1115,6 +1117,7 @@ async def run_worker(
     idle_timeout = setting_int(config.settings, "worker_idle_timeout", lo=1)
     exec_timeout = setting_int(config.settings, "exec_timeout", lo=1)
     planner_timeout = setting_int(config.settings, "planner_timeout", lo=1)
+    messenger_timeout = setting_int(config.settings, "messenger_timeout", lo=1)
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
@@ -1130,7 +1133,8 @@ async def run_worker(
             try:
                 await _process_message(db, config, session, msg, queue, cancel_event,
                                        idle_timeout, exec_timeout, planner_timeout,
-                                       max_replan_depth, slog=slog)
+                                       max_replan_depth, messenger_timeout=messenger_timeout,
+                                       slog=slog)
             except Exception:
                 log.exception("Unexpected error processing message in session=%s", session)
                 slog.error("Unexpected error processing message")
@@ -1251,6 +1255,7 @@ async def _run_planning_loop(
     user_role: str,
     user_skills: "str | list[str] | None",
     exec_timeout: int,
+    messenger_timeout: int,
     session_secrets: dict,
     cancel_event: "asyncio.Event | None",
     planner_timeout: int,
@@ -1267,8 +1272,9 @@ async def _run_planning_loop(
     while True:
         success, replan_reason, completed, remaining = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
-            content, exec_timeout, session_secrets=session_secrets,
-            username=username, cancel_event=cancel_event, slog=slog,
+            content, exec_timeout, messenger_timeout=messenger_timeout,
+            session_secrets=session_secrets, username=username,
+            cancel_event=cancel_event, slog=slog,
         )
 
         if success:
@@ -1349,7 +1355,10 @@ async def _run_planning_loop(
 
         # --- Cancel check before replan ---
         if cancel_event is not None and cancel_event.is_set():
-            await update_plan_status(db, current_plan_id, "cancelled")
+            await _handle_loop_cancel(
+                db, config, session, current_plan_id, completed, remaining, current_goal,
+                session_secrets=session_secrets, cancel_event=cancel_event,
+            )
             break
 
         # Call planner with enriched context
@@ -1456,6 +1465,7 @@ async def _process_message(
     exec_timeout: int,
     planner_timeout: int,
     max_replan_depth: int,
+    messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
 ):
     """Process a single message. Extracted for crash recovery wrapping."""
@@ -1487,7 +1497,8 @@ async def _process_message(
             if slog:
                 slog.info("Fast path: classified as chat, skipping planner")
             fast_plan_id = await _fast_path_chat(
-                db, config, session, msg_id, content, slog=slog,
+                db, config, session, msg_id, content,
+                messenger_timeout=messenger_timeout, slog=slog,
             )
             # Bump fact usage for fast path (facts contributed to chat response)
             await _bump_fact_usage(db, content, session, user_role)
@@ -1566,7 +1577,7 @@ async def _process_message(
     # Execute with replan loop
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
-        plan_id, plan, user_role, user_skills, exec_timeout,
+        plan_id, plan, user_role, user_skills, exec_timeout, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
         username, slog,
     )
@@ -1581,7 +1592,6 @@ async def _process_message(
         )
 
     # --- Invalidate system env cache (exec tasks may have changed the system) ---
-    from kiso.sysenv import invalidate_cache
     invalidate_cache()
 
     # --- Post-plan knowledge processing ---
