@@ -52,6 +52,7 @@ from kiso.worker.loop import (
     _handle_exec_task,
     _handle_loop_cancel,
     _handle_loop_failure,
+    _msg_task_with_fallback,
     _handle_msg_task,
     _handle_plan_error,
     _handle_replan_task,
@@ -7294,8 +7295,10 @@ class TestHandleLoopFailure:
             "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
         )
         rows = await cur.fetchall()
-        # Fallback: raw detail text (built by _build_failure_summary) must be saved
-        assert rows, "A system message must be saved even on timeout"
+        # Fallback: raw detail text from _build_failure_summary is saved, not an LLM response
+        assert any("The plan failed: goal" in row["content"] for row in rows), (
+            "Fallback must save the raw _build_failure_summary text"
+        )
 
 
 class TestHandleLoopCancel:
@@ -7308,6 +7311,21 @@ class TestHandleLoopCancel:
         await create_session(conn, "sess1")
         yield conn
         await conn.close()
+
+    async def test_saves_system_message(self, db):
+        """_handle_loop_cancel saves the cancel text as a system message."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="cancel text"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(db, config, "sess1", plan_id, [], [], "goal")
+
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        rows = await cur.fetchall()
+        assert any("cancel text" in row["content"] for row in rows)
 
     async def test_marks_plan_cancelled(self, db):
         """_handle_loop_cancel sets plan status to 'cancelled'."""
@@ -7355,7 +7373,55 @@ class TestHandleLoopCancel:
             "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
         )
         rows = await cur.fetchall()
-        assert rows, "A system message must be saved even on timeout"
+        # Fallback: raw detail text from _build_cancel_summary is saved, not an LLM response
+        assert any("The user cancelled the plan: goal" in row["content"] for row in rows), (
+            "Fallback must save the raw _build_cancel_summary text"
+        )
+
+
+class TestMsgTaskWithFallback:
+    """Unit tests for _msg_task_with_fallback (post-M94 simplify)."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_returns_msg_task_result_on_success(self, db):
+        """Returns the LLM-generated text when _msg_task succeeds."""
+        config = _make_config()
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="hello"):
+            result = await _msg_task_with_fallback(config, db, "sess1", "detail", "goal", 30)
+        assert result == "hello"
+
+    async def test_falls_back_on_llm_error(self, db):
+        """Returns detail when _msg_task raises LLMError."""
+        config = _make_config()
+        with patch("kiso.worker.loop._msg_task", side_effect=LLMError("boom")):
+            result = await _msg_task_with_fallback(config, db, "sess1", "detail", "goal", 30)
+        assert result == "detail"
+
+    async def test_falls_back_on_messenger_error(self, db):
+        """Returns detail when _msg_task raises MessengerError."""
+        config = _make_config()
+        with patch("kiso.worker.loop._msg_task", side_effect=MessengerError("boom")):
+            result = await _msg_task_with_fallback(config, db, "sess1", "detail", "goal", 30)
+        assert result == "detail"
+
+    async def test_falls_back_on_timeout(self, db):
+        """Returns detail when _msg_task times out."""
+        config = _make_config()
+
+        async def _hanging(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        with patch("kiso.worker.loop._msg_task", side_effect=_hanging):
+            result = await _msg_task_with_fallback(
+                config, db, "sess1", "detail", "goal", timeout=0.001,
+            )
+        assert result == "detail"
 
 
 class TestSubstatusConstants:
