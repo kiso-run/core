@@ -44,11 +44,13 @@ from kiso.worker.loop import (
     _SUBSTATUS_COMPOSING,
     _SUBSTATUS_EXECUTING,
     _SUBSTATUS_REVIEWING,
+    _SUBSTATUS_SEARCHING,
     _SUBSTATUS_TRANSLATING,
     _TASK_HANDLERS,
     _TaskHandlerResult,
     _bump_fact_usage,
     _handle_exec_task,
+    _handle_loop_cancel,
     _handle_loop_failure,
     _handle_msg_task,
     _handle_plan_error,
@@ -6140,8 +6142,6 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value="chat")
         mock_messenger = AsyncMock(return_value="Hi there!")
-        q = asyncio.Queue()
-
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
@@ -6149,7 +6149,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
+                conn, config, "sess1", msg, None, 5, 60, 3,
             )
 
         mock_classifier.assert_called_once()
@@ -6164,8 +6164,6 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value="plan")
         mock_messenger = AsyncMock(return_value="Done")
-        q = asyncio.Queue()
-
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
@@ -6173,7 +6171,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
+                conn, config, "sess1", msg, None, 5, 60, 3,
             )
 
         mock_classifier.assert_called_once()
@@ -6187,8 +6185,6 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value="chat")
         mock_messenger = AsyncMock(return_value="Hi")
-        q = asyncio.Queue()
-
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
@@ -6196,7 +6192,7 @@ class TestFastPathIntegration:
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
+                conn, config, "sess1", msg, None, 5, 60, 3,
             )
 
         mock_classifier.assert_not_called()
@@ -6210,15 +6206,13 @@ class TestFastPathIntegration:
         mock_classifier = AsyncMock(return_value="chat")
         mock_messenger = AsyncMock(return_value="Hi")
         mock_post = AsyncMock()
-        q = asyncio.Queue()
-
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
+                conn, config, "sess1", msg, None, 5, 60, 3,
             )
 
         mock_post.assert_called_once()
@@ -6231,15 +6225,13 @@ class TestFastPathIntegration:
         mock_classifier = AsyncMock(return_value="chat")
         mock_messenger = AsyncMock(return_value="Hi")
         mock_paraphraser = AsyncMock(return_value="paraphrased")
-        q = asyncio.Queue()
-
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.run_paraphraser", mock_paraphraser), \
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
             await _process_message(
-                conn, config, "sess1", msg, q, None, 1, 5, 60, 3,
+                conn, config, "sess1", msg, None, 5, 60, 3,
             )
 
         mock_paraphraser.assert_not_called()
@@ -7283,16 +7275,99 @@ class TestHandleLoopFailure:
         rows = await cur.fetchall()
         assert any("failure text" in row["content"] for row in rows)
 
+    async def test_failure_messenger_timeout_falls_back(self, db):
+        """M94c: if _msg_task times out, _handle_loop_failure falls back to raw detail text."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        async def _hanging_msg(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        with patch("kiso.worker.loop._msg_task", side_effect=_hanging_msg), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_failure(
+                db, config, "sess1", plan_id, [], [], "goal",
+                messenger_timeout=0,  # expire immediately
+            )
+
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        rows = await cur.fetchall()
+        # Fallback: raw detail text (built by _build_failure_summary) must be saved
+        assert rows, "A system message must be saved even on timeout"
+
+
+class TestHandleLoopCancel:
+    """Unit tests for _handle_loop_cancel (M94c)."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_marks_plan_cancelled(self, db):
+        """_handle_loop_cancel sets plan status to 'cancelled'."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="cancelled msg"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(db, config, "sess1", plan_id, [], [], "goal")
+
+        cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+        row = await cur.fetchone()
+        assert row["status"] == "cancelled"
+
+    async def test_clears_cancel_event(self, db):
+        """_handle_loop_cancel clears the cancel_event after handling."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        event = asyncio.Event()
+        event.set()
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="cancelled"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(db, config, "sess1", plan_id, [], [], "goal",
+                                      cancel_event=event)
+
+        assert not event.is_set()
+
+    async def test_cancel_messenger_timeout_falls_back(self, db):
+        """M94c: if _msg_task times out, _handle_loop_cancel falls back to raw detail text."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        async def _hanging_msg(*args, **kwargs):
+            await asyncio.sleep(999)
+
+        with patch("kiso.worker.loop._msg_task", side_effect=_hanging_msg), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(
+                db, config, "sess1", plan_id, [], [], "goal",
+                messenger_timeout=0,  # expire immediately
+            )
+
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        rows = await cur.fetchall()
+        assert rows, "A system message must be saved even on timeout"
+
 
 class TestSubstatusConstants:
     """Verify _SUBSTATUS_* constant values (M88b)."""
 
     def test_substatus_constant_values(self):
-        """All four substatus constants have the expected string values."""
+        """All five substatus constants have the expected string values."""
         assert _SUBSTATUS_TRANSLATING == "translating"
         assert _SUBSTATUS_EXECUTING == "executing"
         assert _SUBSTATUS_REVIEWING == "reviewing"
         assert _SUBSTATUS_COMPOSING == "composing"
+        assert _SUBSTATUS_SEARCHING == "searching"
 
     def test_substatus_constants_are_distinct(self):
         """No two substatus constants share the same value."""
@@ -7301,6 +7376,7 @@ class TestSubstatusConstants:
             _SUBSTATUS_EXECUTING,
             _SUBSTATUS_REVIEWING,
             _SUBSTATUS_COMPOSING,
+            _SUBSTATUS_SEARCHING,
         ]
         assert len(values) == len(set(values))
 
@@ -7523,6 +7599,72 @@ class TestPostPlanKnowledgeParallel:
         assert summarizer_called, (
             "Summarizer must complete even when Curator times out — "
             "they run concurrently in phase 1"
+        )
+
+
+# --- M94d: summarize_messages_limit ---
+
+
+class TestSummarizeMessagesLimit:
+    """M94d: _run_summarizer must cap messages sent to LLM via summarize_messages_limit."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _cfg(self, **extra):
+        return _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 3,
+            **extra,
+        })
+
+    async def test_summarizer_respects_messages_limit(self, db):
+        """With 5 messages and limit=3, get_oldest_messages is called with limit=3."""
+        for i in range(5):
+            await save_message(db, "sess1", "alice", "user", f"msg {i}", processed=True)
+        config = self._cfg(summarize_threshold=1, summarize_messages_limit=3)
+
+        captured_limit: list[int] = []
+
+        async def _mock_get_oldest(db, session, limit):
+            captured_limit.append(limit)
+            return []
+
+        with patch("kiso.worker.loop.get_oldest_messages", side_effect=_mock_get_oldest), \
+             patch("kiso.worker.loop.run_summarizer",
+                   new_callable=AsyncMock, return_value="summary"):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert captured_limit == [3], (
+            f"Expected get_oldest_messages called with limit=3, got {captured_limit}"
+        )
+
+    async def test_summarizer_uses_all_when_below_limit(self, db):
+        """With 2 messages and limit=5, get_oldest_messages is called with limit=2."""
+        for i in range(2):
+            await save_message(db, "sess1", "alice", "user", f"msg {i}", processed=True)
+        config = self._cfg(summarize_threshold=1, summarize_messages_limit=5)
+
+        captured_limit: list[int] = []
+
+        async def _mock_get_oldest(db, session, limit):
+            captured_limit.append(limit)
+            return []
+
+        with patch("kiso.worker.loop.get_oldest_messages", side_effect=_mock_get_oldest), \
+             patch("kiso.worker.loop.run_summarizer",
+                   new_callable=AsyncMock, return_value="summary"):
+            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+
+        assert captured_limit == [2], (
+            f"Expected get_oldest_messages called with limit=2, got {captured_limit}"
         )
 
 

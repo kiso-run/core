@@ -23,6 +23,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     # conversation
     "context_messages": 7,
     "summarize_threshold": 30,
+    "summarize_messages_limit": 100,
     "bot_name": "Kiso",
     # knowledge / memory
     "knowledge_max_facts": 50,
@@ -101,6 +102,7 @@ searcher    = "perplexity/sonar"
 # --- conversation ---
 context_messages          = 7        # recent messages sent to planner
 summarize_threshold       = 30       # message count before summarizer runs
+summarize_messages_limit  = 100      # max messages sent to summarizer LLM per run
 bot_name                  = "Kiso"
 
 # --- knowledge / memory ---

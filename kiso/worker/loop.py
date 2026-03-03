@@ -122,6 +122,7 @@ _SUBSTATUS_TRANSLATING = "translating"
 _SUBSTATUS_EXECUTING = "executing"
 _SUBSTATUS_REVIEWING = "reviewing"
 _SUBSTATUS_COMPOSING = "composing"
+_SUBSTATUS_SEARCHING = "searching"
 
 
 async def _append_calls(
@@ -233,7 +234,8 @@ async def _post_plan_knowledge(
         try:
             sess = await get_session(db, session)
             current_summary = sess["summary"] if sess else ""
-            oldest = await get_oldest_messages(db, session, limit=msg_count)
+            msg_limit = setting_int(config.settings, "summarize_messages_limit", lo=1)
+            oldest = await get_oldest_messages(db, session, limit=min(msg_count, msg_limit))
             new_summary = await asyncio.wait_for(
                 run_summarizer(config, current_summary, oldest, session=session),
                 timeout=exec_timeout,
@@ -865,7 +867,7 @@ async def _handle_search_task(
 
     while True:
         t0 = time.perf_counter()
-        await update_task_substatus(ctx.db, task_id, "searching")
+        await update_task_substatus(ctx.db, task_id, _SUBSTATUS_SEARCHING)
         idx_search = get_usage_index()
         try:
             _search_outputs = ctx.plan_outputs + ([local_plan_output] if local_plan_output else [])
@@ -1134,8 +1136,8 @@ async def run_worker(
                 break
 
             try:
-                await _process_message(db, config, session, msg, queue, cancel_event,
-                                       idle_timeout, exec_timeout, planner_timeout,
+                await _process_message(db, config, session, msg, cancel_event,
+                                       exec_timeout, planner_timeout,
                                        max_replan_depth, messenger_timeout=messenger_timeout,
                                        slog=slog)
             except Exception:
@@ -1190,6 +1192,7 @@ async def _handle_loop_cancel(
     remaining: list[dict],
     goal: str,
     *,
+    messenger_timeout: int = 120,
     session_secrets: dict | None = None,
     cancel_event: "asyncio.Event | None" = None,
 ) -> None:
@@ -1197,8 +1200,11 @@ async def _handle_loop_cancel(
     await update_plan_status(db, plan_id, "cancelled")
     cancel_detail = _build_cancel_summary(completed, remaining, goal)
     try:
-        cancel_text = await _msg_task(config, db, session, cancel_detail, goal=goal)
-    except (LLMError, MessengerError):
+        cancel_text = await asyncio.wait_for(
+            _msg_task(config, db, session, cancel_detail, goal=goal),
+            timeout=messenger_timeout,
+        )
+    except (LLMError, MessengerError, asyncio.TimeoutError):
         cancel_text = cancel_detail
     cancel_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, cancel_detail)
     await update_task(db, cancel_task_id, status="done", output=cancel_text)
@@ -1221,6 +1227,7 @@ async def _handle_loop_failure(
     remaining: list[dict],
     goal: str,
     *,
+    messenger_timeout: int = 120,
     reason: str | None = None,
     session_secrets: dict | None = None,
     deliver_webhook: bool = True,
@@ -1229,8 +1236,11 @@ async def _handle_loop_failure(
     await update_plan_status(db, plan_id, "failed")
     fail_detail = _build_failure_summary(completed, remaining, goal, reason=reason)
     try:
-        fail_text = await _msg_task(config, db, session, fail_detail, goal=goal)
-    except (LLMError, MessengerError):
+        fail_text = await asyncio.wait_for(
+            _msg_task(config, db, session, fail_detail, goal=goal),
+            timeout=messenger_timeout,
+        )
+    except (LLMError, MessengerError, asyncio.TimeoutError):
         fail_text = fail_detail
     fail_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, fail_detail)
     await update_task(db, fail_task_id, status="done", output=fail_text)
@@ -1288,6 +1298,7 @@ async def _run_planning_loop(
         if replan_reason == "cancelled":
             await _handle_loop_cancel(
                 db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
                 session_secrets=session_secrets, cancel_event=cancel_event,
             )
             break
@@ -1299,6 +1310,7 @@ async def _run_planning_loop(
                 slog.info("Plan %d failed", current_plan_id)
             await _handle_loop_failure(
                 db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
                 session_secrets=session_secrets,
             )
             break
@@ -1313,6 +1325,7 @@ async def _run_planning_loop(
             log.warning("Max replan depth (%d) reached for session=%s", max_replan_depth, session)
             await _handle_loop_failure(
                 db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
                 reason=f"Max replan depth ({max_replan_depth}) reached. "
                        f"Last failure: {replan_reason}",
                 session_secrets=session_secrets,
@@ -1360,6 +1373,7 @@ async def _run_planning_loop(
         if cancel_event is not None and cancel_event.is_set():
             await _handle_loop_cancel(
                 db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
                 session_secrets=session_secrets, cancel_event=cancel_event,
             )
             break
@@ -1381,6 +1395,7 @@ async def _run_planning_loop(
             log.error("Replan timed out after %ds", planner_timeout)
             await _handle_loop_failure(
                 db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
                 reason=f"Replan timed out after {planner_timeout}s",
                 deliver_webhook=False,
             )
@@ -1389,6 +1404,7 @@ async def _run_planning_loop(
             log.error("Replan failed: %s", e)
             await _handle_loop_failure(
                 db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
                 reason=f"Replan failed: {e}",
                 deliver_webhook=False,
             )
@@ -1462,9 +1478,7 @@ async def _process_message(
     config: Config,
     session: str,
     msg: dict,
-    queue: asyncio.Queue,
     cancel_event: asyncio.Event | None,
-    idle_timeout: int,
     exec_timeout: int,
     planner_timeout: int,
     max_replan_depth: int,
