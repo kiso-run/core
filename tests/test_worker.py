@@ -7615,28 +7615,36 @@ class TestPreReplanCancelFix:
             ],
         }
 
-        # Set cancel_event when the replan notification is persisted so it fires
-        # at the pre-replan cancel check (line 1357 in loop.py), before the second
-        # planner call.
-        async def _save_and_maybe_cancel(db, session, user, role, content, **kwargs):
-            result = await save_message(db, session, user, role, content, **kwargs)
-            if role == "system" and "Replanning" in (content or ""):
+        # Set cancel_event when the plan transitions to "replanning" status so it
+        # fires at the pre-replan cancel check (loop.py), before the second planner call.
+        # Using plan status is more stable than matching message text.
+        from kiso.store import update_plan_status as _real_update_plan_status
+
+        async def _update_plan_status_and_maybe_cancel(db, plan_id, status):
+            result = await _real_update_plan_status(db, plan_id, status)
+            if status == "replanning":
                 cancel_event.set()
             return result
 
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
 
-        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=fail_plan), \
+        mock_planner = AsyncMock(return_value=fail_plan)
+
+        with patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.save_message", side_effect=_save_and_maybe_cancel), \
+             patch("kiso.worker.loop.update_plan_status",
+                   side_effect=_update_plan_status_and_maybe_cancel), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(
                 run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
                 timeout=10,
             )
+
+        # Cancel was detected before the second planner call — planner called exactly once
+        assert mock_planner.call_count == 1
 
         # Plan should be cancelled
         cur = await db.execute("SELECT status FROM plans WHERE session = 'sess1' ORDER BY id")
@@ -7710,6 +7718,12 @@ class TestMessengerTimeout:
 
         assert result.stop is True
         assert result.stop_success is False
+
+    def test_messenger_timeout_in_settings_defaults(self):
+        """messenger_timeout must exist in SETTINGS_DEFAULTS so config.toml is self-documenting."""
+        from kiso.config import SETTINGS_DEFAULTS
+        assert "messenger_timeout" in SETTINGS_DEFAULTS
+        assert SETTINGS_DEFAULTS["messenger_timeout"] == 120
 
     @pytest.fixture()
     async def plan_id(self, db):

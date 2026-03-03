@@ -2864,3 +2864,24 @@ class TestGroupFactsByCategory:
         facts = [self._fact("global fact", "project")]
         parts = _group_facts_by_category(facts, label_session=True)
         assert "[session:" not in parts[0]
+
+    def test_empty_categories_absent_from_output(self):
+        """Categories with no facts produce no section in the output."""
+        from kiso.brain import _group_facts_by_category
+        facts = [self._fact("only proj", "project")]
+        parts = _group_facts_by_category(facts)
+        assert len(parts) == 1
+        assert "Project" in parts[0]
+
+    def test_fact_order_within_category_preserved(self):
+        """Facts within a category appear in insertion order."""
+        from kiso.brain import _group_facts_by_category
+        facts = [
+            self._fact("first", "user"),
+            self._fact("second", "user"),
+            self._fact("third", "user"),
+        ]
+        parts = _group_facts_by_category(facts)
+        assert len(parts) == 1
+        text = parts[0]
+        assert text.index("first") < text.index("second") < text.index("third")
