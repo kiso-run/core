@@ -7282,7 +7282,7 @@ class TestHandleLoopFailure:
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         async def _hanging_msg(*args, **kwargs):
-            await asyncio.sleep(999)
+            await asyncio.Event().wait()
 
         with patch("kiso.worker.loop._msg_task", side_effect=_hanging_msg), \
              patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
@@ -7360,7 +7360,7 @@ class TestHandleLoopCancel:
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         async def _hanging_msg(*args, **kwargs):
-            await asyncio.sleep(999)
+            await asyncio.Event().wait()
 
         with patch("kiso.worker.loop._msg_task", side_effect=_hanging_msg), \
              patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
@@ -7380,46 +7380,43 @@ class TestHandleLoopCancel:
 
 
 class TestMsgTaskWithFallback:
-    """Unit tests for _msg_task_with_fallback (post-M94 simplify)."""
+    """Unit tests for _msg_task_with_fallback (post-M94 simplify).
 
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
+    _msg_task is fully patched in every test so no real DB is needed;
+    None is passed for the db argument.
+    """
 
-    async def test_returns_msg_task_result_on_success(self, db):
+    async def test_returns_msg_task_result_on_success(self):
         """Returns the LLM-generated text when _msg_task succeeds."""
         config = _make_config()
         with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="hello"):
-            result = await _msg_task_with_fallback(config, db, "sess1", "detail", "goal", 30)
+            result = await _msg_task_with_fallback(config, None, "sess1", "detail", "goal", 30)
         assert result == "hello"
 
-    async def test_falls_back_on_llm_error(self, db):
+    async def test_falls_back_on_llm_error(self):
         """Returns detail when _msg_task raises LLMError."""
         config = _make_config()
         with patch("kiso.worker.loop._msg_task", side_effect=LLMError("boom")):
-            result = await _msg_task_with_fallback(config, db, "sess1", "detail", "goal", 30)
+            result = await _msg_task_with_fallback(config, None, "sess1", "detail", "goal", 30)
         assert result == "detail"
 
-    async def test_falls_back_on_messenger_error(self, db):
+    async def test_falls_back_on_messenger_error(self):
         """Returns detail when _msg_task raises MessengerError."""
         config = _make_config()
         with patch("kiso.worker.loop._msg_task", side_effect=MessengerError("boom")):
-            result = await _msg_task_with_fallback(config, db, "sess1", "detail", "goal", 30)
+            result = await _msg_task_with_fallback(config, None, "sess1", "detail", "goal", 30)
         assert result == "detail"
 
-    async def test_falls_back_on_timeout(self, db):
+    async def test_falls_back_on_timeout(self):
         """Returns detail when _msg_task times out."""
         config = _make_config()
 
         async def _hanging(*args, **kwargs):
-            await asyncio.sleep(999)
+            await asyncio.Event().wait()
 
         with patch("kiso.worker.loop._msg_task", side_effect=_hanging):
             result = await _msg_task_with_fallback(
-                config, db, "sess1", "detail", "goal", timeout=0.001,
+                config, None, "sess1", "detail", "goal", timeout=0.001,
             )
         assert result == "detail"
 
