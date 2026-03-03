@@ -890,22 +890,15 @@ async def _handle_search_task(
             return _TaskHandlerResult(stop=True, stop_success=False)
 
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
-        await update_task(ctx.db, task_id, "done", output=search_result)
+        # Keep local state updated; DB write deferred until reviewer approves
         task_row = {**task_row, "output": search_result, "status": "done"}
-        audit.log_task(
-            ctx.session, task_id, "search", detail, "done", task_duration_ms,
-            len(search_result), deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        if ctx.slog:
-            ctx.slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
+        local_plan_output = _make_plan_output(i + 1, "search", detail, search_result, "done")
 
         await _append_calls(ctx.db, task_id, idx_search)
 
-        local_plan_output = _make_plan_output(i + 1, "search", detail, search_result, "done")
-
         review, review_error = await _run_review_step(ctx, task_row)
         if review_error is not None:
+            await update_task(ctx.db, task_id, "done", output=search_result)
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
             return _TaskHandlerResult(stop=True, stop_success=False, plan_output=local_plan_output)
 
@@ -930,13 +923,22 @@ async def _handle_search_task(
                                   search_retries, replan_reason)
                 else:
                     ctx.slog.info("Review → replan: %s", replan_reason)
+            await update_task(ctx.db, task_id, "done", output=search_result)
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
             return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
                                       plan_output=local_plan_output)
 
-        # review ok → break out of retry loop
+        # review ok → write final status and break out of retry loop
         break
 
+    await update_task(ctx.db, task_id, "done", output=search_result)
+    audit.log_task(
+        ctx.session, task_id, "search", detail, "done", task_duration_ms,
+        len(search_result), deploy_secrets=ctx.deploy_secrets,
+        session_secrets=ctx.session_secrets,
+    )
+    if ctx.slog:
+        ctx.slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:
         ctx.slog.info("Review → %s", review["status"])
@@ -1009,7 +1011,7 @@ async def _execute_plan(
                     deploy_secrets=deploy_secrets,
                     session_secrets=session_secrets or {},
                 )
-            _cleanup_plan_outputs(session)
+            await _cleanup_plan_outputs(session)
             return False, "cancelled", completed, [dict(t) for t in tasks[i:]]
 
         task_id = task_row["id"]
@@ -1035,7 +1037,7 @@ async def _execute_plan(
                 session_secrets=session_secrets or {},
             )
             remaining = [dict(t) for t in tasks[i + 1:]]
-            _cleanup_plan_outputs(session)
+            await _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
         sandbox_uid = await _ensure_sandbox_user(session) if perm.role == "user" else None
@@ -1055,7 +1057,7 @@ async def _execute_plan(
             log.error("Unknown task type %r for task %d", task_type, task_id)
             await update_task(db, task_id, "failed", output=f"Unknown task type: {task_type}")
             remaining = [dict(t) for t in tasks[i + 1:]]
-            _cleanup_plan_outputs(session)
+            await _cleanup_plan_outputs(session)
             return False, None, completed, remaining
 
         is_final = i == len(tasks) - 1
@@ -1067,10 +1069,10 @@ async def _execute_plan(
 
         if result.stop:
             remaining = [dict(t) for t in tasks[i + 1:]]
-            _cleanup_plan_outputs(session)
+            await _cleanup_plan_outputs(session)
             return result.stop_success, result.stop_replan, completed, remaining
 
-    _cleanup_plan_outputs(session)
+    await _cleanup_plan_outputs(session)
     return True, None, completed, []
 
 

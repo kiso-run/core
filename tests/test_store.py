@@ -28,7 +28,6 @@ from kiso.store import (
     get_sessions_for_user,
     get_tasks_for_plan,
     get_tasks_for_session,
-    get_unprocessed_messages,
     get_untrusted_messages,
     mark_message_processed,
     save_fact,
@@ -135,22 +134,23 @@ async def test_save_message_returns_id(db: aiosqlite.Connection):
 async def test_mark_processed(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
-    unprocessed = await get_unprocessed_messages(db)
-    assert len(unprocessed) == 1
+    cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
+    assert (await cur.fetchone())[0] == 1
 
     await mark_message_processed(db, msg_id)
-    unprocessed = await get_unprocessed_messages(db)
-    assert len(unprocessed) == 0
+    cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
+    assert (await cur.fetchone())[0] == 0
 
 
-async def test_unprocessed_excludes_untrusted(db: aiosqlite.Connection):
-    """Untrusted messages saved with processed=True are never unprocessed."""
+async def test_unprocessed_excludes_trusted_only(db: aiosqlite.Connection):
+    """Untrusted messages (processed=True) do not appear in the unprocessed set."""
     await create_session(db, "sess1")
     await save_message(db, "sess1", "stranger", "user", "hi", trusted=False, processed=True)
     await save_message(db, "sess1", "alice", "user", "hello", trusted=True, processed=False)
-    unprocessed = await get_unprocessed_messages(db)
-    assert len(unprocessed) == 1
-    assert unprocessed[0]["user"] == "alice"
+    cur = await db.execute("SELECT * FROM messages WHERE processed = 0 ORDER BY id")
+    rows = [dict(r) for r in await cur.fetchall()]
+    assert len(rows) == 1
+    assert rows[0]["user"] == "alice"
 
 
 async def test_sessions_for_user(db: aiosqlite.Connection):
@@ -176,6 +176,36 @@ async def test_sessions_for_user_no_messages(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     sessions = await get_sessions_for_user(db, "ghost")
     assert sessions == []
+
+
+async def test_sessions_for_user_returns_full_dict(db: aiosqlite.Connection):
+    """M93b: get_sessions_for_user must return all SessionDict fields (not a partial select)."""
+    await create_session(db, "sess1", connector="discord", description="test session")
+    await save_message(db, "sess1", "alice", "user", "hi")
+    sessions = await get_sessions_for_user(db, "alice")
+    assert len(sessions) == 1
+    row = sessions[0]
+    # All SessionDict keys must be present
+    for key in ("session", "connector", "description", "updated_at", "webhook", "summary", "created_at"):
+        assert key in row, f"missing key {key!r} in get_sessions_for_user result"
+
+
+async def test_get_all_sessions_returns_full_dict(db: aiosqlite.Connection):
+    """M93b: get_all_sessions must return all SessionDict fields (not a partial select)."""
+    await create_session(db, "sess1", connector="slack", description="full dict test")
+    sessions = await get_all_sessions(db)
+    assert len(sessions) == 1
+    row = sessions[0]
+    for key in ("session", "connector", "description", "updated_at", "webhook", "summary", "created_at"):
+        assert key in row, f"missing key {key!r} in get_all_sessions result"
+
+
+def test_get_unprocessed_messages_removed():
+    """M93a: get_unprocessed_messages was dead code and must not exist on kiso.store."""
+    import kiso.store
+    assert not hasattr(kiso.store, "get_unprocessed_messages"), (
+        "get_unprocessed_messages must be removed — use get_unprocessed_trusted_messages instead"
+    )
 
 
 async def test_tasks_empty(db: aiosqlite.Connection):

@@ -103,12 +103,12 @@ async def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
     await loop.run_in_executor(None, path.write_text, content, "utf-8")
 
 
-def _cleanup_plan_outputs(session: str) -> None:
+async def _cleanup_plan_outputs(session: str) -> None:
     """Remove plan_outputs.json after plan completion."""
     workspace = _session_workspace(session)
     outputs_file = workspace / ".kiso" / "plan_outputs.json"
-    if outputs_file.exists():
-        outputs_file.unlink()
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: outputs_file.unlink(missing_ok=True))
 
 
 def _ensure_sandbox_user_sync(session: str) -> int | None:

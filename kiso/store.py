@@ -321,18 +321,10 @@ async def mark_message_processed(db: aiosqlite.Connection, msg_id: int) -> None:
     await db.commit()
 
 
-async def get_unprocessed_messages(db: aiosqlite.Connection) -> list[dict]:
-    """Return all unprocessed messages (processed=0)."""
-    cur = await db.execute(
-        "SELECT * FROM messages WHERE processed = 0 ORDER BY id"
-    )
-    return await _rows_to_dicts(cur)
-
-
 async def get_sessions_for_user(db: aiosqlite.Connection, username: str) -> list[SessionDict]:
     """Return sessions where user has sent messages."""
     cur = await db.execute(
-        "SELECT DISTINCT s.session, s.connector, s.description, s.updated_at "
+        "SELECT DISTINCT s.* "
         "FROM sessions s JOIN messages m ON s.session = m.session "
         "WHERE m.user = ? ORDER BY s.updated_at DESC",
         (username,),
@@ -352,8 +344,7 @@ async def session_owned_by(db: aiosqlite.Connection, session: str, username: str
 async def get_all_sessions(db: aiosqlite.Connection) -> list[SessionDict]:
     """Return all sessions."""
     cur = await db.execute(
-        "SELECT session, connector, description, updated_at "
-        "FROM sessions ORDER BY updated_at DESC"
+        "SELECT * FROM sessions ORDER BY updated_at DESC"
     )
     return await _rows_to_dicts(cur)
 

@@ -23,7 +23,6 @@ from kiso.store import (
     get_session,
     get_tasks_for_plan,
     get_tasks_for_session,
-    get_unprocessed_messages,
     init_db,
     save_fact,
     save_learning,
@@ -575,8 +574,8 @@ class TestRunWorker:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Both messages should be processed
-        unprocessed = await get_unprocessed_messages(db)
-        assert len(unprocessed) == 0
+        cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
+        assert (await cur.fetchone())[0] == 0
 
         # Two plans: first failed (PlanError), second done
         cur = await db.execute(
@@ -600,8 +599,8 @@ class TestRunWorker:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
 
-        unprocessed = await get_unprocessed_messages(db)
-        assert len(unprocessed) == 0
+        cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
+        assert (await cur.fetchone())[0] == 0
 
     async def test_idle_timeout_exits(self, db, tmp_path):
         """Worker exits after idle_timeout with no messages."""
@@ -636,8 +635,8 @@ class TestRunWorker:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Both processed
-        unprocessed = await get_unprocessed_messages(db)
-        assert len(unprocessed) == 0
+        cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
+        assert (await cur.fetchone())[0] == 0
 
         # Two plans should exist
         tasks = await get_tasks_for_session(db, "sess1")
@@ -2020,14 +2019,19 @@ class TestCleanupPlanOutputs:
             await _write_plan_outputs("sess1", [{"index": 1, "type": "exec", "detail": "a", "output": "x", "status": "done"}])
             path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
             assert path.exists()
-            _cleanup_plan_outputs("sess1")
+            await _cleanup_plan_outputs("sess1")
             assert not path.exists()
 
-    def test_no_error_if_missing(self, tmp_path):
+    async def test_no_error_if_missing(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
             # Ensure workspace exists but no file
             _session_workspace("sess1")
-            _cleanup_plan_outputs("sess1")  # should not raise
+            await _cleanup_plan_outputs("sess1")  # should not raise
+
+    def test_is_coroutine_function(self):
+        """_cleanup_plan_outputs must be async (consistent with _write_plan_outputs)."""
+        import asyncio
+        assert asyncio.iscoroutinefunction(_cleanup_plan_outputs)
 
 
 # --- _format_plan_outputs_for_msg ---
@@ -5757,6 +5761,81 @@ class TestExecutePlanSearch:
         search_task = [t for t in tasks if t["type"] == "search"][0]
         assert search_task["status"] == "done"
         assert search_task["output"] == "search results"
+
+    async def test_search_status_not_done_during_retry(self, db, tmp_path):
+        """M93c: search task must NOT be written as 'done' in the DB before reviewer approves.
+        During a retry, the task stays 'running' (not 'done')."""
+        config = _make_config(settings={"max_worker_retries": 1})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        status_snapshots: list[str] = []
+
+        # Capture task status right after the first search call (before retry)
+        original_run_review = None
+
+        call_count = 0
+        async def _reviewer_that_captures(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # On first call: capture current DB status then request retry
+            if call_count == 1:
+                cur = await db.execute("SELECT status FROM tasks WHERE type = 'search'")
+                row = await cur.fetchone()
+                status_snapshots.append(row["status"] if row else "missing")
+                return REVIEW_REPLAN_WITH_HINT
+            return REVIEW_OK
+
+        mock_searcher = AsyncMock(return_value="some results")
+        with patch("kiso.worker.search.run_searcher", mock_searcher), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer_that_captures), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "user msg", 5,
+            )
+
+        # Status during first review (before retry) must NOT be "done"
+        assert status_snapshots[0] != "done", (
+            f"Task was prematurely marked 'done' before reviewer approved; got {status_snapshots[0]!r}"
+        )
+        # After retry + review ok the task must end up "done"
+        assert success is True
+        tasks = await get_tasks_for_plan(db, plan_id)
+        search_task = next(t for t in tasks if t["type"] == "search")
+        assert search_task["status"] == "done"
+
+    async def test_search_status_done_after_reviewer_ok(self, db, tmp_path):
+        """M93c: task is 'done' in DB after reviewer returns ok (no retry needed)."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        status_during_review: list[str] = []
+
+        async def _reviewer_ok(*args, **kwargs):
+            cur = await db.execute("SELECT status FROM tasks WHERE type = 'search'")
+            row = await cur.fetchone()
+            status_during_review.append(row["status"] if row else "missing")
+            return REVIEW_OK
+
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer_ok), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "user msg", 5,
+            )
+
+        # During review the task is NOT yet "done"
+        assert status_during_review[0] != "done"
+        # After review ok it IS "done"
+        assert success is True
+        tasks = await get_tasks_for_plan(db, plan_id)
+        search_task = next(t for t in tasks if t["type"] == "search")
+        assert search_task["status"] == "done"
 
     async def test_search_review_replan(self, db, tmp_path):
         """Review returns replan after search → plan returns replan reason."""
