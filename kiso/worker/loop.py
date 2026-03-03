@@ -1183,6 +1183,24 @@ async def _handle_loop_success(
     await _bump_fact_usage(db, content, session, user_role)
 
 
+async def _msg_task_with_fallback(
+    config: Config,
+    db: aiosqlite.Connection,
+    session: str,
+    detail: str,
+    goal: str,
+    timeout: "int | float",
+) -> str:
+    """Call _msg_task with a timeout; fall back to raw detail on any error."""
+    try:
+        return await asyncio.wait_for(
+            _msg_task(config, db, session, detail, goal=goal),
+            timeout=timeout,
+        )
+    except (LLMError, MessengerError, asyncio.TimeoutError):
+        return detail
+
+
 async def _handle_loop_cancel(
     db: aiosqlite.Connection,
     config: Config,
@@ -1192,20 +1210,16 @@ async def _handle_loop_cancel(
     remaining: list[dict],
     goal: str,
     *,
-    messenger_timeout: int = 120,
+    messenger_timeout: "int | float" = 120,
     session_secrets: dict | None = None,
     cancel_event: "asyncio.Event | None" = None,
 ) -> None:
     """Mark plan cancelled, send cancel summary, clear cancel event."""
     await update_plan_status(db, plan_id, "cancelled")
     cancel_detail = _build_cancel_summary(completed, remaining, goal)
-    try:
-        cancel_text = await asyncio.wait_for(
-            _msg_task(config, db, session, cancel_detail, goal=goal),
-            timeout=messenger_timeout,
-        )
-    except (LLMError, MessengerError, asyncio.TimeoutError):
-        cancel_text = cancel_detail
+    cancel_text = await _msg_task_with_fallback(
+        config, db, session, cancel_detail, goal, messenger_timeout,
+    )
     cancel_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, cancel_detail)
     await update_task(db, cancel_task_id, status="done", output=cancel_text)
     await save_message(db, session, None, "system", cancel_text, trusted=True, processed=True)
@@ -1227,7 +1241,7 @@ async def _handle_loop_failure(
     remaining: list[dict],
     goal: str,
     *,
-    messenger_timeout: int = 120,
+    messenger_timeout: "int | float" = 120,
     reason: str | None = None,
     session_secrets: dict | None = None,
     deliver_webhook: bool = True,
@@ -1235,13 +1249,9 @@ async def _handle_loop_failure(
     """Mark plan failed, send failure message, optionally deliver webhook."""
     await update_plan_status(db, plan_id, "failed")
     fail_detail = _build_failure_summary(completed, remaining, goal, reason=reason)
-    try:
-        fail_text = await asyncio.wait_for(
-            _msg_task(config, db, session, fail_detail, goal=goal),
-            timeout=messenger_timeout,
-        )
-    except (LLMError, MessengerError, asyncio.TimeoutError):
-        fail_text = fail_detail
+    fail_text = await _msg_task_with_fallback(
+        config, db, session, fail_detail, goal, messenger_timeout,
+    )
     fail_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, fail_detail)
     await update_task(db, fail_task_id, status="done", output=fail_text)
     await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)

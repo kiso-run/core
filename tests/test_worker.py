@@ -7287,7 +7287,7 @@ class TestHandleLoopFailure:
              patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
             await _handle_loop_failure(
                 db, config, "sess1", plan_id, [], [], "goal",
-                messenger_timeout=0,  # expire immediately
+                messenger_timeout=0.001,  # expire immediately
             )
 
         cur = await db.execute(
@@ -7348,7 +7348,7 @@ class TestHandleLoopCancel:
              patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
             await _handle_loop_cancel(
                 db, config, "sess1", plan_id, [], [], "goal",
-                messenger_timeout=0,  # expire immediately
+                messenger_timeout=0.001,  # expire immediately
             )
 
         cur = await db.execute(
