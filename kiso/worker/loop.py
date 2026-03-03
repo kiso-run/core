@@ -861,6 +861,7 @@ async def _handle_search_task(
     search_retries = 0
     search_extra_context = ""
     local_plan_output: "dict | None" = None
+    t0_total = time.perf_counter()
 
     while True:
         t0 = time.perf_counter()
@@ -889,7 +890,6 @@ async def _handle_search_task(
             )
             return _TaskHandlerResult(stop=True, stop_success=False)
 
-        task_duration_ms = int((time.perf_counter() - t0) * 1000)
         # Keep local state updated; DB write deferred until reviewer approves
         task_row = {**task_row, "output": search_result, "status": "done"}
         local_plan_output = _make_plan_output(i + 1, "search", detail, search_result, "done")
@@ -931,6 +931,7 @@ async def _handle_search_task(
         # review ok → write final status and break out of retry loop
         break
 
+    task_duration_ms = int((time.perf_counter() - t0_total) * 1000)
     await update_task(ctx.db, task_id, "done", output=search_result)
     audit.log_task(
         ctx.session, task_id, "search", detail, "done", task_duration_ms,

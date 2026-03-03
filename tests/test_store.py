@@ -46,6 +46,7 @@ from kiso.store import (
     update_task_substatus,
     update_task_usage,
     save_learning,
+    SessionDict,
 )
 
 
@@ -186,7 +187,7 @@ async def test_sessions_for_user_returns_full_dict(db: aiosqlite.Connection):
     assert len(sessions) == 1
     row = sessions[0]
     # All SessionDict keys must be present
-    for key in ("session", "connector", "description", "updated_at", "webhook", "summary", "created_at"):
+    for key in SessionDict.__annotations__:
         assert key in row, f"missing key {key!r} in get_sessions_for_user result"
 
 
@@ -196,7 +197,7 @@ async def test_get_all_sessions_returns_full_dict(db: aiosqlite.Connection):
     sessions = await get_all_sessions(db)
     assert len(sessions) == 1
     row = sessions[0]
-    for key in ("session", "connector", "description", "updated_at", "webhook", "summary", "created_at"):
+    for key in SessionDict.__annotations__:
         assert key in row, f"missing key {key!r} in get_all_sessions result"
 
 

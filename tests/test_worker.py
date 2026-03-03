@@ -368,6 +368,12 @@ class TestMsgTask:
 
 # --- run_worker ---
 
+async def _assert_all_messages_processed(db) -> None:
+    """Assert no unprocessed messages remain in the DB."""
+    cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
+    assert (await cur.fetchone())[0] == 0
+
+
 class TestRunWorker:
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -574,8 +580,7 @@ class TestRunWorker:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Both messages should be processed
-        cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
-        assert (await cur.fetchone())[0] == 0
+        await _assert_all_messages_processed(db)
 
         # Two plans: first failed (PlanError), second done
         cur = await db.execute(
@@ -599,8 +604,7 @@ class TestRunWorker:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
 
-        cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
-        assert (await cur.fetchone())[0] == 0
+        await _assert_all_messages_processed(db)
 
     async def test_idle_timeout_exits(self, db, tmp_path):
         """Worker exits after idle_timeout with no messages."""
@@ -635,8 +639,7 @@ class TestRunWorker:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Both processed
-        cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
-        assert (await cur.fetchone())[0] == 0
+        await _assert_all_messages_processed(db)
 
         # Two plans should exist
         tasks = await get_tasks_for_session(db, "sess1")
@@ -5771,10 +5774,6 @@ class TestExecutePlanSearch:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         status_snapshots: list[str] = []
-
-        # Capture task status right after the first search call (before retry)
-        original_run_review = None
-
         call_count = 0
         async def _reviewer_that_captures(*args, **kwargs):
             nonlocal call_count
@@ -5836,6 +5835,54 @@ class TestExecutePlanSearch:
         tasks = await get_tasks_for_plan(db, plan_id)
         search_task = next(t for t in tasks if t["type"] == "search")
         assert search_task["status"] == "done"
+
+    async def test_search_audit_duration_spans_retries(self, db, tmp_path):
+        """Simplify fix: audit.log_task duration covers total time across all retries,
+        not just the last iteration (regression guard for t0_total fix)."""
+        config = _make_config(settings={"max_worker_retries": 1})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        # perf_counter calls inside _handle_search_task for a 1-retry success:
+        #   call 1: t0_total (before while loop)
+        #   call 2: t0       (iteration 1 start)
+        #   call 3: t0       (iteration 2 start, after retry)
+        #   call 4: final    (after break: int((perf_counter() - t0_total) * 1000))
+        # Other task handlers (e.g. msg) also call perf_counter; give them a
+        # fallback value so the iterator never raises StopIteration in a coroutine.
+        perf_sequence = [0.0, 0.5, 1.0, 2.0]
+        _perf_idx = 0
+
+        def _fake_perf_counter():
+            nonlocal _perf_idx
+            v = perf_sequence[_perf_idx] if _perf_idx < len(perf_sequence) else 99.0
+            _perf_idx += 1
+            return v
+
+        call_count = 0
+
+        async def _retry_then_ok(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return REVIEW_REPLAN_WITH_HINT if call_count == 1 else REVIEW_OK
+
+        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_retry_then_ok), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             patch("kiso.worker.loop.time") as mock_time, \
+             patch("kiso.worker.loop.audit") as mock_audit, \
+             _patch_kiso_dir(tmp_path):
+            mock_time.perf_counter.side_effect = _fake_perf_counter
+            await _execute_plan(db, config, "sess1", plan_id, "Test", "user msg", 5)
+
+        search_log = next(
+            c for c in mock_audit.log_task.call_args_list if c[0][2] == "search"
+        )
+        duration_ms = search_log[0][5]
+        # Before fix: int((2.0 - 1.0) * 1000) = 1000 (last iteration only)
+        # After fix:  int((2.0 - 0.0) * 1000) = 2000 (total span)
+        assert duration_ms == 2000
 
     async def test_search_review_replan(self, db, tmp_path):
         """Review returns replan after search → plan returns replan reason."""
