@@ -354,6 +354,87 @@ def test_connector_search_no_results(capsys):
     assert "No connectors found." in out
 
 
+def test_cross_type_hint_returns_hint_for_other_type():
+    """cross_type_hint returns a hint string when matches exist in the other type."""
+    from cli.plugin_ops import cross_type_hint
+
+    registry = {
+        "connectors": [{"name": "discord", "description": "Discord bridge"}],
+        "skills": [{"name": "browser", "description": "Web browser"}],
+    }
+    result = cross_type_hint(registry, "connectors", "browser")
+    assert result is not None
+    assert "kiso skill search browser" in result
+    assert "browser" in result
+
+
+def test_cross_type_hint_returns_none_when_no_match():
+    """cross_type_hint returns None when no matches in either type."""
+    from cli.plugin_ops import cross_type_hint
+
+    registry = {
+        "connectors": [{"name": "discord", "description": "Discord bridge"}],
+        "skills": [{"name": "search", "description": "Web search"}],
+    }
+    assert cross_type_hint(registry, "connectors", "nonexistent") is None
+
+
+def test_cross_type_hint_skills_to_connectors():
+    """cross_type_hint works symmetrically: skills → connectors."""
+    from cli.plugin_ops import cross_type_hint
+
+    registry = {
+        "connectors": [{"name": "discord", "description": "Discord bridge"}],
+        "skills": [{"name": "search", "description": "Web search"}],
+    }
+    result = cross_type_hint(registry, "skills", "discord")
+    assert result is not None
+    assert "kiso connector search discord" in result
+
+
+def test_cross_type_hint_missing_key_returns_none():
+    """cross_type_hint handles registry missing the other type's key."""
+    from cli.plugin_ops import cross_type_hint
+
+    registry = {"connectors": [{"name": "discord", "description": "Discord bridge"}]}
+    assert cross_type_hint(registry, "connectors", "anything") is None
+
+
+def test_connector_search_cross_type_hint_shown(capsys):
+    """M102b: when connector search finds nothing, hint about matching skills."""
+    from cli.connector import _connector_search
+
+    with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):
+        _connector_search(argparse.Namespace(query="search"))
+    out = capsys.readouterr().out
+    assert "No connectors found." in out
+    assert "kiso skill search" in out
+    assert "search" in out
+
+
+def test_connector_search_cross_type_hint_not_shown_when_no_match(capsys):
+    """M102b: no cross-type hint when the other type also has no matches."""
+    from cli.connector import _connector_search
+
+    with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):
+        _connector_search(argparse.Namespace(query="nonexistent"))
+    out = capsys.readouterr().out
+    assert "No connectors found." in out
+    assert "kiso skill search" not in out
+
+
+def test_connector_search_cross_type_hint_not_shown_on_empty_query(capsys):
+    """M102b: no cross-type hint when query is empty (all results shown)."""
+    from cli.connector import _connector_search
+
+    empty_registry = {"connectors": [], "skills": [{"name": "search", "description": "Web search"}]}
+    with patch("cli.connector.fetch_registry", return_value=empty_registry):
+        _connector_search(argparse.Namespace(query=""))
+    out = capsys.readouterr().out
+    assert "No connectors found." in out
+    assert "kiso skill search" not in out
+
+
 # ── _connector_install ───────────────────────────────────────
 
 

@@ -79,13 +79,14 @@ The CLI renders the full execution flow in real time. Every decision the system 
 Toggle with `/verbose-on` and `/verbose-off` during a chat session. When enabled, LLM call panels show the full input/output for each LLM call in a task. Each panel shows:
 
 - **Messages sent**: each message with its role label (`[system]`, `[user]`, etc.)
-- **Response received**: the full LLM response, with JSON responses pretty-printed
+- **Thinking/reasoning** (if present): models that return reasoning content — via the API-level `reasoning_content` field (DeepSeek, OpenRouter) or `<think>`/`<thinking>` tags embedded in the response — get a separate `🤔 reasoning` section displayed in yellow between the input and the response. Thinking is extracted at the LLM layer (`kiso/text.py`) and stored in each call's usage entry, so it is available both in verbose panels and in the messenger output.
+- **Response received**: the full LLM response (with thinking tags already stripped), with JSON responses pretty-printed
 
 Example verbose flow for an exec task:
 
 ```
 ▶ [1/3] exec: check file exists  translating ⠋
-  ┌─ translator → deepseek-v3 (300→45) ────────┐
+  ┌─ translator → deepseek-v3 (300→45) 14:32:05 ┐
   │ [system] You translate natural language...   │
   │ [user] ## Task\ncheck file exists...         │
   │ [response] ls -la requirements.txt           │
@@ -93,7 +94,7 @@ Example verbose flow for an exec task:
   $ ls -la requirements.txt
 ▶ [1/3] exec: check file exists  running ⠋
 ▶ [1/3] exec: check file exists  reviewing ⠋
-  ┌─ reviewer → deepseek-v3 (350→60) ──────────┐
+  ┌─ reviewer → deepseek-v3 (350→60) 14:32:08 ─┐
   │ ...                                          │
   └──────────────────────────────────────────────┘
 ✓ [1/3] exec: check file exists
@@ -396,6 +397,14 @@ $ kiso skill search code
   aider   — Code editing, refactoring, bug fixes using aider
 ```
 
+If no results match but the other plugin type has matches, a cross-type hint is shown:
+
+```
+$ kiso connector search browser
+No connectors found.
+Did you mean `kiso skill search browser`? Found in skills: browser
+```
+
 ### Install Flow
 
 See [skills.md — Install Flow](skills.md#install-flow) for the full 10-step sequence (includes `.installing` marker to prevent discovery during install).
@@ -646,6 +655,8 @@ The wrapper (`kiso-host.sh`) fetches the completion script from inside a running
 - All top-level commands including `stats`, `completion`, `instance`, etc.
 - `kiso stats --session` and `kiso reset session` → tab-complete session names from the active instance's DB
 - `kiso instance explore SESSION` → tab-complete session names
+- `kiso skill search` and `kiso connector search` → tab-complete from locally installed plugin names
+- `kiso skill update`, `kiso skill remove`, `kiso connector update`, `kiso connector remove|run|stop|status` → tab-complete from locally installed names
 - `kiso --instance NAME` → detected from command line; completion automatically queries that instance's DB
 - When multiple instances exist and no `--instance` is specified, session completion is silently skipped
 

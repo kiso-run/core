@@ -339,6 +339,41 @@ def test_skill_search_no_results(capsys):
     assert "No skills found." in out
 
 
+def test_skill_search_cross_type_hint_shown(capsys):
+    """M102b: when skill search finds nothing, hint about matching connectors."""
+    from cli.skill import _skill_search
+
+    with patch("cli.skill._fetch_registry", return_value=FAKE_REGISTRY):
+        _skill_search(argparse.Namespace(query="discord"))
+    out = capsys.readouterr().out
+    assert "No skills found." in out
+    assert "kiso connector search" in out
+    assert "discord" in out
+
+
+def test_skill_search_cross_type_hint_not_shown_when_no_match(capsys):
+    """M102b: no cross-type hint when the other type also has no matches."""
+    from cli.skill import _skill_search
+
+    with patch("cli.skill._fetch_registry", return_value=FAKE_REGISTRY):
+        _skill_search(argparse.Namespace(query="nonexistent"))
+    out = capsys.readouterr().out
+    assert "No skills found." in out
+    assert "kiso connector search" not in out
+
+
+def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
+    """M102b: no cross-type hint when query is empty (all results shown)."""
+    from cli.skill import _skill_search
+
+    empty_registry = {"skills": [], "connectors": [{"name": "discord", "description": "Discord bridge"}]}
+    with patch("cli.skill._fetch_registry", return_value=empty_registry):
+        _skill_search(argparse.Namespace(query=""))
+    out = capsys.readouterr().out
+    assert "No skills found." in out
+    assert "kiso connector search" not in out
+
+
 # ── _skill_install ───────────────────────────────────────────
 
 

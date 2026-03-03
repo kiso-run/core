@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import sys
 from dataclasses import dataclass
 
@@ -353,19 +352,8 @@ def render_separator(caps: TermCaps) -> str:
     return _style(line, _DIM, caps=caps)
 
 
-_THINK_RE = re.compile(
-    r"<think(?:ing)?>(.*?)</think(?:ing)?>",
-    re.DOTALL,
-)
-
-
-def extract_thinking(text: str) -> tuple[str, str]:
-    """Extract thinking blocks from text. Returns (thinking, clean_text)."""
-    blocks = []
-    for m in _THINK_RE.finditer(text):
-        blocks.append(m.group(1).strip())
-    clean = _THINK_RE.sub("", text).strip()
-    return "\n".join(blocks), clean
+# Re-exported from kiso.text for backwards compatibility.
+from kiso.text import extract_thinking  # noqa: F401
 
 
 def render_thinking(thinking: str, caps: TermCaps) -> str:
@@ -385,15 +373,29 @@ def render_thinking(thinking: str, caps: TermCaps) -> str:
     return f"{header}\n{body}"
 
 
-def render_msg_output(output: str, caps: TermCaps, bot_name: str = "Bot") -> str:
+def render_msg_output(
+    output: str,
+    caps: TermCaps,
+    bot_name: str = "Bot",
+    thinking: str | None = None,
+) -> str:
     """Render bot message output with markdown formatting.
 
     The bot label (e.g. ``Bot:``) is placed on its own line, followed by
     the response body rendered as markdown via :func:`_render_markdown`.
     This keeps the label visually separate from multi-line markdown output
     (headings, code blocks, lists, tables).
+
+    If *thinking* is provided it is used directly; otherwise thinking
+    blocks are extracted from *output* via ``<think>`` tags (fallback for
+    models that embed reasoning in the response text).
     """
-    thinking, clean = extract_thinking(output)
+    if thinking is None:
+        thinking, clean = extract_thinking(output)
+    else:
+        # Thinking already extracted upstream (call_llm strips tags before
+        # storing content), so output should be clean.  Use as-is.
+        clean = output
     parts: list[str] = []
     if thinking:
         parts.append(render_thinking(thinking, caps))
@@ -452,6 +454,26 @@ def render_step_usage(input_tokens: int, output_tokens: int, caps: TermCaps) -> 
     return _style(text, _DIM, caps=caps)
 
 
+def _parse_llm_calls(llm_calls_json: str | None) -> list[dict]:
+    """Parse *llm_calls_json* safely.  Returns ``[]`` on ``None``/empty/invalid."""
+    if not llm_calls_json:
+        return []
+    import json as _json
+    try:
+        calls = _json.loads(llm_calls_json)
+    except (ValueError, TypeError):
+        return []
+    return calls if isinstance(calls, list) else []
+
+
+def get_last_thinking(llm_calls_json: str | None) -> str | None:
+    """Return the thinking field from the last LLM call, or ``None``."""
+    calls = _parse_llm_calls(llm_calls_json)
+    if calls:
+        return calls[-1].get("thinking") or None
+    return None
+
+
 def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
     """Render per-LLM-call breakdown.
 
@@ -460,13 +482,7 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
       translator ⟨300→45 deepseek/deepseek-v3⟩
       reviewer   ⟨350→60 deepseek/deepseek-v3⟩
     """
-    if not llm_calls_json:
-        return ""
-    import json as _json
-    try:
-        calls = _json.loads(llm_calls_json)
-    except (ValueError, TypeError):
-        return ""
+    calls = _parse_llm_calls(llm_calls_json)
     if not calls:
         return ""
     lines: list[str] = []
@@ -483,30 +499,31 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
     return "\n".join(lines)
 
 
-def render_llm_calls_verbose(llm_calls_json: str | None, caps: TermCaps) -> str:
+def render_llm_calls_verbose(
+    llm_calls_json: str | None, caps: TermCaps, skip: int = 0,
+) -> str:
     """Render full LLM input/output with beautified JSON in bordered panels.
 
     Each call is shown as a rich Panel with:
-    - Title: role -> model (tokens)
+    - Title: role -> model (tokens) HH:MM:SS
     - Body: each message (role-labeled), then the response
     - JSON responses are pretty-printed with syntax highlighting
-    """
-    if not llm_calls_json:
-        return ""
-    import json as _json
-    try:
-        calls = _json.loads(llm_calls_json)
-    except (ValueError, TypeError):
-        return ""
-    if not calls:
-        return ""
 
+    *skip* omits the first N verbose calls (used by incremental rendering
+    to avoid re-printing panels already shown).
+    """
+    import json as _json
+    from datetime import datetime, timezone
+
+    calls = _parse_llm_calls(llm_calls_json)
     # Only render calls that have messages (verbose data present)
     verbose_calls = [c for c in calls if c.get("messages")]
-    if not verbose_calls:
-        return ""
+    if skip >= len(verbose_calls):
+        return ""  # All verbose calls already shown — skip Rich setup
+    verbose_calls = verbose_calls[skip:]
 
     from rich.console import Console
+    from rich.markup import escape as _esc
     from rich.panel import Panel
 
     use_color = caps.color and caps.tty
@@ -524,6 +541,16 @@ def render_llm_calls_verbose(llm_calls_json: str | None, caps: TermCaps) -> str:
         highlight=False,
     )
 
+    sep_char = "\u2500" if caps.unicode else "-"
+    arrow = "\u2192" if caps.unicode else "->"
+
+    def _labeled_sep(label: str, width: int = 40) -> str:
+        return sep_char * 3 + label + sep_char * max(0, width - 3 - len(label))
+
+    sep = _labeled_sep(" response ")
+    think_icon = "\U0001f914" if caps.unicode else "?"
+    think_sep = _labeled_sep(f" {think_icon} reasoning ")
+
     for c in verbose_calls:
         role = c.get("role", "?")
         model = c.get("model", "")
@@ -531,27 +558,42 @@ def render_llm_calls_verbose(llm_calls_json: str | None, caps: TermCaps) -> str:
         out_t = c.get("output_tokens", 0)
         messages = c.get("messages", [])
         response = c.get("response", "")
+        thinking = c.get("thinking", "")
 
         short_model = model.split("/", 1)[-1] if "/" in model else model
-        arrow = "\u2192" if caps.unicode else "->"
-        title = f" {role} {arrow} {short_model} ({in_t:,}{arrow}{out_t:,}) "
 
-        # Build body
+        # Timestamp from LLM usage entry (epoch float)
+        ts = c.get("ts")
+        if ts:
+            ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M:%S")
+            title = f" {_esc(role)} {arrow} {_esc(short_model)} ({in_t:,}{arrow}{out_t:,}) {ts_str} "
+        else:
+            title = f" {_esc(role)} {arrow} {_esc(short_model)} ({in_t:,}{arrow}{out_t:,}) "
+
+        # Build body — input dimmed, response at normal weight
         parts: list[str] = []
         for msg in messages:
             label = msg.get("role", "?")
             content = msg.get("content", "")
-            parts.append(f"[{label}]")
-            parts.append(content)
+            parts.append(f"[dim cyan]\\[{_esc(label)}][/dim cyan]")
+            parts.append(f"[dim]{_esc(content)}[/dim]")
             parts.append("")
 
-        parts.append("[response]")
-        # Try to beautify JSON responses
+        # Visual separator between input and output
+        parts.append(f"[bold green]{sep}[/bold green]")
+
+        # Thinking/reasoning block (if present)
+        if thinking:
+            parts.append(f"[bold yellow]{think_sep}[/bold yellow]")
+            parts.append(f"[dim yellow]{_esc(thinking)}[/dim yellow]")
+            parts.append("")
+
+        # Response (normal weight — stands out against dimmed input)
         try:
             parsed = _json.loads(response)
-            parts.append(_json.dumps(parsed, indent=2, ensure_ascii=False))
+            parts.append(_esc(_json.dumps(parsed, indent=2, ensure_ascii=False)))
         except (ValueError, TypeError):
-            parts.append(response)
+            parts.append(_esc(response))
 
         body = "\n".join(parts)
         panel = Panel(

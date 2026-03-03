@@ -195,3 +195,41 @@ jobs:
 ## Details
 
 For live test internals (flags, markers, timeouts, flakiness, troubleshooting), see [testing-live.md](testing-live.md).
+
+## Debugging verbose sessions
+
+When `/verbose-on` is active, the CLI shows full LLM input/output for every role call. For long sessions this can be thousands of lines. Use `summary.sh` to compact a verbose session into deduplicated JSON for analysis.
+
+### How it works
+
+The script parses the terminal output and:
+
+1. Splits it into **text blocks** and **LLM call boxes** (the `╭─ role → model ╰─` panels)
+2. **Deduplicates** identical content via SHA1 — repeated prompts are stored once as a "def" and referenced by ID
+3. **Redacts** API keys and tokens
+4. **Summarises** long blocks with head/tail previews
+
+The output JSON has three sections: `meta` (compression stats), `defs` (unique content definitions), `events` (ordered sequence referencing defs).
+
+### Usage
+
+```bash
+# Compact a saved verbose session
+./summary.sh session.log --pretty
+
+# Save compact JSON to file
+./summary.sh session.log --out flow.json
+
+# Paste mode (CTRL-D to finish)
+./summary.sh --pretty
+
+# Pipe-friendly (stdout is clean JSON, decorations go to stderr)
+./summary.sh session.log | jq '.meta.stats'
+```
+
+### What to look for
+
+- **Repeated defs**: the same prompt appearing many times suggests a retry spiral or unnecessary replan cycles
+- **Token counts**: `in_tok`/`out_tok` on events show per-call cost; large `out_tok` on a worker call (should be ~5-20 tokens) indicates the model generated explanations instead of just a command
+- **Event sequence**: the `events` array shows the exact order of role calls — useful for tracing planner → worker → reviewer → replan chains
+- **Compression ratio**: `meta.stats` shows before/after — typical sessions compress 85-95%

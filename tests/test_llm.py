@@ -98,8 +98,15 @@ class TestGetApiKey:
 
 # --- call_llm ---
 
-def _ok_response(content: str = "hello", usage: dict | None = None) -> httpx.Response:
-    body: dict = {"choices": [{"message": {"content": content}}]}
+def _ok_response(
+    content: str = "hello",
+    usage: dict | None = None,
+    reasoning_content: str | None = None,
+) -> httpx.Response:
+    msg: dict = {"content": content}
+    if reasoning_content is not None:
+        msg["reasoning_content"] = reasoning_content
+    body: dict = {"choices": [{"message": msg}]}
     if usage is not None:
         body["usage"] = usage
     return httpx.Response(
@@ -842,3 +849,120 @@ class TestSharedHttpClient:
         finally:
             await close_http_client()
             llm_mod._http_client = prev
+
+
+# --- Thinking/reasoning extraction (M98a) ---
+
+
+class TestThinkingExtraction:
+    """Verify call_llm extracts thinking from API response and <think> tags."""
+
+    @pytest.mark.asyncio
+    async def test_reasoning_content_field(self):
+        """API-level reasoning_content is stored as 'thinking' in usage entry."""
+        config = _make_config()
+        reset_usage_tracking()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response(
+                    "final answer", usage=usage, reasoning_content="step by step",
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        assert result == "final answer"
+        from kiso.llm import _llm_usage_entries
+        entry = _llm_usage_entries.get()[-1]
+        assert entry["thinking"] == "step by step"
+        assert entry["response"] == "final answer"
+
+    @pytest.mark.asyncio
+    async def test_think_tags_extracted_from_content(self):
+        """<think> tags are extracted; clean content returned and stored."""
+        config = _make_config()
+        reset_usage_tracking()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response(
+                    "<think>reasoning here</think>clean answer", usage=usage,
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        assert result == "clean answer"
+        from kiso.llm import _llm_usage_entries
+        entry = _llm_usage_entries.get()[-1]
+        assert entry["thinking"] == "reasoning here"
+        assert entry["response"] == "clean answer"
+
+    @pytest.mark.asyncio
+    async def test_tags_take_precedence_over_api_field(self):
+        """When both <think> tags and reasoning_content exist, tags win."""
+        config = _make_config()
+        reset_usage_tracking()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response(
+                    "<think>tag thinking</think>answer",
+                    usage=usage,
+                    reasoning_content="api thinking",
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        assert result == "answer"
+        from kiso.llm import _llm_usage_entries
+        entry = _llm_usage_entries.get()[-1]
+        assert entry["thinking"] == "tag thinking"
+
+    @pytest.mark.asyncio
+    async def test_no_thinking_present(self):
+        """When neither tags nor reasoning_content exist, thinking is empty."""
+        config = _make_config()
+        reset_usage_tracking()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("plain answer", usage=usage)
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        assert result == "plain answer"
+        from kiso.llm import _llm_usage_entries
+        entry = _llm_usage_entries.get()[-1]
+        assert entry["thinking"] == ""
+
+    @pytest.mark.asyncio
+    async def test_thinking_field_in_usage_since(self):
+        """get_usage_since includes thinking field in calls."""
+        config = _make_config()
+        reset_usage_tracking()
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response(
+                    "answer", usage=usage, reasoning_content="deep thought",
+                )
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        delta = get_usage_since(0)
+        assert delta["calls"][0]["thinking"] == "deep thought"

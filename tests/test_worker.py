@@ -121,7 +121,7 @@ def _make_config(**overrides) -> Config:
     from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
     base_settings = {
         **SETTINGS_DEFAULTS,
-        "worker_idle_timeout": 1,  # short for tests
+        "worker_idle_timeout": 0.05,  # sub-second for fast tests
         "exec_timeout": 5,
         "planner_timeout": 5,
     }
@@ -4452,8 +4452,7 @@ class TestFactConsolidationTimeout:
     async def test_fact_consolidation_timeout_doesnt_break_worker(self, db, tmp_path):
         """asyncio.TimeoutError in fact consolidation is caught, worker continues."""
         config = _make_config(settings={
-            "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "exec_timeout": 1,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -7505,6 +7504,95 @@ class TestRunPlanningLoop:
         from kiso.store import get_plan_for_session
         p = await get_plan_for_session(db, "sess1")
         assert p["status"] == "failed"
+
+    async def test_old_plan_stays_replanning_until_new_plan_persisted(self, db, tmp_path):
+        """M103a: old plan stays 'replanning' until the new plan + tasks are persisted.
+
+        The old plan must NOT be finalized to done/failed before create_plan
+        and _persist_plan_tasks complete for the successor plan.
+        """
+        from kiso.store import get_plan_for_session
+
+        # Plan that triggers a replan (exec fails → reviewer says replan)
+        fail_plan = {
+            "goal": "First attempt",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
+            ],
+        }
+        success_plan = {
+            "goal": "Second attempt",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        plan_id = await create_plan(db, "sess1", 0, fail_plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", fail_plan["tasks"])
+        config = _make_config(settings={"max_replan_depth": 3})
+
+        # Track the old plan status at the moment create_plan is called
+        # for the new plan.  If M103a is correct, the old plan should still
+        # be "replanning" (not "done" or "failed") at that point.
+        old_plan_status_at_create: list[str] = []
+
+        original_create_plan = create_plan
+
+        async def _spy_create_plan(conn, session, msg_id, goal, **kw):
+            # Capture old plan status right when the new plan is being created
+            cur = await conn.execute(
+                "SELECT status FROM plans WHERE id = ?", (plan_id,)
+            )
+            row = await cur.fetchone()
+            if row:
+                old_plan_status_at_create.append(row[0])
+            return await original_create_plan(conn, session, msg_id, goal, **kw)
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(1)
+            if len(planner_calls) == 1:
+                return fail_plan
+            return success_plan
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.loop.create_plan", side_effect=_spy_create_plan), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, fail_plan, "admin", None, 5, 30,
+                {}, None, 10, 3, None, None,
+            )
+
+        # The old plan must have been "replanning" when the new plan was created
+        assert old_plan_status_at_create, "create_plan spy was never called for the new plan"
+        assert old_plan_status_at_create[0] == "replanning", (
+            f"Old plan should be 'replanning' when new plan is created, "
+            f"got '{old_plan_status_at_create[0]}'"
+        )
+
+        # After the loop completes, old plan should be finalized
+        cur = await db.execute(
+            "SELECT status FROM plans WHERE id = ?", (plan_id,)
+        )
+        row = await cur.fetchone()
+        assert row[0] == "failed"  # reviewer said replan → old plan is "failed"
+
+        # New plan should be "done"
+        assert returned_id != plan_id
+        cur = await db.execute(
+            "SELECT status FROM plans WHERE id = ?", (returned_id,)
+        )
+        row = await cur.fetchone()
+        assert row[0] == "done"
 
 
 # ---------------------------------------------------------------------------

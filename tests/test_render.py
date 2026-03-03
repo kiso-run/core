@@ -8,10 +8,12 @@ from cli.render import (
     CLEAR_LINE,
     TermCaps,
     _icon,
+    _parse_llm_calls,
     _render_markdown,
     _style,
     detect_caps,
     extract_thinking,
+    get_last_thinking,
     render_banner,
     render_cancel_done,
     render_cancel_start,
@@ -981,6 +983,29 @@ def test_render_msg_output_label_on_own_line():
     assert "Hello world" in body_text
 
 
+def test_render_msg_output_with_stored_thinking():
+    """Pre-extracted thinking parameter is used instead of tag extraction."""
+    result = render_msg_output("clean answer", _COLOR, "Kiso", thinking="stored thought")
+    assert "Thinking..." in result
+    assert "stored thought" in result
+    assert "clean answer" in result
+
+
+def test_render_msg_output_stored_thinking_uses_output_as_is():
+    """When thinking is pre-provided, output is already clean (stripped upstream)."""
+    result = render_msg_output("clean answer", _COLOR, "Kiso", thinking="real thought")
+    assert "Thinking..." in result
+    assert "real thought" in result
+    assert "clean answer" in result
+
+
+def test_render_msg_output_stored_thinking_empty_skips():
+    """Empty stored thinking falls back to tag extraction."""
+    result = render_msg_output("<think>from tags</think>body", _COLOR, thinking="")
+    # Empty string means no thinking — should still extract from tags
+    assert "Thinking..." not in result  # empty thinking = no display
+
+
 # ── render_llm_calls_verbose ────────────────────────────────
 
 
@@ -1089,6 +1114,258 @@ def test_render_llm_calls_verbose_invalid_json():
     assert render_llm_calls_verbose("not json", _COLOR) == ""
 
 
+def test_render_llm_calls_verbose_separator():
+    """A visual separator line appears between input messages and response."""
+    import json
+    calls = [
+        {
+            "role": "planner",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [
+                {"role": "system", "content": "You are helpful"},
+                {"role": "user", "content": "plan something"},
+            ],
+            "response": "here is the plan",
+        },
+    ]
+    # Unicode mode — separator uses ─
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert "\u2500\u2500\u2500 response " in result
+    assert "You are helpful" in result
+    assert "here is the plan" in result
+    # ASCII mode — separator uses -
+    result_ascii = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
+    assert "--- response " in result_ascii
+
+
+def test_render_llm_calls_verbose_escapes_markup():
+    """Content with Rich markup-like brackets is rendered literally."""
+    import json
+    calls = [
+        {
+            "role": "planner",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [{"role": "user", "content": "use [bold]text[/bold] here"}],
+            "response": "ok [red]done[/red]",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    # Brackets must appear literally, not interpreted as Rich styling
+    assert "[bold]" in result
+    assert "[red]" in result
+
+
+def test_render_llm_calls_verbose_thinking_panel():
+    """Thinking block displayed between separator and response when present."""
+    import json
+    calls = [
+        {
+            "role": "worker",
+            "model": "deepseek/deepseek-r1",
+            "input_tokens": 500,
+            "output_tokens": 200,
+            "messages": [{"role": "user", "content": "solve this"}],
+            "response": "the answer is 42",
+            "thinking": "let me think step by step...",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert "reasoning" in result
+    assert "let me think step by step..." in result
+    assert "the answer is 42" in result
+    # Thinking appears after separator, before response
+    sep_pos = result.index("response")
+    think_pos = result.index("reasoning")
+    answer_pos = result.index("the answer is 42")
+    assert sep_pos < think_pos < answer_pos
+
+
+def test_render_llm_calls_verbose_thinking_absent():
+    """No thinking block when thinking field is empty or missing."""
+    import json
+    calls = [
+        {
+            "role": "worker",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "hello",
+            "thinking": "",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert "reasoning" not in result
+    # Missing field entirely
+    calls2 = [
+        {
+            "role": "worker",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "hello",
+        },
+    ]
+    result2 = render_llm_calls_verbose(json.dumps(calls2), _COLOR)
+    assert "reasoning" not in result2
+
+
+def test_render_llm_calls_verbose_thinking_ascii():
+    """Thinking block uses ASCII icon in plain mode."""
+    import json
+    calls = [
+        {
+            "role": "worker",
+            "model": "gpt-4",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "hello",
+            "thinking": "deep reasoning",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
+    assert "reasoning" in result
+    assert "deep reasoning" in result
+    assert "?" in result  # ASCII icon
+
+
+# ── M101: verbose timestamp + skip ───────────────────────────
+
+
+def test_render_llm_calls_verbose_timestamp():
+    """Call with 'ts' epoch → HH:MM:SS appears in panel title."""
+    import json
+    calls = [
+        {
+            "role": "translator",
+            "model": "deepseek-v3",
+            "input_tokens": 300,
+            "output_tokens": 45,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "hello",
+            "ts": 1700000000.0,
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    assert "22:13:20" in result
+
+
+def test_render_llm_calls_verbose_no_timestamp():
+    """Call without 'ts' → no HH:MM:SS but role+model+tokens still present."""
+    import json
+    calls = [
+        {
+            "role": "translator",
+            "model": "deepseek-v3",
+            "input_tokens": 300,
+            "output_tokens": 45,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "hello",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
+    # No timestamp pattern HH:MM:SS
+    import re
+    assert not re.search(r"\d{2}:\d{2}:\d{2}", result)
+    # But role, model, tokens are present
+    assert "translator" in result
+    assert "deepseek-v3" in result
+    assert "300" in result
+
+
+def test_render_llm_calls_verbose_skip_first():
+    """skip=2 → only the third call is rendered."""
+    import json
+    calls = [
+        {
+            "role": "translator",
+            "model": "m1",
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "messages": [{"role": "user", "content": "first"}],
+            "response": "r1",
+        },
+        {
+            "role": "reviewer",
+            "model": "m2",
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "messages": [{"role": "user", "content": "second"}],
+            "response": "r2",
+        },
+        {
+            "role": "curator",
+            "model": "m3",
+            "input_tokens": 30,
+            "output_tokens": 15,
+            "messages": [{"role": "user", "content": "third"}],
+            "response": "r3",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN, skip=2)
+    assert "curator" in result
+    assert "third" in result
+    assert "translator" not in result
+    assert "reviewer" not in result
+
+
+def test_render_llm_calls_verbose_skip_all():
+    """skip >= call count → empty output."""
+    import json
+    calls = [
+        {
+            "role": "translator",
+            "model": "m1",
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "ok",
+        },
+        {
+            "role": "reviewer",
+            "model": "m2",
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "messages": [{"role": "user", "content": "check"}],
+            "response": "ok",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN, skip=2)
+    assert result == ""
+
+
+def test_render_llm_calls_verbose_skip_zero():
+    """skip=0 → all calls rendered."""
+    import json
+    calls = [
+        {
+            "role": "translator",
+            "model": "m1",
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "ok",
+        },
+        {
+            "role": "reviewer",
+            "model": "m2",
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "messages": [{"role": "user", "content": "check"}],
+            "response": "fine",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN, skip=0)
+    assert "translator" in result
+    assert "reviewer" in result
+
+
 # ── M31: search icon + substatus ──────────────────────────────
 
 
@@ -1191,3 +1468,92 @@ def test_render_review_no_retry_no_indicator():
     task3 = {"review_verdict": "replan", "review_reason": "fail", "retry_count": 0}
     result3 = render_review(task3, _COLOR)
     assert "retried" not in result3.lower()
+
+
+# ── M98: _parse_llm_calls + get_last_thinking ────────────────
+
+
+class TestParseLlmCalls:
+    def test_none_returns_empty(self):
+        assert _parse_llm_calls(None) == []
+
+    def test_empty_string_returns_empty(self):
+        assert _parse_llm_calls("") == []
+
+    def test_invalid_json_returns_empty(self):
+        assert _parse_llm_calls("not json") == []
+
+    def test_non_list_json_returns_empty(self):
+        assert _parse_llm_calls('{"key": "val"}') == []
+
+    def test_valid_list(self):
+        import json
+        calls = [{"role": "planner", "model": "gpt-4"}]
+        assert _parse_llm_calls(json.dumps(calls)) == calls
+
+    def test_empty_list(self):
+        assert _parse_llm_calls("[]") == []
+
+
+class TestGetLastThinking:
+    def test_none_returns_none(self):
+        assert get_last_thinking(None) is None
+
+    def test_empty_calls_returns_none(self):
+        assert get_last_thinking("[]") is None
+
+    def test_missing_thinking_field(self):
+        import json
+        calls = [{"role": "worker", "response": "hi"}]
+        assert get_last_thinking(json.dumps(calls)) is None
+
+    def test_empty_thinking_field(self):
+        import json
+        calls = [{"role": "worker", "thinking": ""}]
+        assert get_last_thinking(json.dumps(calls)) is None
+
+    def test_returns_last_call_thinking(self):
+        import json
+        calls = [
+            {"role": "translator", "thinking": "first thought"},
+            {"role": "reviewer", "thinking": "second thought"},
+        ]
+        assert get_last_thinking(json.dumps(calls)) == "second thought"
+
+    def test_invalid_json_returns_none(self):
+        assert get_last_thinking("broken") is None
+
+
+# ── M98: extract_thinking edge cases ─────────────────────────
+
+
+def test_extract_thinking_whitespace_only():
+    """Whitespace-only blocks are stripped to empty."""
+    thinking, clean = extract_thinking("<think>   \n  </think>hello")
+    assert thinking == ""
+    assert clean == "hello"
+
+
+def test_extract_thinking_nested_tags():
+    """Nested tags: inner tags are captured as literal text, not parsed."""
+    text = "<think>outer <think>inner</think> rest</think>body"
+    thinking, clean = extract_thinking(text)
+    # Regex is non-greedy, so first match is "outer <think>inner"
+    assert "outer" in thinking
+    assert "body" in clean
+
+
+def test_extract_thinking_unclosed_tag():
+    """Unclosed <think> tag is not matched — text returned as-is."""
+    text = "<think>no closing tag here"
+    thinking, clean = extract_thinking(text)
+    assert thinking == ""
+    assert clean == text
+
+
+def test_extract_thinking_unicode_content():
+    """Unicode content inside thinking tags is preserved."""
+    text = "<think>考えています 🤔</think>答え"
+    thinking, clean = extract_thinking(text)
+    assert "考えています" in thinking
+    assert clean == "答え"

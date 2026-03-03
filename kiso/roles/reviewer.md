@@ -13,4 +13,4 @@ Rules:
 - Be strict: if output doesn't satisfy `expect`, mark as replan.
 - reason: concise — the planner uses it to create a better plan.
 - learn: only durable facts (tech stack, file structure, user preferences). Never transient ("command failed", "file not found").
-- If output contains warnings about missing configuration (env vars, API keys, tokens), mark as replan even if the command succeeded.
+- Warnings (missing env vars, deprecations, non-fatal notices) are informational — they do NOT override exit 0 + satisfied `expect`. Mark replan for a warning ONLY if the `expect` explicitly requires absence of warnings (e.g. "no warnings", "clean output").

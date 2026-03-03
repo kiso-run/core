@@ -11,6 +11,7 @@ import httpx
 
 from kiso import audit
 from kiso.config import Config, LLM_API_KEY_ENV, Provider
+from kiso.text import extract_thinking
 
 # Roles that require structured output (response_format with json_schema).
 STRUCTURED_ROLES = {"planner", "reviewer", "curator"}
@@ -241,7 +242,8 @@ async def call_llm(
 
     try:
         data = resp.json()
-        content = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        content = msg["content"]
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(f"Unexpected LLM response format: {e}")
@@ -249,6 +251,17 @@ async def call_llm(
     if not content:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(f"Empty response from LLM ({role}, {model_name})")
+
+    # Extract thinking/reasoning content.
+    # 1) API-level field (DeepSeek, OpenRouter)
+    reasoning = (msg.get("reasoning_content") or "").strip()
+    # 2) <think>/<thinking> tags embedded in content
+    tag_thinking, clean_content = extract_thinking(content)
+    # Prefer tags (they're the actual response content); fall back to API field.
+    thinking = tag_thinking or reasoning
+    # If tags were found, use the cleaned content as the response.
+    if tag_thinking:
+        content = clean_content
 
     # Extract token usage
     usage = data.get("usage") or {}
@@ -265,8 +278,10 @@ async def call_llm(
             "model": model_name,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "thinking": thinking,
             "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
             "response": content,
+            "ts": time.time(),
         })
 
     return content

@@ -23,6 +23,7 @@ from cli.plugin_ops import (
     _GIT_ENV,
     _list_plugins,
     _plugin_install,
+    cross_type_hint,
     fetch_registry,
     is_repo_not_found,
     is_url,
@@ -214,6 +215,10 @@ def _connector_search(args) -> None:
 
     if not results:
         print("No connectors found.")
+        if args.query:
+            hint = cross_type_hint(registry, "connectors", args.query)
+            if hint:
+                print(hint)
         return
 
     max_name = max(len(r["name"]) for r in results)

@@ -588,8 +588,12 @@ def test_poll_exits_on_failed_plan_when_worker_idle(capsys, plain_caps):
     assert mock_client.get.call_count == 1
 
 
-def test_poll_exits_on_done_plan_immediately(capsys, plain_caps):
-    """Plan with status=done exits immediately regardless of worker state."""
+def test_poll_exits_on_done_plan_worker_running_after_stability(capsys, plain_caps):
+    """M103b: plan done + worker running → uses stability window (30 polls), not immediate exit.
+
+    This prevents the CLI from missing a replan transition where the old plan
+    is briefly 'done' while the worker is still creating the successor plan.
+    """
     mock_client = MagicMock()
     status_resp = MagicMock()
     status_resp.json.return_value = {
@@ -598,7 +602,7 @@ def test_poll_exits_on_done_plan_immediately(capsys, plain_caps):
             {"id": 5, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
              "output": "All good"},
         ],
-        "worker_running": True,  # worker still running, but plan is done
+        "worker_running": True,  # worker still running — could be replan
     }
     status_resp.raise_for_status = MagicMock()
     mock_client.get.return_value = status_resp
@@ -607,8 +611,8 @@ def test_poll_exits_on_done_plan_immediately(capsys, plain_caps):
         result = _poll_status(mock_client, "sess", 42, 0, quiet=False, verbose=False, caps=plain_caps)
 
     assert result == 5
-    # Should exit after first poll (plan done, exits immediately)
-    assert mock_client.get.call_count == 1
+    # Should exit after 30 stability polls (not 1), since worker is still running
+    assert mock_client.get.call_count == 30
     out = capsys.readouterr().out
     assert "All good" in out
 
@@ -2285,6 +2289,60 @@ class TestShouldStopPolling:
             else:
                 assert should_break is True
 
+    # --- M103b: done + worker_running stability window ---
+
+    def test_done_worker_running_does_not_break_immediately(self):
+        """M103b: plan done + worker still running → do NOT exit immediately.
+
+        This prevents the CLI from exiting the poll loop during a replan
+        transition where the old plan is briefly 'done' but the worker
+        is still creating the new plan.
+        """
+        plan = {"id": 1, "message_id": 1, "status": "done"}
+        tasks = [{"id": 5}]
+        seen = {5: ("done", None, "", 0)}
+        should_break, new_fp = _should_stop_polling(plan, tasks, 1, True, seen, 0)
+        assert should_break is False
+        assert new_fp == 1  # counter started incrementing
+
+    def test_done_worker_running_not_all_rendered(self):
+        """M103b: plan done, worker running, tasks not rendered → wait."""
+        plan = {"id": 1, "message_id": 1, "status": "done"}
+        tasks = [{"id": 5}]
+        seen = {}  # task 5 not rendered yet
+        should_break, new_fp = _should_stop_polling(plan, tasks, 1, True, seen, 5)
+        assert should_break is False
+        assert new_fp == 0  # reset because not all rendered
+
+    def test_done_worker_running_reaches_threshold(self):
+        """M103b: plan done + worker running → break after 30 stable polls."""
+        plan = {"id": 1, "message_id": 1, "status": "done"}
+        tasks = [{"id": 5}]
+        seen = {5: ("done", None, "", 0)}
+        should_break, new_fp = _should_stop_polling(plan, tasks, 1, True, seen, 29)
+        assert should_break is True
+        assert new_fp == 30
+
+    def test_done_worker_stopped_breaks_immediately(self):
+        """Plan done + worker NOT running → break immediately (normal case)."""
+        plan = {"id": 1, "message_id": 1, "status": "done"}
+        should_break, new_fp = _should_stop_polling(plan, [], 1, False, {}, 0)
+        assert should_break is True
+        assert new_fp == 0
+
+    def test_done_worker_running_fp_accumulates(self):
+        """M103b: stability counter accumulates correctly for done + worker_running."""
+        plan = {"id": 1, "message_id": 1, "status": "done"}
+        tasks = [{"id": 5}]
+        seen = {5: ("done", None, "", 0)}
+        fp = 0
+        for i in range(1, 31):
+            should_break, fp = _should_stop_polling(plan, tasks, 1, True, seen, fp)
+            if i < 30:
+                assert should_break is False, f"Should not break at iteration {i}"
+            else:
+                assert should_break is True
+
 
 # ── _render_plan_status ───────────────────────────────────────
 
@@ -2294,7 +2352,7 @@ class TestRenderPlanStatus:
         return TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
 
     def _state(self):
-        return _PollRenderState(seen={})
+        return _PollRenderState(seen={}, verbose_shown={})
 
     def test_renders_plan_goal(self, capsys):
         plan = {"id": 1, "message_id": 1, "status": "running", "goal": "Do the thing",
@@ -2430,3 +2488,124 @@ class TestRenderPlanStatus:
         out = capsys.readouterr().out
         assert "exec" in out  # task type shown in header
         assert "file.txt" in out
+
+
+# ── M101: verbose dedup + replan reset ────────────────────────
+
+
+def test_poll_verbose_incremental_dedup(capsys, plain_caps):
+    """Verbose panels are printed incrementally — each LLM call appears exactly once.
+
+    Poll 1: task running, 1 verbose call (translator) → printed.
+    Poll 2: task running, 2 verbose calls (translator+reviewer) → only reviewer printed.
+    Poll 3: task done, plan done → no duplicate panels.
+    """
+    import json
+
+    mock_client = MagicMock()
+
+    call_translator = {
+        "role": "translator", "model": "m", "input_tokens": 10, "output_tokens": 5,
+        "messages": [{"role": "user", "content": "translate this"}], "response": "ls",
+    }
+    call_reviewer = {
+        "role": "reviewer", "model": "m", "input_tokens": 20, "output_tokens": 10,
+        "messages": [{"role": "user", "content": "review this"}], "response": "ok",
+    }
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "llm_calls": json.dumps([call_translator])},
+        ],
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "running"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "running",
+             "output": "", "llm_calls": json.dumps([call_translator, call_reviewer])},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+
+    resp3 = MagicMock()
+    resp3.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Run it", "status": "done"},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "ls", "status": "done",
+             "output": "file.txt", "llm_calls": json.dumps([call_translator, call_reviewer])},
+            {"id": 4, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Done.", "llm_calls": "[]"},
+        ],
+    }
+    resp3.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2, resp3]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=True, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # Each role appears exactly once in verbose panels
+    assert out.count("translate this") == 1
+    assert out.count("review this") == 1
+
+
+def test_poll_verbose_replan_resets_shown(capsys, plain_caps):
+    """On replan (new plan_id), verbose_shown is reset so calls are not skipped.
+
+    Poll 1: plan_id=1, task with 1 verbose call → printed.
+    Poll 2: plan_id=2 (replan), new task with 1 verbose call → also printed.
+    """
+    import json
+
+    mock_client = MagicMock()
+
+    call_a = {
+        "role": "translator", "model": "m", "input_tokens": 10, "output_tokens": 5,
+        "messages": [{"role": "user", "content": "first plan call"}], "response": "r1",
+    }
+    call_b = {
+        "role": "translator", "model": "m", "input_tokens": 15, "output_tokens": 8,
+        "messages": [{"role": "user", "content": "replan call"}], "response": "r2",
+    }
+
+    # Poll 1: plan_id=1, task done with 1 verbose call (verbose emits on done)
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Plan A", "status": "running",
+                 "llm_calls": None},
+        "tasks": [
+            {"id": 3, "plan_id": 1, "type": "exec", "detail": "step1", "status": "done",
+             "output": "done1", "llm_calls": json.dumps([call_a])},
+        ],
+        "worker_running": True,
+    }
+    resp1.raise_for_status = MagicMock()
+
+    # Poll 2: plan_id=2 (replan), new task done with 1 verbose call
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 2, "message_id": 10, "goal": "Plan B", "status": "done",
+                 "llm_calls": None},
+        "tasks": [
+            {"id": 5, "plan_id": 2, "type": "exec", "detail": "step2", "status": "done",
+             "output": "ok", "llm_calls": json.dumps([call_b])},
+            {"id": 6, "plan_id": 2, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Replanned.", "llm_calls": "[]"},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=True, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # Both verbose panels appear (replan reset prevents dedup from skipping the second)
+    assert "first plan call" in out
+    assert "replan call" in out

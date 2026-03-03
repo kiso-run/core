@@ -1119,7 +1119,7 @@ async def run_worker(
     cancel_event: asyncio.Event | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
-    idle_timeout = setting_int(config.settings, "worker_idle_timeout", lo=1)
+    idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
     exec_timeout = setting_int(config.settings, "exec_timeout", lo=1)
     planner_timeout = setting_int(config.settings, "planner_timeout", lo=1)
     messenger_timeout = setting_int(config.settings, "messenger_timeout", lo=1)
@@ -1420,18 +1420,20 @@ async def _run_planning_loop(
             )
             break
 
-        # Finalize old plan status
-        if is_self_directed:
-            await update_plan_status(db, current_plan_id, "done")
-        else:
-            await update_plan_status(db, current_plan_id, "failed")
-
-        # Create new plan with parent_id
+        # Create new plan BEFORE finalizing the old one, so the CLI never
+        # sees a window where the old plan is done/failed but no successor
+        # exists yet (M103a — race condition fix).
         new_plan_id = await create_plan(
             db, session, msg_id, new_plan["goal"],
             parent_id=current_plan_id,
         )
         await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
+
+        # Now finalize old plan status — the new plan is already visible.
+        if is_self_directed:
+            await update_plan_status(db, current_plan_id, "done")
+        else:
+            await update_plan_status(db, current_plan_id, "failed")
         log.info("Replan %d (parent=%d): goal=%r, %d tasks",
                  new_plan_id, current_plan_id, new_plan["goal"], len(new_plan["tasks"]))
         if slog:

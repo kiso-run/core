@@ -357,6 +357,27 @@ async def build_planner_messages(
     """
     system_prompt = _load_system_prompt("planner")
 
+    # Contextual appendix blocks — injected only when the message touches
+    # the relevant topic.  False positives are harmless (extra guidance);
+    # false negatives degrade gracefully (planner lacks detail, may ask).
+    msg_lower = new_message.lower()
+    appendix_parts: list[str] = []
+
+    _kiso_kw = {"skill", "connector", "env", "instance", "kiso"}
+    if _kiso_kw & set(msg_lower.split()):
+        appendix_parts.append(_load_system_prompt("planner-kiso-commands"))
+
+    _user_kw = {"user", "utente", "admin", "alias"}
+    if _user_kw & set(msg_lower.split()):
+        appendix_parts.append(_load_system_prompt("planner-user-mgmt"))
+
+    _plugin_kw = {"install", "installa", "plugin", "add"}
+    if _plugin_kw & set(msg_lower.split()):
+        appendix_parts.append(_load_system_prompt("planner-plugin-install"))
+
+    if appendix_parts:
+        system_prompt = system_prompt.rstrip() + "\n\n" + "\n\n".join(appendix_parts)
+
     # Context pieces
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""

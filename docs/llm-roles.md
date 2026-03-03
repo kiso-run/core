@@ -256,6 +256,7 @@ No "local fix" status — the planner replans with full context and decides whet
 - **Plan Context**: provided as background only. The sole success criterion is the task's `expect` — not the overall plan goal.
 - **Exit code**: a non-zero exit code is a strong failure signal even if the output appears partially correct. A zero exit code is necessary but not sufficient — the output must also satisfy `expect`.
 - **Maintenance commands**: a command that exits 0 with "nothing to do" or "0 changes" satisfies an expect about resolving issues — there were none to resolve.
+- **Warnings**: warnings (missing env vars, deprecations, non-fatal notices) are informational. They do not override a successful exit code + satisfied `expect`. The reviewer marks replan for a warning only if the `expect` explicitly requires absence of warnings (e.g. "no warnings", "clean output").
 
 ### Replan Flow
 

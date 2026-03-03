@@ -105,6 +105,23 @@ def search_entries(entries: list[dict], query: str | None) -> list[dict]:
     return [e for e in entries if q in e.get("description", "").lower()]
 
 
+def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None:
+    """Check the other plugin type for matches and return a hint string.
+
+    When a search in one type (e.g. "connectors") yields no results, this
+    function checks the other type ("skills") for matches.  Returns a hint
+    string like 'Did you mean `kiso skill search browser`?' or None.
+    """
+    other_type = "skills" if current_type == "connectors" else "connectors"
+    other_cmd = "skill" if other_type == "skills" else "connector"
+    other_entries = registry.get(other_type, [])
+    matches = search_entries(other_entries, query)
+    if matches:
+        names = ", ".join(m["name"] for m in matches)
+        return f"Did you mean `kiso {other_cmd} search {query}`? Found in {other_type}: {names}"
+    return None
+
+
 def _plugin_install(
     plugin_type: str,
     official_prefix: str,

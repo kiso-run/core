@@ -121,6 +121,11 @@ _kiso() {
                         skill_names=(${(f)"$(_kiso_skill_names)"})
                         (( ${#skill_names} )) && compadd -- "${skill_names[@]}"
                         ;;
+                    search)
+                        local -a skill_names
+                        skill_names=(${(f)"$(_kiso_skill_names)"})
+                        (( ${#skill_names} )) && compadd -- "${skill_names[@]}"
+                        ;;
                 esac
             fi
             return
@@ -139,6 +144,11 @@ _kiso() {
                         compadd -- all "${conn_names[@]}"
                         ;;
                     remove|run|stop|status)
+                        local -a conn_names
+                        conn_names=(${(f)"$(_kiso_connector_names)"})
+                        (( ${#conn_names} )) && compadd -- "${conn_names[@]}"
+                        ;;
+                    search)
                         local -a conn_names
                         conn_names=(${(f)"$(_kiso_connector_names)"})
                         (( ${#conn_names} )) && compadd -- "${conn_names[@]}"

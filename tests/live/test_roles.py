@@ -163,6 +163,60 @@ class TestReviewerLive:
         assert review["status"] == "replan"
         assert review["reason"]
 
+    async def test_warning_with_satisfied_expect_returns_ok(self, live_config):
+        """M96: exit 0 + warning about missing env var + expect satisfied → ok."""
+        review = await asyncio.wait_for(
+            run_reviewer(
+                live_config,
+                goal="Install the aider skill",
+                detail="kiso skill install aider",
+                expect="Skill 'aider' installed successfully, exits 0",
+                output="warning: KISO_SKILL_AIDER_API_KEY not set\n"
+                       "Skill 'aider' installed successfully.",
+                user_message="install the aider skill",
+                success=True,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert validate_review(review) == []
+        assert review["status"] == "ok"
+
+    async def test_warning_with_explicit_no_warnings_expect_returns_replan(self, live_config):
+        """M96: exit 0 + warning + expect requires 'no warnings' → replan."""
+        review = await asyncio.wait_for(
+            run_reviewer(
+                live_config,
+                goal="Install the aider skill cleanly",
+                detail="kiso skill install aider",
+                expect="Skill installed with no warnings or errors",
+                output="warning: KISO_SKILL_AIDER_API_KEY not set\n"
+                       "Skill 'aider' installed successfully.",
+                user_message="install aider with no issues",
+                success=True,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert validate_review(review) == []
+        assert review["status"] == "replan"
+
+    async def test_nonzero_exit_with_warning_returns_replan(self, live_config):
+        """M96: non-zero exit + warning → always replan."""
+        review = await asyncio.wait_for(
+            run_reviewer(
+                live_config,
+                goal="Install the aider skill",
+                detail="kiso skill install aider",
+                expect="Skill 'aider' installed successfully, exits 0",
+                output="warning: KISO_SKILL_AIDER_API_KEY not set\n"
+                       "error: installation failed",
+                user_message="install the aider skill",
+                success=False,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert validate_review(review) == []
+        assert review["status"] == "replan"
+
 
 # ---------------------------------------------------------------------------
 # Worker (msg task)
@@ -198,6 +252,29 @@ class TestWorkerLive:
         )
         assert isinstance(text, str)
         assert len(text) > 0
+
+    async def test_thinking_field_in_usage_entries(
+        self, live_config, seeded_db, live_session,
+    ):
+        """Usage entries include a 'thinking' field after M98."""
+        from kiso.llm import get_usage_index, get_usage_since, reset_usage_tracking
+
+        reset_usage_tracking()
+        idx = get_usage_index()
+
+        await asyncio.wait_for(
+            _msg_task(
+                live_config, seeded_db, live_session,
+                "Say hello in one word.",
+            ),
+            timeout=TIMEOUT,
+        )
+
+        delta = get_usage_since(idx)
+        assert len(delta["calls"]) >= 1
+        for call in delta["calls"]:
+            assert "thinking" in call, "usage entry missing 'thinking' field"
+            assert isinstance(call["thinking"], str)
 
 
 # ---------------------------------------------------------------------------

@@ -58,7 +58,7 @@ CREATE TABLE plans (
     message_id          INTEGER NOT NULL,    -- which message triggered this plan
     parent_id           INTEGER,             -- previous plan if this is a replan (null for first plan)
     goal                TEXT NOT NULL,       -- from planner output
-    status              TEXT NOT NULL DEFAULT 'running',  -- running | done | failed | cancelled
+    status              TEXT NOT NULL DEFAULT 'running',  -- running | replanning | done | failed | cancelled
     total_input_tokens  INTEGER NOT NULL DEFAULT 0,       -- cumulative LLM input tokens for this plan
     total_output_tokens INTEGER NOT NULL DEFAULT 0,       -- cumulative LLM output tokens for this plan
     model               TEXT,                             -- model used for the planner call
@@ -70,8 +70,8 @@ CREATE INDEX idx_plans_session ON plans(session, id);
 
 - Created after the planner returns and validation passes.
 - `parent_id` links replan chains: replan creates a new plan pointing to the previous one.
-- Status lifecycle: `running` → `done` | `failed` | `cancelled`.
-- On startup, any plans left in `running` status are marked as `failed`.
+- Status lifecycle: `running` → `replanning` → `done` | `failed` | `cancelled`. The `replanning` status is set when a replan is triggered and persists until the successor plan is created, at which point the old plan is finalized to `done` or `failed`.
+- On startup, any plans left in `running` or `replanning` status are marked as `failed`.
 - `total_input_tokens` / `total_output_tokens`: accumulated across all tasks in the plan. Updated as tasks complete.
 - `llm_calls`: JSON array of `{role, model, input_tokens, output_tokens}` objects, one per LLM call in the plan lifecycle.
 

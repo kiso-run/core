@@ -58,6 +58,7 @@ _kiso() {
                     install) COMPREPLY=($(compgen -W "--name --show-deps --no-deps" -- "$cur")) ;;
                     update)  COMPREPLY=($(compgen -W "all $(_kiso_skill_names)" -- "$cur")) ;;
                     remove)  COMPREPLY=($(compgen -W "$(_kiso_skill_names)" -- "$cur")) ;;
+                    search)  COMPREPLY=($(compgen -W "$(_kiso_skill_names)" -- "$cur")) ;;
                 esac
             fi
             return
@@ -72,6 +73,7 @@ _kiso() {
                     install) COMPREPLY=($(compgen -W "--name --show-deps --no-deps" -- "$cur")) ;;
                     update)  COMPREPLY=($(compgen -W "all $(_kiso_connector_names)" -- "$cur")) ;;
                     remove|run|stop|status) COMPREPLY=($(compgen -W "$(_kiso_connector_names)" -- "$cur")) ;;
+                    search)  COMPREPLY=($(compgen -W "$(_kiso_connector_names)" -- "$cur")) ;;
                 esac
             fi
             return

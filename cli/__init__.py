@@ -526,6 +526,18 @@ class _PollRenderState:
     seen_any_task: bool = False
     spinner_active: bool = False
     at_col0: bool = True
+    verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
+
+
+def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
+    """Render only the verbose LLM panels not yet shown for *task*."""
+    from cli.render import render_llm_calls_verbose
+    tid = task["id"]
+    already = state.verbose_shown.get(tid, 0)
+    detail = render_llm_calls_verbose(task.get("llm_calls"), caps, skip=already)
+    if detail:
+        print(detail)
+    state.verbose_shown[tid] = llm_call_count
 
 
 def _should_stop_polling(
@@ -545,10 +557,11 @@ def _should_stop_polling(
         and plan.get("message_id") == message_id
         and plan.get("status") not in ("running", "replanning")
     ):
-        if plan.get("status") == "failed" and worker_running:
-            # Worker still running after plan failed — could be replan or
-            # post-plan processing.  Wait until all tasks are rendered, then
-            # break after a short stability window to catch replans.
+        if plan.get("status") in ("failed", "done") and worker_running:
+            # Worker still running after plan ended — could be a replan
+            # (reviewer-triggered "failed" or self-directed "done").
+            # Wait until all tasks are rendered, then break after a
+            # short stability window (~5s) to catch the new plan.
             all_rendered = tasks and all(seen.get(t["id"]) is not None for t in tasks)
             if all_rendered:
                 failed_stable_polls += 1
@@ -575,6 +588,7 @@ def _render_msg_task(
 ) -> None:
     """Render a msg task: spinner when running, message output when done."""
     from cli.render import (
+        get_last_thinking,
         render_llm_calls,
         render_llm_calls_verbose,
         render_msg_output,
@@ -591,14 +605,15 @@ def _render_msg_task(
         return
 
     if status == "done":
-        llm_detail = render_llm_calls(task.get("llm_calls"), caps)
+        llm_calls_raw = task.get("llm_calls")
+        llm_detail = render_llm_calls(llm_calls_raw, caps)
         if llm_detail:
             print(llm_detail)
         if verbose:
-            verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
+            verbose_detail = render_llm_calls_verbose(llm_calls_raw, caps)
             if verbose_detail:
                 print(verbose_detail)
-        print(render_msg_output(output, caps, bot_name))
+        print(render_msg_output(output, caps, bot_name, thinking=get_last_thinking(llm_calls_raw)))
         print(render_separator(caps))
     elif status == "running":
         state.active_spinner_task = task
@@ -618,7 +633,6 @@ def _render_other_task(
     """Render an exec/skill/search/replan task: header, output, review."""
     from cli.render import (
         render_command,
-        render_llm_calls_verbose,
         render_review,
         render_task_header,
         render_task_output,
@@ -657,9 +671,8 @@ def _render_other_task(
         print(review_line)
 
     if verbose and status in ("done", "failed"):
-        verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-        if verbose_detail:
-            print(verbose_detail)
+        from cli.render import _parse_llm_calls
+        _emit_verbose_calls(task, caps, state, len(_parse_llm_calls(task.get("llm_calls"))))
 
     if status == "running":
         state.active_spinner_task = task
@@ -686,7 +699,6 @@ def _render_plan_status(
     from cli.render import (
         CLEAR_LINE,
         render_llm_calls,
-        render_llm_calls_verbose,
         render_plan,
         render_plan_detail,
         render_review,
@@ -737,6 +749,7 @@ def _render_plan_status(
             print(render_separator(caps))
             state.shown_plan_id = pid
             state.seen.clear()
+            state.verbose_shown.clear()
             state.seen_any_task = False
 
     # Show plan-level LLM calls (planner step) once available
@@ -789,9 +802,7 @@ def _render_plan_status(
                 if review_line:
                     print(review_line)
                 if verbose:
-                    verbose_detail = render_llm_calls_verbose(task.get("llm_calls"), caps)
-                    if verbose_detail:
-                        print(verbose_detail)
+                    _emit_verbose_calls(task, caps, state, llm_call_count)
             continue
 
         if ttype == "msg":
@@ -860,7 +871,7 @@ def _poll_status(
 
     _MAX_POLL_SECONDS = 300  # safety net: 5 min max
 
-    state = _PollRenderState(seen={}, max_task_id=base_task_id, at_col0=_at_col0)
+    state = _PollRenderState(seen={}, max_task_id=base_task_id, at_col0=_at_col0, verbose_shown={})
     counter = 0
     start_time = time.time()
     no_plan_since_worker_stopped = 0

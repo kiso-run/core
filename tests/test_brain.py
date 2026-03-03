@@ -2063,41 +2063,50 @@ class TestPlannerPromptContent:
         assert "never use the URL" in prompt.lower() or "served at url" in prompt.lower()
 
     def test_m45_plugin_install_uses_registry_not_search(self):
-        """M45: planner prompt must forbid web search for kiso plugin discovery."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """M45: planner plugin-install appendix must forbid web search for kiso plugin discovery."""
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
         assert "NEVER use" in prompt or "NEVER" in prompt
         assert "registry" in prompt.lower()
         assert "web search" in prompt.lower()
 
     def test_m45_plugin_install_rule_is_mandatory(self):
-        """M45: plugin installation rule must be marked MANDATORY."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """M45: plugin installation appendix must be marked MANDATORY."""
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
         assert "Plugin installation (MANDATORY)" in prompt
 
     def test_m46_plugin_install_checks_kiso_toml_before_install(self):
         """M46: planner must curl kiso.toml from GitHub before installing to discover env requirements."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
         assert "raw.githubusercontent.com" in prompt
         assert "kiso.toml" in prompt
         # Step ordering: curl kiso.toml (step 3) must come before "kiso connector install {name}" (step 6).
-        # Use the {name} placeholder variant to skip the management-commands listing at the top.
         toml_pos = prompt.index("kiso.toml")
         install_pos = prompt.index("kiso connector install {name}")
         assert toml_pos < install_pos
 
     def test_m46_plugin_install_includes_env_description_in_msg(self):
-        """M46: planner rule must instruct to include env var descriptions from kiso.toml in the user message."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """M46: planner plugin-install appendix must include env var descriptions from kiso.toml."""
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
         assert "description" in prompt
         assert "how to obtain" in prompt.lower() or "descriptions from kiso.toml" in prompt
 
+    def test_m102a_plugin_discovery_never_single_type_search(self):
+        """M102a: planner must NEVER use single-type search for initial plugin discovery."""
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        assert "NEVER" in prompt
+        assert "kiso connector search" in prompt
+        assert "kiso skill search" in prompt
+        # The NEVER clause must be in the context of single-type search
+        never_idx = prompt.index("NEVER use `kiso connector search`")
+        assert "kiso skill search" in prompt[never_idx:never_idx + 200]
+
 
 class TestM73cPlannerUserManagement:
-    """M73c: planner prompt rules for kiso user subcommand."""
+    """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
 
     def test_kiso_user_commands_listed(self):
-        """kiso user commands must appear in the Kiso management commands section."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """kiso user commands must appear in the kiso-commands appendix."""
+        prompt = (_ROLES_DIR / "planner-kiso-commands.md").read_text()
         assert "kiso user add" in prompt
         assert "kiso user remove" in prompt
         assert "kiso user list" in prompt
@@ -2105,40 +2114,37 @@ class TestM73cPlannerUserManagement:
 
     def test_user_management_admin_only_label(self):
         """The user commands must be labelled as admin only."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        # The label "admin only" must appear in proximity to user commands
+        prompt = (_ROLES_DIR / "planner-kiso-commands.md").read_text()
         idx = prompt.index("kiso user add")
         section = prompt[max(0, idx - 100):idx + 50]
         assert "admin only" in section
 
     def test_protection_rule_blocks_non_admin(self):
-        """Planner must refuse kiso user tasks when Caller Role is 'user'."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """Planner user-mgmt appendix must refuse kiso user tasks when Caller Role is 'user'."""
+        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
         assert "Caller Role" in prompt
         assert "NEVER" in prompt
-        # The protection must reference kiso user and the user role together
         protection_idx = prompt.index("PROTECTION")
         protection_text = prompt[protection_idx:protection_idx + 200]
         assert "kiso user" in protection_text
         assert "user" in protection_text.lower()
 
     def test_skills_required_for_role_user(self):
-        """Prompt must document that --skills is required when role=user."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """User-mgmt appendix must document that --skills is required when role=user."""
+        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
         assert "--skills" in prompt
         assert "--role user" in prompt
 
     def test_ask_for_role_before_add(self):
-        """Planner must ask for role if not specified before running kiso user add."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """Planner user-mgmt appendix must ask for role if not specified."""
+        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
         assert "role is not specified" in prompt or "role not specified" in prompt or \
                "role" in prompt and "msg task" in prompt
 
     def test_ask_for_connector_aliases(self):
-        """Planner must ask for connector aliases when connectors are running."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
+        """Planner user-mgmt appendix must ask for connector aliases."""
+        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
         assert "connector" in prompt.lower()
-        # The alias workflow rule must mention System Environment as the source
         assert "System Environment" in prompt
 
 
@@ -2494,6 +2500,28 @@ class TestM47ReviewerPlanContext:
         assert "0 changes" in prompt or "nothing to do" in prompt
 
 
+# --- M96: reviewer — warning vs error distinction ---
+
+
+class TestReviewerWarningVsError:
+    """M96: warnings don't override exit 0 + satisfied expect."""
+
+    def test_prompt_warnings_are_informational(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "informational" in prompt
+
+    def test_prompt_no_blanket_replan_on_warning(self):
+        """Old rule 'mark as replan even if command succeeded' must be gone."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "mark as replan even if the command succeeded" not in prompt
+
+    def test_prompt_explicit_expect_required_for_warning_replan(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "expect" in prompt.lower()
+        # The new rule: replan for warnings only if expect requires clean output
+        assert "absence of warnings" in prompt or "no warnings" in prompt
+
+
 class TestM47WorkerHintPriority:
     """47d: worker gives priority to retry hint over literal task detail re-translation."""
 
@@ -2680,6 +2708,67 @@ class TestM48PlannerMergedRules:
         """48c: merged detail rule must mention commands/paths for exec tasks."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "commands" in prompt or "paths" in prompt
+
+
+# --- M97a: planner contextual rule blocks ---
+
+
+@pytest.mark.asyncio
+class TestPlannerContextualRules:
+    """M97a: appendix blocks injected only when message keywords match."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "test-session")
+        yield conn
+        await conn.close()
+
+    def _config(self):
+        return _make_brain_config()
+
+    async def test_generic_message_has_no_appendix(self, db):
+        """A message like 'what time is it' should not inject any appendix."""
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin", "what time is it",
+        )
+        system = msgs[0]["content"]
+        assert "kiso skill install" not in system
+        assert "PROTECTION" not in system
+        assert "Plugin installation (MANDATORY)" not in system
+
+    async def test_skill_keyword_injects_kiso_commands(self, db):
+        """Message mentioning 'skill' should inject kiso-commands appendix."""
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin", "install the search skill",
+        )
+        system = msgs[0]["content"]
+        assert "kiso skill install" in system
+
+    async def test_user_keyword_injects_user_mgmt(self, db):
+        """Message mentioning 'user' should inject user-mgmt appendix."""
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin", "add a new user bob",
+        )
+        system = msgs[0]["content"]
+        assert "PROTECTION" in system
+
+    async def test_install_keyword_injects_plugin_install(self, db):
+        """Message mentioning 'install' should inject plugin-install appendix."""
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin", "install the browser connector",
+        )
+        system = msgs[0]["content"]
+        assert "Plugin installation (MANDATORY)" in system
+
+    async def test_base_prompt_always_present(self, db):
+        """Core planner rules are always present regardless of message."""
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin", "hello",
+        )
+        system = msgs[0]["content"]
+        assert "Kiso planner" in system
+        assert "CRITICAL" in system
 
 
 class TestM48CuratorCategoryField:

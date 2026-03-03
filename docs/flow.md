@@ -143,7 +143,7 @@ When the reviewer determines that the task failed and the plan needs revision, o
    - **failure**: the failed task, its output, and the reviewer's `reason`
    - **replan_history**: previous replan attempts for this message (goal, failure, what was tried) — so the planner doesn't repeat the same mistakes
 
-3. The planner produces a new `goal` and `tasks` list. The current plan is marked `failed`. A new plan is created with `parent_id` pointing to the previous plan. Remaining tasks from the old plan are marked `failed`. New tasks go through validation (step d) again.
+3. The planner produces a new `goal` and `tasks` list. A new plan is created with `parent_id` pointing to the previous plan and its tasks are persisted **before** the old plan is finalized (marked `failed` for reviewer-triggered replans, `done` for self-directed replans). This ordering prevents a race where the CLI sees the old plan as terminal with no successor. Remaining tasks from the old plan are marked `failed`. New tasks go through validation (step d) again.
 
 4. Execution continues with the new task list. Even on replan, the planner must produce at least one task (typically a `msg` task summarizing the situation).
 
