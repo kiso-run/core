@@ -50,10 +50,13 @@ from kiso.worker.loop import (
     _TaskHandlerResult,
     _bump_fact_usage,
     _handle_exec_task,
+    _handle_loop_failure,
     _handle_msg_task,
+    _handle_plan_error,
     _handle_replan_task,
     _handle_search_task,
     _handle_skill_task,
+    _make_plan_output,
     _run_planning_loop,
 )
 
@@ -2059,6 +2062,25 @@ class TestFormatPlanOutputsForMsg:
         result = _format_plan_outputs_for_msg(outputs)
         assert "<<<TASK_OUTPUT_" in result
         assert "<<<END_TASK_OUTPUT_" in result
+
+
+# --- _make_plan_output (M91c) ---
+
+
+class TestMakePlanOutput:
+    def test_returns_correct_keys(self):
+        """_make_plan_output returns dict with all five required keys."""
+        entry = _make_plan_output(3, "exec", "echo hi", "hi\n", "done")
+        assert entry == {"index": 3, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"}
+
+    def test_index_is_preserved(self):
+        entry = _make_plan_output(7, "msg", "greet", "Hello!", "done")
+        assert entry["index"] == 7
+
+    def test_all_task_types(self):
+        for task_type in ("exec", "msg", "skill", "search"):
+            entry = _make_plan_output(1, task_type, "d", "o", "done")
+            assert entry["type"] == task_type
 
 
 # --- _msg_task with plan_outputs ---
@@ -6856,9 +6878,8 @@ class TestTaskHandlers:
         assert result.completed_row is not None
         assert result.completed_row["status"] == "done"
         assert result.completed_row["output"] == "Hello!"
-        # plan_outputs accumulates the result
-        assert len(ctx.plan_outputs) == 1
-        assert ctx.plan_outputs[0]["type"] == "msg"
+        assert result.plan_output is not None
+        assert result.plan_output["type"] == "msg"
 
     async def test_handle_msg_task_messenger_error_returns_stop(self, db, plan_id, tmp_path):
         """msg handler returns stop=True on LLMError."""
@@ -6927,7 +6948,7 @@ class TestTaskHandlers:
         assert result.completed_row is None
 
     async def test_handle_exec_task_success(self, db, plan_id, tmp_path):
-        """exec handler runs command, reviews, and returns completed_row on success."""
+        """exec handler runs command, reviews, and returns completed_row and plan_output on success."""
         task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
         ctx = _make_ctx(db)
         with _patch_translator(), \
@@ -6939,6 +6960,10 @@ class TestTaskHandlers:
         assert result.stop is False
         assert result.completed_row is not None
         assert result.completed_row["status"] == "done"
+        assert result.plan_output is not None
+        assert result.plan_output["type"] == "exec"
+        assert result.plan_output["index"] == 1
+        assert result.plan_output["detail"] == "echo hello"
 
     # --- _handle_search_task ---
 
@@ -6958,8 +6983,8 @@ class TestTaskHandlers:
         assert result.stop is False
         assert result.completed_row is not None
         assert result.completed_row["status"] == "done"
-        assert len(ctx.plan_outputs) == 1
-        assert ctx.plan_outputs[0]["type"] == "search"
+        assert result.plan_output is not None
+        assert result.plan_output["type"] == "search"
 
     async def test_handle_search_task_error_returns_stop(self, db, plan_id, tmp_path):
         """search handler returns stop=True on SearcherError."""
@@ -6975,6 +7000,161 @@ class TestTaskHandlers:
 
         assert result.stop is True
         assert result.completed_row is None
+
+    async def test_handle_skill_task_success_returns_plan_output(self, db, plan_id, tmp_path):
+        """skill handler returns plan_output with correct fields on success."""
+        skill_info = {
+            "name": "test-skill",
+            "summary": "A test skill",
+            "args_schema": {},
+            "env": {},
+            "session_secrets": [],
+            "path": "/fake/path",
+        }
+        task_row = await _make_task_row(db, plan_id, "skill", "run the skill",
+                                        skill="test-skill", args="{}")
+        ctx = _make_ctx(db, installed_skills=[skill_info])
+        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+                   return_value=("skill output", "", True)), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                   return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_skill_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is False
+        assert result.plan_output is not None
+        assert result.plan_output["type"] == "skill"
+        assert result.plan_output["index"] == 1
+        assert result.plan_output["output"] == "skill output"
+        assert result.plan_output["status"] == "done"
+
+
+# --- M91a: _handle_plan_error ---
+
+
+class TestHandlePlanError:
+    """Unit tests for _handle_plan_error (M91a)."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_creates_failed_plan_and_task(self, db):
+        """_handle_plan_error creates a plan (status=failed) and a msg task."""
+        config = _make_config()
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_plan_error(db, config, "sess1", msg_id, "Planning failed: oops")
+
+        cur = await db.execute("SELECT * FROM plans WHERE session = 'sess1'")
+        plans = [dict(r) for r in await cur.fetchall()]
+        assert len(plans) == 1
+        assert plans[0]["status"] == "failed"
+
+        cur = await db.execute("SELECT * FROM tasks WHERE session = 'sess1' AND type = 'msg'")
+        tasks = [dict(r) for r in await cur.fetchall()]
+        assert len(tasks) == 1
+        assert tasks[0]["status"] == "done"
+        assert tasks[0]["output"] == "Planning failed: oops"
+
+    async def test_saves_system_message(self, db):
+        """_handle_plan_error saves a system message with the error text."""
+        config = _make_config()
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_plan_error(db, config, "sess1", msg_id, "Timeout")
+
+        cur = await db.execute(
+            "SELECT * FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        msgs = [dict(r) for r in await cur.fetchall()]
+        assert any("Timeout" in (m.get("content") or "") for m in msgs)
+
+    async def test_delivers_webhook(self, db):
+        """_handle_plan_error always delivers a webhook."""
+        config = _make_config()
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
+        mock_webhook = AsyncMock()
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", mock_webhook):
+            await _handle_plan_error(db, config, "sess1", msg_id, "oops")
+
+        assert mock_webhook.called
+
+
+# --- M91b: _handle_loop_failure webhook flag ---
+
+
+class TestHandleLoopFailure:
+    """Unit tests for _handle_loop_failure (M91b), focusing on deliver_webhook flag."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_marks_plan_failed(self, db):
+        """_handle_loop_failure sets plan status to 'failed'."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="fail msg"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+        row = await cur.fetchone()
+        assert row["status"] == "failed"
+
+    async def test_delivers_webhook_by_default(self, db):
+        """_handle_loop_failure delivers webhook when deliver_webhook=True (default)."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        mock_webhook = AsyncMock()
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="fail msg"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", mock_webhook):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal",
+                                        deliver_webhook=True)
+
+        assert mock_webhook.called
+
+    async def test_skips_webhook_when_flag_false(self, db):
+        """_handle_loop_failure does NOT deliver webhook when deliver_webhook=False."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        mock_webhook = AsyncMock()
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="fail msg"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", mock_webhook):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal",
+                                        deliver_webhook=False)
+
+        assert not mock_webhook.called
+
+    async def test_saves_system_message(self, db):
+        """_handle_loop_failure saves a system message."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="failure text"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        cur = await db.execute(
+            "SELECT content FROM messages WHERE session = 'sess1' AND role = 'system'"
+        )
+        rows = await cur.fetchall()
+        assert any("failure text" in row["content"] for row in rows)
 
 
 class TestSubstatusConstants:
