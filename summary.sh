@@ -17,7 +17,7 @@ set -euo pipefail
 IN_TMP="$(mktemp -t flow_in.XXXXXX)"
 OUT_TMP="$(mktemp -t flow_out.XXXXXX)"
 cleanup() { rm -f "$IN_TMP" "$OUT_TMP"; }
-trap cleanup EXIT
+trap cleanup EXIT INT
 
 # -------- CLI flags --------
 DO_CLEAR=0

@@ -2,6 +2,7 @@
 # Run kiso bash tests (kiso-host.sh + install.sh) using bats-core.
 # Install bats: npm install -g bats  |  or: sudo apt-get install bats
 set -euo pipefail
+trap 'exit 130' INT
 
 BATS=$(command -v bats 2>/dev/null || true)
 if [[ -z "$BATS" ]]; then
@@ -11,4 +12,4 @@ if [[ -z "$BATS" ]]; then
 fi
 
 cd "$(dirname "$0")"
-exec "$BATS" tests/bash/ "$@"
+"$BATS" tests/bash/ "$@"

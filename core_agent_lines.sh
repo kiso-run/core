@@ -2,6 +2,7 @@
 # Count Python lines in the core agent code (./kiso directory).
 # Adapted from nanobot's core_agent_lines.sh for Kiso's structure.
 set -euo pipefail
+trap 'exit 130' INT
 
 KISO_DIR="$(cd "$(dirname "$0")/kiso" && pwd)"
 

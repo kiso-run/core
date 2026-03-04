@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'printf "\nInterrupted.\n" >&2; exit 130' INT
 
 # ── kiso host wrapper ────────────────────────────────────────────────────────
 # Multi-instance wrapper: manages named Docker containers (kiso-{NAME}).

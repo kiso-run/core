@@ -56,7 +56,7 @@ cleanup() {
     [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP"
     [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP"
 }
-[[ "${KISO_INSTALL_LIB:-}" != "1" ]] && trap cleanup EXIT
+[[ "${KISO_INSTALL_LIB:-}" != "1" ]] && trap cleanup EXIT INT
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
