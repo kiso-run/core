@@ -125,7 +125,7 @@ def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
     """Resolve a model string to (provider, model_name).
 
     "ollama:llama3"                       → provider "ollama", model "llama3"
-    "minimax/minimax-m2.5"                → first provider, model "minimax/minimax-m2.5"
+    "z-ai/glm-4.7"                        → first provider, model "z-ai/glm-4.7"
     "google/gemini-2.5-flash-lite:online" → first provider, full string as model
                                             (colon ignored when left side isn't a known provider)
     """
