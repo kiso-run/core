@@ -1087,6 +1087,86 @@ class TestBuildReviewerMessages:
         content = msgs[1]["content"]
         assert "## Command Status" not in content
 
+    # --- M106: exit_code parameter ---
+
+    async def test_exit_code_0_shows_success(self):
+        """exit_code=0 with success=True shows 'Exit code: 0 (success)'."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=True, exit_code=0,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: 0 (success)" in content
+
+    async def test_exit_code_1_shows_note(self):
+        """exit_code=1 includes note about grep/which/find."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=1,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: 1 (non-zero)" in content
+        assert "no matches found" in content
+
+    async def test_exit_code_127_shows_note(self):
+        """exit_code=127 includes note about command not found."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=127,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: 127 (non-zero)" in content
+        assert "not found in PATH" in content
+
+    async def test_exit_code_126_shows_note(self):
+        """exit_code=126 includes note about permission issue."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=126,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: 126 (non-zero)" in content
+        assert "not executable" in content
+
+    async def test_exit_code_neg1_shows_timeout_note(self):
+        """exit_code=-1 includes note about timeout/OS error."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=-1,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: -1 (non-zero)" in content
+        assert "killed" in content.lower()
+
+    async def test_exit_code_2_shows_syntax_note(self):
+        """exit_code=2 includes note about usage/syntax error."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=2,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: 2 (non-zero)" in content
+        assert "usage" in content.lower() or "syntax" in content.lower()
+
+    async def test_exit_code_unknown_no_note(self):
+        """Unknown exit code (e.g. 42) shows code but no note."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=42,
+        )
+        content = msgs[1]["content"]
+        assert "Exit code: 42 (non-zero)" in content
+        assert "Note:" not in content
+
+    async def test_exit_code_none_backward_compat(self):
+        """exit_code=None (default) falls back to old format."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            success=False, exit_code=None,
+        )
+        content = msgs[1]["content"]
+        assert "FAILED (non-zero exit code)" in content
+
 
 # --- run_reviewer ---
 
@@ -1120,6 +1200,23 @@ class TestRunReviewer:
             review = await run_reviewer(config, "goal", "detail", "expect", "output", "msg")
         assert review["status"] == "replan"
         assert review["reason"] == "File missing"
+
+    async def test_exit_code_forwarded_to_messages(self, config):
+        """run_reviewer forwards exit_code to build_reviewer_messages."""
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return VALID_REVIEW_OK
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_reviewer(
+                config, "goal", "detail", "expect", "output", "msg",
+                success=False, exit_code=127,
+            )
+        user_content = captured_messages[1]["content"]
+        assert "Exit code: 127" in user_content
+        assert "not found in PATH" in user_content
 
     async def test_review_with_learning(self, config):
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_REVIEW_WITH_LEARN):
@@ -2871,6 +2968,74 @@ class TestM48SummarizerFactsTiebreaker:
         """48e: equal-confidence tiebreaker must prefer more specific fact."""
         prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
         assert "specific" in prompt.lower()
+
+
+# --- M106: exit code notes, default model, prompt rules ---
+
+
+class TestM106ExitCodeNotes:
+    """M106c: _EXIT_CODE_NOTES dictionary completeness."""
+
+    def test_notes_cover_expected_codes(self):
+        from kiso.brain import _EXIT_CODE_NOTES
+        assert 1 in _EXIT_CODE_NOTES
+        assert 2 in _EXIT_CODE_NOTES
+        assert 126 in _EXIT_CODE_NOTES
+        assert 127 in _EXIT_CODE_NOTES
+        assert -1 in _EXIT_CODE_NOTES
+
+    def test_note_1_mentions_grep(self):
+        from kiso.brain import _EXIT_CODE_NOTES
+        assert "grep" in _EXIT_CODE_NOTES[1].lower()
+
+    def test_note_127_mentions_not_found(self):
+        from kiso.brain import _EXIT_CODE_NOTES
+        assert "not found" in _EXIT_CODE_NOTES[127].lower()
+
+
+class TestM106DefaultPlannerModel:
+    """M106e: default planner model is glm-4.7."""
+
+    def test_default_planner_is_glm47(self):
+        from kiso.config import MODEL_DEFAULTS
+        assert MODEL_DEFAULTS["planner"] == "z-ai/glm-4.7"
+
+
+class TestM106PlannerKisoNativeFirst:
+    """M106a: planner prompt must include Kiso-native-first rule."""
+
+    def test_kiso_native_first_rule_present(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "kiso-native" in prompt.lower() or "kiso layer" in prompt.lower()
+
+    def test_check_skills_before_os(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "apt-get" in prompt or "os-level" in prompt.lower()
+
+
+class TestM106ReviewerExitCodeRules:
+    """M106b: reviewer prompt covers verification task exit code semantics."""
+
+    def test_verification_task_exit1_rule(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "nothing found" in prompt.lower() or "no matches" in prompt.lower()
+
+    def test_anti_loop_rule(self):
+        """Reviewer prompt must have anti-loop guidance."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "same output" in prompt.lower() or "retry" in prompt.lower()
+
+
+class TestM106WorkerRobustCommands:
+    """M106d: worker prompt includes robust command rules."""
+
+    def test_no_find_root_rule(self):
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "find /" in prompt
+
+    def test_command_v_recommended(self):
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "command -v" in prompt
 
 
 class TestM48WorkerNoSudo:

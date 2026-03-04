@@ -61,7 +61,7 @@ role = "user"
 skills = ["search", "aider"]
 
 [models]
-planner     = "minimax/minimax-m2.5"
+planner     = "z-ai/glm-4.7"
 reviewer    = "deepseek/deepseek-v3.2"
 curator     = "deepseek/deepseek-v3.2"
 worker      = "deepseek/deepseek-v3.2"
@@ -187,7 +187,7 @@ base_url = "http://localhost:11434/v1"
 Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-minimax/minimax-m2.5             → first provider, model "minimax/minimax-m2.5"
+z-ai/glm-4.7                     → first provider, model "z-ai/glm-4.7"
 deepseek/deepseek-v3.2           → first provider, model "deepseek/deepseek-v3.2"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```

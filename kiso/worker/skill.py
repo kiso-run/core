@@ -19,8 +19,8 @@ async def _skill_task(
     timeout: int,
     sandbox_uid: int | None = None,
     max_output_size: int = 0,
-) -> tuple[str, str, bool]:
-    """Run a skill subprocess. Returns (stdout, stderr, success).
+) -> tuple[str, str, bool, int]:
+    """Run a skill subprocess. Returns (stdout, stderr, success, exit_code).
 
     When *max_output_size* > 0, stdout and stderr are each truncated to
     that many characters to prevent memory exhaustion from oversized output.

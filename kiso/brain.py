@@ -562,6 +562,15 @@ def validate_review(review: dict) -> list[str]:
     return errors
 
 
+_EXIT_CODE_NOTES: dict[int, str] = {
+    1: "Note: exit 1 from grep/which/find/dpkg means 'no matches found', not an error.",
+    2: "Note: exit 2 often indicates a usage/syntax error in the command.",
+    126: "Note: exit 126 means the command was found but is not executable (permission issue).",
+    127: "Note: exit 127 means the command was not found in PATH.",
+    -1: "Note: the process was killed (timeout or OS error).",
+}
+
+
 def build_reviewer_messages(
     goal: str,
     detail: str,
@@ -569,6 +578,7 @@ def build_reviewer_messages(
     output: str,
     user_message: str,
     success: bool | None = None,
+    exit_code: int | None = None,
 ) -> list[dict]:
     """Build the message list for the reviewer LLM call."""
     system_prompt = _load_system_prompt("reviewer")
@@ -582,7 +592,16 @@ def build_reviewer_messages(
     )
 
     if success is not None:
-        status_text = "succeeded (exit code 0)" if success else "FAILED (non-zero exit code)"
+        if exit_code is not None:
+            if success:
+                status_text = f"Exit code: 0 (success)"
+            else:
+                note = _EXIT_CODE_NOTES.get(exit_code, "")
+                status_text = f"Exit code: {exit_code} (non-zero)"
+                if note:
+                    status_text += f"\n{note}"
+        else:
+            status_text = "succeeded (exit code 0)" if success else "FAILED (non-zero exit code)"
         context += f"\n\n## Command Status\n{status_text}"
 
     return _build_messages(system_prompt, context)
@@ -597,13 +616,17 @@ async def run_reviewer(
     user_message: str,
     session: str = "",
     success: bool | None = None,
+    exit_code: int | None = None,
 ) -> dict:
     """Run the reviewer on a task output.
 
     Returns dict with keys: status ("ok" | "replan"), reason, learn.
     Raises ReviewError if all retries exhausted.
     """
-    messages = build_reviewer_messages(goal, detail, expect, output, user_message, success=success)
+    messages = build_reviewer_messages(
+        goal, detail, expect, output, user_message,
+        success=success, exit_code=exit_code,
+    )
     review = await _retry_llm_with_validation(
         config, "reviewer", messages, REVIEW_SCHEMA,
         validate_review, ReviewError, "Review",

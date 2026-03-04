@@ -475,6 +475,7 @@ async def _review_task(
         full_output += f"\n--- stderr ---\n{stderr}"
 
     success = task_row.get("status") == "done"
+    exit_code = task_row.get("exit_code")
     review = await run_reviewer(
         config,
         goal=goal,
@@ -484,6 +485,7 @@ async def _review_task(
         user_message=user_message,
         session=session,
         success=success,
+        exit_code=exit_code,
     )
 
     learn_raw = review.get("learn")
@@ -697,7 +699,7 @@ async def _handle_skill_task(
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
     await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
-    stdout, stderr, success = await _skill_task(
+    stdout, stderr, success, exit_code = await _skill_task(
         ctx.session, skill_info, args, ctx.plan_outputs,
         ctx.session_secrets, ctx.exec_timeout,
         sandbox_uid=ctx.sandbox_uid,
@@ -707,7 +709,8 @@ async def _handle_skill_task(
     stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
     status = "done" if success else "failed"
     await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr)
-    task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+    task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
+                "exit_code": exit_code}
 
     task_duration_ms = int((time.perf_counter() - t0) * 1000)
     audit.log_task(
@@ -785,7 +788,7 @@ async def _handle_exec_task(
 
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
-        stdout, stderr, success = await _exec_task(
+        stdout, stderr, success, exit_code = await _exec_task(
             ctx.session, command, ctx.exec_timeout, sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
         )
@@ -810,7 +813,8 @@ async def _handle_exec_task(
         if ctx.slog:
             ctx.slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
 
-        task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status}
+        task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
+                    "exit_code": exit_code}
 
         local_plan_output = _make_plan_output(i + 1, "exec", detail, stdout, status)
         await _write_plan_outputs(ctx.session, ctx.plan_outputs + [local_plan_output])

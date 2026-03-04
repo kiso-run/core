@@ -81,7 +81,7 @@ class TestSandboxIsolation:
         session, uid, workspace = sandbox_session
         import kiso.worker
 
-        stdout, stderr, success = await _exec_task(
+        stdout, stderr, success, _ = await _exec_task(
             session, "id -u", 5, sandbox_uid=uid,
         )
         assert success is True

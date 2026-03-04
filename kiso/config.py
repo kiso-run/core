@@ -59,7 +59,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "planner": "minimax/minimax-m2.5",
+    "planner": "z-ai/glm-4.7",
     "reviewer": "deepseek/deepseek-v3.2",
     "curator": "deepseek/deepseek-v3.2",
     "worker": "deepseek/deepseek-v3.2",
@@ -89,7 +89,7 @@ role = "admin"
 # aliases.discord = "YourDiscordUser#1234"
 
 [models]
-planner     = "minimax/minimax-m2.5"
+planner     = "z-ai/glm-4.7"
 reviewer    = "deepseek/deepseek-v3.2"
 curator     = "deepseek/deepseek-v3.2"
 worker      = "deepseek/deepseek-v3.2"

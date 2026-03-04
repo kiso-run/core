@@ -26,7 +26,7 @@ async def _run_subprocess(
     stdin_data: bytes | None = None,
     uid: int | None = None,
     max_output_size: int = 0,
-) -> tuple[str, str, bool]:
+) -> tuple[str, str, bool, int]:
     """Run a subprocess with timeout and output handling.
 
     Args:
@@ -40,7 +40,9 @@ async def _run_subprocess(
         max_output_size: If > 0, truncate stdout/stderr to this many characters.
 
     Returns:
-        (stdout, stderr, success) where success is True iff returncode == 0.
+        (stdout, stderr, success, exit_code) where success is True iff
+        returncode == 0.  exit_code is the raw return code (negative for
+        signals, -1 for timeout/OSError).
     """
     kwargs: dict = dict(
         cwd=cwd,
@@ -64,13 +66,14 @@ async def _run_subprocess(
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        return "", "Timed out", False
+        return "", "Timed out", False, -1
     except OSError as e:
-        return "", f"Executable not found: {e}", False
+        return "", f"Executable not found: {e}", False, -1
 
     stdout = _truncate_output(stdout_bytes.decode(errors="replace"), max_output_size)
     stderr = _truncate_output(stderr_bytes.decode(errors="replace"), max_output_size)
-    return stdout, stderr, proc.returncode == 0
+    rc = proc.returncode or 0
+    return stdout, stderr, rc == 0, rc
 
 
 def _session_workspace(session: str, sandbox_uid: int | None = None) -> Path:
