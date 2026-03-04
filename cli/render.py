@@ -288,12 +288,11 @@ def render_task_header(
             "composing": "composing",
         }
         phase_label = label_map.get(substatus, "")
-        elapsed_str = f" ({elapsed}s)" if elapsed >= 2 else ""
         spinner = _style(spinner_frame, _CYAN, caps=caps)
         if phase_label:
-            text = f"{text} {phase_label}{elapsed_str} {spinner}"
+            text = f"{text} {phase_label}{_format_elapsed(elapsed)} {spinner}"
         else:
-            text = f"{text}{elapsed_str} {spinner}"
+            text = f"{text}{_format_elapsed(elapsed)} {spinner}"
 
     # Pick color based on type
     if status == "done":
@@ -430,12 +429,21 @@ def render_banner(bot_name: str, session: str, caps: TermCaps, version: str | No
     return "\n" + "\n".join(lines) + "\n"
 
 
+def _format_elapsed(seconds: int) -> str:
+    """Format elapsed time: '' (<2s), 'for 5s', 'for 1m 30s', 'for 3m 45s'."""
+    if seconds < 2:
+        return ""
+    if seconds < 60:
+        return f" for {seconds}s"
+    m, s = divmod(seconds, 60)
+    return f" for {m}m {s}s" if s else f" for {m}m"
+
+
 def render_planner_spinner(caps: TermCaps, spinner_frame: str, elapsed: int = 0) -> str:
-    """Render planner phase spinner (e.g. '◆ Planning... (45s) ⠋')."""
+    """Render planner phase spinner (e.g. '◆ Planning for 45s ⠋')."""
     icon = _icon("plan", caps)
     frame = _style(spinner_frame, _CYAN, caps=caps)
-    elapsed_str = f" ({elapsed}s)" if elapsed >= 2 else ""
-    text = f"{icon} Planning...{elapsed_str} {frame}"
+    text = f"{icon} Planning{_format_elapsed(elapsed)} {frame}"
     return _style(text, _CYAN, caps=caps)
 
 

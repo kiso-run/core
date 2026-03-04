@@ -1529,7 +1529,14 @@ async def _process_message(
     # Untrusted messages feed into planner context, not messenger context.
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     if fast_path_enabled:
-        msg_class = await classify_message(config, content, session=session)
+        try:
+            msg_class = await asyncio.wait_for(
+                classify_message(config, content, session=session),
+                timeout=15,  # classifier must be fast; fallback to planner on timeout
+            )
+        except asyncio.TimeoutError:
+            log.warning("Classifier timed out after 15s, falling back to planner")
+            msg_class = "plan"
         if msg_class == "chat":
             log.info("Fast path: chat message, skipping planner")
             if slog:

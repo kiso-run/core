@@ -468,14 +468,14 @@ def test_spinner_frames_ascii():
 
 def test_render_planner_spinner_unicode():
     result = render_planner_spinner(_COLOR, "⠋")
-    assert "Planning..." in result
+    assert "Planning" in result
     assert "◆" in result
     assert "⠋" in result
 
 
 def test_render_planner_spinner_ascii():
     result = render_planner_spinner(_PLAIN, "|")
-    assert "Planning..." in result
+    assert "Planning" in result
     assert "*" in result
     assert "\033[" not in result
 

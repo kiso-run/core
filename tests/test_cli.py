@@ -933,7 +933,7 @@ def test_poll_status_shows_planner_spinner(capsys):
         _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
 
     out = capsys.readouterr().out
-    assert "Planning..." in out
+    assert "Planning" in out
 
 
 def test_poll_status_spinner_emits_newline_when_not_at_col0(capsys):
@@ -2045,7 +2045,7 @@ def test_m41_shows_spinner_before_plan_created(capsys):
         _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
 
     out = capsys.readouterr().out
-    assert "Planning..." in out
+    assert "Planning" in out
 
 
 
