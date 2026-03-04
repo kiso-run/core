@@ -2159,7 +2159,7 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "filesystem path" in prompt
         # Files served at URLs — must not use the URL as a path
-        assert "never use the URL" in prompt.lower() or "served at url" in prompt.lower()
+        assert "never use the url" in prompt.lower() or "served at url" in prompt.lower()
 
     def test_m45_plugin_install_uses_registry_not_search(self):
         """M45: planner plugin-install appendix must forbid web search for kiso plugin discovery."""
