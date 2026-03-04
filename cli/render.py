@@ -565,7 +565,7 @@ def render_llm_calls_verbose(
         # Timestamp from LLM usage entry (epoch float)
         ts = c.get("ts")
         if ts:
-            ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M:%S")
+            ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%m-%d %H:%M:%S")
             title = f" {_esc(role)} {arrow} {_esc(short_model)} ({in_t:,}{arrow}{out_t:,}) {ts_str} "
         else:
             title = f" {_esc(role)} {arrow} {_esc(short_model)} ({in_t:,}{arrow}{out_t:,}) "

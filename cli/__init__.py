@@ -751,6 +751,7 @@ def _render_plan_status(
             state.shown_plan_id = pid
             state.seen.clear()
             state.verbose_shown.clear()
+            state.shown_plan_llm_id = None
             state.seen_any_task = False
 
     # Show plan-level LLM calls (planner step) once available

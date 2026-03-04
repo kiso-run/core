@@ -201,10 +201,16 @@ async def call_llm(
 
     t0 = time.perf_counter()
 
-    llm_timeout = int(config.settings["exec_timeout"])
+    # Pick the right timeout for this role.
+    if role == "planner":
+        llm_timeout = int(config.settings.get("planner_timeout", config.settings["exec_timeout"]))
+    elif role == "messenger":
+        llm_timeout = int(config.settings.get("messenger_timeout", config.settings["exec_timeout"]))
+    else:
+        llm_timeout = int(config.settings["exec_timeout"])
     try:
         if _http_client is not None:
-            resp = await _http_client.post(url, headers=headers, json=payload)
+            resp = await _http_client.post(url, headers=headers, json=payload, timeout=llm_timeout)
         else:
             async with httpx.AsyncClient(timeout=llm_timeout) as _client:
                 resp = await _client.post(url, headers=headers, json=payload)

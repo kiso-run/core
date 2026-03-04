@@ -90,7 +90,7 @@ max_plan_tasks            = 20
 
 # --- execution ---
 exec_timeout              = 120      # seconds; also used for post-plan LLM calls
-planner_timeout           = 120      # seconds for planner LLM calls
+planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
 messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 1
@@ -144,8 +144,8 @@ webhook_max_payload       = 1048576
 | `max_replan_depth` | `3` | Max replan cycles per original message. |
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
-| `exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used for post-plan LLM calls (curator, summarizer, fact consolidation), LLM HTTP calls, and graceful shutdown per worker. |
-| `planner_timeout` | `120` | Seconds before a planner LLM call is cancelled. Increase if using a slow planner model; decrease for faster failure feedback. |
+| `exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used for post-plan LLM calls (curator, summarizer, fact consolidation) and graceful shutdown per worker. Also the HTTP timeout for non-planner/non-messenger LLM calls. |
+| `planner_timeout` | `300` | Seconds before a planner LLM call is cancelled (both HTTP timeout and asyncio wrapper). Higher default for reasoning models like GLM 4.7 that need time to think. |
 | `messenger_timeout` | `120` | Seconds before a messenger LLM call is cancelled (applies to fast-path chat and `msg` plan tasks). Tune independently from `planner_timeout` when planner and messenger use different models with different latency profiles. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or skill task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `1` | Max worker-level retries per exec/search task before escalating to a full replan. |
