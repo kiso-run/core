@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import aiosqlite
@@ -58,6 +59,27 @@ def _strip_fences(text: str) -> str:
         s = s[:-3]
     return s.strip()
 
+
+_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+
+
+def _repair_json(text: str) -> str:
+    """Best-effort JSON repair: strip fences, fix trailing commas."""
+    s = _strip_fences(text)
+    return _TRAILING_COMMA_RE.sub(r"\1", s)
+
+
+_PLUGIN_DISCOVERY_RE = re.compile(
+    r"(?:skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
+    r"|(?:registr|kiso).*(?:skill|connector|plugin)",
+    re.IGNORECASE,
+)
+
+
+def _is_plugin_discovery_search(detail: str) -> bool:
+    """Return True if detail looks like a plugin discovery search query."""
+    return bool(_PLUGIN_DISCOVERY_RE.search(detail))
+
 async def _retry_llm_with_validation(
     config: Config,
     role: str,
@@ -101,11 +123,14 @@ async def _retry_llm_with_validation(
             raise error_class(f"LLM call failed: {e}")
 
         try:
-            result = json.loads(_strip_fences(raw))
+            result = json.loads(_repair_json(raw))
         except json.JSONDecodeError as e:
             log.warning("%s returned invalid JSON (attempt %d/%d): %s",
                         error_noun, attempt, max_retries, e)
-            last_errors = [f"returned invalid JSON — ensure the response is valid JSON: {e}"]
+            last_errors = [
+                f"Invalid JSON at line {e.lineno} col {e.colno}: {e.msg} — "
+                "return ONLY the JSON object, no markdown, no trailing commas"
+            ]
             messages.append({"role": "assistant", "content": raw})
             continue
 
@@ -286,6 +311,11 @@ def validate_plan(
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
         if t == TASK_TYPE_SEARCH:
+            if _is_plugin_discovery_search(task.get("detail", "")):
+                errors.append(
+                    f"Task {i}: search cannot be used for kiso plugin discovery — "
+                    "use an exec task with `curl <registry_url>` instead"
+                )
             if task.get("skill") is not None:
                 errors.append(f"Task {i}: search task must have skill = null")
         if t == TASK_TYPE_REPLAN:
@@ -765,6 +795,7 @@ def build_messenger_messages(
     detail: str,
     plan_outputs_text: str = "",
     goal: str = "",
+    recent_messages: list[dict] | None = None,
 ) -> list[dict]:
     """Build the message list for the messenger LLM call.
 
@@ -775,6 +806,7 @@ def build_messenger_messages(
         detail: The msg task detail (what to communicate).
         plan_outputs_text: Pre-formatted preceding task outputs (from worker).
         goal: The plan goal (user's original request for this turn).
+        recent_messages: Recent conversation messages (for chat mode context).
     """
     bot_name = config.settings["bot_name"]
     system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
@@ -787,6 +819,14 @@ def build_messenger_messages(
     if facts:
         facts_text = "\n".join(f"- {f['content']}" for f in facts)
         context_parts.append(f"## Known Facts\n{facts_text}")
+    if recent_messages:
+        msgs_text = "\n".join(
+            f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
+            for m in recent_messages
+        )
+        context_parts.append(
+            f"## Recent Conversation\n{fence_content(msgs_text, 'MESSAGES')}"
+        )
     if plan_outputs_text:
         context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
     context_parts.append(f"## Task\n{detail}")
@@ -800,6 +840,7 @@ async def run_messenger(
     detail: str,
     plan_outputs_text: str = "",
     goal: str = "",
+    include_recent: bool = False,
 ) -> str:
     """Run the messenger: generate a user-facing response.
 
@@ -809,14 +850,23 @@ async def run_messenger(
     When *goal* is provided it is included as ``## Current User Request``
     so the messenger knows the original intent behind the plan.
 
+    When *include_recent* is True (chat fast-path), recent conversation
+    messages are injected so the messenger can reference prior exchanges
+    instead of hallucinating.
+
     Returns the generated text.
     Raises MessengerError on failure.
     """
     sess = await get_session(db, session)
     summary = sess["summary"] if sess else ""
     facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
+    recent = None
+    if include_recent:
+        context_limit = int(config.settings["context_messages"])
+        recent = await get_recent_messages(db, session, limit=context_limit)
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
+        recent_messages=recent or None,
     )
     try:
         return await call_llm(config, "messenger", messages, session=session)
@@ -921,7 +971,7 @@ async def run_exec_translator(
         retry_context=retry_context,
     )
     try:
-        raw = await call_llm(config, "worker", messages, session=session)
+        raw = await call_llm(config, "worker", messages, session=session, max_tokens=500)
     except LLMError as e:
         raise ExecTranslatorError(f"LLM call failed: {e}")
 

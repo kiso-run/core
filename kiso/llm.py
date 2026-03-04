@@ -152,6 +152,7 @@ async def call_llm(
     messages: list[dict],
     response_format: dict | None = None,
     session: str = "",
+    max_tokens: int | None = None,
 ) -> str:
     """Call an LLM. Returns the response content string.
 
@@ -190,6 +191,8 @@ async def call_llm(
     }
     if response_format:
         payload["response_format"] = response_format
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
 
     url = provider.base_url.rstrip("/") + "/chat/completions"
 

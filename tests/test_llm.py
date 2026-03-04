@@ -966,3 +966,49 @@ class TestThinkingExtraction:
 
         delta = get_usage_since(0)
         assert delta["calls"][0]["thinking"] == "deep thought"
+
+
+# --- M105b: max_tokens parameter ---
+
+
+class TestMaxTokensParam:
+    """M105b: call_llm forwards max_tokens to the API payload."""
+
+    @pytest.mark.asyncio
+    async def test_max_tokens_in_payload(self):
+        """When max_tokens is set, it appears in the request payload."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("echo hi")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "worker",
+                    [{"role": "user", "content": "hi"}],
+                    max_tokens=500,
+                )
+
+                payload = mock_client.post.call_args[1]["json"]
+                assert payload["max_tokens"] == 500
+
+    @pytest.mark.asyncio
+    async def test_max_tokens_none_omitted(self):
+        """When max_tokens is None (default), the key is absent from payload."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("echo hi")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "worker",
+                    [{"role": "user", "content": "hi"}],
+                )
+
+                payload = mock_client.post.call_args[1]["json"]
+                assert "max_tokens" not in payload

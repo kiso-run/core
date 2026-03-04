@@ -181,10 +181,14 @@ async def _msg_task(
     detail: str,
     plan_outputs: list[dict] | None = None,
     goal: str = "",
+    include_recent: bool = False,
 ) -> str:
     """Generate a user-facing message via the messenger brain role."""
     outputs_text = _format_plan_outputs_for_msg(plan_outputs) if plan_outputs else ""
-    return await run_messenger(db, config, session, detail, outputs_text, goal=goal)
+    return await run_messenger(
+        db, config, session, detail, outputs_text, goal=goal,
+        include_recent=include_recent,
+    )
 
 
 async def _post_plan_knowledge(
@@ -373,7 +377,8 @@ async def _fast_path_chat(
     try:
         try:
             text = await asyncio.wait_for(
-                _msg_task(config, db, session, content, goal=content),
+                _msg_task(config, db, session, content, goal=content,
+                          include_recent=True),
                 timeout=messenger_timeout,
             )
         except asyncio.TimeoutError:

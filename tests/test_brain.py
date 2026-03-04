@@ -26,6 +26,8 @@ from kiso.brain import (
     _ROLES_DIR,
     invalidate_prompt_cache,
     _strip_fences,
+    _repair_json,
+    _is_plugin_discovery_search,
     build_classifier_messages,
     build_curator_messages,
     build_exec_translator_messages,
@@ -769,7 +771,7 @@ class TestRunPlanner:
     async def test_invalid_json_raises_plan_error(self, db, config):
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value="not json at all"):
-            with pytest.raises(PlanError, match="invalid JSON"):
+            with pytest.raises(PlanError, match="(?i)invalid JSON"):
                 await run_planner(db, config, "sess1", "admin", "hello")
 
     async def test_invalid_json_retries_before_raising(self, db, config):
@@ -1146,7 +1148,7 @@ class TestRunReviewer:
     async def test_invalid_json_raises_review_error(self, config):
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value="not json"):
-            with pytest.raises(ReviewError, match="invalid JSON"):
+            with pytest.raises(ReviewError, match="(?i)invalid JSON"):
                 await run_reviewer(config, "goal", "detail", "expect", "output", "msg")
 
     async def test_retry_appends_error_feedback(self, config):
@@ -1322,7 +1324,7 @@ class TestRunCurator:
         learnings = [{"id": 1, "content": "test"}]
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value="not json"):
-            with pytest.raises(CuratorError, match="invalid JSON"):
+            with pytest.raises(CuratorError, match="(?i)invalid JSON"):
                 await run_curator(config, learnings)
 
 
@@ -2974,3 +2976,239 @@ class TestGroupFactsByCategory:
         assert len(parts) == 1
         text = parts[0]
         assert text.index("first") < text.index("second") < text.index("third")
+
+
+# --- M105a: _is_plugin_discovery_search ---
+
+
+class TestIsPluginDiscoverySearch:
+    """Unit tests for _is_plugin_discovery_search helper."""
+
+    @pytest.mark.parametrize("detail", [
+        "find browser skill in kiso registry",
+        "cercare skill nel registro kiso",
+        "search connector install",
+        "kiso plugin discovery",
+        "skill registry browse",
+        "discover connector in registry",
+        "search for available plugins in the registry",
+        "find skill to install from kiso",
+    ])
+    def test_positive_matches(self, detail):
+        assert _is_plugin_discovery_search(detail) is True
+
+    @pytest.mark.parametrize("detail", [
+        "latest python release",
+        "browser automation tutorial",
+        "how to install docker",
+        "skill development best practices",
+        "what is the weather today",
+    ])
+    def test_negative_matches(self, detail):
+        assert _is_plugin_discovery_search(detail) is False
+
+
+# --- M105a: validate_plan search-for-plugins ---
+
+
+class TestValidatePlanPluginDiscovery:
+    """M105a: search tasks for plugin discovery must be rejected."""
+
+    def test_search_plugin_discovery_rejected(self):
+        plan = {"tasks": [
+            {"type": "search", "detail": "find browser skill in kiso registry",
+             "expect": "skill info", "skill": None, "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("search cannot be used for kiso plugin discovery" in e for e in errors)
+
+    def test_search_general_web_accepted(self):
+        plan = {"tasks": [
+            {"type": "search", "detail": "latest python release",
+             "expect": "version info", "skill": None, "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("plugin discovery" in e for e in errors)
+
+    def test_search_plugin_install_rejected(self):
+        plan = {"tasks": [
+            {"type": "search", "detail": "cercare skill browser nel registro",
+             "expect": "info", "skill": None, "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("search cannot be used for kiso plugin discovery" in e for e in errors)
+
+
+# --- M105b: exec translator passes max_tokens ---
+
+
+class TestExecTranslatorMaxTokens:
+    """M105b: run_exec_translator passes max_tokens=500 to call_llm."""
+
+    @pytest.mark.asyncio
+    async def test_exec_translator_passes_max_tokens(self):
+        config = _make_brain_config()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="echo hi") as mock_llm:
+            await run_exec_translator(config, "print hi", "Linux x86_64", session="s1")
+            mock_llm.assert_called_once()
+            _, kwargs = mock_llm.call_args
+            assert kwargs.get("max_tokens") == 500
+
+
+# --- M105c: _repair_json ---
+
+
+class TestRepairJson:
+    """M105c: JSON repair — trailing commas + fences."""
+
+    def test_trailing_comma_object(self):
+        assert _repair_json('{"a": 1,}') == '{"a": 1}'
+
+    def test_trailing_comma_array(self):
+        assert _repair_json('[1, 2,]') == '[1, 2]'
+
+    def test_nested_trailing_commas(self):
+        repaired = _repair_json('{"a": [1,], "b": 2,}')
+        parsed = json.loads(repaired)
+        assert parsed == {"a": [1], "b": 2}
+
+    def test_fences_and_comma(self):
+        raw = '```json\n{"a": 1,}\n```'
+        assert _repair_json(raw) == '{"a": 1}'
+
+    def test_clean_passthrough(self):
+        clean = '{"a": 1, "b": [2, 3]}'
+        assert _repair_json(clean) == clean
+
+    def test_whitespace_before_bracket(self):
+        repaired = _repair_json('{"a": 1 ,  }')
+        parsed = json.loads(repaired)
+        assert parsed == {"a": 1}
+
+
+# --- M105c: retry JSON error includes position ---
+
+
+class TestRetryJsonErrorPosition:
+    """M105c: retry feedback includes line/col info from JSONDecodeError."""
+
+    @pytest.mark.asyncio
+    async def test_retry_json_error_includes_position(self):
+        config = _make_brain_config()
+        valid_plan = json.dumps({
+            "goal": "test", "secrets": None, "extend_replan": None,
+            "tasks": [{"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None}],
+        })
+        mock_messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "usr"},
+        ]
+        with patch("kiso.brain.build_planner_messages", new_callable=AsyncMock,
+                    return_value=(mock_messages, [])):
+            with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                        side_effect=["{invalid json!!!", valid_plan]) as mock_llm:
+                plan = await run_planner(
+                    db=AsyncMock(), config=config, session="s1",
+                    user_role="admin", new_message="test",
+                )
+                assert plan["goal"] == "test"
+                # Check that the retry feedback message contains "line" and "col"
+                retry_msg = mock_llm.call_args_list[1][0][2]  # messages arg of second call
+                feedback = retry_msg[-1]["content"]  # last message = error feedback
+                assert "line" in feedback.lower()
+                assert "col" in feedback.lower()
+
+
+# --- M105d: messenger recent messages (chat context) ---
+
+
+class TestBuildMessengerMessagesRecent:
+    """M105d: build_messenger_messages includes recent messages when provided."""
+
+    def test_recent_messages_included_in_context(self):
+        config = _make_brain_config()
+        recent = [
+            {"role": "user", "user": "alice", "content": "Is browser installed?"},
+            {"role": "assistant", "content": "Yes, browser skill is installed."},
+        ]
+        msgs = build_messenger_messages(
+            config, "", [], "follow up question",
+            recent_messages=recent,
+        )
+        user_content = msgs[1]["content"]
+        assert "Recent Conversation" in user_content
+        assert "Is browser installed?" in user_content
+        assert "browser skill is installed" in user_content
+
+    def test_no_recent_messages_no_section(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        user_content = msgs[1]["content"]
+        assert "Recent Conversation" not in user_content
+
+    def test_recent_messages_none_no_section(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "", [], "say hi", recent_messages=None,
+        )
+        user_content = msgs[1]["content"]
+        assert "Recent Conversation" not in user_content
+
+    def test_recent_messages_fenced(self):
+        """Recent messages are wrapped in security fences."""
+        config = _make_brain_config()
+        recent = [{"role": "user", "user": "bob", "content": "hello"}]
+        msgs = build_messenger_messages(
+            config, "", [], "reply", recent_messages=recent,
+        )
+        user_content = msgs[1]["content"]
+        assert "<<<MESSAGES_" in user_content
+        assert "<<<END_MESSAGES_" in user_content
+
+
+class TestRunMessengerIncludeRecent:
+    """M105d: run_messenger loads recent messages when include_recent=True."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        await save_message(conn, "sess1", None, "user", "Is browser installed?")
+        await save_message(conn, "sess1", None, "assistant", "Yes it is.")
+        yield conn
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_include_recent_true_loads_messages(self, db):
+        config = _make_brain_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_messenger(
+                db, config, "sess1", "I don't understand",
+                include_recent=True,
+            )
+        user_content = captured_messages[1]["content"]
+        assert "Recent Conversation" in user_content
+        assert "Is browser installed?" in user_content
+
+    @pytest.mark.asyncio
+    async def test_include_recent_false_no_messages(self, db):
+        config = _make_brain_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_messenger(db, config, "sess1", "say hi")
+        user_content = captured_messages[1]["content"]
+        assert "Recent Conversation" not in user_content
