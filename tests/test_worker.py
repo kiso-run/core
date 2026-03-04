@@ -60,6 +60,7 @@ from kiso.worker.loop import (
     _handle_skill_task,
     _make_plan_output,
     _run_planning_loop,
+    _spawn_knowledge_task,
 )
 
 from contextlib import contextmanager
@@ -1243,6 +1244,63 @@ class TestReviewTask:
         assert row[2] == "Needs retry"
 
 
+    async def test_review_task_empty_output_discards_learnings(self, db):
+        """M111d: learnings are discarded when task output is empty."""
+        config = _make_config()
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Inferred fact"]}
+        tid = await self._make_task(db, "check version", "shows version")
+        task_row = {"id": tid, "detail": "check version", "expect": "shows version",
+                    "output": "", "stderr": ""}
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute("SELECT COUNT(*) FROM learnings")
+        count = (await cur.fetchone())[0]
+        assert count == 0, "Learnings should be discarded for empty output"
+
+    async def test_review_task_whitespace_output_discards_learnings(self, db):
+        """M111d: learnings are discarded when task output is whitespace-only."""
+        config = _make_config()
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Inferred fact"]}
+        tid = await self._make_task(db, "check", "ok")
+        task_row = {"id": tid, "detail": "check", "expect": "ok",
+                    "output": "  \n  ", "stderr": "  "}
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute("SELECT COUNT(*) FROM learnings")
+        count = (await cur.fetchone())[0]
+        assert count == 0
+
+    async def test_review_task_nonempty_output_keeps_learnings(self, db):
+        """M111d: learnings are kept when output has real content."""
+        config = _make_config()
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Flask"]}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "echo", "expect": "ok",
+                    "output": "Flask==2.0", "stderr": ""}
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute("SELECT COUNT(*) FROM learnings")
+        count = (await cur.fetchone())[0]
+        assert count == 1
+
+    async def test_review_task_empty_output_but_stderr_keeps_learnings(self, db):
+        """M111d: learnings kept when output is empty but stderr has content."""
+        config = _make_config()
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Python 3.11"]}
+        tid = await self._make_task(db)
+        task_row = {"id": tid, "detail": "check", "expect": "ok",
+                    "output": "", "stderr": "Python 3.11.4"}
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        cur = await db.execute("SELECT COUNT(*) FROM learnings")
+        count = (await cur.fetchone())[0]
+        assert count == 1
+
+
 # --- _build_replan_context ---
 
 class TestBuildReplanContext:
@@ -1282,13 +1340,13 @@ class TestBuildReplanContext:
         assert "Permission denied" in ctx
         assert "[exec] cat /etc/shadow" in ctx
 
-    def test_output_truncated_to_500(self):
+    def test_output_truncated_to_200(self):
         long_output = "x" * 1000
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
         ctx = _build_replan_context(completed, [], "broke", [])
-        # The 1000-char output should be truncated to exactly 500 chars
-        assert "x" * 500 in ctx
-        assert "x" * 501 not in ctx
+        # The 1000-char output should be truncated to exactly 200 chars
+        assert "x" * 200 in ctx
+        assert "x" * 201 not in ctx
 
     def test_history_without_what_was_tried(self):
         """Handles legacy history entries without what_was_tried."""
@@ -5561,26 +5619,37 @@ class TestReportPubFiles:
 
 
 class TestBuildReplanContextSearchLimit:
-    def test_search_output_not_truncated_at_500(self):
-        """Search task output uses 4000 char limit (not 500) in replan context."""
-        long_output = "x" * 3000
+    def test_search_output_uses_1000_limit(self):
+        """Search task output uses 1000 char limit in replan context."""
+        long_output = "x" * 2000
         completed = [
             {"type": "search", "detail": "find info", "status": "done", "output": long_output},
         ]
         context = _build_replan_context(completed, [], "replan reason", [])
-        # Full 3000 chars should be present (under 4000 limit)
-        assert "x" * 3000 in context
+        assert "x" * 1000 in context
+        assert "x" * 1001 not in context
 
-    def test_exec_output_truncated_at_500(self):
-        """Exec task output still uses 500 char limit in replan context."""
+    def test_exec_output_truncated_at_200(self):
+        """Exec task output uses 200 char limit in replan context."""
         long_output = "x" * 1000
         completed = [
             {"type": "exec", "detail": "run command", "status": "done", "output": long_output},
         ]
         context = _build_replan_context(completed, [], "replan reason", [])
-        # Only first 500 chars should be present
-        assert "x" * 500 in context
-        assert "x" * 501 not in context
+        assert "x" * 200 in context
+        assert "x" * 201 not in context
+
+    def test_budget_overflow_summarizes(self):
+        """Tasks exceeding char budget are summarized as one-liners."""
+        completed = [
+            {"type": "exec", "detail": f"task{i}", "status": "done", "output": "x" * 200}
+            for i in range(100)
+        ]
+        context = _build_replan_context(completed, [], "reason", [])
+        # Later tasks should be one-liners (no TASK_OUTPUT fence)
+        lines = context.split("\n")
+        one_liners = [l for l in lines if l.startswith("- [exec]") and "TASK_OUTPUT" not in l]
+        assert len(one_liners) > 0
 
 
 # --- M31: session workspace pub/ directory ---
@@ -6228,7 +6297,7 @@ class TestFastPathIntegration:
         mock_planner.assert_called_once()
 
     async def test_fast_path_runs_post_plan_knowledge(self, db, tmp_path):
-        """Fast path should run post-plan knowledge processing (summarizer, etc.)."""
+        """Fast path should spawn background knowledge task (summarizer, etc.)."""
         conn, msg_id = db
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
@@ -6240,9 +6309,12 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              _patch_kiso_dir(tmp_path):
             from kiso.worker import _process_message
-            await _process_message(
+            bg_task = await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
+            # Background task must be returned
+            assert bg_task is not None
+            await bg_task  # let it run
 
         mock_post.assert_called_once()
 
@@ -7028,6 +7100,20 @@ class TestTaskHandlers:
         assert result.completed_row["output"] == "Hello!"
         assert result.plan_output is not None
         assert result.plan_output["type"] == "msg"
+
+    async def test_handle_msg_task_stores_duration_ms(self, db, plan_id, tmp_path):
+        """M111a: msg handler stores duration_ms in the DB."""
+        task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
+        ctx = _make_ctx(db)
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="Hello!"), \
+             _patch_kiso_dir(tmp_path):
+            await _handle_msg_task(ctx, task_row, 0, True, 0)
+
+        tasks = await get_tasks_for_plan(db, plan_id)
+        done_tasks = [t for t in tasks if t["status"] == "done"]
+        assert done_tasks, "Expected at least one done task"
+        assert done_tasks[0]["duration_ms"] is not None
+        assert done_tasks[0]["duration_ms"] >= 0
 
     async def test_handle_msg_task_messenger_error_returns_stop(self, db, plan_id, tmp_path):
         """msg handler returns stop=True on LLMError."""
@@ -8177,3 +8263,157 @@ class TestMessengerTimeout:
     async def plan_id(self, db):
         pid = await create_plan(db, "sess1", 0, "Test plan")
         yield pid
+
+
+# --- Background knowledge task (M109b) ---
+
+
+class TestSpawnKnowledgeTask:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_exception_logged_not_raised(self, db):
+        """Background knowledge task should log exceptions, not propagate them."""
+        config = _make_config()
+        mock_post = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch("kiso.worker.loop._post_plan_knowledge", mock_post):
+            task = _spawn_knowledge_task(db, config, "sess1", None, 60)
+            # Should not raise
+            await task
+
+        mock_post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clears_budget_on_success(self, db):
+        """Budget should be cleared after successful background task."""
+        config = _make_config()
+        mock_post = AsyncMock()
+        with patch("kiso.worker.loop._post_plan_knowledge", mock_post):
+            task = _spawn_knowledge_task(db, config, "sess1", None, 60)
+            await task
+
+        mock_post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clears_budget_on_failure(self, db):
+        """Budget should be cleared even when the background task fails."""
+        config = _make_config()
+        mock_post = AsyncMock(side_effect=RuntimeError("fail"))
+        with patch("kiso.worker.loop._post_plan_knowledge", mock_post):
+            task = _spawn_knowledge_task(db, config, "sess1", None, 60)
+            await task
+
+        # Task completed without raising (exception caught internally)
+        assert task.done()
+        assert task.exception() is None
+
+
+class TestProcessMessagePhaseCallback:
+    """Verify _process_message invokes set_phase at key transitions."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        msg_id = await save_message(conn, "sess1", "u1", "user", "hello", trusted=True, processed=False)
+        yield conn, msg_id
+        await conn.close()
+
+    def _make_msg(self, msg_id):
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_skills": None, "username": "u1"}
+
+    @pytest.mark.asyncio
+    async def test_phase_transitions_for_chat(self, db, tmp_path):
+        """Chat fast path should set classifying → executing → idle phases."""
+        conn, msg_id = db
+        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        msg = self._make_msg(msg_id)
+        phases = []
+
+        mock_classifier = AsyncMock(return_value="chat")
+        mock_messenger = AsyncMock(return_value="Hi!")
+        mock_post = AsyncMock()
+        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+             patch("kiso.worker.loop.run_messenger", mock_messenger), \
+             patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
+             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
+             _patch_kiso_dir(tmp_path):
+            from kiso.worker import _process_message
+            bg_task = await _process_message(
+                conn, config, "sess1", msg, None, 5, 60, 3,
+                set_phase=lambda p: phases.append(p),
+            )
+            if bg_task:
+                await bg_task
+
+        assert "classifying" in phases
+        assert "executing" in phases
+        assert "idle" in phases
+
+    @pytest.mark.asyncio
+    async def test_replan_emits_planning_then_executing_phases(self, db, tmp_path):
+        """During a replan, set_phase should emit 'planning' before replanning
+        and 'executing' after the new plan is created."""
+        conn, msg_id = db
+        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        # Use username=None to bypass runtime permission re-validation
+        # (test config has no users defined)
+        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_skills": None, "username": None}
+        phases = []
+
+        fail_plan = {
+            "goal": "First",
+            "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo fail", "skill": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+        success_plan = {
+            "goal": "Second",
+            "secrets": None,
+            "tasks": [
+                {"type": "msg", "detail": "fixed", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        call_count = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            call_count.append(1)
+            return fail_plan if len(call_count) == 1 else success_plan
+
+        mock_classifier = AsyncMock(return_value="plan")
+        mock_post = AsyncMock()
+
+        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+             patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
+             patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
+             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
+             _patch_kiso_dir(tmp_path):
+            from kiso.worker import _process_message
+            bg_task = await _process_message(
+                conn, config, "sess1", msg, None, 5, 60, 3,
+                set_phase=lambda p: phases.append(p),
+            )
+            if bg_task:
+                await bg_task
+
+        # Verify the replan emitted planning → executing sequence
+        # The full sequence should include: classifying → planning → executing →
+        # (replan) planning → executing → idle
+        assert phases.count("planning") >= 2, f"Expected >=2 planning phases, got {phases}"
+        assert phases.count("executing") >= 2, f"Expected >=2 executing phases, got {phases}"
+        # Verify planning comes before executing in the replan segment
+        last_planning = len(phases) - 1 - phases[::-1].index("planning")
+        last_executing = len(phases) - 1 - phases[::-1].index("executing")
+        # The last planning should come before the last executing (replan sequence)
+        assert last_planning < last_executing

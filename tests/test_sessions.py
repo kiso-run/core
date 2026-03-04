@@ -242,3 +242,140 @@ async def test_post_cancel_invalid_session(client: httpx.AsyncClient):
     )
     assert resp.status_code == 400
     assert "Invalid session ID" in resp.json()["detail"]
+
+
+# --- Cancel queue drain (M109a) ---
+
+
+async def test_post_cancel_drains_queue(client: httpx.AsyncClient):
+    """Cancel should drain pending messages from the queue."""
+    import kiso.main as main_mod
+    from kiso.store import create_plan, create_session, save_message
+
+    db = client._transport.app.state.db  # type: ignore[attr-defined]
+    await create_session(db, "drain-sess")
+    plan_id = await create_plan(db, "drain-sess", 1, "Drain test")
+
+    cancel_event = asyncio.Event()
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()
+
+    # Put some messages in the queue
+    msg1_id = await save_message(db, "drain-sess", "u1", "user", "msg1", trusted=True, processed=False)
+    msg2_id = await save_message(db, "drain-sess", "u1", "user", "msg2", trusted=True, processed=False)
+    await fake_queue.put({"id": msg1_id, "content": "msg1"})
+    await fake_queue.put({"id": msg2_id, "content": "msg2"})
+
+    from kiso.main import WorkerEntry
+    main_mod._workers["drain-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
+
+    try:
+        resp = await client.post(
+            "/sessions/drain-sess/cancel", headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cancelled"] is True
+        assert data["drained"] == 2
+        assert fake_queue.empty()
+    finally:
+        main_mod._workers.pop("drain-sess", None)
+
+
+async def test_post_cancel_marks_drained_as_processed(client: httpx.AsyncClient):
+    """Drained messages should be marked as processed in the DB."""
+    import kiso.main as main_mod
+    from kiso.store import create_plan, create_session, save_message
+
+    db = client._transport.app.state.db  # type: ignore[attr-defined]
+    await create_session(db, "proc-sess")
+    plan_id = await create_plan(db, "proc-sess", 1, "Process test")
+
+    cancel_event = asyncio.Event()
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()
+
+    msg_id = await save_message(db, "proc-sess", "u1", "user", "queued", trusted=True, processed=False)
+    await fake_queue.put({"id": msg_id, "content": "queued"})
+
+    from kiso.main import WorkerEntry
+    main_mod._workers["proc-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
+
+    try:
+        resp = await client.post(
+            "/sessions/proc-sess/cancel", headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["drained"] == 1
+
+        # Verify message marked as processed in DB
+        row = await db.execute_fetchall(
+            "SELECT processed FROM messages WHERE id = ?", (msg_id,),
+        )
+        assert row[0][0] == 1
+    finally:
+        main_mod._workers.pop("proc-sess", None)
+
+
+async def test_post_cancel_empty_queue_drains_zero(client: httpx.AsyncClient):
+    """Cancel with empty queue should report drained=0."""
+    import kiso.main as main_mod
+    from kiso.store import create_plan, create_session
+
+    db = client._transport.app.state.db  # type: ignore[attr-defined]
+    await create_session(db, "empty-q-sess")
+    plan_id = await create_plan(db, "empty-q-sess", 1, "Empty queue test")
+
+    cancel_event = asyncio.Event()
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()  # empty
+
+    from kiso.main import WorkerEntry
+    main_mod._workers["empty-q-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
+
+    try:
+        resp = await client.post(
+            "/sessions/empty-q-sess/cancel", headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cancelled"] is True
+        assert data["drained"] == 0
+    finally:
+        main_mod._workers.pop("empty-q-sess", None)
+
+
+async def test_post_cancel_queue_msg_without_id_skipped(client: httpx.AsyncClient):
+    """Queued message dict without 'id' key is silently skipped during drain."""
+    import kiso.main as main_mod
+    from kiso.store import create_plan, create_session
+
+    db = client._transport.app.state.db  # type: ignore[attr-defined]
+    await create_session(db, "noid-sess")
+    plan_id = await create_plan(db, "noid-sess", 1, "No-ID test")
+
+    cancel_event = asyncio.Event()
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()
+
+    # Message without 'id' key
+    await fake_queue.put({"content": "orphan message"})
+
+    from kiso.main import WorkerEntry
+    main_mod._workers["noid-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
+
+    try:
+        resp = await client.post(
+            "/sessions/noid-sess/cancel", headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cancelled"] is True
+        assert data["drained"] == 0  # no valid IDs to drain
+        assert fake_queue.empty()
+    finally:
+        main_mod._workers.pop("noid-sess", None)

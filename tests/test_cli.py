@@ -2635,3 +2635,277 @@ class TestPlanLevelVerbose:
         out = capsys.readouterr().out
         assert "planner" in out
         assert "plan this" in out
+
+
+# ── Phase-specific spinner (M109c) ─────────────────────────
+
+
+def test_poll_status_shows_classifying_phase(capsys):
+    """When worker_phase is 'classifying', spinner should show Classifying."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Do stuff", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+        "worker_phase": "classifying",
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "Do stuff", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "respond", "status": "done",
+             "output": "Done."},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
+
+    out = capsys.readouterr().out
+    assert "Classifying" in out
+
+
+def test_poll_status_phase_change_resets_timer(capsys):
+    """Phase transition should reset the spinner elapsed timer."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+        "worker_phase": "classifying",
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+        "worker_phase": "planning",
+    }
+    resp2.raise_for_status = MagicMock()
+
+    resp3 = MagicMock()
+    resp3.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "r", "status": "done",
+             "output": "ok"},
+        ],
+    }
+    resp3.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2, resp3]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
+
+    out = capsys.readouterr().out
+    assert "Classifying" in out
+    assert "Planning" in out
+
+
+# ── Phase completion lines (M110a) ──────────────────────────
+
+
+def test_poll_status_emits_phase_completion_line(capsys):
+    """Phase transition should emit a completion line (e.g. 'Classified in Ns')."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+        "worker_phase": "classifying",
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+        "worker_phase": "planning",
+    }
+    resp2.raise_for_status = MagicMock()
+
+    resp3 = MagicMock()
+    resp3.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "r", "status": "done",
+             "output": "ok"},
+        ],
+    }
+    resp3.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2, resp3]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=False, verbose=False, caps=tty_caps)
+
+    out = capsys.readouterr().out
+    assert "Classified" in out
+
+
+def test_poll_status_quiet_suppresses_phase_completion(capsys):
+    """In quiet mode, phase completion lines should not appear."""
+    tty_caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    mock_client = MagicMock()
+
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "running"},
+        "tasks": [],
+        "worker_running": True,
+        "worker_phase": "classifying",
+    }
+    resp1.raise_for_status = MagicMock()
+
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 10, "goal": "X", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "r", "status": "done",
+             "output": "result"},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 10, 0, quiet=True, verbose=False, caps=tty_caps)
+
+    out = capsys.readouterr().out
+    assert "Classified" not in out
+    assert "Planned" not in out
+
+
+# ── Plan-level incremental LLM rendering (M110b) ────────────
+
+
+def test_plan_llm_calls_rendered_incrementally(capsys):
+    """Plan-level LLM calls should render incrementally via shown_plan_llm_count."""
+    import json as _json
+
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+
+    classifier_call = {
+        "role": "classifier", "model": "m", "input_tokens": 50, "output_tokens": 10,
+        "messages": [{"role": "user", "content": "classify this"}],
+        "response": "plan",
+    }
+    planner_call = {
+        "role": "planner", "model": "m", "input_tokens": 200, "output_tokens": 100,
+        "messages": [{"role": "user", "content": "plan this"}],
+        "response": "{}",
+    }
+
+    # Poll 1: plan running, only classifier call
+    state = _PollRenderState(seen={}, verbose_shown={})
+    plan1 = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "g",
+        "llm_calls": _json.dumps([classifier_call]),
+    }
+    data1 = {"plan": plan1, "tasks": [], "worker_running": True}
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "classify this" in out1
+    assert state.shown_plan_llm_count == 1
+
+    # Poll 2: plan running, both calls
+    plan2 = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "g",
+        "llm_calls": _json.dumps([classifier_call, planner_call]),
+    }
+    data2 = {"plan": plan2, "tasks": [], "worker_running": True}
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    assert "plan this" in out2
+    # Classifier should NOT be re-rendered
+    assert "classify this" not in out2
+    assert state.shown_plan_llm_count == 2
+
+
+# ── Inflight call rendering in verbose mode (M109c) ────────
+
+
+def test_render_plan_status_shows_inflight_call(capsys):
+    """In verbose mode, inflight_call in status should render a waiting panel."""
+    import json as _json
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "g",
+    }
+    data = {
+        "plan": plan,
+        "tasks": [],
+        "worker_running": True,
+        "inflight_call": {
+            "role": "planner",
+            "model": "deepseek/deepseek-v3",
+            "messages": [
+                {"role": "system", "content": "You are a planner."},
+                {"role": "user", "content": "Deploy it."},
+            ],
+            "ts": 1709553600.0,
+        },
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out = capsys.readouterr().out
+    assert "planner" in out
+    assert "waiting" in out.lower()
+    assert "Deploy it." in out
+
+
+def test_render_plan_status_inflight_not_repeated(capsys):
+    """Same inflight_call ts should not render twice."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    inflight = {
+        "role": "planner", "model": "gpt-4",
+        "messages": [{"role": "user", "content": "hi"}],
+        "ts": 1234567890.0,
+    }
+    data = {"plan": plan, "tasks": [], "worker_running": True, "inflight_call": inflight}
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    # First render — should show
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "waiting" in out1.lower()
+
+    # Second render with same ts — should NOT show again
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    assert "waiting" not in out2.lower()
+
+
+def test_render_plan_status_inflight_not_shown_in_quiet(capsys):
+    """Inflight calls should not appear in quiet mode."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    data = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "planner", "model": "gpt-4",
+            "messages": [{"role": "user", "content": "test"}],
+            "ts": 9999.0,
+        },
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    # quiet=True, verbose=True
+    _render_plan_status(data, 1, True, True, caps, "Bot", state)
+    out = capsys.readouterr().out
+    assert "waiting" not in out.lower()

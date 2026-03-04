@@ -231,6 +231,11 @@ def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+_REPLAN_OUTPUT_LIMIT = 200       # chars per exec/skill task output
+_REPLAN_SEARCH_OUTPUT_LIMIT = 1000  # chars per search task output
+_REPLAN_CONTEXT_CHAR_BUDGET = 12000  # ~3000 tokens total
+
+
 def _build_replan_context(
     completed: list[dict],
     remaining: list[dict],
@@ -242,11 +247,18 @@ def _build_replan_context(
 
     if completed:
         items = []
+        total_chars = 0
         for t in completed:
-            limit = 4000 if t.get("type") == "search" else 500
+            limit = _REPLAN_SEARCH_OUTPUT_LIMIT if t.get("type") == "search" else _REPLAN_OUTPUT_LIMIT
+            if total_chars >= _REPLAN_CONTEXT_CHAR_BUDGET:
+                # Over budget — summarize remaining as one-liners
+                items.append(f"- [{t['type']}] {t['detail']}: {t['status']}")
+                continue
             out = (t.get("output") or "")[:limit]
             out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
-            items.append(f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}")
+            item = f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}"
+            items.append(item)
+            total_chars += len(item)
         parts.append("## Completed Tasks\n" + "\n".join(items))
 
     if remaining:

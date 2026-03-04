@@ -61,7 +61,7 @@ role = "user"
 skills = ["search", "aider"]
 
 [models]
-planner     = "z-ai/glm-4.7"
+planner     = "deepseek/deepseek-v3.2"
 reviewer    = "deepseek/deepseek-v3.2"
 curator     = "deepseek/deepseek-v3.2"
 worker      = "deepseek/deepseek-v3.2"
@@ -72,7 +72,7 @@ searcher    = "perplexity/sonar"
 
 [settings]
 # --- conversation ---
-context_messages          = 7        # recent messages sent to planner
+context_messages          = 5        # recent messages sent to planner
 summarize_threshold       = 30       # message count before summarizer runs
 bot_name                  = "Kiso"
 
@@ -133,7 +133,7 @@ webhook_max_payload       = 1048576
 | Field | Default | Description |
 |---|---|---|
 | `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform username. See [security.md](security.md). |
-| `context_messages` | `7` | Number of recent raw messages sent to the planner. |
+| `context_messages` | `5` | Number of recent raw messages sent to the planner. |
 | `summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value. |
 | `bot_name` | `"Kiso"` | Name used by the messenger when referring to itself. |
 | `knowledge_max_facts` | `50` | Max global facts before consolidation. |
@@ -145,7 +145,7 @@ webhook_max_payload       = 1048576
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
 | `exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used for post-plan LLM calls (curator, summarizer, fact consolidation) and graceful shutdown per worker. Also the HTTP timeout for non-planner/non-messenger LLM calls. |
-| `planner_timeout` | `300` | Seconds before a planner LLM call is cancelled (both HTTP timeout and asyncio wrapper). Higher default for reasoning models like GLM 4.7 that need time to think. |
+| `planner_timeout` | `300` | Seconds before a planner LLM call is cancelled (both HTTP timeout and asyncio wrapper). Higher default for reasoning models that need time to think. |
 | `messenger_timeout` | `120` | Seconds before a messenger LLM call is cancelled (applies to fast-path chat and `msg` plan tasks). Tune independently from `planner_timeout` when planner and messenger use different models with different latency profiles. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or skill task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `1` | Max worker-level retries per exec/search task before escalating to a full replan. |
@@ -187,8 +187,8 @@ base_url = "http://localhost:11434/v1"
 Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-z-ai/glm-4.7                     → first provider, model "z-ai/glm-4.7"
 deepseek/deepseek-v3.2           → first provider, model "deepseek/deepseek-v3.2"
+perplexity/sonar                 → first provider, model "perplexity/sonar"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```
 

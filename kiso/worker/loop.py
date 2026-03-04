@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import aiosqlite
@@ -28,6 +29,10 @@ from kiso.brain import (
     TASK_TYPE_REPLAN,
     TASK_TYPE_SEARCH,
     TASK_TYPE_SKILL,
+    WORKER_PHASE_CLASSIFYING,
+    WORKER_PHASE_EXECUTING,
+    WORKER_PHASE_IDLE,
+    WORKER_PHASE_PLANNING,
     ClassifierError,
     CuratorError,
     ExecTranslatorError,
@@ -189,6 +194,29 @@ async def _msg_task(
         db, config, session, detail, outputs_text, goal=goal,
         include_recent=include_recent,
     )
+
+
+def _spawn_knowledge_task(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    plan_id: int | None,
+    exec_timeout: int,
+) -> asyncio.Task:
+    """Spawn _post_plan_knowledge as a background task with its own LLM budget."""
+
+    async def _run() -> None:
+        max_calls = setting_int(config.settings, "max_llm_calls_per_message", lo=1)
+        set_llm_budget(max_calls)
+        reset_usage_tracking()
+        try:
+            await _post_plan_knowledge(db, config, session, plan_id, exec_timeout)
+        except Exception:
+            log.exception("Background post-plan knowledge failed for session=%s", session)
+        finally:
+            clear_llm_budget()
+
+    return asyncio.create_task(_run())
 
 
 async def _post_plan_knowledge(
@@ -392,7 +420,7 @@ async def _fast_path_chat(
         # Persist any partial LLM calls collected before the failure so verbose
         # panels still show the attempted messenger call.
         await _append_calls(db, task_id, usage_idx_before)
-        await update_task(db, task_id, "failed", output=error_text)
+        await update_task(db, task_id, "failed", output=error_text, duration_ms=task_duration_ms)
         await update_plan_status(db, plan_id, "failed")
         audit.log_task(
             session, task_id, TASK_TYPE_MSG, content, "failed", task_duration_ms, 0,
@@ -405,7 +433,7 @@ async def _fast_path_chat(
         return plan_id
 
     task_duration_ms = int((time.perf_counter() - t0) * 1000)
-    await update_task(db, task_id, "done", output=text)
+    await update_task(db, task_id, "done", output=text, duration_ms=task_duration_ms)
     await update_plan_status(db, plan_id, "done")
 
     audit.log_task(
@@ -495,6 +523,12 @@ async def _review_task(
         log.warning("Reviewer returned learn as string, expected list; wrapping: %r", learn_raw[:100])
         learn_items = [learn_raw]
     else:
+        learn_items = []
+    # Discard learnings when output is empty — reviewer may hallucinate
+    if not (output.strip() or stderr.strip()):
+        if learn_items:
+            log.warning("Discarding %d learning(s) for task %d — empty output",
+                        len(learn_items), task_row.get("id", 0))
         learn_items = []
     has_learning = bool(learn_items)
     for item in learn_items:
@@ -628,7 +662,7 @@ async def _handle_msg_task(
         except asyncio.TimeoutError:
             raise MessengerError(f"Messenger timed out after {ctx.messenger_timeout}s")
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
-        await update_task(ctx.db, task_id, "done", output=text)
+        await update_task(ctx.db, task_id, "done", output=text, duration_ms=task_duration_ms)
         task_row = {**task_row, "output": text, "status": "done"}
         audit.log_task(
             ctx.session, task_id, TASK_TYPE_MSG, detail, "done", task_duration_ms,
@@ -651,7 +685,7 @@ async def _handle_msg_task(
     except (LLMError, MessengerError) as e:
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
         log.error("Msg task %d messenger error: %s", task_id, e)
-        await update_task(ctx.db, task_id, "failed", output=str(e))
+        await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
         audit.log_task(
             ctx.session, task_id, TASK_TYPE_MSG, detail, "failed",
             task_duration_ms, 0,
@@ -708,11 +742,10 @@ async def _handle_skill_task(
     stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
     stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
     status = "done" if success else "failed"
-    await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr)
+    task_duration_ms = int((time.perf_counter() - t0) * 1000)
+    await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
     task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                 "exit_code": exit_code}
-
-    task_duration_ms = int((time.perf_counter() - t0) * 1000)
     audit.log_task(
         ctx.session, task_id, "skill", detail, task_row["status"],
         task_duration_ms, len(task_row.get("output") or ""),
@@ -804,7 +837,7 @@ async def _handle_exec_task(
             )
             stdout += pub_note
 
-        await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr)
+        await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
         audit.log_task(
             ctx.session, task_id, "exec", detail, status, task_duration_ms,
             len(stdout), deploy_secrets=ctx.deploy_secrets,
@@ -893,7 +926,7 @@ async def _handle_search_task(
         except SearcherError as e:
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             log.error("Search failed for task %d: %s", task_id, e)
-            await update_task(ctx.db, task_id, "failed", output=str(e))
+            await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
             audit.log_task(
                 ctx.session, task_id, "search", detail, "failed", task_duration_ms, 0,
                 deploy_secrets=ctx.deploy_secrets,
@@ -943,7 +976,7 @@ async def _handle_search_task(
         break
 
     task_duration_ms = int((time.perf_counter() - t0_total) * 1000)
-    await update_task(ctx.db, task_id, "done", output=search_result)
+    await update_task(ctx.db, task_id, "done", output=search_result, duration_ms=task_duration_ms)
     audit.log_task(
         ctx.session, task_id, "search", detail, "done", task_duration_ms,
         len(search_result), deploy_secrets=ctx.deploy_secrets,
@@ -1126,6 +1159,7 @@ async def run_worker(
     session: str,
     queue: asyncio.Queue,
     cancel_event: asyncio.Event | None = None,
+    set_phase: Callable[[str], None] | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
@@ -1135,8 +1169,15 @@ async def run_worker(
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
+    _pending_knowledge_task: asyncio.Task | None = None
+
+    def _phase(p: str) -> None:
+        if set_phase is not None:
+            set_phase(p)
+
     try:
         while True:
+            _phase(WORKER_PHASE_IDLE)
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=idle_timeout)
             except asyncio.TimeoutError:
@@ -1144,16 +1185,32 @@ async def run_worker(
                 slog.info("Worker idle — shutting down")
                 break
 
+            # Await previous background knowledge task before processing next msg
+            if _pending_knowledge_task is not None:
+                try:
+                    await _pending_knowledge_task
+                except Exception:
+                    log.exception("Background knowledge task failed for session=%s", session)
+                _pending_knowledge_task = None
+
             try:
-                await _process_message(db, config, session, msg, cancel_event,
-                                       exec_timeout, planner_timeout,
-                                       max_replan_depth, messenger_timeout=messenger_timeout,
-                                       slog=slog)
+                _pending_knowledge_task = await _process_message(
+                    db, config, session, msg, cancel_event,
+                    exec_timeout, planner_timeout,
+                    max_replan_depth, messenger_timeout=messenger_timeout,
+                    slog=slog, set_phase=set_phase)
             except Exception:
                 log.exception("Unexpected error processing message in session=%s", session)
                 slog.error("Unexpected error processing message")
                 continue
     finally:
+        # Await pending background knowledge task on shutdown
+        if _pending_knowledge_task is not None:
+            try:
+                await _pending_knowledge_task
+            except Exception:
+                log.exception("Background knowledge task failed during shutdown for session=%s", session)
+        _phase(WORKER_PHASE_IDLE)
         slog.close()
 
 
@@ -1294,8 +1351,13 @@ async def _run_planning_loop(
     max_replan_depth: int,
     username: "str | None",
     slog: "SessionLogger | None",
+    set_phase: "Callable[[str], None] | None" = None,
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
+    def _phase(p: str) -> None:
+        if set_phase is not None:
+            set_phase(p)
+
     replan_history: list[dict] = []
     current_plan_id = plan_id
     current_goal = plan["goal"]
@@ -1398,6 +1460,7 @@ async def _run_planning_loop(
             break
 
         # Call planner with enriched context
+        _phase(WORKER_PHASE_PLANNING)
         replan_context = _build_replan_context(completed, remaining, replan_reason, replan_history)
         enriched_message = f"{content}\n\n{replan_context}"
 
@@ -1471,6 +1534,7 @@ async def _run_planning_loop(
 
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
+        _phase(WORKER_PHASE_EXECUTING)
 
     return current_plan_id
 
@@ -1505,13 +1569,18 @@ async def _process_message(
     max_replan_depth: int,
     messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
-):
-    """Process a single message. Extracted for crash recovery wrapping."""
+    set_phase: Callable[[str], None] | None = None,
+) -> asyncio.Task | None:
+    """Process a single message. Returns a background knowledge task (or None)."""
     msg_id: int = msg["id"]
     content: str = msg["content"]
     user_role: str = msg["user_role"]
     user_skills: str | list[str] | None = msg.get("user_skills")
     username: str | None = msg.get("username")
+
+    def _phase(p: str) -> None:
+        if set_phase is not None:
+            set_phase(p)
 
     if slog:
         slog.info("Message received: user=%s, %d chars", username or "?", len(content))
@@ -1529,6 +1598,7 @@ async def _process_message(
     # Untrusted messages feed into planner context, not messenger context.
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     if fast_path_enabled:
+        _phase(WORKER_PHASE_CLASSIFYING)
         try:
             msg_class = await asyncio.wait_for(
                 classify_message(config, content, session=session),
@@ -1541,18 +1611,17 @@ async def _process_message(
             log.info("Fast path: chat message, skipping planner")
             if slog:
                 slog.info("Fast path: classified as chat, skipping planner")
+            _phase(WORKER_PHASE_EXECUTING)
             fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content,
                 messenger_timeout=messenger_timeout, slog=slog,
             )
             # Bump fact usage for fast path (facts contributed to chat response)
             await _bump_fact_usage(db, content, session, user_role)
-            # Run post-plan knowledge processing (summarizer, curator, etc.)
-            await _post_plan_knowledge(
-                db, config, session, fast_plan_id, exec_timeout,
-            )
+            # Spawn post-plan knowledge processing in background
             clear_llm_budget()
-            return
+            _phase(WORKER_PHASE_IDLE)
+            return _spawn_knowledge_task(db, config, session, fast_plan_id, exec_timeout)
 
     # Paraphraser — fetch untrusted messages, paraphrase if any
     paraphrased_context: str | None = None
@@ -1565,6 +1634,7 @@ async def _process_message(
             paraphrased_context = None
 
     # Plan
+    _phase(WORKER_PHASE_PLANNING)
     try:
         plan = await asyncio.wait_for(
             run_planner(
@@ -1620,11 +1690,12 @@ async def _process_message(
         )
 
     # Execute with replan loop
+    _phase(WORKER_PHASE_EXECUTING)
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
         plan_id, plan, user_role, user_skills, exec_timeout, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
-        username, slog,
+        username, slog, set_phase=set_phase,
     )
 
     # --- Store token usage on the final plan ---
@@ -1639,7 +1710,7 @@ async def _process_message(
     # --- Invalidate system env cache (exec tasks may have changed the system) ---
     invalidate_cache()
 
-    # --- Post-plan knowledge processing ---
-    await _post_plan_knowledge(db, config, session, current_plan_id, exec_timeout)
-
+    # --- Spawn post-plan knowledge processing in background ---
     clear_llm_budget()
+    _phase(WORKER_PHASE_IDLE)
+    return _spawn_knowledge_task(db, config, session, current_plan_id, exec_timeout)

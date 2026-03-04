@@ -41,6 +41,16 @@ CURATOR_VERDICTS: frozenset[str] = frozenset({
     CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
 })
 
+# Worker phase constants
+WORKER_PHASE_CLASSIFYING = "classifying"
+WORKER_PHASE_PLANNING = "planning"
+WORKER_PHASE_EXECUTING = "executing"
+WORKER_PHASE_IDLE = "idle"
+WORKER_PHASES: frozenset[str] = frozenset({
+    WORKER_PHASE_CLASSIFYING, WORKER_PHASE_PLANNING,
+    WORKER_PHASE_EXECUTING, WORKER_PHASE_IDLE,
+})
+
 # Fact constants
 _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
@@ -345,6 +355,9 @@ def validate_plan(
     return errors
 
 
+_FACT_CHAR_LIMIT = 200
+
+
 def _group_facts_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
     """Group facts by category and return formatted section parts."""
     cats: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
@@ -352,7 +365,10 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
         cat = f.get("category", "general")
         if cat not in cats:
             cat = "general"
-        line = f"- {f['content']}"
+        content = f['content']
+        if len(content) > _FACT_CHAR_LIMIT:
+            content = content[:_FACT_CHAR_LIMIT] + "…"
+        line = f"- {content}"
         if label_session and f.get("session"):
             line += f" [session:{f['session']}]"
         cats[cat].append(line)

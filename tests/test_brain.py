@@ -76,6 +76,41 @@ def _clear_prompt_cache():
     invalidate_prompt_cache()
 
 
+# --- Worker phase constants (M109c) ---
+
+
+def test_worker_phases_frozenset():
+    """WORKER_PHASES contains all four phase constants."""
+    from kiso.brain import (
+        WORKER_PHASE_CLASSIFYING,
+        WORKER_PHASE_EXECUTING,
+        WORKER_PHASE_IDLE,
+        WORKER_PHASE_PLANNING,
+        WORKER_PHASES,
+    )
+    assert WORKER_PHASES == frozenset({
+        WORKER_PHASE_CLASSIFYING, WORKER_PHASE_PLANNING,
+        WORKER_PHASE_EXECUTING, WORKER_PHASE_IDLE,
+    })
+    assert len(WORKER_PHASES) == 4
+
+
+# --- M111d: reviewer prompt hardening ---
+
+
+def test_reviewer_prompt_contains_empty_output_guard():
+    """M111d: reviewer.md must instruct LLM to set learn=null on empty output."""
+    prompt = _load_system_prompt("reviewer")
+    assert "empty or whitespace-only" in prompt
+    assert "learn MUST be null" in prompt
+
+
+def test_reviewer_prompt_contains_reason_required_rule():
+    """M111d: reviewer.md must require reason for replan status."""
+    prompt = _load_system_prompt("reviewer")
+    assert "required (non-null, non-empty string) when status is replan" in prompt
+
+
 # --- validate_plan ---
 
 class TestValidatePlan:
@@ -2995,11 +3030,11 @@ class TestM106ExitCodeNotes:
 
 
 class TestM106DefaultPlannerModel:
-    """M106e: default planner model is glm-4.7."""
+    """M110c: default planner model is deepseek-v3.2."""
 
-    def test_default_planner_is_glm47(self):
+    def test_default_planner_is_deepseek_v3_2(self):
         from kiso.config import MODEL_DEFAULTS
-        assert MODEL_DEFAULTS["planner"] == "z-ai/glm-4.7"
+        assert MODEL_DEFAULTS["planner"] == "deepseek/deepseek-v3.2"
 
 
 class TestM106PlannerKisoNativeFirst:
@@ -3142,6 +3177,38 @@ class TestGroupFactsByCategory:
         assert len(parts) == 1
         text = parts[0]
         assert text.index("first") < text.index("second") < text.index("third")
+
+    def test_long_fact_truncated_at_200_chars(self):
+        """Facts longer than _FACT_CHAR_LIMIT are truncated with ellipsis."""
+        from kiso.brain import _group_facts_by_category, _FACT_CHAR_LIMIT
+        long_content = "x" * (_FACT_CHAR_LIMIT + 50)
+        facts = [self._fact(long_content, "project")]
+        parts = _group_facts_by_category(facts)
+        text = parts[0]
+        # Should contain the truncated version, not the full string
+        assert long_content not in text
+        assert "x" * _FACT_CHAR_LIMIT in text
+        assert "…" in text
+
+    def test_short_fact_not_truncated(self):
+        """Facts within _FACT_CHAR_LIMIT are kept intact."""
+        from kiso.brain import _group_facts_by_category, _FACT_CHAR_LIMIT
+        short_content = "y" * _FACT_CHAR_LIMIT
+        facts = [self._fact(short_content, "project")]
+        parts = _group_facts_by_category(facts)
+        text = parts[0]
+        assert short_content in text
+        assert "…" not in text
+
+    def test_fact_exactly_at_limit_not_truncated(self):
+        """Facts exactly at _FACT_CHAR_LIMIT are not truncated."""
+        from kiso.brain import _group_facts_by_category, _FACT_CHAR_LIMIT
+        exact_content = "z" * _FACT_CHAR_LIMIT
+        facts = [self._fact(exact_content, "project")]
+        parts = _group_facts_by_category(facts)
+        text = parts[0]
+        assert exact_content in text
+        assert "…" not in text
 
 
 # --- M105a: _is_plugin_discovery_search ---

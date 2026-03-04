@@ -268,7 +268,7 @@ ask_api_key() {
 
 ask_models() {
     local roles=(
-        "planner|interprets requests, creates task plans|z-ai/glm-4.7"
+        "planner|interprets requests, creates task plans|deepseek/deepseek-v3.2"
         "reviewer|checks task output, decides replan|deepseek/deepseek-v3.2"
         "worker|translates tasks to shell commands|deepseek/deepseek-v3.2"
         "messenger|writes human-readable responses|deepseek/deepseek-v3.2"

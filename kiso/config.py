@@ -21,7 +21,7 @@ NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 # NOT used as runtime fallbacks — all settings must be explicitly present.
 SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     # conversation
-    "context_messages": 7,
+    "context_messages": 5,
     "summarize_threshold": 30,
     "summarize_messages_limit": 100,
     "bot_name": "Kiso",
@@ -59,7 +59,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "planner": "z-ai/glm-4.7",
+    "planner": "deepseek/deepseek-v3.2",
     "reviewer": "deepseek/deepseek-v3.2",
     "curator": "deepseek/deepseek-v3.2",
     "worker": "deepseek/deepseek-v3.2",
@@ -89,7 +89,7 @@ role = "admin"
 # aliases.discord = "YourDiscordUser#1234"
 
 [models]
-planner     = "z-ai/glm-4.7"
+planner     = "deepseek/deepseek-v3.2"
 reviewer    = "deepseek/deepseek-v3.2"
 curator     = "deepseek/deepseek-v3.2"
 worker      = "deepseek/deepseek-v3.2"
@@ -100,7 +100,7 @@ searcher    = "perplexity/sonar"
 
 [settings]
 # --- conversation ---
-context_messages          = 7        # recent messages sent to planner
+context_messages          = 5        # recent messages sent to planner
 summarize_threshold       = 30       # message count before summarizer runs
 summarize_messages_limit  = 100      # max messages sent to summarizer LLM per run
 bot_name                  = "Kiso"

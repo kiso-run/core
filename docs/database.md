@@ -101,6 +101,7 @@ CREATE TABLE tasks (
     input_tokens    INTEGER NOT NULL DEFAULT 0,
     output_tokens   INTEGER NOT NULL DEFAULT 0,
     llm_calls       TEXT,               -- JSON array of per-call LLM stats (atomic append via json_insert)
+    duration_ms     INTEGER DEFAULT NULL,  -- wall-clock execution time in milliseconds (set on completion)
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );

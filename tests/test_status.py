@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import MagicMock
+
 import httpx
 
-from kiso.main import app
+import kiso.main as main_mod
+from kiso.main import WorkerEntry, app
 from kiso.store import save_message, create_session
 from tests.conftest import AUTH_HEADER
 
@@ -74,3 +78,84 @@ async def test_status_admin_allowed_on_any_session(client: httpx.AsyncClient):
         headers=AUTH_HEADER,
     )
     assert resp.status_code == 200
+
+
+# ── M109c: worker_phase and inflight_call fields ──────────────────────────────
+
+
+async def test_status_includes_worker_phase_idle_no_worker(client: httpx.AsyncClient):
+    """Without a running worker, worker_phase defaults to 'idle'."""
+    resp = await client.get("/status/no-worker", params={"user": "testadmin"}, headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["worker_phase"] == "idle"
+
+
+async def test_status_includes_worker_phase_from_running_worker(client: httpx.AsyncClient):
+    """With a running worker whose phase is set, worker_phase reflects it."""
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    fake_queue = asyncio.Queue()
+    cancel_event = asyncio.Event()
+    main_mod._workers["phase-sess"] = WorkerEntry(fake_queue, fake_task, cancel_event)
+    main_mod._worker_phases["phase-sess"] = "planning"
+
+    try:
+        resp = await client.get(
+            "/status/phase-sess",
+            params={"user": "testadmin"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["worker_phase"] == "planning"
+    finally:
+        main_mod._workers.pop("phase-sess", None)
+        main_mod._worker_phases.pop("phase-sess", None)
+
+
+async def test_status_includes_inflight_call(client: httpx.AsyncClient):
+    """When an LLM call is inflight, it appears in status (verbose mode)."""
+    import kiso.llm as llm_mod
+
+    llm_mod._inflight_calls["inflight-sess"] = {
+        "role": "planner",
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "hello"}],
+        "ts": 12345.0,
+    }
+    try:
+        resp = await client.get(
+            "/status/inflight-sess",
+            params={"user": "testadmin", "verbose": "true"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        inflight = resp.json()["inflight_call"]
+        assert inflight["role"] == "planner"
+        assert inflight["model"] == "gpt-4"
+        assert inflight["messages"] is not None
+    finally:
+        llm_mod._inflight_calls.pop("inflight-sess", None)
+
+
+async def test_status_inflight_strips_messages_when_not_verbose(client: httpx.AsyncClient):
+    """Non-verbose status should omit messages from inflight_call."""
+    import kiso.llm as llm_mod
+
+    llm_mod._inflight_calls["strip-sess"] = {
+        "role": "worker",
+        "model": "gpt-3.5",
+        "messages": [{"role": "user", "content": "hi"}],
+        "ts": 99999.0,
+    }
+    try:
+        resp = await client.get(
+            "/status/strip-sess",
+            params={"user": "testadmin"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        inflight = resp.json()["inflight_call"]
+        assert inflight["role"] == "worker"
+        assert "messages" not in inflight
+    finally:
+        llm_mod._inflight_calls.pop("strip-sess", None)

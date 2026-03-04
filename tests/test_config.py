@@ -31,7 +31,7 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 
 [models]
-planner     = "z-ai/glm-4.7"
+planner     = "deepseek/deepseek-v3.2"
 reviewer    = "deepseek/deepseek-v3.2"
 curator     = "deepseek/deepseek-v3.2"
 worker      = "deepseek/deepseek-v3.2"
@@ -189,7 +189,7 @@ def test_all_settings_loaded(tmp_path: Path):
 
 def test_missing_model_role(tmp_path: Path, capsys):
     """Config missing a model role fails loudly."""
-    text = VALID.replace('planner     = "z-ai/glm-4.7"\n', "")
+    text = VALID.replace('planner     = "deepseek/deepseek-v3.2"\n', "")
     with pytest.raises(SystemExit):
         load_config(_write(tmp_path, text))
     assert "planner" in _die_msg(capsys)

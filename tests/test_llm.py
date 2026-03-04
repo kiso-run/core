@@ -13,9 +13,11 @@ from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 from kiso.llm import (
     LLMBudgetExceeded,
     LLMError,
+    _inflight_calls,
     call_llm,
     clear_llm_budget,
     close_http_client,
+    get_inflight_call,
     get_llm_call_count,
     get_provider,
     get_usage_index,
@@ -1012,3 +1014,125 @@ class TestMaxTokensParam:
 
                 payload = mock_client.post.call_args[1]["json"]
                 assert "max_tokens" not in payload
+
+
+# --- Inflight call tracking (M109c) ---
+
+
+class TestInflightCallTracking:
+    @pytest.mark.asyncio
+    async def test_inflight_set_during_call(self):
+        """Inflight entry is populated while the HTTP request is in progress."""
+        config = _make_config()
+        captured_inflight = {}
+
+        async def _capture_post(*args, **kwargs):
+            # Capture inflight state while the "request" is happening
+            captured_inflight.update(_inflight_calls.get("test-sess", {}))
+            return _ok_response("done")
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _capture_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "worker",
+                    [{"role": "user", "content": "hello"}],
+                    session="test-sess",
+                )
+
+        assert captured_inflight["role"] == "worker"
+        assert captured_inflight["model"] == "gpt-3.5"
+        assert len(captured_inflight["messages"]) == 1
+        assert captured_inflight["messages"][0]["content"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_inflight_cleared_after_success(self):
+        """After a successful call, inflight entry is removed."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("done")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "worker",
+                    [{"role": "user", "content": "hi"}],
+                    session="cleared-sess",
+                )
+
+        assert get_inflight_call("cleared-sess") is None
+
+    @pytest.mark.asyncio
+    async def test_inflight_cleared_on_timeout(self):
+        """Inflight entry is cleaned up even when the call times out."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = httpx.TimeoutException("timed out")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="timed out"):
+                    await call_llm(
+                        config, "worker",
+                        [{"role": "user", "content": "hi"}],
+                        session="timeout-sess",
+                    )
+
+        assert get_inflight_call("timeout-sess") is None
+
+    @pytest.mark.asyncio
+    async def test_inflight_cleared_on_http_error(self):
+        """Inflight entry is cleaned up on HTTP errors."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = httpx.RequestError("connection failed")
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="request failed"):
+                    await call_llm(
+                        config, "worker",
+                        [{"role": "user", "content": "hi"}],
+                        session="error-sess",
+                    )
+
+        assert get_inflight_call("error-sess") is None
+
+    def test_get_inflight_call_returns_none_when_empty(self):
+        """get_inflight_call returns None for unknown sessions."""
+        assert get_inflight_call("nonexistent-session") is None
+
+    @pytest.mark.asyncio
+    async def test_no_inflight_without_session(self):
+        """When session is empty, no inflight entry is created."""
+        config = _make_config()
+        captured_keys = []
+
+        async def _capture_post(*args, **kwargs):
+            captured_keys.extend(_inflight_calls.keys())
+            return _ok_response("done")
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _capture_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "worker",
+                    [{"role": "user", "content": "hi"}],
+                    session="",
+                )
+
+        assert "" not in captured_keys

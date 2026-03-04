@@ -22,7 +22,7 @@ from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.stats import aggregate, read_audit_entries
-from kiso.brain import invalidate_prompt_cache
+from kiso.brain import WORKER_PHASE_IDLE, invalidate_prompt_cache
 from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool, setting_int
 import kiso.llm as _llm_mod
 from kiso.log import setup_logging
@@ -35,6 +35,7 @@ from kiso.store import (
     get_session,
     get_sessions_for_user,
     get_tasks_for_session,
+    mark_messages_processed as mark_messages_processed_batch,
     session_owned_by,
     get_unprocessed_trusted_messages,
     init_db,
@@ -122,6 +123,14 @@ def _init_kiso_dirs() -> None:
 # Per-session workers: session → WorkerEntry
 _workers: dict[str, WorkerEntry] = {}
 
+# Per-session worker phase: session → phase string (e.g. "classifying", "planning", "executing", "idle")
+_worker_phases: dict[str, str] = {}
+
+
+def _set_worker_phase(session: str, phase: str) -> None:
+    """Set the current worker phase for a session (injected as callback into run_worker)."""
+    _worker_phases[session] = phase
+
 
 class SessionRequest(BaseModel):
     session: str
@@ -147,11 +156,13 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
     cancel_event = asyncio.Event()
     task = asyncio.create_task(
-        run_worker(db, config, session, queue, cancel_event=cancel_event)
+        run_worker(db, config, session, queue, cancel_event=cancel_event,
+                   set_phase=lambda phase, s=session: _set_worker_phase(s, phase))
     )
 
     def _cleanup(t, s=session):
         _workers.pop(s, None)
+        _worker_phases.pop(s, None)
 
     task.add_done_callback(_cleanup)
     _workers[session] = WorkerEntry(queue, task, cancel_event)
@@ -426,12 +437,19 @@ async def get_status(
     worker_running = entry is not None and not entry.task.done()
     queue_length = entry.queue.qsize() if entry and not entry.task.done() else 0
 
+    # Inflight LLM call (live call in progress)
+    inflight = _llm_mod.get_inflight_call(session)
+    if inflight and not verbose:
+        inflight = {k: v for k, v in inflight.items() if k != "messages"}
+
     return {
         "tasks": tasks,
         "plan": plan,
         "queue_length": queue_length,
         "worker_running": worker_running,
         "active_task": None,
+        "worker_phase": _worker_phases.get(session, WORKER_PHASE_IDLE) if worker_running else WORKER_PHASE_IDLE,
+        "inflight_call": inflight,
     }
 
 
@@ -509,7 +527,22 @@ async def post_cancel(
         return {"cancelled": False}
 
     entry.cancel_event.set()
-    return {"cancelled": True, "plan_id": plan["id"]}
+
+    # Drain pending queue so subsequent messages aren't blocked behind stale ones
+    drained_ids: list[int] = []
+    while not entry.queue.empty():
+        try:
+            queued_msg = entry.queue.get_nowait()
+            mid = queued_msg.get("id")
+            if mid is not None:
+                drained_ids.append(mid)
+        except asyncio.QueueEmpty:
+            break
+    if drained_ids:
+        await mark_messages_processed_batch(db, drained_ids)
+        log.info("Cancel: drained %d queued messages for session=%s", len(drained_ids), session)
+
+    return {"cancelled": True, "plan_id": plan["id"], "drained": len(drained_ids)}
 
 
 @app.get("/admin/stats")

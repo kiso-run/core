@@ -14,6 +14,7 @@ Rules:
 - Cleanup commands exiting 0 with "nothing to do" satisfy expects about resolving issues.
 - Be strict: output doesn't satisfy `expect` → replan.
 - Anti-loop: if this is a retry with same output, the failure is structural. Mark `ok` with learn, or `replan` with `retry_hint: null` to escalate — don't suggest a similar command.
-- reason: concise — planner uses it for the next plan.
+- reason: required (non-null, non-empty string) when status is replan. Null when status is ok.
 - learn: only durable facts (tech stack, structure, preferences). Never transient info.
+- If actual output is empty or whitespace-only, learn MUST be null — never infer facts from task description or expected outcome alone.
 - Warnings are informational — don't override exit 0 + satisfied `expect` unless `expect` explicitly requires no warnings.

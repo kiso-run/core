@@ -126,7 +126,9 @@ For polling. Used by the CLI and clients without a webhook.
   ],
   "queue_length": 0,           // pending messages in session queue
   "active_task": null,         // currently running task or null
-  "worker_running": true       // whether session worker is alive
+  "worker_running": true,      // whether session worker is alive
+  "worker_phase": "executing", // current worker phase: classifying | planning | executing | idle
+  "inflight_call": null        // in-flight LLM call (messages included only when verbose=true)
 }
 ```
 
@@ -141,13 +143,14 @@ Cancels the currently executing plan on a session. The worker finishes the curre
 ```json
 {
   "cancelled": true,
-  "plan_id": 3
+  "plan_id": 3,
+  "drained": 0
 }
 ```
 
 If no plan is currently executing: `200 OK` with `"cancelled": false`. Idempotent — calling twice has no additional effect.
 
-Queued messages on the session are not affected — they are processed normally after cancellation. See [flow.md — Cancel](flow.md#cancel).
+Queued messages are drained from the session queue and marked as processed (returned in `drained` count). This prevents stale messages from blocking after cancellation. See [flow.md — Cancel](flow.md#cancel).
 
 ## GET /admin/stats
 

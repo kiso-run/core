@@ -72,6 +72,7 @@ class TaskDict(TypedDict):
     input_tokens: int
     output_tokens: int
     llm_calls: str | None
+    duration_ms: int | None
     created_at: str
     updated_at: str
 
@@ -150,6 +151,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     input_tokens  INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     llm_calls     TEXT,
+    duration_ms INTEGER DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -238,6 +240,13 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     await db.executescript(SCHEMA)
     await db.commit()
 
+    # --- Migrations for existing databases ---
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    existing_cols = {row[1] for row in await cur.fetchall()}
+    if "duration_ms" not in existing_cols:
+        await db.execute("ALTER TABLE tasks ADD COLUMN duration_ms INTEGER DEFAULT NULL")
+        await db.commit()
+
     return db
 
 
@@ -318,6 +327,17 @@ async def save_message(
 async def mark_message_processed(db: aiosqlite.Connection, msg_id: int) -> None:
     """Set processed=1 for a message."""
     await db.execute("UPDATE messages SET processed = 1 WHERE id = ?", (msg_id,))
+    await db.commit()
+
+
+async def mark_messages_processed(db: aiosqlite.Connection, msg_ids: list[int]) -> None:
+    """Batch-mark messages as processed. No-op if list is empty."""
+    if not msg_ids:
+        return
+    placeholders = ",".join("?" for _ in msg_ids)
+    await db.execute(
+        f"UPDATE messages SET processed = 1 WHERE id IN ({placeholders})", msg_ids
+    )
     await db.commit()
 
 
@@ -504,12 +524,13 @@ async def update_task(
     status: str,
     output: str | None = None,
     stderr: str | None = None,
+    duration_ms: int | None = None,
 ) -> None:
-    """Update task status, output, stderr, and updated_at."""
+    """Update task status, output, stderr, duration_ms, and updated_at."""
     await db.execute(
-        "UPDATE tasks SET status = ?, output = ?, stderr = ?, "
+        "UPDATE tasks SET status = ?, output = ?, stderr = ?, duration_ms = ?, "
         "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (status, output, stderr, task_id),
+        (status, output, stderr, duration_ms, task_id),
     )
     await db.commit()
 

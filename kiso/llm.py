@@ -121,11 +121,21 @@ def get_llm_call_count() -> int:
     return _llm_budget_count.get()
 
 
+# Per-session inflight LLM call tracking.
+# Populated just before the HTTP request, cleared in the finally block.
+_inflight_calls: dict[str, dict] = {}
+
+
+def get_inflight_call(session: str) -> dict | None:
+    """Return the inflight LLM call for *session*, or None."""
+    return _inflight_calls.get(session)
+
+
 def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
     """Resolve a model string to (provider, model_name).
 
     "ollama:llama3"                       → provider "ollama", model "llama3"
-    "z-ai/glm-4.7"                        → first provider, model "z-ai/glm-4.7"
+    "deepseek/deepseek-v3.2"              → first provider, model "deepseek/deepseek-v3.2"
     "google/gemini-2.5-flash-lite:online" → first provider, full string as model
                                             (colon ignored when left side isn't a known provider)
     """
@@ -208,6 +218,19 @@ async def call_llm(
         llm_timeout = int(config.settings.get("messenger_timeout", config.settings["exec_timeout"]))
     else:
         llm_timeout = int(config.settings["exec_timeout"])
+
+    # Stripped message list — computed lazily for inflight tracking and usage logging
+    stripped_messages: list[dict] | None = None
+
+    # Track inflight call so the CLI can show it in real-time
+    if session:
+        stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+        _inflight_calls[session] = {
+            "role": role,
+            "model": model_name,
+            "messages": stripped_messages,
+            "ts": time.time(),
+        }
     try:
         if _http_client is not None:
             resp = await _http_client.post(url, headers=headers, json=payload, timeout=llm_timeout)
@@ -222,6 +245,8 @@ async def call_llm(
         duration_ms = int((time.perf_counter() - t0) * 1000)
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(f"LLM request failed: {e}")
+    finally:
+        _inflight_calls.pop(session, None)
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -282,13 +307,15 @@ async def call_llm(
     # Accumulate usage for per-message tracking
     entries = _llm_usage_entries.get(None)
     if entries is not None:
+        if stripped_messages is None:
+            stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
         entries.append({
             "role": role,
             "model": model_name,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "thinking": thinking,
-            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            "messages": stripped_messages,
             "response": content,
             "ts": time.time(),
         })

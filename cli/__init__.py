@@ -519,16 +519,19 @@ class _PollRenderState:
     seen: dict  # tid → (status, review_verdict, substatus, llm_call_count)
     max_task_id: int = 0
     shown_plan_id: int | None = None
-    shown_plan_llm_id: int | None = None
+    shown_plan_llm_count: int = 0
     active_spinner_task: dict | None = None
     active_spinner_index: int = 0
     active_spinner_total: int = 0
     planning_phase: bool = False
+    worker_phase: str = "idle"  # last known worker phase from /status
+    phase_start: float = 0.0  # time.monotonic() when current phase began
     seen_any_task: bool = False
     spinner_active: bool = False
     spinner_start: float = 0.0  # time.monotonic() when current spinner started
     at_col0: bool = True
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
+    shown_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight calls
 
 
 def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
@@ -536,7 +539,10 @@ def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_coun
     from cli.render import render_llm_calls_verbose
     tid = task["id"]
     already = state.verbose_shown.get(tid, 0)
-    detail = render_llm_calls_verbose(task.get("llm_calls"), caps, skip=already)
+    detail = render_llm_calls_verbose(
+        task.get("llm_calls"), caps, skip=already,
+        shown_inflight_ts=state.shown_inflight_ts,
+    )
     if detail:
         print(detail)
     state.verbose_shown[tid] = llm_call_count
@@ -612,7 +618,10 @@ def _render_msg_task(
         if llm_detail:
             print(llm_detail)
         if verbose:
-            verbose_detail = render_llm_calls_verbose(llm_calls_raw, caps)
+            verbose_detail = render_llm_calls_verbose(
+                llm_calls_raw, caps,
+                shown_inflight_ts=state.shown_inflight_ts,
+            )
             if verbose_detail:
                 print(verbose_detail)
         print(render_msg_output(output, caps, bot_name, thinking=get_last_thinking(llm_calls_raw)))
@@ -700,12 +709,13 @@ def _render_plan_status(
     Returns the filtered task list for the current plan (used by the caller
     to drive stop-condition checks via ``_should_stop_polling``).
     """
-    import json as _json
-
     from cli.render import (
         CLEAR_LINE,
+        _parse_llm_calls,
+        render_inflight_call,
         render_llm_calls,
         render_llm_calls_verbose,
+        render_phase_done,
         render_plan,
         render_plan_detail,
         render_review,
@@ -757,22 +767,27 @@ def _render_plan_status(
             state.shown_plan_id = pid
             state.seen.clear()
             state.verbose_shown.clear()
-            state.shown_plan_llm_id = None
+            state.shown_plan_llm_count = 0
             state.seen_any_task = False
 
-    # Show plan-level LLM calls (planner step) once available
-    if (plan and not quiet and plan.get("message_id") == message_id
-            and plan.get("llm_calls")
-            and state.shown_plan_llm_id != plan.get("id")):
-        _clear_spinner()
-        llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
-        if llm_detail:
-            print(llm_detail)
-        if verbose:
-            verbose_detail = render_llm_calls_verbose(plan.get("llm_calls"), caps)
-            if verbose_detail:
-                print(verbose_detail)
-        state.shown_plan_llm_id = plan["id"]
+    # Show plan-level LLM calls incrementally (classifier appears early, planner later)
+    if plan and not quiet and plan.get("message_id") == message_id and plan.get("llm_calls"):
+        plan_calls = _parse_llm_calls(plan.get("llm_calls"))
+        call_count = len(plan_calls)
+        if call_count > state.shown_plan_llm_count:
+            _clear_spinner()
+            if verbose:
+                verbose_detail = render_llm_calls_verbose(
+                    plan.get("llm_calls"), caps, skip=state.shown_plan_llm_count,
+                )
+                if verbose_detail:
+                    print(verbose_detail)
+            # Show summary line only when plan is no longer running
+            if plan.get("status") not in ("running", "replanning"):
+                llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
+                if llm_detail:
+                    print(llm_detail)
+            state.shown_plan_llm_count = call_count
 
     total = len(tasks)
 
@@ -781,10 +796,7 @@ def _render_plan_status(
         tid = task["id"]
         status = task["status"]
         review_verdict = task.get("review_verdict")
-        try:
-            llm_call_count = len(_json.loads(task["llm_calls"])) if task.get("llm_calls") else 0
-        except (ValueError, TypeError):
-            llm_call_count = 0
+        llm_call_count = len(_parse_llm_calls(task.get("llm_calls")))
         substatus = task.get("substatus") or ""
         task_key = (status, review_verdict, substatus, llm_call_count)
 
@@ -806,9 +818,11 @@ def _render_plan_status(
         # show just the review line without re-rendering the task
         if prev_status == status and prev_status is not None:
             if not quiet and ttype != "msg":
-                review_line = render_review(task, caps)
-                if review_line:
-                    print(review_line)
+                prev_review = prev_key[1] if prev_key else None
+                if review_verdict != prev_review:
+                    review_line = render_review(task, caps)
+                    if review_line:
+                        print(review_line)
                 if verbose:
                     _emit_verbose_calls(task, caps, state, llm_call_count)
             continue
@@ -818,6 +832,22 @@ def _render_plan_status(
             continue
 
         _render_other_task(task, quiet, verbose, caps, state, idx, total)
+
+    # Track worker phase from server status
+    new_phase = data.get("worker_phase", "idle")
+    old_phase = state.worker_phase
+    if new_phase != old_phase:
+        # Emit completion line for the previous phase
+        if old_phase != "idle" and state.phase_start and not quiet:
+            elapsed = time.monotonic() - state.phase_start
+            done_line = render_phase_done(old_phase, elapsed, caps)
+            if done_line:
+                _clear_spinner()
+                print(done_line)
+        state.worker_phase = new_phase
+        state.phase_start = time.monotonic()
+        if new_phase != "idle":
+            state.spinner_start = time.monotonic()
 
     # Update planning_phase: spinner shown while worker is thinking but no
     # task is executing.
@@ -835,6 +865,16 @@ def _render_plan_status(
     )
     if state.planning_phase and not was_planning:
         state.spinner_start = time.monotonic()
+
+    # Render inflight LLM call in verbose mode
+    if verbose and not quiet:
+        inflight = data.get("inflight_call")
+        if inflight and inflight.get("messages"):
+            inflight_ts = inflight.get("ts")
+            if inflight_ts and inflight_ts not in state.shown_inflight_ts:
+                _clear_spinner()
+                print(render_inflight_call(inflight, caps))
+                state.shown_inflight_ts.add(inflight_ts)
 
     return tasks
 
@@ -872,6 +912,7 @@ def _poll_status(
     """
     from cli.render import (
         CLEAR_LINE,
+        render_phase_done,
         render_planner_spinner,
         render_task_header,
         render_usage,
@@ -915,6 +956,12 @@ def _poll_status(
                     sys.stdout.flush()
                     state.spinner_active = False
                     state.at_col0 = True
+                # Emit final phase completion line
+                if not quiet and state.worker_phase != "idle" and state.phase_start:
+                    elapsed = time.monotonic() - state.phase_start
+                    done_line = render_phase_done(state.worker_phase, elapsed, caps)
+                    if done_line:
+                        print(done_line)
                 if not quiet:
                     usage_line = render_usage(plan, caps)
                     if usage_line:
@@ -963,7 +1010,10 @@ def _poll_status(
                 state.spinner_active = True
                 state.at_col0 = False
             elif state.planning_phase:
-                line = render_planner_spinner(caps, frame, elapsed=elapsed)
+                # Use worker_phase if available; fall back to "planning" when the
+                # server doesn't report a phase (backward compat / pre-plan window).
+                phase = state.worker_phase if state.worker_phase != "idle" else "planning"
+                line = render_planner_spinner(caps, frame, elapsed=elapsed, phase=phase)
                 if not state.spinner_active and not state.at_col0:
                     sys.stdout.write('\n')
                 sys.stdout.write(f"\r{CLEAR_LINE}{line}")

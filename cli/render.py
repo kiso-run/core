@@ -82,22 +82,12 @@ class _AsciiBuffer:
         return True
 
 
-def _render_markdown(text: str, caps: TermCaps) -> str:
-    """Render *text* as markdown using :pymod:`rich`.
+def _make_rich_console(caps: TermCaps) -> tuple:
+    """Create a Rich Console + buffer for panel/markdown rendering.
 
-    Behaviour adapts to terminal capabilities:
-
-    * ``caps.color and caps.tty`` → full ANSI (syntax highlighting, bold, …)
-    * otherwise → plain text with structure (headings, lists) but no escapes
-    * ``caps.unicode is False`` → ASCII box-drawing via :class:`_AsciiBuffer`
-
-    Returns the rendered string with trailing whitespace stripped per line
-    (rich pads every line to the full console width).
+    Returns ``(console, buf)`` where *buf* has a ``.getvalue()`` method.
     """
-    if not text:
-        return ""
     from rich.console import Console
-    from rich.markdown import Markdown
 
     use_color = caps.color and caps.tty
     if caps.unicode:
@@ -113,15 +103,71 @@ def _render_markdown(text: str, caps: TermCaps) -> str:
         no_color=not use_color,
         highlight=False,
     )
-    md = Markdown(text, code_theme="monokai")
-    console.print(md)
+    return console, buf
+
+
+def _rich_buf_to_str(buf) -> str:
+    """Convert a Rich buffer to a stripped string (trailing whitespace per line removed)."""
     raw = buf.getvalue()
-    # Strip trailing whitespace per line (rich pads to full width)
     lines = [line.rstrip() for line in raw.splitlines()]
-    # Remove trailing empty lines
     while lines and not lines[-1]:
         lines.pop()
     return "\n".join(lines)
+
+
+def _short_model(model: str) -> str:
+    """Shorten model name: 'deepseek/deepseek-chat-v3' → 'deepseek-chat-v3'."""
+    return model.split("/", 1)[-1] if "/" in model else model
+
+
+def _labeled_sep(label: str, sep_char: str, width: int = 40) -> str:
+    """Build a labeled separator: ``───label────────``."""
+    return sep_char * 3 + label + sep_char * max(0, width - 3 - len(label))
+
+
+def _build_message_parts(messages: list[dict], esc) -> list[str]:
+    """Build Rich-markup parts for a list of chat messages (dim, role-labeled)."""
+    parts: list[str] = []
+    for msg in messages:
+        label = msg.get("role", "?")
+        content = msg.get("content", "")
+        parts.append(f"[dim cyan]\\[{esc(label)}][/dim cyan]")
+        parts.append(f"[dim]{esc(content)}[/dim]")
+        parts.append("")
+    return parts
+
+
+def _verbose_title(esc, role: str, short_model: str, arrow: str,
+                   ts: float | None, detail: str) -> str:
+    """Build a panel title for verbose/inflight LLM call display."""
+    from datetime import datetime, timezone
+
+    ts_str = ""
+    if ts:
+        ts_str = f" {datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%m-%d %H:%M:%S')}"
+    return f" {esc(role)} {arrow} {esc(short_model)} ({detail}){ts_str} "
+
+
+def _render_markdown(text: str, caps: TermCaps) -> str:
+    """Render *text* as markdown using :pymod:`rich`.
+
+    Behaviour adapts to terminal capabilities:
+
+    * ``caps.color and caps.tty`` → full ANSI (syntax highlighting, bold, …)
+    * otherwise → plain text with structure (headings, lists) but no escapes
+    * ``caps.unicode is False`` → ASCII box-drawing via :class:`_AsciiBuffer`
+
+    Returns the rendered string with trailing whitespace stripped per line
+    (rich pads every line to the full console width).
+    """
+    if not text:
+        return ""
+    from rich.markdown import Markdown
+
+    console, buf = _make_rich_console(caps)
+    md = Markdown(text, code_theme="monokai")
+    console.print(md)
+    return _rich_buf_to_str(buf)
 
 
 # ── Icons ────────────────────────────────────────────────────
@@ -294,6 +340,12 @@ def render_task_header(
         else:
             text = f"{text}{_format_elapsed(elapsed)} {spinner}"
 
+    # Append elapsed duration for completed tasks
+    elif status in ("done", "failed") and task.get("duration_ms") is not None:
+        duration_s = task["duration_ms"] // 1000
+        if duration_s >= 1:
+            text = f"{text} ({_fmt_duration(duration_s)})"
+
     # Pick color based on type
     if status == "done":
         color = _GREEN
@@ -429,22 +481,58 @@ def render_banner(bot_name: str, session: str, caps: TermCaps, version: str | No
     return "\n" + "\n".join(lines) + "\n"
 
 
+def _fmt_duration(seconds: int) -> str:
+    """Format seconds as compact duration: '0s', '5s', '1m 30s', '3m'."""
+    if seconds < 60:
+        return f"{seconds}s"
+    m, s = divmod(seconds, 60)
+    return f"{m}m {s}s" if s else f"{m}m"
+
+
 def _format_elapsed(seconds: int) -> str:
     """Format elapsed time: '' (<2s), 'for 5s', 'for 1m 30s', 'for 3m 45s'."""
     if seconds < 2:
         return ""
-    if seconds < 60:
-        return f" for {seconds}s"
-    m, s = divmod(seconds, 60)
-    return f" for {m}m {s}s" if s else f" for {m}m"
+    return f" for {_fmt_duration(seconds)}"
 
 
-def render_planner_spinner(caps: TermCaps, spinner_frame: str, elapsed: int = 0) -> str:
-    """Render planner phase spinner (e.g. '◆ Planning for 45s ⠋')."""
+_PHASE_DISPLAY_LABELS = {
+    "classifying": "Classifying",
+    "planning": "Planning",
+    "executing": "Executing",
+    "idle": "Waiting",
+}
+
+_PHASE_DONE_LABELS = {
+    "classifying": "Classified",
+    "planning": "Planned",
+    "executing": "Executed",
+    "idle": "",
+}
+
+
+def render_planner_spinner(
+    caps: TermCaps, spinner_frame: str, elapsed: int = 0, phase: str = "planning",
+) -> str:
+    """Render worker phase spinner (e.g. '◆ Planning for 45s ⠋').
+
+    *phase* is the worker phase label: "classifying", "planning", "executing", etc.
+    """
     icon = _icon("plan", caps)
     frame = _style(spinner_frame, _CYAN, caps=caps)
-    text = f"{icon} Planning{_format_elapsed(elapsed)} {frame}"
+    label = _PHASE_DISPLAY_LABELS.get(phase, phase.capitalize())
+    text = f"{icon} {label}{_format_elapsed(elapsed)} {frame}"
     return _style(text, _CYAN, caps=caps)
+
+
+def render_phase_done(phase: str, elapsed: float, caps: TermCaps) -> str:
+    """Render phase completion line (e.g. '  ✓ Classified in 2s')."""
+    label = _PHASE_DONE_LABELS.get(phase, "")
+    if not label:
+        return ""
+    icon = _icon("ok", caps)
+    text = f"  {icon} {label} in {_fmt_duration(int(elapsed))}"
+    return _style(text, _DIM, _GREEN, caps=caps)
 
 
 def render_cancel_start(caps: TermCaps) -> str:
@@ -503,15 +591,14 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
         model = c.get("model", "")
         in_t = c.get("input_tokens", 0)
         out_t = c.get("output_tokens", 0)
-        # Shorten model name: "deepseek/deepseek-chat-v3" → "deepseek-chat-v3"
-        short_model = model.split("/", 1)[-1] if "/" in model else model
-        text = f"  {role:12s} {in_t:,}{arrow}{out_t:,}  {short_model}"
+        text = f"  {role:12s} {in_t:,}{arrow}{out_t:,}  {_short_model(model)}"
         lines.append(_style(text, _DIM, caps=caps))
     return "\n".join(lines)
 
 
 def render_llm_calls_verbose(
     llm_calls_json: str | None, caps: TermCaps, skip: int = 0,
+    shown_inflight_ts: set | None = None,
 ) -> str:
     """Render full LLM input/output with beautified JSON in bordered panels.
 
@@ -524,7 +611,6 @@ def render_llm_calls_verbose(
     to avoid re-printing panels already shown).
     """
     import json as _json
-    from datetime import datetime, timezone
 
     calls = _parse_llm_calls(llm_calls_json)
     # Only render calls that have messages (verbose data present)
@@ -533,34 +619,16 @@ def render_llm_calls_verbose(
         return ""  # All verbose calls already shown — skip Rich setup
     verbose_calls = verbose_calls[skip:]
 
-    from rich.console import Console
     from rich.markup import escape as _esc
     from rich.panel import Panel
 
-    use_color = caps.color and caps.tty
-    if caps.unicode:
-        from io import StringIO
-        buf = StringIO()
-    else:
-        buf = _AsciiBuffer()
-
-    console = Console(
-        file=buf,
-        width=caps.width,
-        force_terminal=use_color,
-        no_color=not use_color,
-        highlight=False,
-    )
+    console, buf = _make_rich_console(caps)
 
     sep_char = "\u2500" if caps.unicode else "-"
     arrow = "\u2192" if caps.unicode else "->"
-
-    def _labeled_sep(label: str, width: int = 40) -> str:
-        return sep_char * 3 + label + sep_char * max(0, width - 3 - len(label))
-
-    sep = _labeled_sep(" response ")
+    sep = _labeled_sep(" response ", sep_char)
     think_icon = "\U0001f914" if caps.unicode else "?"
-    think_sep = _labeled_sep(f" {think_icon} reasoning ")
+    think_sep = _labeled_sep(f" {think_icon} reasoning ", sep_char)
 
     for c in verbose_calls:
         role = c.get("role", "?")
@@ -571,24 +639,16 @@ def render_llm_calls_verbose(
         response = c.get("response", "")
         thinking = c.get("thinking", "")
 
-        short_model = model.split("/", 1)[-1] if "/" in model else model
-
-        # Timestamp from LLM usage entry (epoch float)
-        ts = c.get("ts")
-        if ts:
-            ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%m-%d %H:%M:%S")
-            title = f" {_esc(role)} {arrow} {_esc(short_model)} ({in_t:,}{arrow}{out_t:,}) {ts_str} "
-        else:
-            title = f" {_esc(role)} {arrow} {_esc(short_model)} ({in_t:,}{arrow}{out_t:,}) "
+        sm = _short_model(model)
+        title = _verbose_title(_esc, role, sm, arrow, c.get("ts"),
+                               detail=f"{in_t:,}{arrow}{out_t:,}")
 
         # Build body — input dimmed, response at normal weight
-        parts: list[str] = []
-        for msg in messages:
-            label = msg.get("role", "?")
-            content = msg.get("content", "")
-            parts.append(f"[dim cyan]\\[{_esc(label)}][/dim cyan]")
-            parts.append(f"[dim]{_esc(content)}[/dim]")
-            parts.append("")
+        # Skip input messages if already shown in inflight panel
+        if shown_inflight_ts is not None and c.get("ts") in shown_inflight_ts:
+            parts: list[str] = []
+        else:
+            parts = _build_message_parts(messages, _esc)
 
         # Visual separator between input and output
         parts.append(f"[bold green]{sep}[/bold green]")
@@ -608,19 +668,12 @@ def render_llm_calls_verbose(
 
         body = "\n".join(parts)
         panel = Panel(
-            body,
-            title=title,
-            border_style="dim magenta",
-            title_align="left",
-            expand=True,
+            body, title=title, border_style="dim magenta",
+            title_align="left", expand=True,
         )
         console.print(panel)
 
-    raw = buf.getvalue()
-    lines = [line.rstrip() for line in raw.splitlines()]
-    while lines and not lines[-1]:
-        lines.pop()
-    return "\n".join(lines)
+    return _rich_buf_to_str(buf)
 
 
 def render_review(task: dict, caps: TermCaps) -> str:
@@ -657,6 +710,40 @@ def render_review(task: dict, caps: TermCaps) -> str:
         prefix = "  📝 learning: " if caps.unicode else "  + learning: "
         lines.append(_style(f'{prefix}"{learning}"', _MAGENTA, caps=caps))
     return "\n".join(lines)
+
+
+def render_inflight_call(call: dict, caps: TermCaps) -> str:
+    """Render a panel for an in-flight LLM call (waiting for response).
+
+    Similar to verbose panels but shows 'waiting for response...' instead of
+    the response section. Title: role → model (waiting...) HH:MM:SS
+    """
+    from rich.markup import escape as _esc
+    from rich.panel import Panel
+
+    role = call.get("role", "?")
+    model = call.get("model", "")
+    messages = call.get("messages", [])
+    arrow = "\u2192" if caps.unicode else "->"
+    sep_char = "\u2500" if caps.unicode else "-"
+
+    title = _verbose_title(_esc, role, _short_model(model), arrow,
+                           call.get("ts"), detail="waiting...")
+
+    parts = _build_message_parts(messages, _esc)
+    sep = _labeled_sep(" response ", sep_char)
+    parts.append(f"[bold yellow]{sep}[/bold yellow]")
+    wait_icon = "\u23f3" if caps.unicode else "..."
+    parts.append(f"[bold yellow]{wait_icon} waiting for response...[/bold yellow]")
+
+    console, buf = _make_rich_console(caps)
+    body = "\n".join(parts)
+    panel = Panel(
+        body, title=title, border_style="dim yellow",
+        title_align="left", expand=True,
+    )
+    console.print(panel)
+    return _rich_buf_to_str(buf)
 
 
 def render_cancel_done(

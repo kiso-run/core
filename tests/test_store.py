@@ -30,6 +30,7 @@ from kiso.store import (
     get_tasks_for_session,
     get_untrusted_messages,
     mark_message_processed,
+    mark_messages_processed,
     save_fact,
     save_facts_batch,
     save_message,
@@ -141,6 +142,26 @@ async def test_mark_processed(db: aiosqlite.Connection):
     await mark_message_processed(db, msg_id)
     cur = await db.execute("SELECT COUNT(*) FROM messages WHERE processed = 0")
     assert (await cur.fetchone())[0] == 0
+
+
+async def test_mark_messages_processed_batch(db: aiosqlite.Connection):
+    """mark_messages_processed marks multiple messages in one call."""
+    await create_session(db, "sess1")
+    m1 = await save_message(db, "sess1", "a", "user", "one", processed=False)
+    m2 = await save_message(db, "sess1", "a", "user", "two", processed=False)
+    m3 = await save_message(db, "sess1", "a", "user", "three", processed=False)
+
+    await mark_messages_processed(db, [m1, m3])
+
+    cur = await db.execute("SELECT id FROM messages WHERE processed = 0")
+    unprocessed = [r[0] for r in await cur.fetchall()]
+    assert unprocessed == [m2]
+
+
+async def test_mark_messages_processed_empty_list(db: aiosqlite.Connection):
+    """Empty list is a no-op."""
+    await mark_messages_processed(db, [])
+    # No error, no crash
 
 
 async def test_unprocessed_excludes_trusted_only(db: aiosqlite.Connection):
@@ -1837,3 +1858,76 @@ async def test_save_facts_batch_mixed_complete_and_minimal(db: aiosqlite.Connect
     assert by_content["Minimal"]["category"] == "general"
     assert by_content["Minimal"]["confidence"] == pytest.approx(1.0)
     assert by_content["Minimal"]["session"] is None
+
+
+# --- M111a: duration_ms ---
+
+
+async def test_update_task_with_duration_ms(db: aiosqlite.Connection):
+    """update_task stores duration_ms when provided."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="ls")
+    await update_task(db, task_id, "done", output="ok", duration_ms=1234)
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["duration_ms"] == 1234
+
+
+async def test_update_task_duration_ms_default_null(db: aiosqlite.Connection):
+    """duration_ms is NULL by default when not provided."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="ls")
+    await update_task(db, task_id, "done", output="ok")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["duration_ms"] is None
+
+
+async def test_duration_ms_in_ddl(db: aiosqlite.Connection):
+    """tasks table includes duration_ms column."""
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "duration_ms" in columns
+
+
+async def test_update_task_running_preserves_null_duration(db: aiosqlite.Connection):
+    """update_task('running') without duration_ms keeps it NULL, not overwritten."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    task_id = await create_task(db, plan_id, "sess1", type="exec", detail="ls")
+    await update_task(db, task_id, "running")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["duration_ms"] is None
+    # Now complete with duration
+    await update_task(db, task_id, "done", output="ok", duration_ms=500)
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["duration_ms"] == 500
+
+
+async def test_duration_ms_migration_on_existing_db(tmp_path):
+    """Migration adds duration_ms to a DB created without it."""
+    from kiso.store import init_db as _init_db
+    db_path = tmp_path / "legacy.db"
+    # Create a DB with the old schema (no duration_ms)
+    import aiosqlite
+    db = await aiosqlite.connect(db_path)
+    await db.execute("""CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        session TEXT NOT NULL,
+        type TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        output TEXT,
+        stderr TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    await db.commit()
+    await db.close()
+    # Re-open with init_db — should add duration_ms via migration
+    db = await _init_db(db_path)
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    columns = {row[1] for row in await cur.fetchall()}
+    assert "duration_ms" in columns
+    await db.close()
