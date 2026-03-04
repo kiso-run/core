@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
+import time
 import typing
 
 from kiso._version import __version__
@@ -525,6 +526,7 @@ class _PollRenderState:
     planning_phase: bool = False
     seen_any_task: bool = False
     spinner_active: bool = False
+    spinner_start: float = 0.0  # time.monotonic() when current spinner started
     at_col0: bool = True
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
 
@@ -616,6 +618,8 @@ def _render_msg_task(
         print(render_msg_output(output, caps, bot_name, thinking=get_last_thinking(llm_calls_raw)))
         print(render_separator(caps))
     elif status == "running":
+        if state.active_spinner_task is not task:
+            state.spinner_start = time.monotonic()
         state.active_spinner_task = task
         state.active_spinner_index = idx
         state.active_spinner_total = total
@@ -675,6 +679,8 @@ def _render_other_task(
         _emit_verbose_calls(task, caps, state, len(_parse_llm_calls(task.get("llm_calls"))))
 
     if status == "running":
+        if state.active_spinner_task is not task:
+            state.spinner_start = time.monotonic()
         state.active_spinner_task = task
         state.active_spinner_index = idx
         state.active_spinner_total = total
@@ -822,10 +828,13 @@ def _render_plan_status(
         and plan.get("status") in ("running", "replanning")
     )
     has_matching_plan = bool(plan and plan.get("message_id") == message_id)
+    was_planning = state.planning_phase
     state.planning_phase = bool(
         (has_matching_running_plan and not any_task_running and not state.active_spinner_task)
         or (worker_running and not has_matching_plan)
     )
+    if state.planning_phase and not was_planning:
+        state.spinner_start = time.monotonic()
 
     return tasks
 
@@ -861,8 +870,6 @@ def _poll_status(
             Always pass an explicit value; the empty-string default is only
             provided to avoid breaking legacy test call sites.
     """
-    import time
-
     from cli.render import (
         CLEAR_LINE,
         render_planner_spinner,
@@ -942,10 +949,12 @@ def _poll_status(
         # Animate spinner on TTY
         if caps.tty:
             frame = frames[counter % len(frames)]
+            elapsed = int(time.monotonic() - state.spinner_start) if state.spinner_start else 0
             if state.active_spinner_task:
                 line = render_task_header(
                     state.active_spinner_task, state.active_spinner_index,
                     state.active_spinner_total, caps, spinner_frame=frame,
+                    elapsed=elapsed,
                 )
                 if not state.spinner_active and not state.at_col0:
                     sys.stdout.write('\n')
@@ -954,7 +963,7 @@ def _poll_status(
                 state.spinner_active = True
                 state.at_col0 = False
             elif state.planning_phase:
-                line = render_planner_spinner(caps, frame)
+                line = render_planner_spinner(caps, frame, elapsed=elapsed)
                 if not state.spinner_active and not state.at_col0:
                     sys.stdout.write('\n')
                 sys.stdout.write(f"\r{CLEAR_LINE}{line}")

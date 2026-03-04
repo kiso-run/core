@@ -247,8 +247,9 @@ def render_task_header(
     caps: TermCaps,
     *,
     spinner_frame: str | None = None,
+    elapsed: int = 0,
 ) -> str:
-    """Render task header line (e.g. '▶ [1/3] exec: ls -la ⠋')."""
+    """Render task header line (e.g. '▶ [1/3] exec: ls -la running (12s) ⠋')."""
     status = task.get("status", "")
     ttype = task.get("type", "")
     detail = task.get("detail", "")
@@ -287,11 +288,12 @@ def render_task_header(
             "composing": "composing",
         }
         phase_label = label_map.get(substatus, "")
+        elapsed_str = f" ({elapsed}s)" if elapsed >= 2 else ""
         spinner = _style(spinner_frame, _CYAN, caps=caps)
         if phase_label:
-            text = f"{text} {phase_label} {spinner}"
+            text = f"{text} {phase_label}{elapsed_str} {spinner}"
         else:
-            text = f"{text} {spinner}"
+            text = f"{text}{elapsed_str} {spinner}"
 
     # Pick color based on type
     if status == "done":
@@ -428,11 +430,12 @@ def render_banner(bot_name: str, session: str, caps: TermCaps, version: str | No
     return "\n" + "\n".join(lines) + "\n"
 
 
-def render_planner_spinner(caps: TermCaps, spinner_frame: str) -> str:
-    """Render planner phase spinner (e.g. '◆ Planning... ⠋')."""
+def render_planner_spinner(caps: TermCaps, spinner_frame: str, elapsed: int = 0) -> str:
+    """Render planner phase spinner (e.g. '◆ Planning... (45s) ⠋')."""
     icon = _icon("plan", caps)
     frame = _style(spinner_frame, _CYAN, caps=caps)
-    text = f"{icon} Planning... {frame}"
+    elapsed_str = f" ({elapsed}s)" if elapsed >= 2 else ""
+    text = f"{icon} Planning...{elapsed_str} {frame}"
     return _style(text, _CYAN, caps=caps)
 
 
