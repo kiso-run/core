@@ -65,6 +65,7 @@ from kiso.llm import (
 from kiso.skills import (
     SkillError,
     discover_skills,
+    invalidate_skills_cache,
     validate_skill_args,
 )
 from kiso.sysenv import get_system_env, build_system_env_section, invalidate_cache
@@ -1107,6 +1108,13 @@ async def _execute_plan(
 
         is_final = i == len(tasks) - 1
         result = await handler(ctx, task_row, i, is_final, usage_idx_before)
+
+        # Refresh skill cache after exec/skill tasks (may have installed new skills)
+        if task_type in (TASK_TYPE_EXEC, TASK_TYPE_SKILL):
+            invalidate_skills_cache()
+            ctx.installed_skills = discover_skills()
+            ctx.installed_skills_by_name = {s["name"]: s for s in ctx.installed_skills}
+
         if result.plan_output is not None:
             ctx.plan_outputs.append(result.plan_output)
         if result.completed_row is not None:

@@ -343,7 +343,11 @@ def validate_plan(
             if not skill_name:
                 errors.append(f"Task {i}: skill task must have a non-null skill name")
             elif installed_skills is not None and skill_name not in installed_skills:
-                errors.append(f"Task {i}: skill '{skill_name}' is not installed")
+                available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
+                errors.append(
+                    f"Task {i}: skill '{skill_name}' is not installed. "
+                    f"Available skills: {available}"
+                )
 
     if replan_count > 1:
         errors.append("A plan can have at most one replan task")

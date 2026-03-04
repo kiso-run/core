@@ -591,14 +591,15 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
         model = c.get("model", "")
         in_t = c.get("input_tokens", 0)
         out_t = c.get("output_tokens", 0)
-        text = f"  {role:12s} {in_t:,}{arrow}{out_t:,}  {_short_model(model)}"
+        dur = c.get("duration_ms")
+        elapsed = f" {_fmt_duration(dur // 1000)}" if dur and dur >= 1000 else ""
+        text = f"  {role:12s} {in_t:,}{arrow}{out_t:,}{elapsed}  {_short_model(model)}"
         lines.append(_style(text, _DIM, caps=caps))
     return "\n".join(lines)
 
 
 def render_llm_calls_verbose(
     llm_calls_json: str | None, caps: TermCaps, skip: int = 0,
-    shown_inflight_ts: set | None = None,
 ) -> str:
     """Render full LLM input/output with beautified JSON in bordered panels.
 
@@ -640,15 +641,13 @@ def render_llm_calls_verbose(
         thinking = c.get("thinking", "")
 
         sm = _short_model(model)
+        dur = c.get("duration_ms")
+        elapsed = f", {_fmt_duration(dur // 1000)}" if dur and dur >= 1000 else ""
         title = _verbose_title(_esc, role, sm, arrow, c.get("ts"),
-                               detail=f"{in_t:,}{arrow}{out_t:,}")
+                               detail=f"{in_t:,}{arrow}{out_t:,}{elapsed}")
 
         # Build body — input dimmed, response at normal weight
-        # Skip input messages if already shown in inflight panel
-        if shown_inflight_ts is not None and c.get("ts") in shown_inflight_ts:
-            parts: list[str] = []
-        else:
-            parts = _build_message_parts(messages, _esc)
+        parts = _build_message_parts(messages, _esc)
 
         # Visual separator between input and output
         parts.append(f"[bold green]{sep}[/bold green]")
@@ -712,38 +711,17 @@ def render_review(task: dict, caps: TermCaps) -> str:
     return "\n".join(lines)
 
 
-def render_inflight_call(call: dict, caps: TermCaps) -> str:
-    """Render a panel for an in-flight LLM call (waiting for response).
+def render_inflight_indicator(call: dict, caps: TermCaps) -> str:
+    """Render a compact one-line indicator for an in-flight LLM call.
 
-    Similar to verbose panels but shows 'waiting for response...' instead of
-    the response section. Title: role → model (waiting...) HH:MM:SS
+    Example: ``  ⏳ reviewer → deepseek-v3.2 (waiting...)``
     """
-    from rich.markup import escape as _esc
-    from rich.panel import Panel
-
     role = call.get("role", "?")
     model = call.get("model", "")
-    messages = call.get("messages", [])
     arrow = "\u2192" if caps.unicode else "->"
-    sep_char = "\u2500" if caps.unicode else "-"
-
-    title = _verbose_title(_esc, role, _short_model(model), arrow,
-                           call.get("ts"), detail="waiting...")
-
-    parts = _build_message_parts(messages, _esc)
-    sep = _labeled_sep(" response ", sep_char)
-    parts.append(f"[bold yellow]{sep}[/bold yellow]")
     wait_icon = "\u23f3" if caps.unicode else "..."
-    parts.append(f"[bold yellow]{wait_icon} waiting for response...[/bold yellow]")
-
-    console, buf = _make_rich_console(caps)
-    body = "\n".join(parts)
-    panel = Panel(
-        body, title=title, border_style="dim yellow",
-        title_align="left", expand=True,
-    )
-    console.print(panel)
-    return _rich_buf_to_str(buf)
+    text = f"  {wait_icon} {role} {arrow} {_short_model(model)} (waiting...)"
+    return _style(text, _DIM, caps=caps)
 
 
 def render_cancel_done(

@@ -749,6 +749,30 @@ class TestUsageTracking:
         assert entry["response"] == "hello back"
 
     @pytest.mark.asyncio
+    async def test_usage_entries_contain_duration_ms(self):
+        """Verify _llm_usage_entries includes duration_ms field."""
+        config = _make_config()
+        reset_usage_tracking()
+        messages = [{"role": "user", "content": "hi"}]
+        usage = {"prompt_tokens": 10, "completion_tokens": 5}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.return_value = _ok_response("ok", usage=usage)
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "worker", messages)
+
+        from kiso.llm import _llm_usage_entries
+        entries = _llm_usage_entries.get(None)
+        assert entries is not None
+        entry = entries[0]
+        assert "duration_ms" in entry
+        assert isinstance(entry["duration_ms"], int)
+        assert entry["duration_ms"] >= 0
+
+    @pytest.mark.asyncio
     async def test_get_usage_since_includes_messages_and_response(self):
         """Verify get_usage_since()['calls'] entries contain messages and response."""
         config = _make_config()

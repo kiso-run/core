@@ -8,7 +8,7 @@ from cli.render import (
     TermCaps,
     _fmt_duration,
     render_cancel_done,
-    render_inflight_call,
+    render_inflight_indicator,
     render_llm_calls_verbose,
     render_phase_done,
     render_planner_spinner,
@@ -179,10 +179,10 @@ class TestRenderPlannerSpinner:
         assert "for 30s" in result
 
 
-# ── render_inflight_call (M109c) ─────────────────────────────
+# ── render_inflight_indicator (M112a) ─────────────────────────
 
 
-class TestRenderInflightCall:
+class TestRenderInflightIndicator:
     _CALL = {
         "role": "planner",
         "model": "deepseek/deepseek-v3",
@@ -194,26 +194,27 @@ class TestRenderInflightCall:
     }
 
     def test_contains_role_and_model(self):
-        result = _plain(render_inflight_call(self._CALL, _PLAIN_CAPS))
+        result = _plain(render_inflight_indicator(self._CALL, _PLAIN_CAPS))
         assert "planner" in result
         assert "deepseek-v3" in result
 
     def test_contains_waiting_label(self):
-        result = _plain(render_inflight_call(self._CALL, _PLAIN_CAPS))
+        result = _plain(render_inflight_indicator(self._CALL, _PLAIN_CAPS))
         assert "waiting" in result.lower()
 
-    def test_contains_messages(self):
-        result = _plain(render_inflight_call(self._CALL, _PLAIN_CAPS))
-        assert "You are a planner." in result
-        assert "Deploy the app." in result
+    def test_is_one_liner(self):
+        """Inflight indicator is a compact one-liner, not a panel."""
+        result = _plain(render_inflight_indicator(self._CALL, _PLAIN_CAPS))
+        # Should NOT contain message contents (that's the full panel)
+        assert "You are a planner." not in result
 
     def test_unicode_uses_hourglass(self):
-        result = render_inflight_call(self._CALL, _UNICODE_CAPS)
+        result = render_inflight_indicator(self._CALL, _UNICODE_CAPS)
         assert "\u23f3" in result  # ⏳
 
     def test_no_messages_still_renders(self):
         call = {"role": "planner", "model": "gpt-4", "messages": [], "ts": None}
-        result = _plain(render_inflight_call(call, _PLAIN_CAPS))
+        result = _plain(render_inflight_indicator(call, _PLAIN_CAPS))
         assert "planner" in result
         assert "waiting" in result.lower()
 
@@ -259,11 +260,11 @@ class TestRenderTaskHeaderDuration:
         assert "(" not in result
 
 
-# ── render_llm_calls_verbose dedup (M111c) ───────────────────
+# ── render_llm_calls_verbose always shows full panel (M112a) ──
 
 
-class TestVerboseDedup:
-    """M111c: shown_inflight_ts suppresses input messages for already-seen calls."""
+class TestVerboseAlwaysShowsFull:
+    """M112a: completed calls always show full input + response."""
 
     _CALLS_JSON = __import__("json").dumps([{
         "role": "translator",
@@ -275,32 +276,63 @@ class TestVerboseDedup:
         "ts": 1700000000.0,
     }])
 
-    def test_without_shown_set_input_visible(self):
+    def test_input_always_visible(self):
         result = _plain(render_llm_calls_verbose(self._CALLS_JSON, _PLAIN_CAPS))
         assert "Translate this." in result
         assert "ls -la" in result
 
-    def test_matching_ts_input_hidden(self):
-        result = _plain(render_llm_calls_verbose(
-            self._CALLS_JSON, _PLAIN_CAPS,
-            shown_inflight_ts={1700000000.0},
-        ))
-        assert "Translate this." not in result
-        assert "ls -la" in result
 
-    def test_non_matching_ts_input_visible(self):
-        result = _plain(render_llm_calls_verbose(
-            self._CALLS_JSON, _PLAIN_CAPS,
-            shown_inflight_ts={9999999999.0},
-        ))
-        assert "Translate this." in result
-        assert "ls -la" in result
+# ── Per-LLM-call elapsed time (M112d) ────────────────────────
 
-    def test_empty_set_input_visible(self):
-        """Empty set (distinct from None) still shows input."""
-        result = _plain(render_llm_calls_verbose(
-            self._CALLS_JSON, _PLAIN_CAPS,
-            shown_inflight_ts=set(),
-        ))
-        assert "Translate this." in result
-        assert "ls -la" in result
+
+class TestElapsedTime:
+    """M112d: elapsed time rendered in compact and verbose LLM call output."""
+
+    def test_compact_shows_elapsed(self):
+        import json
+        from cli.render import render_llm_calls
+        calls = json.dumps([{
+            "role": "translator", "model": "test/m",
+            "input_tokens": 300, "output_tokens": 45,
+            "duration_ms": 3200,
+        }])
+        result = _plain(render_llm_calls(calls, _PLAIN_CAPS))
+        assert "3s" in result
+
+    def test_compact_hides_subsecond(self):
+        import json
+        from cli.render import render_llm_calls
+        calls = json.dumps([{
+            "role": "translator", "model": "test/m",
+            "input_tokens": 300, "output_tokens": 45,
+            "duration_ms": 500,
+        }])
+        result = _plain(render_llm_calls(calls, _PLAIN_CAPS))
+        # Sub-second durations should not appear
+        assert "0s" not in result
+
+    def test_verbose_shows_elapsed(self):
+        import json
+        calls = json.dumps([{
+            "role": "reviewer", "model": "test/m",
+            "input_tokens": 685, "output_tokens": 30,
+            "duration_ms": 5000,
+            "messages": [{"role": "user", "content": "Review this."}],
+            "response": "ok",
+            "ts": 1700000000.0,
+        }])
+        result = _plain(render_llm_calls_verbose(calls, _PLAIN_CAPS))
+        assert "5s" in result
+
+    def test_verbose_no_duration_no_crash(self):
+        import json
+        calls = json.dumps([{
+            "role": "reviewer", "model": "test/m",
+            "input_tokens": 100, "output_tokens": 20,
+            "messages": [{"role": "user", "content": "Check."}],
+            "response": "ok",
+            "ts": 1700000000.0,
+        }])
+        # No duration_ms key — should not crash
+        result = _plain(render_llm_calls_verbose(calls, _PLAIN_CAPS))
+        assert "reviewer" in result

@@ -531,7 +531,7 @@ class _PollRenderState:
     spinner_start: float = 0.0  # time.monotonic() when current spinner started
     at_col0: bool = True
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
-    shown_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight calls
+    seen_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight indicators
 
 
 def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
@@ -541,7 +541,6 @@ def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_coun
     already = state.verbose_shown.get(tid, 0)
     detail = render_llm_calls_verbose(
         task.get("llm_calls"), caps, skip=already,
-        shown_inflight_ts=state.shown_inflight_ts,
     )
     if detail:
         print(detail)
@@ -620,7 +619,6 @@ def _render_msg_task(
         if verbose:
             verbose_detail = render_llm_calls_verbose(
                 llm_calls_raw, caps,
-                shown_inflight_ts=state.shown_inflight_ts,
             )
             if verbose_detail:
                 print(verbose_detail)
@@ -712,7 +710,7 @@ def _render_plan_status(
     from cli.render import (
         CLEAR_LINE,
         _parse_llm_calls,
-        render_inflight_call,
+        render_inflight_indicator,
         render_llm_calls,
         render_llm_calls_verbose,
         render_phase_done,
@@ -871,10 +869,10 @@ def _render_plan_status(
         inflight = data.get("inflight_call")
         if inflight and inflight.get("messages"):
             inflight_ts = inflight.get("ts")
-            if inflight_ts and inflight_ts not in state.shown_inflight_ts:
+            if inflight_ts and inflight_ts not in state.seen_inflight_ts:
                 _clear_spinner()
-                print(render_inflight_call(inflight, caps))
-                state.shown_inflight_ts.add(inflight_ts)
+                print(render_inflight_indicator(inflight, caps))
+                state.seen_inflight_ts.add(inflight_ts)
 
     return tasks
 

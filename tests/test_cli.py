@@ -2841,8 +2841,7 @@ def test_plan_llm_calls_rendered_incrementally(capsys):
 
 
 def test_render_plan_status_shows_inflight_call(capsys):
-    """In verbose mode, inflight_call in status should render a waiting panel."""
-    import json as _json
+    """In verbose mode, inflight_call in status should render a compact indicator."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {
         "id": 1, "message_id": 1, "status": "running", "goal": "g",
@@ -2866,7 +2865,8 @@ def test_render_plan_status_shows_inflight_call(capsys):
     out = capsys.readouterr().out
     assert "planner" in out
     assert "waiting" in out.lower()
-    assert "Deploy it." in out
+    # M112a: compact indicator does not include message contents
+    assert "Deploy it." not in out
 
 
 def test_render_plan_status_inflight_not_repeated(capsys):

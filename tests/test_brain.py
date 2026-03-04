@@ -214,6 +214,15 @@ class TestValidatePlan:
         ]}
         errors = validate_plan(plan, installed_skills=["echo"])
         assert any("skill 'search' is not installed" in e for e in errors)
+        assert any("Available skills: echo" in e for e in errors)
+
+    def test_skill_not_installed_empty_list(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "search", "expect": "ok", "skill": "search", "args": "{}"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=[])
+        assert any("Available skills: none" in e for e in errors)
 
     def test_skill_installed_passes(self):
         plan = {"tasks": [

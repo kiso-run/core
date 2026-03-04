@@ -12,3 +12,7 @@ Do not repeat or address previous requests from the session history.
 When the task includes technical setup instructions — commands to run, URLs to
 visit, exact values to copy, step-by-step procedures — reproduce them verbatim
 and in full. Do not summarize or paraphrase; users need exact commands and paths.
+
+If preceding task outputs do not contain the specific data the task
+asks you to report (variables, URLs, values), say explicitly that
+the information was not found. Never fabricate technical details.

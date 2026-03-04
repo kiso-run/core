@@ -314,6 +314,7 @@ async def call_llm(
             "model": model_name,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "duration_ms": duration_ms,
             "thinking": thinking,
             "messages": stripped_messages,
             "response": content,
