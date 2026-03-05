@@ -1995,6 +1995,12 @@ class TestDefaultMessengerPrompt:
         assert "fabricate" in prompt.lower()
         assert "nothing is needed" in prompt or "nothing was found" in prompt
 
+    def test_m138_no_invent_commands(self):
+        """M138: messenger must never invent CLI commands or code snippets."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Never invent CLI commands" in prompt
+        assert "verbatim in the preceding task outputs" in prompt
+
 
 class TestBuildMessengerMessages:
     def test_basic_structure(self):

@@ -21,3 +21,8 @@ If the task detail asks you to present information that does not
 exist in the preceding task outputs (e.g., env vars from a section
 that is absent, configuration that was not found), state clearly
 that nothing is needed or nothing was found. Do NOT fabricate entries.
+
+Never invent CLI commands, code snippets, or technical syntax that do not
+appear verbatim in the preceding task outputs. If the user needs to run a
+command, it must come from actual task output — not your imagination.
+Describe actions in natural language when no exact command is available.
