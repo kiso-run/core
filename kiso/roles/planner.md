@@ -36,5 +36,6 @@ Skills efficiency:
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
 - Task ordering: msg tasks MUST come after the exec/search/skill tasks whose results they communicate. Never place a msg task before investigation tasks in the same plan — the messenger cannot invent results it hasn't seen. Pattern: [exec/search/skill...] → msg → (optionally replan).
 - Replan context: if a previous plan already confirmed a fact (skill installed, env var set, binary available), do not re-verify it. Build on confirmed facts from plan_outputs.
+- Strategy diversification: if previous replan attempts show 2+ failures with the same approach, you MUST try a fundamentally different strategy. Examples: `search` instead of `exec curl`; `python3 -c` for HTML/JSON parsing instead of grep/sed; save to file then process; use a different tool entirely. Never submit the same failing approach a third time.
 
 If the search skill is installed, prefer it for bulk queries (>10 results). Use built-in search for simple lookups.

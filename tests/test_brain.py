@@ -2376,6 +2376,12 @@ class TestPlannerPromptContent:
         assert "save output to a file" in prompt
         assert "Never embed raw data in task details" in prompt
 
+    def test_m143_strategy_diversification(self):
+        """M143: planner must diversify strategy after repeated failures."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "fundamentally different strategy" in prompt
+        assert "Never submit the same failing approach a third time" in prompt
+
 
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
