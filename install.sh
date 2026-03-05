@@ -5,6 +5,8 @@ set -euo pipefail
 # instead of silently closing the terminal.
 _on_error() {
     local exit_code=$?
+    # Don't report errors caused by signals (Ctrl+C = 130, etc.)
+    if [[ $exit_code -gt 128 ]]; then return; fi
     printf '\n\033[0;31mError: command failed (exit %d):\n  %s\033[0m\n' \
         "$exit_code" "${BASH_COMMAND:-unknown}" >&2
     printf '\n\033[0;31mIf this looks like a bug, please report it at:\n  https://github.com/kiso-run/core/issues\033[0m\n\n' >&2
@@ -66,7 +68,15 @@ cleanup() {
     [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP" || true
     [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP" || true
 }
-[[ "${KISO_INSTALL_LIB:-}" != "1" ]] && trap cleanup EXIT INT || true
+_on_interrupt() {
+    cleanup
+    printf '\nInterrupted.\n' >&2
+    exit 130
+}
+if [[ "${KISO_INSTALL_LIB:-}" != "1" ]]; then
+    trap cleanup EXIT
+    trap _on_interrupt INT
+fi
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
