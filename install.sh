@@ -287,17 +287,28 @@ ask_api_key() {
 }
 
 ask_models() {
-    local roles=(
-        "classifier|classifies messages as plan or chat|deepseek/deepseek-chat"
-        "planner|interprets requests, creates task plans|deepseek/deepseek-v3.2"
-        "reviewer|checks task output, decides replan|deepseek/deepseek-v3.2"
-        "worker|translates tasks to shell commands|deepseek/deepseek-v3.2"
-        "messenger|writes human-readable responses|deepseek/deepseek-v3.2"
-        "searcher|web search (native search)|perplexity/sonar"
-        "summarizer|compresses conversation history|deepseek/deepseek-v3.2"
-        "curator|manages learned knowledge|deepseek/deepseek-v3.2"
-        "paraphraser|prompt injection defense|deepseek/deepseek-v3.2"
-    )
+    # Read model roles from Python source of truth (kiso.config)
+    local roles=()
+    while IFS= read -r line; do
+        roles+=("$line")
+    done < <(PYTHONPATH="${REPO_DIR:-$SCRIPT_DIR}" python3 -c "
+from kiso.config import MODEL_DEFAULTS, MODEL_DESCRIPTIONS
+for role in MODEL_DEFAULTS:
+    desc = MODEL_DESCRIPTIONS.get(role, role)
+    default = MODEL_DEFAULTS[role]
+    print(f'{role}|{desc}|{default}')
+" 2>/dev/null || cat <<'FALLBACK'
+classifier|classifies messages as plan or chat|deepseek/deepseek-chat
+planner|interprets requests, creates task plans|deepseek/deepseek-v3.2
+reviewer|checks task output, decides replan|deepseek/deepseek-v3.2
+curator|manages learned knowledge|deepseek/deepseek-v3.2
+worker|translates tasks to shell commands|deepseek/deepseek-v3.2
+summarizer|compresses conversation history|deepseek/deepseek-v3.2
+paraphraser|prompt injection defense|deepseek/deepseek-v3.2
+messenger|writes human-readable responses|deepseek/deepseek-v3.2
+searcher|web search (native search)|perplexity/sonar
+FALLBACK
+)
 
     # Non-interactive: use defaults (explicit args or no TTY — e.g. curl pipe)
     if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]] || [[ ! -t 0 ]]; then

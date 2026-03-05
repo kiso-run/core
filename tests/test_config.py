@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kiso.config import MODEL_DEFAULTS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config, setting_bool, setting_float, setting_int
+from kiso.config import CONFIG_TEMPLATE, MODEL_DEFAULTS, MODEL_DESCRIPTIONS, SETTINGS_DEFAULTS, ConfigError, load_config, reload_config, setting_bool, setting_float, setting_int
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -549,3 +549,28 @@ class TestSettingFloat:
 
     def test_no_bounds_no_clamp(self):
         assert setting_float({"key": 99.9}, "key") == pytest.approx(99.9)
+
+
+def test_model_descriptions_cover_all_defaults():
+    """Every MODEL_DEFAULTS role must have a description in MODEL_DESCRIPTIONS."""
+    missing = set(MODEL_DEFAULTS) - set(MODEL_DESCRIPTIONS)
+    assert not missing, f"MODEL_DESCRIPTIONS missing roles: {missing}"
+
+
+def test_model_descriptions_no_extra_roles():
+    """MODEL_DESCRIPTIONS should not have roles absent from MODEL_DEFAULTS."""
+    extra = set(MODEL_DESCRIPTIONS) - set(MODEL_DEFAULTS)
+    assert not extra, f"MODEL_DESCRIPTIONS has extra roles: {extra}"
+
+
+def test_config_template_models_match_defaults():
+    """CONFIG_TEMPLATE [models] section must list exactly the roles in MODEL_DEFAULTS."""
+    import tomllib
+
+    parsed = tomllib.loads(CONFIG_TEMPLATE)
+    template_models = set(parsed.get("models", {}))
+    expected = set(MODEL_DEFAULTS)
+    assert template_models == expected, (
+        f"CONFIG_TEMPLATE [models] drift: "
+        f"missing={expected - template_models}, extra={template_models - expected}"
+    )

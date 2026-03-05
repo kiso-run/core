@@ -72,6 +72,19 @@ MODEL_DEFAULTS: dict[str, str] = {
     "searcher": "perplexity/sonar",
 }
 
+# Descriptions shown during interactive install. Keyed by role name.
+MODEL_DESCRIPTIONS: dict[str, str] = {
+    "classifier": "classifies messages as plan or chat",
+    "planner": "interprets requests, creates task plans",
+    "reviewer": "checks task output, decides replan",
+    "curator": "manages learned knowledge",
+    "worker": "translates tasks to shell commands",
+    "summarizer": "compresses conversation history",
+    "paraphraser": "prompt injection defense",
+    "messenger": "writes human-readable responses",
+    "searcher": "web search (native search)",
+}
+
 # Complete config.toml written on first run. Edit to configure your instance.
 CONFIG_TEMPLATE = """\
 # kiso configuration
