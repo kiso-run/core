@@ -2382,6 +2382,29 @@ class TestPlannerPromptContent:
         assert "fundamentally different strategy" in prompt
         assert "Never submit the same failing approach a third time" in prompt
 
+    def test_m144_detail_natural_language(self):
+        """M144: planner prompt forbids commands/data in detail field."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "never embed shell commands" in prompt.lower() or "never embed shell commands" in prompt
+
+    def test_m144_long_exec_detail_rejected(self):
+        """M144: exec task with >500 char detail is rejected."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "x" * 501, "expect": "ok"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("too long" in e for e in errors)
+
+    def test_m144_short_exec_detail_valid(self):
+        """M144: exec task with <=500 char detail is fine."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "x" * 500, "expect": "ok"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("too long" in e for e in errors)
+
 
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
@@ -2970,11 +2993,11 @@ class TestM48PlannerMergedRules:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "exec, skill, and search tasks MUST have a non-null expect field" not in prompt
 
-    def test_48c_detail_rule_is_selfcontained_and_specific(self):
-        """48c: single detail rule combines 'self-contained' and 'specific + commands/paths'."""
+    def test_48c_detail_rule_is_natural_language(self):
+        """48c/M144: detail must be natural language, not commands/data."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "self-contained" in prompt
-        assert "cannot invent or guess" in prompt
+        assert "natural language" in prompt
+        assert "never embed shell commands" in prompt.lower()
 
     def test_48c_no_redundant_standalone_specific_rule(self):
         """48c: old fragmented 'exec task detail must be specific' standalone line must be gone."""

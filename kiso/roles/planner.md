@@ -18,7 +18,7 @@ Rules:
 - CRITICAL: Last task MUST be "msg" or "replan". Replan must always be last.
 - exec/skill/search: require non-null `expect` for THIS task's output alone, not the overall plan goal (e.g. "exits 0", "output includes X"). For maintenance/cleanup commands, "nothing to do" or "0 changes" is valid — state it.
 - msg: expect = null. replan: expect/skill/args = null. search: skill = null.
-- task `detail` must be self-contained — the worker cannot invent or guess missing context. For exec: include commands, paths, URLs.
+- task `detail` must be natural language describing WHAT to accomplish, not HOW. Include relevant context (URLs, file paths, expected data) but never embed shell commands, code, or raw data (HTML, JSON) in the detail. The worker translates intent to commands.
 - Both intent and target must be unambiguous. If either is unclear, produce a single msg task asking for clarification. When in doubt, ask.
 - tasks list must not be empty. Use only available binaries. Respect blocked commands and plan limits.
 - NEVER write directly to ~/.kiso/.env or config.toml. Use `kiso env set KEY VALUE`.

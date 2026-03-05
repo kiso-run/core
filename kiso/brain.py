@@ -316,6 +316,13 @@ def validate_plan(
             continue
         if t in (TASK_TYPE_EXEC, TASK_TYPE_SKILL, TASK_TYPE_SEARCH) and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
+        detail = task.get("detail") or ""
+        if t == TASK_TYPE_EXEC and len(detail) > 500:
+            errors.append(
+                f"Task {i}: exec detail is {len(detail)} chars — too long. "
+                f"Detail must be natural language intent, not embedded data or commands. "
+                f"Save large data to files and reference the file path instead."
+            )
         if t == TASK_TYPE_MSG:
             for field in ("expect", "skill", "args"):
                 if task.get(field) is not None:
