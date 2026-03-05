@@ -901,6 +901,9 @@ async def _handle_exec_task(
                 else:
                     ctx.slog.info("Review → replan: %s", replan_reason)
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            # Carry retry hint to replan context (M145)
+            if local_plan_output is not None and retry_hint:
+                local_plan_output["retry_hint"] = retry_hint
             return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
                                       plan_output=local_plan_output)
 
@@ -986,6 +989,9 @@ async def _handle_search_task(
                     ctx.slog.info("Review → replan: %s", replan_reason)
             await update_task(ctx.db, task_id, "done", output=search_result)
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            # Carry retry hint to replan context (M145)
+            if local_plan_output is not None and retry_hint:
+                local_plan_output["retry_hint"] = retry_hint
             return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
                                       plan_output=local_plan_output)
 
@@ -1029,13 +1035,14 @@ async def _execute_plan(
     username: str | None = None,
     cancel_event: asyncio.Event | None = None,
     slog: SessionLogger | None = None,
-) -> tuple[bool, str | None, list[dict], list[dict]]:
-    """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining).
+) -> tuple[bool, str | None, list[dict], list[dict], list[dict]]:
+    """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining, plan_outputs).
 
     - success: True if all tasks completed successfully
     - replan_reason: reviewer reason if replan needed, None otherwise
     - completed: list of completed task dicts (with outputs)
     - remaining: list of unexecuted task dicts
+    - plan_outputs: list of plan output dicts (may contain retry_hint)
     """
     tasks = await get_tasks_for_plan(db, plan_id)
     completed: list[dict] = []
@@ -1074,7 +1081,7 @@ async def _execute_plan(
                     session_secrets=session_secrets or {},
                 )
             await _cleanup_plan_outputs(session)
-            return False, "cancelled", completed, [dict(t) for t in tasks[i:]]
+            return False, "cancelled", completed, [dict(t) for t in tasks[i:]], ctx.plan_outputs
 
         task_id = task_row["id"]
         task_type = task_row["type"]
@@ -1100,7 +1107,7 @@ async def _execute_plan(
             )
             remaining = [dict(t) for t in tasks[i + 1:]]
             await _cleanup_plan_outputs(session)
-            return False, None, completed, remaining
+            return False, None, completed, remaining, ctx.plan_outputs
 
         sandbox_uid = await _ensure_sandbox_user(session) if perm.role == "user" else None
         if sandbox_uid is not None:
@@ -1120,7 +1127,7 @@ async def _execute_plan(
             await update_task(db, task_id, "failed", output=f"Unknown task type: {task_type}")
             remaining = [dict(t) for t in tasks[i + 1:]]
             await _cleanup_plan_outputs(session)
-            return False, None, completed, remaining
+            return False, None, completed, remaining, ctx.plan_outputs
 
         is_final = i == len(tasks) - 1
         result = await handler(ctx, task_row, i, is_final, usage_idx_before)
@@ -1139,10 +1146,10 @@ async def _execute_plan(
         if result.stop:
             remaining = [dict(t) for t in tasks[i + 1:]]
             await _cleanup_plan_outputs(session)
-            return result.stop_success, result.stop_replan, completed, remaining
+            return result.stop_success, result.stop_replan, completed, remaining, ctx.plan_outputs
 
     await _cleanup_plan_outputs(session)
-    return True, None, completed, []
+    return True, None, completed, [], ctx.plan_outputs
 
 
 async def _apply_curator_result(
@@ -1405,7 +1412,7 @@ async def _run_planning_loop(
                 session_secrets=session_secrets,
             )
             break
-        success, replan_reason, completed, remaining = await _execute_plan(
+        success, replan_reason, completed, remaining, plan_outputs = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
             content, exec_timeout, messenger_timeout=messenger_timeout,
             session_secrets=session_secrets, username=username,
@@ -1473,12 +1480,20 @@ async def _run_planning_loop(
             out = (t.get("output") or "")[:500]
             if out:
                 key_outputs.append(f"[{t['type']}] {out}")
-        replan_history.append({
+        # Extract retry hints from plan_outputs (M145)
+        retry_hints = [
+            po["retry_hint"] for po in plan_outputs
+            if po.get("retry_hint")
+        ]
+        history_entry: dict = {
             "goal": current_goal,
             "failure": replan_reason,
             "what_was_tried": tried,
             "key_outputs": key_outputs,
-        })
+        }
+        if retry_hints:
+            history_entry["retry_hints"] = retry_hints
+        replan_history.append(history_entry)
 
         # Detect circular replanning: if last 2 failures share >60% of words
         stuck_detected = False

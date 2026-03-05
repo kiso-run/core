@@ -1508,7 +1508,7 @@ class TestExecutePlan:
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -1527,7 +1527,7 @@ class TestExecutePlan:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1543,7 +1543,7 @@ class TestExecutePlan:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1561,7 +1561,7 @@ class TestExecutePlan:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("down")), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1576,7 +1576,7 @@ class TestExecutePlan:
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("down")), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1595,7 +1595,7 @@ class TestExecutePlan:
         mock_reviewer = AsyncMock(return_value=REVIEW_REPLAN)
         with patch("kiso.worker.loop.run_reviewer", mock_reviewer), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1617,7 +1617,7 @@ class TestExecutePlan:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("err")), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1643,7 +1643,7 @@ class TestExecutePlan:
         with patch("kiso.worker.loop.run_reviewer", side_effect=_review_side_effect), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1665,7 +1665,7 @@ class TestExecutePlan:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Investigate", "user msg", 5,
             )
 
@@ -1684,7 +1684,7 @@ class TestExecutePlan:
                           detail="decide next steps")
 
         with _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Investigate", "user msg", 5,
             )
 
@@ -1730,7 +1730,7 @@ class TestExecTranslatorIntegration:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1755,7 +1755,7 @@ class TestExecTranslatorIntegration:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1776,7 +1776,7 @@ class TestExecTranslatorIntegration:
         with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
                     side_effect=ExecTranslatorError("Cannot translate")), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1811,7 +1811,7 @@ class TestExecTranslatorIntegration:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -1861,7 +1861,7 @@ class TestExecTranslatorIntegration:
         with patch("kiso.worker.loop.run_exec_translator", translator_mock), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2443,7 +2443,7 @@ class TestExecutePlanSanitization:
              _patch_translator(), \
              _patch_kiso_dir(tmp_path), \
              patch.dict("os.environ", env_patch):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2475,7 +2475,7 @@ class TestExecutePlanOutputChaining:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2494,7 +2494,7 @@ class TestExecutePlanOutputChaining:
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2511,7 +2511,7 @@ class TestExecutePlanOutputChaining:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, _, _ = await _execute_plan(
+            success, reason, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2526,7 +2526,7 @@ class TestExecutePlanOutputChaining:
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("down")), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2551,7 +2551,7 @@ class TestExecutePlanOutputChaining:
              patch("kiso.brain.call_llm", side_effect=_capture_llm), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2579,7 +2579,7 @@ class TestExecutePlanOutputChaining:
              patch("kiso.brain.call_llm", side_effect=_capture_llm), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2597,7 +2597,7 @@ class TestExecutePlanOutputChaining:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_kiso_dir(tmp_path):
-            success, reason, _, _ = await _execute_plan(
+            success, reason, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2837,7 +2837,7 @@ class TestExecutePlanSkill:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_kiso_dir(tmp_path):
-            success, reason, _, _ = await _execute_plan(
+            success, reason, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2859,7 +2859,7 @@ class TestExecutePlanSkill:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2880,7 +2880,7 @@ class TestExecutePlanSkill:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2902,7 +2902,7 @@ class TestExecutePlanSkill:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2944,7 +2944,7 @@ class TestExecutePlanSkill:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 session_secrets=secrets,
             )
@@ -2966,7 +2966,7 @@ class TestExecutePlanSkill:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
-            success, reason, _, remaining = await _execute_plan(
+            success, reason, _, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -2996,7 +2996,7 @@ class TestWebhookDelivery:
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock, return_value=(True, 200, 1)) as mock_wh, \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -3018,7 +3018,7 @@ class TestWebhookDelivery:
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock) as mock_wh, \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -3045,7 +3045,7 @@ class TestWebhookDelivery:
              patch("kiso.worker.loop.deliver_webhook", side_effect=_capture_wh), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -3074,7 +3074,7 @@ class TestWebhookDelivery:
              patch("kiso.worker.loop.deliver_webhook", side_effect=_capture_wh), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -3094,7 +3094,7 @@ class TestWebhookDelivery:
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock, return_value=(False, 500, 3)), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -3715,7 +3715,7 @@ class TestPermissionRevalidation:
         with patch("kiso.worker.loop.reload_config", return_value=config_without_alice), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username="alice",
             )
@@ -3737,7 +3737,7 @@ class TestPermissionRevalidation:
         # Reload returns config where bob only has "search"
         with patch("kiso.worker.loop.reload_config", return_value=config), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username="bob",
             )
@@ -3755,7 +3755,7 @@ class TestPermissionRevalidation:
         with patch("kiso.worker.loop.reload_config", side_effect=ConfigError("bad toml")), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username="alice",
             )
@@ -3928,7 +3928,7 @@ class TestPermissionRevalidationEdgeCases:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username="bob",
             )
@@ -3959,7 +3959,7 @@ class TestPermissionRevalidationEdgeCases:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, remaining = await _execute_plan(
+            success, _, completed, remaining, _po = await _execute_plan(
                 db, config_with_alice, "sess1", plan_id, "Test", "msg", 5,
                 username="alice",
             )
@@ -3996,7 +3996,7 @@ class TestPermissionRevalidationEdgeCases:
              _patch_translator(), \
              _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username="alice",
             )
@@ -4013,7 +4013,7 @@ class TestPermissionRevalidationEdgeCases:
         with patch("kiso.worker.loop.reload_config", return_value=config), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username=None,
             )
@@ -4072,7 +4072,7 @@ class TestCancelMechanism:
         with patch("kiso.worker.loop.reload_config", return_value=config), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 cancel_event=cancel_event,
             )
@@ -4107,7 +4107,7 @@ class TestCancelMechanism:
                    side_effect=_review_then_cancel), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 cancel_event=cancel_event,
             )
@@ -4697,7 +4697,7 @@ class TestSandboxWorkspaceInExecutePlan:
              _patch_translator(), \
              _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test sandbox", "msg", 5,
                 username="bob",
             )
@@ -5968,7 +5968,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -5994,7 +5994,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6019,7 +6019,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6067,7 +6067,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6089,7 +6089,7 @@ class TestExecutePlanSearch:
 
         with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, side_effect=SearcherError("LLM down")), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6113,7 +6113,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6135,7 +6135,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6172,7 +6172,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer_that_captures), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6205,7 +6205,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer_ok), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6275,7 +6275,7 @@ class TestExecutePlanSearch:
         with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="bad results"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6293,7 +6293,7 @@ class TestExecutePlanSearch:
         with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("LLM down")), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6321,7 +6321,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              patch("kiso.worker.loop.update_task_substatus", side_effect=capture_substatus), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6343,7 +6343,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="nothing found"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6365,7 +6365,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6391,7 +6391,7 @@ class TestExecutePlanSearch:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "user msg", 5,
             )
 
@@ -6761,7 +6761,7 @@ class TestWorkerRetry:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6789,7 +6789,7 @@ class TestWorkerRetry:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6810,7 +6810,7 @@ class TestWorkerRetry:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6845,7 +6845,7 @@ class TestWorkerRetry:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock, side_effect=_capture_translator), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6878,7 +6878,7 @@ class TestWorkerRetry:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="search results"), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6903,7 +6903,7 @@ class TestWorkerRetry:
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6932,7 +6932,7 @@ class TestWorkerRetry:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, reason, completed, remaining = await _execute_plan(
+            success, reason, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6970,7 +6970,7 @@ class TestIncrementalLLMCalls:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -6988,7 +6988,7 @@ class TestIncrementalLLMCalls:
         with patch("kiso.worker.loop._append_calls", mock_append), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -7008,7 +7008,7 @@ class TestIncrementalLLMCalls:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
-            success, _, completed, _ = await _execute_plan(
+            success, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -7156,7 +7156,7 @@ class TestM44gRetryLLMCalls:
                    new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
-            success, _, _, _ = await _execute_plan(
+            success, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
@@ -8929,3 +8929,86 @@ class TestProcessMessagePhaseCallback:
         last_executing = len(phases) - 1 - phases[::-1].index("executing")
         # The last planning should come before the last executing (replan sequence)
         assert last_planning < last_executing
+
+
+# --- M145: Retry hint carry-forward to replan context ---
+
+
+@pytest.mark.asyncio
+class TestRetryHintCarryForward:
+    """M145: reviewer retry_hint reaches the planner via replan context."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_exec_replan_carries_retry_hint_in_plan_outputs(self, db, tmp_path):
+        """When exec task escalates to replan, plan_outputs contain retry_hint."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo fail", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            success, reason, completed, remaining, plan_outputs = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Wrong path"
+        # The plan_output for the exec task should carry the retry_hint
+        exec_outputs = [po for po in plan_outputs if po["type"] == "exec"]
+        assert len(exec_outputs) == 1
+        assert exec_outputs[0].get("retry_hint") == "use /opt/app not /app"
+
+    async def test_search_replan_carries_retry_hint_in_plan_outputs(self, db, tmp_path):
+        """When search task escalates to replan, plan_outputs contain retry_hint."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="search", detail="find stuff", expect="results")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
+             patch("kiso.worker.loop._search_task", new_callable=AsyncMock, return_value="some results"), \
+             _patch_kiso_dir(tmp_path):
+            success, reason, completed, remaining, plan_outputs = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        search_outputs = [po for po in plan_outputs if po["type"] == "search"]
+        assert len(search_outputs) == 1
+        assert search_outputs[0].get("retry_hint") == "use /opt/app not /app"
+
+
+class TestRetryHintInReplanContext:
+    """M145: retry hints surface in _build_replan_context output."""
+
+    def test_retry_hints_in_replan_history(self):
+        """retry_hints from history entries appear in replan context."""
+        history = [{
+            "goal": "fetch page",
+            "failure": "page not found",
+            "what_was_tried": ["[exec] curl example.com"],
+            "key_outputs": [],
+            "retry_hints": ["Try curl -L to follow redirects"],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "Reviewer hint: Try curl -L to follow redirects" in ctx
+
+    def test_no_retry_hints_no_crash(self):
+        """History entries without retry_hints don't cause errors."""
+        history = [{
+            "goal": "fetch page",
+            "failure": "page not found",
+            "what_was_tried": ["[exec] curl example.com"],
+            "key_outputs": [],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "Reviewer hint" not in ctx
+        assert "page not found" in ctx
