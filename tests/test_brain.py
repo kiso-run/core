@@ -1930,6 +1930,12 @@ class TestDefaultMessengerPrompt:
         assert "TestBot" in system_prompt
         assert "{bot_name}" not in system_prompt
 
+    def test_m5_no_fabricate_absent_info(self):
+        """M5.3: messenger must not fabricate entries for absent information."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "fabricate" in prompt.lower()
+        assert "nothing is needed" in prompt or "nothing was found" in prompt
+
 
 class TestBuildMessengerMessages:
     def test_basic_structure(self):

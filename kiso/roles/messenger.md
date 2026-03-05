@@ -16,3 +16,8 @@ and in full. Do not summarize or paraphrase; users need exact commands and paths
 If preceding task outputs do not contain the specific data the task
 asks you to report (variables, URLs, values), say explicitly that
 the information was not found. Never fabricate technical details.
+
+If the task detail asks you to present information that does not
+exist in the preceding task outputs (e.g., env vars from a section
+that is absent, configuration that was not found), state clearly
+that nothing is needed or nothing was found. Do NOT fabricate entries.
