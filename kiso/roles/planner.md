@@ -29,6 +29,7 @@ Rules:
 - After failures, never fabricate results. Explain honestly what was tried.
 - Info retrieval: [search, msg]. Don't replan just to deliver results. Use replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks to keep user informed.
+- File-based data flow: when a task produces large output (HTML pages, JSON responses, logs) that a later task needs, instruct the first task to save output to a file (e.g. "fetch the page and save to page.html"). Subsequent tasks should read from that file. Never embed raw data in task details.
 
 Skills efficiency:
 - When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or reinstall tasks for already-listed skills.

@@ -2370,6 +2370,12 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "msg tasks MUST come after" in prompt
 
+    def test_m142_file_based_data_flow(self):
+        """M142: planner prompt requires file-based data flow for large outputs."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "save output to a file" in prompt
+        assert "Never embed raw data in task details" in prompt
+
 
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
