@@ -247,6 +247,73 @@ def _smart_truncate(text: str, limit: int) -> str:
     return text[:cut] + "\n... (truncated)"
 
 
+def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
+    """Best-effort extraction of confirmed facts from completed task outputs.
+
+    Scans outputs for recognisable patterns:
+    - JSON with "name"/"version" keys (registry responses) → skill/connector names
+    - Lines containing "installed" or "available" → installation status
+    - Lines with key=value or [section] headers (TOML/config) → config findings
+    - For other outputs, extract the first non-empty line as a finding
+    """
+    facts: list[str] = []
+    seen: set[str] = set()
+
+    for t in completed:
+        out = (t.get("output") or "").strip()
+        if not out:
+            continue
+
+        # Try JSON parsing for registry-like outputs
+        try:
+            data = json.loads(out)
+            if isinstance(data, dict) and "name" in data:
+                fact = f"Skill/connector '{data['name']}' found in registry"
+                if "version" in data:
+                    fact += f" (v{data['version']})"
+                if fact not in seen:
+                    facts.append(fact)
+                    seen.add(fact)
+                continue
+            if isinstance(data, list):
+                names = [item.get("name") for item in data if isinstance(item, dict) and "name" in item]
+                if names:
+                    fact = f"Registry contains: {', '.join(names[:10])}"
+                    if fact not in seen:
+                        facts.append(fact)
+                        seen.add(fact)
+                    continue
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+
+        # Check for install/status lines
+        for line in out.split("\n")[:20]:
+            line_lower = line.strip().lower()
+            if not line_lower:
+                continue
+            if "installed" in line_lower or "available" in line_lower:
+                fact = line.strip()[:200]
+                if fact not in seen:
+                    facts.append(fact)
+                    seen.add(fact)
+                break
+            if "not found" in line_lower or "error" in line_lower:
+                fact = line.strip()[:200]
+                if fact not in seen:
+                    facts.append(fact)
+                    seen.add(fact)
+                break
+
+        # For short outputs (< 200 chars), use the whole thing as a fact
+        if not facts or (out[:200] not in seen and len(out) < 200 and t.get("status") == "done"):
+            first_line = out.split("\n")[0].strip()[:200]
+            if first_line and first_line not in seen:
+                facts.append(first_line)
+                seen.add(first_line)
+
+    return facts[:10]  # Cap at 10 facts
+
+
 def _build_replan_context(
     completed: list[dict],
     remaining: list[dict],
@@ -255,6 +322,23 @@ def _build_replan_context(
 ) -> str:
     """Build extra context for replanning."""
     parts: list[str] = []
+
+    # Extract confirmed facts from all completed tasks (current + history)
+    all_completed = list(completed)
+    for h in replan_history:
+        # Reconstruct minimal task dicts from key_outputs for fact extraction
+        for ko in h.get("key_outputs", []):
+            # key_outputs are formatted as "[type] output_text"
+            if ko.startswith("[") and "] " in ko:
+                out_text = ko[ko.index("] ") + 2:]
+                all_completed.append({"type": "exec", "output": out_text, "status": "done"})
+    confirmed = _extract_confirmed_facts(all_completed)
+    if confirmed:
+        bullets = "\n".join(f"- {f}" for f in confirmed)
+        parts.append(
+            "## Confirmed Facts (DO NOT re-verify these — they are already established)\n"
+            + bullets
+        )
 
     if completed:
         items = []

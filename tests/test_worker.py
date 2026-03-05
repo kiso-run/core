@@ -1415,6 +1415,56 @@ class TestBuildReplanContext:
         # Output should be truncated
         assert "... (truncated)" in ctx or len(long_output) > ctx.count("x")
 
+    def test_confirmed_facts_from_registry_json(self):
+        """M131: extract skill name from registry JSON output."""
+        import json as _json
+        registry_output = _json.dumps({"name": "browser", "version": "1.0", "description": "Browse the web"})
+        completed = [{"type": "exec", "detail": "curl registry", "status": "done", "output": registry_output}]
+        ctx = _build_replan_context(completed, [], "skill not installed", [])
+        assert "Confirmed Facts" in ctx
+        assert "browser" in ctx
+        assert "DO NOT re-verify" in ctx
+
+    def test_confirmed_facts_from_registry_list(self):
+        """M131: extract skill names from registry JSON array."""
+        import json as _json
+        registry_output = _json.dumps([
+            {"name": "browser", "version": "1.0"},
+            {"name": "search", "version": "2.0"},
+        ])
+        completed = [{"type": "exec", "detail": "curl registry", "status": "done", "output": registry_output}]
+        ctx = _build_replan_context(completed, [], "need skills", [])
+        assert "Confirmed Facts" in ctx
+        assert "browser" in ctx
+        assert "search" in ctx
+
+    def test_confirmed_facts_from_install_output(self):
+        """M131: extract install status from command output."""
+        completed = [{"type": "exec", "detail": "kiso skill install browser", "status": "done",
+                      "output": "Skill 'browser' installed successfully\nReady to use"}]
+        ctx = _build_replan_context(completed, [], "next step", [])
+        assert "Confirmed Facts" in ctx
+        assert "installed" in ctx.lower()
+
+    def test_confirmed_facts_from_history_outputs(self):
+        """M131: facts extracted from previous replan key_outputs too."""
+        import json as _json
+        history = [{
+            "goal": "Find browser",
+            "failure": "not found",
+            "what_was_tried": ["[exec] curl registry"],
+            "key_outputs": [f"[exec] {_json.dumps({'name': 'browser', 'version': '1.0'})}"],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "Confirmed Facts" in ctx
+        assert "browser" in ctx
+
+    def test_no_confirmed_facts_for_empty_outputs(self):
+        """M131: no Confirmed Facts section when outputs are empty."""
+        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": ""}]
+        ctx = _build_replan_context(completed, [], "failed", [])
+        assert "Confirmed Facts" not in ctx
+
 
 # --- _execute_plan ---
 

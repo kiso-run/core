@@ -2929,10 +2929,12 @@ class TestPlannerContextualRules:
         return _make_brain_config()
 
     async def test_generic_message_has_no_appendix(self, db):
-        """A message like 'what time is it' should not inject any appendix."""
-        msgs, _ = await build_planner_messages(
-            db, self._config(), "test-session", "admin", "what time is it",
-        )
+        """A message like 'what time is it' should not inject any appendix (when skills exist)."""
+        fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse the web", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, _ = await build_planner_messages(
+                db, self._config(), "test-session", "admin", "what time is it",
+            )
         system = msgs[0]["content"]
         assert "kiso skill install" not in system
         assert "PROTECTION" not in system
