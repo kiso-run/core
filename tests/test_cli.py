@@ -2841,7 +2841,7 @@ def test_plan_llm_calls_rendered_incrementally(capsys):
 
 
 def test_render_plan_status_shows_inflight_call(capsys):
-    """In verbose mode, inflight_call in status should render a compact indicator."""
+    """In verbose mode, inflight_call shows input panel + waiting indicator."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {
         "id": 1, "message_id": 1, "status": "running", "goal": "g",
@@ -2865,8 +2865,11 @@ def test_render_plan_status_shows_inflight_call(capsys):
     out = capsys.readouterr().out
     assert "planner" in out
     assert "waiting" in out.lower()
-    # M112a: compact indicator does not include message contents
-    assert "Deploy it." not in out
+    # Input panel shows message contents
+    assert "Deploy it." in out
+    # Input panel rendered, ts tracked for dedup
+    assert 1709553600.0 in state.seen_inflight_ts
+    assert 1709553600.0 in state.inflight_input_shown
 
 
 def test_render_plan_status_inflight_not_repeated(capsys):
@@ -2909,3 +2912,54 @@ def test_render_plan_status_inflight_not_shown_in_quiet(capsys):
     _render_plan_status(data, 1, True, True, caps, "Bot", state)
     out = capsys.readouterr().out
     assert "waiting" not in out.lower()
+
+
+def test_inflight_then_complete_skips_input_panel(capsys):
+    """When an inflight call completes, only the output panel is rendered."""
+    import json as _json
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+
+    inflight_ts = 1700000000.0
+    inflight_call = {
+        "role": "planner", "model": "deepseek/deepseek-v3",
+        "messages": [{"role": "user", "content": "INFLIGHT_INPUT_MARKER"}],
+        "ts": inflight_ts,
+    }
+
+    # Phase 1: inflight call shows input panel + waiting indicator
+    plan_running = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    data1 = {
+        "plan": plan_running, "tasks": [], "worker_running": True,
+        "inflight_call": inflight_call,
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "INFLIGHT_INPUT_MARKER" in out1  # input panel shown
+    assert "waiting" in out1.lower()
+    assert inflight_ts in state.inflight_input_shown
+
+    # Phase 2: call completes → appears in plan's llm_calls
+    completed_call = {
+        "role": "planner", "model": "deepseek/deepseek-v3",
+        "input_tokens": 500, "output_tokens": 200,
+        "messages": [{"role": "user", "content": "INFLIGHT_INPUT_MARKER"}],
+        "response": "COMPLETED_OUTPUT_MARKER",
+        "ts": inflight_ts,
+    }
+    plan_done = {
+        "id": 1, "message_id": 1, "status": "done", "goal": "g",
+        "llm_calls": _json.dumps([completed_call]),
+    }
+    data2 = {"plan": plan_done, "tasks": [], "worker_running": False}
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    # Output panel is shown
+    assert "COMPLETED_OUTPUT_MARKER" in out2
+    # Input panel is NOT re-rendered (already shown during inflight)
+    assert "IN " not in out2 or "OUT" in out2  # IN label absent or only OUT present
+    assert "INFLIGHT_INPUT_MARKER" not in out2  # input content not re-rendered
+    # Output direction label is present
+    assert " OUT " in out2
+    # inflight_input_shown entry was consumed
+    assert inflight_ts not in state.inflight_input_shown

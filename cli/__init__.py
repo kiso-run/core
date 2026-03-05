@@ -532,19 +532,42 @@ class _PollRenderState:
     at_col0: bool = True
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
     seen_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight indicators
+    inflight_input_shown: set = dataclasses.field(default_factory=set)  # ts values of inflight calls whose input panel was shown
+
+
+def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> None:
+    """Print input+output panels for *calls*, skipping input if already shown inflight."""
+    from cli.render import render_llm_call_input_panel, render_llm_call_output_panel
+    for c in calls:
+        ts = c.get("ts")
+        if ts and ts in state.inflight_input_shown:
+            out = render_llm_call_output_panel(c, caps)
+            if out:
+                print(out)
+            state.inflight_input_shown.discard(ts)
+        else:
+            in_panel = render_llm_call_input_panel(c, caps)
+            if in_panel:
+                print(in_panel)
+            out_panel = render_llm_call_output_panel(c, caps)
+            if out_panel:
+                print(out_panel)
 
 
 def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
     """Render only the verbose LLM panels not yet shown for *task*."""
-    from cli.render import render_llm_calls_verbose
+    from cli.render import _parse_llm_calls
     tid = task["id"]
     already = state.verbose_shown.get(tid, 0)
-    detail = render_llm_calls_verbose(
-        task.get("llm_calls"), caps, skip=already,
-    )
-    if detail:
-        print(detail)
-    state.verbose_shown[tid] = llm_call_count
+
+    calls = _parse_llm_calls(task.get("llm_calls"))
+    verbose_calls = [c for c in calls if c.get("messages")]
+    new_calls = verbose_calls[already:]
+
+    if new_calls:
+        _print_verbose_panels(new_calls, caps, state)
+
+    state.verbose_shown[tid] = len(verbose_calls)
 
 
 def _should_stop_polling(
@@ -712,7 +735,6 @@ def _render_plan_status(
         _parse_llm_calls,
         render_inflight_indicator,
         render_llm_calls,
-        render_llm_calls_verbose,
         render_phase_done,
         render_plan,
         render_plan_detail,
@@ -775,11 +797,10 @@ def _render_plan_status(
         if call_count > state.shown_plan_llm_count:
             _clear_spinner()
             if verbose:
-                verbose_detail = render_llm_calls_verbose(
-                    plan.get("llm_calls"), caps, skip=state.shown_plan_llm_count,
-                )
-                if verbose_detail:
-                    print(verbose_detail)
+                verbose_calls = [c for c in plan_calls if c.get("messages")]
+                new_calls = verbose_calls[state.shown_plan_llm_count:]
+                if new_calls:
+                    _print_verbose_panels(new_calls, caps, state)
             # Show summary line only when plan is no longer running
             if plan.get("status") not in ("running", "replanning"):
                 llm_detail = render_llm_calls(plan.get("llm_calls"), caps)
@@ -866,13 +887,19 @@ def _render_plan_status(
 
     # Render inflight LLM call in verbose mode
     if verbose and not quiet:
+        from cli.render import render_llm_call_input_panel
         inflight = data.get("inflight_call")
         if inflight and inflight.get("messages"):
             inflight_ts = inflight.get("ts")
             if inflight_ts and inflight_ts not in state.seen_inflight_ts:
                 _clear_spinner()
+                # Show input panel for inflight call + waiting indicator
+                in_panel = render_llm_call_input_panel(inflight, caps)
+                if in_panel:
+                    print(in_panel)
                 print(render_inflight_indicator(inflight, caps))
                 state.seen_inflight_ts.add(inflight_ts)
+                state.inflight_input_shown.add(inflight_ts)
 
     return tasks
 

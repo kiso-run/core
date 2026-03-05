@@ -603,6 +603,99 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
     return "\n".join(lines)
 
 
+def _verbose_call_chars(caps: TermCaps) -> tuple[str, str, str]:
+    """Return ``(arrow, sep_char, think_sep)`` used by verbose panels."""
+    arrow = "\u2192" if caps.unicode else "->"
+    sep_char = "\u2500" if caps.unicode else "-"
+    think_icon = "\U0001f914" if caps.unicode else "?"
+    think_sep = _labeled_sep(f" {think_icon} reasoning ", sep_char)
+    return arrow, sep_char, think_sep
+
+
+def render_llm_call_input_panel(call: dict, caps: TermCaps) -> str:
+    """Render only the *input* panel for a single LLM call.
+
+    Used during live polling to show what was sent before the response arrives.
+    """
+    from rich.markup import escape as _esc
+    from rich.panel import Panel
+
+    messages = call.get("messages", [])
+    if not messages:
+        return ""
+
+    console, buf = _make_rich_console(caps)
+    arrow, _, _ = _verbose_call_chars(caps)
+
+    role = call.get("role", "?")
+    model = call.get("model", "")
+    in_t = call.get("input_tokens", 0)
+    sm = _short_model(model)
+
+    title = _verbose_title(
+        _esc, role, sm, arrow, call.get("ts"),
+        detail=f"{in_t:,} tokens", direction="IN",
+    )
+    parts = _build_message_parts(messages, _esc)
+    console.print(Panel(
+        "\n".join(parts), title=title, border_style="dim cyan",
+        title_align="left", expand=True,
+    ))
+    return _rich_buf_to_str(buf)
+
+
+def render_llm_call_output_panel(call: dict, caps: TermCaps) -> str:
+    """Render the *summary line + output panel* for a single LLM call.
+
+    Used after the input panel was already shown, to complete the pair.
+    """
+    import json as _json
+    from rich.markup import escape as _esc
+    from rich.panel import Panel
+
+    response = call.get("response", "")
+    if not call.get("messages"):
+        return ""
+
+    console, buf = _make_rich_console(caps)
+    arrow, _, think_sep = _verbose_call_chars(caps)
+
+    role = call.get("role", "?")
+    model = call.get("model", "")
+    in_t = call.get("input_tokens", 0)
+    out_t = call.get("output_tokens", 0)
+    thinking = call.get("thinking", "")
+    sm = _short_model(model)
+    dur = call.get("duration_ms")
+    elapsed = f", {_fmt_duration(dur // 1000)}" if dur and dur >= 1000 else ""
+
+    # Summary line
+    summary = f"  {_esc(role):12s} {in_t:,}{arrow}{out_t:,}{elapsed}  {_esc(sm)}"
+    console.print(f"[dim]{summary}[/dim]")
+
+    # Output panel
+    title = _verbose_title(
+        _esc, role, sm, arrow, call.get("ts"),
+        detail=f"{out_t:,} tokens{elapsed}", direction="OUT",
+    )
+    parts: list[str] = []
+    if thinking:
+        parts.append(f"[bold yellow]{think_sep}[/bold yellow]")
+        parts.append(f"[dim yellow]{_esc(thinking)}[/dim yellow]")
+        parts.append("")
+    try:
+        parsed = _json.loads(response)
+        parts.append(_esc(_json.dumps(parsed, indent=2, ensure_ascii=False)))
+    except (ValueError, TypeError):
+        parts.append(_esc(response))
+
+    console.print(Panel(
+        "\n".join(parts), title=title, border_style="dim green",
+        title_align="left", expand=True,
+    ))
+    return _rich_buf_to_str(buf)
+
+
 def render_llm_calls_verbose(
     llm_calls_json: str | None, caps: TermCaps, skip: int = 0,
 ) -> str:
@@ -617,80 +710,22 @@ def render_llm_calls_verbose(
     *skip* omits the first N verbose calls (used by incremental rendering
     to avoid re-printing panels already shown).
     """
-    import json as _json
-
     calls = _parse_llm_calls(llm_calls_json)
-    # Only render calls that have messages (verbose data present)
     verbose_calls = [c for c in calls if c.get("messages")]
     if skip >= len(verbose_calls):
-        return ""  # All verbose calls already shown — skip Rich setup
+        return ""
     verbose_calls = verbose_calls[skip:]
 
-    from rich.markup import escape as _esc
-    from rich.panel import Panel
-
-    console, buf = _make_rich_console(caps)
-
-    arrow = "\u2192" if caps.unicode else "->"
-    sep_char = "\u2500" if caps.unicode else "-"
-    think_icon = "\U0001f914" if caps.unicode else "?"
-    think_sep = _labeled_sep(f" {think_icon} reasoning ", sep_char)
-
+    parts: list[str] = []
     for c in verbose_calls:
-        role = c.get("role", "?")
-        model = c.get("model", "")
-        in_t = c.get("input_tokens", 0)
-        out_t = c.get("output_tokens", 0)
-        messages = c.get("messages", [])
-        response = c.get("response", "")
-        thinking = c.get("thinking", "")
-        sm = _short_model(model)
-        dur = c.get("duration_ms")
-        elapsed = f", {_fmt_duration(dur // 1000)}" if dur and dur >= 1000 else ""
+        in_panel = render_llm_call_input_panel(c, caps)
+        if in_panel:
+            parts.append(in_panel)
+        out_panel = render_llm_call_output_panel(c, caps)
+        if out_panel:
+            parts.append(out_panel)
 
-        # ── Input panel ──────────────────────────────────────
-        in_title = _verbose_title(
-            _esc, role, sm, arrow, c.get("ts"),
-            detail=f"{in_t:,} tokens", direction="IN",
-        )
-        in_parts = _build_message_parts(messages, _esc)
-        in_body = "\n".join(in_parts)
-        console.print(Panel(
-            in_body, title=in_title, border_style="dim cyan",
-            title_align="left", expand=True,
-        ))
-
-        # ── Summary line between panels ──────────────────────
-        summary = f"  {_esc(role):12s} {in_t:,}{arrow}{out_t:,}{elapsed}  {_esc(sm)}"
-        console.print(f"[dim]{summary}[/dim]")
-
-        # ── Output panel ─────────────────────────────────────
-        out_title = _verbose_title(
-            _esc, role, sm, arrow, c.get("ts"),
-            detail=f"{out_t:,} tokens{elapsed}", direction="OUT",
-        )
-        out_parts: list[str] = []
-
-        # Thinking/reasoning block (if present)
-        if thinking:
-            out_parts.append(f"[bold yellow]{think_sep}[/bold yellow]")
-            out_parts.append(f"[dim yellow]{_esc(thinking)}[/dim yellow]")
-            out_parts.append("")
-
-        # Response
-        try:
-            parsed = _json.loads(response)
-            out_parts.append(_esc(_json.dumps(parsed, indent=2, ensure_ascii=False)))
-        except (ValueError, TypeError):
-            out_parts.append(_esc(response))
-
-        out_body = "\n".join(out_parts)
-        console.print(Panel(
-            out_body, title=out_title, border_style="dim green",
-            title_align="left", expand=True,
-        ))
-
-    return _rich_buf_to_str(buf)
+    return "\n".join(parts)
 
 
 def render_review(task: dict, caps: TermCaps) -> str:

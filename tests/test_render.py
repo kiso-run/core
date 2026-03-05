@@ -18,6 +18,8 @@ from cli.render import (
     render_cancel_done,
     render_cancel_start,
     render_command,
+    render_llm_call_input_panel,
+    render_llm_call_output_panel,
     render_llm_calls,
     render_llm_calls_verbose,
     render_max_replan,
@@ -1187,6 +1189,77 @@ def test_render_llm_calls_verbose_summary_between_panels():
     assert "300" in result
     assert "45" in result
     assert "deepseek-v3" in result
+
+
+# ── render_llm_call_input_panel / render_llm_call_output_panel ──
+
+
+def test_render_llm_call_input_panel_shows_messages():
+    """Input panel renders messages and IN direction label."""
+    call = {
+        "role": "translator",
+        "model": "test/model-v1",
+        "input_tokens": 400,
+        "messages": [
+            {"role": "system", "content": "You translate."},
+            {"role": "user", "content": "Translate this."},
+        ],
+    }
+    result = render_llm_call_input_panel(call, _PLAIN)
+    assert "translator" in result
+    assert ") IN" in result
+    assert "You translate." in result
+    assert "Translate this." in result
+    # No output content
+    assert ") OUT" not in result
+
+
+def test_render_llm_call_input_panel_no_messages():
+    """Returns empty string when call has no messages."""
+    call = {"role": "planner", "model": "m", "input_tokens": 0}
+    assert render_llm_call_input_panel(call, _PLAIN) == ""
+
+
+def test_render_llm_call_output_panel_shows_response():
+    """Output panel renders response and OUT direction label."""
+    call = {
+        "role": "reviewer",
+        "model": "test/model-v1",
+        "input_tokens": 200,
+        "output_tokens": 30,
+        "messages": [{"role": "user", "content": "check"}],
+        "response": '{"status": "ok"}',
+    }
+    result = render_llm_call_output_panel(call, _PLAIN)
+    assert "reviewer" in result
+    assert ") OUT" in result
+    assert '"status": "ok"' in result  # pretty-printed JSON
+    # No input content
+    assert ") IN" not in result
+    assert "check" not in result
+
+
+def test_render_llm_call_output_panel_with_thinking():
+    """Output panel includes thinking/reasoning block."""
+    call = {
+        "role": "worker",
+        "model": "deepseek/r1",
+        "input_tokens": 300,
+        "output_tokens": 100,
+        "messages": [{"role": "user", "content": "solve"}],
+        "response": "42",
+        "thinking": "step by step reasoning",
+    }
+    result = render_llm_call_output_panel(call, _PLAIN)
+    assert "reasoning" in result
+    assert "step by step reasoning" in result
+    assert "42" in result
+
+
+def test_render_llm_call_output_panel_no_messages():
+    """Returns empty string when call has no messages."""
+    call = {"role": "planner", "model": "m", "output_tokens": 0}
+    assert render_llm_call_output_panel(call, _PLAIN) == ""
 
 
 def test_render_llm_calls_verbose_escapes_markup():

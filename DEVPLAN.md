@@ -63,7 +63,7 @@ Key rules:
 
 ---
 
-## Milestone 2: Inflight indicator integration
+## Milestone 2: Inflight indicator integration ✅
 
 **Goal:** The inflight indicator (already exists at `cli/__init__.py:867-875`) should appear between the input and output panels during live polling, completing the timer-in-the-middle flow.
 
@@ -79,6 +79,10 @@ Key rules:
 3. **Render the inflight waiting line** (`⏳ role → model (waiting...)`) between input and output panels during live polling, instead of as a standalone line.
 
 ### Acceptance Criteria
-- During live execution, the user sees: input panel → waiting indicator → (response arrives) → elapsed line + output panel
-- No panels are re-rendered or duplicated during incremental polling
-- Works correctly for plan-level calls (classifier, planner) and task-level calls (translator, reviewer, searcher)
+- [x] During live execution, the user sees: input panel → waiting indicator → (response arrives) → summary line + output panel
+- [x] No panels are re-rendered or duplicated during incremental polling
+- [x] Works correctly for plan-level calls (classifier, planner) and task-level calls (translator, reviewer, searcher)
+
+### Deviations
+- Used `inflight_input_shown: set` (ts-based) instead of changing `verbose_shown` structure. Simpler: `verbose_shown` stays `dict[tid, int]`, and `inflight_input_shown` tracks which inflight calls had their input panel pre-rendered.
+- Extracted shared `_print_verbose_panels()` helper used by both `_emit_verbose_calls` and plan-level rendering to eliminate code duplication.
