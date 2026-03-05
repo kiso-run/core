@@ -1452,10 +1452,16 @@ async def _run_planning_loop(
 
         # Build replan history
         tried = [f"[{t['type']}] {t['detail']}" for t in completed]
+        key_outputs = []
+        for t in completed:
+            out = (t.get("output") or "")[:500]
+            if out:
+                key_outputs.append(f"[{t['type']}] {out}")
         replan_history.append({
             "goal": current_goal,
             "failure": replan_reason,
             "what_was_tried": tried,
+            "key_outputs": key_outputs,
         })
 
         # Detect circular replanning: if last 2 failures share >60% of words

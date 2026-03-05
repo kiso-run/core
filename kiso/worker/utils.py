@@ -280,10 +280,22 @@ def _build_replan_context(
     parts.append(f"## Failure Reason\n{replan_reason}")
 
     if replan_history:
+        _HISTORY_OUTPUT_BUDGET = 3000  # max chars for all key_outputs across history
         items = []
+        output_chars = 0
         for h in replan_history:
             tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
-            items.append(f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}")
+            entry = f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}"
+            key_outputs = h.get("key_outputs", [])
+            if key_outputs and output_chars < _HISTORY_OUTPUT_BUDGET:
+                for ko in key_outputs:
+                    remaining = _HISTORY_OUTPUT_BUDGET - output_chars
+                    if remaining <= 0:
+                        break
+                    truncated = _smart_truncate(ko, min(remaining, 500))
+                    entry += f"\n  Output: {truncated}"
+                    output_chars += len(truncated)
+            items.append(entry)
         parts.append(
             "## Previous Replan Attempts (DO NOT repeat these approaches)\n"
             + "\n".join(items)

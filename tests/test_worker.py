@@ -1386,6 +1386,35 @@ class TestBuildReplanContext:
         assert "## Failure Reason" in ctx
         assert "## Previous Replan Attempts" in ctx
 
+    def test_replan_history_includes_key_outputs(self):
+        """M130: replan history entries include key_outputs from completed tasks."""
+        history = [
+            {
+                "goal": "Install browser",
+                "failure": "skill not found",
+                "what_was_tried": ["[exec] kiso skill install browser"],
+                "key_outputs": ["[exec] registry: browser v1.0 available"],
+            },
+        ]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "registry: browser v1.0 available" in ctx
+        assert "Output:" in ctx
+
+    def test_replan_history_key_outputs_budget(self):
+        """M130: key_outputs in history are capped by budget."""
+        long_output = "x" * 4000
+        history = [
+            {
+                "goal": "Try",
+                "failure": "fail",
+                "what_was_tried": ["[exec] cmd"],
+                "key_outputs": [f"[exec] {long_output}"],
+            },
+        ]
+        ctx = _build_replan_context([], [], "fail", history)
+        # Output should be truncated
+        assert "... (truncated)" in ctx or len(long_output) > ctx.count("x")
+
 
 # --- _execute_plan ---
 
