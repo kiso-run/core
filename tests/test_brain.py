@@ -289,6 +289,55 @@ class TestValidatePlan:
         errors = validate_plan(plan, max_tasks=20)
         assert not any("max allowed" in e for e in errors)
 
+    # --- M137: msg must come after data-gathering tasks ---
+
+    def test_msg_before_exec_rejected(self):
+        """M137: msg task before exec tasks must fail validation."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "[Lang: it] describe results", "expect": None, "skill": None, "args": None},
+            {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("msg task must come after" in e for e in errors)
+
+    def test_msg_before_search_rejected(self):
+        """M137: msg before search is also rejected."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "let me check", "expect": None, "skill": None, "args": None},
+            {"type": "search", "detail": "query", "expect": "results"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("msg task must come after" in e for e in errors)
+
+    def test_msg_after_all_exec_valid(self):
+        """M137: msg after all exec/search tasks is valid."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
+            {"type": "exec", "detail": "grep title", "expect": "title found"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("msg task must come after" in e for e in errors)
+
+    def test_msg_only_plan_valid(self):
+        """M137: plan with only a msg (no data tasks) is valid."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Hello!", "expect": None, "skill": None, "args": None},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_msg_between_exec_and_replan_valid(self):
+        """M137: [exec, msg, replan] — msg after exec, before replan — valid."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "ls", "expect": "files"},
+            {"type": "msg", "detail": "progress update", "expect": None, "skill": None, "args": None},
+            {"type": "replan", "detail": "decide next", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("msg task must come after" in e for e in errors)
+
     # --- M25: replan task type ---
 
     def test_replan_as_last_task_valid(self):
@@ -2296,9 +2345,9 @@ class TestPlannerPromptContent:
         assert "absent or empty" in prompt
 
     def test_m5_msg_after_tasks(self):
-        """M5: msg tasks must not presuppose results of tasks that haven't run."""
+        """M5/M137: msg tasks must come after data-gathering tasks."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "presuppose" in prompt
+        assert "msg tasks MUST come after" in prompt
 
 
 class TestM73cPlannerUserManagement:

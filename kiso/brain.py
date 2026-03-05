@@ -354,6 +354,18 @@ def validate_plan(
     if replan_count > 1:
         errors.append("A plan can have at most one replan task")
 
+    # msg tasks must not appear before all data-gathering tasks.
+    # Find the index of the first msg and the last exec/search/skill.
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_SKILL}
+    first_msg_idx = next((i for i, t in enumerate(tasks) if t.get("type") == TASK_TYPE_MSG), None)
+    last_data_idx = next((i for i, t in reversed(list(enumerate(tasks))) if t.get("type") in _DATA_TYPES), None)
+    if first_msg_idx is not None and last_data_idx is not None and first_msg_idx < last_data_idx:
+        errors.append(
+            f"Task {first_msg_idx + 1}: msg task must come after all "
+            f"exec/search/skill tasks (task {last_data_idx + 1} is later). "
+            f"Msg tasks communicate results — place them after investigation."
+        )
+
     last = tasks[-1]
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")

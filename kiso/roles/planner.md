@@ -33,7 +33,7 @@ Rules:
 Skills efficiency:
 - When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or reinstall tasks for already-listed skills.
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
-- Do not create msg tasks that presuppose specific task results before those tasks have run. Place msg tasks after the tasks whose output they summarize.
+- Task ordering: msg tasks MUST come after the exec/search/skill tasks whose results they communicate. Never place a msg task before investigation tasks in the same plan — the messenger cannot invent results it hasn't seen. Pattern: [exec/search/skill...] → msg → (optionally replan).
 - Replan context: if a previous plan already confirmed a fact (skill installed, env var set, binary available), do not re-verify it. Build on confirmed facts from plan_outputs.
 
 If the search skill is installed, prefer it for bulk queries (>10 results). Use built-in search for simple lookups.
