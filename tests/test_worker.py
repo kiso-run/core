@@ -206,7 +206,8 @@ class TestRunSubprocess:
 
         mock_proc.communicate = _hang
 
-        with patch("kiso.worker.utils.asyncio.create_subprocess_shell", AsyncMock(return_value=mock_proc)):
+        # shell=True now uses create_subprocess_exec("bash", "-c", cmd)
+        with patch("kiso.worker.utils.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)):
             _, stderr, success, exit_code = await _run_subprocess(
                 "sleep 999",
                 env={},
@@ -239,6 +240,30 @@ class TestRunSubprocess:
         assert success is False
         assert "No such file" in stderr
         assert exit_code == -1
+
+    async def test_shell_uses_bash(self, tmp_path):
+        """M139: shell=True uses bash, not /bin/sh (dash). Here-strings work."""
+        stdout, _, success, _ = await _run_subprocess(
+            "cat <<< 'hello from bash'",
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=5,
+            cwd=str(tmp_path),
+            shell=True,
+        )
+        assert success is True
+        assert "hello from bash" in stdout
+
+    async def test_shell_bash_double_brackets(self, tmp_path):
+        """M139: bash double brackets work (would fail on dash)."""
+        stdout, _, success, _ = await _run_subprocess(
+            '[[ "abc" == abc ]] && echo ok',
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=5,
+            cwd=str(tmp_path),
+            shell=True,
+        )
+        assert success is True
+        assert "ok" in stdout
 
     async def test_exec_mode_with_stdin(self, tmp_path):
         """Non-shell mode with stdin_data passes data to the process."""
@@ -317,7 +342,7 @@ class TestExecTask:
 
         mock_proc.communicate = _hang
 
-        with patch("kiso.worker.utils.asyncio.create_subprocess_shell", AsyncMock(return_value=mock_proc)), \
+        with patch("kiso.worker.utils.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)), \
              _patch_kiso_dir(tmp_path):
             _, stderr, success, _ = await _exec_task("test-sess", "sleep 999", 0.01)
 
@@ -3758,7 +3783,7 @@ class TestPerSessionSandbox:
         mock_chmod.assert_not_called()
 
     async def test_sandbox_uid_passed_to_exec_subprocess(self, tmp_path):
-        """When sandbox_uid is set, it's passed to create_subprocess_shell."""
+        """When sandbox_uid is set, it's passed to create_subprocess_exec."""
         captured_kwargs = {}
 
         async def _mock_subprocess(*args, **kwargs):
@@ -3769,7 +3794,7 @@ class TestPerSessionSandbox:
             return proc
 
         with _patch_kiso_dir(tmp_path), \
-             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
             await _exec_task("sess1", "echo ok", 5, sandbox_uid=1234)
 
         assert captured_kwargs.get("user") == 1234
@@ -3786,7 +3811,7 @@ class TestPerSessionSandbox:
             return proc
 
         with _patch_kiso_dir(tmp_path), \
-             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
             await _exec_task("sess1", "echo ok", 5, sandbox_uid=None)
 
         assert "user" not in captured_kwargs
@@ -3916,7 +3941,7 @@ class TestPermissionRevalidationEdgeCases:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path), \
-             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
             success, _, _, _ = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
                 username="alice",
@@ -4617,7 +4642,7 @@ class TestSandboxWorkspaceInExecutePlan:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path), \
-             patch("asyncio.create_subprocess_shell", side_effect=_mock_subprocess):
+             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
             success, _, _, _ = await _execute_plan(
                 db, config, "sess1", plan_id, "Test sandbox", "msg", 5,
                 username="bob",

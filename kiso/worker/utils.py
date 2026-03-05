@@ -34,7 +34,7 @@ async def _run_subprocess(
         env: Subprocess environment dict.
         timeout: Seconds before the subprocess is killed.
         cwd: Working directory for the subprocess.
-        shell: If True, use create_subprocess_shell; else create_subprocess_exec.
+        shell: If True, run via ``bash -c``; else create_subprocess_exec.
         stdin_data: Optional bytes to pipe via stdin.
         uid: If set, run the subprocess as this user ID.
         max_output_size: If > 0, truncate stdout/stderr to this many characters.
@@ -57,7 +57,9 @@ async def _run_subprocess(
 
     try:
         if shell:
-            proc = await asyncio.create_subprocess_shell(cmd, **kwargs)
+            # Use bash explicitly — /bin/sh is dash on Debian/Ubuntu and rejects
+            # bashisms (<<<, [[ ]], process substitution) that LLMs generate.
+            proc = await asyncio.create_subprocess_exec("bash", "-c", cmd, **kwargs)
         else:
             proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
