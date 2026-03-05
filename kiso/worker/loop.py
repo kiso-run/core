@@ -1458,8 +1458,32 @@ async def _run_planning_loop(
             "what_was_tried": tried,
         })
 
+        # Detect circular replanning: if last 2 failures share >60% of words
+        stuck_detected = False
+        if len(replan_history) >= 2:
+            prev = replan_history[-2]["failure"].lower().split()
+            curr = replan_history[-1]["failure"].lower().split()
+            if prev and curr:
+                overlap = len(set(prev) & set(curr))
+                ratio = overlap / max(len(set(prev)), len(set(curr)))
+                if ratio > 0.6:
+                    stuck_detected = True
+                    log.warning("Circular replan detected (%.0f%% word overlap): %s",
+                                ratio * 100, replan_reason)
+
         # Notify user about replan (as a visible msg task + webhook)
-        if is_self_directed:
+        if stuck_detected:
+            tried_summary = "; ".join(
+                f"{h['goal']}: {h['failure']}" for h in replan_history[-2:]
+            )
+            msg_text = (
+                f"I'm having trouble with this request. "
+                f"I've tried replanning {replan_depth} times but keep hitting "
+                f"the same issue: {replan_reason}\n"
+                f"Previous attempts: {tried_summary}\n"
+                f"Can you help me with more details or a different approach?"
+            )
+        elif is_self_directed:
             msg_text = f"Investigating... ({replan_depth}/{max_replan_depth})"
         else:
             msg_text = (
