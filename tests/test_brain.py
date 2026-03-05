@@ -2255,6 +2255,35 @@ class TestPlannerPromptContent:
         never_idx = prompt.index("NEVER use `kiso connector search`")
         assert "kiso skill search" in prompt[never_idx:never_idx + 200]
 
+    def test_m4_skill_reuse_rule(self):
+        """M4: planner must use listed skills directly without re-verification."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Skills section" in prompt
+        assert "confirmed installed" in prompt or "already-listed" in prompt
+
+    def test_m4_no_reinstall_listed_skills(self):
+        """M4: planner must not install skills already in Skills section."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "kiso skill install" in prompt
+        assert "already-listed" in prompt
+
+    def test_m4_replan_no_reverify(self):
+        """M4: planner must build on confirmed facts from plan_outputs, not re-verify."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "confirmed facts" in prompt.lower() or "confirmed fact" in prompt.lower()
+        assert "plan_outputs" in prompt
+
+    def test_m5_env_var_rule(self):
+        """M5: planner must only ask for env vars declared in [kiso.env]."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "[kiso.env]" in prompt
+        assert "absent or empty" in prompt
+
+    def test_m5_msg_after_tasks(self):
+        """M5: msg tasks must not presuppose results of tasks that haven't run."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "presuppose" in prompt
+
 
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
