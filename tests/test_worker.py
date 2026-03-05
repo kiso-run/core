@@ -5535,6 +5535,105 @@ class TestExtendReplan:
         # So we expect: plan 1 + 4 replans = 5 planner calls total
         assert len(planner_calls) == 5
 
+    async def test_extend_replan_cumulative_cap(self, db, tmp_path):
+        """Multiple plans each requesting extend_replan are capped at 3 total."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
+
+        fail_plan = {
+            "goal": "Will fail",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # First replan requests extend=2 → gets 2 (total_extensions=2)
+        extend2_plan = {
+            "goal": "Extends by 2",
+            "secrets": None,
+            "extend_replan": 2,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # Second replan requests extend=2 → gets only 1 (cap 3 - 2 used = 1 remaining)
+        extend2_again_plan = {
+            "goal": "Extends by 2 again",
+            "secrets": None,
+            "extend_replan": 2,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        # Third replan requests extend=2 → gets 0 (cap fully used)
+        extend2_third_plan = {
+            "goal": "Extends by 2 third time",
+            "secrets": None,
+            "extend_replan": 2,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        no_extend_plan = {
+            "goal": "No extend",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = []
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls.append(content)
+            n = len(planner_calls)
+            if n == 1:
+                return fail_plan          # initial plan, fails
+            elif n == 2:
+                return extend2_plan       # replan 1: requests +2, gets 2 (total=2, limit=3)
+            elif n == 3:
+                return extend2_again_plan # replan 2: requests +2, gets 1 (total=3, limit=4)
+            elif n == 4:
+                return extend2_third_plan # replan 3: requests +2, gets 0 (cap exhausted)
+            return no_extend_plan         # replan 4: no extend, keeps failing
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Failed after max depth"), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        # max_replan_depth starts at 1
+        # replan 1: +2 granted → limit=3
+        # replan 2: +1 granted (capped) → limit=4
+        # replan 3: +0 (cap exhausted) → limit=4
+        # replan 4: no extend → limit=4
+        # Total: plan 1 + 4 replans = 5 planner calls, then hits depth limit
+        assert len(planner_calls) == 5
+
 
 class TestDefaultMaxReplanDepth:
     """Test that the default max_replan_depth is 3."""

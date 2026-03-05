@@ -1374,6 +1374,7 @@ async def _run_planning_loop(
     current_plan_id = plan_id
     current_goal = plan["goal"]
     replan_depth = 0
+    total_extensions = 0
 
     while True:
         # --- Job timeout check ---
@@ -1548,13 +1549,19 @@ async def _run_planning_loop(
                 llm_calls=replan_planner_usage.get("calls"),
             )
 
-        # Handle extend_replan: planner can request up to +3 extra attempts
+        # Handle extend_replan: planner can request extra attempts, capped globally
         extend = new_plan.get("extend_replan")
         if extend and isinstance(extend, int) and extend > 0:
-            extend = min(extend, _MAX_EXTEND_REPLAN)
-            max_replan_depth += extend
-            log.info("Planner requested %d extra replan attempts (new limit: %d)",
-                     extend, max_replan_depth)
+            remaining_budget = _MAX_EXTEND_REPLAN - total_extensions
+            if remaining_budget <= 0:
+                log.info("Planner requested extend_replan=%d but global cap (%d) reached",
+                         extend, _MAX_EXTEND_REPLAN)
+            else:
+                extend = min(extend, remaining_budget)
+                total_extensions += extend
+                max_replan_depth += extend
+                log.info("Planner granted %d extra replan attempts (total extensions: %d/%d, new limit: %d)",
+                         extend, total_extensions, _MAX_EXTEND_REPLAN, max_replan_depth)
 
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
