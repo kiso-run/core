@@ -2252,6 +2252,21 @@ class TestExecTranslatorPromptContent:
         prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "Preceding Task Outputs" in prompt
 
+    def test_m139_bash_not_sh(self):
+        """M139: worker prompt references bash, not /bin/sh."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "Executed by bash" in prompt
+
+    def test_m140_large_output_files(self):
+        """M140: worker prompt mentions large output files."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "Full output saved to" in prompt
+
+    def test_m141_curl_follow_redirects(self):
+        """M141: worker prompt requires curl -L for redirects."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "curl -L" in prompt
+
 
 # --- Planner prompt content ---
 

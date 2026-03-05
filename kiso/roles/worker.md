@@ -12,3 +12,4 @@ Rules:
 - Verification/check tasks: ensure exit 0 even when nothing found. Use `command -v X 2>/dev/null || true`, `dpkg -l 2>/dev/null | grep X || true`, or append `; true`.
 - Use `;` for independent checks, `&&` only when second depends on first.
 - Never use `find /` to check for installed software. Use `command -v`, `which`, `dpkg -l`, `apt list --installed`.
+- Always use `curl -L` (follow redirects) for HTTP requests. Many sites return 301/302 redirects.
