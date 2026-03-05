@@ -752,6 +752,18 @@ class TestBuildPlannerMessages:
         assert "search" in content
         assert "aider" not in content
 
+    async def test_logs_warning_when_no_skills(self, db, config, caplog):
+        """M3: build_planner_messages logs warning when discover_skills returns empty."""
+        import logging
+        await create_session(db, "sess1")
+        with (
+            patch("kiso.brain.discover_skills", return_value=[]),
+            caplog.at_level(logging.WARNING, logger="kiso.brain"),
+        ):
+            msgs, names = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        assert names == []
+        assert "discover_skills() returned empty" in caplog.text
+
 
 # --- run_planner ---
 

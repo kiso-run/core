@@ -488,6 +488,8 @@ async def build_planner_messages(
 
     # Skill discovery — rescan on each planner call
     installed = discover_skills()
+    if not installed:
+        log.warning("discover_skills() returned empty — no skills available for planner")
     installed_names = [s["name"] for s in installed]
     skill_list = build_planner_skill_list(installed, user_role, user_skills)
     if skill_list:

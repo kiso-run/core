@@ -118,6 +118,10 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
         return cached[1]
 
     if not resolved_dir.is_dir():
+        log.warning(
+            "Skills directory not found: %s (exists=%s)",
+            resolved_dir, resolved_dir.exists(),
+        )
         return []
 
     skills: list[dict] = []

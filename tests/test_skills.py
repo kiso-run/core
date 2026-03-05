@@ -316,6 +316,12 @@ class TestDiscoverSkills:
         result = discover_skills(tmp_path / "nonexistent")
         assert result == []
 
+    def test_nonexistent_dir_logs_warning(self, tmp_path, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING, logger="kiso.skills"):
+            discover_skills(tmp_path / "missing_skills")
+        assert "Skills directory not found" in caplog.text
+
     def test_discovers_valid_skill(self, tmp_path):
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
