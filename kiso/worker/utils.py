@@ -240,6 +240,29 @@ def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
 _REPLAN_OUTPUT_LIMIT = 2000      # chars per exec/skill task output
 _REPLAN_SEARCH_OUTPUT_LIMIT = 2000  # chars per search task output
 _REPLAN_CONTEXT_CHAR_BUDGET = 20000  # ~5000 tokens total
+_LARGE_OUTPUT_THRESHOLD = 4096   # chars — above this, save to file
+_LARGE_OUTPUT_HEAD = 500         # chars to keep inline as preview
+
+
+def _save_large_output(session: str, task_index: int, output: str) -> str:
+    """Save large output to a workspace file; return replacement text with path.
+
+    If the output is below ``_LARGE_OUTPUT_THRESHOLD``, return it unchanged.
+    Otherwise write to ``{workspace}/.kiso/task_outputs/task_{index}.txt``
+    and return a short reference with the first ``_LARGE_OUTPUT_HEAD`` chars.
+    """
+    if len(output) <= _LARGE_OUTPUT_THRESHOLD:
+        return output
+    workspace = _session_workspace(session)
+    out_dir = workspace / ".kiso" / "task_outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"task_{task_index}.txt"
+    path.write_text(output, encoding="utf-8")
+    head = output[:_LARGE_OUTPUT_HEAD]
+    return (
+        f"[Full output saved to {path} ({len(output)} chars). "
+        f"Use cat/grep on this file to extract data.]\n{head}\n... (truncated)"
+    )
 
 
 def _smart_truncate(text: str, limit: int) -> str:

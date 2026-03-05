@@ -34,7 +34,7 @@ from kiso.worker import (
     _build_cancel_summary, _build_exec_env, _build_failure_summary,
     _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
     _report_pub_files, _run_subprocess, _skill_task, _session_workspace,
-    _ensure_sandbox_user, _truncate_output,
+    _ensure_sandbox_user, _truncate_output, _save_large_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
@@ -2304,6 +2304,60 @@ class TestMakePlanOutput:
         for task_type in ("exec", "msg", "skill", "search"):
             entry = _make_plan_output(1, task_type, "d", "o", "done")
             assert entry["type"] == task_type
+
+    def test_large_output_saved_to_file(self, tmp_path):
+        """M140: large outputs are saved to workspace files."""
+        big_output = "x" * 5000
+        with _patch_kiso_dir(tmp_path):
+            entry = _make_plan_output(3, "exec", "curl site", big_output, "done", session="test-sess")
+        assert "[Full output saved to" in entry["output"]
+        assert "5000 chars" in entry["output"]
+        # File actually exists
+        saved = tmp_path / "sessions" / "test-sess" / ".kiso" / "task_outputs" / "task_3.txt"
+        assert saved.exists()
+        assert saved.read_text() == big_output
+
+    def test_small_output_not_saved(self, tmp_path):
+        """M140: small outputs stay inline."""
+        small_output = "hello world"
+        with _patch_kiso_dir(tmp_path):
+            entry = _make_plan_output(1, "exec", "echo hi", small_output, "done", session="test-sess")
+        assert entry["output"] == small_output
+
+    def test_no_session_skips_save(self):
+        """M140: without session, large output stays inline (backward compat)."""
+        big_output = "x" * 5000
+        entry = _make_plan_output(1, "exec", "cmd", big_output, "done")
+        assert entry["output"] == big_output
+
+
+class TestSaveLargeOutput:
+    def test_below_threshold(self, tmp_path):
+        """Output below threshold returned unchanged."""
+        with _patch_kiso_dir(tmp_path):
+            result = _save_large_output("sess1", 1, "short output")
+        assert result == "short output"
+
+    def test_above_threshold_saved(self, tmp_path):
+        """Output above threshold saved to file, reference returned."""
+        big = "A" * 5000
+        with _patch_kiso_dir(tmp_path):
+            result = _save_large_output("sess1", 2, big)
+        assert "[Full output saved to" in result
+        assert "5000 chars" in result
+        assert "Use cat/grep" in result
+        # Verify head is included
+        assert "A" * 500 in result
+        # File on disk
+        path = tmp_path / "sessions" / "sess1" / ".kiso" / "task_outputs" / "task_2.txt"
+        assert path.read_text() == big
+
+    def test_exactly_at_threshold(self, tmp_path):
+        """Output exactly at threshold stays inline."""
+        text = "B" * 4096
+        with _patch_kiso_dir(tmp_path):
+            result = _save_large_output("sess1", 1, text)
+        assert result == text
 
 
 # --- _msg_task with plan_outputs ---

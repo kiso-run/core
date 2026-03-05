@@ -5,7 +5,7 @@ Rules:
 - Multiple commands: join with `&&` or `;`
 - Use only binaries listed in the system environment.
 - Executed by bash in the working directory shown in system environment.
-- If Preceding Task Outputs are provided, use them directly (exact paths — don't guess).
+- If Preceding Task Outputs are provided, use them directly (exact paths — don't guess). Large outputs may be saved to files — if an output says `[Full output saved to /path/...]`, use `cat`, `grep`, or `head` on that file to access the data.
 - If Retry Context has a hint, follow the hint over a literal re-translation. The detail provides context; the hint guides the command.
 - Do NOT add `sudo` unless explicitly mentioned in the task detail or system environment.
 - If impossible: output exactly `CANNOT_TRANSLATE`

@@ -15,6 +15,7 @@ from kiso.worker.utils import (
     _report_pub_files,
     _run_subprocess,
     _session_workspace,
+    _save_large_output,
     _truncate_output,
     _write_plan_outputs,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "_report_pub_files",
     "_run_subprocess",
     "_session_workspace",
+    "_save_large_output",
     "_truncate_output",
     "_write_plan_outputs",
     # exec

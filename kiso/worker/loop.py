@@ -114,6 +114,7 @@ from kiso.worker.utils import (
     _ensure_sandbox_user,
     _format_plan_outputs_for_msg,
     _report_pub_files,
+    _save_large_output,
     _session_workspace,
     _write_plan_outputs,
 )
@@ -593,8 +594,17 @@ class _TaskHandlerResult:
     plan_output: "dict | None" = None   # if set, append to ctx.plan_outputs
 
 
-def _make_plan_output(index: int, task_type: str, detail: str, output: str, status: str) -> dict:
-    """Build a plan-output entry dict (shared by all task handlers)."""
+def _make_plan_output(
+    index: int, task_type: str, detail: str, output: str, status: str,
+    session: str = "",
+) -> dict:
+    """Build a plan-output entry dict (shared by all task handlers).
+
+    When *session* is provided and *output* exceeds the large-output threshold,
+    the full output is saved to a workspace file and replaced with a reference.
+    """
+    if session:
+        output = _save_large_output(session, index, output)
     return {"index": index, "type": task_type, "detail": detail, "output": output, "status": status}
 
 
@@ -686,7 +696,7 @@ async def _handle_msg_task(
         await _store_step_usage(ctx.db, task_id, usage_idx_before)
         return _TaskHandlerResult(
             completed_row=task_row,
-            plan_output=_make_plan_output(i + 1, TASK_TYPE_MSG, detail, text, "done"),
+            plan_output=_make_plan_output(i + 1, TASK_TYPE_MSG, detail, text, "done", session=ctx.session),
         )
     except (LLMError, MessengerError) as e:
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
@@ -762,7 +772,8 @@ async def _handle_skill_task(
         ctx.slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
 
     plan_output_entry = _make_plan_output(
-        i + 1, "skill", detail, task_row.get("output") or "", task_row["status"]
+        i + 1, "skill", detail, task_row.get("output") or "", task_row["status"],
+        session=ctx.session,
     )
 
     review, review_error = await _run_review_step(ctx, task_row)
@@ -855,7 +866,7 @@ async def _handle_exec_task(
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
 
-        local_plan_output = _make_plan_output(i + 1, "exec", detail, stdout, status)
+        local_plan_output = _make_plan_output(i + 1, "exec", detail, stdout, status, session=ctx.session)
         await _write_plan_outputs(ctx.session, ctx.plan_outputs + [local_plan_output])
 
         review, review_error = await _run_review_step(ctx, task_row)
@@ -942,7 +953,7 @@ async def _handle_search_task(
 
         # Keep local state updated; DB write deferred until reviewer approves
         task_row = {**task_row, "output": search_result, "status": "done"}
-        local_plan_output = _make_plan_output(i + 1, "search", detail, search_result, "done")
+        local_plan_output = _make_plan_output(i + 1, "search", detail, search_result, "done", session=ctx.session)
 
         await _append_calls(ctx.db, task_id, idx_search)
 
