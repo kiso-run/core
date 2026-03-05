@@ -520,6 +520,7 @@ class _PollRenderState:
     max_task_id: int = 0
     shown_plan_id: int | None = None
     shown_plan_llm_count: int = 0
+    shown_plan_verbose_count: int = 0
     active_spinner_task: dict | None = None
     active_spinner_index: int = 0
     active_spinner_total: int = 0
@@ -788,6 +789,7 @@ def _render_plan_status(
             state.seen.clear()
             state.verbose_shown.clear()
             state.shown_plan_llm_count = 0
+            state.shown_plan_verbose_count = 0
             state.seen_any_task = False
 
     # Show plan-level LLM calls incrementally (classifier appears early, planner later)
@@ -798,9 +800,10 @@ def _render_plan_status(
             _clear_spinner()
             if verbose:
                 verbose_calls = [c for c in plan_calls if c.get("messages")]
-                new_calls = verbose_calls[state.shown_plan_llm_count:]
+                new_calls = verbose_calls[state.shown_plan_verbose_count:]
                 if new_calls:
                     _print_verbose_panels(new_calls, caps, state)
+                    state.shown_plan_verbose_count = len(verbose_calls)
             # Show summary line only when plan is no longer running
             if plan.get("status") not in ("running", "replanning"):
                 llm_detail = render_llm_calls(plan.get("llm_calls"), caps)

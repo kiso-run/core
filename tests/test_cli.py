@@ -2963,3 +2963,158 @@ def test_inflight_then_complete_skips_input_panel(capsys):
     assert " OUT " in out2
     # inflight_input_shown entry was consumed
     assert inflight_ts not in state.inflight_input_shown
+
+
+def test_classifier_and_planner_both_show_output(capsys):
+    """Both classifier and planner output panels render when llm_calls arrive together."""
+    import json as _json
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    ts_cls = 1700000001.0
+    ts_plan = 1700000002.0
+
+    # Phase 1: classifier inflight
+    state = _PollRenderState(seen={}, verbose_shown={})
+    data1 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "classifying",
+        "inflight_call": {
+            "role": "worker", "model": "deepseek/deepseek-v3.2",
+            "messages": [{"role": "user", "content": "CLASSIFIER_INPUT"}],
+            "ts": ts_cls,
+        },
+    }
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "CLASSIFIER_INPUT" in out1
+
+    # Phase 2: planner inflight (classifier done, no plan yet)
+    data2 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "planner", "model": "deepseek/deepseek-v3.2",
+            "messages": [{"role": "user", "content": "PLANNER_INPUT"}],
+            "ts": ts_plan,
+        },
+    }
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    assert "PLANNER_INPUT" in out2
+
+    # Phase 3: plan created with both calls in llm_calls
+    classifier_call = {
+        "role": "worker", "model": "deepseek/deepseek-v3.2",
+        "input_tokens": 157, "output_tokens": 2,
+        "messages": [{"role": "user", "content": "CLASSIFIER_INPUT"}],
+        "response": "CLASSIFIER_RESPONSE",
+        "ts": ts_cls, "duration_ms": 1200,
+    }
+    planner_call = {
+        "role": "planner", "model": "deepseek/deepseek-v3.2",
+        "input_tokens": 1000, "output_tokens": 300,
+        "messages": [{"role": "user", "content": "PLANNER_INPUT"}],
+        "response": "PLANNER_RESPONSE",
+        "ts": ts_plan, "duration_ms": 5000,
+    }
+    plan = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "Do stuff",
+        "llm_calls": _json.dumps([classifier_call, planner_call]),
+    }
+    data3 = {"plan": plan, "tasks": [], "worker_running": True, "worker_phase": "executing"}
+    _render_plan_status(data3, 1, False, True, caps, "Bot", state)
+    out3 = capsys.readouterr().out
+
+    # Both output panels must appear
+    assert "CLASSIFIER_RESPONSE" in out3, f"Classifier output missing from: {out3[:500]}"
+    assert "PLANNER_RESPONSE" in out3, f"Planner output missing from: {out3[:500]}"
+    # Input panels should NOT re-appear (already shown via inflight)
+    assert "CLASSIFIER_INPUT" not in out3
+    assert "PLANNER_INPUT" not in out3
+
+
+def test_classifier_output_shows_without_inflight(capsys):
+    """Classifier output panel renders even if inflight was not caught by polling."""
+    import json as _json
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+
+    # Scenario: first poll sees plan already created with both calls (inflight was missed)
+    classifier_call = {
+        "role": "worker", "model": "deepseek/deepseek-v3.2",
+        "input_tokens": 157, "output_tokens": 2,
+        "messages": [{"role": "user", "content": "CLASSIFIER_INPUT"}],
+        "response": "CLASSIFIER_OUTPUT",
+        "ts": 1700000001.0, "duration_ms": 1200,
+    }
+    planner_call = {
+        "role": "planner", "model": "deepseek/deepseek-v3.2",
+        "input_tokens": 1000, "output_tokens": 300,
+        "messages": [{"role": "user", "content": "PLANNER_INPUT"}],
+        "response": "PLANNER_OUTPUT",
+        "ts": 1700000002.0, "duration_ms": 5000,
+    }
+    plan = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "g",
+        "llm_calls": _json.dumps([classifier_call, planner_call]),
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    data = {"plan": plan, "tasks": [], "worker_running": True, "worker_phase": "executing"}
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out = capsys.readouterr().out
+
+    # Both calls should show full panels (input + output) since no inflight was seen
+    assert "CLASSIFIER_INPUT" in out
+    assert "CLASSIFIER_OUTPUT" in out
+    assert "PLANNER_INPUT" in out
+    assert "PLANNER_OUTPUT" in out
+
+
+# ── M128: verbose OUT panel counter mismatch ──────────────
+
+
+def test_verbose_panels_with_mixed_calls(capsys):
+    """Non-verbose calls between verbose calls should not skip OUT panels."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    import json as _json
+
+    verbose_call_1 = {
+        "role": "classifier",
+        "messages": [{"role": "user", "content": "CALL1_INPUT"}],
+        "response": "CALL1_OUTPUT",
+    }
+    # Non-verbose call (no messages key)
+    non_verbose_call = {
+        "role": "worker",
+        "input_tokens": 100,
+        "output_tokens": 50,
+    }
+    verbose_call_2 = {
+        "role": "planner",
+        "messages": [{"role": "user", "content": "CALL2_INPUT"}],
+        "response": "CALL2_OUTPUT",
+    }
+
+    # Poll 1: only first call (verbose)
+    state = _PollRenderState(seen={}, verbose_shown={})
+    plan1 = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "g",
+        "llm_calls": _json.dumps([verbose_call_1]),
+    }
+    data1 = {"plan": plan1, "tasks": [], "worker_running": True}
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "CALL1_INPUT" in out1
+
+    # Poll 2: all three calls (one verbose, one non-verbose, one verbose)
+    plan2 = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "g",
+        "llm_calls": _json.dumps([verbose_call_1, non_verbose_call, verbose_call_2]),
+    }
+    data2 = {"plan": plan2, "tasks": [], "worker_running": True}
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+
+    # The second verbose call should be rendered
+    assert "CALL2_INPUT" in out2
+    assert "CALL2_OUTPUT" in out2
+    # First verbose call should NOT be re-rendered
+    assert "CALL1_INPUT" not in out2
