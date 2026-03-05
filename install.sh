@@ -227,65 +227,72 @@ ask_bot_and_instance_name() {
     INST_NAME="$inst_name"
 }
 
+KISO_USER=""
 ask_username() {
-    local default_user kiso_user
+    local default_user
     default_user="$(whoami)"
     if [[ -n "$ARG_USER" ]]; then
         if [[ ! "$ARG_USER" =~ $USERNAME_RE ]]; then
             red "Error: username '$ARG_USER' is invalid (must match $USERNAME_RE)"
             exit 1
         fi
-        echo "$ARG_USER"
+        KISO_USER="$ARG_USER"
         return
     fi
+    local kiso_user
     while true; do
         read -rp "Username [$default_user]: " kiso_user
         kiso_user="${kiso_user:-$default_user}"
         if [[ "$kiso_user" =~ $USERNAME_RE ]]; then
-            echo "$kiso_user"
+            KISO_USER="$kiso_user"
             return
         fi
         red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
     done
 }
 
+PROVIDER_NAME=""
 ask_provider_name() {
     if [[ -n "$ARG_PROVIDER" ]]; then
-        echo "$ARG_PROVIDER"
+        PROVIDER_NAME="$ARG_PROVIDER"
         return
     fi
     local name
     read -rp "Provider name [openrouter]: " name
-    echo "${name:-openrouter}"
+    PROVIDER_NAME="${name:-openrouter}"
 }
 
+BASE_URL=""
 ask_base_url() {
     if [[ -n "$ARG_BASE_URL" ]]; then
-        echo "$ARG_BASE_URL"
+        BASE_URL="$ARG_BASE_URL"
         return
     fi
     local url
     read -rp "LLM provider URL [https://openrouter.ai/api/v1]: " url
-    echo "${url:-https://openrouter.ai/api/v1}"
+    BASE_URL="${url:-https://openrouter.ai/api/v1}"
 }
 
+API_KEY=""
 ask_api_key() {
     if [[ -n "$ARG_API_KEY" ]]; then
         echo "API key: (provided via --api-key)" >&2
-        echo "$ARG_API_KEY"
+        API_KEY="$ARG_API_KEY"
         return
     fi
+    local key
     while true; do
-        read -rsp "LLM API key for $base_url: " api_key
+        read -rsp "LLM API key for $BASE_URL: " key
         echo >&2
-        if [[ -n "$api_key" ]]; then
-            echo "$api_key"
+        if [[ -n "$key" ]]; then
+            API_KEY="$key"
             return
         fi
         red "  API key cannot be empty. Try again."
     done
 }
 
+MODELS_SECTION=""
 ask_models() {
     # Read model roles from Python source of truth (kiso.config)
     local roles=()
@@ -317,7 +324,7 @@ FALLBACK
             IFS='|' read -r role _ default <<< "$entry"
             result+="$role = \"$default\"\n"
         done
-        printf '%b' "$result"
+        MODELS_SECTION="$(printf '%b' "$result")"
         return
     fi
 
@@ -334,7 +341,7 @@ FALLBACK
         result+="$role = \"$choice\"\n"
         echo >&2
     done
-    printf '%b' "$result"
+    MODELS_SECTION="$(printf '%b' "$result")"
 }
 
 # ── Port auto-detection ────────────────────────────────────────────────────────
@@ -599,33 +606,33 @@ fi
 bold "Configuring..."
 mkdir -p "$INST_DIR"
 
-base_url=""  # set inside NEED_CONFIG block; used later for NEED_ENV prompt
+BASE_URL=""  # set inside NEED_CONFIG block; used later for NEED_ENV prompt
 
 if [[ "$NEED_CONFIG" == true ]]; then
-    kiso_user="$(ask_username)"
-    echo "  username: $kiso_user"
+    ask_username
+    echo "  username: $KISO_USER"
 
     bot_name="$BOT_NAME"
     echo "  bot name: $bot_name"
 
-    provider_name="$(ask_provider_name)"
-    echo "  provider: $provider_name"
+    ask_provider_name
+    echo "  provider: $PROVIDER_NAME"
 
-    base_url="$(ask_base_url)"
-    echo "  base url: $base_url"
+    ask_base_url
+    echo "  base url: $BASE_URL"
 
     token="$(generate_token)"
 
-    models_section="$(ask_models)"
+    ask_models
 
     config_body=$(cat <<PREVIEW
 [tokens]
 cli = "$token"
 
-[providers.$provider_name]
-base_url = "$base_url"
+[providers.$PROVIDER_NAME]
+base_url = "$BASE_URL"
 
-[users.$kiso_user]
+[users.$KISO_USER]
 role = "admin"
 
 [settings]
@@ -671,7 +678,7 @@ webhook_max_payload          = 1048576  # bytes
 webhook_allow_list           = []
 
 [models]
-$(printf '%b' "$models_section")
+$MODELS_SECTION
 PREVIEW
 )
 
@@ -687,21 +694,21 @@ PREVIEW
 fi
 echo
 
-base_url="${base_url:-https://openrouter.ai/api/v1}"
+BASE_URL="${BASE_URL:-https://openrouter.ai/api/v1}"
 
 if [[ "$NEED_ENV" == true ]]; then
-    api_key="$(ask_api_key)"
+    ask_api_key
 
     if [[ -f "$ENV_FILE" ]]; then
         bold "Updating $ENV_FILE..."
         tmpfile="$(mktemp)"
         grep -v '^KISO_LLM_API_KEY=' "$ENV_FILE" > "$tmpfile" || true
-        printf 'KISO_LLM_API_KEY=%s\n' "$api_key" >> "$tmpfile"
+        printf 'KISO_LLM_API_KEY=%s\n' "$API_KEY" >> "$tmpfile"
         mv "$tmpfile" "$ENV_FILE"
         green "  .env updated (other entries preserved)"
     else
         bold "Creating $ENV_FILE..."
-        printf 'KISO_LLM_API_KEY=%s\n' "$api_key" > "$ENV_FILE"
+        printf 'KISO_LLM_API_KEY=%s\n' "$API_KEY" > "$ENV_FILE"
         green "  .env created"
     fi
 
