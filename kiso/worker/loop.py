@@ -94,6 +94,7 @@ from kiso.store import (
     search_facts,
     update_fact_usage,
     update_learning,
+    update_plan_goal,
     update_plan_status,
     update_plan_usage,
     update_summary,
@@ -1613,8 +1614,7 @@ async def _handle_plan_error(
         fail_plan_id = await create_plan(db, session, msg_id, "Failed")
     else:
         fail_plan_id = plan_id
-        await db.execute("UPDATE plans SET goal = ? WHERE id = ?", ("Failed", fail_plan_id))
-        await db.commit()
+        await update_plan_goal(db, fail_plan_id, "Failed")
     fail_task_id = await create_task(db, fail_plan_id, session, TASK_TYPE_MSG, error_text)
     await update_task(db, fail_task_id, status="done", output=error_text)
     await update_plan_status(db, fail_plan_id, "failed")
@@ -1729,14 +1729,12 @@ async def _process_message(
         )
     except asyncio.TimeoutError:
         log.error("Planner timed out after %ds for session=%s msg=%d", planner_timeout, session, msg_id)
-        await update_plan_status(db, plan_id, "failed")
         await _handle_plan_error(db, config, session, msg_id,
                                  f"Planning timed out after {planner_timeout}s",
                                  plan_id=plan_id)
         return
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
-        await update_plan_status(db, plan_id, "failed")
         await _handle_plan_error(db, config, session, msg_id, f"Planning failed: {e}",
                                  plan_id=plan_id)
         return
@@ -1760,8 +1758,7 @@ async def _process_message(
             t["args"] = sanitize_output(t["args"], deploy_secrets, session_secrets)
 
     # Update plan with real goal and persist tasks
-    await db.execute("UPDATE plans SET goal = ? WHERE id = ?", (plan["goal"], plan_id))
-    await db.commit()
+    await update_plan_goal(db, plan_id, plan["goal"])
     await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
     log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan["tasks"]))
     if slog:

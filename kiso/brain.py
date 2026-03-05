@@ -565,10 +565,8 @@ async def classify_message(
     returns ``"plan"`` (safe fallback — the planner handles everything).
     """
     messages = build_classifier_messages(content)
-    # Use dedicated classifier model if configured, otherwise fall back to worker
-    role = "classifier" if config.models.get("classifier") else "worker"
     try:
-        raw = await call_llm(config, role, messages, session=session)
+        raw = await call_llm(config, "classifier", messages, session=session)
     except LLMError as e:
         log.warning("Classifier LLM failed, falling back to plan: %s", e)
         return "plan"

@@ -70,6 +70,7 @@ skills = "*"
 discord = "TestUser#1234"
 
 [models]
+classifier  = "test-classifier"
 planner     = "test-planner"
 reviewer    = "test-reviewer"
 curator     = "test-curator"

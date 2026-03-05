@@ -16,8 +16,9 @@ _MINIMAL_CONFIG = {
     "tokens": {"cli": "test-token"},
     "providers": {"openrouter": {"base_url": "https://example.com"}},
     "models": {
-        "planner": "m", "reviewer": "m", "curator": "m", "worker": "m",
-        "summarizer": "m", "paraphraser": "m", "messenger": "m", "searcher": "m",
+        "classifier": "m", "planner": "m", "reviewer": "m", "curator": "m",
+        "worker": "m", "summarizer": "m", "paraphraser": "m", "messenger": "m",
+        "searcher": "m",
     },
     "settings": {},
 }

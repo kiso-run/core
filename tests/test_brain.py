@@ -2511,14 +2511,14 @@ class TestClassifyMessage:
             result = await classify_message(config, "hello")
         assert result == "plan"
 
-    async def test_uses_worker_model(self):
-        """classify_message should call LLM with 'worker' role."""
+    async def test_uses_classifier_model(self):
+        """classify_message should call LLM with 'classifier' role."""
         config = _make_config_for_classifier()
         mock_llm = AsyncMock(return_value="chat")
         with patch("kiso.brain.call_llm", mock_llm):
             await classify_message(config, "hello", session="s1")
         mock_llm.assert_called_once()
-        assert mock_llm.call_args[0][1] == "worker"  # role argument
+        assert mock_llm.call_args[0][1] == "classifier"  # role argument
         assert mock_llm.call_args[1].get("session") == "s1"
 
 

@@ -643,6 +643,16 @@ async def update_plan_status(
     await db.commit()
 
 
+async def update_plan_goal(
+    db: aiosqlite.Connection, plan_id: int, goal: str
+) -> None:
+    """Update plan goal."""
+    await db.execute(
+        "UPDATE plans SET goal = ? WHERE id = ?", (goal, plan_id)
+    )
+    await db.commit()
+
+
 async def update_plan_usage(
     db: aiosqlite.Connection,
     plan_id: int,
