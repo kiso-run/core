@@ -2952,6 +2952,27 @@ class TestPlannerContextualRules:
         system = msgs[0]["content"]
         assert "Plugin installation (MANDATORY)" in system
 
+    async def test_not_installed_in_replan_injects_plugin_install(self, db):
+        """M123: replan context with 'not installed' should inject plugin-install appendix."""
+        replan_msg = (
+            "vorrei navigare su internet\n\n"
+            "## Failure Reason\nskill 'browser' is not installed. Available skills: none"
+        )
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin", replan_msg,
+        )
+        system = msgs[0]["content"]
+        assert "Plugin installation (MANDATORY)" in system
+
+    async def test_registry_keyword_injects_plugin_install(self, db):
+        """M123: message with 'registry' should inject plugin-install appendix."""
+        msgs, _ = await build_planner_messages(
+            db, self._config(), "test-session", "admin",
+            "check the registry for browser skill",
+        )
+        system = msgs[0]["content"]
+        assert "Plugin installation (MANDATORY)" in system
+
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
         msgs, _ = await build_planner_messages(

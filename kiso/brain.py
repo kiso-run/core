@@ -422,7 +422,12 @@ async def build_planner_messages(
         appendix_parts.append(_load_system_prompt("planner-user-mgmt"))
 
     _plugin_kw = {"install", "installa", "plugin", "add"}
-    if _plugin_kw & set(msg_lower.split()):
+    _plugin_install_needed = (
+        _plugin_kw & set(msg_lower.split())
+        or "not installed" in msg_lower
+        or "registry" in msg_lower
+    )
+    if _plugin_install_needed:
         appendix_parts.append(_load_system_prompt("planner-plugin-install"))
 
     if appendix_parts:
