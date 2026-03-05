@@ -656,3 +656,5 @@ HELP
         fi
         ;;
 esac
+
+exit 0
