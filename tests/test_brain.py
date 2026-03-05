@@ -3118,6 +3118,19 @@ class TestM106ReviewerExitCodeRules:
         assert "same output" in prompt.lower() or "retry" in prompt.lower()
 
 
+class TestM6ReviewerSubstanceOverFormat:
+    """M6: reviewer must accept correct check results regardless of output format."""
+
+    def test_substance_over_format_rule(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "substance" in prompt.lower()
+        assert "format" in prompt.lower()
+
+    def test_verification_ok_regardless_of_wording(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "regardless" in prompt.lower()
+
+
 class TestM106WorkerRobustCommands:
     """M106d: worker prompt includes robust command rules."""
 

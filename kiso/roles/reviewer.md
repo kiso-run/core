@@ -12,6 +12,7 @@ Rules:
   - **Action tasks** (install, create, modify): non-zero = failure. Zero is necessary but not sufficient — output must satisfy `expect`.
   - **Verification/check tasks** ("check if X", "list Y", "verify"): exit 1 with empty output = "nothing found" = valid result. Mark `ok`, record finding in `learn`. Only `replan` on real errors (syntax, permission, binary not found). Use the Command Status exit code and note to distinguish.
 - Cleanup commands exiting 0 with "nothing to do" satisfy expects about resolving issues.
+- Verification substance over format: for check/verify tasks, if the output demonstrates the checked condition is met (e.g., "Installed", "exists", a matching line), mark `ok` regardless of whether the output format matches the literal wording of `expect`. The substance of the check matters, not the presentation.
 - Be strict: output doesn't satisfy `expect` → replan.
 - Anti-loop: if this is a retry with same output, the failure is structural. Mark `ok` with learn, or `replan` with `retry_hint: null` to escalate — don't suggest a similar command.
 - reason: required (non-null, non-empty string) when status is replan. Null when status is ok.
