@@ -4,33 +4,53 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 
 ## Context per Role
 
-| Context piece | Planner | Reviewer | Exec Translator | Worker (msg) | Searcher | Summarizer | Curator | Paraphraser |
-|---|---|---|---|---|---|---|---|---|
-| Session summary | yes | - | - | yes | - | yes (existing) | yes | - |
-| Last N raw messages | yes | - | - | - | - | - | - | - |
-| Recent msg outputs | yes | - | - | - | - | - | - | - |
-| Paraphrased untrusted messages | yes | - | - | - | - | - | - | generates |
-| New message | yes | - | - | - | - | - | - | - |
-| Facts (session-scoped; admin sees all) | yes | - | - | yes | - | - | yes | - |
-| Pending items (global + session) | yes | - | - | - | - | - | yes | - |
-| Allowed skill summaries + args schemas | yes | - | - | - | - | - | - | - |
-| Caller role (admin/user) | yes | - | - | - | - | - | - | - |
-| System environment | yes | - | yes | - | - | - | - | - |
-| Plan context (goal) | generates | yes (as background) | - | - | - | - | - | - |
-| Preceding plan outputs (fenced) | - | - | yes | yes | yes | - | - | - |
-| Current task detail | - | yes | yes | yes | yes | - | - | - |
-| Current task expect | - | yes | - | - | - | - | - | - |
-| Current task output (fenced) | - | yes | - | - | - | - | - | - |
-| Original user request | - | yes | - | - | - | - | - | - |
-| Messages to compress + their msg outputs | - | - | - | - | - | yes | - | - |
-| Pending learnings | - | - | - | - | - | - | yes | - |
-| Completed tasks + outputs (fenced) | replan only | - | - | - | - | - | - | - |
-| Remaining tasks | replan only | - | - | - | - | - | - | - |
-| Failure reason | replan only | - | - | - | - | - | - | - |
-| Replan history | replan only | - | - | - | - | - | - | - |
-| Raw untrusted messages (batch) | - | - | - | - | - | - | - | yes |
+| Context piece | Classifier | Planner | Reviewer | Exec Translator | Worker (msg) | Searcher | Summarizer | Curator | Paraphraser |
+|---|---|---|---|---|---|---|---|---|---|
+| User message (raw) | yes | - | - | - | - | - | - | - | - |
+| Session summary | - | yes | - | - | yes | - | yes (existing) | yes | - |
+| Last N raw messages | - | yes | - | - | - | - | - | - | - |
+| Recent msg outputs | - | yes | - | - | - | - | - | - | - |
+| Paraphrased untrusted messages | - | yes | - | - | - | - | - | - | generates |
+| New message | - | yes | - | - | - | - | - | - | - |
+| Facts (session-scoped; admin sees all) | - | yes | - | - | yes | - | - | yes | - |
+| Pending items (global + session) | - | yes | - | - | - | - | - | yes | - |
+| Allowed skill summaries + args schemas | - | yes | - | - | - | - | - | - | - |
+| Caller role (admin/user) | - | yes | - | - | - | - | - | - | - |
+| System environment | - | yes | - | yes | - | - | - | - | - |
+| Plan context (goal) | - | generates | yes (as background) | - | - | - | - | - | - |
+| Preceding plan outputs (fenced) | - | - | - | yes | yes | yes | - | - | - |
+| Current task detail | - | - | yes | yes | yes | yes | - | - | - |
+| Current task expect | - | - | yes | - | - | - | - | - | - |
+| Current task output (fenced) | - | - | yes | - | - | - | - | - | - |
+| Original user request | - | - | yes | - | - | - | - | - | - |
+| Messages to compress + their msg outputs | - | - | - | - | - | - | yes | - | - |
+| Pending learnings | - | - | - | - | - | - | - | yes | - |
+| Completed tasks + outputs (fenced) | - | replan only | - | - | - | - | - | - | - |
+| Remaining tasks | - | replan only | - | - | - | - | - | - | - |
+| Failure reason | - | replan only | - | - | - | - | - | - | - |
+| Replan history | - | replan only | - | - | - | - | - | - | - |
+| Confirmed facts | - | replan only | - | - | - | - | - | - | - |
+| Raw untrusted messages (batch) | - | - | - | - | - | - | - | - | yes |
 
 Key principle: the planner must put everything the worker needs into the task `detail` — the worker won't see the conversation (see [Why the Worker Doesn't See the Conversation](#why-the-worker-doesnt-see-the-conversation)). For `exec` tasks, `detail` is a natural-language description; the **exec translator** (an LLM step) converts it to the actual shell command before execution (architect/editor pattern).
+
+---
+
+## Classifier
+
+**When**: a new message arrives and `fast_path_enabled` is true.
+
+**Input**: the user message (raw text), with a system prompt asking to return "plan" or "chat".
+
+**Output**: a single word — `"plan"` or `"chat"`.
+
+**Purpose**: skip the planner for purely conversational messages (greetings, thanks, follow-up questions). If the classifier returns `"chat"`, the message goes directly to the messenger (fast path). If `"plan"`, the full planning pipeline runs.
+
+**Model**: use a fast, cheap model — the task is trivially simple (one-word classification). Default: `deepseek/deepseek-chat`. Using a reasoning model here wastes time and tokens.
+
+**Fallback**: on LLM error, timeout, or ambiguous output, falls back to `"plan"` (safe — the planner handles everything).
+
+**Prompt file**: `kiso/roles/classifier.md`
 
 ---
 

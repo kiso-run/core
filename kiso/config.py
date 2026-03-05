@@ -61,7 +61,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "classifier": "deepseek/deepseek-v3.2",
+    "classifier": "deepseek/deepseek-chat",
     "planner": "deepseek/deepseek-v3.2",
     "reviewer": "deepseek/deepseek-v3.2",
     "curator": "deepseek/deepseek-v3.2",
@@ -92,7 +92,7 @@ role = "admin"
 # aliases.discord = "YourDiscordUser#1234"
 
 [models]
-classifier  = "deepseek/deepseek-v3.2"
+classifier  = "deepseek/deepseek-chat"
 planner     = "deepseek/deepseek-v3.2"
 reviewer    = "deepseek/deepseek-v3.2"
 curator     = "deepseek/deepseek-v3.2"

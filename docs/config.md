@@ -125,7 +125,7 @@ webhook_max_payload       = 1048576
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
 | `users.*.skills` | Required for `user` role. `"*"` for all skills, or a list of skill names. Ignored for admins (always all). |
-| `[models]` | All 8 roles required: `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`. |
+| `[models]` | All 9 roles required: `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
 | `[settings]` | All fields required. See table below. |
 
 ### Settings reference
