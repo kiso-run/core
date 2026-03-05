@@ -288,6 +288,7 @@ ask_api_key() {
 
 ask_models() {
     local roles=(
+        "classifier|classifies messages as plan or chat|deepseek/deepseek-chat"
         "planner|interprets requests, creates task plans|deepseek/deepseek-v3.2"
         "reviewer|checks task output, decides replan|deepseek/deepseek-v3.2"
         "worker|translates tasks to shell commands|deepseek/deepseek-v3.2"
