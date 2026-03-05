@@ -183,7 +183,7 @@ require_running() {
 # ── TTY / TERM env ───────────────────────────────────────────────────────────
 
 TTY_FLAGS=""
-[[ -t 0 && -t 1 ]] && TTY_FLAGS="-it"
+[[ -t 0 && -t 1 ]] && TTY_FLAGS="-it" || true
 TERM_ENV=(-e "TERM=${TERM:-xterm}" -e "COLORTERM=${COLORTERM:-}" -e "LANG=${LANG:-C.UTF-8}")
 
 # ── connector port assignment (post-install hook) ────────────────────────────
@@ -271,7 +271,7 @@ case "${1:-}" in
 
             create)
                 NAME="${2:-}"
-                [[ -z "$NAME" ]] && { echo "Usage: kiso instance create NAME" >&2; exit 1; }
+                if [[ -z "$NAME" ]]; then echo "Usage: kiso instance create NAME" >&2; exit 1; fi
                 validate_name "$NAME"
 
                 if _read_json | python3 -c "
@@ -429,7 +429,7 @@ PY
                 INST=$(resolve_instance "${2:-$EXPLICIT_INSTANCE}")
                 FORCE=""
                 for arg in "${@:3}"; do
-                    [[ "$arg" == "--yes" || "$arg" == "-y" ]] && FORCE="yes"
+                    [[ "$arg" == "--yes" || "$arg" == "-y" ]] && FORCE="yes" || true
                 done
                 if [[ -z "$FORCE" ]]; then
                     read -r -p "Remove instance '$INST' and ALL its data? This cannot be undone. [y/N] " confirm

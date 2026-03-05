@@ -63,10 +63,10 @@ cleanup() {
     if [[ -n "$CLEANUP_DIR" && -d "$CLEANUP_DIR" ]]; then
         rm -rf "$CLEANUP_DIR"
     fi
-    [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP"
-    [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP"
+    [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP" || true
+    [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP" || true
 }
-[[ "${KISO_INSTALL_LIB:-}" != "1" ]] && trap cleanup EXIT INT
+[[ "${KISO_INSTALL_LIB:-}" != "1" ]] && trap cleanup EXIT INT || true
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -361,7 +361,7 @@ PY
 
 # ── Source-only mode (for testing) ──────────────────────────────────────────
 # When KISO_INSTALL_LIB=1: functions are defined, main execution is skipped.
-[[ "${KISO_INSTALL_LIB:-}" == "1" ]] && return 0
+[[ "${KISO_INSTALL_LIB:-}" == "1" ]] && return 0 || true
 
 # ── 1. Check prerequisites ───────────────────────────────────────────────────
 
@@ -803,8 +803,8 @@ if [[ -n "$CONFIG_BACKUP" && ! -s "$CONFIG" ]]; then
     cp "$CONFIG_BACKUP" "$CONFIG"
     green "  config.toml restored"
 fi
-[[ -n "$ENV_BACKUP" ]] && rm -f "$ENV_BACKUP"
-[[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP"
+[[ -n "$ENV_BACKUP" ]] && rm -f "$ENV_BACKUP" || true
+[[ -n "$CONFIG_BACKUP" ]] && rm -f "$CONFIG_BACKUP" || true
 
 # ── 6c. Register instance ─────────────────────────────────────────────────────
 
@@ -864,8 +864,9 @@ green "  $INST_NAME is running!"
 echo
 echo "  Quick start:"
 echo "    kiso                           start chatting"
-[[ "$EXISTING_COUNT" -gt 0 ]] && \
+if [[ "$EXISTING_COUNT" -gt 0 ]]; then
 echo "    kiso --instance $INST_NAME      (specify instance if multiple exist)"
+fi
 echo "    kiso msg \"hello\"               send a message, get a response"
 echo "    kiso help                      show all commands"
 echo
