@@ -222,6 +222,10 @@ async def call_llm(
     # Stripped message list — computed lazily for inflight tracking and usage logging
     stripped_messages: list[dict] | None = None
 
+    # Timestamp shared between inflight tracking and usage logging so the CLI
+    # can correlate inflight input panels with completed call entries.
+    call_ts = time.time()
+
     # Track inflight call so the CLI can show it in real-time
     if session:
         stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
@@ -229,7 +233,7 @@ async def call_llm(
             "role": role,
             "model": model_name,
             "messages": stripped_messages,
-            "ts": time.time(),
+            "ts": call_ts,
         }
     try:
         if _http_client is not None:
@@ -318,7 +322,7 @@ async def call_llm(
             "thinking": thinking,
             "messages": stripped_messages,
             "response": content,
-            "ts": time.time(),
+            "ts": call_ts,
         })
 
     return content

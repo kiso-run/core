@@ -372,11 +372,12 @@ async def _fast_path_chat(
     content: str,
     messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
+    plan_id: int | None = None,
 ) -> int:
     """Fast path for chat messages: skip planner, go straight to messenger.
 
-    Creates a plan + msg task in the DB so the CLI renders normally and
-    ``/status`` works.  Delivers webhook if configured.
+    Reuses an existing plan (if *plan_id* given) or creates a new one so the
+    CLI renders normally and ``/status`` works.  Delivers webhook if configured.
 
     Returns the plan_id (used by caller for post-plan usage tracking).
 
@@ -387,7 +388,10 @@ async def _fast_path_chat(
        so chat-heavy sessions still trigger summarization.
     """
     deploy_secrets = collect_deploy_secrets()
-    plan_id = await create_plan(db, session, msg_id, "Chat response")
+    if plan_id is None:
+        plan_id = await create_plan(db, session, msg_id, "Chat response")
+    else:
+        await update_plan_goal(db, plan_id, "Chat response")
     task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, content)
     await update_task(db, task_id, "running")
     await update_task_substatus(db, task_id, _SUBSTATUS_COMPOSING)
@@ -1664,6 +1668,10 @@ async def _process_message(
     # Paraphraser is intentionally skipped here — the messenger only sees
     # session summary + facts + the current user message (all trusted).
     # Untrusted messages feed into planner context, not messenger context.
+    # Create plan record before classifier so the CLI can render it immediately.
+    # This ensures the plan header appears before inflight indicators.
+    plan_id = await create_plan(db, session, msg_id, "Planning...")
+
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     if fast_path_enabled:
         _phase(WORKER_PHASE_CLASSIFYING)
@@ -1684,6 +1692,7 @@ async def _process_message(
             fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content,
                 messenger_timeout=messenger_timeout, slog=slog,
+                plan_id=plan_id,
             )
             # Bump fact usage for fast path (facts contributed to chat response)
             await _bump_fact_usage(db, content, session, user_role)
@@ -1691,9 +1700,6 @@ async def _process_message(
             clear_llm_budget()
             _phase(WORKER_PHASE_IDLE)
             return _spawn_knowledge_task(db, config, session, fast_plan_id, exec_timeout)
-
-    # Create plan record early so classifier usage is visible to the CLI
-    plan_id = await create_plan(db, session, msg_id, "Planning...")
 
     # Store classifier usage immediately so verbose panels can render
     classifier_usage = get_usage_since(0)
