@@ -99,6 +99,7 @@ summarizer  = "deepseek/deepseek-v3.2"
 paraphraser = "deepseek/deepseek-v3.2"
 messenger   = "deepseek/deepseek-v3.2"
 searcher    = "perplexity/sonar"
+# classifier = "deepseek/deepseek-v3.2"  # optional; falls back to worker model
 
 [settings]
 # --- conversation ---

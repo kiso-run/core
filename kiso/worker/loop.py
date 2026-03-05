@@ -1606,9 +1606,15 @@ async def _handle_plan_error(
     session: str,
     msg_id: int,
     error_text: str,
+    plan_id: int | None = None,
 ) -> None:
     """Persist a planning failure: create failed plan+task, save message, deliver webhook."""
-    fail_plan_id = await create_plan(db, session, msg_id, "Failed")
+    if plan_id is None:
+        fail_plan_id = await create_plan(db, session, msg_id, "Failed")
+    else:
+        fail_plan_id = plan_id
+        await db.execute("UPDATE plans SET goal = ? WHERE id = ?", ("Failed", fail_plan_id))
+        await db.commit()
     fail_task_id = await create_task(db, fail_plan_id, session, TASK_TYPE_MSG, error_text)
     await update_task(db, fail_task_id, status="done", output=error_text)
     await update_plan_status(db, fail_plan_id, "failed")
@@ -1686,6 +1692,19 @@ async def _process_message(
             _phase(WORKER_PHASE_IDLE)
             return _spawn_knowledge_task(db, config, session, fast_plan_id, exec_timeout)
 
+    # Create plan record early so classifier usage is visible to the CLI
+    plan_id = await create_plan(db, session, msg_id, "Planning...")
+
+    # Store classifier usage immediately so verbose panels can render
+    classifier_usage = get_usage_since(0)
+    if classifier_usage["input_tokens"] or classifier_usage["output_tokens"]:
+        await update_plan_usage(
+            db, plan_id,
+            classifier_usage["input_tokens"], classifier_usage["output_tokens"],
+            classifier_usage["model"],
+            llm_calls=classifier_usage.get("calls"),
+        )
+
     # Paraphraser — fetch untrusted messages, paraphrase if any
     paraphrased_context: str | None = None
     untrusted = await get_untrusted_messages(db, session)
@@ -1698,6 +1717,7 @@ async def _process_message(
 
     # Plan
     _phase(WORKER_PHASE_PLANNING)
+    planner_usage_idx = get_usage_index()
     try:
         plan = await asyncio.wait_for(
             run_planner(
@@ -1709,13 +1729,16 @@ async def _process_message(
         )
     except asyncio.TimeoutError:
         log.error("Planner timed out after %ds for session=%s msg=%d", planner_timeout, session, msg_id)
+        await update_plan_status(db, plan_id, "failed")
         await _handle_plan_error(db, config, session, msg_id,
-                                 f"Planning timed out after {planner_timeout}s")
+                                 f"Planning timed out after {planner_timeout}s",
+                                 plan_id=plan_id)
         return
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
-        # Create a failed plan + msg task so the CLI can detect the failure
-        await _handle_plan_error(db, config, session, msg_id, f"Planning failed: {e}")
+        await update_plan_status(db, plan_id, "failed")
+        await _handle_plan_error(db, config, session, msg_id, f"Planning failed: {e}",
+                                 plan_id=plan_id)
         return
 
     # Extract ephemeral secrets from plan
@@ -1736,20 +1759,22 @@ async def _process_message(
         if t.get("args"):
             t["args"] = sanitize_output(t["args"], deploy_secrets, session_secrets)
 
-    plan_id = await create_plan(db, session, msg_id, plan["goal"])
+    # Update plan with real goal and persist tasks
+    await db.execute("UPDATE plans SET goal = ? WHERE id = ?", (plan["goal"], plan_id))
+    await db.commit()
     await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
     log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan["tasks"]))
     if slog:
         slog.info("Plan %d created: %s (%d tasks)", plan_id, plan["goal"], len(plan["tasks"]))
 
-    # Store planner usage immediately so the CLI can display it with the plan header
-    planner_usage = get_usage_since(0)
-    if planner_usage["input_tokens"] or planner_usage["output_tokens"]:
+    # Store planner usage (incremental from planner_usage_idx) merged with classifier
+    all_usage = get_usage_since(0)
+    if all_usage["input_tokens"] or all_usage["output_tokens"]:
         await update_plan_usage(
             db, plan_id,
-            planner_usage["input_tokens"], planner_usage["output_tokens"],
-            planner_usage["model"],
-            llm_calls=planner_usage.get("calls"),
+            all_usage["input_tokens"], all_usage["output_tokens"],
+            all_usage["model"],
+            llm_calls=all_usage.get("calls"),
         )
 
     # Execute with replan loop
