@@ -346,7 +346,9 @@ def validate_plan(
                 available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
                 errors.append(
                     f"Task {i}: skill '{skill_name}' is not installed. "
-                    f"Available skills: {available}"
+                    f"Available skills: {available}. "
+                    f"Use an exec task with `kiso skill install {skill_name}` "
+                    f"to install it first, then replan to use it."
                 )
 
     if replan_count > 1:
