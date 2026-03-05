@@ -606,14 +606,11 @@ def test_connector_install_already_installed(tmp_path, mock_admin, capsys):
     connectors_dir.mkdir()
     (connectors_dir / "discord").mkdir()
 
-    with (
-        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-        pytest.raises(SystemExit, match="1"),
-    ):
+    with patch("cli.connector.CONNECTORS_DIR", connectors_dir):
         args = argparse.Namespace(
             target="discord", name=None, no_deps=False, show_deps=False,
         )
-        _connector_install(args)
+        _connector_install(args)  # should NOT raise SystemExit
 
     out = capsys.readouterr().out
     assert "already installed" in out

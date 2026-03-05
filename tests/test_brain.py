@@ -2268,9 +2268,9 @@ class TestPlannerPromptContent:
         assert "confirmed installed" in prompt or "already-listed" in prompt
 
     def test_m4_no_reinstall_listed_skills(self):
-        """M4: planner must not install skills already in Skills section."""
+        """M4: planner must not reinstall skills already in Skills section."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "kiso skill install" in prompt
+        assert "reinstall" in prompt
         assert "already-listed" in prompt
 
     def test_m4_replan_no_reverify(self):

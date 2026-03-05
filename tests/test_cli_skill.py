@@ -590,14 +590,11 @@ def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
     skills_dir.mkdir()
     (skills_dir / "search").mkdir()
 
-    with (
-        patch("cli.skill.SKILLS_DIR", skills_dir),
-        pytest.raises(SystemExit, match="1"),
-    ):
+    with patch("cli.skill.SKILLS_DIR", skills_dir):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         )
-        _skill_install(args)
+        _skill_install(args)  # should NOT raise SystemExit
 
     out = capsys.readouterr().out
     assert "already installed" in out

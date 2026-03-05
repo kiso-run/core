@@ -181,8 +181,8 @@ def _plugin_install(
     plugin_dir = parent_dir / name
 
     if plugin_dir.exists():
-        print(f"error: {plugin_type} '{name}' is already installed at {plugin_dir}")
-        sys.exit(1)
+        print(f"{plugin_type.capitalize()} '{name}' is already installed at {plugin_dir}")
+        return  # idempotent — desired state achieved
 
     try:
         parent_dir.mkdir(parents=True, exist_ok=True)

@@ -31,7 +31,7 @@ Rules:
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks to keep user informed.
 
 Skills efficiency:
-- When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or `kiso skill install` tasks for already-listed skills.
+- When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or reinstall tasks for already-listed skills.
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
 - Do not create msg tasks that presuppose specific task results before those tasks have run. Place msg tasks after the tasks whose output they summarize.
 - Replan context: if a previous plan already confirmed a fact (skill installed, env var set, binary available), do not re-verify it. Build on confirmed facts from plan_outputs.
