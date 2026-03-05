@@ -1114,8 +1114,8 @@ def test_render_llm_calls_verbose_invalid_json():
     assert render_llm_calls_verbose("not json", _COLOR) == ""
 
 
-def test_render_llm_calls_verbose_separator():
-    """A visual separator line appears between input messages and response."""
+def test_render_llm_calls_verbose_split_panels():
+    """Input and output are in separate panels (no combined separator)."""
     import json
     calls = [
         {
@@ -1130,14 +1130,63 @@ def test_render_llm_calls_verbose_separator():
             "response": "here is the plan",
         },
     ]
-    # Unicode mode — separator uses ─
+    # Unicode mode — two panels with IN / OUT direction labels
     result = render_llm_calls_verbose(json.dumps(calls), _COLOR)
-    assert "\u2500\u2500\u2500 response " in result
+    assert ") IN" in result   # direction label in input panel title
+    assert ") OUT" in result  # direction label in output panel title
     assert "You are helpful" in result
     assert "here is the plan" in result
-    # ASCII mode — separator uses -
+    # Old combined separator must be gone
+    assert "\u2500\u2500\u2500 response " not in result
+    # ASCII mode
     result_ascii = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
-    assert "--- response " in result_ascii
+    assert ") IN" in result_ascii
+    assert ") OUT" in result_ascii
+    assert "--- response " not in result_ascii
+
+
+def test_render_llm_calls_verbose_input_only_in_input_panel():
+    """Input panel contains messages, output panel does not."""
+    import json
+    calls = [
+        {
+            "role": "reviewer",
+            "model": "test/m",
+            "input_tokens": 200,
+            "output_tokens": 30,
+            "messages": [{"role": "user", "content": "UNIQUE_INPUT_MARKER"}],
+            "response": "UNIQUE_OUTPUT_MARKER",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
+    # Both markers present overall
+    assert "UNIQUE_INPUT_MARKER" in result
+    assert "UNIQUE_OUTPUT_MARKER" in result
+    # Input marker appears before OUT direction label, output marker after
+    in_pos = result.index("UNIQUE_INPUT_MARKER")
+    out_label_pos = result.index(") OUT")
+    out_pos = result.index("UNIQUE_OUTPUT_MARKER")
+    assert in_pos < out_label_pos < out_pos
+
+
+def test_render_llm_calls_verbose_summary_between_panels():
+    """A compact summary line with tokens appears between the two panels."""
+    import json
+    calls = [
+        {
+            "role": "translator",
+            "model": "deepseek/deepseek-v3",
+            "input_tokens": 300,
+            "output_tokens": 45,
+            "messages": [{"role": "user", "content": "hi"}],
+            "response": "hello",
+        },
+    ]
+    result = render_llm_calls_verbose(json.dumps(calls), _PLAIN)
+    # Summary line should contain token counts and model
+    assert "300" in result
+    assert "45" in result
+    assert "deepseek-v3" in result
 
 
 def test_render_llm_calls_verbose_escapes_markup():
@@ -1160,7 +1209,7 @@ def test_render_llm_calls_verbose_escapes_markup():
 
 
 def test_render_llm_calls_verbose_thinking_panel():
-    """Thinking block displayed between separator and response when present."""
+    """Thinking block displayed in output panel before response."""
     import json
     calls = [
         {
@@ -1177,11 +1226,10 @@ def test_render_llm_calls_verbose_thinking_panel():
     assert "reasoning" in result
     assert "let me think step by step..." in result
     assert "the answer is 42" in result
-    # Thinking appears after separator, before response
-    sep_pos = result.index("response")
+    # Thinking appears before response in the output panel
     think_pos = result.index("reasoning")
     answer_pos = result.index("the answer is 42")
-    assert sep_pos < think_pos < answer_pos
+    assert think_pos < answer_pos
 
 
 def test_render_llm_calls_verbose_thinking_absent():
