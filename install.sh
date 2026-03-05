@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Global error handler — ensures unexpected failures always show context
+# instead of silently closing the terminal.
+_on_error() {
+    local exit_code=$?
+    printf '\n\033[0;31mError: command failed (exit %d):\n  %s\033[0m\n' \
+        "$exit_code" "${BASH_COMMAND:-unknown}" >&2
+    printf '\n\033[0;31mIf this looks like a bug, please report it at:\n  https://github.com/kiso-run/core/issues\033[0m\n\n' >&2
+}
+trap _on_error ERR
+
 # ── Kiso installer ────────────────────────────────────────────────────────────
 # Works two ways:
 #   1. bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)

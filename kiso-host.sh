@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 trap 'printf "\nInterrupted.\n" >&2; exit 130' INT
+trap 'printf "\n\033[0;31mError: command failed (exit %d):\n  %s\033[0m\n" "$?" "${BASH_COMMAND:-unknown}" >&2' ERR
 
 # ── kiso host wrapper ────────────────────────────────────────────────────────
 # Multi-instance wrapper: manages named Docker containers (kiso-{NAME}).
