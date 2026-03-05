@@ -2983,6 +2983,25 @@ class TestPlannerContextualRules:
         system = msgs[0]["content"]
         assert "Plugin installation (MANDATORY)" in system
 
+    async def test_no_skills_injects_plugin_install(self, db):
+        """M129: when no skills are installed, always inject plugin-install appendix."""
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _ = await build_planner_messages(
+                db, self._config(), "test-session", "admin", "what time is it",
+            )
+        system = msgs[0]["content"]
+        assert "Plugin installation (MANDATORY)" in system
+
+    async def test_no_skills_no_duplicate_appendix(self, db):
+        """M129: if keyword already triggered plugin-install, no duplicate on empty skills."""
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _ = await build_planner_messages(
+                db, self._config(), "test-session", "admin", "install the browser skill",
+            )
+        system = msgs[0]["content"]
+        # Should appear exactly once
+        assert system.count("Plugin installation (MANDATORY)") == 1
+
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
         msgs, _ = await build_planner_messages(

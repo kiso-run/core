@@ -497,6 +497,8 @@ async def build_planner_messages(
     installed = discover_skills()
     if not installed:
         log.warning("discover_skills() returned empty — no skills available for planner")
+        if not _plugin_install_needed:
+            system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
     installed_names = [s["name"] for s in installed]
     skill_list = build_planner_skill_list(installed, user_role, user_skills)
     if skill_list:
