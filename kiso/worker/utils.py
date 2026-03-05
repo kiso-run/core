@@ -231,9 +231,20 @@ def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
-_REPLAN_OUTPUT_LIMIT = 200       # chars per exec/skill task output
-_REPLAN_SEARCH_OUTPUT_LIMIT = 1000  # chars per search task output
-_REPLAN_CONTEXT_CHAR_BUDGET = 12000  # ~3000 tokens total
+_REPLAN_OUTPUT_LIMIT = 2000      # chars per exec/skill task output
+_REPLAN_SEARCH_OUTPUT_LIMIT = 2000  # chars per search task output
+_REPLAN_CONTEXT_CHAR_BUDGET = 20000  # ~5000 tokens total
+
+
+def _smart_truncate(text: str, limit: int) -> str:
+    """Truncate *text* to *limit* chars, cutting at a newline boundary."""
+    if len(text) <= limit:
+        return text
+    # Find last newline within limit
+    cut = text.rfind("\n", 0, limit)
+    if cut <= 0:
+        cut = limit
+    return text[:cut] + "\n... (truncated)"
 
 
 def _build_replan_context(
@@ -254,7 +265,8 @@ def _build_replan_context(
                 # Over budget — summarize remaining as one-liners
                 items.append(f"- [{t['type']}] {t['detail']}: {t['status']}")
                 continue
-            out = (t.get("output") or "")[:limit]
+            raw_out = t.get("output") or ""
+            out = _smart_truncate(raw_out, limit)
             out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
             item = f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}"
             items.append(item)
