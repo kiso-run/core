@@ -5264,11 +5264,13 @@ class TestBuildExecEnv:
             env = _build_exec_env()
         assert env["PATH"].startswith(str(sys_bin) + ":")
 
-    def test_home_set_to_kiso_dir(self, tmp_path):
-        """HOME is always set to KISO_DIR."""
+    def test_home_set_to_real_home(self, tmp_path):
+        """HOME is set to the real home directory, not KISO_DIR."""
         with _patch_kiso_dir(tmp_path):
             env = _build_exec_env()
-        assert env["HOME"] == str(tmp_path)
+        # Must be the real home, not KISO_DIR (tmp_path), to avoid double .kiso nesting
+        assert env["HOME"] == str(Path.home())
+        assert env["HOME"] != str(tmp_path)
 
     def test_git_config_global_when_exists(self, tmp_path):
         """GIT_CONFIG_GLOBAL is set when sys/gitconfig exists."""

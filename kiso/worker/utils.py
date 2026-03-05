@@ -159,7 +159,8 @@ def _build_exec_env() -> dict[str, str]:
     listed below are passed to the child:
 
     - PATH: prepend sys/bin if it exists
-    - HOME: set to KISO_DIR (for tools that need ~)
+    - HOME: real home directory (so ``Path.home() / ".kiso"`` resolves correctly
+      in child processes like ``kiso skill install``)
     - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists
     - GIT_SSH_COMMAND: use sys/ssh config if it exists
     """
@@ -174,7 +175,10 @@ def _build_exec_env() -> dict[str, str]:
     else:
         env["PATH"] = base_path
 
-    env["HOME"] = str(KISO_DIR)
+    # Use the real home directory, NOT KISO_DIR. If HOME were set to KISO_DIR
+    # (/root/.kiso inside Docker), any child process computing
+    # Path.home() / ".kiso" would resolve to /root/.kiso/.kiso (double nesting).
+    env["HOME"] = str(Path.home())
 
     gitconfig = sys_dir / "gitconfig"
     if gitconfig.is_file():
