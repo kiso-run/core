@@ -7651,7 +7651,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", msg_id, "hello",
                 plan_id, plan, "admin", None, 5, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 10, 3, 600, None, None,
             )
 
         assert returned_id == plan_id
@@ -7680,7 +7680,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, plan, "admin", None, 5, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 10, 3, 600, None, None,
             )
 
         assert returned_id == plan_id
@@ -7752,7 +7752,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, fail_plan, "admin", None, 5, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 10, 3, 600, None, None,
             )
 
         # The old plan must have been "replanning" when the new plan was created
@@ -7776,6 +7776,42 @@ class TestRunPlanningLoop:
         )
         row = await cur.fetchone()
         assert row[0] == "done"
+
+
+class TestJobTimeout:
+    """M125: total job wall-clock timeout."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_job_timeout_triggers_failure(self, db, tmp_path):
+        """When wall-clock exceeds job_timeout, loop breaks with failure."""
+        plan = VALID_PLAN
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = _make_config()
+
+        # Make time.monotonic() return a value past timeout on first check
+        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="timed out"), \
+             patch("kiso.worker.loop.time") as mock_time, \
+             _patch_kiso_dir(tmp_path):
+            # First call (job_start), second call (check) is way past timeout
+            mock_time.monotonic.side_effect = [0.0, 9999.0]
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 5, 30,
+                {}, None, 10, 3, 600, None, None,
+            )
+
+        from kiso.store import get_plan_for_session
+        p = await get_plan_for_session(db, "sess1")
+        assert p["status"] == "failed"
 
 
 # ---------------------------------------------------------------------------

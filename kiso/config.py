@@ -36,6 +36,8 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "max_validation_retries": 3,
     "max_plan_tasks": 20,
     # execution
+    "classifier_timeout": 30,
+    "job_timeout": 600,
     "exec_timeout": 120,
     "planner_timeout": 300,
     "messenger_timeout": 120,
@@ -118,6 +120,8 @@ max_validation_retries    = 3
 max_plan_tasks            = 20
 
 # --- execution ---
+classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
+job_timeout               = 600      # seconds; total wall-clock limit for a single message (plan + replans)
 exec_timeout              = 120      # seconds; also used for post-plan LLM calls
 planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
 messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)

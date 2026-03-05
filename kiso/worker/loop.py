@@ -1171,6 +1171,7 @@ async def run_worker(
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
+    classifier_timeout = setting_int(config.settings, "classifier_timeout", lo=1)
     exec_timeout = setting_int(config.settings, "exec_timeout", lo=1)
     planner_timeout = setting_int(config.settings, "planner_timeout", lo=1)
     messenger_timeout = setting_int(config.settings, "messenger_timeout", lo=1)
@@ -1205,7 +1206,8 @@ async def run_worker(
                 _pending_knowledge_task = await _process_message(
                     db, config, session, msg, cancel_event,
                     exec_timeout, planner_timeout,
-                    max_replan_depth, messenger_timeout=messenger_timeout,
+                    max_replan_depth, classifier_timeout=classifier_timeout,
+                    messenger_timeout=messenger_timeout,
                     slog=slog, set_phase=set_phase)
             except Exception:
                 log.exception("Unexpected error processing message in session=%s", session)
@@ -1357,6 +1359,7 @@ async def _run_planning_loop(
     cancel_event: "asyncio.Event | None",
     planner_timeout: int,
     max_replan_depth: int,
+    job_timeout: int,
     username: "str | None",
     slog: "SessionLogger | None",
     set_phase: "Callable[[str], None] | None" = None,
@@ -1366,12 +1369,25 @@ async def _run_planning_loop(
         if set_phase is not None:
             set_phase(p)
 
+    job_start = time.monotonic()
     replan_history: list[dict] = []
     current_plan_id = plan_id
     current_goal = plan["goal"]
     replan_depth = 0
 
     while True:
+        # --- Job timeout check ---
+        elapsed = time.monotonic() - job_start
+        if elapsed > job_timeout:
+            log.warning("Job timeout (%ds) reached for session=%s after %.0fs",
+                        job_timeout, session, elapsed)
+            await _handle_loop_failure(
+                db, config, session, current_plan_id, [], [], current_goal,
+                messenger_timeout=messenger_timeout,
+                reason=f"Job timeout ({job_timeout}s) reached after {int(elapsed)}s.",
+                session_secrets=session_secrets,
+            )
+            break
         success, replan_reason, completed, remaining = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
             content, exec_timeout, messenger_timeout=messenger_timeout,
@@ -1575,6 +1591,7 @@ async def _process_message(
     exec_timeout: int,
     planner_timeout: int,
     max_replan_depth: int,
+    classifier_timeout: int = 30,
     messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
     set_phase: Callable[[str], None] | None = None,
@@ -1610,10 +1627,11 @@ async def _process_message(
         try:
             msg_class = await asyncio.wait_for(
                 classify_message(config, content, session=session),
-                timeout=15,  # classifier must be fast; fallback to planner on timeout
+                timeout=classifier_timeout,
             )
         except asyncio.TimeoutError:
-            log.warning("Classifier timed out after 15s, falling back to planner")
+            log.warning("Classifier timed out after %ds, falling back to planner",
+                        classifier_timeout)
             msg_class = "plan"
         if msg_class == "chat":
             log.info("Fast path: chat message, skipping planner")
@@ -1699,11 +1717,12 @@ async def _process_message(
 
     # Execute with replan loop
     _phase(WORKER_PHASE_EXECUTING)
+    job_timeout = setting_int(config.settings, "job_timeout", lo=1)
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
         plan_id, plan, user_role, user_skills, exec_timeout, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
-        username, slog, set_phase=set_phase,
+        job_timeout, username, slog, set_phase=set_phase,
     )
 
     # --- Store token usage on the final plan ---
