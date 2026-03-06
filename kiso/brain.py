@@ -294,6 +294,7 @@ def validate_plan(
     installed_skills: list[str] | None = None,
     max_tasks: int | None = None,
     installed_skills_info: dict[str, dict] | None = None,
+    is_replan: bool = False,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
@@ -301,7 +302,11 @@ def validate_plan(
     If max_tasks is provided, plans with more tasks are rejected.
     If installed_skills_info is provided (name→skill dict), skill args are
     validated against the schema at plan time (M166).
+    If is_replan is False, extend_replan is stripped (M171).
     """
+    # Strip extend_replan from initial plans (M171)
+    if not is_replan:
+        plan.pop("extend_replan", None)
     errors: list[str] = []
     tasks = plan.get("tasks", [])
 

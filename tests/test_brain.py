@@ -2473,6 +2473,41 @@ class TestM166ValidatePlanSkillArgs:
         assert not errors
 
 
+class TestM171StripExtendReplan:
+    """M171: strip extend_replan from initial plan."""
+
+    def test_extend_replan_stripped_from_initial_plan(self):
+        plan = {
+            "extend_replan": 3,
+            "tasks": [
+                {"type": "msg", "detail": "hello", "expect": None, "skill": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, is_replan=False)
+        assert not errors
+        assert "extend_replan" not in plan
+
+    def test_extend_replan_preserved_on_replan(self):
+        plan = {
+            "extend_replan": 2,
+            "tasks": [
+                {"type": "msg", "detail": "hello", "expect": None, "skill": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, is_replan=True)
+        assert not errors
+        assert plan.get("extend_replan") == 2
+
+    def test_no_extend_replan_no_error(self):
+        plan = {
+            "tasks": [
+                {"type": "msg", "detail": "hello", "expect": None, "skill": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, is_replan=False)
+        assert not errors
+
+
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
 
