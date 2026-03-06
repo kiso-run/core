@@ -5,7 +5,7 @@ Produce a JSON plan with: goal (string), secrets (null or [{key, value}]), tasks
 Task types:
 - exec: shell command. detail = what to accomplish (natural language; a translator converts it). expect = success criteria (required).
 - skill: call a skill. detail = what to do, skill = name, args = JSON string matching the skill's args schema. expect (required).
-  Example: {"type": "skill", "detail": "take a screenshot of the current page", "skill": "browser", "args": "{\"action\": \"screenshot\"}", "expect": "screenshot saved"}
+  Example: {"type": "skill", "detail": "perform the desired action", "skill": "my-skill", "args": "{\"param\": \"value\"}", "expect": "expected result"}
   Note: args is a JSON-encoded STRING, not a raw object. Match arg names and types from the Skills section below.
 - msg: message to user. detail = what to communicate (intent, not content — never embed facts/URLs/data). skill/args/expect = null. Start detail with `[Lang: xx]` matching user's language.
 - search: web search. detail = search query, expect = what you need (required), skill = null, args = optional `{"max_results": N, "lang": "xx", "country": "XX"}`. Use search over exec curl/wget for web lookups. NEVER use search for kiso plugin discovery — use exec curl on the registry URL.

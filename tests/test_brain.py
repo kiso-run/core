@@ -2410,9 +2410,18 @@ class TestM165SkillArgsExample:
 
     def test_planner_prompt_has_skill_args_example(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert '"action": "screenshot"' in prompt or '\\"action\\": \\"screenshot\\"' in prompt
+        # M181: example uses generic names, not hardcoded "browser"
+        assert '"param": "value"' in prompt or '\\"param\\": \\"value\\"' in prompt
         assert "JSON-encoded STRING" in prompt
         assert "not a raw object" in prompt
+
+    def test_planner_prompt_no_hardcoded_browser_example(self):
+        """M181: skill example must not hardcode 'browser' as skill name."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        # The example line itself should use a generic name
+        for line in prompt.splitlines():
+            if line.strip().startswith("Example:") and '"skill":' in line:
+                assert '"browser"' not in line, "Skill example should use generic name, not 'browser'"
 
 
 class TestM180BrokenSkillRecoveryGuidance:
