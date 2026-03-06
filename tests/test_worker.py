@@ -3084,6 +3084,36 @@ class TestExecutePlanSkill:
         assert reason == "Task failed"
         assert len(remaining) == 1  # msg task remaining
 
+    async def test_skill_review_replan_carries_retry_hint(self, db, tmp_path):
+        """M179: skill handler propagates retry_hint to plan_output on replan."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{"text":"hi"}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        review_with_hint = {
+            "status": "replan", "reason": "Task failed",
+            "learn": None, "retry_hint": "use action=screenshot instead",
+            "summary": None,
+        }
+
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_hint), \
+             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             _patch_kiso_dir(tmp_path):
+            success, reason, _, remaining, plan_outputs = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Task failed"
+        # The skill task's plan_output should carry the retry_hint
+        skill_outputs = [po for po in plan_outputs if po.get("type") == "skill"]
+        assert len(skill_outputs) == 1
+        assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
+
 
 # --- M8: Webhook delivery in _execute_plan ---
 

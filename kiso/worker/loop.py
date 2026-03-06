@@ -796,9 +796,13 @@ async def _handle_skill_task(
 
     if review["status"] == REVIEW_STATUS_REPLAN:
         replan_reason = review.get("reason", "")
+        retry_hint = review.get("retry_hint")
         if ctx.slog:
             ctx.slog.info("Review → replan: %s", replan_reason)
         await _store_step_usage(ctx.db, task_id, usage_idx_before)
+        # Carry retry hint to replan context (M179 — matches exec/search handlers)
+        if plan_output_entry is not None and retry_hint:
+            plan_output_entry["retry_hint"] = retry_hint
         return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
                                   plan_output=plan_output_entry)
 
