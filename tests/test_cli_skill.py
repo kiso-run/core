@@ -901,8 +901,107 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
         ))
 
     out = capsys.readouterr().out
-    assert "missing binaries: ffmpeg, node" in out
+    assert "still missing binaries after install: ffmpeg, node" in out
+    assert "kiso skill remove" in out
     assert "installed successfully" in out
+
+
+def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, capsys):
+    """M183: check_deps_fn receives deps from manifest, not empty dict."""
+    from cli.skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "browser"\n'
+            "[kiso.skill]\n"
+            'summary = "Browser automation"\n'
+            'usage_guide = "Use browser"\n'
+            '[kiso.deps]\nbin = ["playwright"]\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    captured_info = {}
+
+    def spy_check_deps(info):
+        captured_info.update(info)
+        return ["playwright"]
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("cli.skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("cli.skill.check_deps", side_effect=spy_check_deps),
+    ):
+        _skill_install(argparse.Namespace(
+            target="browser", name=None, no_deps=False, show_deps=False,
+        ))
+
+    # M183: check_deps must receive the "deps" key from the manifest
+    assert "deps" in captured_info
+    assert captured_info["deps"] == {"bin": ["playwright"]}
+    out = capsys.readouterr().out
+    assert "still missing binaries after install: playwright" in out
+
+
+def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin, capsys):
+    """M187: auto-retry deps.sh when binaries missing after first install."""
+    from cli.skill import _skill_install
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    def fake_clone(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "kiso.toml").write_text(
+            '[kiso]\ntype = "skill"\nname = "browser"\n'
+            "[kiso.skill]\n"
+            'summary = "Browser"\nusage_guide = "Use it"\n'
+            '[kiso.deps]\nbin = ["playwright"]\n'
+        )
+        (dest / "run.py").write_text("pass\n")
+        (dest / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
+        (dest / "deps.sh").write_text("#!/bin/bash\necho ok\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    check_call_count = [0]
+
+    def check_deps_missing_then_ok(info):
+        check_call_count[0] += 1
+        if check_call_count[0] == 1:
+            return ["playwright"]  # first check: missing
+        return []  # after retry: fixed
+
+    def run_dispatch(cmd, **kwargs):
+        if cmd[0] == "git":
+            return fake_clone(cmd, **kwargs)
+        return _ok_run(cmd, **kwargs)
+
+    with (
+        patch("cli.skill.SKILLS_DIR", skills_dir),
+        patch("subprocess.run", side_effect=run_dispatch),
+        patch("cli.skill.check_deps", side_effect=check_deps_missing_then_ok),
+    ):
+        _skill_install(argparse.Namespace(
+            target="browser", name=None, no_deps=False, show_deps=False,
+        ))
+
+    out = capsys.readouterr().out
+    assert "re-running deps.sh" in out
+    assert "still missing" not in out  # fixed after retry
+    assert "installed successfully" in out
+    assert check_call_count[0] == 2  # called twice
 
 
 def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):

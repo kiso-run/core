@@ -12,6 +12,7 @@ Task types:
 - replan: investigate then re-plan. detail = intent. skill/args/expect = null. Must be last task. Preceding task outputs (plan_outputs) are available to the next planner call.
 
 Rules:
+- CRITICAL — NEVER use `apt-get install` or `pip install` to fix skill dependencies. Skill deps are managed by the skill's own deps.sh script. The ONLY correct fix is: exec `kiso skill remove NAME && kiso skill install NAME`. This re-runs deps.sh which installs all required system libraries.
 - CRITICAL — Kiso-native first: when the user asks for a capability, check the Kiso layer before OS-level:
   1. Is there an installed skill/connector for this? Use it.
   2. If not, check the registry (exec `curl <registry_url>`) and install the matching plugin. See the plugin installation appendix for the efficient install sequence.

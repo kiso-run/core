@@ -48,6 +48,7 @@ from kiso.brain import (
     validate_curator,
     validate_plan,
     validate_review,
+    _retry_llm_with_validation,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 
@@ -2435,6 +2436,22 @@ class TestM180BrokenSkillRecoveryGuidance:
         assert "[BROKEN]" in prompt
 
 
+class TestM185BlockAptGetForSkillDeps:
+    """M185: planner prompt blocks manual apt-get for skill deps."""
+
+    def test_planner_prompt_blocks_apt_get(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "NEVER use `apt-get install`" in prompt
+
+    def test_planner_prompt_blocks_pip_install(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "pip install" in prompt
+
+    def test_reinstall_is_only_correct_fix(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "kiso skill remove NAME && kiso skill install NAME" in prompt
+
+
 class TestM166ValidatePlanSkillArgs:
     """M166: validate_plan checks skill args against schema."""
 
@@ -2491,6 +2508,38 @@ class TestM166ValidatePlanSkillArgs:
         ]}
         errors = validate_plan(plan, installed_skills=["browser"])
         assert not errors
+
+
+    def test_m184_args_example_in_validation_error(self):
+        """M184: validation error includes args example from schema."""
+        plan = {"tasks": [
+            {"type": "skill", "detail": "do stuff", "skill": "browser",
+             "args": None, "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert len(errors) == 1
+        assert 'Set args to a JSON string like:' in errors[0]
+        assert '"action": "value"' in errors[0]
+
+    def test_m184_args_example_multiple_params(self):
+        """M184: example includes all params from schema."""
+        plan = {"tasks": [
+            {"type": "skill", "detail": "do stuff", "skill": "browser",
+             "args": "{}", "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {
+            "action": {"type": "string", "required": True},
+            "count": {"type": "int", "required": False},
+        }}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert len(errors) == 1
+        assert '"action": "value"' in errors[0]
+        assert '"count": 1' in errors[0]
 
 
 class TestM171StripExtendReplan:
@@ -3861,3 +3910,83 @@ class TestM148ReviewerSummaryFailures:
         assert "failures" in prompt.lower() or "failure" in prompt.lower()
         # Must mention both success and failure in summary context
         assert "BOTH" in prompt or "both" in prompt
+
+
+class TestM186EscalatingValidationError:
+    """M186: repeated identical validation errors get escalated."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            models=_full_models(),
+            settings=_full_settings(max_validation_retries="5"),
+            users={},
+            raw={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_escalation_after_2_identical_errors(self, config):
+        """After 2 identical validation errors, the 3rd feedback includes IMPORTANT."""
+        call_count = [0]
+        captured_messages = []
+
+        async def mock_call_llm(cfg, role, messages, **kwargs):
+            call_count[0] += 1
+            captured_messages.append(list(messages))
+            # Always return a valid JSON that fails validation the same way
+            return json.dumps({"tasks": [
+                {"type": "skill", "detail": "do", "skill": "browser",
+                 "args": None, "expect": "done"},
+                {"type": "msg", "detail": "done", "expect": None,
+                 "skill": None, "args": None},
+            ]})
+
+        def always_fail(plan):
+            return ["skill args invalid: missing required arg: action"]
+
+        with patch("kiso.brain.call_llm", side_effect=mock_call_llm):
+            with pytest.raises(PlanError):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, always_fail, PlanError, "Plan",
+                )
+
+        # Check that escalation happened on 3rd+ attempt
+        # captured_messages[2] should have feedback with IMPORTANT
+        assert call_count[0] == 5  # max retries
+        # The 3rd call's messages should include IMPORTANT
+        third_call_msgs = captured_messages[2]
+        feedback = third_call_msgs[-1]["content"]
+        assert "IMPORTANT" in feedback
+        assert "same error" in feedback
+
+    @pytest.mark.asyncio
+    async def test_no_escalation_for_different_errors(self, config):
+        """Different errors each time should not trigger escalation."""
+        call_count = [0]
+        captured_messages = []
+
+        async def mock_call_llm(cfg, role, messages, **kwargs):
+            call_count[0] += 1
+            captured_messages.append(list(messages))
+            return json.dumps({"value": call_count[0]})
+
+        def varying_errors(plan):
+            return [f"error number {call_count[0]}"]
+
+        with patch("kiso.brain.call_llm", side_effect=mock_call_llm):
+            with pytest.raises(PlanError):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, varying_errors, PlanError, "Plan",
+                )
+
+        # No feedback should contain IMPORTANT
+        for msgs in captured_messages:
+            for m in msgs:
+                if m["role"] == "user" and "errors" in m.get("content", ""):
+                    assert "IMPORTANT" not in m["content"]

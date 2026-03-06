@@ -41,6 +41,9 @@ CURATOR_VERDICTS: frozenset[str] = frozenset({
     CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
 })
 
+# Example values for skill args types (used in validation error messages)
+_TYPE_EXAMPLES: dict = {"string": "value", "int": 1, "float": 1.0, "bool": True}
+
 # Worker phase constants
 WORKER_PHASE_CLASSIFYING = "classifying"
 WORKER_PHASE_PLANNING = "planning"
@@ -117,12 +120,22 @@ async def _retry_llm_with_validation(
     """
     max_retries = int(config.settings["max_validation_retries"])
     last_errors: list[str] = []
+    prev_error_set: frozenset[str] = frozenset()  # M186: track repeated identical errors
+    repeat_count: int = 0
 
     for attempt in range(1, max_retries + 1):
         if last_errors:
+            error_lines = [f"- {e}" for e in last_errors]
+            # M186: escalate after 2+ identical error patterns
+            if repeat_count >= 2:
+                error_lines.append(
+                    "\nIMPORTANT: You have made this same error "
+                    f"{repeat_count} times. Read the error message above "
+                    "carefully and apply the exact fix described."
+                )
             error_feedback = (
                 f"Your {error_noun.lower()} has errors:\n"
-                + "\n".join(f"- {e}" for e in last_errors)
+                + "\n".join(error_lines)
                 + f"\nFix these and return the corrected {error_noun.lower()}."
             )
             messages.append({"role": "user", "content": error_feedback})
@@ -151,6 +164,13 @@ async def _retry_llm_with_validation(
 
         log.warning("%s validation failed (attempt %d/%d): %s",
                     error_noun, attempt, max_retries, errors)
+        # M186: track consecutive identical errors for escalation
+        error_set = frozenset(errors)
+        if error_set == prev_error_set:
+            repeat_count += 1
+        else:
+            prev_error_set = error_set
+            repeat_count = 1
         last_errors = errors
         messages.append({"role": "assistant", "content": raw})
 
@@ -377,9 +397,16 @@ def validate_plan(
                     schema = installed_skills_info[skill_name].get("args_schema", {})
                     arg_errors = validate_skill_args(args, schema)
                     if arg_errors:
+                        # M184: include example args format
+                        example_args = {
+                            aname: _TYPE_EXAMPLES.get(adef.get("type", "string"), "value")
+                            for aname, adef in schema.items()
+                        }
+                        example_json = json.dumps(example_args)
                         errors.append(
                             f"Task {i}: skill '{skill_name}' args invalid: "
                             + "; ".join(arg_errors)
+                            + f". Set args to a JSON string like: '{example_json}'"
                         )
 
     if replan_count > 1:

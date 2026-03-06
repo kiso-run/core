@@ -245,11 +245,27 @@ def _plugin_install(
             if result.returncode != 0:
                 print(f"warning: deps.sh failed: {result.stderr.strip()}")
 
-        # Check binary deps
-        plugin_info = {"path": str(plugin_dir)}
+        # Check binary deps — build proper info dict with deps from manifest
+        kiso_section = manifest.get("kiso", {})
+        plugin_info = {
+            "path": str(plugin_dir),
+            "deps": kiso_section.get("deps", {}),
+        }
         missing = check_deps_fn(plugin_info)
+        # M187: auto-retry deps.sh once if binaries still missing
+        if missing and deps_path.exists() and not args.no_deps:
+            print(f"Missing binaries: {', '.join(missing)} — re-running deps.sh...")
+            retry_result = subprocess.run(
+                ["bash", str(deps_path)],
+                capture_output=True, text=True,
+            )
+            if retry_result.returncode != 0:
+                print(f"warning: deps.sh retry failed: {retry_result.stderr.strip()}")
+            missing = check_deps_fn(plugin_info)
         if missing:
-            print(f"warning: missing binaries: {', '.join(missing)}")
+            print(f"warning: still missing binaries after install: {', '.join(missing)}")
+            print(f"  The skill may not work correctly. Try: kiso skill remove {name} && kiso skill install {name}")
+            print(f"  Or run deps.sh manually: bash {plugin_dir / 'deps.sh'}")
 
         # Type-specific post-install steps (env var check, config copy, etc.)
         if post_install is not None:
