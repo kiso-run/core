@@ -2405,6 +2405,16 @@ class TestPlannerPromptContent:
         assert not any("too long" in e for e in errors)
 
 
+class TestM165SkillArgsExample:
+    """M165: planner prompt must include a skill args example."""
+
+    def test_planner_prompt_has_skill_args_example(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert '"action": "screenshot"' in prompt or '\\"action\\": \\"screenshot\\"' in prompt
+        assert "JSON-encoded STRING" in prompt
+        assert "not a raw object" in prompt
+
+
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
 
