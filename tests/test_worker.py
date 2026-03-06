@@ -5798,9 +5798,9 @@ class TestExtendReplan:
 class TestDefaultMaxReplanDepth:
     """Test that the default max_replan_depth is 3."""
 
-    def test_default_max_replan_depth_is_3(self):
+    def test_default_max_replan_depth_is_5(self):
         from kiso.config import SETTINGS_DEFAULTS
-        assert SETTINGS_DEFAULTS["max_replan_depth"] == 3
+        assert SETTINGS_DEFAULTS["max_replan_depth"] == 5
 
 
 class TestReportPubFiles:

@@ -32,7 +32,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "fact_archive_threshold": 0.3,
     "fact_consolidation_min_ratio": 0.3,
     # planning
-    "max_replan_depth": 3,
+    "max_replan_depth": 5,
     "max_validation_retries": 3,
     "max_plan_tasks": 20,
     # execution
@@ -130,7 +130,7 @@ fact_archive_threshold    = 0.3
 fact_consolidation_min_ratio = 0.3  # abort consolidation if fewer than this fraction survive
 
 # --- planning ---
-max_replan_depth          = 3
+max_replan_depth          = 5
 max_validation_retries    = 3
 max_plan_tasks            = 20
 
