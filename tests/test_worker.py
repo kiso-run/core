@@ -1686,6 +1686,35 @@ class TestExecutePlan:
         assert result.plan_output is not None
         assert result.plan_output["status"] == "failed"
 
+    async def test_skill_execution_failure_reviewer_replan(self, db, tmp_path):
+        """M167: skill executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
+        config = _make_config()
+        skill_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="take screenshot",
+                          skill="browser", args="{}", expect="screenshot")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+        tasks = await get_tasks_for_plan(db, plan_id)
+        task_row = tasks[0]
+        ctx = _PlanCtx(
+            db=db, config=config, session="sess1",
+            goal="Test", user_message="msg", exec_timeout=5,
+            deploy_secrets={}, session_secrets={},
+            max_output_size=4096, max_worker_retries=1,
+            messenger_timeout=5, installed_skills=[skill_info],
+            slog=None, sandbox_uid=None,
+        )
+        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+                    return_value=("error output", "skill crashed", False, 1)), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                    return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.loop._write_plan_outputs", new_callable=AsyncMock):
+            result = await _handle_skill_task(ctx, task_row, 0, False, 0)
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.stop_replan == "Task failed"
+        assert result.plan_output is not None
+
     async def test_skill_review_error(self, db, tmp_path):
         """Skill not installed → replan (M164); reviewer never reached."""
         config = _make_config()
