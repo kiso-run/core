@@ -172,7 +172,7 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
         else:
             usage_guide = usage_guide_default
 
-        skills.append({
+        info = {
             "name": kiso["name"],
             "summary": skill_section["summary"],
             "args_schema": args_schema,
@@ -183,7 +183,11 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
             "description": kiso.get("description", ""),
             "usage_guide": usage_guide,
             "deps": kiso.get("deps", {}),
-        })
+        }
+        missing = check_deps(info)
+        info["healthy"] = len(missing) == 0
+        info["missing_deps"] = missing
+        skills.append(info)
 
     _skills_cache[resolved_dir] = (now, skills)
     return skills

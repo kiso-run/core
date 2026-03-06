@@ -501,6 +501,35 @@ class TestCheckDeps:
         skill = discover_skills(skills_dir)[0]
         assert skill["deps"] == {}
 
+    def test_discover_healthy_when_deps_present(self, tmp_path):
+        """Skill with all binary deps present is healthy=True."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        # FULL_TOML requires bin=["curl"] — curl should be available in test env
+        _create_skill(skills_dir, "search", FULL_TOML)
+        skill = discover_skills(skills_dir)[0]
+        assert skill["healthy"] is True
+        assert skill["missing_deps"] == []
+
+    def test_discover_unhealthy_when_deps_missing(self, tmp_path):
+        """Skill with missing binary deps is healthy=False."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["nonexistent_binary_xyz_12345"]')
+        _create_skill(skills_dir, "search", toml)
+        skill = discover_skills(skills_dir)[0]
+        assert skill["healthy"] is False
+        assert "nonexistent_binary_xyz_12345" in skill["missing_deps"]
+
+    def test_discover_healthy_no_deps_declared(self, tmp_path):
+        """Skill with no [kiso.deps].bin is healthy=True."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        _create_skill(skills_dir, "echo", MINIMAL_TOML)
+        skill = discover_skills(skills_dir)[0]
+        assert skill["healthy"] is True
+        assert skill["missing_deps"] == []
+
 
 # --- build_planner_skill_list ---
 
