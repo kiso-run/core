@@ -30,6 +30,9 @@ PROBE_BINARIES: list[str] = [
     "tar", "gzip", "zip", "unzip",
     "grep", "sed", "awk", "find", "xargs",
     "make", "gcc", "go", "rustc", "cargo",
+    "chromium", "chromium-browser", "lynx", "w3m", "html2text",
+    "rg", "head", "tail", "wc", "sort", "cut", "tr", "tee",
+    "diff", "file", "stat", "du", "cat",
 ]
 
 _CACHE_TTL = 300  # seconds
