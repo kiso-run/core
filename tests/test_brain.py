@@ -3105,6 +3105,31 @@ class TestPlannerContextualRules:
         # Should appear exactly once
         assert system.count("Plugin installation:") == 1
 
+    async def test_capability_gap_injects_plugin_install(self, db):
+        """M153: message needing uninstalled capability triggers plugin-install appendix."""
+        # "screenshot" maps to "browser" skill — inject appendix when browser not installed
+        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, _ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "fammi uno screenshot di example.com",
+            )
+        system = msgs[0]["content"]
+        assert "Plugin installation:" in system
+
+    async def test_capability_gap_no_inject_when_skill_installed(self, db):
+        """M153: no plugin-install injection when the capability skill IS installed."""
+        fake_skills = [
+            {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
+        ]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, _ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "fammi uno screenshot di example.com",
+            )
+        system = msgs[0]["content"]
+        assert "Plugin installation:" not in system
+
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
         msgs, _ = await build_planner_messages(

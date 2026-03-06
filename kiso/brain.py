@@ -405,6 +405,33 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
     return parts
 
 
+# Capability keywords → skill name they require.  Used by the
+# capability-gap heuristic to inject plugin-install guidance when the
+# message implies a capability not covered by installed skills.
+_CAPABILITY_MAP: dict[str, str] = {
+    "screenshot": "browser",
+    "schermata": "browser",
+    "navigate": "browser",
+    "naviga": "browser",
+    "click": "browser",
+    "clicca": "browser",
+    "form": "browser",
+    "browse": "browser",
+    "webpage": "browser",
+    "refactor": "aider",
+    "debug": "aider",
+}
+
+
+def _detect_capability_gap(msg_lower: str, installed_names: set[str]) -> str | None:
+    """Return the missing skill name if the message implies an uninstalled capability."""
+    words = set(msg_lower.split())
+    for keyword, skill in _CAPABILITY_MAP.items():
+        if keyword in words and skill not in installed_names:
+            return skill
+    return None
+
+
 async def build_planner_messages(
     db: aiosqlite.Connection,
     config: Config,
@@ -519,7 +546,18 @@ async def build_planner_messages(
         log.warning("discover_skills() returned empty — no skills available for planner")
         if not _plugin_install_needed:
             system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
+            _plugin_install_needed = True
     installed_names = [s["name"] for s in installed]
+
+    # Capability-gap heuristic: if the message implies a capability that
+    # no installed skill provides, inject the plugin-install appendix so
+    # the planner knows how to discover and install the missing skill.
+    if not _plugin_install_needed and installed_names:
+        _gap = _detect_capability_gap(msg_lower, set(installed_names))
+        if _gap:
+            log.info("Capability gap detected: message needs %r but not installed", _gap)
+            system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
+            _plugin_install_needed = True
     skill_list = build_planner_skill_list(installed, user_role, user_skills)
     if skill_list:
         context_parts.append(f"## Skills\n{skill_list}")
