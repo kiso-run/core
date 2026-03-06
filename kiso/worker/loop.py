@@ -964,14 +964,22 @@ async def _handle_search_task(
             )
         except SearcherError as e:
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
+            error_output = f"Search failed: {e}"
             log.error("Search failed for task %d: %s", task_id, e)
-            await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
+            await update_task(ctx.db, task_id, "failed", output=error_output, duration_ms=task_duration_ms)
             audit.log_task(
                 ctx.session, task_id, "search", detail, "failed", task_duration_ms, 0,
                 deploy_secrets=ctx.deploy_secrets,
                 session_secrets=ctx.session_secrets,
             )
-            return _TaskHandlerResult(stop=True, stop_success=False)
+            plan_output = _make_plan_output(
+                i + 1, "search", detail, error_output, "failed", session=ctx.session,
+            )
+            return _TaskHandlerResult(
+                stop=True, stop_success=False,
+                stop_replan=error_output,
+                plan_output=plan_output,
+            )
 
         # Keep local state updated; DB write deferred until reviewer approves
         task_row = {**task_row, "output": search_result, "status": "done"}

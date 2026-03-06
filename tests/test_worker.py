@@ -6191,8 +6191,8 @@ class TestExecutePlanSearch:
         # list is not a string → None
         assert call_kwargs.kwargs.get("country") is None
 
-    async def test_search_searcher_error(self, db, tmp_path):
-        """SearcherError marks task failed and stops plan."""
+    async def test_search_searcher_error_triggers_replan(self, db, tmp_path):
+        """SearcherError triggers replan with error message (M169)."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
@@ -6205,11 +6205,14 @@ class TestExecutePlanSearch:
             )
 
         assert success is False
-        assert reason is None  # no replan, just failure
+        assert reason is not None
+        assert "Search failed" in reason
         assert len(remaining) == 1  # msg task
         tasks = await get_tasks_for_plan(db, plan_id)
         search_task = [t for t in tasks if t["type"] == "search"][0]
         assert search_task["status"] == "failed"
+        assert len(_po) == 1
+        assert "Search failed" in _po[0]["output"]
 
     async def test_search_result_in_plan_outputs(self, db, tmp_path):
         """Search output flows to plan_outputs for subsequent msg task."""
@@ -7615,8 +7618,8 @@ class TestTaskHandlers:
         assert result.plan_output is not None
         assert result.plan_output["type"] == "search"
 
-    async def test_handle_search_task_error_returns_stop(self, db, plan_id, tmp_path):
-        """search handler returns stop=True on SearcherError."""
+    async def test_handle_search_task_error_triggers_replan(self, db, plan_id, tmp_path):
+        """search handler returns stop_replan on SearcherError (M169)."""
         from kiso.worker.search import SearcherError
         task_row = await _make_task_row(db, plan_id, "search", "find something")
         ctx = _make_ctx(db)
@@ -7628,6 +7631,9 @@ class TestTaskHandlers:
             result = await _handle_search_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
+        assert result.stop_replan is not None
+        assert "Search failed" in result.stop_replan
+        assert result.plan_output is not None
         assert result.completed_row is None
 
     async def test_handle_skill_task_success_returns_plan_output(self, db, plan_id, tmp_path):
