@@ -260,6 +260,15 @@ async def lifespan(app: FastAPI):
 
     await _startup_recovery(db, config)
 
+    # Auto-repair unhealthy skills (re-run deps.sh for missing binaries)
+    from kiso.skill_repair import repair_unhealthy_skills
+    try:
+        repaired = await repair_unhealthy_skills()
+        if repaired:
+            log.info("Repaired skills on startup: %s", repaired)
+    except Exception as e:
+        log.warning("Skill auto-repair failed: %s", e)
+
     # Webhook secret length warning
     webhook_secret = config.settings["webhook_secret"]
     if webhook_secret and len(webhook_secret) < 32:
