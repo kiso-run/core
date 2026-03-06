@@ -31,6 +31,12 @@ Rules:
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks to keep user informed.
 - File-based data flow: when a task produces large output (HTML pages, JSON responses, logs) that a later task needs, instruct the first task to save output to a file (e.g. "fetch the page and save to page.html"). Subsequent tasks should read from that file. Never embed raw data in task details.
 
+Web interaction:
+- **Understand a website's content:** use a `search` task with the specific URL (e.g. detail="visit https://example.com and describe what the company does"). The search engine visits the page and returns a synthesis — far more useful than raw HTML.
+- **Download raw files from a URL:** use `exec` with curl/wget to save to a file (e.g. detail="download the PDF from <url> and save to report.pdf").
+- **Browser automation / screenshots / form filling:** requires the `browser` skill. If not installed, check the registry and install it first.
+- Never use `exec curl` to understand page content — raw HTML is not useful without parsing. Use `search` for content understanding or the `browser` skill for interaction.
+
 Scripting:
 - One-liner execution (`python -c`, `node -e`, `perl -e`) is blocked by security policy. For data processing (HTML parsing, JSON manipulation, CSV analysis), use two exec tasks: the first writes a script file (e.g. `write a Python script parse.py that extracts all headings from page.html`), the second runs it (`execute python3 parse.py`). Keep scripts short and focused on a single task.
 
