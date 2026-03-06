@@ -500,8 +500,10 @@ for k,v in d.items():
     fi
     BOT_NAME="${INST_NAME^}"
     echo
-    yellow "  Reset data? This wipes conversations, messages, learnings and facts."
-    yellow "  Config and API key are kept. Useful if something is broken or you want a fresh start."
+    yellow "  Reset data? This wipes EVERYTHING: conversations, messages, learnings,"
+    yellow "  skills, connectors, installed binaries, and all session files."
+    yellow "  Only config.toml and .env (API key) are kept."
+    yellow "  Useful if something is broken or you want a fresh start."
     if confirm "  Reset data for '$INST_NAME'?" "n"; then
         DO_RESET=true
         RESET_REQUESTED=true
