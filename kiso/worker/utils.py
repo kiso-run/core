@@ -280,13 +280,20 @@ def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
     """Best-effort extraction of confirmed facts from completed task outputs.
 
     Scans outputs for recognisable patterns:
+    - Reviewer summaries from successful tasks (highest priority)
     - JSON with "name"/"version" keys (registry responses) → skill/connector names
     - Lines containing "installed" or "available" → installation status
-    - Lines with key=value or [section] headers (TOML/config) → config findings
     - For other outputs, extract the first non-empty line as a finding
     """
     facts: list[str] = []
     seen: set[str] = set()
+
+    # Priority 1: reviewer summaries from completed tasks (most reliable)
+    for t in completed:
+        summary = t.get("reviewer_summary")
+        if summary and summary not in seen:
+            facts.append(summary)
+            seen.add(summary)
 
     for t in completed:
         out = (t.get("output") or "").strip()
@@ -340,7 +347,7 @@ def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
                 facts.append(first_line)
                 seen.add(first_line)
 
-    return facts[:10]  # Cap at 10 facts
+    return facts[:15]  # Cap at 15 facts
 
 
 def _build_replan_context(

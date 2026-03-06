@@ -1490,6 +1490,28 @@ class TestBuildReplanContext:
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "Confirmed Facts" not in ctx
 
+    def test_reviewer_summary_as_confirmed_fact(self):
+        """M160: reviewer summaries appear as confirmed facts in replan context."""
+        completed = [
+            {"type": "exec", "detail": "curl site.com", "status": "done",
+             "output": "<html>very long html...</html>",
+             "reviewer_summary": "Site is a design agency based in Milan"},
+        ]
+        ctx = _build_replan_context(completed, [], "need screenshot", [])
+        assert "Confirmed Facts" in ctx
+        assert "design agency based in Milan" in ctx
+
+    def test_confirmed_facts_cap_at_15(self):
+        """M160: confirmed facts capped at 15."""
+        from kiso.worker.utils import _extract_confirmed_facts
+        completed = [
+            {"type": "exec", "detail": f"cmd-{i}", "status": "done",
+             "output": f"result-{i}", "reviewer_summary": f"fact-{i}"}
+            for i in range(20)
+        ]
+        facts = _extract_confirmed_facts(completed)
+        assert len(facts) <= 15
+
 
 # --- _execute_plan ---
 
