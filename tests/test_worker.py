@@ -8068,6 +8068,65 @@ class TestRunPlanningLoop:
         p = await get_plan_for_session(db, "sess1")
         assert p["status"] == "failed"
 
+    async def test_auto_replan_safety_net(self, db, tmp_path):
+        """M172: when replan_reason is None but there are failed outputs, auto-replan."""
+        initial_plan = EXEC_THEN_MSG_PLAN
+        plan_id = await create_plan(db, "sess1", 0, initial_plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", initial_plan["tasks"])
+        config = _make_config()
+
+        call_count = [0]
+        failed_output = _make_plan_output(1, "exec", "echo hello", "command not found", "failed")
+
+        async def _mock_execute_plan(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call: fail without replan_reason but with failed output
+                return (False, None, [], [{"type": "msg", "detail": "done"}], [failed_output])
+            # Second call (after auto-replan): succeed
+            return (True, None, [{"type": "msg", "detail": "done"}], [], [])
+
+        replan_plan = {
+            "goal": "Retry", "secrets": None,
+            "tasks": [
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+        with patch("kiso.worker.loop._execute_plan", side_effect=_mock_execute_plan), \
+             patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=replan_plan), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, initial_plan, "admin", None, 5, 30,
+                {}, None, 10, 3, 600, None, None,
+            )
+
+        # Should have auto-replanned (returned_id is the new plan id)
+        assert returned_id != plan_id
+        assert call_count[0] == 2  # called twice: initial + replan
+
+    async def test_auto_replan_no_failed_outputs_fails(self, db, tmp_path):
+        """M172: when replan_reason is None and no failed outputs, fall through to failure."""
+        plan = VALID_PLAN
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = _make_config()
+
+        # Messenger fails → _execute_plan returns (False, None, ..., empty plan_outputs)
+        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   side_effect=LLMError("API down")), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 5, 30,
+                {}, None, 10, 3, 600, None, None,
+            )
+
+        assert returned_id == plan_id  # no replan happened
+        from kiso.store import get_plan_for_session
+        p = await get_plan_for_session(db, "sess1")
+        assert p["status"] == "failed"
+
     async def test_old_plan_stays_replanning_until_new_plan_persisted(self, db, tmp_path):
         """M103a: old plan stays 'replanning' until the new plan + tasks are persisted.
 

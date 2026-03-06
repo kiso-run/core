@@ -1466,16 +1466,25 @@ async def _run_planning_loop(
             break
 
         if replan_reason is None:
-            # Failed without replan request (LLM error, review error, etc.)
-            log.info("Plan %d failed (no replan)", current_plan_id)
-            if slog:
-                slog.info("Plan %d failed", current_plan_id)
-            await _handle_loop_failure(
-                db, config, session, current_plan_id, completed, remaining, current_goal,
-                messenger_timeout=messenger_timeout,
-                session_secrets=session_secrets,
-            )
-            break
+            # Auto-replan safety net (M172): if there are failed outputs and
+            # replan budget remains, generate a reason from the last failure.
+            failed_outputs = [
+                po for po in plan_outputs if po.get("status") == "failed"
+            ]
+            if failed_outputs and replan_depth < max_replan_depth:
+                last_fail = failed_outputs[-1]
+                replan_reason = f"Task failed: {(last_fail.get('output') or 'unknown error')[:200]}"
+                log.info("Auto-generating replan reason (M172): %s", replan_reason)
+            else:
+                log.info("Plan %d failed (no replan)", current_plan_id)
+                if slog:
+                    slog.info("Plan %d failed", current_plan_id)
+                await _handle_loop_failure(
+                    db, config, session, current_plan_id, completed, remaining, current_goal,
+                    messenger_timeout=messenger_timeout,
+                    session_secrets=session_secrets,
+                )
+                break
 
         # Replan requested
         replan_depth += 1
