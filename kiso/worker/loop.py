@@ -834,13 +834,21 @@ async def _handle_exec_task(
             )
         except ExecTranslatorError as e:
             log.error("Exec translation failed for task %d: %s", task_id, e)
-            await update_task(ctx.db, task_id, "failed", output="", stderr=str(e))
+            error_output = f"Translation failed: {e}"
+            await update_task(ctx.db, task_id, "failed", output="", stderr=error_output)
             audit.log_task(
                 ctx.session, task_id, "exec", detail, "failed", 0, 0,
                 deploy_secrets=ctx.deploy_secrets,
                 session_secrets=ctx.session_secrets,
             )
-            return _TaskHandlerResult(stop=True, stop_success=False)
+            plan_output = _make_plan_output(
+                i + 1, "exec", detail, error_output, "failed", session=ctx.session,
+            )
+            return _TaskHandlerResult(
+                stop=True, stop_success=False,
+                stop_replan=error_output,
+                plan_output=plan_output,
+            )
 
         await _append_calls(ctx.db, task_id, idx_translate)
         await update_task_command(ctx.db, task_id, command)

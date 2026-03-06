@@ -1872,8 +1872,8 @@ class TestExecTranslatorIntegration:
         assert len(exec_tasks) == 1
         assert "translated" in exec_tasks[0]["output"]
 
-    async def test_translator_failure_marks_task_failed(self, db, tmp_path):
-        """ExecTranslatorError → task fails, plan stops."""
+    async def test_translator_failure_triggers_replan(self, db, tmp_path):
+        """ExecTranslatorError → replan with error message (M168)."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
@@ -1889,8 +1889,11 @@ class TestExecTranslatorIntegration:
             )
 
         assert success is False
-        assert reason is None  # failed, no replan
+        assert reason is not None
+        assert "Translation failed" in reason
         assert len(remaining) == 1  # msg task not executed
+        assert len(_po) == 1
+        assert "Translation failed" in _po[0]["output"]
 
     async def test_translator_receives_plan_outputs(self, db, tmp_path):
         """The translator receives preceding plan outputs for context."""
@@ -7555,8 +7558,8 @@ class TestTaskHandlers:
 
     # --- _handle_exec_task ---
 
-    async def test_handle_exec_task_translator_error_returns_stop(self, db, plan_id, tmp_path):
-        """exec handler returns stop=True when translator raises ExecTranslatorError."""
+    async def test_handle_exec_task_translator_error_triggers_replan(self, db, plan_id, tmp_path):
+        """exec handler returns stop_replan when translator raises ExecTranslatorError (M168)."""
         task_row = await _make_task_row(db, plan_id, "exec", "list files")
         ctx = _make_ctx(db)
         with patch(
@@ -7568,6 +7571,9 @@ class TestTaskHandlers:
 
         assert result.stop is True
         assert result.stop_success is False
+        assert result.stop_replan is not None
+        assert "Translation failed" in result.stop_replan
+        assert result.plan_output is not None
         assert result.completed_row is None
 
     async def test_handle_exec_task_success(self, db, plan_id, tmp_path):
