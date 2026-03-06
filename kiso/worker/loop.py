@@ -749,7 +749,14 @@ async def _handle_skill_task(
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
-        return _TaskHandlerResult(stop=True, stop_success=False)
+        plan_output = _make_plan_output(
+            i + 1, "skill", detail, setup_error, "failed", session=ctx.session,
+        )
+        return _TaskHandlerResult(
+            stop=True, stop_success=False,
+            stop_replan=f"Skill task failed: {setup_error}",
+            plan_output=plan_output,
+        )
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
     await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)

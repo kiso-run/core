@@ -594,7 +594,7 @@ class TestRunWorker:
         assert plan["status"] == "failed"
 
     async def test_skill_task_fails_not_implemented(self, db, tmp_path):
-        config = _make_config()
+        config = _make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -606,7 +606,7 @@ class TestRunWorker:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
-        # Should eventually fail (after replan attempts)
+        # Should eventually fail (after replan attempts hit max depth)
         tasks = await get_tasks_for_session(db, "sess1")
         skill_tasks = [t for t in tasks if t["type"] == "skill"]
         assert all(t["status"] == "failed" for t in skill_tasks)
@@ -1095,8 +1095,8 @@ class TestRunWorker:
         assert plans[1] == "done"    # new plan succeeded
 
     async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
-        """Skill task review error → plan fails without replan."""
-        config = _make_config()
+        """Skill task review error → plan fails (after replan attempts)."""
+        config = _make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -1106,14 +1106,14 @@ class TestRunWorker:
         with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=SKILL_PLAN), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("LLM down")), \
              _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         plan = await get_plan_for_session(db, "sess1")
         assert plan["status"] == "failed"
 
     async def test_skill_review_ok_still_fails_plan(self, db, tmp_path):
-        """Even if reviewer says ok for a skill task, plan still fails (skill not implemented)."""
-        config = _make_config()
+        """Even if reviewer says ok for a skill task, plan still fails (skill not installed)."""
+        config = _make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -1123,7 +1123,7 @@ class TestRunWorker:
         with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=SKILL_PLAN), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         plan = await get_plan_for_session(db, "sess1")
         assert plan["status"] == "failed"
@@ -1606,8 +1606,8 @@ class TestExecutePlan:
         assert reason is None
         assert len(completed) == 0
 
-    async def test_skill_not_installed_fails_immediately(self, db, tmp_path):
-        """Skill not installed → immediate failure, no review."""
+    async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
+        """Skill not installed → replan with error message (M164)."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="skill", detail="search",
@@ -1622,16 +1622,72 @@ class TestExecutePlan:
             )
 
         assert success is False
-        assert reason is None  # no replan — setup failure, not review
+        assert reason is not None
+        assert "not installed" in reason
         assert len(remaining) == 1  # msg task
-        mock_reviewer.assert_not_called()  # review skipped
+        mock_reviewer.assert_not_called()  # review skipped (setup error)
         tasks = await get_tasks_for_plan(db, plan_id)
         skill_task = [t for t in tasks if t["type"] == "skill"][0]
         assert skill_task["status"] == "failed"
         assert "not installed" in skill_task["output"]
-        assert reason is None  # failed but no replan
+        # plan_outputs should contain the error
+        assert len(_po) == 1
+        assert "not installed" in _po[0]["output"]
+
+    async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
+        """Invalid JSON in skill args → replan with error (M164)."""
+        config = _make_config()
+        skill_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="do thing",
+                          skill="browser", args="not-json{", expect="done")
+        tasks = await get_tasks_for_plan(db, plan_id)
+        task_row = tasks[0]
+        ctx = _PlanCtx(
+            db=db, config=config, session="sess1",
+            goal="Test", user_message="msg", exec_timeout=5,
+            deploy_secrets={}, session_secrets={},
+            max_output_size=4096, max_worker_retries=1,
+            messenger_timeout=5, installed_skills=[skill_info],
+            slog=None, sandbox_uid=None,
+        )
+        result = await _handle_skill_task(ctx, task_row, 0, False, 0)
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.stop_replan is not None
+        assert "Invalid skill args JSON" in result.stop_replan
+        assert result.plan_output is not None
+
+    async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
+        """Skill args missing required field → replan with error (M164)."""
+        config = _make_config()
+        skill_info = {
+            "name": "browser",
+            "args_schema": {"action": {"type": "string", "required": True}},
+            "entry": "browser.sh",
+        }
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="take screenshot",
+                          skill="browser", args="{}", expect="screenshot")
+        tasks = await get_tasks_for_plan(db, plan_id)
+        task_row = tasks[0]
+        ctx = _PlanCtx(
+            db=db, config=config, session="sess1",
+            goal="Test", user_message="msg", exec_timeout=5,
+            deploy_secrets={}, session_secrets={},
+            max_output_size=4096, max_worker_retries=1,
+            messenger_timeout=5, installed_skills=[skill_info],
+            slog=None, sandbox_uid=None,
+        )
+        result = await _handle_skill_task(ctx, task_row, 0, False, 0)
+        assert result.stop is True
+        assert result.stop_replan is not None
+        assert "validation failed" in result.stop_replan
+        assert result.plan_output is not None
+        assert result.plan_output["status"] == "failed"
 
     async def test_skill_review_error(self, db, tmp_path):
+        """Skill not installed → replan (M164); reviewer never reached."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="skill", detail="search",
@@ -1644,7 +1700,8 @@ class TestExecutePlan:
             )
 
         assert success is False
-        assert reason is None
+        assert reason is not None  # M164: setup failure triggers replan
+        assert "not installed" in reason
 
     async def test_multiple_exec_first_fails(self, db, tmp_path):
         """First exec fails → remaining tasks returned."""
