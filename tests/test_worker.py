@@ -546,8 +546,8 @@ class TestRunWorker:
         assert plan["status"] == "failed"
 
     async def test_exec_failure_review_error_marks_failed(self, db, tmp_path):
-        """Exec fails, reviewer errors → plan failed without replan."""
-        config = _make_config()
+        """Exec fails, reviewer errors → plan fails (after replan attempts, M170)."""
+        config = _make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
 
@@ -569,13 +569,9 @@ class TestRunWorker:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "failed"
-
-        tasks = await get_tasks_for_plan(db, plan["id"])
-        assert tasks[0]["status"] == "failed"
-        # Second task remains pending (never reached)
-        assert tasks[1]["status"] == "pending"
+        # The last plan should be failed
+        plans = await db.execute_fetchall("SELECT * FROM plans WHERE session = 'sess1' ORDER BY id DESC LIMIT 1")
+        assert plans[0]["status"] == "failed"
 
     async def test_msg_llm_error_marks_plan_failed(self, db, tmp_path):
         config = _make_config()
@@ -1574,7 +1570,8 @@ class TestExecutePlan:
         assert len(completed) == 0
         assert len(remaining) == 1  # msg task
 
-    async def test_exec_review_error(self, db, tmp_path):
+    async def test_exec_review_error_triggers_replan(self, db, tmp_path):
+        """M170: exec review error triggers replan with task output preserved."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -1588,8 +1585,10 @@ class TestExecutePlan:
             )
 
         assert success is False
-        assert reason is None  # no replan, just failure
+        assert reason is not None
+        assert "Review failed" in reason
         assert len(remaining) == 1
+        assert len(_po) == 1  # task output preserved
 
     async def test_msg_llm_error(self, db, tmp_path):
         config = _make_config()
@@ -6397,8 +6396,8 @@ class TestExecutePlanSearch:
         assert reason == "Task failed"
         assert len(remaining) == 1  # msg task
 
-    async def test_search_review_error(self, db, tmp_path):
-        """ReviewError during search review fails plan without replan."""
+    async def test_search_review_error_triggers_replan(self, db, tmp_path):
+        """M170: ReviewError during search review triggers replan with output preserved."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
@@ -6412,8 +6411,10 @@ class TestExecutePlanSearch:
             )
 
         assert success is False
-        assert reason is None
+        assert reason is not None
+        assert "Review failed" in reason
         assert len(remaining) == 1
+        assert len(_po) == 1  # task output preserved
 
     async def test_search_substatus_transitions(self, db, tmp_path):
         """Search task updates substatus: searching → reviewing."""
@@ -8341,6 +8342,8 @@ class TestCircularReplanDetection:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Failed"), \
              patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
+             patch("kiso.worker.search.run_searcher", new_callable=AsyncMock,
+                   return_value="search results"), \
              patch("kiso.worker.loop.save_message", side_effect=_save_msg), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):

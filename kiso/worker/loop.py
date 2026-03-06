@@ -790,7 +790,9 @@ async def _handle_skill_task(
     review, review_error = await _run_review_step(ctx, task_row)
     if review_error is not None:
         await _store_step_usage(ctx.db, task_id, usage_idx_before)
-        return _TaskHandlerResult(stop=True, stop_success=False, plan_output=plan_output_entry)
+        return _TaskHandlerResult(stop=True, stop_success=False,
+                                  stop_replan=f"Review failed: {review_error}",
+                                  plan_output=plan_output_entry)
 
     if review["status"] == REVIEW_STATUS_REPLAN:
         replan_reason = review.get("reason", "")
@@ -892,7 +894,9 @@ async def _handle_exec_task(
         if review_error is not None:
             await update_task(ctx.db, task_id, "failed")
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False, plan_output=local_plan_output)
+            return _TaskHandlerResult(stop=True, stop_success=False,
+                                      stop_replan=f"Review failed: {review_error}",
+                                      plan_output=local_plan_output)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
@@ -991,7 +995,9 @@ async def _handle_search_task(
         if review_error is not None:
             await update_task(ctx.db, task_id, "done", output=search_result)
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False, plan_output=local_plan_output)
+            return _TaskHandlerResult(stop=True, stop_success=False,
+                                      stop_replan=f"Review failed: {review_error}",
+                                      plan_output=local_plan_output)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
