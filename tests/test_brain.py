@@ -3699,3 +3699,18 @@ class TestM147PlannerActOnHints:
         prompt = _load_system_prompt("planner")
         assert "Suggested Fixes" in prompt
         assert "do not re-investigate" in prompt.lower() or "Do not re-investigate" in prompt
+
+
+# --- M148: Reviewer summary covers failures too ---
+
+
+class TestM148ReviewerSummaryFailures:
+    """M148: reviewer prompt instructs summary for both successes and failures."""
+
+    def test_reviewer_prompt_summary_covers_failures(self):
+        from kiso.brain import _load_system_prompt, invalidate_prompt_cache
+        invalidate_prompt_cache()
+        prompt = _load_system_prompt("reviewer")
+        assert "failures" in prompt.lower() or "failure" in prompt.lower()
+        # Must mention both success and failure in summary context
+        assert "BOTH" in prompt or "both" in prompt
