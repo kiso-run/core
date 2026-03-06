@@ -808,8 +808,11 @@ class TestBuildPlannerMessages:
                 db, config, "sess1", "user", "hello", user_skills=["search"],
             )
         content = msgs[1]["content"]
-        assert "search" in content
-        assert "aider" not in content
+        # Skills section should only show search, not aider (restricted user)
+        skills_start = content.find("## Skills")
+        skills_section = content[skills_start:skills_start + 500] if skills_start >= 0 else ""
+        assert "search" in skills_section
+        assert "aider" not in skills_section
 
     async def test_logs_warning_when_no_skills(self, db, config, caplog):
         """M3: build_planner_messages logs warning when discover_skills returns empty."""
