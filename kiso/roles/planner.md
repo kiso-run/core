@@ -12,7 +12,7 @@ Task types:
 Rules:
 - CRITICAL — Kiso-native first: when the user asks for a capability, check the Kiso layer before OS-level:
   1. Is there an installed skill/connector for this? Use it.
-  2. If not, `exec curl <registry_url>` + `replan` to check the registry. Do NOT install in the same plan.
+  2. If not, check the registry (exec `curl <registry_url>`) and install the matching plugin. See the plugin installation appendix for the efficient install sequence.
   3. Only if nothing in the registry, fall back to OS-level packages.
   Never jump to `apt-get install` without checking 1–2 first.
 - CRITICAL: Last task MUST be "msg" or "replan". Replan must always be last.
