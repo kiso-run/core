@@ -5,8 +5,15 @@ set -euo pipefail
 # instead of silently closing the terminal.
 _on_error() {
     local exit_code=$?
-    # Don't report errors caused by signals (Ctrl+C = 130, etc.)
-    if [[ $exit_code -gt 128 ]]; then return; fi
+    # Signal-caused exits (Ctrl+C = 130, etc.): let the INT/TERM trap handle it.
+    if [[ $exit_code -gt 128 ]]; then
+        # If we got here via set -e after a child was killed by signal,
+        # and the INT trap hasn't fired yet, show the interrupted message.
+        if [[ "${_INTERRUPTED:-}" != true ]]; then
+            printf '\n\033[0;33mInstallation interrupted.\033[0m\n' >&2
+        fi
+        return
+    fi
     printf '\n\033[0;31mError: command failed (exit %d):\n  %s\033[0m\n' \
         "$exit_code" "${BASH_COMMAND:-unknown}" >&2
     printf '\n\033[0;31mIf this looks like a bug, please report it at:\n  https://github.com/kiso-run/core/issues\033[0m\n\n' >&2
@@ -68,10 +75,15 @@ cleanup() {
     [[ -n "${ENV_BACKUP:-}" ]] && rm -f "$ENV_BACKUP" || true
     [[ -n "${CONFIG_BACKUP:-}" ]] && rm -f "$CONFIG_BACKUP" || true
 }
+_INTERRUPTED=false
 _on_interrupt() {
+    _INTERRUPTED=true
     cleanup
-    printf '\nInterrupted.\n' >&2
-    exit 130
+    printf '\n\033[0;33mInstallation interrupted. No changes were applied.\033[0m\n' >&2
+    # Re-raise SIGINT properly so the parent shell knows what happened.
+    # This prevents the terminal from closing unexpectedly.
+    trap - INT
+    kill -INT $$
 }
 if [[ "${KISO_INSTALL_LIB:-}" != "1" ]]; then
     trap cleanup EXIT
@@ -775,6 +787,8 @@ if [[ "$NEED_BUILD" == true ]]; then
 
     bold "Building Docker image..."
     if ! docker build -t "$IMAGE" "$REPO_DIR"; then
+        # If the user pressed Ctrl+C, don't retry — just bail out
+        [[ "$_INTERRUPTED" == true ]] && exit 130
         yellow "  Build failed — pruning build cache and retrying without cache..."
         docker builder prune -f &>/dev/null || true
         if ! docker build --no-cache -t "$IMAGE" "$REPO_DIR"; then
@@ -802,13 +816,13 @@ if [[ "$NEED_BUILD" == true ]]; then
 
     bold "Waiting for healthcheck..."
     elapsed=0
-    while [[ $elapsed -lt 30 ]]; do
+    while [[ $elapsed -lt 30 && "$_INTERRUPTED" != true ]]; do
         if curl -sf "http://localhost:$SERVER_PORT/health" &>/dev/null; then
             echo
             green "  healthy!"
             break
         fi
-        sleep 2
+        sleep 2 || true  # don't let set -e kill us on Ctrl+C during sleep
         elapsed=$((elapsed + 2))
         printf '.'
     done

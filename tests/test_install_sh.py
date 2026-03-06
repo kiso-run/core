@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 
 import pytest
@@ -178,3 +179,69 @@ class TestM175SkillWipeOnRebuildReset:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "SKILLS=gone" in result.stdout
         assert "CONNECTORS=gone" in result.stdout
+
+
+class TestSignalHandling:
+    """Ctrl+C during install shows message and exits cleanly."""
+
+    def test_interrupted_flag_exists(self):
+        """install.sh declares _INTERRUPTED variable."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            echo "_INTERRUPTED=$_INTERRUPTED"
+        """)
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert "_INTERRUPTED=false" in result.stdout
+
+    def test_on_interrupt_sets_flag_and_prints_message(self):
+        """_on_interrupt sets _INTERRUPTED=true and prints a message."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            # Wire up traps like the real script does
+            trap cleanup EXIT
+            trap _on_interrupt INT
+
+            # Simulate interrupt by calling the handler directly
+            # (can't easily send real SIGINT in a test without killing pytest)
+            _INTERRUPTED=false
+            cleanup() { :; }
+            # Override kill so we don't actually signal ourselves
+            kill() { :; }
+            trap() { :; }
+            _on_interrupt
+            echo "_INTERRUPTED=$_INTERRUPTED"
+        """)
+        assert "_INTERRUPTED=true" in result.stdout
+        assert "interrupted" in result.stderr.lower() or "interrupted" in result.stdout.lower()
+
+    def test_on_error_shows_message_for_signal_exit(self):
+        """_on_error prints interrupted message for exit codes > 128."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            _INTERRUPTED=false
+            # Simulate _on_error being called with a signal exit code
+            (exit 130)  # sets $? to 130
+            _on_error
+            echo "DONE"
+        """)
+        # The function should print "interrupted" on stderr
+        assert "interrupted" in result.stderr.lower()
+
+    def test_docker_build_retry_skipped_on_interrupt(self):
+        """The docker build retry block checks _INTERRUPTED."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        # Verify the guard exists in the retry path
+        assert '_INTERRUPTED" == true ]] && exit 130' in content
+
+    def test_healthcheck_loop_respects_interrupt(self):
+        """The healthcheck loop checks _INTERRUPTED and uses sleep || true."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert '_INTERRUPTED" != true' in content
+        assert "sleep 2 || true" in content
