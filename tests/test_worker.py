@@ -8157,8 +8157,8 @@ class TestCircularReplanDetection:
         # Verify it mentions the failure reason
         assert "not installed" in stuck_msgs[0].lower()
 
-    async def test_no_stuck_message_on_different_failures(self, db, tmp_path):
-        """Different failure reasons should NOT trigger stuck detection."""
+    async def test_no_stuck_message_on_genuinely_different_strategies(self, db, tmp_path):
+        """Genuinely different strategies (different task types/details) should NOT trigger stuck."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
             "exec_timeout": 5,
@@ -8169,23 +8169,31 @@ class TestCircularReplanDetection:
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
-        fail_plan = {
+        # Plans with genuinely different task structures
+        plan_a = {
             "goal": "Do it",
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "exec", "detail": "try approach A with curl", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+        plan_b = {
+            "goal": "Do it",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "search", "detail": "find a completely different thing", "skill": None, "args": None, "expect": "results"},
                 {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
             ],
         }
 
-        planner_calls = []
+        plan_iter = iter([plan_a, plan_b, plan_b])
 
         async def _planner(db, config, session, role, content, **kwargs):
-            planner_calls.append(content)
-            return fail_plan
+            return next(plan_iter, plan_b)
 
-        # Completely different failure reasons each time
         review_reasons = [
             "network timeout while fetching data",
             "permission denied accessing file system",
@@ -8219,7 +8227,69 @@ class TestCircularReplanDetection:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         stuck_msgs = [m for m in saved_messages if "I'm having trouble" in m]
-        assert len(stuck_msgs) == 0, f"Should NOT get stuck message with different failures: {stuck_msgs}"
+        assert len(stuck_msgs) == 0, f"Should NOT get stuck message with different strategies: {stuck_msgs}"
+
+    async def test_strategy_fingerprint_detects_same_plan_different_errors(self, db, tmp_path):
+        """M157: same strategy with different failure reasons detected as circular via fingerprint."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 5,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
+
+        # Same plan structure every time
+        fail_plan = {
+            "goal": "Do it",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            return fail_plan
+
+        # Different failure reasons but same strategy
+        review_reasons = [
+            "network timeout while fetching data",
+            "completely unrelated disk error occurred",
+            "something else entirely",
+        ]
+        review_idx = [0]
+
+        async def _reviewer(*a, **kw):
+            idx = min(review_idx[0], len(review_reasons) - 1)
+            review_idx[0] += 1
+            return {"status": "replan", "reason": review_reasons[idx]}
+
+        saved_messages = []
+        orig_save_msg = save_message
+
+        async def _save_msg(*args, **kwargs):
+            content = args[4] if len(args) > 4 else kwargs.get("content", "")
+            saved_messages.append(content)
+            return await orig_save_msg(*args, **kwargs)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Failed"), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
+             patch("kiso.worker.loop.save_message", side_effect=_save_msg), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        stuck_msgs = [m for m in saved_messages if "I'm having trouble" in m]
+        assert len(stuck_msgs) >= 1, f"Expected stuck message from strategy fingerprint, got: {saved_messages}"
 
 
 # ---------------------------------------------------------------------------
