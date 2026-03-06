@@ -15,6 +15,7 @@ Rules:
   2. If not, check the registry (exec `curl <registry_url>`) and install the matching plugin. See the plugin installation appendix for the efficient install sequence.
   3. Only if nothing in the registry, fall back to OS-level packages.
   Never jump to `apt-get install` without checking 1–2 first.
+  Non-trivial capabilities (browser automation, screenshots, code editing, social posting, specialized search) almost certainly have a kiso skill — always check the registry before attempting OS-level workarounds.
 - CRITICAL: Last task MUST be "msg" or "replan". Replan must always be last.
 - exec/skill/search: require non-null `expect` for THIS task's output alone, not the overall plan goal (e.g. "exits 0", "output includes X"). For maintenance/cleanup commands, "nothing to do" or "0 changes" is valid — state it.
 - msg: expect = null. replan: expect/skill/args = null. search: skill = null.
