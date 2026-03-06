@@ -100,11 +100,37 @@ def _collect_connectors() -> list[dict[str, str]]:
     return result
 
 
+def _load_registry_hints() -> str:
+    """Load brief skill/connector descriptions from the local registry.json."""
+    registry_path = Path(__file__).parent.parent / "registry.json"
+    if not registry_path.is_file():
+        return ""
+    try:
+        import json
+        data = json.loads(registry_path.read_text())
+        parts: list[str] = []
+        for s in data.get("skills", []):
+            name = s.get("name", "")
+            desc = s.get("description", "")
+            if name and desc:
+                parts.append(f"{name} ({desc})")
+        for c in data.get("connectors", []):
+            name = c.get("name", "")
+            desc = c.get("description", "")
+            if name and desc:
+                parts.append(f"{name} ({desc})")
+        return "; ".join(parts) if parts else ""
+    except Exception as exc:
+        log.warning("Failed to read registry.json for hints: %s", exc)
+        return ""
+
+
 def collect_system_env(config: Config) -> dict:
     """Assemble all system environment info into one dict."""
     os_info = _collect_os_info()
     found_bins, missing_bins = _collect_binaries()
     connectors = _collect_connectors()
+    registry_hints = _load_registry_hints()
 
     return {
         "os": os_info,
@@ -119,6 +145,7 @@ def collect_system_env(config: Config) -> dict:
         "max_plan_tasks": int(config.settings["max_plan_tasks"]),
         "max_replan_depth": int(config.settings["max_replan_depth"]),
         "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+        "registry_hints": registry_hints,
         "reference_docs_path": str(KISO_DIR / "reference"),
         "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
     }
@@ -225,6 +252,9 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
     lines.append(f"Reference docs: {env['reference_docs_path']} (skill/connector authoring guides — cat before planning)")
     lines.append(f"Plugin registry: {env['registry_url']} (curl to discover available skills/connectors)")
+    registry_hints = env.get("registry_hints")
+    if registry_hints:
+        lines.append(f"Registry skills available: {registry_hints}")
     lines.append(
         f"Exec timeout: {env['exec_timeout']}s | "
         f"Max output: {_format_size(env['max_output_size'])}"

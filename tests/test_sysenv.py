@@ -262,6 +262,7 @@ class TestBuildSystemEnvSection:
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
             "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
+            "registry_hints": "browser (Headless browser automation); search (Web search)",
         }
 
     def test_contains_os_info(self, sample_env):
@@ -286,6 +287,16 @@ class TestBuildSystemEnvSection:
         assert "Kiso CLI (usable in exec tasks):" in section
         assert "kiso skill list" in section
         assert "kiso connector run" in section
+
+    def test_contains_registry_hints(self, sample_env):
+        section = build_system_env_section(sample_env)
+        assert "Registry skills available:" in section
+        assert "browser" in section
+
+    def test_no_registry_hints_when_empty(self, sample_env):
+        sample_env["registry_hints"] = ""
+        section = build_system_env_section(sample_env)
+        assert "Registry skills available:" not in section
 
     def test_contains_blocked_commands(self, sample_env):
         section = build_system_env_section(sample_env)
