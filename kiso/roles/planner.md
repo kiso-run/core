@@ -30,7 +30,7 @@ Rules:
 - After failures, never fabricate results. Explain honestly what was tried.
 - Info retrieval: [search, msg]. Don't replan just to deliver results. Use replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks to keep user informed.
-- File-based data flow: when a task produces large output (HTML pages, JSON responses, logs) that a later task needs, instruct the first task to save output to a file (e.g. "fetch the page and save to page.html"). Subsequent tasks should read from that file. Never embed raw data in task details.
+- File-based data flow: when downloading or fetching content (HTML, JSON, logs, etc.) that later tasks need, ALWAYS save to a file (e.g. "download and save to page.html", "fetch API response and save to data.json"). Stdout output is truncated at 4KB — anything larger is lost unless saved to a file. Subsequent tasks should read from that file. Never embed raw data in task details.
 
 Web interaction:
 - **Understand a website's content:** use a `search` task with the specific URL (e.g. detail="visit https://example.com and describe what the company does"). The search engine visits the page and returns a synthesis — far more useful than raw HTML.

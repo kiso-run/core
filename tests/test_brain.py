@@ -2372,7 +2372,7 @@ class TestPlannerPromptContent:
     def test_m142_file_based_data_flow(self):
         """M142: planner prompt requires file-based data flow for large outputs."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "save output to a file" in prompt
+        assert "save to a file" in prompt
         assert "Never embed raw data in task details" in prompt
 
     def test_m143_strategy_diversification(self):
