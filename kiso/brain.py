@@ -12,7 +12,7 @@ import aiosqlite
 from kiso.config import Config, KISO_DIR
 from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
-from kiso.skills import discover_skills, build_planner_skill_list
+from kiso.skills import discover_skills, build_planner_skill_list, validate_skill_args
 from kiso.store import get_facts, get_pending_items, get_recent_messages, get_session, search_facts
 from kiso.sysenv import get_system_env, build_system_env_section
 
@@ -293,11 +293,14 @@ def validate_plan(
     plan: dict,
     installed_skills: list[str] | None = None,
     max_tasks: int | None = None,
+    installed_skills_info: dict[str, dict] | None = None,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
     If installed_skills is provided, skill tasks are validated against it.
     If max_tasks is provided, plans with more tasks are rejected.
+    If installed_skills_info is provided (name→skill dict), skill args are
+    validated against the schema at plan time (M166).
     """
     errors: list[str] = []
     tasks = plan.get("tasks", [])
@@ -358,6 +361,21 @@ def validate_plan(
                     f"Use an exec task with `kiso skill install {skill_name}` "
                     f"to install it first, then replan to use it."
                 )
+            elif installed_skills_info and skill_name in installed_skills_info:
+                # Validate args against schema (M166)
+                args_raw = task.get("args") or "{}"
+                try:
+                    args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                except (json.JSONDecodeError, TypeError):
+                    errors.append(f"Task {i}: skill args is not valid JSON")
+                else:
+                    schema = installed_skills_info[skill_name].get("args_schema", {})
+                    arg_errors = validate_skill_args(args, schema)
+                    if arg_errors:
+                        errors.append(
+                            f"Task {i}: skill '{skill_name}' args invalid: "
+                            + "; ".join(arg_errors)
+                        )
 
     if replan_count > 1:
         errors.append("A plan can have at most one replan task")
@@ -567,7 +585,7 @@ async def build_planner_messages(
 
     context_block = "\n\n".join(context_parts)
 
-    return _build_messages(system_prompt, context_block), installed_names
+    return _build_messages(system_prompt, context_block), installed_names, installed
 
 
 async def run_planner(
@@ -584,15 +602,17 @@ async def run_planner(
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
     """
-    messages, installed_names = await build_planner_messages(
+    messages, installed_names, installed_info = await build_planner_messages(
         db, config, session, user_role, new_message, user_skills=user_skills,
         paraphrased_context=paraphrased_context,
     )
+    skills_by_name = {s["name"]: s for s in installed_info}
 
     max_tasks = int(config.settings["max_plan_tasks"])
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,
-        lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks),
+        lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
+                                installed_skills_info=skills_by_name),
         PlanError, "Plan",
         session=session,
     )

@@ -562,7 +562,7 @@ class TestBuildPlannerMessages:
 
     async def test_basic_no_context(self, db, config):
         await create_session(db, "sess1")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert len(msgs) == 2
         assert msgs[0]["role"] == "system"
         assert msgs[1]["role"] == "user"
@@ -575,7 +575,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await db.execute("UPDATE sessions SET summary = 'previous context' WHERE session = 'sess1'")
         await db.commit()
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert "## Session Summary" in msgs[1]["content"]
         assert "previous context" in msgs[1]["content"]
 
@@ -583,7 +583,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await db.execute("INSERT INTO facts (content, source) VALUES (?, ?)", ("Python 3.12", "curator"))
         await db.commit()
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert "## Known Facts" in msgs[1]["content"]
         assert "Python 3.12" in msgs[1]["content"]
 
@@ -595,7 +595,7 @@ class TestBuildPlannerMessages:
         await save_fact(db, "Prefers dark mode", "curator", category="user")
         await save_fact(db, "Git available", "curator", category="tool")
         await save_fact(db, "Some general fact", "curator", category="general")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "### Project" in content
         assert "### User" in content
@@ -617,7 +617,7 @@ class TestBuildPlannerMessages:
         await save_fact(db, "Alice prefers verbose", "curator", session="sess1", category="user")
         await save_fact(db, "Bob prefers brief", "curator", session="sess-other", category="user")
         await save_fact(db, "Uses Docker", "curator")  # no session — global
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         # Current session + global go into primary block, no session label
         assert "## Known Facts" in content
@@ -638,7 +638,7 @@ class TestBuildPlannerMessages:
         from kiso.store import save_fact
         await create_session(db, "sess1")
         await save_fact(db, "Uses pytest", "curator", session="sess1", category="tool")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "user", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "user", "hello")
         content = msgs[1]["content"]
         assert "Uses pytest" in content
         assert "[session:" not in content
@@ -650,7 +650,7 @@ class TestBuildPlannerMessages:
         from kiso.store import save_fact
         await save_fact(db, "Exotic fact", "curator", category="exotic")
         await save_fact(db, "Normal fact", "curator", category="general")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "### General" in content
         assert "Exotic fact" in content
@@ -664,7 +664,7 @@ class TestBuildPlannerMessages:
             ("Which DB?", "sess1", "curator"),
         )
         await db.commit()
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert "## Pending Questions" in msgs[1]["content"]
         assert "Which DB?" in msgs[1]["content"]
 
@@ -672,7 +672,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await save_message(db, "sess1", "alice", "user", "first msg")
         await save_message(db, "sess1", "alice", "user", "second msg")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "third")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "third")
         assert "## Recent Messages" in msgs[1]["content"]
         assert "first msg" in msgs[1]["content"]
         assert "second msg" in msgs[1]["content"]
@@ -682,7 +682,7 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         for i in range(5):
             await save_message(db, "sess1", "alice", "user", f"msg-{i}")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "new")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "new")
         content = msgs[1]["content"]
         # Only last 3 should be present
         assert "msg-0" not in content
@@ -695,14 +695,14 @@ class TestBuildPlannerMessages:
         await create_session(db, "sess1")
         await save_message(db, "sess1", "trusted", "user", "good msg", trusted=True)
         await save_message(db, "sess1", "stranger", "user", "bad msg", trusted=False, processed=True)
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "new")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "new")
         content = msgs[1]["content"]
         assert "good msg" in content
         assert "bad msg" not in content
 
     async def test_no_session_doesnt_crash(self, db, config):
         """Building context for a nonexistent session should not crash."""
-        msgs, _installed = await build_planner_messages(db, config, "nonexistent", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "nonexistent", "admin", "hello")
         assert len(msgs) == 2
 
     # --- M7: skills in planner context ---
@@ -715,7 +715,7 @@ class TestBuildPlannerMessages:
             }, "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
         ]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "search for X")
+            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "search for X")
         content = msgs[1]["content"]
         assert "## Skills" in content
         assert "search — Web search" in content
@@ -744,7 +744,7 @@ class TestBuildPlannerMessages:
             "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
-            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "## System Environment" in content
         assert "Linux x86_64" in content
@@ -781,7 +781,7 @@ class TestBuildPlannerMessages:
             "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         with patch("kiso.brain.get_system_env", return_value=fake_env):
-            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         facts_pos = content.index("## Known Facts")
         sysenv_pos = content.index("## System Environment")
@@ -791,7 +791,7 @@ class TestBuildPlannerMessages:
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
         with patch("kiso.brain.discover_skills", return_value=[]):
-            msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "## Skills" not in content
 
@@ -804,7 +804,7 @@ class TestBuildPlannerMessages:
              "env": {}, "session_secrets": [], "path": "/fake2", "version": "0.1.0", "description": ""},
         ]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs, _installed = await build_planner_messages(
+            msgs, _installed, *_ = await build_planner_messages(
                 db, config, "sess1", "user", "hello", user_skills=["search"],
             )
         content = msgs[1]["content"]
@@ -822,7 +822,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_skills", return_value=[]),
             caplog.at_level(logging.WARNING, logger="kiso.brain"),
         ):
-            msgs, names = await build_planner_messages(db, config, "sess1", "admin", "hello")
+            msgs, names, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert names == []
         assert "discover_skills() returned empty" in caplog.text
 
@@ -1870,14 +1870,14 @@ class TestPlannerMessagesFencing:
     async def test_planner_messages_fence_recent(self, db, config):
         await create_session(db, "sess1")
         await save_message(db, "sess1", "alice", "user", "hello world")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "new msg")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "new msg")
         content = msgs[1]["content"]
         assert "<<<MESSAGES_" in content
         assert "<<<END_MESSAGES_" in content
 
     async def test_planner_messages_fence_new_message(self, db, config):
         await create_session(db, "sess1")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "test input")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "test input")
         content = msgs[1]["content"]
         assert "<<<USER_MSG_" in content
         assert "<<<END_USER_MSG_" in content
@@ -1885,7 +1885,7 @@ class TestPlannerMessagesFencing:
 
     async def test_planner_messages_include_paraphrased(self, db, config):
         await create_session(db, "sess1")
-        msgs, _installed = await build_planner_messages(
+        msgs, _installed, *_ = await build_planner_messages(
             db, config, "sess1", "admin", "hello",
             paraphrased_context="The external user asked about the weather.",
         )
@@ -1896,7 +1896,7 @@ class TestPlannerMessagesFencing:
 
     async def test_planner_messages_no_paraphrased_when_none(self, db, config):
         await create_session(db, "sess1")
-        msgs, _installed = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "Paraphrased" not in content
 
@@ -2415,6 +2415,64 @@ class TestM165SkillArgsExample:
         assert "not a raw object" in prompt
 
 
+class TestM166ValidatePlanSkillArgs:
+    """M166: validate_plan checks skill args against schema."""
+
+    def test_missing_required_arg_rejected(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "screenshot", "skill": "browser",
+             "args": "{}", "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert any("missing required arg: action" in e for e in errors)
+
+    def test_valid_args_accepted(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "screenshot", "skill": "browser",
+             "args": '{"action": "screenshot"}', "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert not errors
+
+    def test_invalid_json_args_rejected(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "screenshot", "skill": "browser",
+             "args": "not-json{", "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert any("not valid JSON" in e for e in errors)
+
+    def test_null_args_checked_against_schema(self):
+        plan = {"tasks": [
+            {"type": "skill", "detail": "screenshot", "skill": "browser",
+             "args": None, "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert any("missing required arg: action" in e for e in errors)
+
+    def test_no_info_skips_args_validation(self):
+        """When installed_skills_info is not provided, args are not validated."""
+        plan = {"tasks": [
+            {"type": "skill", "detail": "screenshot", "skill": "browser",
+             "args": None, "expect": "done"},
+            {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["browser"])
+        assert not errors
+
+
 class TestM73cPlannerUserManagement:
     """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
 
@@ -2510,7 +2568,7 @@ class TestM82PlannerAskThenAdd:
 
     async def test_caller_role_user_in_messages(self, db, config):
         """build_planner_messages injects '## Caller Role\\nuser' for role=user."""
-        msgs, _ = await build_planner_messages(db, config, "sess1", "user", "add user bob")
+        msgs, *_ = await build_planner_messages(db, config, "sess1", "user", "add user bob")
         assert "## Caller Role\nuser" in msgs[1]["content"]
 
     async def test_run_planner_accepts_msg_only_plan(self, db, config):
@@ -3046,7 +3104,7 @@ class TestPlannerContextualRules:
         """A message like 'what time is it' should not inject any appendix (when skills exist)."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse the web", "commands": {}}]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs, _ = await build_planner_messages(
+            msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
         system = msgs[0]["content"]
@@ -3056,7 +3114,7 @@ class TestPlannerContextualRules:
 
     async def test_skill_keyword_injects_kiso_commands(self, db):
         """Message mentioning 'skill' should inject kiso-commands appendix."""
-        msgs, _ = await build_planner_messages(
+        msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", "install the search skill",
         )
         system = msgs[0]["content"]
@@ -3064,7 +3122,7 @@ class TestPlannerContextualRules:
 
     async def test_user_keyword_injects_user_mgmt(self, db):
         """Message mentioning 'user' should inject user-mgmt appendix."""
-        msgs, _ = await build_planner_messages(
+        msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", "add a new user bob",
         )
         system = msgs[0]["content"]
@@ -3072,7 +3130,7 @@ class TestPlannerContextualRules:
 
     async def test_install_keyword_injects_plugin_install(self, db):
         """Message mentioning 'install' should inject plugin-install appendix."""
-        msgs, _ = await build_planner_messages(
+        msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", "install the browser connector",
         )
         system = msgs[0]["content"]
@@ -3084,7 +3142,7 @@ class TestPlannerContextualRules:
             "vorrei navigare su internet\n\n"
             "## Failure Reason\nskill 'browser' is not installed. Available skills: none"
         )
-        msgs, _ = await build_planner_messages(
+        msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", replan_msg,
         )
         system = msgs[0]["content"]
@@ -3092,7 +3150,7 @@ class TestPlannerContextualRules:
 
     async def test_registry_keyword_injects_plugin_install(self, db):
         """M123: message with 'registry' should inject plugin-install appendix."""
-        msgs, _ = await build_planner_messages(
+        msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin",
             "check the registry for browser skill",
         )
@@ -3102,7 +3160,7 @@ class TestPlannerContextualRules:
     async def test_no_skills_injects_plugin_install(self, db):
         """M129: when no skills are installed, always inject plugin-install appendix."""
         with patch("kiso.brain.discover_skills", return_value=[]):
-            msgs, _ = await build_planner_messages(
+            msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
         system = msgs[0]["content"]
@@ -3111,7 +3169,7 @@ class TestPlannerContextualRules:
     async def test_no_skills_no_duplicate_appendix(self, db):
         """M129: if keyword already triggered plugin-install, no duplicate on empty skills."""
         with patch("kiso.brain.discover_skills", return_value=[]):
-            msgs, _ = await build_planner_messages(
+            msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "install the browser skill",
             )
         system = msgs[0]["content"]
@@ -3123,7 +3181,7 @@ class TestPlannerContextualRules:
         # "screenshot" maps to "browser" skill — inject appendix when browser not installed
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs, _ = await build_planner_messages(
+            msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "fammi uno screenshot di example.com",
             )
@@ -3136,7 +3194,7 @@ class TestPlannerContextualRules:
             {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
         ]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs, _ = await build_planner_messages(
+            msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "fammi uno screenshot di example.com",
             )
@@ -3145,7 +3203,7 @@ class TestPlannerContextualRules:
 
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
-        msgs, _ = await build_planner_messages(
+        msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", "hello",
         )
         system = msgs[0]["content"]
@@ -3600,7 +3658,7 @@ class TestRetryJsonErrorPosition:
             {"role": "user", "content": "usr"},
         ]
         with patch("kiso.brain.build_planner_messages", new_callable=AsyncMock,
-                    return_value=(mock_messages, [])):
+                    return_value=(mock_messages, [], [])):
             with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                         side_effect=["{invalid json!!!", valid_plan]) as mock_llm:
                 plan = await run_planner(

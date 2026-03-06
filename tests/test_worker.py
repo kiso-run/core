@@ -3561,7 +3561,7 @@ class TestKnowledgeProcessing:
 
         # Build planner messages for session B — facts are global
         from kiso.brain import build_planner_messages
-        msgs, _installed = await build_planner_messages(db, config, "sessB", "admin", "hello")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sessB", "admin", "hello")
         content = msgs[1]["content"]
         assert "Python 3.12" in content
 
@@ -9464,7 +9464,7 @@ class TestE2EWebScenario:
         # Some skills installed, but NOT browser
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
-            msgs, installed = await build_planner_messages(
+            msgs, installed, *_ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "fammi uno screenshot di example.com",
             )
