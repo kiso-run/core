@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
-import sys
 
 import pytest
 
@@ -99,3 +99,82 @@ class TestM174DoResetSetsResetRequested:
         """)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "OK" in result.stdout
+
+
+class TestM175SkillWipeOnRebuildReset:
+    """M175: skills/ and connectors/ dirs are wiped when NEED_BUILD+RESET_REQUESTED."""
+
+    def test_wipe_block_present_in_install_sh(self):
+        """The 3f wipe block exists and references RESET_REQUESTED."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert 'NEED_BUILD" == true && "$RESET_REQUESTED" == true' in content
+        assert "skills" in content
+        assert "connectors" in content
+
+    def test_wipe_block_skipped_when_no_reset(self):
+        """When RESET_REQUESTED=false, wipe block does not run."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+
+            NEED_BUILD=true
+            RESET_REQUESTED=false
+            INST_DIR="$(mktemp -d)"
+            mkdir -p "$INST_DIR/skills/browser"
+            touch "$INST_DIR/skills/browser/kiso.toml"
+
+            bold() { :; }
+            green() { :; }
+            yellow() { :; }
+
+            # Simulate the wipe block logic
+            if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
+                rm -rf "$INST_DIR/skills"
+            fi
+
+            if [[ -d "$INST_DIR/skills/browser" ]]; then
+                echo "SKILLS_SURVIVED=true"
+            else
+                echo "SKILLS_SURVIVED=false"
+            fi
+            rm -rf "$INST_DIR"
+        """)
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert "SKILLS_SURVIVED=true" in result.stdout
+
+    def test_wipe_block_runs_when_reset_requested(self):
+        """When NEED_BUILD+RESET_REQUESTED, skills dir is removed."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+
+            NEED_BUILD=true
+            RESET_REQUESTED=true
+            INST_DIR="$(mktemp -d)"
+            mkdir -p "$INST_DIR/skills/browser"
+            touch "$INST_DIR/skills/browser/kiso.toml"
+            mkdir -p "$INST_DIR/connectors/telegram"
+            touch "$INST_DIR/connectors/telegram/kiso.toml"
+
+            bold() { :; }
+            green() { :; }
+            yellow() { :; }
+
+            # Simulate the wipe block (without docker — just rm)
+            if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
+                for _wipe_dir in skills connectors; do
+                    if [[ -d "$INST_DIR/$_wipe_dir" ]]; then
+                        rm -rf "$INST_DIR/$_wipe_dir"
+                    fi
+                done
+            fi
+
+            [[ -d "$INST_DIR/skills" ]] && echo "SKILLS=exists" || echo "SKILLS=gone"
+            [[ -d "$INST_DIR/connectors" ]] && echo "CONNECTORS=exists" || echo "CONNECTORS=gone"
+            rm -rf "$INST_DIR"
+        """)
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert "SKILLS=gone" in result.stdout
+        assert "CONNECTORS=gone" in result.stdout

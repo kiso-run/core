@@ -602,6 +602,24 @@ if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
     fi
 fi
 
+# ── 3f. Wipe skills/connectors on reset ───────────────────────────────────────
+# When a reset is requested AND the image is being rebuilt, unconditionally
+# remove skills/ and connectors/ directories. deps.sh artifacts live in the
+# image (gone after rebuild), so keeping stale skill dirs leads to "installed
+# but broken" skills.
+
+if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
+    for _wipe_dir in skills connectors; do
+        if [[ -d "$INST_DIR/$_wipe_dir" ]]; then
+            bold "Wiping $_wipe_dir directory (reset requested)..."
+            # Use alpine container to handle root-owned files
+            docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine rm -rf "/mnt/kiso/$_wipe_dir" \
+                && green "  $_wipe_dir directory wiped" \
+                || yellow "  warning: could not wipe $_wipe_dir directory"
+        fi
+    done
+fi
+
 # ── 4. Configure ─────────────────────────────────────────────────────────────
 
 bold "Configuring..."
