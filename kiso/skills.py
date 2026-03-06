@@ -232,7 +232,14 @@ def build_planner_skill_list(
 
     lines: list[str] = ["Available skills:"]
     for s in skills:
-        lines.append(f"- {s['name']} — {s['summary']}")
+        if s.get("healthy") is False:
+            missing = ", ".join(s.get("missing_deps", []))
+            lines.append(
+                f"- {s['name']} — {s['summary']}  [BROKEN — missing: {missing}. "
+                f"Reinstall with: kiso skill remove {s['name']} && kiso skill install {s['name']}]"
+            )
+        else:
+            lines.append(f"- {s['name']} — {s['summary']}")
         args_schema = s.get("args_schema", {})
         for arg_name, arg_def in args_schema.items():
             arg_type = arg_def.get("type", "string")

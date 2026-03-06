@@ -603,6 +603,36 @@ class TestBuildPlannerSkillList:
         result = build_planner_skill_list([skill], "admin")
         assert "guide:" not in result
 
+    def test_unhealthy_skill_shows_broken_annotation(self):
+        skill = self._make_skill("browser", "Browser automation")
+        skill["healthy"] = False
+        skill["missing_deps"] = ["playwright"]
+        result = build_planner_skill_list([skill], "admin")
+        assert "[BROKEN" in result
+        assert "missing: playwright" in result
+        assert "kiso skill remove browser" in result
+        assert "kiso skill install browser" in result
+
+    def test_healthy_skill_no_broken_annotation(self):
+        skill = self._make_skill("browser", "Browser automation")
+        skill["healthy"] = True
+        skill["missing_deps"] = []
+        result = build_planner_skill_list([skill], "admin")
+        assert "- browser — Browser automation" in result
+        assert "[BROKEN" not in result
+
+    def test_mixed_healthy_and_unhealthy(self):
+        healthy = self._make_skill("echo", "Echo skill")
+        healthy["healthy"] = True
+        healthy["missing_deps"] = []
+        broken = self._make_skill("browser", "Browser automation")
+        broken["healthy"] = False
+        broken["missing_deps"] = ["playwright", "chromium"]
+        result = build_planner_skill_list([healthy, broken], "admin")
+        assert "- echo — Echo skill" in result
+        assert "[BROKEN" in result
+        assert "playwright, chromium" in result
+
 
 # --- validate_skill_args ---
 
