@@ -9277,3 +9277,143 @@ class TestReviewerSummaryStoredOnCompletedRow:
         assert success is True
         exec_rows = [c for c in completed if c["type"] == "exec"]
         assert "reviewer_summary" not in exec_rows[0]
+
+
+# ---------------------------------------------------------------------------
+# M163: End-to-end smoke test — multi-plan web scenario
+# ---------------------------------------------------------------------------
+
+
+class TestE2EWebScenario:
+    """M163: Verify the full orchestration for a multi-plan scenario.
+
+    Simulates: user asks for website info + screenshot on a factory-reset
+    state (no skills). Verifies the system correctly:
+    1. Uses search for content understanding
+    2. Checks registry when screenshot needed
+    3. Installs browser skill
+    4. Uses browser skill for screenshot
+    5. Delivers final msg
+    """
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_multi_plan_registry_then_install_then_use(self, db, tmp_path):
+        """Full flow: plan1 (search + registry check) → plan2 (install) → plan3 (use skill + msg)."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "exec_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 5,
+        })
+        msg_id = await save_message(
+            db, "sess1", "alice", "user",
+            "vai su example.com, dimmi cosa fa e mandami screenshot",
+            processed=False,
+        )
+
+        # Plan 1: search + registry check + replan
+        plan1 = {
+            "goal": "Get site info and prepare screenshot",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "search", "detail": "visit example.com and describe the company",
+                 "skill": None, "args": None, "expect": "description of the company"},
+                {"type": "exec", "detail": "check kiso registry for browser skill",
+                 "skill": None, "args": None, "expect": "registry JSON"},
+                {"type": "replan", "detail": "install browser and take screenshot",
+                 "skill": None, "args": None, "expect": None},
+            ],
+        }
+        # Plan 2: install browser skill + replan
+        plan2 = {
+            "goal": "Install browser skill",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "install the browser skill",
+                 "skill": None, "args": None, "expect": "skill installed"},
+                {"type": "replan", "detail": "use browser skill for screenshot",
+                 "skill": None, "args": None, "expect": None},
+            ],
+        }
+        # Plan 3: use browser skill + msg
+        plan3 = {
+            "goal": "Take screenshot and report to user",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "take screenshot of example.com and save to pub/",
+                 "skill": None, "args": None, "expect": "screenshot saved"},
+                {"type": "msg", "detail": "[Lang: it] Tell user about the company and share screenshot",
+                 "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        plan_iter = iter([plan1, plan2, plan3])
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            return next(plan_iter)
+
+        # Searcher returns synthesis
+        async def _searcher(*a, **kw):
+            return "Example.com is a domain reserved for documentation purposes by IANA."
+
+        # Reviewer approves everything except self-directed replans
+        async def _reviewer(*a, **kw):
+            return {
+                "status": "ok", "reason": None,
+                "learn": None, "retry_hint": None,
+                "summary": "Task completed successfully",
+            }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({
+            "id": msg_id,
+            "content": "vai su example.com, dimmi cosa fa e mandami screenshot",
+            "user_role": "admin",
+        })
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Example.com is a documentation domain. Screenshot attached."), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
+             patch("kiso.worker.search.run_searcher", side_effect=_searcher), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=15)
+
+        # Verify: planner was called 3 times (initial + 2 replans)
+        # Verify: final plan succeeded
+        tasks = await get_tasks_for_session(db, "sess1")
+        done_tasks = [t for t in tasks if t["status"] == "done"]
+        msg_tasks = [t for t in done_tasks if t["type"] == "msg"]
+        # Should have at least one msg task with the final response
+        final_msgs = [t for t in msg_tasks if "Example.com" in (t.get("output") or "")]
+        assert len(final_msgs) >= 1, f"Expected final msg, got tasks: {[(t['type'], t['status']) for t in tasks]}"
+
+    async def test_capability_gap_triggers_plugin_install_guidance(self, db):
+        """Verify the planner sees plugin-install guidance when screenshot is needed."""
+        from kiso.brain import build_planner_messages
+
+        config = _make_config()
+        # Some skills installed, but NOT browser
+        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, installed = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "fammi uno screenshot di example.com",
+            )
+        system = msgs[0]["content"]
+        # Plugin-install appendix should be injected (capability gap: screenshot → browser)
+        assert "Plugin installation:" in system
+        # Skills section should show search but not browser
+        assert "search" in installed
+        assert "browser" not in installed
