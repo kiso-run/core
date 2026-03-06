@@ -2415,6 +2415,17 @@ class TestM165SkillArgsExample:
         assert "not a raw object" in prompt
 
 
+class TestM180BrokenSkillRecoveryGuidance:
+    """M180: planner prompt includes broken skill recovery guidance."""
+
+    def test_planner_prompt_has_broken_skill_guidance(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Broken skill recovery" in prompt
+        assert "kiso skill remove" in prompt
+        assert "kiso skill install" in prompt
+        assert "[BROKEN]" in prompt
+
+
 class TestM166ValidatePlanSkillArgs:
     """M166: validate_plan checks skill args against schema."""
 

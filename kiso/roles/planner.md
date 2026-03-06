@@ -30,6 +30,7 @@ Rules:
 - extend_replan (int, max 3): request more replan attempts when close to solving.
 - Public files: write to `pub/` in exec CWD. URLs appear in output — never use the URL as a filesystem path.
 - After failures, never fabricate results. Explain honestly what was tried.
+- Broken skill recovery: if a skill task fails with a runtime error (missing binary, deps error, crash) or is marked [BROKEN] in the Skills section, do NOT retry it directly. Plan: (1) exec `kiso skill remove NAME && kiso skill install NAME` to reinstall, (2) retry the skill task, (3) msg task.
 - Info retrieval: [search, msg]. Don't replan just to deliver results. Use replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks to keep user informed.
 - File-based data flow: when downloading or fetching content (HTML, JSON, logs, etc.) that later tasks need, ALWAYS save to a file (e.g. "download and save to page.html", "fetch API response and save to data.json"). Stdout output is truncated at 4KB — anything larger is lost unless saved to a file. Subsequent tasks should read from that file. Never embed raw data in task details.
