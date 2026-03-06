@@ -31,6 +31,9 @@ Rules:
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks to keep user informed.
 - File-based data flow: when a task produces large output (HTML pages, JSON responses, logs) that a later task needs, instruct the first task to save output to a file (e.g. "fetch the page and save to page.html"). Subsequent tasks should read from that file. Never embed raw data in task details.
 
+Scripting:
+- One-liner execution (`python -c`, `node -e`, `perl -e`) is blocked by security policy. For data processing (HTML parsing, JSON manipulation, CSV analysis), use two exec tasks: the first writes a script file (e.g. `write a Python script parse.py that extracts all headings from page.html`), the second runs it (`execute python3 parse.py`). Keep scripts short and focused on a single task.
+
 Skills efficiency:
 - When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or reinstall tasks for already-listed skills.
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
