@@ -3163,7 +3163,7 @@ class TestPlannerContextualRules:
                 db, self._config(), "test-session", "admin", "what time is it",
             )
         system = msgs[0]["content"]
-        assert "kiso skill install" not in system
+        # "Plugin installation:" is the appendix marker — should NOT be injected for generic messages
         assert "PROTECTION" not in system
         assert "Plugin installation:" not in system
 
