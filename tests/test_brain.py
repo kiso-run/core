@@ -3685,3 +3685,17 @@ class TestM146ReviewerSummary:
         prompt = _load_system_prompt("reviewer")
         assert "summary" in prompt.lower()
         assert "500 chars" in prompt or "max 500" in prompt
+
+
+# --- M147: Planner act-on-reviewer-hints rule ---
+
+
+class TestM147PlannerActOnHints:
+    """M147: planner prompt has act-on-reviewer-fixes rule."""
+
+    def test_planner_prompt_act_on_fixes(self):
+        from kiso.brain import _load_system_prompt, invalidate_prompt_cache
+        invalidate_prompt_cache()
+        prompt = _load_system_prompt("planner")
+        assert "Suggested Fixes" in prompt
+        assert "do not re-investigate" in prompt.lower() or "Do not re-investigate" in prompt

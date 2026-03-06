@@ -9014,6 +9014,67 @@ class TestRetryHintInReplanContext:
         assert "page not found" in ctx
 
 
+# --- M147: Suggested Fixes section in replan context ---
+
+
+class TestSuggestedFixesSection:
+    """M147: retry hints surface as a prominent Suggested Fixes section."""
+
+    def test_suggested_fixes_from_history(self):
+        """Retry hints from replan_history appear in Suggested Fixes section."""
+        history = [{
+            "goal": "navigate to site",
+            "failure": "browser engine missing",
+            "what_was_tried": ["[skill] browser navigate"],
+            "key_outputs": [],
+            "retry_hints": ["Run playwright install to download missing browsers"],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "## Suggested Fixes" in ctx
+        assert "Run playwright install to download missing browsers" in ctx
+        assert "do NOT re-investigate" in ctx
+
+    def test_suggested_fixes_before_confirmed_facts(self):
+        """Suggested Fixes section appears before Confirmed Facts."""
+        completed = [{"type": "exec", "detail": "check", "status": "done", "output": "installed"}]
+        history = [{
+            "goal": "fix",
+            "failure": "broken",
+            "what_was_tried": [],
+            "key_outputs": [],
+            "retry_hints": ["use -L flag"],
+        }]
+        ctx = _build_replan_context(completed, [], "still broken", history)
+        fixes_pos = ctx.index("## Suggested Fixes")
+        # Should be at the top (before any other section)
+        assert fixes_pos == 0
+
+    def test_no_suggested_fixes_when_no_hints(self):
+        """No Suggested Fixes section when no retry_hints exist."""
+        history = [{
+            "goal": "fetch page",
+            "failure": "timeout",
+            "what_was_tried": ["[exec] curl"],
+            "key_outputs": [],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "## Suggested Fixes" not in ctx
+
+    def test_dedup_hints_across_history(self):
+        """Duplicate hints from multiple history entries are deduplicated."""
+        history = [
+            {"goal": "a", "failure": "f", "what_was_tried": [], "key_outputs": [],
+             "retry_hints": ["use curl -L"]},
+            {"goal": "b", "failure": "f2", "what_was_tried": [], "key_outputs": [],
+             "retry_hints": ["use curl -L", "try wget instead"]},
+        ]
+        ctx = _build_replan_context([], [], "still failing", history)
+        # "use curl -L" should appear only once in the Suggested Fixes section
+        fixes_section = ctx.split("## Suggested Fixes")[1].split("\n\n")[0]
+        assert fixes_section.count("use curl -L") == 1
+        assert "try wget instead" in fixes_section
+
+
 # --- M146: Reviewer summary field for intelligent output condensation ---
 
 

@@ -352,6 +352,21 @@ def _build_replan_context(
     """Build extra context for replanning."""
     parts: list[str] = []
 
+    # Collect all retry hints from replan history — prominent section at top (M147)
+    all_hints: list[str] = []
+    seen_hints: set[str] = set()
+    for h in replan_history:
+        for hint in h.get("retry_hints", []):
+            if hint not in seen_hints:
+                all_hints.append(hint)
+                seen_hints.add(hint)
+    if all_hints:
+        bullets = "\n".join(f"- {h}" for h in all_hints)
+        parts.append(
+            "## Suggested Fixes (from reviewer — execute these, do NOT re-investigate)\n"
+            + bullets
+        )
+
     # Extract confirmed facts from all completed tasks (current + history)
     all_completed = list(completed)
     for h in replan_history:
