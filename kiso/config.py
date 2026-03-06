@@ -42,7 +42,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "planner_timeout": 300,
     "messenger_timeout": 120,
     "max_output_size": 1048576,
-    "max_worker_retries": 1,
+    "max_worker_retries": 2,
     # limits
     "max_llm_calls_per_message": 200,
     "max_message_size": 65536,
@@ -141,7 +141,7 @@ exec_timeout              = 120      # seconds; also used for post-plan LLM call
 planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
 messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
-max_worker_retries        = 1
+max_worker_retries        = 2
 
 # --- limits ---
 max_llm_calls_per_message = 200
