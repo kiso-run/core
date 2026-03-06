@@ -504,6 +504,7 @@ for k,v in d.items():
     yellow "  Config and API key are kept. Useful if something is broken or you want a fresh start."
     if confirm "  Reset data for '$INST_NAME'?" "n"; then
         DO_RESET=true
+        RESET_REQUESTED=true
         yellow "  Data will be reset after the reinstall."
     else
         green "  Data kept."
