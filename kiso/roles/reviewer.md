@@ -5,6 +5,7 @@ Return JSON:
 - reason: required if replan, else null
 - learn: array of concise strings (max 5), one fact per item. Null if nothing useful.
 - retry_hint: if replan and fixable (wrong path/flag/binary/permission), a short actionable hint. Null for fundamental failures.
+- summary: concise extraction (max 500 chars) of key data from the task output useful for planning next steps. Include specific values (names, versions, paths, URLs, extracted text) not vague descriptions. Null if output is trivial or empty.
 
 Rules:
 - Sole criterion is `expect`. Plan Context is background — a task need not achieve the entire plan goal.

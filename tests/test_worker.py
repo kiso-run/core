@@ -98,9 +98,9 @@ SKILL_PLAN = {
     ],
 }
 
-REVIEW_OK = {"status": "ok", "reason": None, "learn": None, "retry_hint": None}
-REVIEW_REPLAN = {"status": "replan", "reason": "Task failed", "learn": None, "retry_hint": None}
-REVIEW_REPLAN_WITH_HINT = {"status": "replan", "reason": "Wrong path", "learn": None, "retry_hint": "use /opt/app not /app"}
+REVIEW_OK = {"status": "ok", "reason": None, "learn": None, "retry_hint": None, "summary": None}
+REVIEW_REPLAN = {"status": "replan", "reason": "Task failed", "learn": None, "retry_hint": None, "summary": None}
+REVIEW_REPLAN_WITH_HINT = {"status": "replan", "reason": "Wrong path", "learn": None, "retry_hint": "use /opt/app not /app", "summary": None}
 
 
 def _passthrough_translator(config, detail, sys_env_text, **kw):
@@ -6871,7 +6871,7 @@ class TestWorkerRetry:
         async def _mock_reviewer(*args, **kw):
             review_calls[0] += 1
             if review_calls[0] == 1:
-                return {"status": "replan", "reason": "No results", "learn": None, "retry_hint": "try broader terms"}
+                return {"status": "replan", "reason": "No results", "learn": None, "retry_hint": "try broader terms", "summary": None}
             return REVIEW_OK
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
@@ -9012,3 +9012,115 @@ class TestRetryHintInReplanContext:
         ctx = _build_replan_context([], [], "still failing", history)
         assert "Reviewer hint" not in ctx
         assert "page not found" in ctx
+
+
+# --- M146: Reviewer summary field for intelligent output condensation ---
+
+
+class TestReviewerSummarySchema:
+    """M146: REVIEW_SCHEMA includes summary field."""
+
+    def test_schema_has_summary(self):
+        from kiso.brain import REVIEW_SCHEMA
+        props = REVIEW_SCHEMA["json_schema"]["schema"]["properties"]
+        assert "summary" in props
+        required = REVIEW_SCHEMA["json_schema"]["schema"]["required"]
+        assert "summary" in required
+
+
+class TestReviewerSummaryInReplanContext:
+    """M146: reviewer summary preferred over truncated output in replan context."""
+
+    def test_summary_preferred_over_raw_output(self):
+        """When reviewer_summary is present, use it instead of raw output."""
+        completed = [{
+            "type": "exec",
+            "detail": "curl example.com",
+            "status": "done",
+            "output": "<html>" + "x" * 5000 + "</html>",  # large raw output
+            "reviewer_summary": "Page title: Example. Description: test site.",
+        }]
+        ctx = _build_replan_context(completed, [], "need more info", [])
+        assert "Summary: Page title: Example. Description: test site." in ctx
+        # Completed Tasks section should use summary, not raw fenced output
+        assert "TASK_OUTPUT" not in ctx.split("## Completed Tasks")[1].split("## Failure")[0]
+
+    def test_falls_back_to_raw_when_no_summary(self):
+        """When reviewer_summary is absent, use truncated raw output."""
+        completed = [{
+            "type": "exec",
+            "detail": "echo hello",
+            "status": "done",
+            "output": "hello\n",
+        }]
+        ctx = _build_replan_context(completed, [], "need more info", [])
+        assert "hello" in ctx
+        assert "Summary:" not in ctx
+
+    def test_null_summary_falls_back(self):
+        """Explicit None summary falls back to raw output."""
+        completed = [{
+            "type": "exec",
+            "detail": "echo hi",
+            "status": "done",
+            "output": "hi\n",
+            "reviewer_summary": None,
+        }]
+        ctx = _build_replan_context(completed, [], "need more info", [])
+        assert "hi" in ctx
+        assert "Summary:" not in ctx
+
+
+@pytest.mark.asyncio
+class TestReviewerSummaryStoredOnCompletedRow:
+    """M146: reviewer summary is attached to completed task row."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_exec_completed_row_has_summary(self, db, tmp_path):
+        """Exec task: completed row carries reviewer_summary when present."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        review_with_summary = {
+            "status": "ok", "reason": None, "learn": None,
+            "retry_hint": None, "summary": "Command succeeded, output: ok",
+        }
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_summary), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            success, _, completed, _, _po = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        exec_rows = [c for c in completed if c["type"] == "exec"]
+        assert len(exec_rows) == 1
+        assert exec_rows[0]["reviewer_summary"] == "Command succeeded, output: ok"
+
+    async def test_exec_no_summary_when_null(self, db, tmp_path):
+        """Exec task: no reviewer_summary key when review summary is null."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            success, _, completed, _, _po = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        exec_rows = [c for c in completed if c["type"] == "exec"]
+        assert "reviewer_summary" not in exec_rows[0]

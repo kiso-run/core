@@ -635,6 +635,10 @@ async def _run_review_step(
         log.error("Review failed for task %d: %s", task_id, e)
         return None, str(e)
     await _append_calls(ctx.db, task_id, idx)
+    # Attach reviewer summary for replan context (M146)
+    summary = review.get("summary")
+    if summary:
+        task_row["reviewer_summary"] = summary[:600]
     return review, None
 
 

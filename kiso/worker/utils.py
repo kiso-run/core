@@ -378,9 +378,14 @@ def _build_replan_context(
                 # Over budget — summarize remaining as one-liners
                 items.append(f"- [{t['type']}] {t['detail']}: {t['status']}")
                 continue
-            raw_out = t.get("output") or ""
-            out = _smart_truncate(raw_out, limit)
-            out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
+            # Prefer reviewer summary over truncated raw output (M146)
+            reviewer_summary = t.get("reviewer_summary")
+            if reviewer_summary:
+                out_fenced = f"Summary: {reviewer_summary}"
+            else:
+                raw_out = t.get("output") or ""
+                out = _smart_truncate(raw_out, limit)
+                out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
             item = f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}"
             items.append(item)
             total_chars += len(item)

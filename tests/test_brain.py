@@ -1061,33 +1061,33 @@ class TestM83ReviewSchema:
     # Valid ---
 
     def test_valid_ok_nulls(self):
-        self._valid({"status": "ok", "reason": None, "learn": None, "retry_hint": None})
+        self._valid({"status": "ok", "reason": None, "learn": None, "retry_hint": None, "summary": None})
 
     def test_valid_replan_full(self):
-        self._valid({"status": "replan", "reason": "wrong path", "learn": ["Fact 1"], "retry_hint": "try /opt"})
+        self._valid({"status": "replan", "reason": "wrong path", "learn": ["Fact 1"], "retry_hint": "try /opt", "summary": "Found page with title X"})
 
     def test_valid_learn_exactly_5(self):
-        self._valid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e"], "retry_hint": None})
+        self._valid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e"], "retry_hint": None, "summary": None})
 
     # Invalid ---
 
     def test_missing_status(self):
-        self._invalid({"reason": None, "learn": None, "retry_hint": None})
+        self._invalid({"reason": None, "learn": None, "retry_hint": None, "summary": None})
 
     def test_status_not_in_enum(self):
-        self._invalid({"status": "maybe", "reason": None, "learn": None, "retry_hint": None})
+        self._invalid({"status": "maybe", "reason": None, "learn": None, "retry_hint": None, "summary": None})
 
     def test_missing_retry_hint(self):
-        self._invalid({"status": "ok", "reason": None, "learn": None})
+        self._invalid({"status": "ok", "reason": None, "learn": None, "summary": None})
 
     def test_extra_field(self):
-        self._invalid({"status": "ok", "reason": None, "learn": None, "retry_hint": None, "extra": "x"})
+        self._invalid({"status": "ok", "reason": None, "learn": None, "retry_hint": None, "summary": None, "extra": "x"})
 
     def test_learn_exceeds_max_items(self):
-        self._invalid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e", "f"], "retry_hint": None})
+        self._invalid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e", "f"], "retry_hint": None, "summary": None})
 
     def test_learn_non_string_item(self):
-        self._invalid({"status": "ok", "reason": None, "learn": [42], "retry_hint": None})
+        self._invalid({"status": "ok", "reason": None, "learn": [42], "retry_hint": None, "summary": None})
 
 
 # --- build_reviewer_messages ---
@@ -3671,3 +3671,17 @@ class TestRunMessengerIncludeRecent:
             await run_messenger(db, config, "sess1", "say hi")
         user_content = captured_messages[1]["content"]
         assert "Recent Conversation" not in user_content
+
+
+# --- M146: Reviewer summary field ---
+
+
+class TestM146ReviewerSummary:
+    """M146: reviewer prompt instructs summary extraction."""
+
+    def test_reviewer_prompt_mentions_summary(self):
+        from kiso.brain import _load_system_prompt, invalidate_prompt_cache
+        invalidate_prompt_cache()
+        prompt = _load_system_prompt("reviewer")
+        assert "summary" in prompt.lower()
+        assert "500 chars" in prompt or "max 500" in prompt
