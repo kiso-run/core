@@ -4012,3 +4012,30 @@ class TestM186EscalatingValidationError:
             for m in msgs:
                 if m["role"] == "user" and "errors" in m.get("content", ""):
                     assert "IMPORTANT" not in m["content"]
+
+
+class TestM194ReviewerDomainCheck:
+    """M194: Reviewer prompt contains search domain cross-check rule."""
+
+    def test_reviewer_prompt_has_domain_check_rule(self):
+        """reviewer.md includes the search domain check rule."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "search returned results for wrong domain" in prompt
+
+    def test_reviewer_prompt_domain_check_mentions_replan(self):
+        """Domain mismatch should trigger replan status."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "mark as replan" in prompt
+        assert "different domain" in prompt
+
+    def test_build_reviewer_messages_contains_domain_rule(self):
+        """build_reviewer_messages output includes the domain check rule."""
+        msgs = build_reviewer_messages(
+            goal="visit guidance.studio",
+            detail="search for https://guidance.studio",
+            expect="info about the site",
+            output="guidestudio.com is a design firm...",
+            user_message="go to guidance.studio",
+        )
+        system_content = msgs[0]["content"]
+        assert "wrong domain" in system_content
