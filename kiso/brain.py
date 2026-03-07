@@ -174,9 +174,11 @@ async def _retry_llm_with_validation(
         last_errors = errors
         messages.append({"role": "assistant", "content": raw})
 
-    raise error_class(
+    exc = error_class(
         f"{error_noun} validation failed after {max_retries} attempts: {last_errors}"
     )
+    exc.last_errors = last_errors  # M195: expose raw errors for auto-correction
+    raise exc
 
 
 PLAN_SCHEMA: dict = {
@@ -623,6 +625,60 @@ async def build_planner_messages(
     return _build_messages(system_prompt, context_block), installed_names, installed
 
 
+_SKILL_NOT_INSTALLED_RE = re.compile(r"skill '([^']+)' is not installed")
+
+
+def _auto_correct_uninstalled_skills(errors: list[str], messages: list[dict]) -> dict | None:
+    """M195: Build a corrected plan when validation fails due to uninstalled skills.
+
+    Extracts skill names from the raw validation error list, and replaces the plan
+    with exec install + replan.
+    Returns None if no errors are about uninstalled skills.
+    """
+    skill_names: list[str] = []
+    all_skill_errors = True
+    for e in errors:
+        m = _SKILL_NOT_INSTALLED_RE.search(e)
+        if m:
+            skill_names.append(m.group(1))
+        else:
+            all_skill_errors = False
+    if not skill_names or not all_skill_errors:
+        return None
+
+    # Extract goal from the last assistant response
+    goal = "install missing skills"
+    for m in reversed(messages):
+        if m["role"] == "assistant":
+            try:
+                parsed = json.loads(m["content"])
+                goal = parsed.get("goal", goal)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            break
+
+    # Build corrected plan: install each missing skill, then replan
+    tasks: list[dict] = []
+    unique_skills = list(dict.fromkeys(skill_names))  # dedupe preserving order
+    for name in unique_skills:
+        tasks.append({
+            "type": TASK_TYPE_EXEC,
+            "detail": f"Install the {name} skill using kiso skill install {name}",
+            "skill": None,
+            "args": None,
+            "expect": "install succeeds",
+        })
+    tasks.append({
+        "type": TASK_TYPE_REPLAN,
+        "detail": f"Use {', '.join(unique_skills)} after install",
+        "skill": None,
+        "args": None,
+        "expect": None,
+    })
+
+    return {"goal": goal, "secrets": None, "tasks": tasks}
+
+
 async def run_planner(
     db: aiosqlite.Connection,
     config: Config,
@@ -644,13 +700,21 @@ async def run_planner(
     skills_by_name = {s["name"]: s for s in installed_info}
 
     max_tasks = int(config.settings["max_plan_tasks"])
-    plan = await _retry_llm_with_validation(
-        config, "planner", messages, PLAN_SCHEMA,
-        lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
-                                installed_skills_info=skills_by_name),
-        PlanError, "Plan",
-        session=session,
-    )
+    try:
+        plan = await _retry_llm_with_validation(
+            config, "planner", messages, PLAN_SCHEMA,
+            lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
+                                    installed_skills_info=skills_by_name),
+            PlanError, "Plan",
+            session=session,
+        )
+    except PlanError as exc:
+        # M195: auto-correct when last errors are about uninstalled skills
+        last_errors = getattr(exc, "last_errors", [])
+        plan = _auto_correct_uninstalled_skills(last_errors, messages)
+        if plan is None:
+            raise
+        log.warning("Auto-corrected plan: replaced uninstalled skill tasks with install + replan")
     log.info("Plan: goal=%r, %d tasks", plan["goal"], len(plan["tasks"]))
     return plan
 

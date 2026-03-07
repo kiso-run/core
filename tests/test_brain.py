@@ -4039,3 +4039,87 @@ class TestM194ReviewerDomainCheck:
         )
         system_content = msgs[0]["content"]
         assert "wrong domain" in system_content
+
+
+class TestM195AutoCorrectUninstalledSkill:
+    """M195: Auto-correct plan when planner keeps using uninstalled skills."""
+
+    UNINSTALLED_SKILL_PLAN = json.dumps({
+        "goal": "Navigate to example.com",
+        "secrets": None,
+        "tasks": [
+            {"type": "skill", "detail": "visit site", "skill": "browser",
+             "args": '{"action": "navigate"}', "expect": "page loads"},
+            {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+        ],
+    })
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3, context_messages=5),
+            raw={},
+        )
+
+    async def test_auto_corrects_to_install_plus_replan(self, db, config):
+        """When planner always uses uninstalled skill, auto-correct plan is returned."""
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=self.UNINSTALLED_SKILL_PLAN):
+            plan = await run_planner(db, config, "sess1", "admin", "visit example.com")
+
+        # Should have exec install + replan instead of skill + msg
+        assert len(plan["tasks"]) == 2
+        assert plan["tasks"][0]["type"] == "exec"
+        assert "kiso skill install browser" in plan["tasks"][0]["detail"]
+        assert plan["tasks"][1]["type"] == "replan"
+        assert "browser" in plan["tasks"][1]["detail"]
+        assert plan["goal"] == "Navigate to example.com"
+
+    async def test_non_skill_error_still_raises(self, db, config):
+        """Non-skill validation errors still raise PlanError."""
+        bad_plan = json.dumps({
+            "goal": "test",
+            "secrets": None,
+            "tasks": [{"type": "exec", "detail": "ls", "skill": None,
+                        "args": None, "expect": None}],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=bad_plan):
+            with pytest.raises(PlanError, match="validation failed"):
+                await run_planner(db, config, "sess1", "admin", "do something")
+
+    async def test_auto_correct_multiple_skills(self, db, config):
+        """Auto-correct handles multiple uninstalled skills."""
+        multi_skill_plan = json.dumps({
+            "goal": "Complex task",
+            "secrets": None,
+            "tasks": [
+                {"type": "skill", "detail": "browse", "skill": "browser",
+                 "args": "{}", "expect": "ok"},
+                {"type": "skill", "detail": "screenshot", "skill": "screenshotter",
+                 "args": "{}", "expect": "ok"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=multi_skill_plan):
+            plan = await run_planner(db, config, "sess1", "admin", "do complex task")
+
+        # exec install browser + exec install screenshotter + replan
+        assert len(plan["tasks"]) == 3
+        assert plan["tasks"][0]["type"] == "exec"
+        assert "browser" in plan["tasks"][0]["detail"]
+        assert plan["tasks"][1]["type"] == "exec"
+        assert "screenshotter" in plan["tasks"][1]["detail"]
+        assert plan["tasks"][2]["type"] == "replan"
