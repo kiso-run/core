@@ -193,6 +193,12 @@ def discover_skills(skills_dir: Path | None = None) -> list[dict]:
     return skills
 
 
+def _skill_venv_bin(skill: dict) -> str:
+    """Return the skill's ``.venv/bin`` path, or ``""`` if no path is set."""
+    skill_path = skill.get("path", "")
+    return str(Path(skill_path) / ".venv" / "bin") if skill_path else ""
+
+
 def check_deps(skill: dict) -> list[str]:
     """Check [kiso.deps].bin entries with `which`. Returns list of missing binaries.
 
@@ -205,8 +211,7 @@ def check_deps(skill: dict) -> list[str]:
         return []
 
     # Build an extended PATH that includes the skill's venv bin
-    skill_path = skill.get("path", "")
-    venv_bin = str(Path(skill_path) / ".venv" / "bin") if skill_path else ""
+    venv_bin = _skill_venv_bin(skill)
     search_path = (
         f"{venv_bin}:{os.environ.get('PATH', '')}" if venv_bin else None
     )
@@ -371,8 +376,7 @@ def build_skill_env(skill: dict) -> dict[str, str]:
 
     Includes PATH + deploy secret env vars (KISO_SKILL_{NAME}_{KEY}).
     """
-    skill_path = skill.get("path", "")
-    venv_bin = str(Path(skill_path) / ".venv" / "bin") if skill_path else ""
+    venv_bin = _skill_venv_bin(skill)
     sys_path = os.environ.get("PATH", "/usr/bin:/bin")
     env: dict[str, str] = {
         "PATH": f"{venv_bin}:{sys_path}" if venv_bin else sys_path,
