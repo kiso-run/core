@@ -35,7 +35,7 @@ from kiso.worker import (
     _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
     _report_pub_files, _run_subprocess, _skill_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output, _save_large_output,
-    _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
+    _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks, _maybe_inject_intent_msg,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
     run_worker,
 )
@@ -115,6 +115,14 @@ def _patch_translator():
         "kiso.worker.loop.run_exec_translator",
         new_callable=AsyncMock,
         side_effect=_passthrough_translator,
+    )
+
+
+def _patch_no_intent():
+    """Suppress M201 intent msg injection for tests that don't expect it."""
+    return patch(
+        "kiso.worker.loop._maybe_inject_intent_msg",
+        side_effect=lambda tasks, goal: tasks,
     )
 
 
@@ -430,12 +438,15 @@ class TestRunWorker:
         assert plan["status"] == "done"
 
         tasks = await get_tasks_for_plan(db, plan["id"])
-        assert len(tasks) == 2
-        assert tasks[0]["type"] == "exec"
+        # M201 injects an intent msg at position 0 → 3 tasks total
+        assert len(tasks) == 3
+        assert tasks[0]["type"] == "msg"  # intent msg
         assert tasks[0]["status"] == "done"
-        assert "hello" in tasks[0]["output"]
-        assert tasks[1]["type"] == "msg"
+        assert tasks[1]["type"] == "exec"
         assert tasks[1]["status"] == "done"
+        assert "hello" in tasks[1]["output"]
+        assert tasks[2]["type"] == "msg"
+        assert tasks[2]["status"] == "done"
 
     async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
         """Secrets from the plan are extracted and available for skill execution."""
@@ -547,7 +558,8 @@ class TestRunWorker:
 
         with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=SKILL_PLAN), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Should eventually fail (after replan attempts hit max depth)
@@ -808,7 +820,8 @@ class TestRunWorker:
         with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # First plan should be failed
@@ -855,7 +868,8 @@ class TestRunWorker:
         with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Should have a recovery msg task with status=done
@@ -904,7 +918,8 @@ class TestRunWorker:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Get first plan's tasks
@@ -2196,6 +2211,65 @@ class TestPersistPlanTasks:
         db_tasks = await get_tasks_for_plan(db, plan_id)
         assert db_tasks[0]["skill"] == "search"
         assert db_tasks[0]["args"] == '{"q":"test"}'
+
+
+# --- M201: _maybe_inject_intent_msg ---
+
+class TestM201IntentMsgInjection:
+    """M201: auto-inject intent msg before plan execution."""
+
+    def test_injects_msg_when_first_task_is_exec(self):
+        tasks = [
+            {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "echo world", "skill": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+        ]
+        result = _maybe_inject_intent_msg(tasks, "greet the world")
+        assert len(result) == 4
+        assert result[0]["type"] == "msg"
+        assert "greet the world" in result[0]["detail"]
+        assert "echo hello" in result[0]["detail"]
+        # Original tasks unchanged
+        assert result[1]["type"] == "exec"
+
+    def test_no_injection_when_first_task_is_msg(self):
+        tasks = [
+            {"type": "msg", "detail": "hello", "skill": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+        ]
+        result = _maybe_inject_intent_msg(tasks, "greet")
+        assert len(result) == 2
+        assert result[0]["detail"] == "hello"
+
+    def test_no_injection_for_single_task(self):
+        tasks = [
+            {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+        ]
+        result = _maybe_inject_intent_msg(tasks, "greet")
+        assert len(result) == 1
+
+    def test_does_not_mutate_input(self):
+        tasks = [
+            {"type": "exec", "detail": "a", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "b", "skill": None, "args": None, "expect": "ok"},
+        ]
+        original_len = len(tasks)
+        result = _maybe_inject_intent_msg(tasks, "goal")
+        assert len(tasks) == original_len
+        assert len(result) == original_len + 1
+
+    def test_intent_detail_includes_up_to_3_steps(self):
+        tasks = [
+            {"type": "exec", "detail": f"step{i}", "skill": None, "args": None, "expect": "ok"}
+            for i in range(5)
+        ]
+        result = _maybe_inject_intent_msg(tasks, "multi-step")
+        detail = result[0]["detail"]
+        assert "step0" in detail
+        assert "step1" in detail
+        assert "step2" in detail
+        # step3 and step4 are NOT in the summary (max 3)
+        assert "step3" not in detail
 
 
 # --- store: save_learning ---
@@ -4254,7 +4328,8 @@ class TestCancelMechanism:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Cancelled."), \
              patch("kiso.worker.loop.deliver_webhook", mock_webhook), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(
                 run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
                 timeout=5,
@@ -4340,7 +4415,8 @@ class TestCancelMechanism:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    side_effect=MessengerError("API down")), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(
                 run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
                 timeout=5,
@@ -4515,7 +4591,8 @@ class TestCancelDuringReplanWindow:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    side_effect=_review_and_cancel), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue,
                                               cancel_event=cancel_event), timeout=5)
 

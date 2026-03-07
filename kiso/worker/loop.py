@@ -476,6 +476,30 @@ async def _fast_path_chat(
     return plan_id
 
 
+def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
+    """M201: prepend an intent msg so the user knows what's about to happen.
+
+    Skips injection when: plan has ≤1 task, or first task is already a msg.
+    Returns a new list (does not mutate the input).
+    """
+    if len(tasks) <= 1 or tasks[0]["type"] == TASK_TYPE_MSG:
+        return tasks
+    task_summary = ", ".join(
+        f"{t['type']}: {t['detail'][:60]}" for t in tasks[:3]
+    )
+    intent_task = {
+        "type": TASK_TYPE_MSG,
+        "detail": (
+            f"Briefly tell the user what you're about to do. "
+            f"Plan goal: {goal}. Steps: {task_summary}"
+        ),
+        "skill": None,
+        "args": None,
+        "expect": None,
+    }
+    return [intent_task] + tasks
+
+
 async def _persist_plan_tasks(
     db: aiosqlite.Connection,
     plan_id: int,
@@ -1837,8 +1861,11 @@ async def _process_message(
 
     # Update plan with real goal and persist tasks
     await update_plan_goal(db, plan_id, plan["goal"])
-    await _persist_plan_tasks(db, plan_id, session, plan["tasks"])
-    log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan["tasks"]))
+
+    plan_tasks = _maybe_inject_intent_msg(plan["tasks"], plan["goal"])
+
+    await _persist_plan_tasks(db, plan_id, session, plan_tasks)
+    log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan_tasks))
     if slog:
         slog.info("Plan %d created: %s (%d tasks)", plan_id, plan["goal"], len(plan["tasks"]))
 
