@@ -185,3 +185,19 @@ class TestRunSessionsCommand:
 
         err = capsys.readouterr().err
         assert "403" in err
+
+    def test_args_user_overrides_getuser(self):
+        """When args.user is set, it is sent instead of getpass.getuser()."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = []
+
+        with (
+            patch("kiso.config.load_config", return_value=_mock_config()),
+            patch("httpx.request", return_value=mock_resp) as mock_req,
+        ):
+            run_sessions_command(argparse.Namespace(
+                api="http://localhost:8333", show_all=False,
+                command="sessions", user="admin",
+            ))
+
+        assert mock_req.call_args.kwargs["params"]["user"] == "admin"

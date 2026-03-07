@@ -79,7 +79,7 @@ def _call_reload(args) -> None:
     """Call POST /admin/reload-config to hot-reload the running server."""
     from cli._http import cli_post
 
-    user = getpass.getuser()
+    user = getattr(args, "user", None) or getpass.getuser()
     cli_post(args, "/admin/reload-config", params={"user": user})
 
 

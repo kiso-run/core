@@ -142,7 +142,7 @@ def _env_reload(args) -> None:
 
     from cli._http import cli_post
 
-    user = getpass.getuser()
+    user = getattr(args, "user", None) or getpass.getuser()
     resp = cli_post(args, "/admin/reload-env", params={"user": user})
     data = resp.json()
     print(f"Reloaded. {data.get('keys_applied', 0)} keys applied, {data.get('keys_skipped', 0)} skipped.")

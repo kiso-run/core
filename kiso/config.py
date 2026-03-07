@@ -43,6 +43,10 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "max_output_size": 1048576,
     "max_worker_retries": 2,
     # limits
+    "max_memory_gb": 4,
+    "max_cpus": 2,
+    "max_disk_gb": 32,
+    "max_pids": 512,
     "max_llm_calls_per_message": 200,
     "max_message_size": 65536,
     "max_queue_size": 50,
@@ -140,6 +144,12 @@ planner_timeout           = 300      # seconds for planner LLM calls (higher for
 messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 2
+
+# --- resource limits ---
+max_memory_gb             = 4          # container RAM limit (applied via docker run/update)
+max_cpus                  = 2          # container CPU limit (applied via docker run/update)
+max_disk_gb               = 32         # app-level disk limit (applied immediately)
+max_pids                  = 512        # container PID limit (applied via docker run/update)
 
 # --- limits ---
 max_llm_calls_per_message = 200

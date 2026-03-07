@@ -9,7 +9,7 @@ from cli._http import cli_get
 
 def run_stats_command(args) -> None:
     """Print token usage stats from the kiso server (admin only)."""
-    user = getpass.getuser()
+    user = getattr(args, "user", None) or getpass.getuser()
     since = args.since
     session = args.session
     by = args.by

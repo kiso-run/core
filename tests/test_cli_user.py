@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -630,6 +630,20 @@ class TestUserAlias:
 
         assert exc.value.code == 1
         assert "invalid connector" in capsys.readouterr().err
+
+
+class TestCallReload:
+    def test_args_user_overrides_getuser(self):
+        """_call_reload sends args.user to /admin/reload-config."""
+        mock_resp = MagicMock()
+        with (
+            patch("kiso.config.load_config", return_value=MagicMock(tokens={"cli": "tok"})),
+            patch("httpx.request", return_value=mock_resp) as mock_req,
+        ):
+            from cli.user import _call_reload
+            _call_reload(_args(api="http://localhost:8333", user="admin"))
+
+        assert mock_req.call_args.kwargs["params"]["user"] == "admin"
 
 
 class TestRunUserCommandDispatch:

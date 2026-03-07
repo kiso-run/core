@@ -10,7 +10,7 @@ from cli._http import cli_get
 
 def run_sessions_command(args) -> None:
     """List sessions from the kiso server."""
-    user = getpass.getuser()
+    user = getattr(args, "user", None) or getpass.getuser()
     show_all = args.show_all
 
     resp = cli_get(args, "/sessions", params={"user": user, "all": str(show_all).lower()})

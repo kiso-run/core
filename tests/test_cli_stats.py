@@ -107,3 +107,32 @@ class TestRunStatsCommand:
             run_stats_command(_make_args(session=None))
 
         assert "session" not in mock_req.call_args.kwargs["params"]
+
+    def test_args_user_overrides_getuser(self):
+        """When args.user is set (e.g. --user admin), it is sent instead of getpass.getuser()."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {}
+
+        with (
+            patch("kiso.config.load_config", return_value=_mock_cfg()),
+            patch("httpx.request", return_value=mock_resp) as mock_req,
+            patch("cli.stats.print_stats"),
+        ):
+            run_stats_command(_make_args(user="admin"))
+
+        assert mock_req.call_args.kwargs["params"]["user"] == "admin"
+
+    def test_no_args_user_falls_back_to_getuser(self):
+        """When args.user is None, getpass.getuser() is used."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {}
+
+        with (
+            patch("kiso.config.load_config", return_value=_mock_cfg()),
+            patch("httpx.request", return_value=mock_resp) as mock_req,
+            patch("cli.stats.print_stats"),
+            patch("cli.stats.getpass.getuser", return_value="osuser"),
+        ):
+            run_stats_command(_make_args())
+
+        assert mock_req.call_args.kwargs["params"]["user"] == "osuser"
