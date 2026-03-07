@@ -1664,10 +1664,10 @@ async def _run_planning_loop(
         else:
             await update_plan_status(db, current_plan_id, "failed")
         log.info("Replan %d (parent=%d): goal=%r, %d tasks",
-                 new_plan_id, current_plan_id, new_plan["goal"], len(new_plan["tasks"]))
+                 new_plan_id, current_plan_id, new_plan["goal"], len(replan_tasks))
         if slog:
             slog.info("Replan %d: %s (%d tasks, attempt %d/%d)",
-                      new_plan_id, new_plan["goal"], len(new_plan["tasks"]),
+                      new_plan_id, new_plan["goal"], len(replan_tasks),
                       replan_depth, max_replan_depth)
 
         # Store replanner usage immediately
@@ -1868,7 +1868,7 @@ async def _process_message(
     await _persist_plan_tasks(db, plan_id, session, plan_tasks)
     log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan_tasks))
     if slog:
-        slog.info("Plan %d created: %s (%d tasks)", plan_id, plan["goal"], len(plan["tasks"]))
+        slog.info("Plan %d created: %s (%d tasks)", plan_id, plan["goal"], len(plan_tasks))
 
     # Store planner usage (incremental from planner_usage_idx) merged with classifier
     all_usage = get_usage_since(0)
