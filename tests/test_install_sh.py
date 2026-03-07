@@ -284,6 +284,20 @@ print('OK')
         assert result.returncode == 0, result.stderr
         assert "OK" in result.stdout
 
+    def test_instance_display_shows_version(self):
+        """Both instance listing blocks show version info when available."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        # Both listing blocks should use version/build_hash display logic
+        # There are two python3 -c blocks that format instance display:
+        # 1. "Found N existing instance(s)" listing
+        # 2. "Which instance do you want to update?" listing
+        import re
+        display_blocks = re.findall(r"v\.get\('version'", content)
+        assert len(display_blocks) >= 2, \
+            f"Expected version display in both listing blocks, found {len(display_blocks)}"
+
     def test_register_instance_preserves_connectors(self):
         result = _run_bash("""
             export HOME="$(mktemp -d)"

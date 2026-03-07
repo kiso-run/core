@@ -2271,6 +2271,28 @@ class TestM201IntentMsgInjection:
         # step3 and step4 are NOT in the summary (max 3)
         assert "step3" not in detail
 
+    async def test_replan_also_injects_intent_msg(self, tmp_path):
+        """Intent msg is injected for replan plans too, not just initial plans."""
+        from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        plan_id = await create_plan(db, "sess1", 1, "Retry with new approach")
+
+        replan_tasks = [
+            {"type": "exec", "detail": "apt-get install foo", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "run test", "skill": None, "args": None, "expect": "pass"},
+            {"type": "msg", "detail": "report", "skill": None, "args": None, "expect": None},
+        ]
+        injected = _maybe_inject_intent_msg(replan_tasks, "Retry with new approach")
+        await _persist_plan_tasks(db, plan_id, "sess1", injected)
+
+        db_tasks = await get_tasks_for_plan(db, plan_id)
+        assert len(db_tasks) == 4
+        assert db_tasks[0]["type"] == "msg"
+        assert "Retry with new approach" in db_tasks[0]["detail"]
+        assert db_tasks[1]["type"] == "exec"
+        await db.close()
+
 
 # --- store: save_learning ---
 

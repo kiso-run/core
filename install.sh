@@ -477,7 +477,11 @@ if [[ "$EXISTING_COUNT" -gt 0 ]]; then
 import json
 d=json.load(open('$INSTANCES_JSON'))
 for k,v in d.items():
-    print(f'    {k}  →  port {v.get(\"server_port\",\"?\")}')
+    ver = v.get('version','')
+    bh = v.get('build_hash','')
+    tag = f'v{ver} @ {bh}' if ver and bh else f'v{ver}' if ver else ''
+    label = f'({tag}, port {v.get(\"server_port\",\"?\")})' if tag else f'(port {v.get(\"server_port\",\"?\")})'
+    print(f'    {k}  →  {label}')
 " 2>/dev/null || true
     echo
     if [[ "$EXISTING_COUNT" -eq 1 ]]; then
