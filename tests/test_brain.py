@@ -2017,6 +2017,11 @@ class TestDefaultMessengerPrompt:
         assert "Never invent CLI commands" in prompt
         assert "verbatim in the preceding task outputs" in prompt
 
+    def test_m214_language_inference_from_user_message(self):
+        """M214: messenger prompt tells LLM to infer language from user message."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Original User Message" in prompt
+
 
 class TestBuildMessengerMessages:
     def test_basic_structure(self):
@@ -2071,6 +2076,34 @@ class TestBuildMessengerMessages:
         assert goal_pos < summary_pos
 
 
+    def test_includes_user_message(self):
+        """M214: user_message adds Original User Message section."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "", [], "say hi", user_message="Ciao, come stai?",
+        )
+        content = msgs[1]["content"]
+        assert "## Original User Message" in content
+        assert "Ciao, come stai?" in content
+
+    def test_no_user_message_section_when_empty(self):
+        """M214: no section when user_message is empty."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi", user_message="")
+        assert "Original User Message" not in msgs[1]["content"]
+
+    def test_user_message_appears_before_goal(self):
+        """M214: user message section comes before goal."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "", [], "say hi", goal="Do stuff", user_message="fammi qualcosa",
+        )
+        content = msgs[1]["content"]
+        user_pos = content.index("Original User Message")
+        goal_pos = content.index("Current User Request")
+        assert user_pos < goal_pos
+
+
 class TestRunMessenger:
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -2111,6 +2144,24 @@ class TestRunMessenger:
         user_content = captured_messages[1]["content"]
         assert "Current User Request" in user_content
         assert "List files" in user_content
+
+    async def test_user_message_passed_to_context(self, db):
+        """M214: run_messenger forwards user_message to context."""
+        config = _make_brain_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_messenger(
+                db, config, "sess1", "say hi",
+                user_message="Dimmi come va",
+            )
+        user_content = captured_messages[1]["content"]
+        assert "Original User Message" in user_content
+        assert "Dimmi come va" in user_content
 
     async def test_llm_error_raises_messenger_error(self, db):
         config = _make_brain_config()

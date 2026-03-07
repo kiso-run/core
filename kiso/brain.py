@@ -1034,6 +1034,7 @@ def build_messenger_messages(
     plan_outputs_text: str = "",
     goal: str = "",
     recent_messages: list[dict] | None = None,
+    user_message: str = "",
 ) -> list[dict]:
     """Build the message list for the messenger LLM call.
 
@@ -1045,11 +1046,16 @@ def build_messenger_messages(
         plan_outputs_text: Pre-formatted preceding task outputs (from worker).
         goal: The plan goal (user's original request for this turn).
         recent_messages: Recent conversation messages (for chat mode context).
+        user_message: The original user message (for language/context inference).
     """
     bot_name = config.settings["bot_name"]
     system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
 
     context_parts: list[str] = []
+    if user_message:
+        context_parts.append(
+            f"## Original User Message\n{fence_content(user_message, 'USER_MSG')}"
+        )
     if goal:
         context_parts.append(f"## Current User Request\n{goal}")
     if summary:
@@ -1079,6 +1085,7 @@ async def run_messenger(
     plan_outputs_text: str = "",
     goal: str = "",
     include_recent: bool = False,
+    user_message: str = "",
 ) -> str:
     """Run the messenger: generate a user-facing response.
 
@@ -1092,6 +1099,10 @@ async def run_messenger(
     messages are injected so the messenger can reference prior exchanges
     instead of hallucinating.
 
+    When *user_message* is provided it is included as
+    ``## Original User Message`` so the messenger can infer language
+    and context from the user's actual words.
+
     Returns the generated text.
     Raises MessengerError on failure.
     """
@@ -1104,7 +1115,7 @@ async def run_messenger(
         recent = await get_recent_messages(db, session, limit=context_limit)
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
-        recent_messages=recent or None,
+        recent_messages=recent or None, user_message=user_message,
     )
     try:
         return await call_llm(config, "messenger", messages, session=session)
