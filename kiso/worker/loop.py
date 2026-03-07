@@ -1499,7 +1499,7 @@ async def _run_planning_loop(
         current_tasks = await get_tasks_for_plan(db, current_plan_id)
         for t in current_tasks:
             if t["status"] == "pending":
-                await update_task(db, t["id"], "failed", output="Superseded by replan")
+                await update_task(db, t["id"], "skipped", output="skipped — superseded by replan")
 
         # Build replan history
         tried = [f"[{t['type']}] {t['detail']}" for t in completed]

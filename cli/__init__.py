@@ -849,7 +849,7 @@ def _render_plan_status(
                     _emit_verbose_calls(task, caps, state, llm_call_count)
             continue
 
-        if ttype == "msg":
+        if ttype == "msg" and status != "skipped":
             _render_msg_task(task, quiet, verbose, caps, bot_name, state, idx, total)
             continue
 

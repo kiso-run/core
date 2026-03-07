@@ -187,6 +187,7 @@ _ICONS_UNICODE = {
     "replan": "↻",
     "search": "🔍",
     "cancel": "⊘",
+    "skip": "⊘",
     "thinking": "🤔",
 }
 
@@ -200,6 +201,7 @@ _ICONS_ASCII = {
     "replan": "~>",
     "search": "S",
     "cancel": "X",
+    "skip": "-",
     "thinking": "?",
 }
 
@@ -313,6 +315,8 @@ def render_task_header(
         icon = _icon("fail", caps)
     elif status == "cancelled":
         icon = _icon("cancel", caps)
+    elif status == "skipped":
+        icon = _icon("skip", caps)
     else:
         # running or other → type icon
         icon = _icon(ttype, caps)
@@ -327,6 +331,8 @@ def render_task_header(
     else:
         detail_str = ""
     text = f"{icon} [{index}/{total}] {label}{detail_str}"
+    if status == "skipped":
+        text += "  (skipped)"
 
     # Append substatus + spinner frame when running
     if spinner_frame is not None:

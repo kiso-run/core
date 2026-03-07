@@ -913,10 +913,10 @@ class TestRunWorker:
         assert len(plans) == 2
 
         first_tasks = await get_tasks_for_plan(db, plans[0]["id"])
-        # The msg task was pending and should be marked failed (superseded)
+        # The msg task was pending and should be marked skipped (superseded)
         msg_task = [t for t in first_tasks if t["type"] == "msg"][0]
-        assert msg_task["status"] == "failed"
-        assert "Superseded" in msg_task["output"]
+        assert msg_task["status"] == "skipped"
+        assert "superseded" in msg_task["output"]
 
     async def test_replan_notification_saved(self, db, tmp_path):
         """On replan, a system message notifying the user is saved."""
