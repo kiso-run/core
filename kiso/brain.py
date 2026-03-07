@@ -495,7 +495,7 @@ async def build_planner_messages(
     new_message: str,
     user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict], list[str], list[dict]]:
     """Build the message list for the planner LLM call.
 
     Assembles context from session summary, facts, pending questions,
@@ -506,8 +506,9 @@ async def build_planner_messages(
     and a ``Session:`` line — giving it precise knowledge of the execution
     directory for shell commands.
 
-    Returns (messages, installed_skill_names) — the caller can reuse the
-    skill names list for plan validation without rescanning the filesystem.
+    Returns (messages, installed_skill_names, installed_skills_info) — the
+    caller can reuse the skill names list for plan validation and the
+    skills_info list for args validation without rescanning the filesystem.
     """
     system_prompt = _load_system_prompt("planner")
 

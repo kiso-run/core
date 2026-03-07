@@ -563,6 +563,16 @@ class TestBuildPlannerMessages:
             raw={},
         )
 
+    async def test_returns_3_tuple(self, db, config):
+        """M208: build_planner_messages returns (messages, names, info)."""
+        await create_session(db, "sess1")
+        result = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        assert len(result) == 3
+        msgs, names, info = result
+        assert isinstance(msgs, list)
+        assert isinstance(names, list)
+        assert isinstance(info, list)
+
     async def test_basic_no_context(self, db, config):
         await create_session(db, "sess1")
         msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
