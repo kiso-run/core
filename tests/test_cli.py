@@ -3107,3 +3107,34 @@ def test_verbose_panels_with_mixed_calls(capsys):
     assert "CALL2_OUTPUT" in out2
     # First verbose call should NOT be re-rendered
     assert "CALL1_INPUT" not in out2
+
+
+def test_spinner_restored_after_inflight_clears_it():
+    """Spinner for a running task must survive inflight panel rendering."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    running_task = {
+        "id": 10, "plan_id": 1, "type": "exec", "detail": "install browser",
+        "status": "running", "output": "", "command": "kiso skill install browser",
+    }
+    inflight = {
+        "role": "worker", "model": "deepseek/deepseek-v3",
+        "messages": [{"role": "user", "content": "translate"}],
+        "ts": 55555.0,
+    }
+    data = {
+        "plan": plan, "tasks": [running_task],
+        "worker_running": True, "inflight_call": inflight,
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    # First render: task goes to running, inflight shown
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+
+    # active_spinner_task must still point to the running task
+    assert state.active_spinner_task is running_task
+    assert state.active_spinner_index == 1
+
+    # Second render: same task_key — task loop skips, but spinner must persist
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    assert state.active_spinner_task is running_task
