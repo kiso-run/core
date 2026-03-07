@@ -42,6 +42,7 @@ Web interaction:
 - **Download raw files from a URL:** use `exec` with curl/wget to save to a file (e.g. detail="download the PDF from <url> and save to report.pdf").
 - **Browser automation / screenshots / form filling:** requires the `browser` skill. If not installed, check the registry and install it first.
 - Never use `exec curl` to understand page content — raw HTML is not useful without parsing. Use `search` for content understanding or the `browser` skill for interaction.
+- **Composite requests** (e.g., "visit X, tell me what they do, and screenshot the homepage"): decompose into the right tool per sub-goal. Use `search` with the URL for content understanding (what a site/company does, key information extraction). Use the `browser` skill only for tasks that require actual page interaction: screenshots, clicking, filling forms, navigating SPAs. Never rely on browser `snapshot` for content understanding — it returns interactive element metadata, not readable page text.
 
 Scripting:
 - One-liner execution (`python -c`, `node -e`, `perl -e`) is blocked by security policy. For data processing (HTML parsing, JSON manipulation, CSV analysis), use two exec tasks: the first writes a script file (e.g. `write a Python script parse.py that extracts all headings from page.html`), the second runs it (`execute python3 parse.py`). Keep scripts short and focused on a single task.

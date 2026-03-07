@@ -2479,6 +2479,18 @@ class TestM192PlannerNavigateAndInstallGuard:
         assert "NEVER put a skill task for an uninstalled skill" in prompt
 
 
+class TestM207CompositeRequestDecomposition:
+    """M207: planner decomposes composite requests by tool."""
+
+    def test_composite_requests_rule_present(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Composite requests" in prompt
+
+    def test_snapshot_warning_present(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "interactive element metadata" in prompt
+
+
 class TestM199PluginInstallIdempotent:
     """M199: planner-plugin-install.md tells planner that install is idempotent."""
 
