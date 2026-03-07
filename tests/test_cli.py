@@ -849,35 +849,6 @@ def test_poll_status_shows_review_verdict(capsys, plain_caps):
     assert "review: ok" in out
 
 
-def test_poll_status_timeout_exit(capsys, plain_caps):
-    """Poll should exit with timeout error after _MAX_POLL_SECONDS."""
-    mock_client = MagicMock()
-    status_resp = MagicMock()
-    status_resp.json.return_value = {
-        "plan": {"id": 1, "message_id": 1, "goal": "Slow", "status": "running"},
-        "tasks": [],
-        "worker_running": True,
-    }
-    status_resp.raise_for_status = MagicMock()
-    mock_client.get.return_value = status_resp
-
-    call_count = 0
-
-    def fake_time():
-        nonlocal call_count
-        call_count += 1
-        # Simulate time advancing past 300 seconds on 3rd poll
-        if call_count >= 3:
-            return 1000.0 + 301
-        return 1000.0
-
-    with patch("time.sleep"), patch("time.time", side_effect=fake_time):
-        _poll_status(mock_client, "sess", 1, 0, quiet=False, verbose=False, caps=plain_caps)
-
-    err = capsys.readouterr().err
-    assert "timed out" in err
-
-
 def test_poll_status_worker_grace_period(capsys, plain_caps):
     """Worker stopped should wait 3 polls before giving up."""
     mock_client = MagicMock()

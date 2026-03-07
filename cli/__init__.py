@@ -947,11 +947,8 @@ def _poll_status(
         spinner_frames,
     )
 
-    _MAX_POLL_SECONDS = 300  # safety net: 5 min max
-
     state = _PollRenderState(seen={}, max_task_id=base_task_id, at_col0=_at_col0, verbose_shown={})
     counter = 0
-    start_time = time.time()
     no_plan_since_worker_stopped = 0
     failed_stable_polls = 0
     frames = spinner_frames(caps)
@@ -1010,16 +1007,6 @@ def _poll_status(
                     break
             else:
                 no_plan_since_worker_stopped = 0
-
-            # Safety net: absolute timeout
-            if time.time() - start_time > _MAX_POLL_SECONDS:
-                if state.active_spinner_task and caps.tty:
-                    sys.stdout.write(f"\r{CLEAR_LINE}")
-                    sys.stdout.flush()
-                    state.spinner_active = False
-                    state.at_col0 = True
-                print("error: timed out waiting for response", file=sys.stderr)
-                break
 
         # Animate spinner on TTY
         if caps.tty:
