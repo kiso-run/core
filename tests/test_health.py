@@ -37,3 +37,17 @@ async def test_health_includes_resources(client: httpx.AsyncClient):
     assert "used" in res["disk_gb"] and "limit" in res["disk_gb"]
     assert "pids" in res
     assert "used" in res["pids"] and "limit" in res["pids"]
+
+
+async def test_health_disk_used_is_kiso_dir_size(client: httpx.AsyncClient):
+    """M219 fix: disk_gb.used should reflect KISO_DIR size, not whole filesystem."""
+    resp = await client.get("/health")
+    data = resp.json()
+    disk = data["resources"]["disk_gb"]
+    # disk_used should be reasonable (< a few GB for test env)
+    # and definitely less than disk_total (the whole filesystem)
+    if disk["used"] is not None and disk["limit"] is not None:
+        assert disk["used"] < disk["limit"], (
+            f"disk used ({disk['used']} GB) >= total ({disk['limit']} GB) — "
+            f"likely measuring whole filesystem instead of KISO_DIR"
+        )

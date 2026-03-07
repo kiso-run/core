@@ -8,6 +8,7 @@ import logging
 import os
 import pwd
 import shutil
+import subprocess
 from pathlib import Path
 
 from kiso.config import KISO_DIR, Config
@@ -187,14 +188,43 @@ def _build_exec_env() -> dict[str, str]:
     return env
 
 
-def _check_disk_limit(config: Config) -> str | None:
-    """Check disk usage against max_disk_gb. Returns error msg or None."""
-    max_gb = config.settings.get("max_disk_gb", 32)
+def _kiso_dir_bytes() -> int | None:
+    """Return total bytes used by KISO_DIR (recursive).
+
+    Uses ``du -sb`` for speed; falls back to a Python walk if ``du``
+    is unavailable.  Returns *None* on any error.
+    """
     try:
-        usage = shutil.disk_usage(str(KISO_DIR))
+        out = subprocess.check_output(
+            ["du", "-sb", str(KISO_DIR)],
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return int(out.split()[0])
+    except (subprocess.SubprocessError, OSError, ValueError, IndexError):
+        pass
+
+    # Fallback: walk the tree in Python.
+    try:
+        total = 0
+        for dirpath, _dirnames, filenames in os.walk(KISO_DIR):
+            for f in filenames:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    pass
+        return total
     except OSError:
         return None
-    used_gb = usage.used / (1024**3)
+
+
+def _check_disk_limit(config: Config) -> str | None:
+    """Check KISO_DIR usage against max_disk_gb. Returns error msg or None."""
+    max_gb = config.settings.get("max_disk_gb", 32)
+    total = _kiso_dir_bytes()
+    if total is None:
+        return None
+    used_gb = total / (1024**3)
     if used_gb > max_gb:
         return f"Disk limit exceeded: {used_gb:.1f} GB used, limit {max_gb} GB"
     return None

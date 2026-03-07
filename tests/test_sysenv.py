@@ -602,12 +602,13 @@ class TestGetResourceLimits:
         assert result["pids_limit"] == 512
 
     def test_disk_usage_from_kiso_dir(self, tmp_path):
-        """Disk usage is read via shutil.disk_usage(KISO_DIR)."""
+        """Disk used_gb is actual KISO_DIR size via _kiso_dir_bytes, total_gb from filesystem."""
         with (
             patch("kiso.sysenv.KISO_DIR", tmp_path),
+            patch("kiso.worker.utils._kiso_dir_bytes", return_value=3_400_000_000),
             patch("kiso.sysenv.shutil.disk_usage") as mock_du,
         ):
-            mock_du.return_value = MagicMock(used=3_400_000_000, total=34_000_000_000)
+            mock_du.return_value = MagicMock(total=34_000_000_000)
             result = get_resource_limits()
         assert result["disk_used_gb"] == 3.2
         assert result["disk_total_gb"] == 31.7
@@ -617,8 +618,7 @@ class TestGetResourceLimits:
         with patch("kiso.sysenv.KISO_DIR", tmp_path):
             result = get_resource_limits()
         # On a normal dev machine, cgroup files may or may not exist;
-        # but disk values should always be present
-        assert result["disk_used_gb"] is not None
+        # but disk_total should always be present (filesystem capacity)
         assert result["disk_total_gb"] is not None
 
 

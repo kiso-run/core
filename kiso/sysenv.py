@@ -97,10 +97,15 @@ def get_resource_limits() -> dict:
     except (ValueError, OSError):
         pass
 
-    # Disk usage
+    # Disk usage — KISO_DIR actual size (not whole filesystem)
+    from kiso.worker.utils import _kiso_dir_bytes
+
+    dir_bytes = _kiso_dir_bytes()
+    if dir_bytes is not None:
+        result["disk_used_gb"] = round(dir_bytes / (1024**3), 1)
+    # Filesystem capacity (for context)
     try:
         usage = shutil.disk_usage(str(KISO_DIR))
-        result["disk_used_gb"] = round(usage.used / (1024**3), 1)
         result["disk_total_gb"] = round(usage.total / (1024**3), 1)
     except OSError:
         pass
