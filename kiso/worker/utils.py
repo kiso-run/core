@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import pwd
+import shutil
 from pathlib import Path
 
 from kiso.config import KISO_DIR, Config
@@ -186,6 +187,19 @@ def _build_exec_env() -> dict[str, str]:
     return env
 
 
+def _check_disk_limit(config: Config) -> str | None:
+    """Check disk usage against max_disk_gb. Returns error msg or None."""
+    max_gb = config.settings.get("max_disk_gb", 32)
+    try:
+        usage = shutil.disk_usage(str(KISO_DIR))
+    except OSError:
+        return None
+    used_gb = usage.used / (1024**3)
+    if used_gb > max_gb:
+        return f"Disk limit exceeded: {used_gb:.1f} GB used, limit {max_gb} GB"
+    return None
+
+
 def _report_pub_files(
     session: str, config: Config, base_url: str = "",
 ) -> list[dict]:
@@ -238,8 +252,6 @@ def _auto_publish_skill_files(
     Skips directories and files already inside pub/. Returns list of
     published filenames.
     """
-    import shutil
-
     workspace = _session_workspace(session)
     pub_dir = workspace / "pub"
     pub_dir.mkdir(exist_ok=True)

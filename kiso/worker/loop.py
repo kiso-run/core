@@ -111,6 +111,7 @@ from kiso.worker.utils import (
     _build_cancel_summary,
     _build_failure_summary,
     _build_replan_context,
+    _check_disk_limit,
     _cleanup_plan_outputs,
     _ensure_sandbox_user,
     _format_plan_outputs_for_msg,
@@ -799,6 +800,22 @@ async def _handle_skill_task(
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
+    # Disk limit check (M218)
+    disk_err = _check_disk_limit(ctx.config)
+    if disk_err:
+        log.error("Disk limit exceeded for task %d: %s", task_id, disk_err)
+        await update_task(ctx.db, task_id, "failed", output=disk_err)
+        audit.log_task(
+            ctx.session, task_id, TASK_TYPE_SKILL, detail, "failed", 0, 0,
+            deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        return _TaskHandlerResult(
+            stop=True, stop_success=False,
+            stop_replan=disk_err,
+            plan_output=_make_plan_output(i + 1, TASK_TYPE_SKILL, detail, disk_err, "failed", session=ctx.session),
+        )
+
     # Snapshot workspace before execution to detect new files (M215)
     pre_snapshot = _snapshot_workspace(ctx.session)
 
@@ -894,6 +911,22 @@ async def _handle_exec_task(
     task_id = task_row["id"]
     detail = task_row["detail"]
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
+
+    # Disk limit check (M218)
+    disk_err = _check_disk_limit(ctx.config)
+    if disk_err:
+        log.error("Disk limit exceeded for task %d: %s", task_id, disk_err)
+        await update_task(ctx.db, task_id, "failed", output=disk_err)
+        audit.log_task(
+            ctx.session, task_id, TASK_TYPE_EXEC, detail, "failed", 0, 0,
+            deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
+        return _TaskHandlerResult(
+            stop=True, stop_success=False,
+            stop_replan=disk_err,
+            plan_output=_make_plan_output(i + 1, TASK_TYPE_EXEC, detail, disk_err, "failed", session=ctx.session),
+        )
 
     retry_context = ""
     exec_retries = 0

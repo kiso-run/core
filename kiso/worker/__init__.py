@@ -7,6 +7,7 @@ backward compatibility with existing imports and test code.
 from kiso.worker.utils import (
     _auto_publish_skill_files,
     _build_cancel_summary,
+    _check_disk_limit,
     _build_exec_env,
     _build_failure_summary,
     _build_replan_context,
@@ -53,6 +54,7 @@ __all__ = [
     # utils
     "_auto_publish_skill_files",
     "_build_cancel_summary",
+    "_check_disk_limit",
     "_build_exec_env",
     "_build_failure_summary",
     "_build_replan_context",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -70,7 +70,8 @@ from contextlib import contextmanager
 def _patch_kiso_dir(tmp_path):
     """Patch KISO_DIR in both utils and loop submodules (and exec via utils)."""
     with patch("kiso.worker.utils.KISO_DIR", tmp_path), \
-         patch("kiso.worker.loop.KISO_DIR", tmp_path):
+         patch("kiso.worker.loop.KISO_DIR", tmp_path), \
+         patch("kiso.worker.loop._check_disk_limit", return_value=None):
         yield
 
 
@@ -1685,7 +1686,8 @@ class TestExecutePlan:
                     return_value=("error output", "skill crashed", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                     return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop._write_plan_outputs", new_callable=AsyncMock):
+             patch("kiso.worker.loop._write_plan_outputs", new_callable=AsyncMock), \
+             patch("kiso.worker.loop._check_disk_limit", return_value=None):
             result = await _handle_skill_task(ctx, task_row, 0, False, 0)
         assert result.stop is True
         assert result.stop_success is False
@@ -9819,3 +9821,66 @@ class TestE2EWebScenario:
         # Skills section should show search but not browser
         assert "search" in installed
         assert "browser" not in installed
+
+
+# --- M218: _check_disk_limit ---
+
+
+class TestCheckDiskLimit:
+    def test_under_limit_returns_none(self, tmp_path):
+        """When disk usage is under the limit, returns None."""
+        from kiso.worker import _check_disk_limit
+
+        config = MagicMock()
+        config.settings = {"max_disk_gb": 32}
+        with (
+            patch("kiso.worker.utils.KISO_DIR", tmp_path),
+            patch("shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=10 * 1024**3, total=100 * 1024**3)
+            result = _check_disk_limit(config)
+        assert result is None
+
+    def test_over_limit_returns_error(self, tmp_path):
+        """When disk usage exceeds the limit, returns error message."""
+        from kiso.worker import _check_disk_limit
+
+        config = MagicMock()
+        config.settings = {"max_disk_gb": 32}
+        with (
+            patch("kiso.worker.utils.KISO_DIR", tmp_path),
+            patch("shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=40 * 1024**3, total=100 * 1024**3)
+            result = _check_disk_limit(config)
+        assert result is not None
+        assert "Disk limit exceeded" in result
+        assert "40.0" in result
+        assert "32" in result
+
+    def test_oserror_returns_none(self, tmp_path):
+        """When disk_usage raises OSError, returns None (graceful degradation)."""
+        from kiso.worker import _check_disk_limit
+
+        config = MagicMock()
+        config.settings = {"max_disk_gb": 32}
+        with (
+            patch("kiso.worker.utils.KISO_DIR", tmp_path),
+            patch("shutil.disk_usage", side_effect=OSError("failed")),
+        ):
+            result = _check_disk_limit(config)
+        assert result is None
+
+    def test_default_limit_used(self, tmp_path):
+        """When max_disk_gb missing from settings, default of 32 is used."""
+        from kiso.worker import _check_disk_limit
+
+        config = MagicMock()
+        config.settings = {}
+        with (
+            patch("kiso.worker.utils.KISO_DIR", tmp_path),
+            patch("shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=10 * 1024**3, total=100 * 1024**3)
+            result = _check_disk_limit(config)
+        assert result is None
