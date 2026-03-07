@@ -387,15 +387,28 @@ print('\n'.join(str(v.get('connector_port_base',0)) for v in d.values()))
 }
 
 register_instance() {
-    local name="$1" sport="$2" cbase="$3"
+    local name="$1" sport="$2" cbase="$3" version="${4:-}" build_hash="${5:-}"
     mkdir -p "$KISO_DIR"
-    python3 - "$INSTANCES_JSON" "$name" "$sport" "$cbase" <<'PY'
-import sys, json, pathlib
+    python3 - "$INSTANCES_JSON" "$name" "$sport" "$cbase" "$version" "$build_hash" <<'PY'
+import sys, json, pathlib, datetime
 path = pathlib.Path(sys.argv[1])
 name, sport, cbase = sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+version = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else ""
+build_hash = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else ""
 path.parent.mkdir(parents=True, exist_ok=True)
 d = json.loads(path.read_text()) if path.exists() else {}
-d[name] = {"server_port": sport, "connector_port_base": cbase, "connectors": {}}
+entry = d.get(name, {})
+entry.update({
+    "server_port": sport,
+    "connector_port_base": cbase,
+    "connectors": entry.get("connectors", {}),
+})
+if version:
+    entry["version"] = version
+if build_hash:
+    entry["build_hash"] = build_hash
+entry["installed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+d[name] = entry
 path.write_text(json.dumps(d, indent=2) + "\n")
 PY
 }
@@ -501,7 +514,11 @@ import json; print(list(json.load(open('$INSTANCES_JSON')).keys())[0])
 import json
 d=json.load(open('$INSTANCES_JSON'))
 for k,v in d.items():
-    print(f'    {k}  →  port {v.get(\"server_port\",\"?\")}')
+    ver = v.get('version','')
+    bh = v.get('build_hash','')
+    tag = f'v{ver} @ {bh}' if ver and bh else f'v{ver}' if ver else ''
+    label = f'({tag}, port {v.get(\"server_port\",\"?\")})' if tag else f'(port {v.get(\"server_port\",\"?\")})'
+    print(f'    {k}  →  {label}')
 " 2>/dev/null
         echo
         read -rp "  Instance name: " INST_NAME
@@ -785,13 +802,15 @@ echo
 if [[ "$NEED_BUILD" == true ]]; then
     docker image prune -f &>/dev/null || true
 
+    _BUILD_HASH=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
     bold "Building Docker image..."
-    if ! docker build -t "$IMAGE" "$REPO_DIR"; then
+    if ! docker build --build-arg KISO_BUILD_HASH="$_BUILD_HASH" -t "$IMAGE" "$REPO_DIR"; then
         # If the user pressed Ctrl+C, don't retry — just bail out
         [[ "$_INTERRUPTED" == true ]] && exit 130
         yellow "  Build failed — pruning build cache and retrying without cache..."
         docker builder prune -f &>/dev/null || true
-        if ! docker build --no-cache -t "$IMAGE" "$REPO_DIR"; then
+        if ! docker build --no-cache --build-arg KISO_BUILD_HASH="$_BUILD_HASH" -t "$IMAGE" "$REPO_DIR"; then
             echo
             red "Error: Docker build failed."
             red "  Try:"
@@ -872,7 +891,9 @@ fi
 
 # ── 6c. Register instance ─────────────────────────────────────────────────────
 
-register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE"
+_INST_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' "$REPO_DIR/kiso/_version.py" 2>/dev/null || echo "")
+_INST_HASH=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
+register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE" "$_INST_VERSION" "$_INST_HASH"
 green "  registered in $INSTANCES_JSON"
 
 # ── 7. Install wrapper ─────────────────────────────────────────────────────

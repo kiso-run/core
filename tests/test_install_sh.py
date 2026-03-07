@@ -245,3 +245,69 @@ class TestSignalHandling:
             content = f.read()
         assert '_INTERRUPTED" != true' in content
         assert "sleep 2 || true" in content
+
+
+class TestM200VersionTracking:
+    """M200: instance version tracking — Dockerfile, install.sh, /health."""
+
+    def test_dockerfile_has_build_hash_arg(self):
+        dockerfile = os.path.join(os.path.dirname(__file__), "..", "Dockerfile")
+        with open(dockerfile) as f:
+            content = f.read()
+        assert "ARG KISO_BUILD_HASH" in content
+        assert "ENV KISO_BUILD_HASH" in content
+
+    def test_install_passes_build_hash_to_docker_build(self):
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "--build-arg KISO_BUILD_HASH" in content
+
+    def test_register_instance_accepts_version_args(self):
+        result = _run_bash("""
+            export HOME="$(mktemp -d)"
+            export KISO_DIR="$HOME/.kiso"
+            mkdir -p "$KISO_DIR"
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            register_instance testbot 8333 9000 "0.2.0" "abc1234"
+            python3 -c "
+import json
+d = json.load(open('$KISO_DIR/instances.json'))
+e = d['testbot']
+assert e['version'] == '0.2.0', f'version={e.get(\"version\")}'
+assert e['build_hash'] == 'abc1234', f'hash={e.get(\"build_hash\")}'
+assert 'installed_at' in e, 'missing installed_at'
+print('OK')
+"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "OK" in result.stdout
+
+    def test_register_instance_preserves_connectors(self):
+        result = _run_bash("""
+            export HOME="$(mktemp -d)"
+            export KISO_DIR="$HOME/.kiso"
+            mkdir -p "$KISO_DIR"
+            # Pre-populate with connectors
+            python3 -c "
+import json, pathlib
+p = pathlib.Path('$KISO_DIR/instances.json')
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps({'bot': {'server_port': 8333, 'connector_port_base': 9000, 'connectors': {'tg': {'port': 9001}}}}))
+"
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            register_instance bot 8334 9100 "0.3.0" "def5678"
+            python3 -c "
+import json
+d = json.load(open('$KISO_DIR/instances.json'))
+e = d['bot']
+assert e['server_port'] == 8334
+assert e['version'] == '0.3.0'
+assert e['connectors'] == {'tg': {'port': 9001}}, f'connectors lost: {e[\"connectors\"]}'
+print('OK')
+"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "OK" in result.stdout

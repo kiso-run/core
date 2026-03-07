@@ -21,6 +21,9 @@ RUN uv sync --frozen --no-dev
 # COPY config.toml /root/.kiso/config.toml
 # RUN uv run kiso skill install search
 
+ARG KISO_BUILD_HASH=dev
+ENV KISO_BUILD_HASH=$KISO_BUILD_HASH
+
 EXPOSE 8333
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

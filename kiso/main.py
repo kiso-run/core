@@ -309,7 +309,12 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from kiso._version import __version__
+    return {
+        "status": "ok",
+        "version": __version__,
+        "build_hash": os.environ.get("KISO_BUILD_HASH", "dev"),
+    }
 
 
 @app.get("/pub/{token}/{filename:path}")
