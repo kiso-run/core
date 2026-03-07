@@ -1415,7 +1415,6 @@ async def _run_planning_loop(
     cancel_event: "asyncio.Event | None",
     planner_timeout: int,
     max_replan_depth: int,
-    job_timeout: int,
     username: "str | None",
     slog: "SessionLogger | None",
     set_phase: "Callable[[str], None] | None" = None,
@@ -1425,7 +1424,6 @@ async def _run_planning_loop(
         if set_phase is not None:
             set_phase(p)
 
-    job_start = time.monotonic()
     replan_history: list[dict] = []
     current_plan_id = plan_id
     current_goal = plan["goal"]
@@ -1433,18 +1431,6 @@ async def _run_planning_loop(
     total_extensions = 0
 
     while True:
-        # --- Job timeout check ---
-        elapsed = time.monotonic() - job_start
-        if elapsed > job_timeout:
-            log.warning("Job timeout (%ds) reached for session=%s after %.0fs",
-                        job_timeout, session, elapsed)
-            await _handle_loop_failure(
-                db, config, session, current_plan_id, [], [], current_goal,
-                messenger_timeout=messenger_timeout,
-                reason=f"Job timeout ({job_timeout}s) reached after {int(elapsed)}s.",
-                session_secrets=session_secrets,
-            )
-            break
         success, replan_reason, completed, remaining, plan_outputs = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
             content, messenger_timeout=messenger_timeout,
@@ -1868,12 +1854,11 @@ async def _process_message(
 
     # Execute with replan loop
     _phase(WORKER_PHASE_EXECUTING)
-    job_timeout = setting_int(config.settings, "job_timeout", lo=1)
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
         plan_id, plan, user_role, user_skills, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
-        job_timeout, username, slog, set_phase=set_phase,
+        username, slog, set_phase=set_phase,
     )
 
     # --- Store token usage on the final plan ---
