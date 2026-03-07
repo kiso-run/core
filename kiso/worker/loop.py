@@ -107,6 +107,7 @@ from kiso.store import (
 )
 
 from kiso.worker.utils import (
+    _auto_publish_skill_files,
     _build_cancel_summary,
     _build_failure_summary,
     _build_replan_context,
@@ -116,6 +117,7 @@ from kiso.worker.utils import (
     _report_pub_files,
     _save_large_output,
     _session_workspace,
+    _snapshot_workspace,
     _write_plan_outputs,
 )
 from kiso.worker.exec import _exec_task
@@ -610,6 +612,7 @@ class _PlanCtx:
     installed_skills: list[dict]
     slog: "SessionLogger | None"
     sandbox_uid: "int | None"
+    base_url: str = ""
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     # Derived from installed_skills for O(1) lookup by name (populated in __post_init__)
     installed_skills_by_name: dict[str, dict] = field(init=False)
@@ -796,6 +799,9 @@ async def _handle_skill_task(
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
+    # Snapshot workspace before execution to detect new files (M215)
+    pre_snapshot = _snapshot_workspace(ctx.session)
+
     skill_retries = 0
     plan_output_entry: "dict | None" = None
     while True:
@@ -811,6 +817,16 @@ async def _handle_skill_task(
         stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
         status = "done" if success else "failed"
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
+
+        # Auto-publish new files to pub/ and append URLs (M215)
+        _auto_publish_skill_files(ctx.session, pre_snapshot)
+        pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
+        if pub_urls:
+            pub_note = "\n\nPublished files:\n" + "\n".join(
+                f"- {u['filename']}: {u['url']}" for u in pub_urls
+            )
+            stdout += pub_note
+
         await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
@@ -929,7 +945,7 @@ async def _handle_exec_task(
         stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
         status = "done" if success else "failed"
 
-        pub_urls = _report_pub_files(ctx.session, ctx.config)
+        pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
         if pub_urls:
             pub_note = "\n\nPublished files:\n" + "\n".join(
                 f"- {u['filename']}: {u['url']}" for u in pub_urls

@@ -5,6 +5,7 @@ backward compatibility with existing imports and test code.
 """
 
 from kiso.worker.utils import (
+    _auto_publish_skill_files,
     _build_cancel_summary,
     _build_exec_env,
     _build_failure_summary,
@@ -16,6 +17,7 @@ from kiso.worker.utils import (
     _run_subprocess,
     _session_workspace,
     _save_large_output,
+    _snapshot_workspace,
     _truncate_output,
     _write_plan_outputs,
 )
@@ -49,6 +51,7 @@ from kiso.worker.loop import (
 
 __all__ = [
     # utils
+    "_auto_publish_skill_files",
     "_build_cancel_summary",
     "_build_exec_env",
     "_build_failure_summary",
@@ -60,6 +63,7 @@ __all__ = [
     "_run_subprocess",
     "_session_workspace",
     "_save_large_output",
+    "_snapshot_workspace",
     "_truncate_output",
     "_write_plan_outputs",
     # exec

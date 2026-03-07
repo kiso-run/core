@@ -186,8 +186,14 @@ def _build_exec_env() -> dict[str, str]:
     return env
 
 
-def _report_pub_files(session: str, config: Config) -> list[dict]:
-    """List files in pub/ and return their public URLs."""
+def _report_pub_files(
+    session: str, config: Config, base_url: str = "",
+) -> list[dict]:
+    """List files in pub/ and return their public URLs.
+
+    When *base_url* is provided (e.g. ``http://host:8333``), URLs are
+    absolute; otherwise they are server-relative (``/pub/…``).
+    """
     pub_dir = _session_workspace(session) / "pub"
     if not pub_dir.is_dir():
         return []
@@ -206,15 +212,55 @@ def _report_pub_files(session: str, config: Config) -> list[dict]:
         all_paths.append(p)
     if truncated:
         log.warning("pub/ for session %r has >%d entries, listing truncated", session, _MAX_PUB_SCAN)
+    prefix = base_url.rstrip("/") if base_url else ""
     results = []
     for f in sorted(all_paths):
         if f.is_file():
             rel = f.relative_to(pub_dir)
             results.append({
                 "filename": str(rel),
-                "url": f"/pub/{token}/{rel}",
+                "url": f"{prefix}/pub/{token}/{rel}",
             })
     return results
+
+
+def _snapshot_workspace(session: str) -> set[Path]:
+    """Return the set of file paths currently in the session workspace."""
+    workspace = _session_workspace(session)
+    return set(workspace.rglob("*"))
+
+
+def _auto_publish_skill_files(
+    session: str, pre_snapshot: set[Path],
+) -> list[str]:
+    """Copy new workspace files (created after *pre_snapshot*) into pub/.
+
+    Skips directories and files already inside pub/. Returns list of
+    published filenames.
+    """
+    import shutil
+
+    workspace = _session_workspace(session)
+    pub_dir = workspace / "pub"
+    pub_dir.mkdir(exist_ok=True)
+
+    new_files = set(workspace.rglob("*")) - pre_snapshot
+    published: list[str] = []
+    for f in sorted(new_files):
+        if not f.is_file():
+            continue
+        # Skip files already in pub/
+        try:
+            f.relative_to(pub_dir)
+            continue
+        except ValueError:
+            pass
+        dest = pub_dir / f.relative_to(workspace)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, dest)
+        published.append(str(f.relative_to(workspace)))
+        log.debug("Auto-published %s → %s", f, dest)
+    return published
 
 
 def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:

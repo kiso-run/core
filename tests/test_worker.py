@@ -6183,6 +6183,107 @@ class TestReportPubFiles:
         assert any("truncated" in r.message for r in caplog.records)
 
 
+    def test_base_url_prefix(self, tmp_path, config):
+        """M215: base_url prepends full URL prefix to pub paths."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "screenshot.png").write_bytes(b"fake")
+
+        with _patch_kiso_dir(tmp_path):
+            result = _report_pub_files("test-session", config, base_url="http://myhost:8333")
+
+        assert len(result) == 1
+        assert result[0]["url"].startswith("http://myhost:8333/pub/")
+
+    def test_base_url_strips_trailing_slash(self, tmp_path, config):
+        """M215: trailing slash in base_url doesn't cause double slash."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "file.txt").write_bytes(b"x")
+
+        with _patch_kiso_dir(tmp_path):
+            result = _report_pub_files("test-session", config, base_url="http://host:8333/")
+
+        assert "//" not in result[0]["url"].replace("http://", "")
+
+    def test_no_base_url_gives_relative(self, tmp_path, config):
+        """M215: no base_url gives server-relative paths."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "file.txt").write_bytes(b"x")
+
+        with _patch_kiso_dir(tmp_path):
+            result = _report_pub_files("test-session", config)
+
+        assert result[0]["url"].startswith("/pub/")
+
+
+class TestAutoPublishSkillFiles:
+    """M215: _auto_publish_skill_files and _snapshot_workspace tests."""
+
+    def test_snapshot_and_publish(self, tmp_path):
+        """New files in workspace are copied to pub/."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            # Simulate skill creating a file
+            (workspace / "screenshot.png").write_bytes(b"fake-image")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert "screenshot.png" in published
+        assert (workspace / "pub" / "screenshot.png").exists()
+
+    def test_no_new_files(self, tmp_path):
+        """No new files → nothing published."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert published == []
+
+    def test_skips_files_already_in_pub(self, tmp_path):
+        """Files created inside pub/ are not re-published."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            # File created directly in pub/ (by exec handler or user)
+            (workspace / "pub" / "existing.txt").write_text("already here")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert published == []
+
+    def test_nested_files_preserve_structure(self, tmp_path):
+        """Files in subdirs preserve directory structure in pub/."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            sub = workspace / "results"
+            sub.mkdir()
+            (sub / "data.csv").write_text("a,b,c")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert any("data.csv" in p for p in published)
+        assert (workspace / "pub" / "results" / "data.csv").exists()
+
+
 # --- M31: search output truncation in replan context ---
 
 
