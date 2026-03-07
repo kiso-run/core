@@ -708,7 +708,7 @@ _EXIT_CODE_NOTES: dict[int, str] = {
     2: "Note: exit 2 often indicates a usage/syntax error in the command.",
     126: "Note: exit 126 means the command was found but is not executable (permission issue).",
     127: "Note: exit 127 means the command was not found in PATH.",
-    -1: "Note: the process was killed (timeout or OS error).",
+    -1: "Note: the process was killed (OS error).",
 }
 
 

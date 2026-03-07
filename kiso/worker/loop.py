@@ -566,7 +566,6 @@ class _PlanCtx:
     session: str
     goal: str
     user_message: str
-    exec_timeout: int
     deploy_secrets: dict[str, str]
     session_secrets: dict[str, str]
     max_output_size: int
@@ -762,7 +761,7 @@ async def _handle_skill_task(
     await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
     stdout, stderr, success, exit_code = await _skill_task(
         ctx.session, skill_info, args, ctx.plan_outputs,
-        ctx.session_secrets, ctx.exec_timeout,
+        ctx.session_secrets,
         sandbox_uid=ctx.sandbox_uid,
         max_output_size=ctx.max_output_size,
     )
@@ -864,7 +863,7 @@ async def _handle_exec_task(
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
         stdout, stderr, success, exit_code = await _exec_task(
-            ctx.session, command, ctx.exec_timeout, sandbox_uid=ctx.sandbox_uid,
+            ctx.session, command, sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
         )
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
@@ -1066,7 +1065,6 @@ async def _execute_plan(
     plan_id: int,
     goal: str,
     user_message: str,
-    exec_timeout: int,
     messenger_timeout: int = 120,
     session_secrets: dict[str, str] | None = None,
     username: str | None = None,
@@ -1095,7 +1093,6 @@ async def _execute_plan(
         session=session,
         goal=goal,
         user_message=user_message,
-        exec_timeout=exec_timeout,
         deploy_secrets=deploy_secrets,
         session_secrets=session_secrets or {},
         max_output_size=max_output_size,
@@ -1413,7 +1410,6 @@ async def _run_planning_loop(
     plan: dict,
     user_role: str,
     user_skills: "str | list[str] | None",
-    exec_timeout: int,
     messenger_timeout: int,
     session_secrets: dict,
     cancel_event: "asyncio.Event | None",
@@ -1451,7 +1447,7 @@ async def _run_planning_loop(
             break
         success, replan_reason, completed, remaining, plan_outputs = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
-            content, exec_timeout, messenger_timeout=messenger_timeout,
+            content, messenger_timeout=messenger_timeout,
             session_secrets=session_secrets, username=username,
             cancel_event=cancel_event, slog=slog,
         )
@@ -1875,7 +1871,7 @@ async def _process_message(
     job_timeout = setting_int(config.settings, "job_timeout", lo=1)
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
-        plan_id, plan, user_role, user_skills, exec_timeout, messenger_timeout,
+        plan_id, plan, user_role, user_skills, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
         job_timeout, username, slog, set_phase=set_phase,
     )

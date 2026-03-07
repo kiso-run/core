@@ -38,7 +38,6 @@ def config():
         users={},
         models={"planner": "gpt-4"},
         settings={
-            "exec_timeout": 120,
             "max_output_size": 1_048_576,
             "max_plan_tasks": 20,
             "max_replan_depth": 3,
@@ -146,7 +145,7 @@ class TestCollectSystemEnv:
         with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         expected_keys = {
-            "os", "shell", "exec_cwd", "exec_env", "exec_timeout",
+            "os", "shell", "exec_cwd", "exec_env",
             "max_output_size", "available_binaries", "missing_binaries",
             "connectors", "max_plan_tasks", "max_replan_depth",
             "sys_bin_path", "reference_docs_path", "registry_url",
@@ -165,7 +164,6 @@ class TestCollectSystemEnv:
         )
         with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(cfg)
-        assert env["exec_timeout"] == 60
         assert env["max_output_size"] == 512_000
         assert env["max_plan_tasks"] == 10
         assert env["max_replan_depth"] == 2
@@ -249,7 +247,6 @@ class TestBuildSystemEnvSection:
             "shell": "/bin/sh",
             "exec_cwd": str(KISO_DIR / "sessions"),
             "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
-            "exec_timeout": 120,
             "max_output_size": 1_048_576,
             "available_binaries": ["git", "python3", "curl"],
             "missing_binaries": ["docker", "ffmpeg"],
@@ -523,7 +520,6 @@ class TestWorkspaceInBuildSection:
             "shell": "/bin/sh",
             "exec_cwd": str(KISO_DIR / "sessions"),
             "exec_env": "PATH",
-            "exec_timeout": 120,
             "max_output_size": 1_048_576,
             "available_binaries": ["git"],
             "missing_binaries": [],

@@ -20,19 +20,17 @@ async def _run_subprocess(
     cmd,
     *,
     env: dict,
-    timeout: int | float,
     cwd: str,
     shell: bool = False,
     stdin_data: bytes | None = None,
     uid: int | None = None,
     max_output_size: int = 0,
 ) -> tuple[str, str, bool, int]:
-    """Run a subprocess with timeout and output handling.
+    """Run a subprocess and return its output.
 
     Args:
         cmd: Shell command string (shell=True) or list of args (shell=False).
         env: Subprocess environment dict.
-        timeout: Seconds before the subprocess is killed.
         cwd: Working directory for the subprocess.
         shell: If True, run via ``bash -c``; else create_subprocess_exec.
         stdin_data: Optional bytes to pipe via stdin.
@@ -42,7 +40,7 @@ async def _run_subprocess(
     Returns:
         (stdout, stderr, success, exit_code) where success is True iff
         returncode == 0.  exit_code is the raw return code (negative for
-        signals, -1 for timeout/OSError).
+        signals, -1 for OSError).
     """
     kwargs: dict = dict(
         cwd=cwd,
@@ -62,13 +60,7 @@ async def _run_subprocess(
             proc = await asyncio.create_subprocess_exec("bash", "-c", cmd, **kwargs)
         else:
             proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(input=stdin_data), timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return "", "Timed out", False, -1
+        stdout_bytes, stderr_bytes = await proc.communicate(input=stdin_data)
     except OSError as e:
         return "", f"Executable not found: {e}", False, -1
 

@@ -151,7 +151,7 @@ class TestSkillArgsReplanFlow:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "take screenshot of example.com",
-                plan_id, bad_plan, "admin", None, 5, 30,
+                plan_id, bad_plan, "admin", None, 30,
                 {}, None, 10, 2, 600, None, None,
             )
 
@@ -183,7 +183,7 @@ class TestSkillArgsReplanFlow:
 
         ctx = _PlanCtx(
             db=db, config=config, session="sess1",
-            goal="Test", user_message="msg", exec_timeout=5,
+            goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
             messenger_timeout=5, installed_skills=[skill_info_with_schema],

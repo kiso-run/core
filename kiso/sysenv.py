@@ -137,7 +137,6 @@ def collect_system_env(config: Config) -> dict:
         "shell": "/bin/sh",
         "exec_cwd": str(KISO_DIR / "sessions"),
         "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
-        "exec_timeout": int(config.settings["exec_timeout"]),
         "max_output_size": int(config.settings["max_output_size"]),
         "available_binaries": found_bins,
         "missing_binaries": missing_bins,
@@ -255,10 +254,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     registry_hints = env.get("registry_hints")
     if registry_hints:
         lines.append(f"Registry skills available: {registry_hints}")
-    lines.append(
-        f"Exec timeout: {env['exec_timeout']}s | "
-        f"Max output: {_format_size(env['max_output_size'])}"
-    )
+    lines.append(f"Max output: {_format_size(env['max_output_size'])}")
     lines.append("")
 
     if env["available_binaries"]:

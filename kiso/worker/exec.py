@@ -8,14 +8,14 @@ from kiso.worker.utils import _build_exec_env, _run_subprocess, _session_workspa
 
 
 async def _exec_task(
-    session: str, detail: str, timeout: int, sandbox_uid: int | None = None,
+    session: str, detail: str, sandbox_uid: int | None = None,
     max_output_size: int = 0,
 ) -> tuple[str, str, bool, int]:
     """Run a shell command. Returns (stdout, stderr, success, exit_code).
 
     When *max_output_size* > 0, stdout and stderr are each truncated to
     that many characters to prevent memory exhaustion from oversized output.
-    *exit_code* is the raw process return code (-1 for timeout/OSError).
+    *exit_code* is the raw process return code (-1 for OSError).
     """
     denial = check_command_deny_list(detail)
     if denial:
@@ -27,7 +27,6 @@ async def _exec_task(
     return await _run_subprocess(
         detail,
         env=clean_env,
-        timeout=timeout,
         cwd=str(workspace),
         shell=True,
         uid=sandbox_uid,

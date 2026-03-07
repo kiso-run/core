@@ -149,7 +149,6 @@ class TestRunSubprocess:
         stdout, stderr, success, exit_code = await _run_subprocess(
             "echo hello",
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             shell=True,
         )
@@ -162,7 +161,6 @@ class TestRunSubprocess:
         _, _, success, exit_code = await _run_subprocess(
             "exit 1",
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             shell=True,
         )
@@ -174,7 +172,6 @@ class TestRunSubprocess:
         _, _, success, exit_code = await _run_subprocess(
             "nonexistent_command_xyz_99",
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             shell=True,
         )
@@ -186,41 +183,11 @@ class TestRunSubprocess:
         _, _, success, exit_code = await _run_subprocess(
             "exit 42",
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             shell=True,
         )
         assert success is False
         assert exit_code == 42
-
-    async def test_timeout_kills_process(self, tmp_path):
-        """TimeoutError → process killed, returns Timed out."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        mock_proc = MagicMock()
-        mock_proc.kill = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        async def _hang(*args, **kwargs):
-            await asyncio.sleep(999)
-
-        mock_proc.communicate = _hang
-
-        # shell=True now uses create_subprocess_exec("bash", "-c", cmd)
-        with patch("kiso.worker.utils.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)):
-            _, stderr, success, exit_code = await _run_subprocess(
-                "sleep 999",
-                env={},
-                timeout=0.01,
-                cwd=str(tmp_path),
-                shell=True,
-            )
-
-        assert success is False
-        assert "Timed out" in stderr
-        assert exit_code == -1
-        mock_proc.kill.assert_called_once()
-        mock_proc.wait.assert_awaited_once()
 
     async def test_oserror_returns_error(self, tmp_path):
         """OSError (e.g. executable not found) → success=False, error in stderr."""
@@ -233,7 +200,6 @@ class TestRunSubprocess:
             _, stderr, success, exit_code = await _run_subprocess(
                 ["/nonexistent/binary"],
                 env={},
-                timeout=5,
                 cwd=str(tmp_path),
             )
 
@@ -246,7 +212,6 @@ class TestRunSubprocess:
         stdout, _, success, _ = await _run_subprocess(
             "cat <<< 'hello from bash'",
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             shell=True,
         )
@@ -258,7 +223,6 @@ class TestRunSubprocess:
         stdout, _, success, _ = await _run_subprocess(
             '[[ "abc" == abc ]] && echo ok',
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             shell=True,
         )
@@ -271,12 +235,24 @@ class TestRunSubprocess:
         stdout, _, success, _ = await _run_subprocess(
             [_sys.executable, "-c", "import sys; print(sys.stdin.read().strip())"],
             env={"PATH": "/usr/bin:/bin"},
-            timeout=5,
             cwd=str(tmp_path),
             stdin_data=b"hello from stdin",
         )
         assert success is True
         assert "hello from stdin" in stdout
+
+    async def test_no_timeout_wrapping(self, tmp_path):
+        """M189: _run_subprocess never wraps in asyncio.wait_for (no timeout)."""
+        with patch("kiso.worker.utils.asyncio.wait_for", new_callable=AsyncMock) as mock_wf:
+            stdout, _, success, _ = await _run_subprocess(
+                "echo no_timeout",
+                env={"PATH": "/usr/bin:/bin"},
+                cwd=str(tmp_path),
+                shell=True,
+            )
+        mock_wf.assert_not_called()
+        assert success is True
+        assert "no_timeout" in stdout
 
 
 # --- _exec_task ---
@@ -284,72 +260,44 @@ class TestRunSubprocess:
 class TestExecTask:
     async def test_successful_command(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "echo hello", 5)
+            stdout, stderr, success, _ = await _exec_task("test-sess", "echo hello")
         assert stdout.strip() == "hello"
         assert success is True
 
     async def test_failing_command(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "ls /nonexistent_dir_xyz", 5)
+            stdout, stderr, success, _ = await _exec_task("test-sess", "ls /nonexistent_dir_xyz")
         assert success is False
         assert stderr  # should have error message
 
-    async def test_timeout(self, tmp_path):
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "sleep 10", 1)
-        assert success is False
-        assert "Timed out" in stderr
-
     async def test_workspace_created(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            await _exec_task("new-sess", "echo ok", 5)
+            await _exec_task("new-sess", "echo ok")
         assert (tmp_path / "sessions" / "new-sess").is_dir()
 
     async def test_captures_stderr(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "echo err >&2", 5)
+            stdout, stderr, success, _ = await _exec_task("test-sess", "echo err >&2")
         assert "err" in stderr
 
     async def test_runs_in_workspace_dir(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "pwd", 5)
+            stdout, stderr, success, _ = await _exec_task("test-sess", "pwd")
         expected = str(tmp_path / "sessions" / "test-sess")
         assert stdout.strip() == expected
 
     async def test_deny_list_blocks_rm_rf(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, exit_code = await _exec_task("test-sess", "rm -rf /", 5)
+            stdout, stderr, success, exit_code = await _exec_task("test-sess", "rm -rf /")
         assert success is False
         assert "Command blocked" in stderr
         assert exit_code == -1
 
     async def test_deny_list_allows_safe_rm(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "rm -rf ./nonexistent", 5)
+            stdout, stderr, success, _ = await _exec_task("test-sess", "rm -rf ./nonexistent")
         # Command may fail (dir doesn't exist) but should NOT be blocked by deny list
         assert "Command blocked" not in stderr
-
-    async def test_timeout_kills_process(self, tmp_path):
-        """On timeout, the subprocess is killed and waited — no zombie processes."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        mock_proc = MagicMock()
-        mock_proc.kill = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        async def _hang(*args, **kwargs):
-            await asyncio.sleep(999)
-
-        mock_proc.communicate = _hang
-
-        with patch("kiso.worker.utils.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)), \
-             _patch_kiso_dir(tmp_path):
-            _, stderr, success, _ = await _exec_task("test-sess", "sleep 999", 0.01)
-
-        assert success is False
-        assert "Timed out" in stderr
-        mock_proc.kill.assert_called_once()
-        mock_proc.wait.assert_awaited_once()
 
 
 # --- _msg_task ---
@@ -1644,7 +1592,7 @@ class TestExecutePlan:
         task_row = tasks[0]
         ctx = _PlanCtx(
             db=db, config=config, session="sess1",
-            goal="Test", user_message="msg", exec_timeout=5,
+            goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
             messenger_timeout=5, installed_skills=[skill_info],
@@ -1672,7 +1620,7 @@ class TestExecutePlan:
         task_row = tasks[0]
         ctx = _PlanCtx(
             db=db, config=config, session="sess1",
-            goal="Test", user_message="msg", exec_timeout=5,
+            goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
             messenger_timeout=5, installed_skills=[skill_info],
@@ -1697,7 +1645,7 @@ class TestExecutePlan:
         task_row = tasks[0]
         ctx = _PlanCtx(
             db=db, config=config, session="sess1",
-            goal="Test", user_message="msg", exec_timeout=5,
+            goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
             messenger_timeout=5, installed_skills=[skill_info],
@@ -2751,7 +2699,7 @@ class TestSkillTask:
         skill = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _skill_task(
-                "sess1", skill, {"text": "hello"}, None, None, 5,
+                "sess1", skill, {"text": "hello"}, None, None,
             )
         assert success is True
         result = json.loads(stdout)
@@ -2777,7 +2725,7 @@ class TestSkillTask:
         plan_outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "files", "status": "done"}]
         with _patch_kiso_dir(tmp_path):
             stdout, _, success, _ = await _skill_task(
-                "sess1", skill, {}, plan_outputs, None, 5,
+                "sess1", skill, {}, plan_outputs, None,
             )
         assert success is True
         data = json.loads(stdout)
@@ -2804,32 +2752,11 @@ class TestSkillTask:
         secrets = {"api_token": "tok_123", "other": "should_not_appear"}
         with _patch_kiso_dir(tmp_path):
             stdout, _, success, _ = await _skill_task(
-                "sess1", skill, {}, None, secrets, 5,
+                "sess1", skill, {}, None, secrets,
             )
         assert success is True
         result = json.loads(stdout)
         assert result == {"api_token": "tok_123"}
-
-    async def test_skill_timeout(self, tmp_path):
-        skill_dir = tmp_path / "skills" / "slow"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text("import time; time.sleep(10)")
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "slow"\n'
-            '[kiso.skill]\nsummary = "Slow"\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "slow"\nversion = "0.1.0"')
-        skill = {
-            "name": "slow", "summary": "Slow", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _skill_task(
-                "sess1", skill, {}, None, None, 1,
-            )
-        assert success is False
-        assert "Timed out" in stderr
 
     async def test_skill_failing_script(self, tmp_path):
         skill_dir = tmp_path / "skills" / "fail"
@@ -2847,7 +2774,7 @@ class TestSkillTask:
 
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _skill_task(
-                "sess1", skill, {}, None, None, 5,
+                "sess1", skill, {}, None, None,
             )
         assert success is False
         assert "err msg" in stderr
@@ -2873,7 +2800,7 @@ class TestSkillTask:
 
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _skill_task(
-                "sess1", skill, {}, None, None, 5,
+                "sess1", skill, {}, None, None,
             )
         assert success is False
         # Might be PermissionError or similar — just check it failed
@@ -2895,37 +2822,11 @@ class TestSkillTask:
 
         with _patch_kiso_dir(tmp_path):
             stdout, _, success, _ = await _skill_task(
-                "sess1", skill, {}, None, None, 5,
+                "sess1", skill, {}, None, None,
             )
         assert success is True
         expected = str(tmp_path / "sessions" / "sess1")
         assert stdout.strip() == expected
-
-    async def test_timeout_kills_process(self, tmp_path):
-        """On timeout, the skill subprocess is killed and waited — no zombie processes."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        mock_proc = MagicMock()
-        mock_proc.kill = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        async def _hang(*args, **kwargs):
-            await asyncio.sleep(999)
-
-        mock_proc.communicate = _hang
-
-        skill = {
-            "name": "s", "summary": "s", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(tmp_path), "version": "0.1.0", "description": "",
-        }
-        with patch("kiso.worker.utils.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)), \
-             _patch_kiso_dir(tmp_path):
-            _, stderr, success, _ = await _skill_task("sess1", skill, {}, None, None, 0.01)
-
-        assert success is False
-        assert "Timed out" in stderr
-        mock_proc.kill.assert_called_once()
-        mock_proc.wait.assert_awaited_once()
 
 
 # --- M7: _execute_plan with real skill ---
@@ -3989,7 +3890,7 @@ class TestPerSessionSandbox:
 
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _exec_task("sess1", "echo ok", 5, sandbox_uid=1234)
+            await _exec_task("sess1", "echo ok", sandbox_uid=1234)
 
         assert captured_kwargs.get("user") == 1234
 
@@ -4006,7 +3907,7 @@ class TestPerSessionSandbox:
 
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _exec_task("sess1", "echo ok", 5, sandbox_uid=None)
+            await _exec_task("sess1", "echo ok", sandbox_uid=None)
 
         assert "user" not in captured_kwargs
 
@@ -4024,7 +3925,7 @@ class TestPerSessionSandbox:
         skill = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _skill_task("sess1", skill, {"text": "hi"}, None, None, 5, sandbox_uid=9999)
+            await _skill_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=9999)
 
         assert captured_kwargs.get("user") == 9999
 
@@ -4042,7 +3943,7 @@ class TestPerSessionSandbox:
         skill = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _skill_task("sess1", skill, {"text": "hi"}, None, None, 5, sandbox_uid=None)
+            await _skill_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=None)
 
         assert "user" not in captured_kwargs
 
@@ -4466,7 +4367,7 @@ class TestOutputTruncation:
         cmd = "printf '%02000d' 0"
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _exec_task(
-                "test-sess", cmd, 5, max_output_size=100,
+                "test-sess", cmd, max_output_size=100,
             )
         assert success is True
         assert len(stdout) <= 100 + len("\n[truncated]")
@@ -4487,7 +4388,7 @@ class TestOutputTruncation:
         }
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _skill_task(
-                "sess1", skill, {}, None, None, 5, max_output_size=100,
+                "sess1", skill, {}, None, None, max_output_size=100,
             )
         assert success is True
         assert stdout.endswith("[truncated]")
@@ -7454,7 +7355,6 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_skills=None) -> _Pla
         session="sess1",
         goal="Test goal",
         user_message="test message",
-        exec_timeout=5,
         deploy_secrets={},
         session_secrets={},
         max_output_size=1024 * 1024,
@@ -8060,7 +7960,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", msg_id, "hello",
-                plan_id, plan, "admin", None, 5, 30,
+                plan_id, plan, "admin", None, 30,
                 {}, None, 10, 3, 600, None, None,
             )
 
@@ -8089,7 +7989,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 5, 30,
+                plan_id, plan, "admin", None, 30,
                 {}, None, 10, 3, 600, None, None,
             )
 
@@ -8127,7 +8027,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, initial_plan, "admin", None, 5, 30,
+                plan_id, initial_plan, "admin", None, 30,
                 {}, None, 10, 3, 600, None, None,
             )
 
@@ -8148,7 +8048,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 5, 30,
+                plan_id, plan, "admin", None, 30,
                 {}, None, 10, 3, 600, None, None,
             )
 
@@ -8220,7 +8120,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, fail_plan, "admin", None, 5, 30,
+                plan_id, fail_plan, "admin", None, 30,
                 {}, None, 10, 3, 600, None, None,
             )
 
@@ -8274,7 +8174,7 @@ class TestJobTimeout:
             mock_time.monotonic.side_effect = [0.0, 9999.0]
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 5, 30,
+                plan_id, plan, "admin", None, 30,
                 {}, None, 10, 3, 600, None, None,
             )
 
@@ -8968,7 +8868,7 @@ class TestPreReplanCancelFix:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(
                 run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
-                timeout=10,
+                timeout=5,
             )
 
         # Cancel was detected before the second planner call — planner called exactly once

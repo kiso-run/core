@@ -16,7 +16,6 @@ async def _skill_task(
     args: dict,
     plan_outputs: list[dict] | None,
     session_secrets: dict[str, str] | None,
-    timeout: int,
     sandbox_uid: int | None = None,
     max_output_size: int = 0,
 ) -> tuple[str, str, bool, int]:
@@ -45,7 +44,6 @@ async def _skill_task(
     return await _run_subprocess(
         [str(venv_python), str(run_py)],
         env=env,
-        timeout=timeout,
         cwd=str(workspace),
         stdin_data=input_bytes,
         uid=sandbox_uid,
