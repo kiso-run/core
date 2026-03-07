@@ -438,15 +438,13 @@ class TestRunWorker:
         assert plan["status"] == "done"
 
         tasks = await get_tasks_for_plan(db, plan["id"])
-        # M201 injects an intent msg at position 0 → 3 tasks total
-        assert len(tasks) == 3
-        assert tasks[0]["type"] == "msg"  # intent msg
+        # No intent injection (EXEC_THEN_MSG_PLAN has no [Lang: xx] tag)
+        assert len(tasks) == 2
+        assert tasks[0]["type"] == "exec"
         assert tasks[0]["status"] == "done"
-        assert tasks[1]["type"] == "exec"
+        assert "hello" in tasks[0]["output"]
+        assert tasks[1]["type"] == "msg"
         assert tasks[1]["status"] == "done"
-        assert "hello" in tasks[1]["output"]
-        assert tasks[2]["type"] == "msg"
-        assert tasks[2]["status"] == "done"
 
     async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
         """Secrets from the plan are extracted and available for skill execution."""
@@ -2222,24 +2220,24 @@ class TestM201IntentMsgInjection:
         tasks = [
             {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "ok"},
             {"type": "exec", "detail": "echo world", "skill": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            {"type": "msg", "detail": "[Lang: it] fatto", "skill": None, "args": None, "expect": None},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet the world")
         assert len(result) == 4
         assert result[0]["type"] == "msg"
-        assert "greet the world" in result[0]["detail"]
+        assert result[0]["detail"].startswith("[Lang: it]")
         assert "echo hello" in result[0]["detail"]
         # Original tasks unchanged
         assert result[1]["type"] == "exec"
 
     def test_no_injection_when_first_task_is_msg(self):
         tasks = [
-            {"type": "msg", "detail": "hello", "skill": None, "args": None, "expect": None},
+            {"type": "msg", "detail": "[Lang: en] hello", "skill": None, "args": None, "expect": None},
             {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert len(result) == 2
-        assert result[0]["detail"] == "hello"
+        assert result[0]["detail"] == "[Lang: en] hello"
 
     def test_no_injection_for_single_task(self):
         tasks = [
@@ -2248,10 +2246,20 @@ class TestM201IntentMsgInjection:
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert len(result) == 1
 
+    def test_no_injection_without_lang_tag(self):
+        """Skip injection when no msg task has [Lang: xx] — can't detect language."""
+        tasks = [
+            {"type": "exec", "detail": "a", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "b", "skill": None, "args": None, "expect": "ok"},
+        ]
+        result = _maybe_inject_intent_msg(tasks, "goal")
+        assert len(result) == 2  # no injection
+
     def test_does_not_mutate_input(self):
         tasks = [
             {"type": "exec", "detail": "a", "skill": None, "args": None, "expect": "ok"},
             {"type": "exec", "detail": "b", "skill": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "[Lang: en] done", "skill": None, "args": None, "expect": None},
         ]
         original_len = len(tasks)
         result = _maybe_inject_intent_msg(tasks, "goal")
@@ -2263,8 +2271,10 @@ class TestM201IntentMsgInjection:
             {"type": "exec", "detail": f"step{i}", "skill": None, "args": None, "expect": "ok"}
             for i in range(5)
         ]
+        tasks.append({"type": "msg", "detail": "[Lang: fr] fini", "skill": None, "args": None, "expect": None})
         result = _maybe_inject_intent_msg(tasks, "multi-step")
         detail = result[0]["detail"]
+        assert detail.startswith("[Lang: fr]")
         assert "step0" in detail
         assert "step1" in detail
         assert "step2" in detail
@@ -2281,7 +2291,7 @@ class TestM201IntentMsgInjection:
         replan_tasks = [
             {"type": "exec", "detail": "apt-get install foo", "skill": None, "args": None, "expect": "ok"},
             {"type": "exec", "detail": "run test", "skill": None, "args": None, "expect": "pass"},
-            {"type": "msg", "detail": "report", "skill": None, "args": None, "expect": None},
+            {"type": "msg", "detail": "[Lang: it] report", "skill": None, "args": None, "expect": None},
         ]
         injected = _maybe_inject_intent_msg(replan_tasks, "Retry with new approach")
         await _persist_plan_tasks(db, plan_id, "sess1", injected)
@@ -2289,7 +2299,8 @@ class TestM201IntentMsgInjection:
         db_tasks = await get_tasks_for_plan(db, plan_id)
         assert len(db_tasks) == 4
         assert db_tasks[0]["type"] == "msg"
-        assert "Retry with new approach" in db_tasks[0]["detail"]
+        assert db_tasks[0]["detail"].startswith("[Lang: it]")
+        assert "apt-get install foo" in db_tasks[0]["detail"]
         assert db_tasks[1]["type"] == "exec"
         await db.close()
 

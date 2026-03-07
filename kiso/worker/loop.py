@@ -479,19 +479,32 @@ async def _fast_path_chat(
 def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
     """M201: prepend an intent msg so the user knows what's about to happen.
 
-    Skips injection when: plan has ≤1 task, or first task is already a msg.
+    Skips injection when: plan has ≤1 task, first task is already a msg,
+    or no msg task with [Lang: xx] exists to detect the language.
     Returns a new list (does not mutate the input).
     """
     if len(tasks) <= 1 or tasks[0]["type"] == TASK_TYPE_MSG:
         return tasks
+
+    # Extract [Lang: xx] from existing msg tasks (planner always sets it)
+    lang_tag = ""
+    for t in tasks:
+        if t["type"] == TASK_TYPE_MSG:
+            detail = t.get("detail") or ""
+            if detail.startswith("[Lang:"):
+                lang_tag = detail[:detail.index("]") + 1] + " "
+                break
+    if not lang_tag:
+        return tasks  # can't inject without knowing the language
+
     task_summary = ", ".join(
         f"{t['type']}: {t['detail'][:60]}" for t in tasks[:3]
     )
     intent_task = {
         "type": TASK_TYPE_MSG,
         "detail": (
-            f"Briefly tell the user what you're about to do. "
-            f"Plan goal: {goal}. Steps: {task_summary}"
+            f"{lang_tag}Briefly tell the user what you're about to do. "
+            f"Plan: {task_summary}"
         ),
         "skill": None,
         "args": None,

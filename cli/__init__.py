@@ -95,6 +95,8 @@ def _setup_readline() -> None:
     readline.set_completer(completer)
     readline.set_completer_delims(" \t\n")
     readline.parse_and_bind("tab: complete")
+    # Prevent pasted text (with trailing newline) from auto-submitting
+    readline.parse_and_bind("set enable-bracketed-paste on")
 
     from kiso.config import KISO_DIR
 
