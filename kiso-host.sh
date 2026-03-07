@@ -347,7 +347,31 @@ PY
 
             restart)
                 INST=$(resolve_instance "${2:-$EXPLICIT_INSTANCE}")
-                docker restart "kiso-$INST"
+                CONTAINER="kiso-$INST"
+                INST_DIR="$KISO_DIR/instances/$INST"
+                CONFIG="$INST_DIR/config.toml"
+                # Apply resource limits from config.toml before restart
+                if [[ -f "$CONFIG" ]] && command -v python3 &>/dev/null; then
+                    _mem=4; _cpu=2; _pids=512
+                    _out=$(python3 -c "
+import tomllib, sys
+with open(sys.argv[1], 'rb') as f:
+    s = tomllib.load(f).get('settings', {})
+print(s.get('max_memory_gb', 4))
+print(s.get('max_cpus', 2))
+print(s.get('max_pids', 512))
+" "$CONFIG" 2>/dev/null) && {
+                        read -r _mem; read -r _cpu; read -r _pids
+                    } <<< "$_out"
+                    echo "Applying limits: RAM=${_mem}GB, CPU=${_cpu}, PIDs=${_pids}"
+                    docker update \
+                        --memory="${_mem}g" \
+                        --memory-swap="${_mem}g" \
+                        --cpus="$_cpu" \
+                        --pids-limit="$_pids" \
+                        "$CONTAINER" >/dev/null 2>&1 || echo "Warning: docker update failed (limits may not be applied)"
+                fi
+                docker restart "$CONTAINER"
                 ;;
 
             list)

@@ -42,6 +42,72 @@ _cached_env: dict | None = None
 _cached_at: float = 0.0
 
 
+def get_resource_limits() -> dict:
+    """Read actual resource limits from cgroups and disk usage.
+
+    Returns a dict with keys: memory_mb, memory_used_mb, cpu_limit,
+    disk_used_gb, disk_total_gb, pids_limit, pids_used.
+    Values are None when the corresponding source is unavailable.
+    """
+    result: dict[str, int | float | None] = {
+        "memory_mb": None,
+        "memory_used_mb": None,
+        "cpu_limit": None,
+        "disk_used_gb": None,
+        "disk_total_gb": None,
+        "pids_limit": None,
+        "pids_used": None,
+    }
+
+    # Memory limit from cgroup v2
+    try:
+        raw = Path("/sys/fs/cgroup/memory.max").read_text().strip()
+        if raw != "max":
+            result["memory_mb"] = int(raw) // (1024 * 1024)
+    except (ValueError, OSError):
+        pass
+
+    # Memory usage
+    try:
+        result["memory_used_mb"] = int(Path("/sys/fs/cgroup/memory.current").read_text().strip()) // (1024 * 1024)
+    except (ValueError, OSError):
+        pass
+
+    # CPU limit from cgroup v2: "quota period" e.g. "200000 100000" = 2 CPUs
+    try:
+        raw = Path("/sys/fs/cgroup/cpu.max").read_text().strip()
+        parts = raw.split()
+        if parts[0] != "max" and len(parts) == 2:
+            quota, period = int(parts[0]), int(parts[1])
+            result["cpu_limit"] = round(quota / period, 1)
+    except (ValueError, OSError, IndexError):
+        pass
+
+    # PIDs limit from cgroup v2
+    try:
+        raw = Path("/sys/fs/cgroup/pids.max").read_text().strip()
+        if raw != "max":
+            result["pids_limit"] = int(raw)
+    except (ValueError, OSError):
+        pass
+
+    # PIDs current
+    try:
+        result["pids_used"] = int(Path("/sys/fs/cgroup/pids.current").read_text().strip())
+    except (ValueError, OSError):
+        pass
+
+    # Disk usage
+    try:
+        usage = shutil.disk_usage(str(KISO_DIR))
+        result["disk_used_gb"] = round(usage.used / (1024**3), 1)
+        result["disk_total_gb"] = round(usage.total / (1024**3), 1)
+    except OSError:
+        pass
+
+    return result
+
+
 def _collect_os_info() -> dict[str, str]:
     """Collect OS platform info."""
     return {

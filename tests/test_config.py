@@ -582,3 +582,42 @@ def test_config_template_models_match_defaults():
         f"CONFIG_TEMPLATE [models] drift: "
         f"missing={expected - template_models}, extra={template_models - expected}"
     )
+
+
+# --- M217: resource limits in config ---
+
+
+class TestResourceLimitDefaults:
+    def test_defaults_exist(self):
+        """Resource limit settings exist in SETTINGS_DEFAULTS."""
+        assert SETTINGS_DEFAULTS["max_memory_gb"] == 4
+        assert SETTINGS_DEFAULTS["max_cpus"] == 2
+        assert SETTINGS_DEFAULTS["max_disk_gb"] == 32
+        assert SETTINGS_DEFAULTS["max_pids"] == 512
+
+    def test_config_template_includes_resource_limits(self):
+        """CONFIG_TEMPLATE has resource limit settings."""
+        import tomllib
+        parsed = tomllib.loads(CONFIG_TEMPLATE)
+        settings = parsed.get("settings", {})
+        assert settings["max_memory_gb"] == 4
+        assert settings["max_cpus"] == 2
+        assert settings["max_disk_gb"] == 32
+        assert settings["max_pids"] == 512
+
+    def test_loaded_config_has_resource_limits(self, tmp_path: Path):
+        """Loaded config includes resource limits from defaults."""
+        cfg = load_config(_write(tmp_path, VALID))
+        assert cfg.settings["max_memory_gb"] == 4
+        assert cfg.settings["max_cpus"] == 2
+        assert cfg.settings["max_disk_gb"] == 32
+        assert cfg.settings["max_pids"] == 512
+
+    def test_custom_resource_limits(self, tmp_path: Path):
+        """Custom resource limits override defaults."""
+        text = VALID + "max_memory_gb = 8\nmax_cpus = 4\nmax_disk_gb = 64\nmax_pids = 1024\n"
+        cfg = load_config(_write(tmp_path, text))
+        assert cfg.settings["max_memory_gb"] == 8
+        assert cfg.settings["max_cpus"] == 4
+        assert cfg.settings["max_disk_gb"] == 64
+        assert cfg.settings["max_pids"] == 1024

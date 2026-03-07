@@ -356,6 +356,59 @@ FALLBACK
     MODELS_SECTION="$(printf '%b' "$result")"
 }
 
+MAX_MEMORY_GB=4
+MAX_CPUS=2
+MAX_DISK_GB=32
+MAX_PIDS=512
+ask_resource_limits() {
+    # Non-interactive: use defaults
+    if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]] || [[ ! -t 0 ]]; then
+        return
+    fi
+
+    echo >&2
+    bold "Resource limits — press Enter for defaults:" >&2
+    echo >&2
+
+    local val
+    read -rp "  RAM in GB [$MAX_MEMORY_GB]: " val
+    [[ -n "$val" ]] && MAX_MEMORY_GB="$val"
+
+    read -rp "  CPUs [$MAX_CPUS]: " val
+    [[ -n "$val" ]] && MAX_CPUS="$val"
+
+    read -rp "  Disk in GB [$MAX_DISK_GB]: " val
+    [[ -n "$val" ]] && MAX_DISK_GB="$val"
+
+    read -rp "  Max PIDs [$MAX_PIDS]: " val
+    [[ -n "$val" ]] && MAX_PIDS="$val"
+
+    echo >&2
+}
+
+# Read resource limits from an existing config.toml.
+# Falls back to global defaults if parsing fails.
+_read_limits_from_config() {
+    local config_path="$1"
+    [[ -f "$config_path" ]] || return
+    local _out
+    _out=$(python3 -c "
+import tomllib, sys
+with open(sys.argv[1], 'rb') as f:
+    s = tomllib.load(f).get('settings', {})
+print(s.get('max_memory_gb', $MAX_MEMORY_GB))
+print(s.get('max_cpus', $MAX_CPUS))
+print(s.get('max_disk_gb', $MAX_DISK_GB))
+print(s.get('max_pids', $MAX_PIDS))
+" "$config_path" 2>/dev/null) || return
+    {
+        read -r MAX_MEMORY_GB
+        read -r MAX_CPUS
+        read -r MAX_DISK_GB
+        read -r MAX_PIDS
+    } <<< "$_out"
+}
+
 # ── Port auto-detection ────────────────────────────────────────────────────────
 
 next_free_server_port() {
@@ -678,6 +731,7 @@ if [[ "$NEED_CONFIG" == true ]]; then
     token="$(generate_token)"
 
     ask_models
+    ask_resource_limits
 
     config_body=$(cat <<PREVIEW
 [tokens]
@@ -712,6 +766,12 @@ llm_timeout                  = 120    # seconds; timeout for post-plan LLM calls
 planner_timeout              = 300    # seconds for planner LLM calls (higher for reasoning models)
 max_output_size              = 1048576  # bytes (1 MB)
 fast_path_enabled            = true   # skip planner for simple chat messages
+
+# Resource limits
+max_memory_gb                = $MAX_MEMORY_GB
+max_cpus                     = $MAX_CPUS
+max_disk_gb                  = $MAX_DISK_GB
+max_pids                     = $MAX_PIDS
 
 # Limits
 max_llm_calls_per_message    = 200
@@ -827,10 +887,18 @@ if [[ "$NEED_BUILD" == true ]]; then
     fi
     green "  image: $IMAGE"
 
+    # Read limits from config (handles both new installs and updates with kept config)
+    _read_limits_from_config "$CONFIG"
+
     bold "Starting container $CONTAINER..."
+    echo "  Limits: RAM=${MAX_MEMORY_GB}GB, CPU=${MAX_CPUS}, Disk=${MAX_DISK_GB}GB, PIDs=${MAX_PIDS}"
     docker run -d \
         --name "$CONTAINER" \
         --restart unless-stopped \
+        --memory="${MAX_MEMORY_GB}g" \
+        --memory-swap="${MAX_MEMORY_GB}g" \
+        --cpus="$MAX_CPUS" \
+        --pids-limit="$MAX_PIDS" \
         -p "${SERVER_PORT}:8333" \
         -p "$((CONN_BASE+1))-$((CONN_BASE+10)):$((CONN_BASE+1))-$((CONN_BASE+10))" \
         --env-file "$ENV_FILE" \

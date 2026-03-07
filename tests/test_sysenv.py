@@ -17,6 +17,7 @@ from kiso.sysenv import (
     _collect_workspace_files,
     build_system_env_section,
     collect_system_env,
+    get_resource_limits,
     get_system_env,
     invalidate_cache,
 )
@@ -506,6 +507,119 @@ class TestCollectWorkspaceFiles:
             result = _collect_workspace_files("huge-session")
         # Function must return (not hang) and show truncation marker
         assert "truncated" in result
+
+
+# --- get_resource_limits (M217) ---
+
+
+class TestGetResourceLimits:
+    def test_returns_dict_with_expected_keys(self, tmp_path):
+        """get_resource_limits returns a dict with all resource keys."""
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = get_resource_limits()
+        for key in ("memory_mb", "memory_used_mb", "cpu_limit",
+                     "disk_used_gb", "disk_total_gb", "pids_limit", "pids_used"):
+            assert key in result
+
+    def test_reads_memory_from_cgroup(self, tmp_path):
+        """Memory limit is read from /sys/fs/cgroup/memory.max."""
+        cgroup = tmp_path / "memory.max"
+        cgroup.write_text("4294967296\n")  # 4 GB
+        with (
+            patch("kiso.sysenv.Path") as MockPath,
+            patch("kiso.sysenv.KISO_DIR", tmp_path),
+            patch("kiso.sysenv.shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=1_000_000_000, total=32_000_000_000)
+            def path_side_effect(p):
+                if p == "/sys/fs/cgroup/memory.max":
+                    return cgroup
+                mock = MagicMock()
+                mock.read_text.side_effect = OSError("no such file")
+                return mock
+            MockPath.side_effect = path_side_effect
+            result = get_resource_limits()
+        assert result["memory_mb"] == 4096
+
+    def test_memory_max_means_unlimited(self, tmp_path):
+        """When cgroup says 'max', memory_mb stays None."""
+        cgroup = tmp_path / "memory.max"
+        cgroup.write_text("max\n")
+        with (
+            patch("kiso.sysenv.Path") as MockPath,
+            patch("kiso.sysenv.KISO_DIR", tmp_path),
+            patch("kiso.sysenv.shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=0, total=0)
+            def path_side_effect(p):
+                if p == "/sys/fs/cgroup/memory.max":
+                    return cgroup
+                mock = MagicMock()
+                mock.read_text.side_effect = OSError("no such file")
+                return mock
+            MockPath.side_effect = path_side_effect
+            result = get_resource_limits()
+        assert result["memory_mb"] is None
+
+    def test_reads_cpu_from_cgroup(self, tmp_path):
+        """CPU limit is computed from cpu.max quota/period."""
+        cgroup = tmp_path / "cpu.max"
+        cgroup.write_text("200000 100000\n")  # 2 CPUs
+        with (
+            patch("kiso.sysenv.Path") as MockPath,
+            patch("kiso.sysenv.KISO_DIR", tmp_path),
+            patch("kiso.sysenv.shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=0, total=0)
+            def path_side_effect(p):
+                if p == "/sys/fs/cgroup/cpu.max":
+                    return cgroup
+                mock = MagicMock()
+                mock.read_text.side_effect = OSError("no such file")
+                return mock
+            MockPath.side_effect = path_side_effect
+            result = get_resource_limits()
+        assert result["cpu_limit"] == 2.0
+
+    def test_reads_pids_from_cgroup(self, tmp_path):
+        """PIDs limit is read from /sys/fs/cgroup/pids.max."""
+        cgroup = tmp_path / "pids.max"
+        cgroup.write_text("512\n")
+        with (
+            patch("kiso.sysenv.Path") as MockPath,
+            patch("kiso.sysenv.KISO_DIR", tmp_path),
+            patch("kiso.sysenv.shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=0, total=0)
+            def path_side_effect(p):
+                if p == "/sys/fs/cgroup/pids.max":
+                    return cgroup
+                mock = MagicMock()
+                mock.read_text.side_effect = OSError("no such file")
+                return mock
+            MockPath.side_effect = path_side_effect
+            result = get_resource_limits()
+        assert result["pids_limit"] == 512
+
+    def test_disk_usage_from_kiso_dir(self, tmp_path):
+        """Disk usage is read via shutil.disk_usage(KISO_DIR)."""
+        with (
+            patch("kiso.sysenv.KISO_DIR", tmp_path),
+            patch("kiso.sysenv.shutil.disk_usage") as mock_du,
+        ):
+            mock_du.return_value = MagicMock(used=3_400_000_000, total=34_000_000_000)
+            result = get_resource_limits()
+        assert result["disk_used_gb"] == 3.2
+        assert result["disk_total_gb"] == 31.7
+
+    def test_no_cgroup_files_returns_none_values(self, tmp_path):
+        """When cgroup files don't exist, resource values are None."""
+        with patch("kiso.sysenv.KISO_DIR", tmp_path):
+            result = get_resource_limits()
+        # On a normal dev machine, cgroup files may or may not exist;
+        # but disk values should always be present
+        assert result["disk_used_gb"] is not None
+        assert result["disk_total_gb"] is not None
 
 
 # --- Workspace lines in build_system_env_section ---
