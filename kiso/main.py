@@ -311,10 +311,19 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/health")
 async def health():
     from kiso._version import __version__
+    from kiso.sysenv import get_resource_limits
+
+    rl = get_resource_limits()
     return {
         "status": "ok",
         "version": __version__,
         "build_hash": os.environ.get("KISO_BUILD_HASH", "dev"),
+        "resources": {
+            "memory_mb": {"used": rl["memory_used_mb"], "limit": rl["memory_mb"]},
+            "cpu": {"limit": rl["cpu_limit"]},
+            "disk_gb": {"used": rl["disk_used_gb"], "limit": rl["disk_total_gb"]},
+            "pids": {"used": rl["pids_used"], "limit": rl["pids_limit"]},
+        },
     }
 
 

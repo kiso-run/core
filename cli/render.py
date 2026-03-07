@@ -476,7 +476,31 @@ def render_user_prompt(user: str, caps: TermCaps) -> str:
     return _style(f"{user}:", _BOLD, _CYAN, caps=caps)
 
 
-def render_banner(bot_name: str, session: str, caps: TermCaps, version: str | None = None) -> str:
+def _format_resources(resources: dict, caps: TermCaps) -> str:
+    """Format resource limits dict into a compact status line."""
+    parts: list[str] = []
+    mem = resources.get("memory_mb", {})
+    mem_used, mem_limit = mem.get("used"), mem.get("limit")
+    if mem_used is not None and mem_limit is not None:
+        parts.append(f"RAM: {mem_used / 1024:.1f}/{mem_limit / 1024:.0f} GB")
+    cpu = resources.get("cpu", {})
+    cpu_limit = cpu.get("limit")
+    if cpu_limit is not None:
+        parts.append(f"CPU: {cpu_limit}")
+    disk = resources.get("disk_gb", {})
+    disk_used, disk_limit = disk.get("used"), disk.get("limit")
+    if disk_used is not None and disk_limit is not None:
+        parts.append(f"Disk: {disk_used}/{disk_limit} GB")
+    if not parts:
+        return ""
+    dot = " · " if caps.unicode else " | "
+    return "  " + dot.join(parts)
+
+
+def render_banner(
+    bot_name: str, session: str, caps: TermCaps,
+    version: str | None = None, resources: dict | None = None,
+) -> str:
     """Render welcome banner at chat startup."""
     sep = render_separator(caps)
     kiso_label = "  Kiso 基礎" if caps.unicode else "  Kiso"
@@ -488,7 +512,12 @@ def render_banner(bot_name: str, session: str, caps: TermCaps, version: str | No
     caps_line = _style(caps_text, _DIM, caps=caps)
     hint = _style(f"  /help for commands{dot}Ctrl+C to cancel a task", _DIM, caps=caps)
     instance_session = _style(f"  instance: {bot_name}  |  session: {session}", _DIM, caps=caps)
-    lines = [sep, name_line, instance_session, caps_line, hint, sep]
+    lines = [sep, name_line, instance_session]
+    if resources:
+        res_text = _format_resources(resources, caps)
+        if res_text:
+            lines.append(_style(res_text, _DIM, caps=caps))
+    lines.extend([caps_line, hint, sep])
     return "\n" + "\n".join(lines) + "\n"
 
 

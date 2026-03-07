@@ -12,6 +12,7 @@ from cli.render import (
     _render_markdown,
     _style,
     detect_caps,
+    _format_resources,
     extract_thinking,
     get_last_thinking,
     render_banner,
@@ -419,6 +420,40 @@ def test_render_banner_custom_name_instance_line():
     result = render_banner("Jarvis", "host@alice", _COLOR)
     assert "instance: Jarvis" in result
     assert "host@alice" in result
+
+
+def test_render_banner_with_resources():
+    """M219: banner shows resource line when resources dict provided."""
+    resources = {
+        "memory_mb": {"used": 312, "limit": 4096},
+        "cpu": {"limit": 2},
+        "disk_gb": {"used": 3.2, "limit": 32},
+        "pids": {"used": 45, "limit": 512},
+    }
+    result = render_banner("Kiso", "host@alice", _COLOR, resources=resources)
+    assert "RAM:" in result
+    assert "CPU: 2" in result
+    assert "Disk: 3.2/32 GB" in result
+
+
+def test_render_banner_no_resources():
+    """M219: banner without resources still works (backward compatible)."""
+    result = render_banner("Kiso", "host@alice", _COLOR)
+    assert "RAM:" not in result
+    assert "Kiso" in result
+
+
+def test_render_banner_resources_none_values():
+    """M219: resources with None values are skipped gracefully."""
+    resources = {
+        "memory_mb": {"used": None, "limit": None},
+        "cpu": {"limit": None},
+        "disk_gb": {"used": 3.2, "limit": 32},
+        "pids": {"used": None, "limit": None},
+    }
+    result = render_banner("Kiso", "host@alice", _COLOR, resources=resources)
+    assert "Disk: 3.2/32 GB" in result
+    assert "RAM:" not in result
 
 
 # ── render_cancel_start / done ───────────────────────────────

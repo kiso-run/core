@@ -448,7 +448,20 @@ def _chat(args: argparse.Namespace) -> None:
 
     ctx = _setup_client_context(args)
     prompt = render_user_prompt(ctx.user, ctx.caps)
-    print(render_banner(ctx.bot_name, ctx.session, ctx.caps, __version__))
+
+    # Fetch resource info for banner (best-effort)
+    resources = None
+    try:
+        resp = ctx.client.get("/health")
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict):
+            res = data.get("resources")
+            if isinstance(res, dict):
+                resources = res
+    except Exception:
+        pass
+    print(render_banner(ctx.bot_name, ctx.session, ctx.caps, __version__, resources=resources))
 
     # Tab-completion for slash commands
     _setup_readline()
@@ -1117,15 +1130,21 @@ def _slash_status(client, session: str, user: str, caps: "TermCaps") -> None:  #
     """Show server health, session message count, and worker state."""
     import httpx
 
-    from cli.render import render_separator
+    from cli.render import _format_resources, render_separator
 
     print(render_separator(caps))
 
-    # Health
+    # Health + resources
     try:
         resp = client.get("/health")
         resp.raise_for_status()
-        print(f"  Health: {resp.json().get('status', 'ok')}")
+        health_data = resp.json()
+        print(f"  Health: {health_data.get('status', 'ok')}")
+        resources = health_data.get("resources")
+        if resources:
+            res_line = _format_resources(resources, caps)
+            if res_line:
+                print(res_line)
     except (httpx.HTTPError, httpx.ConnectError):
         print("  Health: unreachable")
 
