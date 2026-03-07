@@ -47,6 +47,34 @@ async def test_get_session_info(client: httpx.AsyncClient):
     assert data["summary"] is None
 
 
+async def test_post_msg_includes_base_url_in_queue(client: httpx.AsyncClient):
+    """M216: post_msg puts base_url from request into the queue dict."""
+    import asyncio
+
+    captured_msg = {}
+    fake_queue = asyncio.Queue()
+
+    original_put = fake_queue.put_nowait
+
+    def _capture_put(msg):
+        captured_msg.update(msg)
+        # Don't actually queue — avoid worker starting
+        return None
+
+    fake_queue.put_nowait = _capture_put
+
+    with patch("kiso.main._ensure_worker", return_value=fake_queue):
+        resp = await client.post("/msg", json={
+            "session": "base-url-test",
+            "user": "testadmin",
+            "content": "hello",
+        }, headers=AUTH_HEADER)
+
+    assert resp.status_code == 202
+    assert "base_url" in captured_msg
+    assert captured_msg["base_url"]  # non-empty
+
+
 async def test_get_session_info_no_session(client: httpx.AsyncClient):
     """Non-existent session returns count 0 and no summary."""
     resp = await client.get("/sessions/nonexistent/info", headers=AUTH_HEADER)

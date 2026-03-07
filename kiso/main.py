@@ -234,6 +234,7 @@ async def _startup_recovery(db, config) -> None:
                     "user_role": user_role,
                     "user_skills": user_skills,
                     "username": msg["user"],
+                    "base_url": "",
                 })
                 recovered_count += 1
             except asyncio.QueueFull:
@@ -413,6 +414,7 @@ async def post_msg(
                 "user_role": user_role,
                 "user_skills": user_skills,
                 "username": resolved.username,
+                "base_url": str(request.base_url).rstrip("/"),
             })
         except asyncio.QueueFull:
             raise HTTPException(status_code=429, detail="Too many queued messages")

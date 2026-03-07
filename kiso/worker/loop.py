@@ -1144,6 +1144,7 @@ async def _execute_plan(
     username: str | None = None,
     cancel_event: asyncio.Event | None = None,
     slog: SessionLogger | None = None,
+    base_url: str = "",
 ) -> tuple[bool, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining, plan_outputs).
 
@@ -1174,6 +1175,7 @@ async def _execute_plan(
         messenger_timeout=messenger_timeout,
         installed_skills=installed_skills,
         slog=slog,
+        base_url=base_url,
         sandbox_uid=None,
     )
 
@@ -1498,6 +1500,7 @@ async def _run_planning_loop(
     username: "str | None",
     slog: "SessionLogger | None",
     set_phase: "Callable[[str], None] | None" = None,
+    base_url: str = "",
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
     def _phase(p: str) -> None:
@@ -1515,7 +1518,7 @@ async def _run_planning_loop(
             db, config, session, current_plan_id, current_goal,
             content, messenger_timeout=messenger_timeout,
             session_secrets=session_secrets, username=username,
-            cancel_event=cancel_event, slog=slog,
+            cancel_event=cancel_event, slog=slog, base_url=base_url,
         )
 
         if success:
@@ -1808,6 +1811,7 @@ async def _process_message(
     user_role: str = msg["user_role"]
     user_skills: str | list[str] | None = msg.get("user_skills")
     username: str | None = msg.get("username")
+    base_url: str = msg.get("base_url", "")
 
     def _phase(p: str) -> None:
         if set_phase is not None:
@@ -1948,7 +1952,7 @@ async def _process_message(
         db, config, session, msg_id, content,
         plan_id, plan, user_role, user_skills, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
-        username, slog, set_phase=set_phase,
+        username, slog, set_phase=set_phase, base_url=base_url,
     )
 
     # --- Store token usage on the final plan ---
