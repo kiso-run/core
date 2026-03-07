@@ -607,12 +607,18 @@ async def build_planner_messages(
     # Capability-gap heuristic: if the message implies a capability that
     # no installed skill provides, inject the plugin-install appendix so
     # the planner knows how to discover and install the missing skill.
-    if not _plugin_install_needed and installed_names:
-        _gap = _detect_capability_gap(msg_lower, set(installed_names))
-        if _gap:
-            log.info("Capability gap detected: message needs %r but not installed", _gap)
+    _gap = _detect_capability_gap(msg_lower, set(installed_names))
+    if _gap:
+        log.info("Capability gap detected: message needs %r but not installed", _gap)
+        if not _plugin_install_needed:
             system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
             _plugin_install_needed = True
+        # M198: expose the detected skill name to the planner
+        context_parts.append(
+            f"## Capability Analysis\n"
+            f"Skill '{_gap}' is needed for this request but not installed. "
+            f"Install it with: exec `kiso skill install {_gap}`, then replan."
+        )
     skill_list = build_planner_skill_list(installed, user_role, user_skills)
     if skill_list:
         context_parts.append(f"## Skills\n{skill_list}")

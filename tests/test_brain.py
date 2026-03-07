@@ -3327,6 +3327,43 @@ class TestPlannerContextualRules:
         system = msgs[0]["content"]
         assert "Plugin installation:" not in system
 
+    async def test_capability_gap_exposes_skill_name_in_context(self, db):
+        """M198: capability gap detection result is visible in planner context."""
+        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "navigate to example.com",
+            )
+        context = msgs[1]["content"]
+        assert "Capability Analysis" in context
+        assert "browser" in context
+        assert "kiso skill install browser" in context
+
+    async def test_capability_gap_no_context_when_skill_installed(self, db):
+        """M198: no capability analysis when the needed skill is installed."""
+        fake_skills = [
+            {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
+        ]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "navigate to example.com",
+            )
+        context = msgs[1]["content"]
+        assert "Capability Analysis" not in context
+
+    async def test_capability_gap_with_no_skills_installed(self, db):
+        """M198: capability analysis works even when no skills are installed."""
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "fammi uno screenshot",
+            )
+        context = msgs[1]["content"]
+        assert "Capability Analysis" in context
+        assert "browser" in context
+
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
         msgs, *_ = await build_planner_messages(
