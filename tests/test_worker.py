@@ -5347,7 +5347,8 @@ class TestRecoveryMsgTask:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="I'm sorry, something went wrong with the task."), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         plan = await get_plan_for_session(db, "sess1")
@@ -8376,7 +8377,8 @@ class TestCircularReplanDetection:
                    return_value="search results"), \
              patch("kiso.worker.loop.save_message", side_effect=_save_msg), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path):
+             _patch_kiso_dir(tmp_path), \
+             _patch_no_intent():
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         stuck_msgs = [m for m in saved_messages if "I'm having trouble" in m]

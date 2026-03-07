@@ -1655,7 +1655,8 @@ async def _run_planning_loop(
             db, session, msg_id, new_plan["goal"],
             parent_id=current_plan_id,
         )
-        await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
+        replan_tasks = _maybe_inject_intent_msg(new_plan["tasks"], new_plan["goal"])
+        await _persist_plan_tasks(db, new_plan_id, session, replan_tasks)
 
         # Now finalize old plan status — the new plan is already visible.
         if is_self_directed:
