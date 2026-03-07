@@ -213,11 +213,11 @@ async def call_llm(
 
     # Pick the right timeout for this role.
     if role == "planner":
-        llm_timeout = int(config.settings.get("planner_timeout", config.settings["exec_timeout"]))
+        llm_timeout = int(config.settings.get("planner_timeout", config.settings["llm_timeout"]))
     elif role == "messenger":
-        llm_timeout = int(config.settings.get("messenger_timeout", config.settings["exec_timeout"]))
+        llm_timeout = int(config.settings.get("messenger_timeout", config.settings["llm_timeout"]))
     else:
-        llm_timeout = int(config.settings["exec_timeout"])
+        llm_timeout = int(config.settings["llm_timeout"])
 
     # Stripped message list — computed lazily for inflight tracking and usage logging
     stripped_messages: list[dict] | None = None

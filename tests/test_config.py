@@ -53,7 +53,7 @@ fact_consolidation_min_ratio = 0.3
 max_replan_depth          = 3
 max_validation_retries    = 3
 max_plan_tasks            = 20
-exec_timeout              = 120
+llm_timeout              = 120
 planner_timeout           = 60
 max_output_size           = 1048576
 max_worker_retries        = 1
@@ -198,9 +198,17 @@ def test_missing_model_role(tmp_path: Path, capsys):
 
 def test_missing_setting_uses_default(tmp_path: Path):
     """Missing settings fall back to SETTINGS_DEFAULTS silently."""
-    text = VALID.replace("exec_timeout              = 120\n", "")
+    text = VALID.replace("llm_timeout              = 120\n", "")
     cfg = load_config(_write(tmp_path, text))
-    assert cfg.settings["exec_timeout"] == SETTINGS_DEFAULTS["exec_timeout"]
+    assert cfg.settings["llm_timeout"] == SETTINGS_DEFAULTS["llm_timeout"]
+
+
+def test_exec_timeout_backward_compat(tmp_path: Path):
+    """M191: old exec_timeout in config.toml maps to llm_timeout."""
+    text = VALID.replace("llm_timeout              = 120", "exec_timeout              = 42")
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.settings["llm_timeout"] == 42
+    assert "exec_timeout" not in cfg.settings
 
 
 def test_provider_missing_base_url(tmp_path: Path, capsys):

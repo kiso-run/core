@@ -37,7 +37,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "max_plan_tasks": 20,
     # execution
     "classifier_timeout": 30,
-    "exec_timeout": 300,
+    "llm_timeout": 300,
     "planner_timeout": 300,
     "messenger_timeout": 120,
     "max_output_size": 1048576,
@@ -135,7 +135,7 @@ max_plan_tasks            = 20
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
-exec_timeout              = 300      # seconds; timeout for post-plan LLM calls (curator, summarizer)
+llm_timeout               = 300      # seconds; timeout for post-plan LLM calls (curator, summarizer)
 planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
 messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
@@ -335,6 +335,11 @@ def _build_config(path: Path, on_error) -> Config:
 
     # --- settings: start from defaults, override with config values ---
     settings_raw = raw.get("settings", {})
+    # Backward compat: map old exec_timeout → llm_timeout
+    if "exec_timeout" in settings_raw and "llm_timeout" not in settings_raw:
+        settings_raw["llm_timeout"] = settings_raw.pop("exec_timeout")
+    elif "exec_timeout" in settings_raw:
+        del settings_raw["exec_timeout"]
     settings = dict(SETTINGS_DEFAULTS)
     settings.update(settings_raw)
 

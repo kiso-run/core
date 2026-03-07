@@ -204,7 +204,7 @@ def _spawn_knowledge_task(
     config: Config,
     session: str,
     plan_id: int | None,
-    exec_timeout: int,
+    llm_timeout: int,
 ) -> asyncio.Task:
     """Spawn _post_plan_knowledge as a background task with its own LLM budget."""
 
@@ -213,7 +213,7 @@ def _spawn_knowledge_task(
         set_llm_budget(max_calls)
         reset_usage_tracking()
         try:
-            await _post_plan_knowledge(db, config, session, plan_id, exec_timeout)
+            await _post_plan_knowledge(db, config, session, plan_id, llm_timeout)
         except Exception:
             log.exception("Background post-plan knowledge failed for session=%s", session)
         finally:
@@ -227,7 +227,7 @@ async def _post_plan_knowledge(
     config: Config,
     session: str,
     plan_id: int | None,
-    exec_timeout: int,
+    llm_timeout: int,
 ) -> None:
     """Run post-plan knowledge processing: curator, summarizer, fact consolidation.
 
@@ -250,11 +250,11 @@ async def _post_plan_knowledge(
         try:
             curator_result = await asyncio.wait_for(
                 run_curator(config, learnings, session=session),
-                timeout=exec_timeout,
+                timeout=llm_timeout,
             )
             await _apply_curator_result(db, session, curator_result)
         except asyncio.TimeoutError:
-            log.warning("Curator timed out after %ds", exec_timeout)
+            log.warning("Curator timed out after %ds", llm_timeout)
         except CuratorError as e:
             log.error("Curator failed: %s", e)
         except asyncio.CancelledError:
@@ -273,11 +273,11 @@ async def _post_plan_knowledge(
             oldest = await get_oldest_messages(db, session, limit=min(msg_count, msg_limit))
             new_summary = await asyncio.wait_for(
                 run_summarizer(config, current_summary, oldest, session=session),
-                timeout=exec_timeout,
+                timeout=llm_timeout,
             )
             await update_summary(db, session, new_summary)
         except asyncio.TimeoutError:
-            log.warning("Summarizer timed out after %ds", exec_timeout)
+            log.warning("Summarizer timed out after %ds", llm_timeout)
         except SummarizerError as e:
             log.error("Summarizer failed: %s", e)
 
@@ -291,7 +291,7 @@ async def _post_plan_knowledge(
         try:
             consolidated = await asyncio.wait_for(
                 run_fact_consolidation(config, all_facts, session=session),
-                timeout=exec_timeout,
+                timeout=llm_timeout,
             )
             if consolidated:
                 min_ratio = setting_float(config.settings, "fact_consolidation_min_ratio", lo=0.0, hi=1.0)
@@ -323,7 +323,7 @@ async def _post_plan_knowledge(
                     else:
                         log.warning("All consolidated facts filtered out, preserving originals")
         except asyncio.TimeoutError:
-            log.warning("Fact consolidation timed out after %ds", exec_timeout)
+            log.warning("Fact consolidation timed out after %ds", llm_timeout)
         except SummarizerError as e:
             log.error("Fact consolidation failed: %s", e)
 
@@ -1229,7 +1229,7 @@ async def run_worker(
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
     classifier_timeout = setting_int(config.settings, "classifier_timeout", lo=1)
-    exec_timeout = setting_int(config.settings, "exec_timeout", lo=1)
+    llm_timeout = setting_int(config.settings, "llm_timeout", lo=1)
     planner_timeout = setting_int(config.settings, "planner_timeout", lo=1)
     messenger_timeout = setting_int(config.settings, "messenger_timeout", lo=1)
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
@@ -1262,7 +1262,7 @@ async def run_worker(
             try:
                 _pending_knowledge_task = await _process_message(
                     db, config, session, msg, cancel_event,
-                    exec_timeout, planner_timeout,
+                    llm_timeout, planner_timeout,
                     max_replan_depth, classifier_timeout=classifier_timeout,
                     messenger_timeout=messenger_timeout,
                     slog=slog, set_phase=set_phase)
@@ -1707,7 +1707,7 @@ async def _process_message(
     session: str,
     msg: dict,
     cancel_event: asyncio.Event | None,
-    exec_timeout: int,
+    llm_timeout: int,
     planner_timeout: int,
     max_replan_depth: int,
     classifier_timeout: int = 30,
@@ -1771,7 +1771,7 @@ async def _process_message(
             # Spawn post-plan knowledge processing in background
             clear_llm_budget()
             _phase(WORKER_PHASE_IDLE)
-            return _spawn_knowledge_task(db, config, session, fast_plan_id, exec_timeout)
+            return _spawn_knowledge_task(db, config, session, fast_plan_id, llm_timeout)
 
     # Store classifier usage immediately so verbose panels can render
     classifier_usage = get_usage_since(0)
@@ -1876,4 +1876,4 @@ async def _process_message(
     # --- Spawn post-plan knowledge processing in background ---
     clear_llm_budget()
     _phase(WORKER_PHASE_IDLE)
-    return _spawn_knowledge_task(db, config, session, current_plan_id, exec_timeout)
+    return _spawn_knowledge_task(db, config, session, current_plan_id, llm_timeout)

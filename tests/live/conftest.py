@@ -25,7 +25,7 @@ def live_config() -> Config:
     """Config wired to the real OpenRouter provider (same models as production)."""
     settings = {
         **SETTINGS_DEFAULTS,
-        "exec_timeout": 60,
+        "llm_timeout": 60,
         "max_validation_retries": 3,
     }
     return Config(

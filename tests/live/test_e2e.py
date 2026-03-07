@@ -63,7 +63,7 @@ class TestSimpleQuestionE2E:
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"],
                     "What is the tallest mountain in the world?",
-                    exec_timeout=60,
+                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -115,7 +115,7 @@ class TestExecAndReviewOkE2E:
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"],
                     "Run 'echo hello world' and tell me the output",
-                    exec_timeout=60,
+                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -160,7 +160,7 @@ class TestReplanFlowE2E:
                     seeded_db, live_config, live_session, plan_id,
                     "List files in the project directory",
                     "list files in the project",
-                    exec_timeout=60,
+                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )

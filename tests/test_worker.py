@@ -123,7 +123,7 @@ def _make_config(**overrides) -> Config:
     base_settings = {
         **SETTINGS_DEFAULTS,
         "worker_idle_timeout": 0.05,  # sub-second for fast tests
-        "exec_timeout": 5,
+        "llm_timeout": 5,
         "planner_timeout": 5,
     }
     # Merge settings overrides rather than replacing the whole dict
@@ -464,7 +464,7 @@ class TestRunWorker:
         """Exec fails, reviewer says replan, but max_replan_depth=0 → immediate failure."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 0,
@@ -612,7 +612,7 @@ class TestRunWorker:
         """Worker exits after idle_timeout with no messages."""
         config = _make_config(settings={
             "worker_idle_timeout": 0.1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -734,7 +734,7 @@ class TestRunWorker:
         """When max replan depth is reached, a recovery msg task is created via LLM."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 1,
@@ -3303,7 +3303,7 @@ class TestKnowledgeProcessing:
     async def test_summarizer_called_when_threshold_reached(self, db, tmp_path):
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3332,7 +3332,7 @@ class TestKnowledgeProcessing:
     async def test_summarizer_skipped_below_threshold(self, db, tmp_path):
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3355,7 +3355,7 @@ class TestKnowledgeProcessing:
     async def test_summarizer_failure_doesnt_break_worker(self, db, tmp_path):
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3379,7 +3379,7 @@ class TestKnowledgeProcessing:
     async def test_fact_consolidation_when_over_max(self, db, tmp_path):
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3412,7 +3412,7 @@ class TestKnowledgeProcessing:
         """Empty LLM consolidation result → facts NOT deleted."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3442,7 +3442,7 @@ class TestKnowledgeProcessing:
         """Facts <= max → no consolidation call."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3492,7 +3492,7 @@ class TestKnowledgeProcessing:
         """count == threshold triggers summarizer."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3553,7 +3553,7 @@ class TestKnowledgeProcessing:
         """Curator runs before summarizer (order verified via side effects)."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -3591,7 +3591,7 @@ class TestKnowledgeProcessing:
         """SummarizerError in consolidation is caught, worker continues."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4408,7 +4408,7 @@ class TestPostPlanTimeouts:
     async def test_curator_timeout_does_not_crash(self, db, tmp_path):
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 1,
+            "llm_timeout": 1,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4436,7 +4436,7 @@ class TestPostPlanTimeouts:
     async def test_summarizer_timeout_does_not_crash(self, db, tmp_path):
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 1,
+            "llm_timeout": 1,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4476,7 +4476,7 @@ class TestCancelDuringReplanWindow:
         Verify plan is cancelled and replan planner is never called."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4760,7 +4760,7 @@ class TestFactConsolidationTimeout:
     async def test_fact_consolidation_timeout_doesnt_break_worker(self, db, tmp_path):
         """asyncio.TimeoutError in fact consolidation is caught, worker continues."""
         config = _make_config(settings={
-            "exec_timeout": 1,
+            "llm_timeout": 1,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4807,7 +4807,7 @@ class TestConsolidationSafetyGuards:
         """10 facts → consolidation returns 1 (< 30%) → originals preserved."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4836,7 +4836,7 @@ class TestConsolidationSafetyGuards:
         """Consolidation returns mix of valid and <3-char → short ones filtered."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4880,7 +4880,7 @@ class TestConsolidationSafetyGuards:
         """
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -4918,7 +4918,7 @@ class TestConsolidationSafetyGuards:
         """
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -5007,7 +5007,7 @@ class TestFactDecayInPostPlan:
         """Stale facts get their confidence reduced via _post_plan_knowledge."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -5025,7 +5025,7 @@ class TestFactDecayInPostPlan:
         await db.commit()
 
         # Call _post_plan_knowledge directly (bypasses success handler usage bump)
-        await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+        await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         facts = await get_facts(db)
         assert len(facts) == 1
@@ -5035,7 +5035,7 @@ class TestFactDecayInPostPlan:
         """Facts with low confidence are archived via _post_plan_knowledge."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -5048,7 +5048,7 @@ class TestFactDecayInPostPlan:
         await save_fact(db, "Barely alive fact", "curator", confidence=0.1)
 
         # Call _post_plan_knowledge directly
-        await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+        await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         # Fact should be archived (confidence 0.1 < threshold 0.3)
         facts = await get_facts(db)
@@ -5507,7 +5507,7 @@ class TestSelfDirectedReplan:
         """Self-directed replans increment replan_depth and count toward the limit."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 1,
@@ -5598,7 +5598,7 @@ class TestExtendReplan:
         """Plan with extend_replan=2 raises max_replan_depth by 2."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 1,
@@ -5670,7 +5670,7 @@ class TestExtendReplan:
         """extend_replan=10 only adds 3 (capped)."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 1,
@@ -5740,7 +5740,7 @@ class TestExtendReplan:
         """Multiple plans each requesting extend_replan are capped at 3 total."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 1,
@@ -8166,7 +8166,7 @@ class TestCircularReplanDetection:
         """When 2 consecutive replans have >60% word overlap, show stuck message."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 5,
@@ -8235,7 +8235,7 @@ class TestCircularReplanDetection:
         """Genuinely different strategies (different task types/details) should NOT trigger stuck."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -8309,7 +8309,7 @@ class TestCircularReplanDetection:
         """M157: same strategy with different failure reasons detected as circular via fingerprint."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 5,
@@ -8387,7 +8387,7 @@ class TestPostPlanKnowledgeParallel:
     def _cfg(self, **extra):
         return _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -8409,7 +8409,7 @@ class TestPostPlanKnowledgeParallel:
         with patch("kiso.worker.loop.run_curator",
                    new_callable=AsyncMock, side_effect=CuratorError("boom")), \
              patch("kiso.worker.loop.run_summarizer", side_effect=_ok_summarizer):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert summarizer_called, "Summarizer must run even if Curator fails"
 
@@ -8431,7 +8431,7 @@ class TestPostPlanKnowledgeParallel:
         with patch("kiso.worker.loop.run_curator", side_effect=_ok_curator), \
              patch("kiso.worker.loop.run_summarizer",
                    new_callable=AsyncMock, side_effect=SummarizerError("boom")):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert curator_called, "Curator must run even if Summarizer fails"
 
@@ -8464,7 +8464,7 @@ class TestPostPlanKnowledgeParallel:
                    new_callable=AsyncMock, return_value=promote_result), \
              patch("kiso.worker.loop.run_fact_consolidation",
                    side_effect=_capture_consolidation):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert consolidation_input, "Consolidation must be called"
         seen = consolidation_input[0]
@@ -8482,7 +8482,7 @@ class TestPostPlanKnowledgeParallel:
              patch("kiso.worker.loop.archive_low_confidence_facts",
                    new_callable=AsyncMock,
                    side_effect=lambda *a, **kw: archive_called.append(True) or 0):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert archive_called, "Archive must run even if decay fails"
 
@@ -8496,7 +8496,7 @@ class TestPostPlanKnowledgeParallel:
                    side_effect=lambda *a, **kw: decay_called.append(True) or 0), \
              patch("kiso.worker.loop.archive_low_confidence_facts",
                    new_callable=AsyncMock, side_effect=RuntimeError("oom")):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert decay_called, "Decay must run even if archive fails"
 
@@ -8518,7 +8518,7 @@ class TestPostPlanKnowledgeParallel:
 
         with patch("kiso.worker.loop.run_curator", side_effect=_slow_curator), \
              patch("kiso.worker.loop.run_summarizer", side_effect=_instant_summarizer):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=1)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=1)
 
         assert summarizer_called, (
             "Summarizer must complete even when Curator times out — "
@@ -8542,7 +8542,7 @@ class TestSummarizeMessagesLimit:
     def _cfg(self, **extra):
         return _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 3,
@@ -8564,7 +8564,7 @@ class TestSummarizeMessagesLimit:
         with patch("kiso.worker.loop.get_oldest_messages", side_effect=_mock_get_oldest), \
              patch("kiso.worker.loop.run_summarizer",
                    new_callable=AsyncMock, return_value="summary"):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert captured_limit == [3], (
             f"Expected get_oldest_messages called with limit=3, got {captured_limit}"
@@ -8585,7 +8585,7 @@ class TestSummarizeMessagesLimit:
         with patch("kiso.worker.loop.get_oldest_messages", side_effect=_mock_get_oldest), \
              patch("kiso.worker.loop.run_summarizer",
                    new_callable=AsyncMock, return_value="summary"):
-            await _post_plan_knowledge(db, config, "sess1", None, exec_timeout=5)
+            await _post_plan_knowledge(db, config, "sess1", None, llm_timeout=5)
 
         assert captured_limit == [2], (
             f"Expected get_oldest_messages called with limit=2, got {captured_limit}"
@@ -8722,14 +8722,14 @@ class TestCancelledErrorPropagation:
         """CancelledError raised by decay_facts must propagate out of _post_plan_knowledge."""
         with patch("kiso.worker.loop.decay_facts", side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
-                await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
+                await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
 
     async def test_cancelled_error_propagates_from_archive(self, db):
         """CancelledError raised by archive_low_confidence_facts must propagate."""
         with patch("kiso.worker.loop.archive_low_confidence_facts",
                    side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
-                await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
+                await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
 
     async def test_cancelled_error_propagates_from_curator(self, db):
         """CancelledError raised by run_curator must propagate, not be swallowed.
@@ -8740,7 +8740,7 @@ class TestCancelledErrorPropagation:
         await save_learning(db, "a learning to process", "sess1")
         with patch("kiso.worker.loop.run_curator", side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
-                await _post_plan_knowledge(db, _make_config(), "sess1", None, exec_timeout=5)
+                await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -9361,7 +9361,7 @@ class TestE2EWebScenario:
         """Full flow: plan1 (search + registry check) → plan2 (install) → plan3 (use skill + msg)."""
         config = _make_config(settings={
             "worker_idle_timeout": 1,
-            "exec_timeout": 5,
+            "llm_timeout": 5,
             "max_validation_retries": 1,
             "context_messages": 5,
             "max_replan_depth": 5,

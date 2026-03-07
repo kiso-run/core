@@ -291,7 +291,7 @@ class TestExecTranslatorLive:
             "shell": "/bin/sh",
             "exec_cwd": str(KISO_DIR / "sessions"),
             "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
-            "exec_timeout": 120,
+            "llm_timeout": 120,
             "max_output_size": 1_048_576,
             "available_binaries": ["ls", "echo", "cat"],
             "missing_binaries": [],

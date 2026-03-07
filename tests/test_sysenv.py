@@ -156,7 +156,7 @@ class TestCollectSystemEnv:
         cfg = Config(
             tokens={}, providers={}, users={}, models={}, raw={},
             settings={
-                "exec_timeout": 60,
+                "llm_timeout": 60,
                 "max_output_size": 512_000,
                 "max_plan_tasks": 10,
                 "max_replan_depth": 2,

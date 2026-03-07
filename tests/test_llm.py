@@ -506,8 +506,8 @@ class TestEmptyResponse:
 class TestTimeoutConfig:
     @pytest.mark.asyncio
     async def test_timeout_uses_config_value(self):
-        """Verify httpx.AsyncClient receives timeout from exec_timeout config."""
-        config = _make_config(settings={"exec_timeout": 42})
+        """Verify httpx.AsyncClient receives timeout from llm_timeout config."""
+        config = _make_config(settings={"llm_timeout": 42})
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = AsyncMock()

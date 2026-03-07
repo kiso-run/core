@@ -78,7 +78,7 @@ class TestExecChaining:
             success, replan_reason, completed, remaining = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
-                    plan["goal"], content, exec_timeout=60,
+                    plan["goal"], content, llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -134,7 +134,7 @@ class TestExecTranslator:
                     seeded_db, live_config, live_session, plan_id,
                     "List directory contents",
                     "List the contents of the current directory",
-                    exec_timeout=60,
+                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -183,7 +183,7 @@ class TestExecTranslator:
                     seeded_db, live_config, live_session, plan_id,
                     "Create and delete a test file",
                     "Create a file called test123.txt with 'hello' in it, then delete it",
-                    exec_timeout=60,
+                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -229,7 +229,7 @@ class TestExecTranslator:
                     seeded_db, live_config, live_session, plan_id,
                     "Show hostname",
                     "Show me the system hostname",
-                    exec_timeout=60,
+                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -269,7 +269,7 @@ class TestFullPipeline:
                 _process_message(
                     seeded_db, live_config, live_session, msg,
                     queue, cancel_event,
-                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -302,7 +302,7 @@ class TestFullPipeline:
                 _process_message(
                     seeded_db, live_config, live_session, msg,
                     queue, cancel_event,
-                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -387,7 +387,7 @@ class TestReplanRecovery:
                 _process_message(
                     seeded_db, live_config, live_session, msg,
                     queue, cancel_event,
-                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -560,7 +560,7 @@ class TestSkillExecution:
             success, replan_reason, completed, remaining = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
-                    plan["goal"], content, exec_timeout=60,
+                    plan["goal"], content, llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -656,7 +656,7 @@ class TestPerStepTokenTracking:
                 _process_message(
                     seeded_db, live_config, live_session, msg,
                     queue, cancel_event,
-                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -711,7 +711,7 @@ class TestPerStepTokenTracking:
                 _process_message(
                     seeded_db, live_config, live_session, msg,
                     queue, cancel_event,
-                    idle_timeout=60, exec_timeout=60, max_replan_depth=3,
+                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )

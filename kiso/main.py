@@ -251,7 +251,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     config = load_config()
     _init_kiso_dirs()
-    await _llm_mod.init_http_client(timeout=setting_int(config.settings, "exec_timeout", lo=1))
+    await _llm_mod.init_http_client(timeout=setting_int(config.settings, "llm_timeout", lo=1))
     log.info("Server starting — host=%s port=%s",
              config.settings["host"],
              config.settings["port"])
@@ -280,7 +280,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Graceful shutdown with timeout
-    shutdown_timeout = setting_int(config.settings, "exec_timeout", lo=1)
+    shutdown_timeout = setting_int(config.settings, "llm_timeout", lo=1)
     for session, entry in list(_workers.items()):
         entry.cancel_event.set()
     for session, entry in list(_workers.items()):
