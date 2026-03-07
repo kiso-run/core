@@ -2273,6 +2273,11 @@ class TestExecTranslatorPromptContent:
         prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "curl -L" in prompt
 
+    def test_m205_kiso_short_skill_names(self):
+        """M205: worker prompt tells translator to use short skill/connector names."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "short skill/connector names" in prompt
+
 
 # --- Planner prompt content ---
 

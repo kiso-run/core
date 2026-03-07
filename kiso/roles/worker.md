@@ -13,5 +13,6 @@ Rules:
 - Use `;` for independent checks, `&&` only when second depends on first.
 - Never use `find /` to check for installed software. Use `command -v`, `which`, `dpkg -l`, `apt list --installed`.
 - Always use `curl -L` (follow redirects) for HTTP requests. Many sites return 301/302 redirects.
+- Kiso CLI uses short skill/connector names from the registry (e.g., `kiso skill install browser`, `kiso skill remove search`). Never prefix with `kiso-skill-` or `kiso-connector-`. If a preceding task output shows the correct name, use it exactly.
 - When the task says "extract", "parse", or "read from" and a preceding task output references a saved file, operate on that file (cat/grep/head it) — never re-fetch the data.
 - When writing a script file (Python, Node, etc.), use `cat > script.py << 'PYEOF'` with a heredoc, then `python3 script.py` in a second command joined with `&&`.
