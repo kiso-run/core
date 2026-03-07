@@ -383,8 +383,11 @@ def validate_plan(
                 errors.append(
                     f"Task {i}: skill '{skill_name}' is not installed. "
                     f"Available skills: {available}. "
-                    f"Use an exec task with `kiso skill install {skill_name}` "
-                    f"to install it first, then replan to use it."
+                    f"You CANNOT use '{skill_name}' in this plan. Remove the skill task. "
+                    f"Correct structure: "
+                    f'[{{"type": "exec", "detail": "Install the {skill_name} skill using '
+                    f'kiso skill install {skill_name}", "expect": "install succeeds", ...}}, '
+                    f'{{"type": "replan", "detail": "Use {skill_name} after install", ...}}]'
                 )
             elif installed_skills_info and skill_name in installed_skills_info:
                 # Validate args against schema (M166)

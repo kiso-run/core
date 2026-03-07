@@ -218,14 +218,16 @@ class TestValidatePlan:
         assert any("Available skills: echo" in e for e in errors)
 
     def test_skill_not_installed_suggests_fix(self):
-        """M124: validation error for missing skill includes install instruction."""
+        """M193: validation error includes CANNOT use and correct plan structure."""
         plan = {"tasks": [
             {"type": "skill", "detail": "browse", "expect": "ok", "skill": "browser", "args": "{}"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
+        assert any("CANNOT use 'browser'" in e for e in errors)
+        assert any('"type": "exec"' in e for e in errors)
+        assert any('"type": "replan"' in e for e in errors)
         assert any("kiso skill install browser" in e for e in errors)
-        assert any("replan to use it" in e for e in errors)
 
     def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [
