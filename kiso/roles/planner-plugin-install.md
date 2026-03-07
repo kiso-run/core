@@ -1,3 +1,5 @@
+Note: `kiso skill install NAME` is idempotent — if already installed, it prints a notice and exits 0. You do NOT need to check if a skill is installed before running install. Just install it directly.
+
 Plugin installation: when the user asks for a capability and no matching skill/connector is installed:
 
 1. **Named request** ("install skill X", "installa il connector Y") → go to step 3.

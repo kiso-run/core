@@ -2474,6 +2474,18 @@ class TestM192PlannerNavigateAndInstallGuard:
         assert "NEVER put a skill task for an uninstalled skill" in prompt
 
 
+class TestM199PluginInstallIdempotent:
+    """M199: planner-plugin-install.md tells planner that install is idempotent."""
+
+    def test_idempotent_note_present(self):
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        assert "idempotent" in prompt
+
+    def test_no_need_to_check_first(self):
+        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        assert "do NOT need to check" in prompt.lower() or "do not need to check" in prompt.lower()
+
+
 class TestM166ValidatePlanSkillArgs:
     """M166: validate_plan checks skill args against schema."""
 
