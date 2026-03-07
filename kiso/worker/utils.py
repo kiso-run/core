@@ -139,8 +139,9 @@ async def _ensure_sandbox_user(session: str) -> int | None:
 
 def _truncate_output(text: str, limit: int) -> str:
     """Truncate text to *limit* characters, appending a marker if truncated."""
+    marker = "\n[truncated]"
     if limit > 0 and len(text) > limit:
-        return text[:limit] + "\n[truncated]"
+        return text[: limit - len(marker)] + marker
     return text
 
 

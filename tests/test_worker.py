@@ -4573,7 +4573,7 @@ class TestOutputTruncation:
                 "test-sess", cmd, max_output_size=100,
             )
         assert success is True
-        assert len(stdout) <= 100 + len("\n[truncated]")
+        assert len(stdout) <= 100
         assert stdout.endswith("[truncated]")
 
     async def test_skill_output_truncated_when_large(self, tmp_path):
@@ -4595,7 +4595,29 @@ class TestOutputTruncation:
             )
         assert success is True
         assert stdout.endswith("[truncated]")
-        assert len(stdout) <= 100 + len("\n[truncated]")
+        assert len(stdout) <= 100
+
+
+class TestTruncateOutputUnit:
+    """Direct unit tests for _truncate_output respecting the limit."""
+
+    def test_total_length_respects_limit(self):
+        text = "x" * 500
+        result = _truncate_output(text, 100)
+        assert len(result) == 100
+        assert result.endswith("\n[truncated]")
+
+    def test_short_text_unchanged(self):
+        text = "hello"
+        assert _truncate_output(text, 100) == "hello"
+
+    def test_exact_limit_unchanged(self):
+        text = "x" * 100
+        assert _truncate_output(text, 100) == text
+
+    def test_zero_limit_unchanged(self):
+        text = "x" * 500
+        assert _truncate_output(text, 0) == text
 
 
 # --- Curator/summarizer timeout ---
