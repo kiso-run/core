@@ -486,7 +486,7 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
     if len(tasks) <= 1 or tasks[0]["type"] == TASK_TYPE_MSG:
         return tasks
 
-    # Extract [Lang: xx] from existing msg tasks (planner always sets it)
+    # Extract [Lang: xx] from existing msg tasks if available
     lang_tag = ""
     for t in tasks:
         if t["type"] == TASK_TYPE_MSG:
@@ -494,8 +494,6 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
             if detail.startswith("[Lang:"):
                 lang_tag = detail[:detail.index("]") + 1] + " "
                 break
-    if not lang_tag:
-        return tasks  # can't inject without knowing the language
 
     task_summary = ", ".join(
         f"{t['type']}: {t['detail'][:60]}" for t in tasks[:3]

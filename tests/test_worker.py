@@ -438,13 +438,14 @@ class TestRunWorker:
         assert plan["status"] == "done"
 
         tasks = await get_tasks_for_plan(db, plan["id"])
-        # No intent injection (EXEC_THEN_MSG_PLAN has no [Lang: xx] tag)
-        assert len(tasks) == 2
-        assert tasks[0]["type"] == "exec"
-        assert tasks[0]["status"] == "done"
-        assert "hello" in tasks[0]["output"]
-        assert tasks[1]["type"] == "msg"
+        # Intent msg injected even without [Lang: xx] (M201 fix)
+        assert len(tasks) == 3
+        assert tasks[0]["type"] == "msg"  # intent msg
+        assert tasks[1]["type"] == "exec"
         assert tasks[1]["status"] == "done"
+        assert "hello" in tasks[1]["output"]
+        assert tasks[2]["type"] == "msg"
+        assert tasks[2]["status"] == "done"
 
     async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
         """Secrets from the plan are extracted and available for skill execution."""
@@ -2246,14 +2247,16 @@ class TestM201IntentMsgInjection:
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert len(result) == 1
 
-    def test_no_injection_without_lang_tag(self):
-        """Skip injection when no msg task has [Lang: xx] — can't detect language."""
+    def test_injection_without_lang_tag(self):
+        """Inject intent msg even when no [Lang: xx] — messenger infers language."""
         tasks = [
             {"type": "exec", "detail": "a", "skill": None, "args": None, "expect": "ok"},
             {"type": "exec", "detail": "b", "skill": None, "args": None, "expect": "ok"},
         ]
         result = _maybe_inject_intent_msg(tasks, "goal")
-        assert len(result) == 2  # no injection
+        assert len(result) == 3  # injection happened
+        assert result[0]["type"] == "msg"
+        assert not result[0]["detail"].startswith("[Lang:")  # no lang tag
 
     def test_does_not_mutate_input(self):
         tasks = [
