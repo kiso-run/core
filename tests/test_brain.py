@@ -2954,6 +2954,11 @@ class TestReviewerPromptRetryHint:
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "retry_hint" in prompt
 
+    def test_m206_reviewer_partial_success_guidance(self):
+        """M206: reviewer prompt guides summary to cover partial successes."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "partial successes" in prompt
+
 
 # --- M47: planner/reviewer/worker improvements ---
 
