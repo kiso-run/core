@@ -3122,6 +3122,100 @@ class TestExecutePlanSkill:
         assert len(skill_outputs) == 1
         assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
 
+    async def test_skill_retry_on_transient_failure(self, db, tmp_path):
+        """M204: skill retries internally when reviewer provides retry_hint."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{"text":"hi"}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        review_replan_with_hint = {
+            "status": "replan", "reason": "Task failed",
+            "learn": None, "retry_hint": "try again", "summary": None,
+        }
+        # First call: reviewer says replan with hint (triggers retry)
+        # Second call: reviewer says ok (retry succeeds)
+        reviewer_side = AsyncMock(side_effect=[review_replan_with_hint, REVIEW_OK])
+
+        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+                    return_value=("ok output", "", True, 0)), \
+             patch("kiso.worker.loop.run_reviewer", reviewer_side), \
+             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, reason, completed, remaining, _po = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert reason is None
+        # Skill was reviewed twice (retry + success)
+        assert reviewer_side.call_count == 2
+
+    async def test_skill_retry_exhausted_escalates_to_replan(self, db, tmp_path):
+        """M204: skill escalates to replan after max_worker_retries exhausted."""
+        config = _make_config(settings={"max_worker_retries": 1})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{"text":"hi"}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        review_replan_with_hint = {
+            "status": "replan", "reason": "Still failing",
+            "learn": None, "retry_hint": "try something else", "summary": None,
+        }
+        # Both calls return replan with hint — retry once, then escalate
+        reviewer_side = AsyncMock(return_value=review_replan_with_hint)
+
+        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+                    return_value=("error", "crash", False, 1)), \
+             patch("kiso.worker.loop.run_reviewer", reviewer_side), \
+             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             _patch_kiso_dir(tmp_path):
+            success, reason, _, remaining, plan_outputs = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Still failing"
+        # Reviewed twice: initial + 1 retry
+        assert reviewer_side.call_count == 2
+        # retry_hint carried to plan_output
+        skill_outputs = [po for po in plan_outputs if po.get("type") == "skill"]
+        assert skill_outputs[0].get("retry_hint") == "try something else"
+
+    async def test_skill_no_retry_without_hint(self, db, tmp_path):
+        """M204: skill does NOT retry when reviewer returns replan without retry_hint."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+                          skill="echo", args='{"text":"hi"}', expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        skill = _create_echo_skill(tmp_path)
+
+        # replan without retry_hint → immediate escalation, no retry
+        reviewer_side = AsyncMock(return_value=REVIEW_REPLAN)
+
+        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+                    return_value=("error", "crash", False, 1)), \
+             patch("kiso.worker.loop.run_reviewer", reviewer_side), \
+             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             _patch_kiso_dir(tmp_path):
+            success, reason, _, remaining, _po = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is False
+        assert reason == "Task failed"
+        # Only reviewed once — no retry without hint
+        assert reviewer_side.call_count == 1
+
 
 # --- M8: Webhook delivery in _execute_plan ---
 

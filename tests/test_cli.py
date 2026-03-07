@@ -1375,6 +1375,24 @@ def test_setup_readline_registers_completer():
         readline.set_completer(old)
 
 
+def test_setup_readline_enables_bracketed_paste():
+    """M203: _setup_readline enables bracketed paste to prevent auto-submit on paste."""
+    import readline
+
+    calls = []
+    original_parse_and_bind = readline.parse_and_bind
+
+    def _spy(s):
+        calls.append(s)
+        return original_parse_and_bind(s)
+
+    with patch("readline.parse_and_bind", side_effect=_spy):
+        _setup_readline()
+
+    assert any("enable-bracketed-paste" in c for c in calls), \
+        f"bracketed-paste not enabled; parse_and_bind calls: {calls}"
+
+
 # ── poll_status plan_id filtering ────────────────────────────
 
 

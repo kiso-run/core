@@ -795,52 +795,73 @@ async def _handle_skill_task(
         )
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
-    await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
-    stdout, stderr, success, exit_code = await _skill_task(
-        ctx.session, skill_info, args, ctx.plan_outputs,
-        ctx.session_secrets,
-        sandbox_uid=ctx.sandbox_uid,
-        max_output_size=ctx.max_output_size,
-    )
-    stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
-    stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
-    status = "done" if success else "failed"
-    task_duration_ms = int((time.perf_counter() - t0) * 1000)
-    await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
-    task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
-                "exit_code": exit_code}
-    audit.log_task(
-        ctx.session, task_id, "skill", detail, task_row["status"],
-        task_duration_ms, len(task_row.get("output") or ""),
-        deploy_secrets=ctx.deploy_secrets,
-        session_secrets=ctx.session_secrets,
-    )
-    if ctx.slog:
-        ctx.slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
 
-    plan_output_entry = _make_plan_output(
-        i + 1, "skill", detail, task_row.get("output") or "", task_row["status"],
-        session=ctx.session,
-    )
-
-    review, review_error = await _run_review_step(ctx, task_row)
-    if review_error is not None:
-        await _store_step_usage(ctx.db, task_id, usage_idx_before)
-        return _TaskHandlerResult(stop=True, stop_success=False,
-                                  stop_replan=f"Review failed: {review_error}",
-                                  plan_output=plan_output_entry)
-
-    if review["status"] == REVIEW_STATUS_REPLAN:
-        replan_reason = review.get("reason", "")
-        retry_hint = review.get("retry_hint")
+    skill_retries = 0
+    plan_output_entry: "dict | None" = None
+    while True:
+        await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
+        t0 = time.perf_counter()
+        stdout, stderr, success, exit_code = await _skill_task(
+            ctx.session, skill_info, args, ctx.plan_outputs,
+            ctx.session_secrets,
+            sandbox_uid=ctx.sandbox_uid,
+            max_output_size=ctx.max_output_size,
+        )
+        stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
+        stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
+        status = "done" if success else "failed"
+        task_duration_ms = int((time.perf_counter() - t0) * 1000)
+        await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
+        task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
+                    "exit_code": exit_code}
+        audit.log_task(
+            ctx.session, task_id, "skill", detail, task_row["status"],
+            task_duration_ms, len(task_row.get("output") or ""),
+            deploy_secrets=ctx.deploy_secrets,
+            session_secrets=ctx.session_secrets,
+        )
         if ctx.slog:
-            ctx.slog.info("Review → replan: %s", replan_reason)
-        await _store_step_usage(ctx.db, task_id, usage_idx_before)
-        # Carry retry hint to replan context (M179 — matches exec/search handlers)
-        if plan_output_entry is not None and retry_hint:
-            plan_output_entry["retry_hint"] = retry_hint
-        return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
-                                  plan_output=plan_output_entry)
+            ctx.slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
+
+        plan_output_entry = _make_plan_output(
+            i + 1, "skill", detail, task_row.get("output") or "", task_row["status"],
+            session=ctx.session,
+        )
+
+        review, review_error = await _run_review_step(ctx, task_row)
+        if review_error is not None:
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False,
+                                      stop_replan=f"Review failed: {review_error}",
+                                      plan_output=plan_output_entry)
+
+        if review["status"] == REVIEW_STATUS_REPLAN:
+            retry_hint = review.get("retry_hint")
+            # M204: internal retry for transient skill failures
+            if retry_hint and skill_retries < ctx.max_worker_retries:
+                skill_retries += 1
+                await update_task_retry_count(ctx.db, task_id, skill_retries)
+                if ctx.slog:
+                    ctx.slog.info("Task %d skill retry %d/%d: %s",
+                                  task_id, skill_retries, ctx.max_worker_retries, retry_hint)
+                continue
+
+            replan_reason = review.get("reason", "")
+            if ctx.slog:
+                if skill_retries > 0:
+                    ctx.slog.info("Review → replan (retried %dx before escalating): %s",
+                                  skill_retries, replan_reason)
+                else:
+                    ctx.slog.info("Review → replan: %s", replan_reason)
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            # Carry retry hint to replan context (M179)
+            if plan_output_entry is not None and retry_hint:
+                plan_output_entry["retry_hint"] = retry_hint
+            return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
+                                      plan_output=plan_output_entry)
+
+        # review ok → break out of retry loop
+        break
 
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:

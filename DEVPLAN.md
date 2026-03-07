@@ -1,6 +1,6 @@
 # Development Plan
 
-Active devplan: [devplan/v0.3_wip.md](devplan/v0.3_wip.md) (M164-M195 completed)
+Active devplan: [devplan/v0.3_wip.md](devplan/v0.3_wip.md) (M204-M209)
 
 Previous:
 - [devplan/v0.3.md](devplan/v0.3.md) (M149-M163 completed)
