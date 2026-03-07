@@ -2452,6 +2452,26 @@ class TestM185BlockAptGetForSkillDeps:
         assert "kiso skill remove NAME && kiso skill install NAME" in prompt
 
 
+class TestM192PlannerNavigateAndInstallGuard:
+    """M192: planner prompt has navigate-vs-search rule and install-then-replan guard."""
+
+    def test_navigate_requires_browser_skill(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "browser skill is REQUIRED" in prompt
+
+    def test_search_may_return_wrong_site(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "completely different website" in prompt
+
+    def test_cannot_use_uninstalled_skill(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "CANNOT use a skill that is not listed" in prompt
+
+    def test_install_then_replan_pattern(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "NEVER put a skill task for an uninstalled skill" in prompt
+
+
 class TestM166ValidatePlanSkillArgs:
     """M166: validate_plan checks skill args against schema."""
 

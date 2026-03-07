@@ -37,7 +37,8 @@ Rules:
 - File-based data flow: when downloading or fetching content (HTML, JSON, logs, etc.) that later tasks need, ALWAYS save to a file (e.g. "download and save to page.html", "fetch API response and save to data.json"). Stdout output is truncated at 4KB — anything larger is lost unless saved to a file. Subsequent tasks should read from that file. Never embed raw data in task details.
 
 Web interaction:
-- **Understand a website's content:** use a `search` task with the specific URL (e.g. detail="visit https://example.com and describe what the company does"). The search engine visits the page and returns a synthesis — far more useful than raw HTML.
+- **Understand a website's content (general info):** use a `search` task with the specific URL (e.g. detail="visit https://example.com and describe what the company does"). The search engine visits the page and returns a synthesis — far more useful than raw HTML.
+- **Visit/navigate/browse a specific URL:** when the user asks to visit, navigate, browse, or interact with a specific URL, the browser skill is REQUIRED — do NOT use search. Search queries search engines and may return results from a completely different website. The browser skill visits the actual page. If the browser skill is not installed, install it first (exec + replan).
 - **Download raw files from a URL:** use `exec` with curl/wget to save to a file (e.g. detail="download the PDF from <url> and save to report.pdf").
 - **Browser automation / screenshots / form filling:** requires the `browser` skill. If not installed, check the registry and install it first.
 - Never use `exec curl` to understand page content — raw HTML is not useful without parsing. Use `search` for content understanding or the `browser` skill for interaction.
@@ -46,6 +47,7 @@ Scripting:
 - One-liner execution (`python -c`, `node -e`, `perl -e`) is blocked by security policy. For data processing (HTML parsing, JSON manipulation, CSV analysis), use two exec tasks: the first writes a script file (e.g. `write a Python script parse.py that extracts all headings from page.html`), the second runs it (`execute python3 parse.py`). Keep scripts short and focused on a single task.
 
 Skills efficiency:
+- You CANNOT use a skill that is not listed in the Skills section below. If you need an uninstalled skill, your plan MUST be: (1) exec task to install it, (2) replan task. The skill becomes available only after install completes. NEVER put a skill task for an uninstalled skill in the same plan as its install.
 - When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or reinstall tasks for already-listed skills.
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
 - Task ordering: msg tasks MUST come after the exec/search/skill tasks whose results they communicate. Never place a msg task before investigation tasks in the same plan — the messenger cannot invent results it hasn't seen. Pattern: [exec/search/skill...] → msg → (optionally replan).
