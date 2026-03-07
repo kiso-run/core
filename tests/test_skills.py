@@ -484,6 +484,27 @@ class TestCheckDeps:
         result = check_deps(skill)
         assert "nonexistent_binary_xyz" in result
 
+    def test_venv_bin_found(self, tmp_path):
+        """check_deps finds binaries in the skill's .venv/bin/ directory."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["myfakebin"]')
+        skill_dir = _create_skill(skills_dir, "search", toml)
+        skill = discover_skills(skills_dir)[0]
+
+        # Binary not on system PATH
+        assert check_deps(skill) == ["myfakebin"]
+
+        # Create it in skill's .venv/bin/
+        venv_bin = skill_dir / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        fake_bin = venv_bin / "myfakebin"
+        fake_bin.write_text("#!/bin/sh\n")
+        fake_bin.chmod(0o755)
+
+        # Now check_deps should find it
+        assert check_deps(skill) == []
+
     def test_discover_includes_deps_key(self, tmp_path):
         """discover_skills must include 'deps' key with the manifest's [kiso.deps] section."""
         skills_dir = tmp_path / "skills"
@@ -860,6 +881,12 @@ class TestBuildSkillEnv:
             os.environ["PATH"] = "/usr/bin"
             env = build_skill_env(skill)
         assert "KISO_SKILL_SEARCH_API_KEY" not in env
+
+    def test_venv_bin_in_path(self, tmp_path):
+        """Skill's .venv/bin/ is prepended to PATH so pip-installed CLIs are found."""
+        skill = {"name": "browser", "env": {}, "path": str(tmp_path / "skills" / "browser")}
+        env = build_skill_env(skill)
+        assert env["PATH"].startswith(str(tmp_path / "skills" / "browser" / ".venv" / "bin"))
 
     def test_multiple_env_vars(self):
         skill = {
