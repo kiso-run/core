@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test
-    command: uv run pytest tests/ -q
+    command: uv run pytest tests/ -q --ignore=tests/docker --ignore=tests/live
     profiles: [unit]
 
   test-live:
@@ -15,3 +15,10 @@ services:
       - path: .env
         required: true
     profiles: [live]
+
+  test-docker:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: uv run pytest tests/docker/ -v
+    profiles: [docker]

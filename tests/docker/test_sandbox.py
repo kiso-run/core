@@ -2,15 +2,14 @@
 
 Requires root to create Linux users and chown directories.
 Run inside the dev container:
-    docker compose exec dev uv run pytest tests/test_sandbox_docker.py -v
+    docker compose -f docker-compose.test.yml --profile docker run --rm test-docker
 """
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import os
 import subprocess
-import tempfile
 
 import pytest
 
@@ -21,21 +20,13 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _session_hash(session: str) -> str:
+    return hashlib.sha256(session.encode()).hexdigest()[:12]
+
+
 @pytest.fixture()
-def sandbox_session(tmp_path, monkeypatch):
+def sandbox_session(kiso_dir):
     """Create a per-session sandbox user and locked workspace."""
-    from pathlib import Path
-    import kiso.worker
-
-    monkeypatch.setattr(kiso.worker, "KISO_DIR", tmp_path)
-
-    # pytest creates tmp_path with 700 (root-only). Make parent dirs
-    # traversable so the sandbox user can reach the workspace.
-    path = tmp_path
-    while path != Path("/tmp") and path != path.parent:
-        os.chmod(path, os.stat(path).st_mode | 0o011)
-        path = path.parent
-
     session = "integration-sandbox-test"
     uid = _ensure_sandbox_user(session)
     assert uid is not None, "useradd failed — are we running as root?"
@@ -53,10 +44,9 @@ class TestSandboxIsolation:
 
     def test_sandbox_user_can_write_inside_workspace(self, sandbox_session):
         session, uid, workspace = sandbox_session
-        # Write a file as the sandbox user
+        username = f"kiso-s-{_session_hash(session)}"
         result = subprocess.run(
-            ["su", "-s", "/bin/sh", "-c", f"echo hello > {workspace}/test.txt",
-             f"kiso-s-{_session_hash(session)}"],
+            ["su", "-s", "/bin/sh", "-c", f"echo hello > {workspace}/test.txt", username],
             capture_output=True,
         )
         assert result.returncode == 0
@@ -64,7 +54,6 @@ class TestSandboxIsolation:
 
     def test_sandbox_user_cannot_read_outside_workspace(self, sandbox_session):
         session, uid, workspace = sandbox_session
-        # Create a file outside the workspace that only root can read
         outside = workspace.parent / "secret.txt"
         outside.write_text("top-secret")
         os.chown(outside, 0, 0)
@@ -75,19 +64,12 @@ class TestSandboxIsolation:
             ["su", "-s", "/bin/sh", "-c", f"cat {outside}", username],
             capture_output=True,
         )
-        assert result.returncode != 0  # permission denied
+        assert result.returncode != 0
 
     async def test_exec_task_runs_as_sandbox_user(self, sandbox_session):
         session, uid, workspace = sandbox_session
-        import kiso.worker
-
         stdout, stderr, success, _ = await _exec_task(
             session, "id -u", 5, sandbox_uid=uid,
         )
         assert success is True
         assert stdout.strip() == str(uid)
-
-
-def _session_hash(session: str) -> str:
-    import hashlib
-    return hashlib.sha256(session.encode()).hexdigest()[:12]
