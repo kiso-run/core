@@ -4457,6 +4457,8 @@ class TestBrieferMessages:
             "paraphrased": "External user said hello",
             "replan_context": "Previous plan failed due to missing skill",
             "plan_outputs": "[0] exec: install browser\nStatus: done",
+            "system_env": "OS: linux\nBinaries: python3, node",
+            "capability_gap": "Skill 'browser' is needed but not installed.",
         }
         msgs = build_briefer_messages("messenger", "report results", pool)
         content = msgs[1]["content"]
@@ -4469,6 +4471,8 @@ class TestBrieferMessages:
         assert "Paraphrased External Messages" in content
         assert "Replan Context" in content
         assert "Plan Outputs" in content
+        assert "System Environment" in content
+        assert "Capability Analysis" in content
 
     def test_empty_pool_values_excluded(self):
         pool = {"summary": "", "facts": "", "skills": "browser: navigate"}
@@ -4900,6 +4904,8 @@ class TestBrieferPlannerIntegration:
         assert "## Context\nUser wants to browse a website." in user_content
         # Briefer-filtered skills used
         assert "browser: navigate, screenshot" in user_content
+        # M258: sys_env NOT unconditionally included in briefer path
+        assert "## System Environment" not in user_content
 
     async def test_briefer_disabled_uses_full_context(self, db):
         """When briefer_enabled=False, full context is used (original behavior)."""
@@ -5169,3 +5175,140 @@ class TestBrieferTagRetrieval:
 
         briefer_user_content = captured_messages[1]["content"]
         assert "Available Fact Tags" not in briefer_user_content
+
+
+# ---------------------------------------------------------------------------
+# M258 — sys_env and capability_gap removed from planner in briefer path
+# ---------------------------------------------------------------------------
+
+
+class TestM258SysEnvAndGapFiltering:
+    """M258: sys_env and capability_gap go through briefer, not unconditional."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self, briefer_enabled=True):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(
+                context_messages=3,
+                briefer_enabled=briefer_enabled,
+            ),
+            raw={},
+        )
+
+    async def test_briefer_path_no_sys_env_in_user_content(self, db):
+        """M258: briefer path does NOT unconditionally append sys_env."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "User wants a joke.",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "tell me a joke",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## System Environment" not in user_content
+        assert "## Context\nUser wants a joke." in user_content
+
+    async def test_fallback_path_has_sys_env(self, db):
+        """M258: fallback path (no briefer) still includes sys_env."""
+        config = self._config(briefer_enabled=False)
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin", "hello",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## System Environment" in user_content
+
+    async def test_capability_gap_in_context_pool_for_briefer(self, db):
+        """M258: capability_gap is passed to briefer in context_pool."""
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return json.dumps({
+                    "modules": ["plugin_install"],
+                    "skills": [],
+                    "context": "User wants to take a screenshot. Browser skill missing.",
+                    "output_indices": [],
+                    "relevant_tags": [],
+                })
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "take a screenshot",
+            )
+
+        # Briefer should receive capability gap in its context
+        briefer_content = captured_messages[1]["content"]
+        assert "Capability Analysis" in briefer_content
+        assert "browser" in briefer_content
+
+        # Planner user content should NOT have raw capability gap
+        user_content = msgs[1]["content"]
+        assert "## Capability Analysis" not in user_content
+
+    async def test_capability_gap_in_fallback_path(self, db):
+        """M258: fallback path still unconditionally includes capability_gap."""
+        config = self._config(briefer_enabled=False)
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "take a screenshot",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## Capability Analysis" in user_content
+        assert "browser" in user_content
+
+    async def test_sys_env_in_briefer_context_pool(self, db):
+        """M258: sys_env is available to the briefer via context_pool."""
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return json.dumps({
+                    "modules": [],
+                    "skills": [],
+                    "context": "Simple request.",
+                    "output_indices": [],
+                    "relevant_tags": [],
+                })
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            await build_planner_messages(
+                db, config, "sess1", "user", "hello",
+            )
+
+        # Briefer should see system environment in its context
+        briefer_content = captured_messages[1]["content"]
+        assert "System Environment" in briefer_content

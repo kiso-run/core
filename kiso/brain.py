@@ -669,6 +669,17 @@ async def build_planner_messages(
     if full_skill_list:
         context_pool["skills"] = full_skill_list
 
+    # --- Capability gap detection ---
+    msg_lower = new_message.lower()
+    _gap = _detect_capability_gap(msg_lower, set(installed_names))
+    _gap_text = ""
+    if _gap:
+        _gap_text = (
+            f"Skill '{_gap}' is needed for this request but not installed. "
+            f"Install it with: exec `kiso skill install {_gap}`, then replan."
+        )
+        context_pool["capability_gap"] = _gap_text
+
     # --- Briefer path ---
     briefing = None
     if setting_bool(config.settings, "briefer_enabled"):
@@ -682,10 +693,6 @@ async def build_planner_messages(
             )
         except Exception as exc:
             log.warning("Briefer failed for planner, falling back to full context: %s", exc)
-
-    # --- Build system prompt ---
-    msg_lower = new_message.lower()
-    _gap = _detect_capability_gap(msg_lower, set(installed_names))
 
     if briefing:
         # Briefer path: modules selected by the briefer LLM.
@@ -784,17 +791,10 @@ async def build_planner_messages(
                 f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
             )
 
-    if briefing:
-        # Briefer path: sys env is small, always include it
-        context_parts.append(f"## System Environment\n{sys_env_text}")
-
-    # Capability gap analysis (always included when detected)
-    if _gap:
-        context_parts.append(
-            f"## Capability Analysis\n"
-            f"Skill '{_gap}' is needed for this request but not installed. "
-            f"Install it with: exec `kiso skill install {_gap}`, then replan."
-        )
+    if not briefing and _gap_text:
+        # Fallback path: capability gap unconditionally included.
+        # In briefer path, gap is in context_pool and briefer includes it.
+        context_parts.append(f"## Capability Analysis\n{_gap_text}")
 
     # Skills section — briefer filters or full list
     if briefing and briefing["skills"]:
@@ -912,12 +912,14 @@ async def run_planner(
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("skills", "Available Skills"),
     ("connectors", "Available Connectors"),
+    ("system_env", "System Environment"),
     ("summary", "Session Summary"),
     ("facts", "Known Facts"),
     ("recent_messages", "Recent Messages"),
     ("pending", "Pending Questions"),
     ("available_tags", "Available Fact Tags"),
     ("paraphrased", "Paraphrased External Messages"),
+    ("capability_gap", "Capability Analysis"),
     ("replan_context", "Replan Context"),
     ("plan_outputs", "Plan Outputs"),
 )
