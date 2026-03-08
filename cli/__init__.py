@@ -549,26 +549,18 @@ class _PollRenderState:
     at_col0: bool = True
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
     seen_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight indicators
-    inflight_input_shown: set = dataclasses.field(default_factory=set)  # ts values of inflight calls whose input panel was shown
 
 
 def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> None:
-    """Print input+output panels for *calls*, skipping input if already shown inflight."""
+    """Print input+output panels for *calls* as paired IN→OUT."""
     from cli.render import render_llm_call_input_panel, render_llm_call_output_panel
     for c in calls:
-        ts = c.get("ts")
-        if ts and ts in state.inflight_input_shown:
-            out = render_llm_call_output_panel(c, caps)
-            if out:
-                print(out)
-            state.inflight_input_shown.discard(ts)
-        else:
-            in_panel = render_llm_call_input_panel(c, caps)
-            if in_panel:
-                print(in_panel)
-            out_panel = render_llm_call_output_panel(c, caps)
-            if out_panel:
-                print(out_panel)
+        in_panel = render_llm_call_input_panel(c, caps)
+        if in_panel:
+            print(in_panel)
+        out_panel = render_llm_call_output_panel(c, caps)
+        if out_panel:
+            print(out_panel)
 
 
 def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
@@ -926,21 +918,20 @@ def _render_plan_status(
     if state.planning_phase and not was_planning:
         state.spinner_start = time.monotonic()
 
-    # Render inflight LLM call in verbose mode
+    # Render inflight LLM call indicator (verbose mode)
+    # NOTE: we do NOT show the full IN panel here — that would cause
+    # IN IN OUT OUT batching when multiple calls happen between polls.
+    # Instead, we show only the waiting indicator.  The full IN+OUT pair
+    # is rendered later via _print_verbose_panels when the call completes,
+    # guaranteeing each IN is immediately followed by its OUT.
     if verbose and not quiet:
-        from cli.render import render_llm_call_input_panel
         inflight = data.get("inflight_call")
         if inflight and inflight.get("messages"):
             inflight_ts = inflight.get("ts")
             if inflight_ts and inflight_ts not in state.seen_inflight_ts:
                 _clear_spinner()
-                # Show input panel for inflight call + waiting indicator
-                in_panel = render_llm_call_input_panel(inflight, caps)
-                if in_panel:
-                    print(in_panel)
                 print(render_inflight_indicator(inflight, caps))
                 state.seen_inflight_ts.add(inflight_ts)
-                state.inflight_input_shown.add(inflight_ts)
 
     # Restore spinner for running tasks after inflight/phase rendering
     # may have cleared it via _clear_spinner().

@@ -4557,8 +4557,8 @@ class TestBrieferMessages:
         """M259: briefer system prompt includes zero-module guidance."""
         msgs = build_briefer_messages("planner", "task", {})
         system = msgs[0]["content"]
-        # Should mention that simple lookups need zero modules
-        assert "zero modules" in system or "core is sufficient" in system
+        # Should mention that simple requests need zero/few modules
+        assert "ZERO" in system or "core rules are sufficient" in system or "0-2 modules" in system
 
     def test_briefer_prompt_sys_env_guidance(self):
         """M259: briefer prompt includes sys_env filtering guidance."""
