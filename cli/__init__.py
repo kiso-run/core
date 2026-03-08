@@ -534,6 +534,7 @@ class _PollRenderState:
     seen: dict  # tid → (status, review_verdict, substatus, llm_call_count)
     max_task_id: int = 0
     shown_plan_id: int | None = None
+    shown_plan_goal: str = ""
     shown_plan_llm_count: int = 0
     shown_plan_verbose_count: int = 0
     active_spinner_task: dict | None = None
@@ -791,25 +792,38 @@ def _render_plan_status(
     # Show plan goal / replan detection (only for current message)
     if plan and not quiet and plan.get("message_id") == message_id:
         pid = plan["id"]
+        goal = plan["goal"]
         task_count = len(tasks)
         if state.shown_plan_id is None:
             _clear_spinner()
-            print(f"\n{render_plan(plan['goal'], task_count, caps)}")
+            print(f"\n{render_plan(goal, task_count, caps)}")
             plan_detail = render_plan_detail(tasks, caps)
             if plan_detail:
                 print(render_separator(caps))
                 print(plan_detail)
             print(render_separator(caps))
             state.shown_plan_id = pid
+            state.shown_plan_goal = goal
+        elif pid == state.shown_plan_id and goal != state.shown_plan_goal and task_count > 0:
+            # Plan goal updated (e.g. "Planning..." → real goal) — re-render header (M229)
+            _clear_spinner()
+            print(f"\n{render_plan(goal, task_count, caps)}")
+            plan_detail = render_plan_detail(tasks, caps)
+            if plan_detail:
+                print(render_separator(caps))
+                print(plan_detail)
+            print(render_separator(caps))
+            state.shown_plan_goal = goal
         elif pid != state.shown_plan_id:
             _clear_spinner()
-            print(f"\n{render_plan(plan['goal'], task_count, caps, replan=True)}")
+            print(f"\n{render_plan(goal, task_count, caps, replan=True)}")
             plan_detail = render_plan_detail(tasks, caps)
             if plan_detail:
                 print(render_separator(caps))
                 print(plan_detail)
             print(render_separator(caps))
             state.shown_plan_id = pid
+            state.shown_plan_goal = goal
             state.seen.clear()
             state.verbose_shown.clear()
             state.shown_plan_llm_count = 0

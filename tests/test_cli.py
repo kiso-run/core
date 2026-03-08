@@ -855,6 +855,40 @@ def test_poll_status_msg_task_numbering_consistent(capsys, plain_caps):
     assert "Done!" in out
 
 
+def test_poll_status_plan_header_updates_with_real_goal(capsys, plain_caps):
+    """Plan header re-renders when goal changes from 'Planning...' to real goal (M229)."""
+    mock_client = MagicMock()
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "plan": {"id": 1, "message_id": 7, "goal": "Planning...", "status": "running"},
+        "tasks": [],
+    }
+    resp1.raise_for_status = MagicMock()
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "plan": {"id": 1, "message_id": 7, "goal": "Install browser skill", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "exec", "detail": "install", "status": "done",
+             "output": "ok"},
+            {"id": 2, "plan_id": 1, "type": "msg", "detail": "summary", "status": "done",
+             "output": "Installed."},
+        ],
+    }
+    resp2.raise_for_status = MagicMock()
+    mock_client.get.side_effect = [resp1, resp2]
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 7, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # Initial "Planning..." should appear
+    assert "Planning..." in out
+    # Updated real goal should also appear
+    assert "Install browser skill" in out
+    # Task count should appear with the updated header
+    assert "2 tasks" in out
+
+
 def test_poll_status_shows_review_verdict(capsys, plain_caps):
     """Tasks with review_verdict should have the review rendered."""
     mock_client = MagicMock()
