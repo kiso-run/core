@@ -244,6 +244,22 @@ def test_render_task_header_plain():
     assert "\033[" not in result
 
 
+def test_render_task_header_msg_type():
+    """M232: msg tasks get the same [x/y] header format as other types."""
+    task = {"type": "msg", "detail": "Tell the user about results", "status": "running"}
+    result = render_task_header(task, 1, 4, _COLOR)
+    assert "[1/4]" in result
+    assert "msg:" in result
+    assert "Tell the user" in result
+
+
+def test_render_task_header_msg_done():
+    task = {"type": "msg", "detail": "Summary", "status": "done"}
+    result = render_task_header(task, 3, 5, _PLAIN)
+    assert "[3/5]" in result
+    assert "msg: Summary" in result
+
+
 # ── render_task_output ───────────────────────────────────────
 
 
