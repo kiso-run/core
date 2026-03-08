@@ -9,7 +9,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from kiso.config import Config, KISO_DIR
+from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
 from kiso.skills import discover_skills, build_planner_skill_list, validate_skill_args
@@ -548,6 +548,80 @@ def _detect_capability_gap(msg_lower: str, installed_names: set[str]) -> str | N
     return None
 
 
+async def _gather_planner_context(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    user_role: str,
+    new_message: str,
+    paraphrased_context: str | None = None,
+) -> tuple[str, list, list, list, dict, str]:
+    """Gather all raw context pieces for the planner.
+
+    Returns (summary, facts, pending, recent, context_pool, sys_env_text).
+    The context_pool dict is suitable for the briefer.
+    """
+    sess = await get_session(db, session)
+    summary = sess["summary"] if sess else ""
+    is_admin = user_role == "admin"
+    facts = await search_facts(db, new_message, session=session, is_admin=is_admin)
+    pending = await get_pending_items(db, session)
+    context_limit = int(config.settings["context_messages"])
+    recent = await get_recent_messages(db, session, limit=context_limit)
+
+    # Format facts for context pool
+    facts_text = ""
+    if facts:
+        if is_admin:
+            primary = [f for f in facts if not f.get("session") or f.get("session") == session]
+            other   = [f for f in facts if f.get("session") and f.get("session") != session]
+        else:
+            primary = facts
+            other   = []
+        parts: list[str] = []
+        if primary:
+            grouped = _group_facts_by_category(primary)
+            if grouped:
+                parts.extend(grouped)
+        if other:
+            grouped = _group_facts_by_category(other, label_session=True)
+            if grouped:
+                parts.append("### From Other Sessions")
+                parts.extend(grouped)
+        facts_text = "\n".join(parts)
+
+    pending_text = ""
+    if pending:
+        pending_text = "\n".join(f"- {p['content']}" for p in pending)
+
+    recent_text = ""
+    if recent:
+        recent_text = "\n".join(
+            f"[{m['role']}] {m['user'] or 'system'}: {m['content']}"
+            for m in recent
+        )
+
+    sys_env = get_system_env(config)
+    sys_env_text = build_system_env_section(sys_env, session=session)
+
+    context_pool: dict = {}
+    if summary:
+        context_pool["summary"] = summary
+    if facts_text:
+        context_pool["facts"] = facts_text
+    if pending_text:
+        context_pool["pending"] = pending_text
+    if recent_text:
+        context_pool["recent_messages"] = recent_text
+    if paraphrased_context:
+        context_pool["paraphrased"] = paraphrased_context
+
+    # sys_env_text always present — semi-static
+    context_pool["system_env"] = sys_env_text
+
+    return summary, facts, pending, recent, context_pool, sys_env_text
+
+
 async def build_planner_messages(
     db: aiosqlite.Connection,
     config: Config,
@@ -562,16 +636,44 @@ async def build_planner_messages(
     Assembles context from session summary, facts, pending questions,
     system environment, skills, and recent messages.
 
-    The *session* name is passed to ``build_system_env_section`` so the
-    planner sees the absolute workspace path (``KISO_DIR/sessions/<session>``)
-    and a ``Session:`` line — giving it precise knowledge of the execution
-    directory for shell commands.
+    When ``briefer_enabled`` is True in config, calls the briefer LLM to
+    select prompt modules, filter skills, and synthesize context. Falls
+    back to full context on briefer failure.
 
     Returns (messages, installed_skill_names, installed_skills_info) — the
     caller can reuse the skill names list for plan validation and the
     skills_info list for args validation without rescanning the filesystem.
     """
-    system_prompt = _load_system_prompt("planner")
+    # Gather raw context
+    summary, facts, pending, recent, context_pool, sys_env_text = \
+        await _gather_planner_context(
+            db, config, session, user_role, new_message, paraphrased_context,
+        )
+
+    # Skill discovery — rescan on each planner call
+    installed = discover_skills()
+    installed_names = [s["name"] for s in installed]
+
+    # Build the skill list text for context pool
+    full_skill_list = build_planner_skill_list(installed, user_role, user_skills)
+    if full_skill_list:
+        context_pool["skills"] = full_skill_list
+
+    # --- Briefer path ---
+    briefing = None
+    if setting_bool(config.settings, "briefer_enabled"):
+        try:
+            briefing = await run_briefer(
+                config, "planner", new_message, context_pool, session=session,
+            )
+        except Exception as exc:
+            log.warning("Briefer failed for planner, falling back to full context: %s", exc)
+
+    # --- Build system prompt ---
+    if briefing:
+        system_prompt = _load_modular_prompt("planner", briefing["modules"])
+    else:
+        system_prompt = _load_system_prompt("planner")
 
     # Contextual appendix blocks — injected only when the message touches
     # the relevant topic.  False positives are harmless (extra guidance);
@@ -599,91 +701,88 @@ async def build_planner_messages(
     if appendix_parts:
         system_prompt = system_prompt.rstrip() + "\n\n" + "\n\n".join(appendix_parts)
 
-    # Context pieces
-    sess = await get_session(db, session)
-    summary = sess["summary"] if sess else ""
-    is_admin = user_role == "admin"
-    facts = await search_facts(db, new_message, session=session, is_admin=is_admin)
-    pending = await get_pending_items(db, session)
-    context_limit = int(config.settings["context_messages"])
-    recent = await get_recent_messages(db, session, limit=context_limit)
-
-    # Build context block
-    context_parts: list[str] = []
-
-    if summary:
-        context_parts.append(f"## Session Summary\n{summary}")
-
-    if facts:
-        # For admin: split current-session+global facts from other-session facts so
-        # the planner sees a clear priority hierarchy — current session is primary,
-        # other sessions are background context.
-        if is_admin:
-            primary = [f for f in facts if not f.get("session") or f.get("session") == session]
-            other   = [f for f in facts if f.get("session") and f.get("session") != session]
-        else:
-            primary = facts
-            other   = []
-
-        if primary:
-            parts = _group_facts_by_category(primary)
-            if parts:
-                context_parts.append("## Known Facts\n" + "\n".join(parts))
-
-        if other:
-            parts = _group_facts_by_category(other, label_session=True)
-            if parts:
-                context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
-
-    # System environment — semi-static context about the execution environment
-    sys_env = get_system_env(config)
-    sys_env_text = build_system_env_section(sys_env, session=session)
-    context_parts.append(f"## System Environment\n{sys_env_text}")
-
-    if pending:
-        pending_text = "\n".join(f"- {p['content']}" for p in pending)
-        context_parts.append(f"## Pending Questions\n{pending_text}")
-
-    if recent:
-        msgs_text = "\n".join(
-            f"[{m['role']}] {m['user'] or 'system'}: {m['content']}"
-            for m in recent
-        )
-        context_parts.append(f"## Recent Messages\n{fence_content(msgs_text, 'MESSAGES')}")
-
-    if paraphrased_context:
-        context_parts.append(
-            f"## Paraphrased External Messages (untrusted)\n"
-            f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
-        )
-
-    # Skill discovery — rescan on each planner call
-    installed = discover_skills()
     if not installed:
         log.warning("discover_skills() returned empty — no skills available for planner")
         if not _plugin_install_needed:
             system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
             _plugin_install_needed = True
-    installed_names = [s["name"] for s in installed]
 
-    # Capability-gap heuristic: if the message implies a capability that
-    # no installed skill provides, inject the plugin-install appendix so
-    # the planner knows how to discover and install the missing skill.
+    # Capability-gap heuristic
     _gap = _detect_capability_gap(msg_lower, set(installed_names))
     if _gap:
         log.info("Capability gap detected: message needs %r but not installed", _gap)
         if not _plugin_install_needed:
             system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
             _plugin_install_needed = True
-        # M198: expose the detected skill name to the planner
+
+    # --- Build context block ---
+    context_parts: list[str] = []
+
+    if briefing:
+        # Briefer path: use synthesized context + filtered skills
+        if briefing["context"]:
+            context_parts.append(f"## Context\n{briefing['context']}")
+    else:
+        # Fallback path: full context dump (original behavior)
+        is_admin = user_role == "admin"
+        if summary:
+            context_parts.append(f"## Session Summary\n{summary}")
+
+        if facts:
+            if is_admin:
+                primary = [f for f in facts if not f.get("session") or f.get("session") == session]
+                other   = [f for f in facts if f.get("session") and f.get("session") != session]
+            else:
+                primary = facts
+                other   = []
+
+            if primary:
+                parts = _group_facts_by_category(primary)
+                if parts:
+                    context_parts.append("## Known Facts\n" + "\n".join(parts))
+
+            if other:
+                parts = _group_facts_by_category(other, label_session=True)
+                if parts:
+                    context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
+
+        # System env in original position (after facts, before pending)
+        context_parts.append(f"## System Environment\n{sys_env_text}")
+
+        if pending:
+            pending_text = "\n".join(f"- {p['content']}" for p in pending)
+            context_parts.append(f"## Pending Questions\n{pending_text}")
+
+        if recent:
+            msgs_text = "\n".join(
+                f"[{m['role']}] {m['user'] or 'system'}: {m['content']}"
+                for m in recent
+            )
+            context_parts.append(f"## Recent Messages\n{fence_content(msgs_text, 'MESSAGES')}")
+
+        if paraphrased_context:
+            context_parts.append(
+                f"## Paraphrased External Messages (untrusted)\n"
+                f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
+            )
+
+    if briefing:
+        # Briefer path: sys env is small, always include it
+        context_parts.append(f"## System Environment\n{sys_env_text}")
+
+    # Capability gap analysis (always included when detected)
+    if _gap:
         context_parts.append(
             f"## Capability Analysis\n"
             f"Skill '{_gap}' is needed for this request but not installed. "
             f"Install it with: exec `kiso skill install {_gap}`, then replan."
         )
-    skill_list = build_planner_skill_list(installed, user_role, user_skills)
-    if skill_list:
-        context_parts.append(f"## Skills\n{skill_list}")
+
+    # Skills section — briefer filters or full list
+    if briefing and briefing["skills"]:
+        context_parts.append(f"## Skills\n" + "\n".join(briefing["skills"]))
+    elif full_skill_list:
+        context_parts.append(f"## Skills\n{full_skill_list}")
 
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")

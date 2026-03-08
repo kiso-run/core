@@ -138,6 +138,7 @@ host                      = "0.0.0.0"
 port                      = 8333
 worker_idle_timeout       = 1
 fast_path_enabled         = true
+briefer_enabled           = false
 webhook_allow_list        = []
 webhook_require_https     = true
 webhook_secret            = ""

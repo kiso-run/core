@@ -56,6 +56,8 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "worker_idle_timeout": 300,
     # fast path
     "fast_path_enabled": True,
+    # briefer (context intelligence layer)
+    "briefer_enabled": True,
     # webhooks
     "webhook_allow_list": [],
     "webhook_require_https": True,
@@ -166,6 +168,9 @@ worker_idle_timeout       = 300
 
 # --- fast path ---
 fast_path_enabled         = true     # skip planner for conversational messages
+
+# --- briefer (context intelligence layer) ---
+briefer_enabled           = true     # LLM-based context selection for each pipeline stage
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check

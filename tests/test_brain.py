@@ -61,8 +61,13 @@ from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEF
 
 
 def _full_settings(**overrides) -> dict:
-    """Return a complete settings dict (all required keys) with optional overrides."""
-    return {**SETTINGS_DEFAULTS, **overrides}
+    """Return a complete settings dict (all required keys) with optional overrides.
+
+    Briefer is disabled by default in tests to avoid interfering with
+    mocked call_llm. Tests that need the briefer should pass
+    ``briefer_enabled=True`` explicitly.
+    """
+    return {**SETTINGS_DEFAULTS, "briefer_enabled": False, **overrides}
 
 
 def _full_models(**overrides) -> dict:
@@ -4703,3 +4708,165 @@ class TestLoadModularPrompt:
         assert "File-based data flow" in result
         assert "extend_replan" not in result
         assert "Broken skill recovery" not in result
+
+
+# ---------------------------------------------------------------------------
+# Briefer integration for planner (M244)
+# ---------------------------------------------------------------------------
+
+
+class TestBrieferPlannerIntegration:
+    """Tests for briefer integration in build_planner_messages."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self, briefer_enabled=True):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(
+                context_messages=3,
+                briefer_enabled=briefer_enabled,
+            ),
+            raw={},
+        )
+
+    async def test_briefer_selects_modules(self, db):
+        """When briefer succeeds, planner prompt uses selected modules only."""
+        briefing = {
+            "modules": ["web"],
+            "skills": ["browser: navigate, screenshot"],
+            "context": "User wants to browse a website.",
+            "output_indices": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return json.dumps({
+                "goal": "browse", "secrets": None,
+                "tasks": [{"type": "msg", "detail": "Answer in English. done",
+                           "skill": None, "args": None, "expect": None}],
+            })
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "go to example.com",
+            )
+
+        system = msgs[0]["content"]
+        user_content = msgs[1]["content"]
+        # Web module included
+        assert "Web interaction:" in system
+        # Replan module excluded
+        assert "extend_replan" not in system
+        # Briefer's synthesized context used
+        assert "## Context\nUser wants to browse a website." in user_content
+        # Briefer-filtered skills used
+        assert "browser: navigate, screenshot" in user_content
+
+    async def test_briefer_disabled_uses_full_context(self, db):
+        """When briefer_enabled=False, full context is used (original behavior)."""
+        config = self._config(briefer_enabled=False)
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin", "hello",
+            )
+
+        system = msgs[0]["content"]
+        # Full prompt with all modules
+        assert "Kiso planner" in system
+        # User content has standard sections
+        user_content = msgs[1]["content"]
+        assert "## System Environment" in user_content
+        assert "## New Message" in user_content
+
+    async def test_briefer_failure_falls_back(self, db):
+        """When briefer raises, falls back to full context gracefully."""
+        config = self._config(briefer_enabled=True)
+
+        async def _failing_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                raise LLMError("briefer down")
+            return json.dumps({
+                "goal": "test", "secrets": None,
+                "tasks": [{"type": "msg", "detail": "Answer in English. hi",
+                           "skill": None, "args": None, "expect": None}],
+            })
+
+        with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "what time is it?",
+            )
+
+        system = msgs[0]["content"]
+        # Full prompt (fallback)
+        assert "Kiso planner" in system
+        user_content = msgs[1]["content"]
+        # Standard sections present (fallback path)
+        assert "## System Environment" in user_content
+        assert "## New Message" in user_content
+
+    async def test_briefer_context_replaces_raw_sections(self, db):
+        """With briefer, raw summary/facts/recent are replaced by synthesized context."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "Synthesized context from briefer.",
+            "output_indices": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "hello",
+            )
+
+        user_content = msgs[1]["content"]
+        # Briefer's synthesized context present
+        assert "Synthesized context from briefer." in user_content
+        # Raw sections NOT present
+        assert "## Session Summary" not in user_content
+        assert "## Known Facts" not in user_content
+        assert "## Recent Messages" not in user_content
+
+    async def test_appendices_still_injected_with_briefer(self, db):
+        """Keyword-based appendices are still injected even when briefer is active."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "User wants to install a skill.",
+            "output_indices": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "install the browser skill",
+            )
+
+        system = msgs[0]["content"]
+        # Plugin-install appendix injected by keyword matching
+        assert "plugin" in system.lower() or "install" in system.lower()
