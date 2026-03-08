@@ -3767,9 +3767,9 @@ class TestM106ExitCodeNotes:
 class TestM106DefaultPlannerModel:
     """M110c: default planner model is deepseek-v3.2."""
 
-    def test_default_planner_is_deepseek_v3_2(self):
+    def test_default_planner_model(self):
         from kiso.config import MODEL_DEFAULTS
-        assert MODEL_DEFAULTS["planner"] == "deepseek/deepseek-v3.2"
+        assert MODEL_DEFAULTS["planner"] == "glm/glm-4.7"
 
 
 class TestM106PlannerKisoNativeFirst:

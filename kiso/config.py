@@ -66,15 +66,15 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "briefer": "deepseek/deepseek-v3.2",
-    "classifier": "deepseek/deepseek-chat",
-    "planner": "deepseek/deepseek-v3.2",
-    "reviewer": "deepseek/deepseek-v3.2",
-    "curator": "deepseek/deepseek-v3.2",
-    "worker": "deepseek/deepseek-v3.2",
-    "summarizer": "deepseek/deepseek-v3.2",
-    "paraphraser": "deepseek/deepseek-v3.2",
-    "messenger": "deepseek/deepseek-v3.2",
+    "briefer": "qwen/qwen-3.5-flash",
+    "classifier": "step/step-3.5-flash",
+    "planner": "glm/glm-4.7",
+    "reviewer": "step/step-3.5-flash",
+    "curator": "step/step-3.5-flash",
+    "worker": "step/step-3.5-flash",
+    "summarizer": "qwen/qwen-3.5-flash",
+    "paraphraser": "step/step-3.5-flash",
+    "messenger": "kimi/kimi-k2.5",
     "searcher": "perplexity/sonar",
 }
 
@@ -112,16 +112,18 @@ role = "admin"
 # aliases.discord = "YourDiscordUser#1234"
 
 [models]
-briefer     = "deepseek/deepseek-v3.2"
-classifier  = "deepseek/deepseek-chat"
-planner     = "deepseek/deepseek-v3.2"
-reviewer    = "deepseek/deepseek-v3.2"
-curator     = "deepseek/deepseek-v3.2"
-worker      = "deepseek/deepseek-v3.2"
-summarizer  = "deepseek/deepseek-v3.2"
-paraphraser = "deepseek/deepseek-v3.2"
-messenger   = "deepseek/deepseek-v3.2"
-searcher    = "perplexity/sonar"
+# Format: "provider/model-name" — provider must exist in [providers]
+# All models route through your configured gateway (e.g., OpenRouter)
+briefer     = "qwen/qwen-3.5-flash"       # context selection (fast, cheap)
+classifier  = "step/step-3.5-flash"        # message classification (fast)
+planner     = "glm/glm-4.7"               # plan generation (strong reasoning)
+reviewer    = "step/step-3.5-flash"        # output review (fast, structured)
+curator     = "step/step-3.5-flash"        # knowledge curation (fast)
+worker      = "step/step-3.5-flash"        # command translation (fast)
+summarizer  = "qwen/qwen-3.5-flash"       # conversation summary (fast, cheap)
+paraphraser = "step/step-3.5-flash"        # prompt injection defense (fast)
+messenger   = "kimi/kimi-k2.5"             # user-facing responses (natural language)
+searcher    = "perplexity/sonar"           # web search (native search API)
 
 [settings]
 # --- conversation ---
