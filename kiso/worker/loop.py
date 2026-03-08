@@ -709,10 +709,10 @@ async def _run_review_step(
         log.error("Review failed for task %d: %s", task_id, e)
         return None, str(e)
     await _append_calls(ctx.db, task_id, idx)
-    # Attach reviewer summary for replan context (M146)
+    # Attach reviewer summary for downstream context (M146, M247)
     summary = review.get("summary")
     if summary:
-        task_row["reviewer_summary"] = summary[:600]
+        task_row["reviewer_summary"] = summary[:1500]
     return review, None
 
 
@@ -934,6 +934,9 @@ async def _handle_skill_task(
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:
         ctx.slog.info("Review → %s", review["status"])
+    # Propagate reviewer summary to plan_output for downstream consumers (M247)
+    if plan_output_entry is not None and task_row.get("reviewer_summary"):
+        plan_output_entry["reviewer_summary"] = task_row["reviewer_summary"]
     if task_row["status"] == "failed":
         return _TaskHandlerResult(stop=True, stop_success=False, plan_output=plan_output_entry)
     return _TaskHandlerResult(completed_row=task_row, plan_output=plan_output_entry)
@@ -1097,6 +1100,9 @@ async def _handle_exec_task(
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:
         ctx.slog.info("Review → %s", review["status"])
+    # Propagate reviewer summary to plan_output for downstream consumers (M247)
+    if local_plan_output is not None and task_row.get("reviewer_summary"):
+        local_plan_output["reviewer_summary"] = task_row["reviewer_summary"]
     return _TaskHandlerResult(completed_row=task_row, plan_output=local_plan_output)
 
 
@@ -1204,6 +1210,9 @@ async def _handle_search_task(
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:
         ctx.slog.info("Review → %s", review["status"])
+    # Propagate reviewer summary to plan_output for downstream consumers (M247)
+    if local_plan_output is not None and task_row.get("reviewer_summary"):
+        local_plan_output["reviewer_summary"] = task_row["reviewer_summary"]
     return _TaskHandlerResult(completed_row=task_row, plan_output=local_plan_output)
 
 

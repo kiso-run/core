@@ -2633,6 +2633,45 @@ class TestFormatPlanOutputsForMsg:
         pos3 = result.index("[3]")
         assert pos1 < pos2 < pos3
 
+    def test_prefers_reviewer_summary_over_raw_output(self):
+        """M247: reviewer_summary is used instead of raw output when available."""
+        outputs = [
+            {
+                "index": 1, "type": "exec", "detail": "search news",
+                "output": "raw HTML noise...", "status": "done",
+                "reviewer_summary": "Top headlines: A, B, C",
+            },
+        ]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "Summary: Top headlines: A, B, C" in result
+        assert "raw HTML noise" not in result
+
+    def test_falls_back_to_raw_output_without_summary(self):
+        """Without reviewer_summary, raw output is used as before."""
+        outputs = [
+            {"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"},
+        ]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "hi\n" in result
+        assert "Summary:" not in result
+
+    def test_mixed_with_and_without_summary(self):
+        """M247: entries with summary use it, entries without use raw output."""
+        outputs = [
+            {"index": 1, "type": "exec", "detail": "step 1", "output": "raw1", "status": "done"},
+            {
+                "index": 2, "type": "search", "detail": "search",
+                "output": "long raw search output...", "status": "done",
+                "reviewer_summary": "Found: X, Y, Z",
+            },
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=8000)
+        # Entry 1: raw output
+        assert "raw1" in result
+        # Entry 2: reviewer summary
+        assert "Summary: Found: X, Y, Z" in result
+        assert "long raw search output" not in result
+
 
 # --- _make_plan_output (M91c) ---
 

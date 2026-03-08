@@ -5,7 +5,7 @@ Return JSON:
 - reason: required if replan, else null
 - learn: array of concise strings (max 5), one fact per item. Null if nothing useful.
 - retry_hint: if replan and fixable (wrong path/flag/binary/permission), a short actionable hint. Null for fundamental failures.
-- summary: concise extraction (max 500 chars) of key data from the task output useful for planning next steps. Include specific values (names, versions, paths, URLs, extracted text) not vague descriptions. Produce a summary for BOTH successes and failures. For partial successes (e.g., installed with warnings, command succeeded but output incomplete), state BOTH what succeeded AND what is still wrong — the planner uses this to decide next steps without re-investigating. Null only if the output is truly trivial or empty.
+- summary: extraction (max 1500 chars) of key data from the task output. This is the PRIMARY data channel to downstream stages — another LLM will use this summary to compose the user response or plan next steps. Include ALL specific values: headlines, names, numbers, URLs, paths, extracted text, error messages. If data is missing from the summary, it is lost. Produce a summary for BOTH successes and failures. For partial successes (e.g., installed with warnings, command succeeded but output incomplete), state BOTH what succeeded AND what is still wrong. Null only if the output is truly trivial or empty.
 
 Rules:
 - Sole criterion is `expect`. Plan Context is background — a task need not achieve the entire plan goal.

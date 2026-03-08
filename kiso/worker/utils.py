@@ -347,8 +347,13 @@ def _format_plan_outputs_for_msg(
     for entry in reversed(plan_outputs):
         idx = entry["index"]
         header = f"[{idx}] {entry['type']}: {entry['detail']}"
-        output = entry.get("output") or "(no output)"
         status = entry["status"]
+        # Prefer reviewer summary over raw output when available (M247)
+        reviewer_summary = entry.get("reviewer_summary")
+        if reviewer_summary:
+            output = f"Summary: {reviewer_summary}"
+        else:
+            output = entry.get("output") or "(no output)"
         full_text = f"{header}\nStatus: {status}\n{fence_content(output, 'TASK_OUTPUT')}"
 
         if budget_used + len(full_text) <= budget:
