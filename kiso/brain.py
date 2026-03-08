@@ -1221,8 +1221,12 @@ CURATOR_SCHEMA: dict = {
                             "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
                             "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                             "reason": {"type": "string"},
+                            "tags": {"anyOf": [
+                                {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+                                {"type": "null"},
+                            ]},
                         },
-                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason"],
+                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags"],
                         "additionalProperties": False,
                     },
                 },
@@ -1263,23 +1267,34 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
     return errors
 
 
-def build_curator_messages(learnings: list[dict]) -> list[dict]:
+def build_curator_messages(
+    learnings: list[dict],
+    available_tags: list[str] | None = None,
+) -> list[dict]:
     """Build the message list for the curator LLM call."""
     system_prompt = _load_system_prompt("curator")
     items = "\n".join(
         f"{i}. [id={l['id']}] {l['content']}"
         for i, l in enumerate(learnings, 1)
     )
-    return _build_messages(system_prompt, f"## Learnings\n{items}")
+    parts = [f"## Learnings\n{items}"]
+    if available_tags:
+        parts.append(f"## Existing Tags\n{', '.join(available_tags)}")
+    return _build_messages(system_prompt, "\n\n".join(parts))
 
 
-async def run_curator(config: Config, learnings: list[dict], session: str = "") -> dict:
+async def run_curator(
+    config: Config,
+    learnings: list[dict],
+    session: str = "",
+    available_tags: list[str] | None = None,
+) -> dict:
     """Run the curator on pending learnings.
 
     Returns dict with key "evaluations".
     Raises CuratorError if all retries exhausted.
     """
-    messages = build_curator_messages(learnings)
+    messages = build_curator_messages(learnings, available_tags=available_tags)
     expected = len(learnings)
     result = await _retry_llm_with_validation(
         config, "curator", messages, CURATOR_SCHEMA,

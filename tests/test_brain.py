@@ -1508,15 +1508,33 @@ class TestBuildCuratorMessages:
         msgs = build_curator_messages([{"id": 1, "content": "test"}])
         assert "knowledge curator" in msgs[0]["content"]
 
+    def test_available_tags_injected(self):
+        """M249: available tags are included in the curator prompt."""
+        msgs = build_curator_messages(
+            [{"id": 1, "content": "test"}],
+            available_tags=["browser", "tech-stack", "api"],
+        )
+        user_content = msgs[1]["content"]
+        assert "## Existing Tags" in user_content
+        assert "browser" in user_content
+        assert "tech-stack" in user_content
+
+    def test_no_tags_section_without_available_tags(self):
+        """No Existing Tags section when available_tags is empty or None."""
+        msgs = build_curator_messages([{"id": 1, "content": "test"}])
+        assert "## Existing Tags" not in msgs[1]["content"]
+        msgs2 = build_curator_messages([{"id": 1, "content": "test"}], available_tags=[])
+        assert "## Existing Tags" not in msgs2[1]["content"]
+
 
 # --- M9: run_curator ---
 
 VALID_CURATOR = json.dumps({"evaluations": [
-    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good"},
+    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good", "tags": ["tech-stack"]},
 ]})
 
 INVALID_CURATOR = json.dumps({"evaluations": [
-    {"learning_id": 1, "verdict": "promote", "fact": None, "category": None, "question": None, "reason": "Good"},
+    {"learning_id": 1, "verdict": "promote", "fact": None, "category": None, "question": None, "reason": "Good", "tags": None},
 ]})
 
 
