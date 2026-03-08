@@ -5670,11 +5670,13 @@ class TestBuildFailureSummary:
         remaining = [{"type": "msg", "detail": "Report results"}]
         result = _build_failure_summary(completed, remaining, "Run tests")
         assert "The plan failed: Run tests" in result
-        assert "Completed (1):" in result
+        assert "Completed successfully (1):" in result
         assert "[exec] echo hello" in result
         assert "Failed/Skipped (1):" in result
         assert "[msg] Report results" in result
         assert "suggest next steps" in result
+        # M270: instruction not to misrepresent completed tasks
+        assert "do NOT say they failed" in result
 
     def test_with_reason(self):
         result = _build_failure_summary([], [], "Goal", reason="LLM error")
@@ -5689,8 +5691,29 @@ class TestBuildFailureSummary:
     def test_no_remaining(self):
         completed = [{"type": "exec", "detail": "echo ok"}]
         result = _build_failure_summary(completed, [], "Goal")
-        assert "Completed (1):" in result
+        assert "Completed successfully (1):" in result
         assert "Failed/Skipped" not in result
+
+    def test_m270_replan_failure_explicit(self):
+        """M270: when all tasks succeeded but replan failed, say so explicitly."""
+        completed = [
+            {"type": "exec", "detail": "Install browser"},
+            {"type": "replan", "detail": "Visit guidance.studio"},
+        ]
+        result = _build_failure_summary(
+            completed, [], "Visit guidance.studio",
+            reason="Replan failed: LLM call failed: Empty response",
+        )
+        assert "All planned tasks completed successfully" in result
+        assert "re-planning" in result
+        assert "Failure reason: Replan failed" in result
+
+    def test_m270_no_replan_msg_when_remaining(self):
+        """M270: don't add replan clarification when tasks are still remaining."""
+        completed = [{"type": "exec", "detail": "step 1"}]
+        remaining = [{"type": "exec", "detail": "step 2"}]
+        result = _build_failure_summary(completed, remaining, "Multi-step")
+        assert "re-planning" not in result
 
 
 class TestRecoveryMsgTask:
@@ -10449,3 +10472,9 @@ class TestExecTaskBrieferIntegration:
         assert len(translator_calls) == 2
         # Second exec should see the first exec's output
         assert "echo first" in translator_calls[1] or "first" in translator_calls[1]
+
+
+def test_m270_messenger_prompt_has_precision_rule():
+    """M270: messenger.md has rule about completed vs failed task accuracy."""
+    prompt = (Path(__file__).resolve().parent.parent / "kiso" / "roles" / "messenger.md").read_text()
+    assert "Never say a completed task failed" in prompt

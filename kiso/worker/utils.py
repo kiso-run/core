@@ -618,16 +618,24 @@ def _build_failure_summary(
 
     if completed:
         items = [f"- [{t['type']}] {t['detail']}" for t in completed]
-        parts.append(f"Completed ({len(completed)}):\n" + "\n".join(items))
+        parts.append(f"Completed successfully ({len(completed)}):\n" + "\n".join(items))
     else:
         parts.append("No tasks were completed.")
+
+    # M270: when all tasks succeeded but replanning failed, make it explicit
+    if completed and not remaining:
+        parts.append(
+            "All planned tasks completed successfully. "
+            "The failure occurred during re-planning for the next phase."
+        )
 
     if remaining:
         items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
         parts.append(f"Failed/Skipped ({len(remaining)}):\n" + "\n".join(items))
 
     parts.append(
-        "Generate a brief message explaining what went wrong "
-        "and suggest next steps."
+        "Generate a brief message explaining what went wrong and suggest "
+        "next steps. Completed tasks SUCCEEDED — do NOT say they failed. "
+        "Focus the error on the failure reason only."
     )
     return "\n\n".join(parts)

@@ -36,3 +36,6 @@ Never invent CLI commands, code snippets, or technical syntax that do not
 appear verbatim in the preceding task outputs. If the user needs to run a
 command, it must come from actual task output — not your imagination.
 Describe actions in natural language when no exact command is available.
+
+When the task describes completed and failed items, be precise about what
+succeeded and what failed. Never say a completed task failed.
