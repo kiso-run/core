@@ -31,8 +31,11 @@ from kiso.store import (
     get_untrusted_messages,
     mark_message_processed,
     mark_messages_processed,
+    get_all_tags,
     save_fact,
+    save_fact_tags,
     save_facts_batch,
+    search_facts_by_tags,
     save_message,
     save_pending_item,
     update_fact_usage,
@@ -61,8 +64,8 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
         if not r[0].startswith("sqlite_") and not r[0].startswith("kiso_facts_fts_")
     )
     expected = [
-        "facts", "facts_archive", "kiso_facts_fts", "learnings", "messages",
-        "pending", "plans", "sessions", "tasks",
+        "fact_tags", "facts", "facts_archive", "kiso_facts_fts", "learnings",
+        "messages", "pending", "plans", "sessions", "tasks",
     ]
     assert tables == expected
 
@@ -1931,3 +1934,111 @@ async def test_duration_ms_migration_on_existing_db(tmp_path):
     columns = {row[1] for row in await cur.fetchall()}
     assert "duration_ms" in columns
     await db.close()
+
+
+# ---------------------------------------------------------------------------
+# Fact tagging (M248)
+# ---------------------------------------------------------------------------
+
+
+async def test_save_fact_with_tags(db: aiosqlite.Connection):
+    """save_fact with tags creates both fact and fact_tags rows."""
+    fid = await save_fact(db, "Browser uses Playwright", "curator", tags=["browser", "tech-stack"])
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ? ORDER BY tag", (fid,))
+    tags = [r[0] for r in await cur.fetchall()]
+    assert tags == ["browser", "tech-stack"]
+
+
+async def test_save_fact_without_tags(db: aiosqlite.Connection):
+    """save_fact without tags creates no fact_tags rows."""
+    fid = await save_fact(db, "Uses Python", "curator")
+    cur = await db.execute("SELECT COUNT(*) FROM fact_tags WHERE fact_id = ?", (fid,))
+    assert (await cur.fetchone())[0] == 0
+
+
+async def test_save_fact_tags_standalone(db: aiosqlite.Connection):
+    """save_fact_tags adds tags to an existing fact."""
+    fid = await save_fact(db, "Fact one", "curator")
+    await save_fact_tags(db, fid, ["web", "navigation"])
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ? ORDER BY tag", (fid,))
+    tags = [r[0] for r in await cur.fetchall()]
+    assert tags == ["navigation", "web"]
+
+
+async def test_save_fact_tags_idempotent(db: aiosqlite.Connection):
+    """Duplicate tags are silently ignored."""
+    fid = await save_fact(db, "Fact", "curator", tags=["web"])
+    await save_fact_tags(db, fid, ["web", "browser"])
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ? ORDER BY tag", (fid,))
+    tags = [r[0] for r in await cur.fetchall()]
+    assert tags == ["browser", "web"]
+
+
+async def test_save_fact_tags_empty_list(db: aiosqlite.Connection):
+    """Empty tags list is a no-op."""
+    fid = await save_fact(db, "Fact", "curator")
+    await save_fact_tags(db, fid, [])
+    cur = await db.execute("SELECT COUNT(*) FROM fact_tags WHERE fact_id = ?", (fid,))
+    assert (await cur.fetchone())[0] == 0
+
+
+async def test_get_all_tags(db: aiosqlite.Connection):
+    """get_all_tags returns distinct sorted tags."""
+    f1 = await save_fact(db, "F1", "c", tags=["web", "browser"])
+    f2 = await save_fact(db, "F2", "c", tags=["browser", "api"])
+    tags = await get_all_tags(db)
+    assert tags == ["api", "browser", "web"]
+
+
+async def test_get_all_tags_empty(db: aiosqlite.Connection):
+    """get_all_tags returns empty list when no tags exist."""
+    tags = await get_all_tags(db)
+    assert tags == []
+
+
+async def test_search_facts_by_tags_basic(db: aiosqlite.Connection):
+    """search_facts_by_tags returns facts matching any tag."""
+    f1 = await save_fact(db, "Browser fact", "c", tags=["browser"])
+    f2 = await save_fact(db, "API fact", "c", tags=["api"])
+    f3 = await save_fact(db, "Untagged", "c")
+    results = await search_facts_by_tags(db, ["browser"], is_admin=True)
+    assert len(results) == 1
+    assert results[0]["content"] == "Browser fact"
+
+
+async def test_search_facts_by_tags_ranking(db: aiosqlite.Connection):
+    """Facts with more matching tags rank higher."""
+    f1 = await save_fact(db, "Multi-tag", "c", tags=["browser", "web", "api"])
+    f2 = await save_fact(db, "Single-tag", "c", tags=["browser"])
+    results = await search_facts_by_tags(db, ["browser", "web"], is_admin=True)
+    assert len(results) == 2
+    assert results[0]["content"] == "Multi-tag"  # 2 matching tags
+    assert results[1]["content"] == "Single-tag"  # 1 matching tag
+
+
+async def test_search_facts_by_tags_session_filter(db: aiosqlite.Connection):
+    """Non-admin users only see their session or global facts."""
+    await save_fact(db, "Global", "c", tags=["test"])
+    await save_fact(db, "Sess1 fact", "c", session="sess1", tags=["test"])
+    await save_fact(db, "Sess2 fact", "c", session="sess2", tags=["test"])
+    results = await search_facts_by_tags(db, ["test"], session="sess1", is_admin=False)
+    contents = {r["content"] for r in results}
+    assert "Global" in contents
+    assert "Sess1 fact" in contents
+    assert "Sess2 fact" not in contents
+
+
+async def test_search_facts_by_tags_empty_tags(db: aiosqlite.Connection):
+    """Empty tags list returns empty results."""
+    await save_fact(db, "Fact", "c", tags=["web"])
+    results = await search_facts_by_tags(db, [])
+    assert results == []
+
+
+async def test_fact_tags_cascade_on_delete(db: aiosqlite.Connection):
+    """Deleting a fact removes its tags (CASCADE)."""
+    fid = await save_fact(db, "Temp", "c", tags=["temp"])
+    await db.execute("DELETE FROM facts WHERE id = ?", (fid,))
+    await db.commit()
+    cur = await db.execute("SELECT COUNT(*) FROM fact_tags WHERE fact_id = ?", (fid,))
+    assert (await cur.fetchone())[0] == 0

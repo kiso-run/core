@@ -188,6 +188,16 @@ CREATE TRIGGER IF NOT EXISTS facts_fts_delete AFTER DELETE ON facts BEGIN
     INSERT INTO kiso_facts_fts(kiso_facts_fts, rowid, content) VALUES ('delete', old.id, old.content);
 END;
 
+CREATE TABLE IF NOT EXISTS fact_tags (
+    fact_id INTEGER NOT NULL,
+    tag     TEXT NOT NULL,
+    PRIMARY KEY (fact_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_fact_tags_tag ON fact_tags(tag);
+CREATE TRIGGER IF NOT EXISTS fact_tags_cleanup AFTER DELETE ON facts BEGIN
+    DELETE FROM fact_tags WHERE fact_id = old.id;
+END;
+
 CREATE TABLE IF NOT EXISTS facts_archive (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     original_id INTEGER,
@@ -761,15 +771,22 @@ async def save_fact(
     session: str | None = None,
     category: str = "general",
     confidence: float = 1.0,
+    tags: list[str] | None = None,
 ) -> int:
-    """Insert a fact row. Returns fact id."""
+    """Insert a fact row and optional tags. Returns fact id."""
     cur = await db.execute(
         "INSERT INTO facts (content, source, session, category, confidence) "
         "VALUES (?, ?, ?, ?, ?)",
         (content, source, session, category, confidence),
     )
+    fact_id: int = cur.lastrowid  # type: ignore[assignment]
+    if tags:
+        await db.executemany(
+            "INSERT OR IGNORE INTO fact_tags (fact_id, tag) VALUES (?, ?)",
+            [(fact_id, t) for t in tags],
+        )
     await db.commit()
-    return cur.lastrowid  # type: ignore[return-value]
+    return fact_id
 
 
 async def save_facts_batch(
@@ -797,6 +814,56 @@ async def save_facts_batch(
         rows,
     )
     await db.commit()
+
+
+async def save_fact_tags(
+    db: aiosqlite.Connection,
+    fact_id: int,
+    tags: list[str],
+) -> None:
+    """Insert tags for a fact (idempotent — duplicates ignored)."""
+    if not tags:
+        return
+    await db.executemany(
+        "INSERT OR IGNORE INTO fact_tags (fact_id, tag) VALUES (?, ?)",
+        [(fact_id, t) for t in tags],
+    )
+    await db.commit()
+
+
+async def get_all_tags(db: aiosqlite.Connection) -> list[str]:
+    """Return all distinct tags from fact_tags, sorted alphabetically."""
+    cur = await db.execute("SELECT DISTINCT tag FROM fact_tags ORDER BY tag")
+    rows = await cur.fetchall()
+    return [r[0] for r in rows]
+
+
+async def search_facts_by_tags(
+    db: aiosqlite.Connection,
+    tags: list[str],
+    session: str | None = None,
+    is_admin: bool = False,
+) -> list[dict]:
+    """Return facts that have ANY of the given tags, ranked by tag overlap count.
+
+    Non-admin users only see facts from their session or global facts.
+    """
+    if not tags:
+        return []
+    placeholders = ", ".join("?" for _ in tags)
+    query = f"""
+        SELECT f.*, COUNT(ft.tag) AS tag_overlap
+        FROM facts f
+        JOIN fact_tags ft ON f.id = ft.fact_id
+        WHERE ft.tag IN ({placeholders})
+    """
+    params: list = list(tags)
+    if not is_admin and session:
+        query += " AND (f.session IS NULL OR f.session = ?)"
+        params.append(session)
+    query += " GROUP BY f.id ORDER BY tag_overlap DESC, f.use_count DESC"
+    cur = await db.execute(query, params)
+    return [dict(r) for r in await cur.fetchall()]
 
 
 async def save_pending_item(
