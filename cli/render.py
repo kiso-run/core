@@ -680,9 +680,17 @@ def render_llm_call_input_panel(call: dict, caps: TermCaps) -> str:
     in_t = call.get("input_tokens", 0)
     sm = _short_model(model)
 
+    if in_t:
+        token_detail = f"{in_t:,} tokens"
+    else:
+        # Estimate from message content (~4 chars per token)
+        chars = sum(len(m.get("content", "")) for m in messages)
+        est = max(1, chars // 4)
+        token_detail = f"~{est:,} tokens"
+
     title = _verbose_title(
         _esc, role, sm, arrow, call.get("ts"),
-        detail=f"{in_t:,} tokens", direction="IN",
+        detail=token_detail, direction="IN",
     )
     parts = _build_message_parts(messages, _esc)
     console.print(Panel(
