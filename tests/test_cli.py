@@ -793,8 +793,8 @@ def test_poll_status_blank_line_between_tasks(capsys, plain_caps):
     assert lines[pwd_idx - 1].strip() == "", f"Expected blank line before 'exec: pwd', got: {lines[pwd_idx - 1]!r}"
 
 
-def test_poll_status_msg_task_not_shown_while_running(capsys, plain_caps):
-    """Msg tasks should NOT show a header when running, only render_msg_output when done."""
+def test_poll_status_msg_task_shows_header(capsys, plain_caps):
+    """Msg tasks show a [x/y] header when running, plus output when done (M228)."""
     mock_client = MagicMock()
     resp1 = MagicMock()
     resp1.json.return_value = {
@@ -820,10 +820,39 @@ def test_poll_status_msg_task_not_shown_while_running(capsys, plain_caps):
         _poll_status(mock_client, "sess", 3, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
-    # msg task header should not appear
-    assert "msg: respond" not in out
-    # But the actual message output should
+    # msg task header should appear when running
+    assert "msg: respond" in out
+    # And the actual message output should appear when done
     assert "Hello!" in out
+
+
+def test_poll_status_msg_task_numbering_consistent(capsys, plain_caps):
+    """All tasks (exec + msg) should show in consistent [x/y] numbering (M228)."""
+    mock_client = MagicMock()
+    resp = MagicMock()
+    resp.json.return_value = {
+        "plan": {"id": 1, "message_id": 5, "goal": "Install stuff", "status": "done"},
+        "tasks": [
+            {"id": 1, "plan_id": 1, "type": "msg", "detail": "intent", "status": "done",
+             "output": "I'll install it."},
+            {"id": 2, "plan_id": 1, "type": "exec", "detail": "install", "status": "done",
+             "output": "ok"},
+            {"id": 3, "plan_id": 1, "type": "msg", "detail": "summary", "status": "done",
+             "output": "Done!"},
+        ],
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client.get.return_value = resp
+
+    with patch("time.sleep"):
+        _poll_status(mock_client, "sess", 5, 0, quiet=False, verbose=False, caps=plain_caps)
+
+    out = capsys.readouterr().out
+    # All tasks should appear with [x/3] numbering
+    assert "[2/3]" in out
+    # Both msg outputs should appear
+    assert "I'll install it." in out
+    assert "Done!" in out
 
 
 def test_poll_status_shows_review_verdict(capsys, plain_caps):

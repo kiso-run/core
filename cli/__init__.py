@@ -632,13 +632,14 @@ def _render_msg_task(
     idx: int,
     total: int,
 ) -> None:
-    """Render a msg task: spinner when running, message output when done."""
+    """Render a msg task: header + spinner when running, header + output when done."""
     from cli.render import (
         get_last_thinking,
         render_llm_calls,
         render_llm_calls_verbose,
         render_msg_output,
         render_separator,
+        render_task_header,
     )
 
     status = task["status"]
@@ -651,6 +652,9 @@ def _render_msg_task(
         return
 
     if status == "done":
+        if state.seen_any_task:
+            print()
+        state.seen_any_task = True
         llm_calls_raw = task.get("llm_calls")
         llm_detail = render_llm_calls(llm_calls_raw, caps)
         if llm_detail:
@@ -664,7 +668,12 @@ def _render_msg_task(
         print(render_msg_output(output, caps, bot_name, thinking=get_last_thinking(llm_calls_raw)))
         print(render_separator(caps))
     elif status == "running":
+        # Show header on first transition to running
         if state.active_spinner_task is not task:
+            if state.seen_any_task:
+                print()
+            state.seen_any_task = True
+            print(render_task_header(task, idx, total, caps))
             state.spinner_start = time.monotonic()
         state.active_spinner_task = task
         state.active_spinner_index = idx
