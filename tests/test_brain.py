@@ -5753,3 +5753,102 @@ class TestM261MessengerContextReduction:
         assert "weather rome" in messenger_content or "Sunny" in messenger_content
         # Briefer context replaces raw summary/facts
         assert "## Context\nUser asked about weather in Rome." in messenger_content
+
+
+# --- M269: Retry on empty LLM response ---
+
+
+class TestM269RetryOnLLMError:
+    """M269: _retry_llm_with_validation retries on LLMError instead of crashing."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3),
+            raw={},
+        )
+
+    async def test_recovers_after_transient_llm_error(self, config):
+        """LLMError on first call, valid JSON on second → succeeds."""
+        from kiso.llm import LLMError
+        call_count = [0]
+        valid_plan = json.dumps({
+            "goal": "test", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "hi", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _flaky(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise LLMError("Empty response from LLM (planner, glm-4.7)")
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_flaky):
+            result = await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+            )
+        assert result["goal"] == "test"
+        assert call_count[0] == 2
+
+    async def test_exhausts_retries_on_persistent_llm_error(self, config):
+        """LLMError on ALL attempts → raises PlanError after exhaustion."""
+        from kiso.llm import LLMError
+
+        async def _always_fail(cfg, role, messages, **kw):
+            raise LLMError("Empty response")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_fail):
+            with pytest.raises(PlanError, match="LLM call failed after 3 attempts"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                )
+
+    async def test_llm_error_retries_cleanly_without_feedback(self, config):
+        """LLMError retry is a clean retry — no error feedback appended to messages."""
+        from kiso.llm import LLMError
+        call_count = [0]
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+        captured_messages: list[list[dict]] = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.append(list(messages))
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise LLMError("timeout")
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+            )
+        # Second call should have identical messages (no feedback, no assistant msg)
+        assert len(captured_messages[0]) == len(captured_messages[1])
+
+    async def test_llm_error_preserves_last_errors_on_exhaustion(self, config):
+        """exc.last_errors is set when LLM errors exhaust all attempts (M195 compat)."""
+        from kiso.llm import LLMError
+
+        async def _always_fail(cfg, role, messages, **kw):
+            raise LLMError("Empty response")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_fail):
+            with pytest.raises(PlanError) as exc_info:
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                )
+        assert hasattr(exc_info.value, "last_errors")

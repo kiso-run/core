@@ -147,7 +147,16 @@ async def _retry_llm_with_validation(
         try:
             raw = await call_llm(config, role, messages, response_format=schema, session=session)
         except LLMError as e:
-            raise error_class(f"LLM call failed: {e}")
+            # M269: treat LLM errors (empty response, transient failures) as
+            # retriable — only give up after exhausting all attempts.
+            # Don't set last_errors: there's no LLM output to "fix", so
+            # error feedback would be misleading.  Next attempt is a clean retry.
+            log.warning("LLM error (attempt %d/%d): %s", attempt, max_retries, e)
+            if attempt == max_retries:
+                exc = error_class(f"LLM call failed after {max_retries} attempts: {e}")
+                exc.last_errors = last_errors  # preserve for M195 auto-correction
+                raise exc
+            continue
 
         try:
             result = json.loads(_repair_json(raw))
