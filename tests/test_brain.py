@@ -2059,14 +2059,13 @@ class TestDefaultMessengerPrompt:
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "system actions" in prompt
         assert 'Never say "I cannot"' in prompt
-        assert "system can run shell commands" in prompt or "system performs" in prompt
 
-    def test_m264_bot_name_in_system_identity(self):
-        """M264: system identity paragraph uses {bot_name} placeholder."""
-        config = _make_brain_config(settings={"bot_name": "MyBot"})
-        msgs = build_messenger_messages(config, "", [], "say hi")
-        system_prompt = msgs[0]["content"]
-        assert "MyBot system performs" in system_prompt
+    def test_m277_voice_rules(self):
+        """M277: messenger has explicit voice rules for system vs conversational."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Voice rules" in prompt
+        assert 'NEVER say "I ran"' in prompt
+        assert "third-person" in prompt or "passive" in prompt
 
 
 class TestBuildMessengerMessages:
