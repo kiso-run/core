@@ -263,6 +263,45 @@ REVIEW_SCHEMA: dict = {
 }
 
 
+BRIEFER_SCHEMA: dict = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "briefing",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "modules": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "context": {"type": "string"},
+                "output_indices": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                },
+            },
+            "required": ["modules", "skills", "context", "output_indices"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+# Available prompt modules that the briefer can select.
+BRIEFER_MODULES: frozenset[str] = frozenset({
+    "web", "replan", "scripting", "skill_recovery", "data_flow",
+})
+_BRIEFER_MODULES_STR = ", ".join(sorted(BRIEFER_MODULES))
+
+
+class BrieferError(Exception):
+    """Briefer generation failure."""
+
+
 class ReviewError(Exception):
     """Review validation or generation failure."""
 
@@ -717,6 +756,99 @@ async def run_planner(
         log.warning("Auto-corrected plan: replaced uninstalled skill tasks with install + replan")
     log.info("Plan: goal=%r, %d tasks", plan["goal"], len(plan["tasks"]))
     return plan
+
+
+# ---------------------------------------------------------------------------
+# Briefer (context intelligence layer)
+# ---------------------------------------------------------------------------
+
+
+_CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("skills", "Available Skills"),
+    ("connectors", "Available Connectors"),
+    ("summary", "Session Summary"),
+    ("facts", "Known Facts"),
+    ("recent_messages", "Recent Messages"),
+    ("pending", "Pending Questions"),
+    ("paraphrased", "Paraphrased External Messages"),
+    ("replan_context", "Replan Context"),
+    ("plan_outputs", "Plan Outputs"),
+)
+
+
+def build_briefer_messages(
+    consumer_role: str,
+    task_description: str,
+    context_pool: dict,
+) -> list[dict]:
+    """Build the message list for the briefer LLM call.
+
+    Args:
+        consumer_role: Which role the briefing is for (e.g. "planner", "messenger").
+        task_description: What the consumer needs to accomplish.
+        context_pool: Dict of available context pieces. Keys match
+            ``_CONTEXT_POOL_SECTIONS`` (all optional).
+    """
+    system_prompt = _load_system_prompt("briefer")
+
+    parts: list[str] = [
+        f"## Consumer Role\n{consumer_role}",
+        f"## Task\n{task_description}",
+        f"## Available Modules\n{_BRIEFER_MODULES_STR}",
+    ]
+
+    for key, heading in _CONTEXT_POOL_SECTIONS:
+        if val := context_pool.get(key):
+            parts.append(f"## {heading}\n{val}")
+
+    return _build_messages(system_prompt, "\n\n".join(parts))
+
+
+def validate_briefing(briefing: dict) -> list[str]:
+    """Validate briefing semantics. Returns list of error strings."""
+    errors: list[str] = []
+    if not isinstance(briefing.get("modules"), list):
+        errors.append("modules must be an array")
+    else:
+        for m in briefing["modules"]:
+            if m not in BRIEFER_MODULES:
+                errors.append(f"unknown module: {m!r}")
+    if not isinstance(briefing.get("skills"), list):
+        errors.append("skills must be an array")
+    if not isinstance(briefing.get("context"), str):
+        errors.append("context must be a string")
+    if not isinstance(briefing.get("output_indices"), list):
+        errors.append("output_indices must be an array")
+    return errors
+
+
+async def run_briefer(
+    config: Config,
+    consumer_role: str,
+    task_description: str,
+    context_pool: dict,
+    session: str = "",
+) -> dict:
+    """Run the briefer: select relevant context for a consumer role.
+
+    Returns a dict with keys: modules, skills, context, output_indices.
+    Raises BrieferError on failure.
+    """
+    messages = build_briefer_messages(consumer_role, task_description, context_pool)
+    briefing = await _retry_llm_with_validation(
+        config, "briefer", messages, BRIEFER_SCHEMA,
+        validate_briefing,
+        BrieferError, "Briefing",
+        session=session,
+    )
+    log.info(
+        "Briefer for %s: %d modules, %d skills, %d output_indices",
+        consumer_role,
+        len(briefing["modules"]),
+        len(briefing["skills"]),
+        len(briefing["output_indices"]),
+    )
+    return briefing
 
 
 # ---------------------------------------------------------------------------

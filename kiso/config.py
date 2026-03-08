@@ -64,6 +64,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
+    "briefer": "deepseek/deepseek-v3.2",
     "classifier": "deepseek/deepseek-chat",
     "planner": "deepseek/deepseek-v3.2",
     "reviewer": "deepseek/deepseek-v3.2",
@@ -77,6 +78,7 @@ MODEL_DEFAULTS: dict[str, str] = {
 
 # Descriptions shown during interactive install. Keyed by role name.
 MODEL_DESCRIPTIONS: dict[str, str] = {
+    "briefer": "selects relevant context for each LLM role",
     "classifier": "classifies messages as plan or chat",
     "planner": "interprets requests, creates task plans",
     "reviewer": "checks task output, decides replan",
@@ -108,6 +110,7 @@ role = "admin"
 # aliases.discord = "YourDiscordUser#1234"
 
 [models]
+briefer     = "deepseek/deepseek-v3.2"
 classifier  = "deepseek/deepseek-chat"
 planner     = "deepseek/deepseek-v3.2"
 reviewer    = "deepseek/deepseek-v3.2"

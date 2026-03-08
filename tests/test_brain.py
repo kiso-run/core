@@ -10,6 +10,9 @@ import pytest
 
 import aiosqlite
 from kiso.brain import (
+    BRIEFER_MODULES,
+    BRIEFER_SCHEMA,
+    BrieferError,
     ClassifierError,
     CURATOR_SCHEMA,
     CuratorError,
@@ -28,6 +31,7 @@ from kiso.brain import (
     _strip_fences,
     _repair_json,
     _is_plugin_discovery_search,
+    build_briefer_messages,
     build_classifier_messages,
     build_curator_messages,
     build_exec_translator_messages,
@@ -37,6 +41,7 @@ from kiso.brain import (
     build_reviewer_messages,
     build_summarizer_messages,
     classify_message,
+    run_briefer,
     run_curator,
     run_exec_translator,
     run_fact_consolidation,
@@ -45,6 +50,7 @@ from kiso.brain import (
     run_planner,
     run_reviewer,
     run_summarizer,
+    validate_briefing,
     validate_curator,
     validate_plan,
     validate_review,
@@ -4395,3 +4401,216 @@ class TestM195AutoCorrectUninstalledSkill:
         assert plan["tasks"][1]["type"] == "exec"
         assert "screenshotter" in plan["tasks"][1]["detail"]
         assert plan["tasks"][2]["type"] == "replan"
+
+
+# ---------------------------------------------------------------------------
+# Briefer tests (M242)
+# ---------------------------------------------------------------------------
+
+
+class TestBrieferMessages:
+    """Tests for build_briefer_messages."""
+
+    def test_minimal_context(self):
+        msgs = build_briefer_messages("planner", "what time is it", {})
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert "briefer" in msgs[0]["content"].lower() or "context" in msgs[0]["content"].lower()
+        assert "planner" in msgs[1]["content"]
+        assert "what time is it" in msgs[1]["content"]
+        assert "Available Modules" in msgs[1]["content"]
+
+    def test_full_context_pool(self):
+        pool = {
+            "summary": "User asked about weather",
+            "facts": "- Python 3.12 is installed",
+            "recent_messages": "[user] marco: ciao",
+            "skills": "browser: navigate, screenshot",
+            "connectors": "telegram: messaging",
+            "pending": "- What is your API key?",
+            "paraphrased": "External user said hello",
+            "replan_context": "Previous plan failed due to missing skill",
+            "plan_outputs": "[0] exec: install browser\nStatus: done",
+        }
+        msgs = build_briefer_messages("messenger", "report results", pool)
+        content = msgs[1]["content"]
+        assert "Session Summary" in content
+        assert "Known Facts" in content
+        assert "Recent Messages" in content
+        assert "Available Skills" in content
+        assert "Available Connectors" in content
+        assert "Pending Questions" in content
+        assert "Paraphrased External Messages" in content
+        assert "Replan Context" in content
+        assert "Plan Outputs" in content
+
+    def test_empty_pool_values_excluded(self):
+        pool = {"summary": "", "facts": "", "skills": "browser: navigate"}
+        msgs = build_briefer_messages("planner", "do something", pool)
+        content = msgs[1]["content"]
+        assert "Session Summary" not in content
+        assert "Known Facts" not in content
+        assert "Available Skills" in content
+
+    def test_consumer_role_in_message(self):
+        for role in ("planner", "messenger", "worker"):
+            msgs = build_briefer_messages(role, "task", {})
+            assert role in msgs[1]["content"]
+
+    def test_available_modules_listed(self):
+        msgs = build_briefer_messages("planner", "task", {})
+        content = msgs[1]["content"]
+        for module in BRIEFER_MODULES:
+            assert module in content
+
+
+class TestValidateBriefing:
+    """Tests for validate_briefing."""
+
+    def test_valid_briefing(self):
+        briefing = {
+            "modules": ["web"],
+            "skills": ["browser: navigate, screenshot"],
+            "context": "User wants to visit a website",
+            "output_indices": [0, 2],
+        }
+        assert validate_briefing(briefing) == []
+
+    def test_empty_briefing(self):
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        }
+        assert validate_briefing(briefing) == []
+
+    def test_unknown_module(self):
+        briefing = {
+            "modules": ["web", "nonexistent_module"],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        }
+        errors = validate_briefing(briefing)
+        assert len(errors) == 1
+        assert "nonexistent_module" in errors[0]
+
+    def test_invalid_modules_type(self):
+        briefing = {
+            "modules": "web",
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        }
+        errors = validate_briefing(briefing)
+        assert any("modules" in e for e in errors)
+
+    def test_invalid_context_type(self):
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": None,
+            "output_indices": [],
+        }
+        errors = validate_briefing(briefing)
+        assert any("context" in e for e in errors)
+
+    def test_all_valid_modules(self):
+        briefing = {
+            "modules": list(BRIEFER_MODULES),
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        }
+        assert validate_briefing(briefing) == []
+
+
+class TestRunBriefer:
+    """Tests for run_briefer."""
+
+    @pytest.fixture
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"deepseek": Provider(base_url="http://localhost")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(),
+            raw={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_success(self, config):
+        response = json.dumps({
+            "modules": ["web"],
+            "skills": ["browser: navigate"],
+            "context": "User wants to browse",
+            "output_indices": [1],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "visit a website", {"skills": "browser"})
+        assert result["modules"] == ["web"]
+        assert result["skills"] == ["browser: navigate"]
+        assert result["context"] == "User wants to browse"
+        assert result["output_indices"] == [1]
+
+    @pytest.mark.asyncio
+    async def test_empty_briefing(self, config):
+        response = json.dumps({
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "what time is it", {})
+        assert result["modules"] == []
+        assert result["skills"] == []
+
+    @pytest.mark.asyncio
+    async def test_llm_error_raises_briefer_error(self, config):
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("connection failed")):
+            with pytest.raises(BrieferError):
+                await run_briefer(config, "planner", "task", {})
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_retries_then_fails(self, config):
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value="not json at all"):
+            with pytest.raises(BrieferError):
+                await run_briefer(config, "planner", "task", {})
+
+
+class TestBrieferSchema:
+    """Tests for BRIEFER_SCHEMA validity."""
+
+    def test_schema_validates_valid_briefing(self):
+        valid = {
+            "modules": ["web", "replan"],
+            "skills": ["browser: navigate"],
+            "context": "some context",
+            "output_indices": [0, 1, 2],
+        }
+        _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
+
+    def test_schema_rejects_missing_field(self):
+        invalid = {
+            "modules": ["web"],
+            "skills": [],
+            "context": "",
+            # missing output_indices
+        }
+        with pytest.raises(_jsonschema.ValidationError):
+            _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
+
+    def test_schema_rejects_wrong_type(self):
+        invalid = {
+            "modules": "web",  # should be array
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        }
+        with pytest.raises(_jsonschema.ValidationError):
+            _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])

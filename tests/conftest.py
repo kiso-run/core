@@ -104,6 +104,7 @@ skills = "*"
 discord = "TestUser#1234"
 
 [models]
+briefer     = "test-briefer"
 classifier  = "test-classifier"
 planner     = "test-planner"
 reviewer    = "test-reviewer"

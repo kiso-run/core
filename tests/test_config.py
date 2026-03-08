@@ -31,6 +31,7 @@ base_url = "https://openrouter.ai/api/v1"
 role = "admin"
 
 [models]
+briefer     = "deepseek/deepseek-v3.2"
 classifier  = "deepseek/deepseek-v3.2"
 planner     = "deepseek/deepseek-v3.2"
 reviewer    = "deepseek/deepseek-v3.2"

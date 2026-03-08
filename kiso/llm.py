@@ -14,7 +14,7 @@ from kiso.config import Config, LLM_API_KEY_ENV, Provider
 from kiso.text import extract_thinking
 
 # Roles that require structured output (response_format with json_schema).
-STRUCTURED_ROLES = {"planner", "reviewer", "curator"}
+STRUCTURED_ROLES = {"planner", "reviewer", "curator", "briefer"}
 
 # Shared long-lived HTTP client, initialized by main.py lifespan.
 # When set, call_llm reuses the connection pool instead of opening a new
