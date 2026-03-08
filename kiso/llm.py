@@ -11,7 +11,7 @@ import time
 import httpx
 
 from kiso import audit
-from kiso.config import Config, LLM_API_KEY_ENV, Provider
+from kiso.config import Config, LLM_API_KEY_ENV, Provider, REASONING_DEFAULTS
 from kiso.text import extract_thinking
 
 log = logging.getLogger(__name__)
@@ -245,6 +245,10 @@ async def call_llm(
             payload["response_format"] = effective_format
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        # M271: per-role reasoning config (limits thinking tokens for simple roles)
+        reasoning = REASONING_DEFAULTS.get(role)
+        if reasoning:
+            payload["reasoning"] = reasoning
 
         t0 = time.perf_counter()
 

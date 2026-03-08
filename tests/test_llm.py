@@ -1330,3 +1330,70 @@ class TestJsonSchemaFallback:
                 )
 
         assert result == '{"result": true}'
+
+
+# --- M271: Reasoning budget control per role ---
+
+
+class TestM271ReasoningDefaults:
+    """M271: per-role reasoning config is included in API payload."""
+
+    @pytest.mark.asyncio
+    async def test_messenger_includes_reasoning(self):
+        """Messenger role sends reasoning config in payload."""
+        config = _make_config()
+        captured_payload: list[dict] = []
+
+        async def _capture(url, *, headers, json, **kw):
+            captured_payload.append(json)
+            return _ok_response("Hello user")
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _capture
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(config, "messenger", [{"role": "user", "content": "hi"}])
+
+        assert len(captured_payload) == 1
+        assert "reasoning" in captured_payload[0]
+        assert captured_payload[0]["reasoning"]["effort"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_planner_no_reasoning(self):
+        """Planner role does NOT send reasoning config (not in REASONING_DEFAULTS)."""
+        config = _make_config()
+        captured_payload: list[dict] = []
+
+        async def _capture(url, *, headers, json, **kw):
+            captured_payload.append(json)
+            return _ok_response('{"goal":"test","secrets":null,"tasks":[]}')
+
+        schema = {"type": "json_schema", "json_schema": {"name": "test"}}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _capture
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=schema,
+                )
+
+        assert len(captured_payload) == 1
+        assert "reasoning" not in captured_payload[0]
+
+
+def test_m271_reasoning_defaults_import():
+    """REASONING_DEFAULTS is importable from config and has expected structure."""
+    from kiso.config import REASONING_DEFAULTS
+    assert isinstance(REASONING_DEFAULTS, dict)
+    assert "messenger" in REASONING_DEFAULTS
+    assert REASONING_DEFAULTS["messenger"]["effort"] == "low"
+    # Roles not in the dict get no reasoning
+    assert REASONING_DEFAULTS.get("planner") is None

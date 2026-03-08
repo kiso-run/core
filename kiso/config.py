@@ -78,6 +78,13 @@ MODEL_DEFAULTS: dict[str, str] = {
     "searcher": "perplexity/sonar",
 }
 
+# M271: Per-role reasoning config sent to OpenRouter.  Roles not listed here
+# (or mapped to None) get no reasoning parameter — the provider's default applies.
+# Valid effort levels: "minimal", "low", "medium", "high".
+REASONING_DEFAULTS: dict[str, dict | None] = {
+    "messenger": {"effort": "low"},
+}
+
 # Descriptions shown during interactive install. Keyed by role name.
 MODEL_DESCRIPTIONS: dict[str, str] = {
     "briefer": "selects relevant context for each LLM role",
