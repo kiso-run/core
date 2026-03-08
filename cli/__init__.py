@@ -763,6 +763,7 @@ def _render_plan_status(
         CLEAR_LINE,
         _parse_llm_calls,
         render_inflight_indicator,
+        render_llm_call_input_panel,
         render_llm_calls,
         render_phase_done,
         render_plan,
@@ -943,7 +944,6 @@ def _render_plan_status(
                 # M267: skip duplicate indicator for same role (e.g. planner validation retry)
                 if inflight_role is None or inflight_role not in state.inflight_roles_shown:
                     _clear_spinner()
-                    from cli.render import render_llm_call_input_panel
                     in_panel = render_llm_call_input_panel(inflight, caps)
                     if in_panel:
                         print(in_panel)
