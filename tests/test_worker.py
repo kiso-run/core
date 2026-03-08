@@ -2482,6 +2482,54 @@ class TestFormatPlanOutputsForMsg:
         assert "<<<TASK_OUTPUT_" in result
         assert "<<<END_TASK_OUTPUT_" in result
 
+    def test_small_outputs_all_included(self):
+        """3 small outputs under budget → all included in full."""
+        outputs = [
+            {"index": i, "type": "exec", "detail": f"task{i}", "output": f"out{i}", "status": "done"}
+            for i in range(1, 4)
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=8000)
+        for i in range(1, 4):
+            assert f"[{i}] exec: task{i}" in result
+            assert f"out{i}" in result
+        assert "summarized" not in result
+
+    def test_large_outputs_oldest_summarized(self):
+        """6 outputs with 4KB each → most recent in full, oldest summarized."""
+        outputs = [
+            {"index": i, "type": "exec", "detail": f"task{i}", "output": "x" * 2000, "status": "done"}
+            for i in range(1, 7)
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=8000)
+        # Most recent outputs should be in full
+        assert "Status: done" in result
+        # Oldest outputs should be summarized
+        assert "summarized" in result
+        # Summary lines don't have fenced output
+        assert result.count("<<<TASK_OUTPUT_") < 6
+
+    def test_budget_respected(self):
+        """Total output stays roughly within budget."""
+        outputs = [
+            {"index": i, "type": "exec", "detail": f"task{i}", "output": "y" * 3000, "status": "done"}
+            for i in range(1, 10)
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=8000)
+        # The full entries part should be within budget (summaries add minor overhead)
+        assert len(result) < 12000  # budget + summary overhead
+
+    def test_order_preserved(self):
+        """Outputs maintain ascending index order even after reverse processing."""
+        outputs = [
+            {"index": i, "type": "exec", "detail": f"task{i}", "output": f"out{i}", "status": "done"}
+            for i in range(1, 4)
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=8000)
+        pos1 = result.index("[1]")
+        pos2 = result.index("[2]")
+        pos3 = result.index("[3]")
+        assert pos1 < pos2 < pos3
+
 
 # --- _make_plan_output (M91c) ---
 

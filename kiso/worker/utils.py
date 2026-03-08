@@ -305,16 +305,47 @@ def _auto_publish_skill_files(
     return published
 
 
-def _format_plan_outputs_for_msg(plan_outputs: list[dict]) -> str:
-    """Format plan_outputs as readable text for the worker LLM prompt."""
+_PLAN_OUTPUTS_BUDGET = 8000  # max total chars for plan_outputs in LLM context
+
+
+def _format_plan_outputs_for_msg(
+    plan_outputs: list[dict], budget: int = _PLAN_OUTPUTS_BUDGET,
+) -> str:
+    """Format plan_outputs as readable text for the worker LLM prompt.
+
+    Processes outputs in reverse order (most recent first) so the messenger
+    and exec translator always see the freshest context.  Once the budget
+    is exhausted, older entries are reduced to one-line summaries.
+    """
     if not plan_outputs:
         return ""
-    parts: list[str] = []
-    for entry in plan_outputs:
-        header = f"[{entry['index']}] {entry['type']}: {entry['detail']}"
+
+    # Build full entries in reverse, track budget
+    full_parts: list[tuple[int, str]] = []  # (original_index, text)
+    summary_parts: list[tuple[int, str]] = []
+    budget_used = 0
+
+    for entry in reversed(plan_outputs):
+        idx = entry["index"]
+        header = f"[{idx}] {entry['type']}: {entry['detail']}"
         output = entry.get("output") or "(no output)"
         status = entry["status"]
-        parts.append(f"{header}\nStatus: {status}\n{fence_content(output, 'TASK_OUTPUT')}")
+        full_text = f"{header}\nStatus: {status}\n{fence_content(output, 'TASK_OUTPUT')}"
+
+        if budget_used + len(full_text) <= budget:
+            full_parts.append((idx, full_text))
+            budget_used += len(full_text)
+        else:
+            summary_parts.append((idx, f"[{idx}] {entry['type']}: {entry['detail']} -> {status}"))
+
+    # Re-sort by original index (ascending)
+    full_parts.sort(key=lambda x: x[0])
+    summary_parts.sort(key=lambda x: x[0])
+
+    parts: list[str] = []
+    if summary_parts:
+        parts.append("(earlier tasks summarized)\n" + "\n".join(t for _, t in summary_parts))
+    parts.extend(t for _, t in full_parts)
     return "\n\n".join(parts)
 
 
