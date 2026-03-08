@@ -1301,6 +1301,108 @@ class TestReviewTask:
         assert count == 1
 
 
+# --- M226: Smoke tests — large output handling ---
+
+class TestReviewTaskLargeOutput:
+    """M226: verify _review_task truncates large output via prepare_reviewer_output."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_large_stdout_truncated_for_reviewer(self, db):
+        """100KB stdout is truncated before reaching the reviewer LLM."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        tid = await create_task(db, plan_id, "sess1", type="exec", detail="big", expect="ok")
+        large_output = "\n".join(f"line {i}: ok" for i in range(5000))
+        task_row = {"id": tid, "detail": "big", "expect": "ok",
+                    "output": large_output, "stderr": ""}
+
+        captured_output = []
+
+        async def _mock_reviewer(config, *, goal, detail, expect, output, user_message, **kw):
+            captured_output.append(output)
+            return {"status": "ok", "reason": None, "learn": None,
+                    "retry_hint": None, "summary": None}
+
+        with patch("kiso.worker.loop.run_reviewer", side_effect=_mock_reviewer):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        # Reviewer should have received truncated output, not 100KB
+        assert len(captured_output) == 1
+        assert len(captured_output[0]) <= 5000  # well under 100KB
+
+    async def test_error_in_middle_reaches_reviewer(self, db):
+        """Error line buried in large stdout reaches the reviewer via grep section."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        tid = await create_task(db, plan_id, "sess1", type="exec", detail="build", expect="build succeeds")
+        lines = [f"compiling module {i}..." for i in range(500)]
+        lines[50] = "FATAL ERROR: out of memory"
+        lines[-1] = "Build finished"
+        large_output = "\n".join(lines)
+        task_row = {"id": tid, "detail": "build", "expect": "build succeeds",
+                    "output": large_output, "stderr": ""}
+
+        captured_output = []
+
+        async def _mock_reviewer(config, *, goal, detail, expect, output, user_message, **kw):
+            captured_output.append(output)
+            return {"status": "replan", "reason": "build failed",
+                    "learn": None, "retry_hint": None, "summary": None}
+
+        with patch("kiso.worker.loop.run_reviewer", side_effect=_mock_reviewer):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        assert "FATAL ERROR: out of memory" in captured_output[0]
+        assert "Build finished" in captured_output[0]
+
+    async def test_stderr_priority_in_large_output(self, db):
+        """Stderr is preserved even when stdout is massive."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        tid = await create_task(db, plan_id, "sess1", type="exec", detail="cmd", expect="ok")
+        task_row = {"id": tid, "detail": "cmd", "expect": "ok",
+                    "output": "x\n" * 50000, "stderr": "critical: permission denied"}
+
+        captured_output = []
+
+        async def _mock_reviewer(config, *, goal, detail, expect, output, user_message, **kw):
+            captured_output.append(output)
+            return {"status": "replan", "reason": "permission denied",
+                    "learn": None, "retry_hint": None, "summary": None}
+
+        with patch("kiso.worker.loop.run_reviewer", side_effect=_mock_reviewer):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        assert "critical: permission denied" in captured_output[0]
+
+    async def test_small_output_unchanged(self, db):
+        """Small output passes through without truncation marker."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        tid = await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="prints hi")
+        task_row = {"id": tid, "detail": "echo hi", "expect": "prints hi",
+                    "output": "hi\n", "stderr": ""}
+
+        captured_output = []
+
+        async def _mock_reviewer(config, *, goal, detail, expect, output, user_message, **kw):
+            captured_output.append(output)
+            return {"status": "ok", "reason": None, "learn": None,
+                    "retry_hint": None, "summary": None}
+
+        with patch("kiso.worker.loop.run_reviewer", side_effect=_mock_reviewer):
+            await _review_task(config, db, "sess1", "goal", task_row, "msg")
+
+        assert captured_output[0] == "hi\n"
+        assert "TRUNCATED" not in captured_output[0]
+
+
 # --- _build_replan_context ---
 
 class TestBuildReplanContext:
