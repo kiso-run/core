@@ -4526,6 +4526,27 @@ class TestM194ReviewerDomainCheck:
         assert "warnings" in prompt.lower()
 
 
+class TestM283SearcherPrompt:
+    """M283: searcher prompt quality and language rules."""
+
+    def test_searcher_prompt_exists(self):
+        prompt = (_ROLES_DIR / "searcher.md").read_text()
+        assert len(prompt) > 0
+
+    def test_searcher_lang_matching(self):
+        prompt = (_ROLES_DIR / "searcher.md").read_text()
+        assert "query language controls output language" in prompt
+
+    def test_searcher_source_quality(self):
+        prompt = (_ROLES_DIR / "searcher.md").read_text()
+        assert "primary sources" in prompt.lower()
+        assert "official documentation" in prompt.lower()
+
+    def test_searcher_domain_focus(self):
+        prompt = (_ROLES_DIR / "searcher.md").read_text()
+        assert "specific URL or domain" in prompt
+
+
 class TestM195AutoCorrectUninstalledSkill:
     """M195: Auto-correct plan when planner keeps using uninstalled skills."""
 
