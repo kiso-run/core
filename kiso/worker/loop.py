@@ -2004,12 +2004,24 @@ async def _process_message(
     # Plan
     _phase(WORKER_PHASE_PLANNING)
     planner_usage_idx = get_usage_index()
+
+    async def _flush_pre_planner_usage():
+        """Store briefer/paraphraser usage so CLI can render panels while planner runs."""
+        usage = get_usage_since(0)
+        if usage["input_tokens"] or usage["output_tokens"]:
+            await update_plan_usage(
+                db, plan_id,
+                usage["input_tokens"], usage["output_tokens"],
+                usage["model"], llm_calls=usage.get("calls"),
+            )
+
     try:
         plan = await asyncio.wait_for(
             run_planner(
                 db, config, session, user_role, content,
                 user_skills=user_skills,
                 paraphrased_context=paraphrased_context,
+                on_context_ready=_flush_pre_planner_usage,
             ),
             timeout=planner_timeout,
         )

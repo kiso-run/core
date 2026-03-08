@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import aiosqlite
@@ -897,8 +898,15 @@ async def run_planner(
     new_message: str,
     user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
+    on_context_ready: Callable | None = None,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
+
+    Args:
+        on_context_ready: Optional async callback invoked after the briefer
+            completes but before the planner LLM call.  The caller can use
+            this to flush intermediate usage so the CLI can render briefer
+            panels while the planner is still running.
 
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
@@ -907,6 +915,8 @@ async def run_planner(
         db, config, session, user_role, new_message, user_skills=user_skills,
         paraphrased_context=paraphrased_context,
     )
+    if on_context_ready:
+        await on_context_ready()
     skills_by_name = {s["name"]: s for s in installed_info}
 
     max_tasks = int(config.settings["max_plan_tasks"])

@@ -2906,6 +2906,34 @@ class TestM82PlannerAskThenAdd:
         assert "## Caller Role\nuser" in user_msg["content"]
         assert "kiso user add charlie" in user_msg["content"]
 
+    async def test_on_context_ready_called_before_planner_llm(self, db, config):
+        """on_context_ready fires after briefer/context but before planner LLM call."""
+        call_order: list[str] = []
+
+        async def _on_ready():
+            call_order.append("context_ready")
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            call_order.append(f"llm:{role}")
+            return _MSG_PLAN_FOR_USER
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            await run_planner(
+                db, config, "sess1", "user", "hello",
+                on_context_ready=_on_ready,
+            )
+
+        assert "context_ready" in call_order
+        planner_idx = next(i for i, v in enumerate(call_order) if v == "llm:planner")
+        ready_idx = call_order.index("context_ready")
+        assert ready_idx < planner_idx, "on_context_ready must fire before planner LLM call"
+
+    async def test_on_context_ready_none_is_noop(self, db, config):
+        """on_context_ready=None (default) does not break anything."""
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=_MSG_PLAN_FOR_USER):
+            plan = await run_planner(db, config, "sess1", "user", "hello")
+        assert plan["goal"]
+
 
 # --- Classifier (fast path) ---
 
