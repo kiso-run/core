@@ -1862,8 +1862,8 @@ async def _run_planning_loop(
             db, session, msg_id, new_plan["goal"],
             parent_id=current_plan_id,
         )
-        replan_tasks = _maybe_inject_intent_msg(new_plan["tasks"], new_plan["goal"])
-        await _persist_plan_tasks(db, new_plan_id, session, replan_tasks)
+        # M279: skip intent injection on replan — user already saw the intent
+        await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
 
         # Now finalize old plan status — the new plan is already visible.
         if is_self_directed:
@@ -1871,10 +1871,10 @@ async def _run_planning_loop(
         else:
             await update_plan_status(db, current_plan_id, "failed")
         log.info("Replan %d (parent=%d): goal=%r, %d tasks",
-                 new_plan_id, current_plan_id, new_plan["goal"], len(replan_tasks))
+                 new_plan_id, current_plan_id, new_plan["goal"], len(new_plan["tasks"]))
         if slog:
             slog.info("Replan %d: %s (%d tasks, attempt %d/%d)",
-                      new_plan_id, new_plan["goal"], len(replan_tasks),
+                      new_plan_id, new_plan["goal"], len(new_plan["tasks"]),
                       replan_depth, max_replan_depth)
 
         # Store replanner usage immediately

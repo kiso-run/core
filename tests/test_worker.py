@@ -2415,8 +2415,8 @@ class TestM201IntentMsgInjection:
         assert len(result) == 3
         assert result[0]["detail"].startswith("[Lang: it]")
 
-    async def test_replan_also_injects_intent_msg(self, tmp_path):
-        """Intent msg is injected for replan plans too, not just initial plans."""
+    async def test_replan_skips_intent_msg(self, tmp_path):
+        """M279: intent msg is NOT injected for replan — user already saw the intent."""
         from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
         db = await init_db(tmp_path / "test.db")
         await create_session(db, "sess1")
@@ -2427,15 +2427,12 @@ class TestM201IntentMsgInjection:
             {"type": "exec", "detail": "run test", "skill": None, "args": None, "expect": "pass"},
             {"type": "msg", "detail": "Answer in Italian. report", "skill": None, "args": None, "expect": None},
         ]
-        injected = _maybe_inject_intent_msg(replan_tasks, "Retry with new approach")
-        await _persist_plan_tasks(db, plan_id, "sess1", injected)
+        # Replan path persists tasks directly without _maybe_inject_intent_msg
+        await _persist_plan_tasks(db, plan_id, "sess1", replan_tasks)
 
         db_tasks = await get_tasks_for_plan(db, plan_id)
-        assert len(db_tasks) == 4
-        assert db_tasks[0]["type"] == "msg"
-        assert db_tasks[0]["detail"].startswith("Answer in Italian.")
-        assert "apt-get install foo" in db_tasks[0]["detail"]
-        assert db_tasks[1]["type"] == "exec"
+        assert len(db_tasks) == 3  # No injected intent msg
+        assert db_tasks[0]["type"] == "exec"
         await db.close()
 
     def test_m264_intent_msg_says_system(self):
