@@ -3064,6 +3064,48 @@ class TestClassifierPromptContent:
         assert "any language" in prompt
         assert "imperative" in prompt
 
+    def test_classifier_prompt_has_recent_context_rule(self):
+        """M276: classifier prompt accepts Recent Context for follow-up detection."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text()
+        assert "Recent Context" in prompt
+        assert "follow-up" in prompt.lower() or "follow up" in prompt.lower()
+
+
+class TestM276ClassifierContext:
+    """M276: classifier receives conversation context for follow-up detection."""
+
+    def test_build_messages_without_context(self):
+        msgs = build_classifier_messages("hello")
+        assert "Recent Context" not in msgs[1]["content"]
+
+    def test_build_messages_with_context(self):
+        msgs = build_classifier_messages("e la pagina?", recent_context="Last plan goal: Navigate to example.com")
+        assert "Recent Context" in msgs[1]["content"]
+        assert "Navigate to example.com" in msgs[1]["content"]
+
+    def test_build_messages_context_appended_after_content(self):
+        msgs = build_classifier_messages("test msg", recent_context="Last plan goal: X")
+        user_content = msgs[1]["content"]
+        # Content comes first, context after
+        assert user_content.index("test msg") < user_content.index("Recent Context")
+
+    async def test_classify_passes_context_to_llm(self):
+        config = _make_config_for_classifier()
+        mock_llm = AsyncMock(return_value="plan")
+        with patch("kiso.brain.call_llm", mock_llm):
+            await classify_message(config, "e la pagina?", recent_context="Last plan goal: Nav")
+        # Check the user message includes context
+        messages = mock_llm.call_args[0][2]
+        assert "Recent Context" in messages[1]["content"]
+
+    async def test_classify_empty_context_no_section(self):
+        config = _make_config_for_classifier()
+        mock_llm = AsyncMock(return_value="chat")
+        with patch("kiso.brain.call_llm", mock_llm):
+            await classify_message(config, "hello", recent_context="")
+        messages = mock_llm.call_args[0][2]
+        assert "Recent Context" not in messages[1]["content"]
+
 
 # --- M234: Planner — don't decompose atomic CLI operations ---
 

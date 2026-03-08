@@ -88,6 +88,7 @@ from kiso.store import (
     get_facts,
     get_oldest_messages,
     get_pending_learnings,
+    get_plan_for_session,
     get_session,
     get_tasks_for_plan,
     get_untrusted_messages,
@@ -1972,6 +1973,13 @@ async def _process_message(
     # Paraphraser is intentionally skipped here — the messenger only sees
     # session summary + facts + the current user message (all trusted).
     # Untrusted messages feed into planner context, not messenger context.
+    # Fetch last plan goal for classifier context (M276) before creating new plan
+    _prev_plan = await get_plan_for_session(db, session)
+    _classifier_ctx = ""
+    if _prev_plan and _prev_plan.get("goal") and _prev_plan["goal"] != "Planning...":
+        goal = _prev_plan["goal"]
+        _classifier_ctx = f"Last plan goal: {goal[:150]}"
+
     # Create plan record before classifier so the CLI can render it immediately.
     # This ensures the plan header appears before inflight indicators.
     plan_id = await create_plan(db, session, msg_id, "Planning...")
@@ -1981,7 +1989,10 @@ async def _process_message(
         _phase(WORKER_PHASE_CLASSIFYING)
         try:
             msg_class = await asyncio.wait_for(
-                classify_message(config, content, session=session),
+                classify_message(
+                    config, content, session=session,
+                    recent_context=_classifier_ctx,
+                ),
                 timeout=classifier_timeout,
             )
         except asyncio.TimeoutError:

@@ -1066,20 +1066,26 @@ class ClassifierError(Exception):
     """Classifier generation failure."""
 
 
-def build_classifier_messages(content: str) -> list[dict]:
+def build_classifier_messages(
+    content: str, recent_context: str = "",
+) -> list[dict]:
     """Build the message list for the classifier LLM call."""
-    return _build_messages(_load_system_prompt("classifier"), content)
+    user_text = content
+    if recent_context:
+        user_text = f"{content}\n\n## Recent Context\n{recent_context}"
+    return _build_messages(_load_system_prompt("classifier"), user_text)
 
 
 async def classify_message(
     config: Config, content: str, session: str = "",
+    recent_context: str = "",
 ) -> str:
     """Classify a user message as 'plan' or 'chat'.
 
     Returns ``"plan"`` or ``"chat"``.  On any error or ambiguous output,
     returns ``"plan"`` (safe fallback — the planner handles everything).
     """
-    messages = build_classifier_messages(content)
+    messages = build_classifier_messages(content, recent_context=recent_context)
     try:
         raw = await call_llm(config, "classifier", messages, session=session)
     except LLMError as e:
