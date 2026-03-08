@@ -7672,11 +7672,11 @@ class TestIncrementalLLMCalls:
             )
 
         assert success is True
-        # exec task: 2 _append_calls (translator + reviewer), msg task: 1 (messenger) = 3 total
-        assert mock_append.call_count >= 2
+        # exec task: 3 _append_calls (M273 briefer + translator + reviewer), msg task: 2 (M273 briefer + messenger)
+        assert mock_append.call_count >= 3
 
     async def test_msg_task_appends_calls_after_messenger(self, db, tmp_path):
-        """msg task: _append_calls called once — after messenger."""
+        """msg task: _append_calls called twice — M273 briefer flush + after messenger."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -7690,7 +7690,7 @@ class TestIncrementalLLMCalls:
             )
 
         assert success is True
-        assert mock_append.call_count == 1
+        assert mock_append.call_count == 2
 
     async def test_search_task_appends_calls_after_searcher_and_reviewer(self, db, tmp_path):
         """search task: _append_calls called twice — after searcher + after reviewer."""
@@ -7710,7 +7710,7 @@ class TestIncrementalLLMCalls:
             )
 
         assert success is True
-        # search: 2 calls (searcher + reviewer), msg: 1 call = 3 total
+        # search: 2 calls (searcher + reviewer), msg: 2 calls (M273 briefer + messenger) = 4 total
         assert mock_append.call_count >= 2
 
     async def test_fast_path_appends_calls_after_messenger(self, db, tmp_path):
@@ -7858,11 +7858,12 @@ class TestM44gRetryLLMCalls:
             )
 
         assert success is True
+        # exec task: M273 briefer flush = 1 call
         # attempt 1: translator+reviewer = 2 calls
         # attempt 2: translator+reviewer = 2 calls
-        # msg task: 1 call
-        # total _append_calls = 5
-        assert mock_append.call_count == 5
+        # msg task: M273 briefer flush + messenger = 2 calls
+        # total _append_calls = 7
+        assert mock_append.call_count == 7
 
 
 # ---------------------------------------------------------------------------
@@ -10478,3 +10479,97 @@ def test_m270_messenger_prompt_has_precision_rule():
     """M270: messenger.md has rule about completed vs failed task accuracy."""
     prompt = (Path(__file__).resolve().parent.parent / "kiso" / "roles" / "messenger.md").read_text()
     assert "Never say a completed task failed" in prompt
+
+
+# --- M273: flush briefer usage before consumer LLM call ---
+
+
+@pytest.mark.asyncio()
+class TestM273FlushBrieferUsage:
+    """M273: _append_calls fires between briefer and consumer for msg & exec tasks."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import init_db
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_msg_task_flush_before_messenger(self, db, tmp_path):
+        """M273: msg task flushes briefer usage before messenger runs."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        call_order: list[str] = []
+        real_append = AsyncMock(side_effect=lambda *a, **kw: call_order.append("append"))
+
+        async def _mock_messenger(*a, **kw):
+            call_order.append("messenger")
+            return "Hi"
+
+        with patch("kiso.worker.loop._append_calls", real_append), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   side_effect=_mock_messenger), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # First append (briefer flush) must happen before messenger
+        assert call_order[0] == "append"
+        assert "messenger" in call_order
+        msg_idx = call_order.index("messenger")
+        # At least one append before messenger
+        assert any(call_order[i] == "append" for i in range(msg_idx))
+
+    async def test_exec_task_flush_before_translator(self, db, tmp_path):
+        """M273: exec task flushes briefer usage before translator runs."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        call_order: list[str] = []
+        real_append = AsyncMock(side_effect=lambda *a, **kw: call_order.append("append"))
+
+        async def _mock_translator(*a, **kw):
+            call_order.append("translator")
+            return "echo ok"
+
+        with patch("kiso.worker.loop._append_calls", real_append), \
+             patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+                   side_effect=_mock_translator), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # First append (briefer flush) must happen before translator
+        assert call_order[0] == "append"
+        translator_idx = call_order.index("translator")
+        assert any(call_order[i] == "append" for i in range(translator_idx))
+
+    async def test_msg_task_flush_even_without_briefer(self, db, tmp_path):
+        """M273: on_briefer_done fires even when briefer is disabled (no-op flush)."""
+        config = _make_config()
+        # briefer_enabled defaults to False in _make_config, so no briefer runs
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="msg", detail="hello")
+
+        mock_append = AsyncMock()
+        with patch("kiso.worker.loop._append_calls", mock_append), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # 2 calls: briefer flush (no-op) + after messenger
+        assert mock_append.call_count == 2

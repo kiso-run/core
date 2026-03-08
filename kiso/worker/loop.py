@@ -200,11 +200,18 @@ async def _msg_task(
     goal: str = "",
     include_recent: bool = False,
     user_message: str = "",
+    on_briefer_done: "Callable | None" = None,
 ) -> str:
     """Generate a user-facing message via the messenger brain role.
 
     When the briefer is enabled, it selects which plan_outputs are relevant
     to the msg task and synthesizes context, reducing noise in the messenger.
+
+    Args:
+        on_briefer_done: Optional async callback invoked after the briefer
+            completes but before the messenger LLM call.  The caller can use
+            this to flush intermediate usage so the CLI can render briefer
+            panels while the messenger is still running (M273).
     """
     selected_outputs = plan_outputs
     briefing_context: str | None = None
@@ -242,6 +249,10 @@ async def _msg_task(
                 briefing_context = briefing["context"]
         except Exception:
             log.debug("Briefer failed for messenger, using full context")
+
+    # M273: flush briefer usage before messenger call
+    if on_briefer_done:
+        await on_briefer_done()
 
     outputs_text = _format_plan_outputs_for_msg(selected_outputs) if selected_outputs else ""
     return await run_messenger(
@@ -764,6 +775,11 @@ async def _handle_msg_task(
     try:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
         idx_msg = get_usage_index()
+
+        async def _flush_briefer():
+            """M273: flush briefer calls so CLI renders panels before messenger runs."""
+            await _append_calls(ctx.db, task_id, idx_msg)
+
         try:
             text = await asyncio.wait_for(
                 _msg_task(
@@ -771,6 +787,7 @@ async def _handle_msg_task(
                     plan_outputs=ctx.plan_outputs,
                     goal=ctx.goal,
                     user_message=ctx.user_message,
+                    on_briefer_done=_flush_briefer,
                 ),
                 timeout=ctx.messenger_timeout,
             )
@@ -987,6 +1004,7 @@ async def _handle_exec_task(
         )
 
     # Briefer: select relevant plan_outputs for this exec task
+    idx_exec = get_usage_index()
     briefed_outputs = ctx.plan_outputs
     if ctx.plan_outputs and setting_bool(ctx.config.settings, "briefer_enabled"):
         try:
@@ -1001,6 +1019,8 @@ async def _handle_exec_task(
                     briefed_outputs = filtered
         except Exception:
             log.debug("Briefer failed for worker task %d, using all plan_outputs", task_id)
+    # M273: flush briefer calls so CLI renders panels before translator runs
+    await _append_calls(ctx.db, task_id, idx_exec)
 
     retry_context = ""
     exec_retries = 0
