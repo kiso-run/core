@@ -4,35 +4,90 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 
 ## Context per Role
 
-| Context piece | Classifier | Planner | Reviewer | Exec Translator | Worker (msg) | Searcher | Summarizer | Curator | Paraphraser |
-|---|---|---|---|---|---|---|---|---|---|
-| User message (raw) | yes | - | - | - | - | - | - | - | - |
-| Session summary | - | yes | - | - | yes | - | yes (existing) | yes | - |
-| Last N raw messages | - | yes | - | - | - | - | - | - | - |
-| Recent msg outputs | - | yes | - | - | - | - | - | - | - |
-| Paraphrased untrusted messages | - | yes | - | - | - | - | - | - | generates |
-| New message | - | yes | - | - | - | - | - | - | - |
-| Facts (session-scoped; admin sees all) | - | yes | - | - | yes | - | - | yes | - |
-| Pending items (global + session) | - | yes | - | - | - | - | - | yes | - |
-| Allowed skill summaries + args schemas | - | yes | - | - | - | - | - | - | - |
-| Caller role (admin/user) | - | yes | - | - | - | - | - | - | - |
-| System environment | - | yes | - | yes | - | - | - | - | - |
-| Plan context (goal) | - | generates | yes (as background) | - | - | - | - | - | - |
-| Preceding plan outputs (fenced) | - | - | - | yes | yes | yes | - | - | - |
-| Current task detail | - | - | yes | yes | yes | yes | - | - | - |
-| Current task expect | - | - | yes | - | - | - | - | - | - |
-| Current task output (fenced) | - | - | yes | - | - | - | - | - | - |
-| Original user request | - | - | yes | - | - | - | - | - | - |
-| Messages to compress + their msg outputs | - | - | - | - | - | - | yes | - | - |
-| Pending learnings | - | - | - | - | - | - | - | yes | - |
-| Completed tasks + outputs (fenced) | - | replan only | - | - | - | - | - | - | - |
-| Remaining tasks | - | replan only | - | - | - | - | - | - | - |
-| Failure reason | - | replan only | - | - | - | - | - | - | - |
-| Replan history | - | replan only | - | - | - | - | - | - | - |
-| Confirmed facts | - | replan only | - | - | - | - | - | - | - |
-| Raw untrusted messages (batch) | - | - | - | - | - | - | - | - | yes |
+| Context piece | Classifier | Briefer | Planner | Reviewer | Exec Translator | Worker (msg) | Searcher | Summarizer | Curator | Paraphraser |
+|---|---|---|---|---|---|---|---|---|---|---|
+| User message (raw) | yes | - | - | - | - | - | - | - | - | - |
+| Session summary | - | yes | briefer-filtered | - | - | briefer-filtered | - | yes (existing) | yes | - |
+| Last N raw messages | - | yes | briefer-filtered | - | - | - | - | - | - | - |
+| Recent msg outputs | - | yes | briefer-filtered | - | - | - | - | - | - | - |
+| Paraphrased untrusted messages | - | yes | briefer-filtered | - | - | - | - | - | - | generates |
+| New message | - | yes | yes | - | - | - | - | - | - | - |
+| Facts (session-scoped; admin sees all) | - | yes | briefer-filtered | - | - | briefer-filtered | - | - | yes | - |
+| Pending items (global + session) | - | yes | briefer-filtered | - | - | - | - | - | yes | - |
+| Allowed skill summaries + args schemas | - | yes | briefer-filtered | - | - | - | - | - | - | - |
+| Caller role (admin/user) | - | - | yes | - | - | - | - | - | - | - |
+| System environment | - | yes | briefer-filtered | - | yes | - | - | - | - | - |
+| Capability analysis | - | yes | briefer-filtered | - | - | - | - | - | - | - |
+| Plan context (goal) | - | - | generates | yes (as background) | - | - | - | - | - | - |
+| Preceding plan outputs (fenced) | - | yes (msg) | - | - | yes | briefer-filtered | yes | - | - | - |
+| Current task detail | - | - | - | yes | yes | yes | yes | - | - | - |
+| Current task expect | - | - | - | yes | - | - | - | - | - | - |
+| Current task output (fenced) | - | - | - | yes | - | - | - | - | - | - |
+| Original user request | - | - | - | yes | - | - | - | - | - | - |
+| Messages to compress + their msg outputs | - | - | - | - | - | - | - | yes | - | - |
+| Pending learnings | - | - | - | - | - | - | - | - | yes | - |
+| Completed tasks + outputs (fenced) | - | - | replan only | - | - | - | - | - | - | - |
+| Remaining tasks | - | - | replan only | - | - | - | - | - | - | - |
+| Failure reason | - | - | replan only | - | - | - | - | - | - | - |
+| Replan history | - | - | replan only | - | - | - | - | - | - | - |
+| Confirmed facts | - | - | replan only | - | - | - | - | - | - | - |
+| Raw untrusted messages (batch) | - | - | - | - | - | - | - | - | - | yes |
 
 Key principle: the planner must put everything the worker needs into the task `detail` — the worker won't see the conversation (see [Why the Worker Doesn't See the Conversation](#why-the-worker-doesnt-see-the-conversation)). For `exec` tasks, `detail` is a natural-language description; the **exec translator** (an LLM step) converts it to the actual shell command before execution (architect/editor pattern).
+
+---
+
+## Briefer
+
+**When**: before the planner and messenger LLM calls, when `briefer_enabled` is true.
+
+**Input**: the full context pool (summary, facts, recent messages, skills, system environment, capability analysis, plan outputs). **Output**: JSON selecting what each downstream consumer actually needs.
+
+**Purpose**: context intelligence layer. Reads the full context pool (large, cheap model with 1M context) and produces a focused briefing for each consumer. Downstream models receive only relevant information, reducing token costs and improving accuracy.
+
+**Model**: use a large-context, fast model — the briefer reads everything but produces small output. Default: `google/gemini-2.5-flash-lite`.
+
+### Output Schema
+
+```json
+{
+  "modules": ["web", "data_flow"],
+  "skills": ["browser: navigate, screenshot, text — browser automation"],
+  "context": "User wants to visit gazzetta.it and get news. Browser is installed.",
+  "output_indices": [2, 3],
+  "relevant_tags": ["web", "browser"]
+}
+```
+
+- **modules**: prompt modules to inject into the consumer's system prompt (from 11 available modules). Empty array when only core rules are needed (e.g., simple lookups).
+- **skills**: relevant skill descriptions (copied verbatim from context pool). Filters the full skill list to only what's relevant.
+- **context**: synthesized briefing replacing raw summary, facts, and history. Preserves specific values (names, versions, paths, URLs).
+- **output_indices**: which plan_output entries to include (for messenger/worker). Filters irrelevant setup/install outputs.
+- **relevant_tags**: fact tags for additional retrieval by semantic topic.
+
+### Planner Modules
+
+The planner prompt is modular — `<!-- MODULE: name -->` markers divide it into 11 optional sections plus a core. The briefer selects which modules to include:
+
+| Module | When to include |
+|--------|----------------|
+| `planning_rules` | Non-trivial plans (2+ tasks) |
+| `kiso_native` | User asks for capabilities that might need skills/connectors |
+| `skills_rules` | Plan will use skills |
+| `web` | URLs, websites, or web content mentioned |
+| `data_flow` | Tasks produce large output for later tasks |
+| `scripting` | Data processing or code generation needed |
+| `replan` | Replan context only |
+| `skill_recovery` | Skill is broken or has failed |
+| `kiso_commands` | Kiso administration (skill/connector/env management) |
+| `user_mgmt` | Users, roles, or aliases |
+| `plugin_install` | Skill/connector not installed (also force-injected when no skills exist) |
+
+### Fallback
+
+When `briefer_enabled` is false or the briefer fails, the system falls back to keyword-based module selection and full context injection (original behavior).
+
+**Prompt file**: `kiso/roles/briefer.md`
 
 ---
 
@@ -159,7 +214,7 @@ The planner knows it is the planning component of Kiso, not a generic task plann
 
 ### Prompt Design
 
-**System prompt** (`roles/planner.md`) includes:
+**System prompt** (`roles/planner.md`) is modular — a fixed core plus 11 conditional modules selected by the briefer (see [Briefer](#briefer)). When the briefer is disabled, keyword-based fallback selects modules.
 
 **1. Few-shot examples.** Complete plan examples in `roles/planner.md`. Cover: coding task (msg → skill → exec → msg), research task (skill → msg). All task fields always present (strict mode); nullable fields are `null`.
 

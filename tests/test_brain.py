@@ -5385,3 +5385,195 @@ class TestM258SysEnvAndGapFiltering:
         # Briefer should see system environment in its context
         briefer_content = captured_messages[1]["content"]
         assert "System Environment" in briefer_content
+
+
+# ---------------------------------------------------------------------------
+# M261 — End-to-end token reduction validation
+# ---------------------------------------------------------------------------
+
+
+class TestM261PromptSizeReduction:
+    """M261: verify planner prompt size decreases with selective module loading."""
+
+    def test_core_only_is_smallest(self):
+        """Core-only prompt (no modules) is significantly smaller than all modules."""
+        core_only = _load_modular_prompt("planner", [])
+        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        # Core-only should be less than 25% of full prompt
+        assert len(core_only) < len(all_modules) * 0.25
+
+    def test_core_plus_web_is_small(self):
+        """Core + web module is much smaller than full prompt."""
+        core_web = _load_modular_prompt("planner", ["web"])
+        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        assert len(core_web) < len(all_modules) * 0.35
+
+    def test_install_scenario_moderate(self):
+        """Install scenario includes only relevant modules, not all."""
+        install_prompt = _load_modular_prompt(
+            "planner", ["planning_rules", "kiso_native", "skills_rules", "plugin_install"],
+        )
+        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        # Install scenario should be roughly 50-70% of full
+        assert len(install_prompt) < len(all_modules) * 0.75
+
+    def test_replan_scenario_small(self):
+        """Replan scenario (core + replan + skill_recovery) is compact."""
+        replan_prompt = _load_modular_prompt("planner", ["replan", "skill_recovery"])
+        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        assert len(replan_prompt) < len(all_modules) * 0.40
+
+    def test_all_modules_cover_all_content(self):
+        """All modules combined include all the content from planner.md."""
+        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        # Key content from each module should be present
+        assert "Kiso planner" in all_modules  # core
+        assert "Kiso-native first" in all_modules  # kiso_native
+        assert "task `detail` must be natural language" in all_modules  # planning_rules
+        assert "Atomic operations" in all_modules  # skills_rules
+        assert "NEVER use `apt-get install`" in all_modules  # skill_recovery
+        assert "File-based data flow" in all_modules  # data_flow
+        assert "Web interaction" in all_modules  # web
+        assert "One-liner execution" in all_modules  # scripting
+        assert "extend_replan" in all_modules  # replan
+        assert "kiso skill install" in all_modules  # kiso_commands
+        assert "PROTECTION" in all_modules  # user_mgmt
+        assert "Plugin installation" in all_modules  # plugin_install
+
+
+class TestM261BrieferModuleCoverage:
+    """M261: verify briefer path covers what keyword matching used to handle."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(context_messages=3, briefer_enabled=True),
+            raw={},
+        )
+
+    def _fake_skill(self):
+        return [{"name": "dummy", "summary": "test skill", "args_schema": {}}]
+
+    async def _run_with_briefer_modules(self, db, message, modules):
+        """Run build_planner_messages with a briefer that returns given modules."""
+        briefing = {
+            "modules": modules,
+            "skills": [],
+            "context": "Briefer context.",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        # Provide a fake skill so plugin_install safety net doesn't trigger
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=self._fake_skill()):
+            msgs, _, _ = await build_planner_messages(
+                db, self._config(), "sess1", "user", message,
+            )
+        return msgs[0]["content"]  # system prompt
+
+    async def test_plugin_install_module_selected(self, db):
+        """Briefer selecting plugin_install covers old keyword matching."""
+        system = await self._run_with_briefer_modules(
+            db, "install the browser skill", ["plugin_install"],
+        )
+        assert "Plugin installation" in system
+
+    async def test_kiso_commands_module_selected(self, db):
+        """Briefer selecting kiso_commands covers old kiso keyword matching."""
+        system = await self._run_with_briefer_modules(
+            db, "list kiso envs", ["kiso_commands"],
+        )
+        assert "kiso skill install" in system
+
+    async def test_user_mgmt_module_selected(self, db):
+        """Briefer selecting user_mgmt covers old user keyword matching."""
+        system = await self._run_with_briefer_modules(
+            db, "add user marco", ["user_mgmt"],
+        )
+        assert "PROTECTION" in system
+
+    async def test_zero_modules_for_simple_query(self, db):
+        """Simple query with zero modules gets core-only prompt."""
+        system = await self._run_with_briefer_modules(
+            db, "what time is it?", [],
+        )
+        # Core content present
+        assert "Kiso planner" in system
+        # Module-specific content absent
+        assert "extend_replan" not in system
+        assert "Web interaction" not in system
+        assert "Plugin installation" not in system
+
+
+class TestM261MessengerContextReduction:
+    """M261: verify messenger briefer filters plan_outputs effectively."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_messenger_receives_filtered_outputs(self, db):
+        """M261: messenger with briefer receives only relevant outputs."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(context_messages=3, briefer_enabled=True),
+            raw={},
+        )
+        # Simulate 5 plan outputs, briefer selects only index 4 and 5
+        plan_outputs = [
+            {"index": 1, "type": "exec", "detail": "install deps", "output": "ok", "status": "done"},
+            {"index": 2, "type": "exec", "detail": "check env", "output": "ok", "status": "done"},
+            {"index": 3, "type": "exec", "detail": "download data", "output": "ok", "status": "done"},
+            {"index": 4, "type": "search", "detail": "weather rome", "output": "Sunny 25C", "status": "done"},
+            {"index": 5, "type": "exec", "detail": "format results", "output": "Rome: Sunny", "status": "done"},
+        ]
+
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps({
+                    "modules": [], "skills": [],
+                    "context": "User asked about weather in Rome.",
+                    "output_indices": [4, 5],
+                    "relevant_tags": [],
+                })
+            captured_messages.extend(messages)
+            return "The weather in Rome is sunny."
+
+        from kiso.worker.loop import _msg_task
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            result = await _msg_task(
+                config, db, "sess1", "Answer in English. Tell the user the weather.",
+                plan_outputs=plan_outputs, goal="weather in Rome",
+                user_message="che tempo fa a Roma?",
+            )
+
+        # Messenger should receive filtered context
+        messenger_content = captured_messages[1]["content"]
+        # Relevant outputs present
+        assert "weather rome" in messenger_content or "Sunny" in messenger_content
+        # Briefer context replaces raw summary/facts
+        assert "## Context\nUser asked about weather in Rome." in messenger_content

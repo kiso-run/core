@@ -115,16 +115,23 @@ alternative in the pipeline for web search tasks.
 
 ## Cost Estimation
 
-Typical request with 3 tasks:
+Typical request with 3 tasks (with briefer-enabled deep context filtering):
 
 | Call | Model | Input tok | Output tok | Cost |
 |---|---|---|---|---|
 | Briefer | gemini-flash-lite | 800 | 200 | $0.00016 |
-| Planner | glm-4.7 | 1500 | 500 | $0.00156 |
+| Planner | glm-4.7 | 800–1500 | 500 | $0.00065–0.00156 |
 | Worker x3 | step-3.5-flash | 500 x3 | 100 x3 | $0.00024 |
 | Reviewer x3 | step-3.5-flash | 400 x3 | 100 x3 | $0.00021 |
-| Messenger | qwen-3.5-flash | 1000 | 300 | $0.00038 |
-| **Total** | | | | **~$0.0026** |
+| Messenger | qwen-3.5-flash | 600–1000 | 300 | $0.00024–0.00038 |
+| **Total** | | | | **~$0.0015–0.0026** |
+
+The briefer reduces planner input by selecting only relevant prompt modules
+(core-only: ~300 tok vs all modules: ~2800 tok) and filtering context
+(sys_env, facts, summary). Simple requests ("what time is it?") get the
+smallest prompt; complex requests ("install a skill and configure it") get
+more modules. Messenger context is also filtered — the briefer synthesizes
+only relevant facts and plan outputs.
 
 Comparison: all-deepseek-v3.2 baseline costs ~$0.003 per request with
 significantly worse quality (MMLU 79, LCB 60) and 6x slower planner.
