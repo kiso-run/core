@@ -2893,7 +2893,7 @@ def test_plan_llm_calls_rendered_incrementally(capsys):
 
 
 def test_render_plan_status_shows_inflight_call(capsys):
-    """In verbose mode, inflight_call shows waiting indicator (not full IN panel)."""
+    """In verbose mode, inflight_call shows full IN panel immediately."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {
         "id": 1, "message_id": 1, "status": "running", "goal": "g",
@@ -2916,11 +2916,12 @@ def test_render_plan_status_shows_inflight_call(capsys):
     _render_plan_status(data, 1, False, True, caps, "Bot", state)
     out = capsys.readouterr().out
     assert "planner" in out
-    assert "waiting" in out.lower()
-    # Full IN panel NOT shown — only waiting indicator
-    assert "Deploy it." not in out
+    # Full IN panel shown with content
+    assert "Deploy it." in out
+    assert "IN" in out
     # ts tracked for dedup
     assert 1709553600.0 in state.seen_inflight_ts
+    assert 1709553600.0 in state.inflight_in_shown
 
 
 def test_render_plan_status_inflight_not_repeated(capsys):
@@ -2935,15 +2936,15 @@ def test_render_plan_status_inflight_not_repeated(capsys):
     data = {"plan": plan, "tasks": [], "worker_running": True, "inflight_call": inflight}
     state = _PollRenderState(seen={}, verbose_shown={})
 
-    # First render — should show
+    # First render — should show IN panel
     _render_plan_status(data, 1, False, True, caps, "Bot", state)
     out1 = capsys.readouterr().out
-    assert "waiting" in out1.lower()
+    assert "IN" in out1
 
     # Second render with same ts — should NOT show again
     _render_plan_status(data, 1, False, True, caps, "Bot", state)
     out2 = capsys.readouterr().out
-    assert "waiting" not in out2.lower()
+    assert "IN" not in out2
 
 
 def test_render_plan_status_inflight_not_shown_in_quiet(capsys):
@@ -2965,8 +2966,8 @@ def test_render_plan_status_inflight_not_shown_in_quiet(capsys):
     assert "waiting" not in out.lower()
 
 
-def test_inflight_then_complete_shows_paired_panels(capsys):
-    """When an inflight call completes, both IN and OUT panels are rendered as a pair."""
+def test_inflight_then_complete_shows_split_panels(capsys):
+    """Inflight shows IN panel immediately; completion shows only OUT panel."""
     import json as _json
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
 
@@ -2977,7 +2978,7 @@ def test_inflight_then_complete_shows_paired_panels(capsys):
         "ts": inflight_ts,
     }
 
-    # Phase 1: inflight call shows only waiting indicator (not IN panel)
+    # Phase 1: inflight call shows full IN panel immediately
     plan_running = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
     data1 = {
         "plan": plan_running, "tasks": [], "worker_running": True,
@@ -2986,10 +2987,10 @@ def test_inflight_then_complete_shows_paired_panels(capsys):
     state = _PollRenderState(seen={}, verbose_shown={})
     _render_plan_status(data1, 1, False, True, caps, "Bot", state)
     out1 = capsys.readouterr().out
-    assert "waiting" in out1.lower()
-    assert "INFLIGHT_INPUT_MARKER" not in out1  # no full IN panel
+    assert "INFLIGHT_INPUT_MARKER" in out1  # full IN panel shown
+    assert "IN" in out1
 
-    # Phase 2: call completes → appears in plan's llm_calls
+    # Phase 2: call completes → only OUT panel (IN was already shown)
     completed_call = {
         "role": "planner", "model": "deepseek/deepseek-v3",
         "input_tokens": 500, "output_tokens": 200,
@@ -3004,23 +3005,19 @@ def test_inflight_then_complete_shows_paired_panels(capsys):
     data2 = {"plan": plan_done, "tasks": [], "worker_running": False}
     _render_plan_status(data2, 1, False, True, caps, "Bot", state)
     out2 = capsys.readouterr().out
-    # Both IN and OUT panels rendered as a pair
-    assert "INFLIGHT_INPUT_MARKER" in out2  # IN panel with content
-    assert "COMPLETED_OUTPUT_MARKER" in out2  # OUT panel with response
-    # IN appears before OUT
-    in_pos = out2.index("INFLIGHT_INPUT_MARKER")
-    out_pos = out2.index("COMPLETED_OUTPUT_MARKER")
-    assert in_pos < out_pos
+    # OUT panel shown, IN panel NOT re-shown
+    assert "COMPLETED_OUTPUT_MARKER" in out2
+    assert "INFLIGHT_INPUT_MARKER" not in out2  # IN already shown in phase 1
 
 
 def test_classifier_and_planner_show_paired_in_out(capsys):
-    """Both classifier and planner show IN+OUT pairs when llm_calls arrive."""
+    """Classifier IN from inflight, then both OUT panels when llm_calls arrive."""
     import json as _json
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     ts_cls = 1700000001.0
     ts_plan = 1700000002.0
 
-    # Phase 1: classifier inflight → only waiting indicator
+    # Phase 1: classifier inflight → full IN panel shown
     state = _PollRenderState(seen={}, verbose_shown={})
     data1 = {
         "plan": None, "tasks": [], "worker_running": True,
@@ -3033,8 +3030,7 @@ def test_classifier_and_planner_show_paired_in_out(capsys):
     }
     _render_plan_status(data1, 1, False, True, caps, "Bot", state)
     out1 = capsys.readouterr().out
-    assert "waiting" in out1.lower()
-    assert "CLASSIFIER_INPUT" not in out1  # no full IN panel during inflight
+    assert "CLASSIFIER_INPUT" in out1  # full IN panel shown from inflight
 
     # Phase 2: plan created with both calls in llm_calls
     classifier_call = {
@@ -3059,17 +3055,16 @@ def test_classifier_and_planner_show_paired_in_out(capsys):
     _render_plan_status(data2, 1, False, True, caps, "Bot", state)
     out2 = capsys.readouterr().out
 
-    # Both IN+OUT pairs rendered
-    assert "CLASSIFIER_INPUT" in out2
+    # Classifier IN was already shown → only OUT rendered; planner IN+OUT both rendered
+    assert "CLASSIFIER_INPUT" not in out2  # IN already shown in phase 1
     assert "CLASSIFIER_RESPONSE" in out2
     assert "PLANNER_INPUT" in out2
     assert "PLANNER_RESPONSE" in out2
-    # Order: classifier IN before classifier OUT, planner IN before planner OUT
-    cls_in = out2.index("CLASSIFIER_INPUT")
+    # Classifier OUT before planner IN before planner OUT
     cls_out = out2.index("CLASSIFIER_RESPONSE")
     pln_in = out2.index("PLANNER_INPUT")
     pln_out = out2.index("PLANNER_RESPONSE")
-    assert cls_in < cls_out < pln_in < pln_out
+    assert cls_out < pln_in < pln_out
 
 
 def test_classifier_output_shows_without_inflight(capsys):
@@ -3195,11 +3190,11 @@ def test_spinner_restored_after_inflight_clears_it():
 
 
 def test_m267_duplicate_planner_inflight_suppressed(capsys):
-    """Two planner inflight events (validation retry) → only first renders."""
+    """Two planner inflight events (validation retry) → only first renders IN panel."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     state = _PollRenderState(seen={}, verbose_shown={})
 
-    # First planner inflight
+    # First planner inflight → full IN panel
     data1 = {
         "plan": None, "tasks": [], "worker_running": True,
         "worker_phase": "planning",
@@ -3211,7 +3206,7 @@ def test_m267_duplicate_planner_inflight_suppressed(capsys):
     }
     _render_plan_status(data1, 1, False, True, caps, "Bot", state)
     out1 = capsys.readouterr().out
-    assert "waiting" in out1.lower()
+    assert "PLAN_ATTEMPT_1" in out1
 
     # Second planner inflight (validation retry, different ts)
     data2 = {
@@ -3226,16 +3221,15 @@ def test_m267_duplicate_planner_inflight_suppressed(capsys):
     _render_plan_status(data2, 1, False, True, caps, "Bot", state)
     out2 = capsys.readouterr().out
     # Second inflight for same role must be suppressed
-    assert "waiting" not in out2.lower()
     assert "PLAN_ATTEMPT_2" not in out2
 
 
 def test_m267_different_roles_both_render(capsys):
-    """Inflight indicators for different roles both render."""
+    """Inflight IN panels for different roles both render."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     state = _PollRenderState(seen={}, verbose_shown={})
 
-    # Planner inflight
+    # Planner inflight → IN panel
     data1 = {
         "plan": None, "tasks": [], "worker_running": True,
         "worker_phase": "planning",
@@ -3247,9 +3241,9 @@ def test_m267_different_roles_both_render(capsys):
     }
     _render_plan_status(data1, 1, False, True, caps, "Bot", state)
     out1 = capsys.readouterr().out
-    assert "waiting" in out1.lower()
+    assert "PLANNER_MSG" in out1
 
-    # Briefer inflight (different role) → should also render
+    # Briefer inflight (different role) → should also render IN panel
     data2 = {
         "plan": None, "tasks": [], "worker_running": True,
         "worker_phase": "planning",
@@ -3261,7 +3255,7 @@ def test_m267_different_roles_both_render(capsys):
     }
     _render_plan_status(data2, 1, False, True, caps, "Bot", state)
     out2 = capsys.readouterr().out
-    assert "waiting" in out2.lower()
+    assert "BRIEFER_MSG" in out2
 
 
 def test_m267_role_reset_after_out_panel(capsys):
@@ -3272,7 +3266,7 @@ def test_m267_role_reset_after_out_panel(capsys):
 
     ts_plan = 1700000001.0
 
-    # Step 1: planner inflight
+    # Step 1: planner inflight → IN panel shown
     data1 = {
         "plan": None, "tasks": [], "worker_running": True,
         "worker_phase": "planning",
@@ -3284,7 +3278,7 @@ def test_m267_role_reset_after_out_panel(capsys):
     }
     _render_plan_status(data1, 1, False, True, caps, "Bot", state)
     out1 = capsys.readouterr().out
-    assert "waiting" in out1.lower()
+    assert "PLAN_V1" in out1
     assert "planner" in state.inflight_roles_shown
 
     # Step 2: plan created with completed call → OUT panel renders, role cleared
@@ -3317,4 +3311,4 @@ def test_m267_role_reset_after_out_panel(capsys):
     }
     _render_plan_status(data3, 1, False, True, caps, "Bot", state)
     out3 = capsys.readouterr().out
-    assert "waiting" in out3.lower()
+    assert "REPLAN_V2" in out3

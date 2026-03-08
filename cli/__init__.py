@@ -550,15 +550,21 @@ class _PollRenderState:
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
     seen_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight indicators
     inflight_roles_shown: set = dataclasses.field(default_factory=set)  # roles with active (unresolved) inflight indicators
+    inflight_in_shown: set = dataclasses.field(default_factory=set)  # ts values whose IN panel was rendered from inflight
 
 
 def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> None:
     """Print input+output panels for *calls* as paired IN→OUT."""
     from cli.render import render_llm_call_input_panel, render_llm_call_output_panel
     for c in calls:
-        in_panel = render_llm_call_input_panel(c, caps)
-        if in_panel:
-            print(in_panel)
+        # Skip IN panel if already rendered from inflight data
+        ts = c.get("ts")
+        if ts and ts in state.inflight_in_shown:
+            state.inflight_in_shown.discard(ts)
+        else:
+            in_panel = render_llm_call_input_panel(c, caps)
+            if in_panel:
+                print(in_panel)
         out_panel = render_llm_call_output_panel(c, caps)
         if out_panel:
             print(out_panel)
@@ -923,12 +929,10 @@ def _render_plan_status(
     if state.planning_phase and not was_planning:
         state.spinner_start = time.monotonic()
 
-    # Render inflight LLM call indicator (verbose mode)
-    # NOTE: we do NOT show the full IN panel here — that would cause
-    # IN IN OUT OUT batching when multiple calls happen between polls.
-    # Instead, we show only the waiting indicator.  The full IN+OUT pair
-    # is rendered later via _print_verbose_panels when the call completes,
-    # guaranteeing each IN is immediately followed by its OUT.
+    # Render inflight LLM call: show full IN panel so the user can see
+    # what was sent while the model is thinking.  When the completed
+    # llm_calls entry arrives later, _print_verbose_panels will skip the
+    # IN panel (already shown) and render only the OUT panel.
     if verbose and not quiet:
         inflight = data.get("inflight_call")
         if inflight and inflight.get("messages"):
@@ -939,7 +943,13 @@ def _render_plan_status(
                 # M267: skip duplicate indicator for same role (e.g. planner validation retry)
                 if inflight_role is None or inflight_role not in state.inflight_roles_shown:
                     _clear_spinner()
-                    print(render_inflight_indicator(inflight, caps))
+                    from cli.render import render_llm_call_input_panel
+                    in_panel = render_llm_call_input_panel(inflight, caps)
+                    if in_panel:
+                        print(in_panel)
+                        state.inflight_in_shown.add(inflight_ts)
+                    else:
+                        print(render_inflight_indicator(inflight, caps))
                     if inflight_role is not None:
                         state.inflight_roles_shown.add(inflight_role)
 
