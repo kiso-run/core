@@ -271,36 +271,43 @@ ask_username() {
     echo ""
 
     # Tab-completion for available usernames.
-    # `read -e` uses readline, but `complete -W` only works for command-line
-    # completion, not inside read.  We bind a custom function via `bind -x`
-    # that edits the readline buffer directly (READLINE_LINE/READLINE_POINT).
+    # `read -e` uses readline but programmable completion (`complete -W`)
+    # does not apply to `read` builtins.  We use `bind -x` to intercept
+    # TAB and edit READLINE_LINE directly.  The bind -x callback runs
+    # under the script's `set -e`, so we temporarily disable it for the
+    # entire prompt block to prevent non-zero exits from killing the script.
     local _kiso_user_words=""
     local _kiso_user_prompt="User [$default_user]: "
+
+    set +e  # bind -x callbacks inherit errexit; disable for prompt block
     if [[ -n "$available_users" ]]; then
         _kiso_user_words="${available_users//$'\n'/ }"
         _kiso_complete_user() {
             local cur="${READLINE_LINE:0:$READLINE_POINT}"
             cur="${cur#"${cur%%[![:space:]]*}"}"
             local matches
-            matches="$(compgen -W "$_kiso_user_words" -- "$cur")"
-            [[ -z "$matches" ]] && return
-            local -a match_arr
-            IFS=$'\n' read -r -d '' -a match_arr <<< "$matches"
+            matches="$(compgen -W "$_kiso_user_words" -- "$cur" 2>/dev/null)" || true
+            if [[ -z "$matches" ]]; then return 0; fi
+            local -a match_arr=()
+            while IFS= read -r _line; do
+                match_arr+=("$_line")
+            done <<< "$matches"
             if [[ ${#match_arr[@]} -eq 1 ]]; then
-                READLINE_LINE="$matches"
+                READLINE_LINE="${match_arr[0]}"
                 READLINE_POINT=${#READLINE_LINE}
-            else
+            elif [[ ${#match_arr[@]} -gt 1 ]]; then
                 echo ""
                 echo "$matches"
                 printf "%s%s" "$_kiso_user_prompt" "$cur"
             fi
+            return 0
         }
         bind -x '"\t": _kiso_complete_user' 2>/dev/null || true
     fi
 
-    local kiso_user
-    while true; do
-        read -erp "$_kiso_user_prompt" kiso_user
+    local kiso_user _user_valid=0
+    while [[ $_user_valid -eq 0 ]]; do
+        read -erp "$_kiso_user_prompt" kiso_user || true
         kiso_user="${kiso_user:-$default_user}"
         if [[ ! "$kiso_user" =~ $USERNAME_RE ]]; then
             red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
@@ -312,12 +319,14 @@ ask_username() {
             echo "  Then enter the name again, or press Ctrl+C to abort."
             continue
         fi
-        KISO_USER="$kiso_user"
-        # Restore default readline TAB behavior
-        bind '"\t": complete' 2>/dev/null || true
-        unset -f _kiso_complete_user 2>/dev/null || true
-        return
+        _user_valid=1
     done
+    set -e  # restore errexit
+
+    KISO_USER="$kiso_user"
+    # Restore default readline TAB behavior
+    bind '"\t": complete' 2>/dev/null || true
+    unset -f _kiso_complete_user 2>/dev/null || true
 }
 
 PROVIDER_NAME=""
