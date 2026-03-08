@@ -5900,3 +5900,61 @@ class TestM272BrieferSimpleConsumers:
         assert "Available Skills" not in content
         # Worker keeps plan_outputs (needed for command context)
         assert "Plan Outputs" in content
+
+
+# --- M274: no Italian keywords in fallback path ---
+
+
+@pytest.mark.asyncio()
+class TestM274NoItalianKeywords:
+    """M274: keyword fallback path uses only English keywords."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self):
+        return _make_brain_config()
+
+    async def test_utente_does_not_trigger_user_mgmt(self, db):
+        """Italian 'utente' no longer triggers user_mgmt module."""
+        fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "crea un utente nuovo",
+            )
+        system = msgs[0]["content"]
+        assert "PROTECTION" not in system
+
+    async def test_installa_does_not_trigger_plugin_install(self, db):
+        """Italian 'installa' no longer triggers plugin_install module."""
+        fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "installa il browser",
+            )
+        system = msgs[0]["content"]
+        assert "Plugin installation:" not in system
+
+    async def test_english_install_still_works(self, db):
+        """English 'install' still triggers plugin_install module."""
+        msgs, *_ = await build_planner_messages(
+            db, self._config(), "test-session", "admin",
+            "install the browser connector",
+        )
+        system = msgs[0]["content"]
+        assert "Plugin installation:" in system
+
+    async def test_english_user_still_works(self, db):
+        """English 'user' still triggers user_mgmt module."""
+        msgs, *_ = await build_planner_messages(
+            db, self._config(), "test-session", "admin",
+            "add a new user bob",
+        )
+        system = msgs[0]["content"]
+        assert "PROTECTION" in system

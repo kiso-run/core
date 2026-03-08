@@ -736,10 +736,10 @@ async def build_planner_messages(
         msg_words = set(msg_lower.split())
         if {"skill", "connector", "env", "instance", "kiso"} & msg_words:
             fallback_modules.append("kiso_commands")
-        if {"user", "utente", "admin", "alias"} & msg_words:
+        if {"user", "admin", "alias"} & msg_words:
             fallback_modules.append("user_mgmt")
         _plugin_kw_hit = (
-            {"install", "installa", "plugin", "add"} & msg_words
+            {"install", "plugin", "add"} & msg_words
             or "not installed" in msg_lower
             or "registry" in msg_lower
         )
