@@ -51,3 +51,16 @@ async def test_health_disk_used_is_kiso_dir_size(client: httpx.AsyncClient):
             f"disk used ({disk['used']} GB) >= total ({disk['limit']} GB) — "
             f"likely measuring whole filesystem instead of KISO_DIR"
         )
+
+
+async def test_health_disk_limit_from_config(client: httpx.AsyncClient):
+    """M231: disk_gb.limit should use max_disk_gb from config, not filesystem total."""
+    from kiso.main import app
+    max_disk = app.state.config.settings.get("max_disk_gb")
+    resp = await client.get("/health")
+    data = resp.json()
+    disk_limit = data["resources"]["disk_gb"]["limit"]
+    if max_disk is not None:
+        assert disk_limit == max_disk, (
+            f"disk limit ({disk_limit}) should match config max_disk_gb ({max_disk})"
+        )
