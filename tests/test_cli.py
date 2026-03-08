@@ -3189,3 +3189,132 @@ def test_spinner_restored_after_inflight_clears_it():
     # Second render: same task_key — task loop skips, but spinner must persist
     _render_plan_status(data, 1, False, True, caps, "Bot", state)
     assert state.active_spinner_task is running_task
+
+
+# ---------- M267: deduplicate inflight indicator on validation retry ----------
+
+
+def test_m267_duplicate_planner_inflight_suppressed(capsys):
+    """Two planner inflight events (validation retry) → only first renders."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    # First planner inflight
+    data1 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "planner", "model": "deepseek/deepseek-v3.2",
+            "messages": [{"role": "user", "content": "PLAN_ATTEMPT_1"}],
+            "ts": 1700000001.0,
+        },
+    }
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "waiting" in out1.lower()
+
+    # Second planner inflight (validation retry, different ts)
+    data2 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "planner", "model": "deepseek/deepseek-v3.2",
+            "messages": [{"role": "user", "content": "PLAN_ATTEMPT_2"}],
+            "ts": 1700000002.0,
+        },
+    }
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    # Second inflight for same role must be suppressed
+    assert "waiting" not in out2.lower()
+    assert "PLAN_ATTEMPT_2" not in out2
+
+
+def test_m267_different_roles_both_render(capsys):
+    """Inflight indicators for different roles both render."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    # Planner inflight
+    data1 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "planner", "model": "m1",
+            "messages": [{"role": "user", "content": "PLANNER_MSG"}],
+            "ts": 1700000001.0,
+        },
+    }
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "waiting" in out1.lower()
+
+    # Briefer inflight (different role) → should also render
+    data2 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "briefer", "model": "m2",
+            "messages": [{"role": "user", "content": "BRIEFER_MSG"}],
+            "ts": 1700000002.0,
+        },
+    }
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    assert "waiting" in out2.lower()
+
+
+def test_m267_role_reset_after_out_panel(capsys):
+    """After OUT panel renders for a role, a new inflight for that role renders again."""
+    import json as _json
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    ts_plan = 1700000001.0
+
+    # Step 1: planner inflight
+    data1 = {
+        "plan": None, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "planner", "model": "m1",
+            "messages": [{"role": "user", "content": "PLAN_V1"}],
+            "ts": ts_plan,
+        },
+    }
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "waiting" in out1.lower()
+    assert "planner" in state.inflight_roles_shown
+
+    # Step 2: plan created with completed call → OUT panel renders, role cleared
+    planner_call = {
+        "role": "planner", "model": "m1",
+        "input_tokens": 500, "output_tokens": 100,
+        "messages": [{"role": "user", "content": "PLAN_V1"}],
+        "response": "PLAN_RESULT",
+        "ts": ts_plan, "duration_ms": 3000,
+    }
+    plan = {
+        "id": 1, "message_id": 1, "status": "running", "goal": "Do stuff",
+        "llm_calls": _json.dumps([planner_call]),
+    }
+    data2 = {"plan": plan, "tasks": [], "worker_running": True, "worker_phase": "executing"}
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    capsys.readouterr()  # consume output
+    # Role should be cleared after OUT panel
+    assert "planner" not in state.inflight_roles_shown
+
+    # Step 3: new planner inflight (replan) → should render again
+    data3 = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "worker_phase": "planning",
+        "inflight_call": {
+            "role": "planner", "model": "m1",
+            "messages": [{"role": "user", "content": "REPLAN_V2"}],
+            "ts": 1700000005.0,
+        },
+    }
+    _render_plan_status(data3, 1, False, True, caps, "Bot", state)
+    out3 = capsys.readouterr().out
+    assert "waiting" in out3.lower()

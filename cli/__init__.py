@@ -549,6 +549,7 @@ class _PollRenderState:
     at_col0: bool = True
     verbose_shown: dict = None  # tid → number of verbose LLM calls already rendered
     seen_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight indicators
+    inflight_roles_shown: set = dataclasses.field(default_factory=set)  # roles with active (unresolved) inflight indicators
 
 
 def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> None:
@@ -561,6 +562,10 @@ def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> N
         out_panel = render_llm_call_output_panel(c, caps)
         if out_panel:
             print(out_panel)
+        # M267: allow this role to show a new inflight indicator in future phases
+        role = c.get("role")
+        if role:
+            state.inflight_roles_shown.discard(role)
 
 
 def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
@@ -928,10 +933,15 @@ def _render_plan_status(
         inflight = data.get("inflight_call")
         if inflight and inflight.get("messages"):
             inflight_ts = inflight.get("ts")
+            inflight_role = inflight.get("role") or None
             if inflight_ts and inflight_ts not in state.seen_inflight_ts:
-                _clear_spinner()
-                print(render_inflight_indicator(inflight, caps))
                 state.seen_inflight_ts.add(inflight_ts)
+                # M267: skip duplicate indicator for same role (e.g. planner validation retry)
+                if inflight_role is None or inflight_role not in state.inflight_roles_shown:
+                    _clear_spinner()
+                    print(render_inflight_indicator(inflight, caps))
+                    if inflight_role is not None:
+                        state.inflight_roles_shown.add(inflight_role)
 
     # Restore spinner for running tasks after inflight/phase rendering
     # may have cleared it via _clear_spinner().
