@@ -4501,6 +4501,18 @@ class TestM194ReviewerDomainCheck:
         system_content = msgs[0]["content"]
         assert "wrong domain" in system_content
 
+    def test_m280_truncated_output_rule(self):
+        """M280: reviewer prompt handles truncated output gracefully."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "[truncated]" in prompt
+        assert "do NOT replan just because output was truncated" in prompt
+
+    def test_m280_partial_success_rule(self):
+        """M280: reviewer prompt defines partial success boundaries."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "Partial success" in prompt
+        assert "warnings" in prompt.lower()
+
 
 class TestM195AutoCorrectUninstalledSkill:
     """M195: Auto-correct plan when planner keeps using uninstalled skills."""
