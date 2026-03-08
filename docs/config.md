@@ -61,13 +61,15 @@ role = "user"
 skills = ["search", "aider"]
 
 [models]
-planner     = "deepseek/deepseek-v3.2"
-reviewer    = "deepseek/deepseek-v3.2"
-curator     = "deepseek/deepseek-v3.2"
-worker      = "deepseek/deepseek-v3.2"
-summarizer  = "deepseek/deepseek-v3.2"
-paraphraser = "deepseek/deepseek-v3.2"
-messenger   = "deepseek/deepseek-v3.2"
+briefer     = "google/gemini-2.5-flash-lite"
+classifier  = "google/gemini-2.5-flash-lite"
+planner     = "glm/glm-4.7"
+reviewer    = "step/step-3.5-flash"
+curator     = "google/gemini-2.5-flash-lite"
+worker      = "step/step-3.5-flash"
+summarizer  = "google/gemini-2.5-flash-lite"
+paraphraser = "google/gemini-2.5-flash-lite"
+messenger   = "qwen/qwen-3.5-flash"
 searcher    = "perplexity/sonar"
 
 [settings]
@@ -187,7 +189,7 @@ base_url = "http://localhost:11434/v1"
 Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-deepseek/deepseek-v3.2           → first provider, model "deepseek/deepseek-v3.2"
+glm/glm-4.7                      → first provider, model "glm/glm-4.7"
 perplexity/sonar                 → first provider, model "perplexity/sonar"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```

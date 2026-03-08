@@ -53,7 +53,7 @@ uv run pytest tests/live/ -v
 
 ## Cost
 
-A full run of all live tests makes roughly 30-50 LLM calls using the models in `MODEL_DEFAULTS` (deepseek-v3.2 for all roles). Estimated cost: **~$0.30-1.00 per full run** via OpenRouter.
+A full run of all live tests makes roughly 30-50 LLM calls using the models in `MODEL_DEFAULTS` (see `docs/model-selection.md` for current defaults). Estimated cost: **~$0.20-0.80 per full run** via OpenRouter.
 
 ## Test Levels
 

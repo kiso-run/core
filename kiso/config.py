@@ -66,15 +66,15 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "briefer": "qwen/qwen-3.5-flash",
-    "classifier": "step/step-3.5-flash",
+    "briefer": "google/gemini-2.5-flash-lite",
+    "classifier": "google/gemini-2.5-flash-lite",
     "planner": "glm/glm-4.7",
     "reviewer": "step/step-3.5-flash",
-    "curator": "step/step-3.5-flash",
+    "curator": "google/gemini-2.5-flash-lite",
     "worker": "step/step-3.5-flash",
-    "summarizer": "qwen/qwen-3.5-flash",
-    "paraphraser": "step/step-3.5-flash",
-    "messenger": "kimi/kimi-k2.5",
+    "summarizer": "google/gemini-2.5-flash-lite",
+    "paraphraser": "google/gemini-2.5-flash-lite",
+    "messenger": "qwen/qwen-3.5-flash",
     "searcher": "perplexity/sonar",
 }
 
@@ -112,18 +112,18 @@ role = "admin"
 # aliases.discord = "YourDiscordUser#1234"
 
 [models]
-# Format: "provider/model-name" — provider must exist in [providers]
-# All models route through your configured gateway (e.g., OpenRouter)
-briefer     = "qwen/qwen-3.5-flash"       # context selection (fast, cheap)
-classifier  = "step/step-3.5-flash"        # message classification (fast)
-planner     = "glm/glm-4.7"               # plan generation (strong reasoning)
-reviewer    = "step/step-3.5-flash"        # output review (fast, structured)
-curator     = "step/step-3.5-flash"        # knowledge curation (fast)
-worker      = "step/step-3.5-flash"        # command translation (fast)
-summarizer  = "qwen/qwen-3.5-flash"       # conversation summary (fast, cheap)
-paraphraser = "step/step-3.5-flash"        # prompt injection defense (fast)
-messenger   = "kimi/kimi-k2.5"             # user-facing responses (natural language)
-searcher    = "perplexity/sonar"           # web search (native search API)
+# Format: "provider/model-name" — all route through your gateway (e.g., OpenRouter)
+# See docs/model-selection.md for rationale and alternatives
+briefer     = "google/gemini-2.5-flash-lite"  # context selection (150 t/s, cheapest)
+classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, simple)
+planner     = "glm/glm-4.7"                   # plan generation (MMLU 83, 130 t/s)
+reviewer    = "step/step-3.5-flash"            # output review (LCB 86, structured)
+curator     = "google/gemini-2.5-flash-lite"   # knowledge curation (simple classification)
+worker      = "step/step-3.5-flash"            # command translation (LCB 86, coding)
+summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, cheap)
+paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
+messenger   = "qwen/qwen-3.5-flash"            # user-facing responses (MMLU 82, natural)
+searcher    = "perplexity/sonar"               # web search (native search API)
 
 [settings]
 # --- conversation ---

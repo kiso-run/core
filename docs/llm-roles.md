@@ -46,7 +46,7 @@ Key principle: the planner must put everything the worker needs into the task `d
 
 **Purpose**: skip the planner for purely conversational messages (greetings, thanks, follow-up questions). If the classifier returns `"chat"`, the message goes directly to the messenger (fast path). If `"plan"`, the full planning pipeline runs.
 
-**Model**: use a fast, cheap model — the task is trivially simple (one-word classification). Default: `deepseek/deepseek-chat`. Using a reasoning model here wastes time and tokens.
+**Model**: use a fast, cheap model — the task is trivially simple (one-word classification). Default: `google/gemini-2.5-flash-lite`. Using a reasoning model here wastes time and tokens.
 
 **Fallback**: on LLM error, timeout, or ambiguous output, falls back to `"plan"` (safe — the planner handles everything).
 
@@ -123,7 +123,7 @@ Provider guarantees valid JSON at decoding level — no parse retries needed. If
 ```
 Provider "ollama" does not support structured output.
 Planner, Reviewer, and Curator require it. Route these roles to a compatible provider
-(e.g. models.planner = "openrouter:deepseek/deepseek-v3.2").
+(e.g. models.planner = "openrouter:glm/glm-4.7").
 ```
 
 Structured output is a hard requirement for Planner, Reviewer, and Curator. Worker, Searcher, Summarizer, and Paraphraser produce free-form text.
