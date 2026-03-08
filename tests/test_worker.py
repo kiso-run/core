@@ -2438,6 +2438,16 @@ class TestM201IntentMsgInjection:
         assert db_tasks[1]["type"] == "exec"
         await db.close()
 
+    def test_m264_intent_msg_says_system(self):
+        """M264: intent msg says 'the system is about to do', not 'you're about to do'."""
+        tasks = [
+            {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "echo world", "skill": None, "args": None, "expect": "ok"},
+        ]
+        result = _maybe_inject_intent_msg(tasks, "greet")
+        assert "the system is about to do" in result[0]["detail"]
+        assert "you're about to do" not in result[0]["detail"]
+
 
 # --- store: save_learning ---
 

@@ -562,7 +562,7 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
     intent_task = {
         "type": TASK_TYPE_MSG,
         "detail": (
-            f"{lang_prefix}Briefly tell the user what you're about to do. "
+            f"{lang_prefix}Briefly tell the user what the system is about to do. "
             f"Plan: {task_summary}"
         ),
         "skill": None,
