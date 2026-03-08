@@ -342,6 +342,35 @@ def invalidate_prompt_cache() -> None:
     _prompt_cache.clear()
 
 
+_MODULE_MARKER_RE = re.compile(r"<!--\s*MODULE:\s*(\w+)\s*-->")
+
+
+def _load_modular_prompt(role: str, modules: list[str]) -> str:
+    """Load a role prompt, returning only core + selected modules.
+
+    The prompt file must use ``<!-- MODULE: name -->`` markers to delimit
+    sections.  The ``core`` module is always included.  If no markers are
+    found the full prompt is returned unchanged (backward compat).
+    """
+    full_text = _load_system_prompt(role)
+    parts = _MODULE_MARKER_RE.split(full_text)
+    # If no markers found, return full prompt
+    if len(parts) <= 1:
+        return full_text
+
+    # parts alternates: [preamble, name1, text1, name2, text2, ...]
+    # preamble (parts[0]) is discarded — prompt files must start with a marker.
+    wanted = {"core"} | set(modules)
+    sections: list[str] = []
+    for i in range(1, len(parts), 2):
+        name = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        if name in wanted:
+            sections.append(body)
+    stripped = [s.strip() for s in sections]
+    return "\n".join(s for s in stripped if s)
+
+
 def _build_messages(system_prompt: str, user_content: str) -> list[dict]:
     """Assemble the canonical [system, user] message pair used by all LLM roles."""
     return [

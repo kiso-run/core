@@ -24,6 +24,7 @@ from kiso.brain import (
     PlanError,
     ReviewError,
     SummarizerError,
+    _load_modular_prompt,
     _load_system_prompt,
     _prompt_cache,
     _ROLES_DIR,
@@ -4614,3 +4615,91 @@ class TestBrieferSchema:
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
+
+
+# ---------------------------------------------------------------------------
+# _load_modular_prompt (M243)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadModularPrompt:
+    """Tests for _load_modular_prompt — module marker parsing."""
+
+    def test_planner_core_only(self):
+        """Loading only core returns identity + rules without conditional modules."""
+        result = _load_modular_prompt("planner", [])
+        assert "Kiso planner" in result
+        assert "Task types:" in result
+        # Conditional modules should be absent
+        assert "Web interaction:" not in result
+        assert "Scripting:" not in result
+        assert "extend_replan" not in result
+        assert "Broken skill recovery" not in result
+        assert "File-based data flow" not in result
+
+    def test_planner_core_plus_web(self):
+        """Loading core + web includes web rules but not others."""
+        result = _load_modular_prompt("planner", ["web"])
+        assert "Kiso planner" in result
+        assert "Web interaction:" in result
+        assert "browser" in result.lower()
+        # Other modules absent
+        assert "Scripting:" not in result
+        assert "extend_replan" not in result
+
+    def test_planner_core_plus_replan(self):
+        """Loading core + replan includes replan strategy rules."""
+        result = _load_modular_prompt("planner", ["replan"])
+        assert "extend_replan" in result
+        assert "Strategy diversification" in result
+        assert "Act on reviewer fixes" in result
+        # Others absent
+        assert "Web interaction:" not in result
+        assert "Scripting:" not in result
+
+    def test_planner_core_plus_scripting(self):
+        """Loading core + scripting includes scripting rules."""
+        result = _load_modular_prompt("planner", ["scripting"])
+        assert "Scripting:" in result
+        assert "python -c" in result
+        assert "Web interaction:" not in result
+
+    def test_planner_core_plus_skill_recovery(self):
+        """Loading core + skill_recovery includes deps.sh and broken skill rules."""
+        result = _load_modular_prompt("planner", ["skill_recovery"])
+        assert "deps.sh" in result
+        assert "Broken skill recovery" in result
+
+    def test_planner_core_plus_data_flow(self):
+        """Loading core + data_flow includes file-based data flow rules."""
+        result = _load_modular_prompt("planner", ["data_flow"])
+        assert "File-based data flow" in result
+        assert "truncated at 4KB" in result
+
+    def test_all_modules_returns_full_content(self):
+        """Loading all modules returns content equivalent to the full prompt."""
+        full = _load_system_prompt("planner")
+        modular = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        # All key sections present
+        assert "Kiso planner" in modular
+        assert "Web interaction:" in modular
+        assert "Scripting:" in modular
+        assert "extend_replan" in modular
+        assert "Broken skill recovery" in modular
+        assert "File-based data flow" in modular
+
+    def test_no_markers_returns_full_prompt(self):
+        """Prompt without markers returns the full text (backward compat)."""
+        prompt_text = "You are a test role.\nNo markers here."
+        with patch("kiso.brain._load_system_prompt", return_value=prompt_text):
+            result = _load_modular_prompt("testrole", ["web"])
+        assert result == prompt_text
+
+    def test_multiple_modules_combined(self):
+        """Loading multiple modules concatenates them with core."""
+        result = _load_modular_prompt("planner", ["web", "scripting", "data_flow"])
+        assert "Web interaction:" in result
+        assert "Scripting:" in result
+        assert "File-based data flow" in result
+        assert "extend_replan" not in result
+        assert "Broken skill recovery" not in result
