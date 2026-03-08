@@ -4686,6 +4686,19 @@ class TestBrieferMessages:
         system = msgs[0]["content"]
         assert "System Environment" in system
 
+    def test_m281_fast_path_examples(self):
+        """M281: briefer prompt has explicit fast-path examples."""
+        prompt = (_ROLES_DIR / "briefer.md").read_text()
+        assert "Fast-path" in prompt
+        assert "greetings" in prompt.lower()
+        assert "Needs modules" in prompt
+
+    def test_m281_conflict_handling(self):
+        """M281: briefer prompt has conflict handling guidance."""
+        prompt = (_ROLES_DIR / "briefer.md").read_text()
+        assert "Conflicting facts" in prompt
+        assert "most recent" in prompt.lower()
+
     def test_m265_messenger_no_modules_or_skills_rule(self):
         """M265: briefer prompt says messenger gets modules=[] and skills=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
