@@ -24,6 +24,8 @@ asyncio_mode = "auto"
 markers = [
     "llm_live: tests that call real LLMs (requires --llm-live and KISO_LLM_API_KEY)",
     "live_network: tests that call external services (requires --live-network)",
+    "functional: full pipeline functional tests (requires --functional and KISO_LLM_API_KEY)",
+    "destructive: functional tests with irreversible side effects (requires --destructive)",
 ]
 filterwarnings = [
     # pytest-asyncio: subprocess transport.__del__ fires after event loop closes.

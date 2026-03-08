@@ -28,6 +28,14 @@ def pytest_addoption(parser):
         "--live-network", action="store_true", default=False,
         help="Run tests that call external services (GitHub, etc.)",
     )
+    parser.addoption(
+        "--functional", action="store_true", default=False,
+        help="Run full pipeline functional tests (requires KISO_LLM_API_KEY)",
+    )
+    parser.addoption(
+        "--destructive", action="store_true", default=False,
+        help="Run destructive functional tests with real side effects",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -49,6 +57,32 @@ def pytest_collection_modifyitems(config, items):
         skip = pytest.mark.skip(reason="Need --live-network flag to run network tests")
         for item in items:
             if "live_network" in item.keywords:
+                item.add_marker(skip)
+
+    # --- functional gating ---
+    # Use iter_markers() instead of keyword lookup because pytest adds
+    # the directory name "functional" as a keyword to every test in
+    # tests/functional/, which would match falsely.
+    def _has_marker(item, name):
+        return next(item.iter_markers(name), None) is not None
+
+    if config.getoption("--functional"):
+        if not os.environ.get("KISO_LLM_API_KEY"):
+            skip = pytest.mark.skip(reason="KISO_LLM_API_KEY not set")
+            for item in items:
+                if _has_marker(item, "functional"):
+                    item.add_marker(skip)
+    else:
+        skip = pytest.mark.skip(reason="Need --functional flag to run functional tests")
+        for item in items:
+            if _has_marker(item, "functional"):
+                item.add_marker(skip)
+
+    # --- destructive gating ---
+    if not config.getoption("--destructive"):
+        skip = pytest.mark.skip(reason="Need --destructive flag to run destructive tests")
+        for item in items:
+            if _has_marker(item, "destructive"):
                 item.add_marker(skip)
 
 VALID_CONFIG = """\
