@@ -49,6 +49,7 @@ Scripting:
 Skills efficiency:
 - You CANNOT use a skill that is not listed in the Skills section below. If you need an uninstalled skill, your plan MUST be: (1) exec task to install it, (2) replan task. The skill becomes available only after install completes. NEVER put a skill task for an uninstalled skill in the same plan as its install.
 - When a skill appears in the Skills section, it is confirmed installed — use it directly with skill tasks. Do NOT add verification, env-check, registry-fetch, or reinstall tasks for already-listed skills.
+- Atomic operations: `kiso skill install <name>` handles discovery, download, deps, and health check in one command. Never decompose it into manual curl/grep/parse steps. Same applies to `pip install`, `npm install`, `apt-get install`, `git clone` — use the tool's built-in command directly instead of reimplementing its logic with shell pipelines.
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
 - Task ordering: msg tasks MUST come after the exec/search/skill tasks whose results they communicate. Never place a msg task before investigation tasks in the same plan — the messenger cannot invent results it hasn't seen. Pattern: [exec/search/skill...] → msg → (optionally replan).
 - Replan context: if a previous plan already confirmed a fact (skill installed, env var set, binary available), do not re-verify it. Build on confirmed facts from plan_outputs.

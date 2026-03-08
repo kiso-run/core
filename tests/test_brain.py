@@ -2941,6 +2941,24 @@ class TestClassifierPromptContent:
         assert "imperative" in prompt
 
 
+# --- M234: Planner — don't decompose atomic CLI operations ---
+
+
+class TestM234PlannerAtomicOperations:
+    """M234: planner prompt tells LLM not to decompose atomic CLI commands."""
+
+    def test_planner_prompt_atomic_operations_rule(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Atomic operations" in prompt
+        assert "kiso skill install" in prompt
+        assert "Never decompose" in prompt
+
+    def test_planner_prompt_atomic_covers_package_managers(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        for cmd in ("pip install", "npm install", "apt-get install", "git clone"):
+            assert cmd in prompt, f"Missing atomic-ops mention of {cmd}"
+
+
 # --- M33: retry_hint in REVIEW_SCHEMA ---
 
 
