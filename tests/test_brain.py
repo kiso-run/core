@@ -4580,6 +4580,18 @@ class TestBrieferMessages:
         system = msgs[0]["content"]
         assert "System Environment" in system
 
+    def test_m265_messenger_no_modules_or_skills_rule(self):
+        """M265: briefer prompt says messenger gets modules=[] and skills=[] always."""
+        msgs = build_briefer_messages("messenger", "tell the user what happened", {})
+        system = msgs[0]["content"]
+        assert "For messenger: modules=[] and skills=[] always" in system
+
+    def test_m265_worker_no_modules_or_skills_rule(self):
+        """M265: briefer prompt says worker gets modules=[] and skills=[] always."""
+        msgs = build_briefer_messages("worker", "translate command", {})
+        system = msgs[0]["content"]
+        assert "For worker: modules=[] and skills=[] always" in system
+
 
 class TestValidateBriefing:
     """Tests for validate_briefing."""

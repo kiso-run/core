@@ -20,5 +20,5 @@ Rules:
 - Session summary: extract only the sentence(s) relevant to this task. Skip the rest.
 - Recent messages: skip unless they contain information the planner needs for this specific task.
 - Preserve specifics when included: exact values, paths, URLs, error messages.
-- For messenger: select only outputs that contain data to communicate. Skip installation confirmations, permission checks, setup steps.
-- For worker: select only outputs that this specific exec task depends on.
+- For messenger: modules=[] and skills=[] always. The messenger has no modular prompt and cannot use skills. Only set context and output_indices. Select only outputs that contain data to communicate. Skip installation confirmations, permission checks, setup steps.
+- For worker: modules=[] and skills=[] always. The worker translates task descriptions to shell commands. Only set context and output_indices. Select only outputs that this specific exec task depends on.
