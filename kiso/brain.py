@@ -984,13 +984,23 @@ def build_briefer_messages(
     """
     system_prompt = _load_system_prompt("briefer")
 
+    # M272: messenger/worker never use modules or skills — omit those sections
+    # to save ~400 tokens per briefer call for these simple consumers.
+    _simple_consumer = consumer_role in ("messenger", "worker")
+
     parts: list[str] = [
         f"## Consumer Role\n{consumer_role}",
         f"## Task\n{task_description}",
-        f"## Available Modules\n{_BRIEFER_MODULES_STR}",
     ]
+    if not _simple_consumer:
+        parts.append(f"## Available Modules\n{_BRIEFER_MODULES_STR}")
+
+    # M272: skip sections irrelevant for simple consumers
+    _skip_keys = {"skills", "system_env", "connectors"} if _simple_consumer else set()
 
     for key, heading in _CONTEXT_POOL_SECTIONS:
+        if key in _skip_keys:
+            continue
         if val := context_pool.get(key):
             parts.append(f"## {heading}\n{val}")
 

@@ -4552,7 +4552,8 @@ class TestBrieferMessages:
             "system_env": "OS: linux\nBinaries: python3, node",
             "capability_gap": "Skill 'browser' is needed but not installed.",
         }
-        msgs = build_briefer_messages("messenger", "report results", pool)
+        # Use "planner" — includes all sections (M272 skips some for messenger/worker)
+        msgs = build_briefer_messages("planner", "plan task", pool)
         content = msgs[1]["content"]
         assert "Session Summary" in content
         assert "Known Facts" in content
@@ -5852,3 +5853,50 @@ class TestM269RetryOnLLMError:
                     PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
                 )
         assert hasattr(exc_info.value, "last_errors")
+
+
+# --- M272: Briefer omits irrelevant sections for messenger/worker ---
+
+
+class TestM272BrieferSimpleConsumers:
+    """M272: build_briefer_messages omits modules/skills/sys_env for messenger/worker."""
+
+    def _pool(self):
+        return {
+            "skills": "browser: navigate websites",
+            "system_env": "OS: Linux\nArch: x86_64",
+            "connectors": "slack: send messages",
+            "summary": "User asked about guidance.studio",
+            "plan_outputs": "Output 1: page loaded",
+            "recent_messages": "[user] vai su guidance.studio",
+        }
+
+    def test_planner_gets_all_sections(self):
+        """Planner briefer includes Available Modules, skills, sys_env."""
+        msgs = build_briefer_messages("planner", "plan the task", self._pool())
+        content = msgs[1]["content"]
+        assert "Available Modules" in content
+        assert "Available Skills" in content
+        assert "System Environment" in content
+
+    def test_messenger_omits_modules_and_irrelevant_sections(self):
+        """Messenger briefer skips modules, skills, sys_env, connectors."""
+        msgs = build_briefer_messages("messenger", "tell user", self._pool())
+        content = msgs[1]["content"]
+        assert "Available Modules" not in content
+        assert "Available Skills" not in content
+        assert "System Environment" not in content
+        assert "Available Connectors" not in content
+        # Relevant sections still present
+        assert "Session Summary" in content
+        assert "Plan Outputs" in content
+        assert "Recent Messages" in content
+
+    def test_worker_omits_modules_and_irrelevant_sections(self):
+        """Worker briefer skips modules, skills, sys_env, connectors."""
+        msgs = build_briefer_messages("worker", "translate cmd", self._pool())
+        content = msgs[1]["content"]
+        assert "Available Modules" not in content
+        assert "Available Skills" not in content
+        # Worker keeps plan_outputs (needed for command context)
+        assert "Plan Outputs" in content
