@@ -3163,6 +3163,20 @@ class TestM275PlannerUsageGuideCompliance:
 # --- M235: Planner — scope limited to current user request ---
 
 
+class TestM286PlannerLanguageUniversal:
+    """M286: planner handles any input language without bias."""
+
+    def test_planner_any_language_any_script(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "any language" in prompt
+        assert "any script" in prompt
+
+    def test_planner_language_handling_rule(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Language handling" in prompt
+        assert "messenger handles translation" in prompt
+
+
 class TestM235PlannerScope:
     """M235: planner prompt explicitly limits scope to current message."""
 
