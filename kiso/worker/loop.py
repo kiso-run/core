@@ -34,6 +34,7 @@ from kiso.brain import (
     WORKER_PHASE_EXECUTING,
     WORKER_PHASE_IDLE,
     WORKER_PHASE_PLANNING,
+    BrieferError,
     ClassifierError,
     CuratorError,
     ExecTranslatorError,
@@ -43,6 +44,7 @@ from kiso.brain import (
     ReviewError,
     SummarizerError,
     classify_message,
+    run_briefer,
     run_curator,
     run_exec_translator,
     run_fact_consolidation,
@@ -197,8 +199,33 @@ async def _msg_task(
     include_recent: bool = False,
     user_message: str = "",
 ) -> str:
-    """Generate a user-facing message via the messenger brain role."""
-    outputs_text = _format_plan_outputs_for_msg(plan_outputs) if plan_outputs else ""
+    """Generate a user-facing message via the messenger brain role.
+
+    When the briefer is enabled, it selects which plan_outputs are relevant
+    to the msg task, reducing noise in the messenger context.
+    """
+    selected_outputs = plan_outputs
+    if plan_outputs and setting_bool(config.settings, "briefer_enabled"):
+        try:
+            context_pool: dict = {
+                "plan_outputs": _format_plan_outputs_for_msg(plan_outputs),
+            }
+            if goal:
+                context_pool["goal"] = goal
+            if user_message:
+                context_pool["recent_messages"] = user_message
+            briefing = await run_briefer(
+                config, "messenger", detail, context_pool, session=session,
+            )
+            indices = set(briefing.get("output_indices", []))
+            if indices:
+                selected_outputs = [o for o in plan_outputs if o["index"] in indices]
+                if not selected_outputs:
+                    selected_outputs = plan_outputs  # safety: don't pass empty
+        except Exception:
+            log.debug("Briefer failed for messenger, using all plan_outputs")
+
+    outputs_text = _format_plan_outputs_for_msg(selected_outputs) if selected_outputs else ""
     return await run_messenger(
         db, config, session, detail, outputs_text, goal=goal,
         include_recent=include_recent, user_message=user_message,

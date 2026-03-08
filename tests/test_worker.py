@@ -134,6 +134,7 @@ def _make_config(**overrides) -> Config:
         "worker_idle_timeout": 0.05,  # sub-second for fast tests
         "llm_timeout": 5,
         "planner_timeout": 5,
+        "briefer_enabled": False,  # avoid interfering with mocked call_llm
     }
     # Merge settings overrides rather than replacing the whole dict
     if "settings" in overrides:
@@ -10186,3 +10187,118 @@ class TestDiskLimitIntegration:
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
         assert success is True
+
+
+# ---------------------------------------------------------------------------
+# Briefer integration for messenger (M245)
+# ---------------------------------------------------------------------------
+
+
+class TestMsgTaskBrieferIntegration:
+    """Tests for briefer integration in _msg_task."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _plan_outputs(self):
+        return [
+            {"index": 1, "type": "exec", "detail": "install browser", "output": "installed ok", "status": "done"},
+            {"index": 2, "type": "search", "detail": "search gazzetta.it", "output": "news headlines here", "status": "done"},
+            {"index": 3, "type": "exec", "detail": "cleanup temp files", "output": "cleaned", "status": "done"},
+        ]
+
+    async def test_briefer_filters_plan_outputs(self, db):
+        """When briefer selects output_indices, only those outputs reach messenger."""
+        config = _make_config(settings={"briefer_enabled": True})
+        plan_outputs = self._plan_outputs()
+
+        captured_outputs_text = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps({
+                    "modules": [],
+                    "skills": [],
+                    "context": "",
+                    "output_indices": [2],  # only the search result
+                })
+            # messenger
+            captured_outputs_text.append(messages[1]["content"])
+            return "Here are the news headlines"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            result = await _msg_task(
+                config, db, "sess1", "Answer in Italian. Tell the user the news",
+                plan_outputs=plan_outputs, goal="get news",
+            )
+
+        assert result == "Here are the news headlines"
+        # Messenger should see only the search output, not install/cleanup
+        content = captured_outputs_text[0]
+        assert "news headlines here" in content
+        assert "install browser" not in content
+
+    async def test_briefer_disabled_passes_all_outputs(self, db):
+        """When briefer is disabled, all plan_outputs reach messenger."""
+        config = _make_config(settings={"briefer_enabled": False})
+        plan_outputs = self._plan_outputs()
+
+        captured = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.append(messages[1]["content"])
+            return "response"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(
+                config, db, "sess1", "Tell the user",
+                plan_outputs=plan_outputs,
+            )
+
+        content = captured[0]
+        # All outputs present
+        assert "install browser" in content
+        assert "news headlines here" in content
+        assert "cleanup" in content
+
+    async def test_briefer_failure_falls_back_to_all_outputs(self, db):
+        """When briefer fails, all plan_outputs reach messenger."""
+        config = _make_config(settings={"briefer_enabled": True})
+        plan_outputs = self._plan_outputs()
+
+        call_count = [0]
+
+        async def _failing_briefer(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if role == "briefer":
+                raise LLMError("briefer down")
+            return "response"
+
+        with patch("kiso.brain.call_llm", side_effect=_failing_briefer):
+            await _msg_task(
+                config, db, "sess1", "Tell the user",
+                plan_outputs=plan_outputs,
+            )
+
+        # Briefer was called and failed, then messenger was called
+        assert call_count[0] >= 2  # at least briefer + messenger
+
+    async def test_no_plan_outputs_skips_briefer(self, db):
+        """When there are no plan_outputs, briefer is not called."""
+        config = _make_config(settings={"briefer_enabled": True})
+
+        call_roles = []
+
+        async def _capture(cfg, role, messages, **kw):
+            call_roles.append(role)
+            return "response"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "Say hello")
+
+        # No briefer call — only messenger
+        assert "briefer" not in call_roles
