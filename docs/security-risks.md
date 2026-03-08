@@ -166,7 +166,7 @@ With OpenRouter pricing, this could cost $5-15 per adversarial message depending
 
 ### Defense-in-depth layers
 
-1. **Input validation** — session IDs, usernames, message size limits
+1. **Input validation** — session IDs, user names, message size limits
 2. **Deny list** — regex patterns against literal destructive commands (bypassable)
 3. **Paraphraser** — rewrites untrusted messages to neutralize injections
 4. **Random boundary fencing** — prevents content from escaping context sections

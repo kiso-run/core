@@ -140,7 +140,7 @@ def _user_add(args) -> None:
     alias_pairs = args.alias or []
 
     if not NAME_RE.match(username):
-        print(f"error: invalid username '{username}' (must match {NAME_RE.pattern})", file=sys.stderr)
+        print(f"error: invalid user '{username}' (must match {NAME_RE.pattern})", file=sys.stderr)
         sys.exit(1)
 
     # Check if the Linux system user exists; warn with instructions if not

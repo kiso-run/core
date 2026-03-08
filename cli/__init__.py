@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--session",
         default=None,
-        help="session name (default: {hostname}@{username})",
+        help="session name (default: {hostname}@{user})",
     )
     parser.add_argument(
         "--api",
@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--user",
         default=None,
-        help="username to send as (default: system user)",
+        help="user to send as (default: system user)",
     )
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="only show msg task content"
@@ -236,7 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     user_add_p = user_sub.add_parser("add", help="add a user")
-    user_add_p.add_argument("username", help="username")
+    user_add_p.add_argument("username", help="user name")
     user_add_p.add_argument(
         "--role", required=True, choices=["admin", "user"], help="user role"
     )
@@ -258,7 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     user_edit_p = user_sub.add_parser("edit", help="edit role or skills of an existing user")
-    user_edit_p.add_argument("username", help="username to edit")
+    user_edit_p.add_argument("username", help="user to edit")
     user_edit_p.add_argument(
         "--role", default=None, choices=["admin", "user"], help="new role"
     )
@@ -272,14 +272,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     user_remove_p = user_sub.add_parser("remove", help="remove a user")
-    user_remove_p.add_argument("username", help="username to remove")
+    user_remove_p.add_argument("username", help="user to remove")
     user_remove_p.add_argument(
         "--no-reload", action="store_true", dest="no_reload",
         help="skip hot-reload after writing config",
     )
 
     user_alias_p = user_sub.add_parser("alias", help="manage connector aliases for a user")
-    user_alias_p.add_argument("username", help="username")
+    user_alias_p.add_argument("username", help="user name")
     user_alias_p.add_argument("--connector", required=True, help="connector name")
     user_alias_p.add_argument("--id", default=None, metavar="PLATFORM_ID", help="platform user ID")
     user_alias_p.add_argument("--remove", action="store_true", help="remove the alias")
@@ -959,7 +959,7 @@ def _poll_status(
             function is called.  Pass ``False`` when the caller has printed
             text without a trailing newline (e.g. an inline prompt) so the
             spinner always opens on a fresh line instead of overwriting it.
-        user: username forwarded as the ``user`` query param to ``/status``.
+        user: user forwarded as the ``user`` query param to ``/status``.
             Always pass an explicit value; the empty-string default is only
             provided to avoid breaking legacy test call sites.
     """

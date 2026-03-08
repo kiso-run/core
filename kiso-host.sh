@@ -603,8 +603,8 @@ Chat:
 
 Options (for chat and msg):
   --instance NAME, -i NAME       instance to use (default: implicit if only one)
-  --session NAME                 session name (default: {hostname}@{username})
-  --user NAME                    username (default: system user)
+  --session NAME                 session name (default: {hostname}@{user})
+  --user NAME                    user (default: system user)
   --quiet, -q                    only show message output
 
 Skills & connectors:

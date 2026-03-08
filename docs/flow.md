@@ -42,7 +42,7 @@ Authorization: Bearer <token>
 1. Validates the bearer token against `config.toml` tokens (401 if no match)
 2. Logs which named token was used
 3. Checks if `user` is in `config.users` whitelist (direct name or alias match — see [security.md](security.md)).
-   - **Whitelisted**: resolves Linux username, role, and allowed skills. Message saved with `trusted=1`.
+   - **Whitelisted**: resolves Linux user, role, and allowed skills. Message saved with `trusted=1`.
    - **Not whitelisted**: saves message with `trusted=0` (context and audit). Responds `202 Accepted`. Does **not** enqueue or process. Stops here.
 4. If session doesn't exist, creates it implicitly (no webhook, no connector metadata)
 5. Saves the message to `store.messages` with `processed=0`

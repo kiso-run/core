@@ -132,7 +132,7 @@ webhook_max_payload       = 1048576
 
 | Field | Default | Description |
 |---|---|---|
-| `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform username. See [security.md](security.md). |
+| `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform user. See [security.md](security.md). |
 | `context_messages` | `5` | Number of recent raw messages sent to the planner. |
 | `summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value. |
 | `bot_name` | `"Kiso"` | Name used by the messenger when referring to itself. |
@@ -216,6 +216,6 @@ skills = ["search", "aider"]
 
 - **`role`**: `"admin"` (unrestricted exec, package management, all skills) or `"user"` (sandboxed exec, allowed skills only).
 - **`skills`**: which skills the planner can use for this user. `"*"` = all, or a list. Admins always have all skills regardless of this field.
-- **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform username.
+- **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform user.
 
-User identifiers are Linux usernames. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.
+User identifiers are Linux users. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.

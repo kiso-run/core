@@ -71,7 +71,7 @@ No secrets. Deploy secrets come from env vars declared in `kiso.toml`.
 3. Listens for messages
 4. POSTs to kiso's `/msg` endpoint:
    - `session`: mapped from platform context (e.g. Discord channel → session name via `channel_map`)
-   - `user`: the platform identity as-is (e.g. `"Marco#1234"`) — kiso resolves it to a Linux username via `aliases.{token_name}` in `config.toml` (see [security.md — Connector Aliases](security.md#connector-aliases))
+   - `user`: the platform identity as-is (e.g. `"Marco#1234"`) — kiso resolves it to a Linux user via `aliases.{token_name}` in `config.toml` (see [security.md — Connector Aliases](security.md#connector-aliases))
    - `content`: message text
 5. Receives webhook callbacks from kiso (at the URL set in `POST /sessions`)
 6. Sends responses back to the platform

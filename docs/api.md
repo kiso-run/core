@@ -56,7 +56,7 @@ Receives a message and queues it for processing.
 | Field | Required | Description |
 |---|---|---|
 | `session` | yes | Session identifier. Must match `^[a-zA-Z0-9_@.-]{1,255}$`. |
-| `user` | yes | User identity: Linux username (direct API) or platform identity (connectors — resolved via aliases) |
+| `user` | yes | User identity: Linux user (direct API) or platform identity (connectors — resolved via aliases) |
 | `content` | yes | Message content |
 
 If the session does not exist, it is created implicitly (with no webhook, no connector metadata). This is the normal path for CLI usage.
@@ -87,7 +87,7 @@ Lists sessions the authenticated user participates in.
 | Param | Required | Description |
 |---|---|---|
 | `all` | no | If `true`, return all sessions (admin only). Non-admins: ignored. |
-| `user` | yes | Linux username or platform identity. Resolved the same way as `POST /msg`. |
+| `user` | yes | Linux user or platform identity. Resolved the same way as `POST /msg`. |
 
 Returns sessions where the resolved user has at least one message in `store.messages`.
 
@@ -160,7 +160,7 @@ Returns aggregated token-usage statistics from the audit log. Admin only.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `user` | yes | — | Username (used for admin check) |
+| `user` | yes | — | User (used for admin check) |
 | `since` | no | `30` | Look back this many days |
 | `session` | no | — | Filter entries to this session only |
 | `by` | no | `model` | Group dimension: `model`, `session`, or `role` |
@@ -206,7 +206,7 @@ Hot-reloads `config.toml` into the running server without restarting the contain
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `user` | yes | Username (used for admin check) |
+| `user` | yes | User (used for admin check) |
 
 **Response** `200 OK`:
 

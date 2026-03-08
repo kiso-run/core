@@ -250,7 +250,7 @@ ask_username() {
 
     if [[ -n "$ARG_USER" ]]; then
         if [[ ! "$ARG_USER" =~ $USERNAME_RE ]]; then
-            red "Error: username '$ARG_USER' is invalid (must match $USERNAME_RE)"
+            red "Error: user '$ARG_USER' is invalid (must match $USERNAME_RE)"
             exit 1
         fi
         if ! id "$ARG_USER" &>/dev/null; then
@@ -272,7 +272,7 @@ ask_username() {
 
     local kiso_user
     while true; do
-        read -rp "Username [$default_user]: " kiso_user
+        read -rp "User [$default_user]: " kiso_user
         kiso_user="${kiso_user:-$default_user}"
         if [[ ! "$kiso_user" =~ $USERNAME_RE ]]; then
             red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
@@ -743,7 +743,7 @@ BASE_URL=""  # set inside NEED_CONFIG block; used later for NEED_ENV prompt
 
 if [[ "$NEED_CONFIG" == true ]]; then
     ask_username
-    echo "  username: $KISO_USER"
+    echo "  user: $KISO_USER"
 
     bot_name="$BOT_NAME"
     echo "  bot name: $bot_name"

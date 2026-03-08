@@ -231,8 +231,11 @@ def render_plan(
     """Render plan header line."""
     icon = _icon("replan" if replan else "plan", caps)
     label = "Replan" if replan else "Plan"
-    s = "s" if task_count != 1 else ""
-    text = f"{icon} {label}: {goal} ({task_count} task{s})"
+    if task_count > 0:
+        s = "s" if task_count != 1 else ""
+        text = f"{icon} {label}: {goal} ({task_count} task{s})"
+    else:
+        text = f"{icon} {label}: {goal}"
     return _style(text, _BOLD, _CYAN, caps=caps)
 
 

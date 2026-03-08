@@ -314,6 +314,11 @@ async def health():
     from kiso.sysenv import get_resource_limits
 
     rl = get_resource_limits()
+    max_disk = getattr(app.state, "config", None)
+    if max_disk is not None:
+        max_disk = max_disk.settings.get("max_disk_gb")
+    if max_disk is None:
+        max_disk = rl["disk_total_gb"]
     return {
         "status": "ok",
         "version": __version__,
@@ -321,7 +326,7 @@ async def health():
         "resources": {
             "memory_mb": {"used": rl["memory_used_mb"], "limit": rl["memory_mb"]},
             "cpu": {"limit": rl["cpu_limit"]},
-            "disk_gb": {"used": rl["disk_used_gb"], "limit": rl["disk_total_gb"]},
+            "disk_gb": {"used": rl["disk_used_gb"], "limit": max_disk},
             "pids": {"used": rl["pids_used"], "limit": rl["pids_limit"]},
         },
     }

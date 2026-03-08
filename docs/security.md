@@ -30,11 +30,11 @@ The `/pub/{id}` and `/health` endpoints do NOT require auth.
 
 ## 3. User Identity
 
-Kiso identifies users by **Linux username** — it maps to OS-level permissions and workspace isolation.
+Kiso identifies users by **Linux user** — it maps to OS-level permissions and workspace isolation.
 
 ### Direct API Calls
 
-Callers pass the Linux username directly in the `user` field:
+Callers pass the Linux user directly in the `user` field:
 
 ```json
 {"session": "dev", "user": "marco", "content": "..."}
@@ -44,7 +44,7 @@ The CLI does this automatically with `$(whoami)`.
 
 ### Connector Aliases
 
-Connectors map platform identities to Linux usernames. Each connector has its own alias table in `config.toml`:
+Connectors map platform identities to Linux users. Each connector has its own alias table in `config.toml`:
 
 ```toml
 [users.marco]
@@ -60,8 +60,8 @@ aliases.discord = "anna_dev"
 
 When a connector sends a message, it passes the platform identity as `user`. Kiso resolves it:
 
-1. Check if `user` matches a Linux username directly → use it
-2. Check if `user` matches any `aliases.{connector_name}` → resolve to the Linux username
+1. Check if `user` matches a Linux user directly → use it
+2. Check if `user` matches any `aliases.{connector_name}` → resolve to the Linux user
 3. No match → save message with `trusted=0` for context and audit, do not process
 
 The connector identifies itself via its named token (e.g. token name `discord`). Kiso uses the token name to know which alias namespace to search.
@@ -86,9 +86,9 @@ Kiso does not impose per-session access control. The API requires a valid bearer
 
 `GET /sessions` returns only sessions where the user has messages. Admins can see all sessions with `?all=true`.
 
-### Why Linux Usernames
+### Why Linux Users
 
-Each user needs an actual Linux user for the exec sandbox (see below). The username is the natural primary key.
+Each user needs an actual Linux user for the exec sandbox (see below). The user name is the natural primary key.
 
 ## 4. Role-Based Permissions
 
@@ -402,7 +402,7 @@ Hardening measures to implement for production deployments.
 ### Input Validation
 
 - **Session IDs**: must match `^[a-zA-Z0-9_@.-]{1,255}$`. Reject on `POST /sessions` and `POST /msg`.
-- **User names**: must match Linux username constraints (`^[a-z_][a-z0-9_-]{0,31}$`).
+- **User names**: must match Linux user constraints (`^[a-z_][a-z0-9_-]{0,31}$`).
 - **Token names** in config: same constraints as user names.
 - **Alias values**: case-sensitive, no Unicode normalization. Duplicate aliases across users are rejected at config load time.
 - **Skill args JSON**: max 64KB. Nesting depth max 5 levels. Validated before passing to subprocess.

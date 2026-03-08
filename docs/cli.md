@@ -26,7 +26,7 @@ kiso msg "hello" --session dev                 # specific session
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--instance NAME` / `-i NAME` | implicit (if one instance) | Which bot instance to connect to |
-| `--session SESSION` | `{hostname}@{username}` | Session identifier |
+| `--session SESSION` | `{hostname}@{user}` | Session identifier |
 | `--api URL` | `http://localhost:{instance_port}` | Server URL (auto-set per instance) |
 | `--quiet` / `-q` | off | Only show `msg` task content (hide decision flow) |
 
@@ -36,16 +36,16 @@ The API token is read from `~/.kiso/instances/{name}/config.toml`: the CLI alway
 
 ### Default Session
 
-If not specified, the session is: `{hostname}@{username}`
+If not specified, the session is: `{hostname}@{user}`
 
-The username comes from the Linux user (`whoami`). Example: `laptop@marco`
+The user comes from the Linux user (`whoami`). Example: `laptop@marco`
 
 ### Behavior
 
 1. Generates session ID (default or from `--session`)
 2. Shows interactive prompt
 3. On each user input:
-   - POSTs to `/msg` on localhost (or `--api`) with `user` = Linux username
+   - POSTs to `/msg` on localhost (or `--api`) with `user` = Linux user
    - Polls `GET /status/{session}?after={last_task_id}` until plan completes
    - Renders each event as it arrives (see [Display Rendering](#display-rendering))
 4. Loops until `Ctrl+C` or `exit`
@@ -521,16 +521,16 @@ Only admins can add, remove, or manage users.
 ```bash
 kiso user list                                                    # list all users with role, skills, aliases
 kiso user list --json                                             # machine-readable JSON output
-kiso user add <username> --role admin|user                        # add an admin (no skills needed)
-kiso user add <username> --role user --skills "*"                 # add a user with all skills
-kiso user add <username> --role user --skills "search,aider"      # add a user with specific skills
-kiso user add <username> --role user --skills "*" \
-    --alias discord:bob#1234 --alias slack:U0123456               # add with connector aliases
-kiso user edit <username> --role admin                            # change role in-place
-kiso user edit <username> --skills "read,write"                   # change skills in-place
-kiso user remove <username>                                       # remove a user
-kiso user alias <username> --connector discord --id "bob#1234"    # set a connector alias
-kiso user alias <username> --connector discord --remove           # remove a connector alias
+kiso user add <user> --role admin|user                        # add an admin (no skills needed)
+kiso user add <user> --role user --skills "*"                 # add a user with all skills
+kiso user add <user> --role user --skills "search,aider"      # add a user with specific skills
+kiso user add <user> --role user --skills "*" \
+    --alias discord:bob#1234 --alias slack:U0123456           # add with connector aliases
+kiso user edit <user> --role admin                            # change role in-place
+kiso user edit <user> --skills "read,write"                   # change skills in-place
+kiso user remove <user>                                       # remove a user
+kiso user alias <user> --connector discord --id "bob#1234"    # set a connector alias
+kiso user alias <user> --connector discord --remove           # remove a connector alias
 ```
 
 Changes are written to `config.toml` and the running server is hot-reloaded automatically (via `POST /admin/reload-config`). No restart needed.
@@ -560,8 +560,8 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 
 | Situation | Output |
 |-----------|--------|
-| Username fails `NAME_RE` validation | `error: invalid username '...'` |
-| Username already exists (`add`) | `error: user '...' already exists` |
+| User fails `NAME_RE` validation | `error: invalid user '...'` |
+| User already exists (`add`) | `error: user '...' already exists` |
 | User does not exist (`edit`/`remove`/`alias`) | `error: user '...' does not exist` |
 | `--role` omitted on `add` | `error: --role must be 'admin' or 'user'` |
 | `role=user` without `--skills` | `error: --skills required for role=user` |

@@ -94,7 +94,7 @@ class TestIntegrationUserAdd:
         with pytest.raises(SystemExit) as exc:
             _run(["user", "add", "INVALID!", "--role", "admin", "--no-reload"], config_path)
         assert exc.value.code == 1
-        assert "invalid username" in capsys.readouterr().err
+        assert "invalid user" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

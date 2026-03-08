@@ -188,7 +188,7 @@ class TestUserAdd:
                 _user_add(_args(username="INVALID USER!", role="admin", skills=None, alias=None))
 
         assert exc.value.code == 1
-        assert "invalid username" in capsys.readouterr().err
+        assert "invalid user" in capsys.readouterr().err
 
     def test_add_missing_role_rejected(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
