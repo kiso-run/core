@@ -76,8 +76,10 @@ def _full_models(**overrides) -> dict:
 from kiso.llm import LLMError
 from kiso.store import (
     create_session,
-    save_message,
     init_db,
+    save_fact,
+    save_fact_tags,
+    save_message,
 )
 
 
@@ -4497,6 +4499,7 @@ class TestValidateBriefing:
             "skills": ["browser: navigate, screenshot"],
             "context": "User wants to visit a website",
             "output_indices": [0, 2],
+            "relevant_tags": ["browser"],
         }
         assert validate_briefing(briefing) == []
 
@@ -4506,6 +4509,7 @@ class TestValidateBriefing:
             "skills": [],
             "context": "",
             "output_indices": [],
+            "relevant_tags": [],
         }
         assert validate_briefing(briefing) == []
 
@@ -4515,6 +4519,7 @@ class TestValidateBriefing:
             "skills": [],
             "context": "",
             "output_indices": [],
+            "relevant_tags": [],
         }
         errors = validate_briefing(briefing)
         assert len(errors) == 1
@@ -4526,6 +4531,7 @@ class TestValidateBriefing:
             "skills": [],
             "context": "",
             "output_indices": [],
+            "relevant_tags": [],
         }
         errors = validate_briefing(briefing)
         assert any("modules" in e for e in errors)
@@ -4536,6 +4542,7 @@ class TestValidateBriefing:
             "skills": [],
             "context": None,
             "output_indices": [],
+            "relevant_tags": [],
         }
         errors = validate_briefing(briefing)
         assert any("context" in e for e in errors)
@@ -4546,8 +4553,32 @@ class TestValidateBriefing:
             "skills": [],
             "context": "",
             "output_indices": [],
+            "relevant_tags": [],
         }
         assert validate_briefing(briefing) == []
+
+    def test_invalid_relevant_tags_type(self):
+        """M250: relevant_tags must be an array."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": "browser",  # should be array
+        }
+        errors = validate_briefing(briefing)
+        assert any("relevant_tags" in e for e in errors)
+
+    def test_missing_relevant_tags(self):
+        """M250: missing relevant_tags is an error."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+        }
+        errors = validate_briefing(briefing)
+        assert any("relevant_tags" in e for e in errors)
 
 
 class TestRunBriefer:
@@ -4571,6 +4602,7 @@ class TestRunBriefer:
             "skills": ["browser: navigate"],
             "context": "User wants to browse",
             "output_indices": [1],
+            "relevant_tags": ["browser"],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit a website", {"skills": "browser"})
@@ -4578,6 +4610,7 @@ class TestRunBriefer:
         assert result["skills"] == ["browser: navigate"]
         assert result["context"] == "User wants to browse"
         assert result["output_indices"] == [1]
+        assert result["relevant_tags"] == ["browser"]
 
     @pytest.mark.asyncio
     async def test_empty_briefing(self, config):
@@ -4586,6 +4619,7 @@ class TestRunBriefer:
             "skills": [],
             "context": "",
             "output_indices": [],
+            "relevant_tags": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "what time is it", {})
@@ -4616,6 +4650,7 @@ class TestBrieferSchema:
             "skills": ["browser: navigate"],
             "context": "some context",
             "output_indices": [0, 1, 2],
+            "relevant_tags": ["browser", "tech-stack"],
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
@@ -4624,7 +4659,7 @@ class TestBrieferSchema:
             "modules": ["web"],
             "skills": [],
             "context": "",
-            # missing output_indices
+            # missing output_indices and relevant_tags
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
@@ -4635,9 +4670,21 @@ class TestBrieferSchema:
             "skills": [],
             "context": "",
             "output_indices": [],
+            "relevant_tags": [],
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
+
+    def test_schema_validates_empty_relevant_tags(self):
+        """M250: empty relevant_tags is valid."""
+        valid = {
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+        _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
 
 # ---------------------------------------------------------------------------
@@ -4763,6 +4810,7 @@ class TestBrieferPlannerIntegration:
             "skills": ["browser: navigate, screenshot"],
             "context": "User wants to browse a website.",
             "output_indices": [],
+            "relevant_tags": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -4842,6 +4890,7 @@ class TestBrieferPlannerIntegration:
             "skills": [],
             "context": "Synthesized context from briefer.",
             "output_indices": [],
+            "relevant_tags": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -4871,6 +4920,7 @@ class TestBrieferPlannerIntegration:
             "skills": [],
             "context": "User wants to install a skill.",
             "output_indices": [],
+            "relevant_tags": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -4888,3 +4938,173 @@ class TestBrieferPlannerIntegration:
         system = msgs[0]["content"]
         # Plugin-install appendix injected by keyword matching
         assert "plugin" in system.lower() or "install" in system.lower()
+
+
+# ---------------------------------------------------------------------------
+# Briefer tag-based fact retrieval (M250)
+# ---------------------------------------------------------------------------
+
+
+class TestBrieferTagRetrieval:
+    """Tests for briefer using tags to retrieve additional facts."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self, briefer_enabled=True):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(
+                context_messages=3,
+                briefer_enabled=briefer_enabled,
+            ),
+            raw={},
+        )
+
+    async def test_tag_matched_facts_appended(self, db):
+        """M250: briefer's relevant_tags trigger tag-based fact retrieval."""
+        # Save facts: one matched by FTS5, one only reachable by tag.
+        # Use a unique keyword in the FTS fact so FTS5 returns it (not fallback).
+        await save_fact(db, "Python version 3.12 deployed", "test", category="project")
+        tag_only_id = await save_fact(db, "Redis cache on port 6379", "test", category="project")
+        await save_fact_tags(db, tag_only_id, ["infra", "cache"])
+
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "User asks about infrastructure.",
+            "output_indices": [],
+            "relevant_tags": ["infra", "cache"],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "Python version",
+            )
+
+        user_content = msgs[1]["content"]
+        # Tag-matched fact appears in additional section
+        assert "Redis cache on port 6379" in user_content
+        assert "## Additional Facts (tag-matched)" in user_content
+
+    async def test_no_duplicate_facts(self, db):
+        """M250: facts already in FTS5 results are not duplicated in tag section."""
+        # Save a fact that matches both FTS5 (via keyword) and tags
+        fid = await save_fact(db, "Python version 3.12 deployed", "test", category="project")
+        await save_fact_tags(db, fid, ["tech-stack"])
+
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "User asks about Python.",
+            "output_indices": [],
+            "relevant_tags": ["tech-stack"],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "Python version",
+            )
+
+        user_content = msgs[1]["content"]
+        # No additional facts section since the tag-matched fact is already in FTS5
+        assert "## Additional Facts (tag-matched)" not in user_content
+
+    async def test_empty_relevant_tags_no_section(self, db):
+        """M250: empty relevant_tags produces no additional facts section."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "Simple question.",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "hello",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## Additional Facts (tag-matched)" not in user_content
+
+    async def test_available_tags_in_briefer_context(self, db):
+        """M250: available tags are passed to the briefer in the context pool."""
+        # Save tagged facts so tags exist
+        fid = await save_fact(db, "Uses PostgreSQL", "test", category="project")
+        await save_fact_tags(db, fid, ["database", "postgres"])
+
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                })
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            await build_planner_messages(
+                db, config, "sess1", "user", "tell me about the db",
+            )
+
+        # Briefer should receive available tags in its context
+        briefer_user_content = captured_messages[1]["content"]
+        assert "database" in briefer_user_content
+        assert "postgres" in briefer_user_content
+        assert "Available Fact Tags" in briefer_user_content
+
+    async def test_fallback_no_tags_exist(self, db):
+        """M250: when no tags exist, no available_tags section in briefer context."""
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                })
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            await build_planner_messages(
+                db, config, "sess1", "user", "hello",
+            )
+
+        briefer_user_content = captured_messages[1]["content"]
+        assert "Available Fact Tags" not in briefer_user_content

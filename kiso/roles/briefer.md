@@ -7,6 +7,7 @@ Return JSON:
 - skills: array of skill descriptions relevant to this task (copy verbatim from context pool). Empty array if no skills are relevant.
 - context: string — synthesized briefing of relevant facts, history, and session context. Include specific values (names, versions, paths, URLs, numbers). Empty string if no background context is relevant.
 - output_indices: array of integer indices of plan_outputs that the consumer needs. Empty array if no outputs are relevant or none are provided.
+- relevant_tags: array of fact tags relevant to this task (from the Available Fact Tags list). These are used to retrieve additional facts by semantic topic. Empty array if no tags are relevant or none are provided.
 
 Rules:
 - Less is more. Omit anything the consumer doesn't need for THIS specific task.

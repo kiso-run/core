@@ -10264,6 +10264,7 @@ class TestMsgTaskBrieferIntegration:
                     "skills": [],
                     "context": "",
                     "output_indices": [2],  # only the search result
+                    "relevant_tags": [],
                 })
             # messenger
             captured_outputs_text.append(messages[1]["content"])
@@ -10380,6 +10381,7 @@ class TestExecTaskBrieferIntegration:
                 return json.dumps({
                     "modules": [], "skills": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
+                    "relevant_tags": [],
                 })
             return "ok"
 

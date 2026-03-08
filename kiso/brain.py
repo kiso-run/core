@@ -13,7 +13,10 @@ from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
 from kiso.skills import discover_skills, build_planner_skill_list, validate_skill_args
-from kiso.store import get_facts, get_pending_items, get_recent_messages, get_session, search_facts
+from kiso.store import (
+    get_all_tags, get_facts, get_pending_items, get_recent_messages,
+    get_session, search_facts, search_facts_by_tags,
+)
 from kiso.sysenv import get_system_env, build_system_env_section
 
 log = logging.getLogger(__name__)
@@ -284,8 +287,12 @@ BRIEFER_SCHEMA: dict = {
                     "type": "array",
                     "items": {"type": "integer"},
                 },
+                "relevant_tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
             },
-            "required": ["modules", "skills", "context", "output_indices"],
+            "required": ["modules", "skills", "context", "output_indices", "relevant_tags"],
             "additionalProperties": False,
         },
     },
@@ -662,6 +669,10 @@ async def build_planner_messages(
     # --- Briefer path ---
     briefing = None
     if setting_bool(config.settings, "briefer_enabled"):
+        # Fact tags for briefer-driven retrieval (only fetched when briefer active)
+        all_tags = await get_all_tags(db)
+        if all_tags:
+            context_pool["available_tags"] = ", ".join(all_tags)
         try:
             briefing = await run_briefer(
                 config, "planner", new_message, context_pool, session=session,
@@ -715,6 +726,21 @@ async def build_planner_messages(
             system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
             _plugin_install_needed = True
 
+    is_admin = user_role == "admin"
+
+    # --- Tag-based fact enrichment (briefer path only) ---
+    tag_facts_text = ""
+    if briefing and briefing.get("relevant_tags"):
+        tag_facts = await search_facts_by_tags(
+            db, briefing["relevant_tags"],
+            session=session, is_admin=is_admin,
+        )
+        # Deduplicate: remove facts already in the FTS5 set
+        fts_ids = {f["id"] for f in facts}
+        new_tag_facts = [f for f in tag_facts if f["id"] not in fts_ids]
+        if new_tag_facts:
+            tag_facts_text = "\n".join(f"- {f['content']}" for f in new_tag_facts)
+
     # --- Build context block ---
     context_parts: list[str] = []
 
@@ -722,9 +748,10 @@ async def build_planner_messages(
         # Briefer path: use synthesized context + filtered skills
         if briefing["context"]:
             context_parts.append(f"## Context\n{briefing['context']}")
+        if tag_facts_text:
+            context_parts.append(f"## Additional Facts (tag-matched)\n{tag_facts_text}")
     else:
         # Fallback path: full context dump (original behavior)
-        is_admin = user_role == "admin"
         if summary:
             context_parts.append(f"## Session Summary\n{summary}")
 
@@ -898,6 +925,7 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("facts", "Known Facts"),
     ("recent_messages", "Recent Messages"),
     ("pending", "Pending Questions"),
+    ("available_tags", "Available Fact Tags"),
     ("paraphrased", "Paraphrased External Messages"),
     ("replan_context", "Replan Context"),
     ("plan_outputs", "Plan Outputs"),
@@ -947,6 +975,8 @@ def validate_briefing(briefing: dict) -> list[str]:
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
         errors.append("output_indices must be an array")
+    if not isinstance(briefing.get("relevant_tags"), list):
+        errors.append("relevant_tags must be an array")
     return errors
 
 
@@ -959,7 +989,7 @@ async def run_briefer(
 ) -> dict:
     """Run the briefer: select relevant context for a consumer role.
 
-    Returns a dict with keys: modules, skills, context, output_indices.
+    Returns a dict with keys: modules, skills, context, output_indices, relevant_tags.
     Raises BrieferError on failure.
     """
     messages = build_briefer_messages(consumer_role, task_description, context_pool)
@@ -970,11 +1000,12 @@ async def run_briefer(
         session=session,
     )
     log.info(
-        "Briefer for %s: %d modules, %d skills, %d output_indices",
+        "Briefer for %s: %d modules, %d skills, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
         len(briefing["skills"]),
         len(briefing["output_indices"]),
+        len(briefing.get("relevant_tags", [])),
     )
     return briefing
 
