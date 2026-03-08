@@ -3862,6 +3862,18 @@ class TestM48CuratorCategoryField:
         errors = validate_curator(result)
         assert any("category" in e for e in errors)
 
+    def test_m282_tag_reuse_rule(self):
+        """M282: curator prompt enforces tag reuse over synonyms."""
+        prompt = (_ROLES_DIR / "curator.md").read_text()
+        assert "Tag reuse" in prompt
+        assert "NEVER create a tag that is a synonym" in prompt
+
+    def test_m282_contradiction_rule(self):
+        """M282: curator prompt handles contradicting facts."""
+        prompt = (_ROLES_DIR / "curator.md").read_text()
+        assert "Contradicting facts" in prompt
+        assert "Newer observations take precedence" in prompt
+
     def test_48d_validate_curator_ignores_category_for_ask(self):
         """48d: validate_curator does not enforce category for ask verdicts."""
         result = {"evaluations": [

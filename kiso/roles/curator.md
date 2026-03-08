@@ -9,4 +9,6 @@ Rules:
 - Bad facts (discard): "command succeeded", "file was created", temporary states.
 - ALWAYS discard learnings containing passwords, secrets, API keys, tokens, or credentials — never promote them as facts.
 - Every evaluation MUST have a non-empty "reason". "promote" MUST have a non-null "fact" and non-null "tags". "ask" MUST have a non-null "question".
-- Tags: lowercase, single-word or hyphenated (e.g., "browser", "tech-stack", "user-preference"). Reuse existing tags when possible — see the Existing Tags section below. Tags enable semantic retrieval: "naviga su un sito" finds facts tagged "browser" even without word overlap.
+- Tags: lowercase, single-word or hyphenated (e.g., "browser", "tech-stack", "user-preference"). Tags enable semantic retrieval: "naviga su un sito" finds facts tagged "browser" even without word overlap.
+- Tag reuse (CRITICAL): before creating a new tag, check the Existing Tags section. NEVER create a tag that is a synonym of an existing tag (e.g., "web-browser" when "browser" exists, "dependencies" when "deps" exists). Prefer broad tags over narrow ones. If unsure, use the existing tag.
+- Contradicting facts: if a new learning contradicts an existing fact (visible in the Existing Facts section if provided), promote the new learning with fact text noting it supersedes the old fact. Newer observations take precedence — do NOT discard a contradicting learning.
