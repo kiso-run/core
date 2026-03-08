@@ -84,6 +84,19 @@ class TestGetProvider:
         assert model == "ns/model:latest"
         assert provider.base_url == "http://localhost:11434/v1"
 
+    def test_all_model_defaults_resolve(self):
+        """M252: all MODEL_DEFAULTS resolve via a single gateway provider."""
+        from kiso.config import MODEL_DEFAULTS
+        config = _make_config()
+        for role, model_str in MODEL_DEFAULTS.items():
+            provider, model_name = get_provider(config, model_str)
+            assert provider.base_url == "https://api.example.com/v1", (
+                f"Role {role!r} model {model_str!r} should use the gateway provider"
+            )
+            assert model_name == model_str, (
+                f"Role {role!r}: model name should pass through as-is"
+            )
+
 
 # --- _get_api_key ---
 

@@ -101,11 +101,27 @@ CONFIG_TEMPLATE = """\
 [tokens]
 # cli = "your-secret-token-here"
 
+# Recommended: single gateway (OpenRouter, LiteLLM) routes all models.
+# Model names like "qwen/qwen-3.5-flash" are sent as-is to the gateway.
+# To use a specific provider, prefix with "provider:" e.g. "ollama:llama3".
 [providers.openrouter]
 base_url = "https://openrouter.ai/api/v1"
 
+# --- Direct endpoints (uncomment if not using a gateway) ---
 # [providers.ollama]
 # base_url = "http://localhost:11434/v1"
+#
+# [providers.qwen]
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+#
+# [providers.step]
+# base_url = "https://api.stepfun.com/v1"
+#
+# [providers.glm]
+# base_url = "https://open.bigmodel.cn/api/paas/v4"
+#
+# [providers.kimi]
+# base_url = "https://api.moonshot.cn/v1"
 
 [users.admin]
 role = "admin"
