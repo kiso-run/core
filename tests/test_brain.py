@@ -3115,6 +3115,90 @@ class TestReviewerWarningVsError:
         assert "absence of warnings" in prompt or "no warnings" in prompt
 
 
+class TestPrepareReviewerOutput:
+    """M224: reviewer output preparation with tail + error grep + stderr."""
+
+    def test_small_output_passthrough(self):
+        """Output under limit is returned unchanged."""
+        from kiso.brain import prepare_reviewer_output
+        stdout = "hello world\nexit 0"
+        stderr = ""
+        result = prepare_reviewer_output(stdout, stderr)
+        assert result == "hello world\nexit 0"
+
+    def test_small_output_with_stderr_passthrough(self):
+        """Small combined output (stdout + stderr) returned as-is."""
+        from kiso.brain import prepare_reviewer_output
+        stdout = "line1\nline2"
+        stderr = "warning: foo"
+        result = prepare_reviewer_output(stdout, stderr)
+        assert "line1" in result
+        assert "warning: foo" in result
+
+    def test_large_output_truncated(self):
+        """100K stdout is truncated to ≤ limit."""
+        from kiso.brain import prepare_reviewer_output
+        stdout = "\n".join(f"line {i}: ok" for i in range(5000))
+        result = prepare_reviewer_output(stdout, "", limit=4000)
+        assert len(result) <= 4000
+        assert "OUTPUT TRUNCATED" in result
+
+    def test_error_in_middle_captured(self):
+        """Error line buried in the middle of large output appears in grep section."""
+        from kiso.brain import prepare_reviewer_output
+        lines = [f"line {i}: ok" for i in range(500)]
+        lines[50] = "FATAL error: disk full"
+        stdout = "\n".join(lines)
+        result = prepare_reviewer_output(stdout, "", limit=4000)
+        assert "FATAL error: disk full" in result
+        assert "error matches" in result
+
+    def test_tail_present(self):
+        """Last lines of stdout appear in the tail section."""
+        from kiso.brain import prepare_reviewer_output
+        lines = [f"line {i}" for i in range(500)]
+        lines[-1] = "BUILD SUCCESS"
+        stdout = "\n".join(lines)
+        result = prepare_reviewer_output(stdout, "", limit=4000)
+        assert "BUILD SUCCESS" in result
+        assert "last" in result
+
+    def test_stderr_section_present(self):
+        """Non-empty stderr gets its own section."""
+        from kiso.brain import prepare_reviewer_output
+        stdout = "\n".join(f"line {i}" for i in range(500))
+        stderr = "error: something failed\ndetails: bad input"
+        result = prepare_reviewer_output(stdout, stderr, limit=4000)
+        assert "--- stderr" in result
+        assert "something failed" in result
+
+    def test_grep_dedup_with_tail(self):
+        """Error lines already in tail are not duplicated in grep section."""
+        from kiso.brain import prepare_reviewer_output
+        lines = [f"line {i}: ok" for i in range(200)]
+        lines[-5] = "error: final issue"  # this is in the tail
+        stdout = "\n".join(lines)
+        result = prepare_reviewer_output(stdout, "", limit=4000)
+        # "error: final issue" should appear once (in tail) but NOT in grep matches
+        # (because it's already in the tail set)
+        count = result.count("error: final issue")
+        assert count == 1
+
+    def test_empty_output(self):
+        """Empty stdout and stderr returns empty string."""
+        from kiso.brain import prepare_reviewer_output
+        result = prepare_reviewer_output("", "")
+        assert result == ""
+
+    def test_budget_priority_stderr_preserved(self):
+        """Even with huge stdout, stderr is preserved."""
+        from kiso.brain import prepare_reviewer_output
+        stdout = "x" * 100000
+        stderr = "critical error\n"
+        result = prepare_reviewer_output(stdout, stderr, limit=4000)
+        assert "critical error" in result
+
+
 class TestM47WorkerHintPriority:
     """47d: worker gives priority to retry hint over literal task detail re-translation."""
 

@@ -51,6 +51,7 @@ from kiso.brain import (
     run_planner,
     run_reviewer,
     run_summarizer,
+    prepare_reviewer_output,
 )
 from kiso.config import Config, setting_bool, setting_float, setting_int
 from kiso.llm import (
@@ -553,9 +554,7 @@ async def _review_task(
     """Review an exec/skill task. Returns review dict. Stores learning if present."""
     output = task_row.get("output") or ""
     stderr = task_row.get("stderr") or ""
-    full_output = output
-    if stderr:
-        full_output += f"\n--- stderr ---\n{stderr}"
+    full_output = prepare_reviewer_output(output, stderr)
 
     success = task_row.get("status") == "done"
     exit_code = task_row.get("exit_code")

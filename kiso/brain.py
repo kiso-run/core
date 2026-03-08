@@ -779,6 +779,97 @@ _EXIT_CODE_NOTES: dict[int, str] = {
 }
 
 
+_REVIEWER_OUTPUT_LIMIT = 4000
+_REVIEWER_STDERR_BUDGET = 1500
+_REVIEWER_STDERR_MAX_LINES = 40
+_REVIEWER_TAIL_LINES = 80
+_REVIEWER_MAX_GREP_MATCHES = 20
+
+_ERROR_RE = re.compile(
+    r"error|fail|exception|traceback|warning|denied|not found|fatal|panic|refused|timeout|errno",
+    re.IGNORECASE,
+)
+
+
+def prepare_reviewer_output(
+    stdout: str, stderr: str, limit: int = _REVIEWER_OUTPUT_LIMIT,
+) -> str:
+    """Prepare task output for the reviewer LLM.
+
+    For small outputs, returns the combined text as-is.  For large outputs,
+    builds a compact digest: stderr (priority) + error grep matches from
+    stdout + tail of stdout, all within *limit* chars.
+    """
+    combined = stdout
+    if stderr:
+        combined += f"\n--- stderr ---\n{stderr}"
+    if len(combined) <= limit:
+        return combined
+
+    original_len = len(stdout) + len(stderr)
+    parts: list[str] = []
+
+    # 1. Stderr section (priority — errors live here)
+    stderr_section = ""
+    stderr_budget = _REVIEWER_STDERR_BUDGET
+    if stderr.strip():
+        stderr_lines = stderr.splitlines()[:_REVIEWER_STDERR_MAX_LINES]
+        stderr_section = "\n".join(stderr_lines)
+        if len(stderr_section) > stderr_budget:
+            stderr_section = stderr_section[:stderr_budget] + "\n... (stderr truncated)"
+        parts.append(f"--- stderr ({len(stderr_lines)} lines) ---\n{stderr_section}")
+
+    # 2. Stdout tail (last N lines — most valuable)
+    stdout_lines = stdout.splitlines()
+    tail_lines = stdout_lines[-_REVIEWER_TAIL_LINES:]
+    tail_text = "\n".join(tail_lines)
+
+    # 3. Error grep — scan FULL stdout, collect unique matches not in tail
+    tail_set = set(tail_lines)
+    grep_matches: list[str] = []
+    for i, line in enumerate(stdout_lines):
+        if _ERROR_RE.search(line) and line not in tail_set:
+            # Include 1 line of context before
+            context_line = stdout_lines[i - 1] if i > 0 else ""
+            entry = f"{context_line}\n{line}".strip() if context_line else line
+            if entry not in grep_matches:
+                grep_matches.append(entry)
+            if len(grep_matches) >= _REVIEWER_MAX_GREP_MATCHES:
+                break
+
+    if grep_matches:
+        grep_text = "\n".join(grep_matches)
+        parts.append(f"--- error matches (from full stdout) ---\n{grep_text}")
+
+    parts.append(f"--- last {len(tail_lines)} lines of stdout ---\n{tail_text}")
+
+    # Assemble and apply hard cap
+    header = f"[OUTPUT TRUNCATED — original {original_len} chars, showing"
+    if stderr_section:
+        header += " stderr +"
+    if grep_matches:
+        header += " error matches +"
+    header += f" last {len(tail_lines)} lines]\n"
+
+    body = "\n".join(parts)
+
+    # Shrink to fit: trim tail first, then grep, then stderr
+    result = header + body
+    if len(result) > limit:
+        # Recalculate with trimmed tail
+        available = limit - len(header) - sum(len(p) + 1 for p in parts[:-1])
+        if available > 100:
+            tail_text = tail_text[:available] + "\n... (tail trimmed)"
+            parts[-1] = f"--- last {len(tail_lines)} lines of stdout ---\n{tail_text}"
+        body = "\n".join(parts)
+        result = header + body
+
+    if len(result) > limit:
+        result = result[:limit]
+
+    return result
+
+
 def build_reviewer_messages(
     goal: str,
     detail: str,
