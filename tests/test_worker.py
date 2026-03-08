@@ -6445,6 +6445,75 @@ class TestAutoPublishSkillFiles:
         assert any("data.csv" in p for p in published)
         assert (workspace / "pub" / "results" / "data.csv").exists()
 
+    def test_ignores_browser_cache(self, tmp_path):
+        """M233: files under .browser/ should NOT be auto-published."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            cache_dir = workspace / ".browser" / "profile" / "CacheStorage"
+            cache_dir.mkdir(parents=True)
+            (cache_dir / "origin").write_text("cached")
+            (workspace / "output.txt").write_text("result")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert "output.txt" in published
+        assert not any(".browser" in p for p in published)
+
+    def test_ignores_pycache(self, tmp_path):
+        """M233: __pycache__ files should NOT be auto-published."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            cache_dir = workspace / "__pycache__"
+            cache_dir.mkdir()
+            (cache_dir / "mod.cpython-312.pyc").write_bytes(b"\x00")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert published == []
+
+    def test_ignores_hidden_dotfiles(self, tmp_path):
+        """M233: hidden files/dirs (starting with .) should NOT be auto-published."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            (workspace / ".hidden_config").write_text("secret")
+            hidden_dir = workspace / "subdir" / ".internal"
+            hidden_dir.mkdir(parents=True)
+            (hidden_dir / "data.bin").write_bytes(b"\x00")
+            (workspace / "report.pdf").write_bytes(b"pdf")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert "report.pdf" in published
+        assert not any(".hidden" in p or ".internal" in p for p in published)
+
+    def test_ignores_node_modules(self, tmp_path):
+        """M233: node_modules should NOT be auto-published."""
+        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+
+        with _patch_kiso_dir(tmp_path):
+            workspace = _session_workspace("test-session")
+            pre = _snapshot_workspace("test-session")
+
+            nm = workspace / "node_modules" / "pkg"
+            nm.mkdir(parents=True)
+            (nm / "index.js").write_text("module.exports = {}")
+
+            published = _auto_publish_skill_files("test-session", pre)
+
+        assert published == []
+
 
 # --- M31: search output truncation in replan context ---
 

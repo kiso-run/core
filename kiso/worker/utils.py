@@ -274,13 +274,25 @@ def _snapshot_workspace(session: str) -> set[Path]:
     return set(workspace.rglob("*"))
 
 
+# Top-level directories in the workspace that should never be auto-published.
+# Skills/tools create caches, profiles, and temp files here — they are internal,
+# not user-facing output.  Skills can still write directly to pub/ if they want
+# to publish specific files.
+_PUB_IGNORE_DIRS = frozenset({
+    ".browser", ".cache", ".local", ".config", ".mozilla", ".playwright",
+    "__pycache__", "node_modules", ".npm", ".yarn", ".pnpm",
+    ".git", ".venv", ".tox", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+})
+
+
 def _auto_publish_skill_files(
     session: str, pre_snapshot: set[Path],
 ) -> list[str]:
     """Copy new workspace files (created after *pre_snapshot*) into pub/.
 
-    Skips directories and files already inside pub/. Returns list of
-    published filenames.
+    Skips directories and files already inside pub/, files under ignored
+    directories (caches, profiles, etc.), and hidden dotfiles. Returns
+    list of published filenames.
     """
     workspace = _session_workspace(session)
     pub_dir = workspace / "pub"
@@ -297,10 +309,17 @@ def _auto_publish_skill_files(
             continue
         except ValueError:
             pass
-        dest = pub_dir / f.relative_to(workspace)
+        rel = f.relative_to(workspace)
+        # Skip files under ignored directories
+        if rel.parts[0] in _PUB_IGNORE_DIRS:
+            continue
+        # Skip hidden dotfiles (but not dotdirs already handled above)
+        if any(p.startswith(".") for p in rel.parts):
+            continue
+        dest = pub_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(f, dest)
-        published.append(str(f.relative_to(workspace)))
+        published.append(str(rel))
         log.debug("Auto-published %s → %s", f, dest)
     return published
 
