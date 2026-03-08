@@ -7,7 +7,7 @@ Task types:
 - skill: call a skill. detail = what to do, skill = name, args = JSON string matching the skill's args schema. expect (required).
   Example: {"type": "skill", "detail": "perform the desired action", "skill": "my-skill", "args": "{\"param\": \"value\"}", "expect": "expected result"}
   Note: args is a JSON-encoded STRING, not a raw object. Match arg names and types from the Skills section below.
-- msg: message to user. detail = what to communicate (intent, not content — never embed facts/URLs/data). skill/args/expect = null. Start detail with `[Lang: xx]` matching user's language.
+- msg: message to user. detail = what to communicate (intent, not content — never embed facts/URLs/data). skill/args/expect = null. Always start detail with `Answer in {language}.` matching the user's language (e.g. "Answer in Italian.", "Answer in English."). Include this even for English.
 - search: web search. detail = search query, expect = what you need (required), skill = null, args = optional `{"max_results": N, "lang": "xx", "country": "XX"}`. Use search over exec curl/wget for web lookups. NEVER use search for kiso plugin discovery — use exec curl on the registry URL.
 - replan: investigate then re-plan. detail = intent. skill/args/expect = null. Must be last task. Preceding task outputs (plan_outputs) are available to the next planner call.
 

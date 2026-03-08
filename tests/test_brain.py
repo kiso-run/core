@@ -297,7 +297,7 @@ class TestValidatePlan:
     def test_msg_before_exec_rejected(self):
         """M137: msg task before exec tasks must fail validation."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "[Lang: it] describe results", "expect": None, "skill": None, "args": None},
+            {"type": "msg", "detail": "Answer in Italian. describe results", "expect": None, "skill": None, "args": None},
             {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
             {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
         ]}

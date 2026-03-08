@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -480,23 +481,31 @@ async def _fast_path_chat(
     return plan_id
 
 
+_ANSWER_IN_RE = re.compile(r"^Answer in \w[\w\s]*\.\s*", re.IGNORECASE)
+
+
 def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
     """M201: prepend an intent msg so the user knows what's about to happen.
 
-    Skips injection when: plan has ≤1 task, first task is already a msg,
-    or no msg task with [Lang: xx] exists to detect the language.
+    Skips injection when: plan has ≤1 task or first task is already a msg.
+    Propagates the ``Answer in {language}.`` prefix from existing msg tasks.
     Returns a new list (does not mutate the input).
     """
     if len(tasks) <= 1 or tasks[0]["type"] == TASK_TYPE_MSG:
         return tasks
 
-    # Extract [Lang: xx] from existing msg tasks if available
-    lang_tag = ""
+    # Extract "Answer in {language}." from existing msg tasks if available
+    lang_prefix = ""
     for t in tasks:
         if t["type"] == TASK_TYPE_MSG:
             detail = t.get("detail") or ""
-            if detail.startswith("[Lang:"):
-                lang_tag = detail[:detail.index("]") + 1] + " "
+            m = _ANSWER_IN_RE.match(detail)
+            if m:
+                lang_prefix = m.group(0)
+                break
+            # Legacy [Lang: xx] support during transition
+            if detail.startswith("[Lang:") and "]" in detail:
+                lang_prefix = detail[:detail.index("]") + 1] + " "
                 break
 
     task_summary = ", ".join(
@@ -505,7 +514,7 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
     intent_task = {
         "type": TASK_TYPE_MSG,
         "detail": (
-            f"{lang_tag}Briefly tell the user what you're about to do. "
+            f"{lang_prefix}Briefly tell the user what you're about to do. "
             f"Plan: {task_summary}"
         ),
         "skill": None,
