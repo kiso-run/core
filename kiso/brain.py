@@ -305,7 +305,23 @@ BRIEFER_MODULES: frozenset[str] = frozenset({
     "web", "replan", "scripting", "skill_recovery", "data_flow",
     "kiso_commands", "user_mgmt", "plugin_install",
 })
-_BRIEFER_MODULES_STR = ", ".join(sorted(BRIEFER_MODULES))
+_BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
+    "planning_rules": "general planning rules (expect, task ordering, multi-step). Include for non-trivial plans (2+ tasks).",
+    "kiso_native": "kiso-first policy, registry checking. Include when user asks for a capability that might need a skill/connector.",
+    "skills_rules": "skill usage rules, atomic operations. Include when the plan will use skills.",
+    "web": "website interaction rules. Include when URLs, websites, or web content are mentioned.",
+    "data_flow": "file-based data flow. Include when tasks produce large output that later tasks need.",
+    "scripting": "script execution rules. Include when data processing or code generation is needed.",
+    "replan": "replan strategy, extend_replan. Include only in replan context.",
+    "skill_recovery": "broken skill reinstall. Include only when a skill is broken or has failed.",
+    "kiso_commands": "kiso CLI commands (skill/connector/env/instance management). Include when user asks about kiso administration.",
+    "user_mgmt": "user/alias management. Include when user asks about users, roles, or aliases.",
+    "plugin_install": "plugin discovery and installation procedure. Include when a needed skill/connector is not installed.",
+}
+_BRIEFER_MODULES_STR = "\n".join(
+    f"- {name}: {_BRIEFER_MODULE_DESCRIPTIONS[name]}"
+    for name in sorted(BRIEFER_MODULES)
+)
 
 
 class BrieferError(Exception):

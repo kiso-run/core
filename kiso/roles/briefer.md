@@ -11,8 +11,10 @@ Return JSON:
 
 Rules:
 - Less is more. Omit anything the consumer doesn't need for THIS specific task.
+- For a simple lookup ([search, msg] plan), you typically need zero modules — the core is sufficient. Only add modules when the task genuinely requires those rules.
 - Preserve specifics: exact values, paths, URLs, error messages. Drop boilerplate and repetition.
 - For planner: select skills that match the user's request. Include replan/web/scripting modules only when relevant.
 - For messenger: select only outputs that contain data to communicate. Skip installation confirmations, permission checks, setup steps.
 - For worker: select only outputs that this specific exec task depends on (file paths, download results, data references).
 - If the context pool is small enough that no filtering is needed, pass it through — don't compress what's already concise.
+- System Environment and Capability Analysis: include in context only when the task needs system info (e.g. package install, binary availability). Skip for simple lookups, messages, jokes.

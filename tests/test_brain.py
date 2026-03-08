@@ -4493,6 +4493,29 @@ class TestBrieferMessages:
         for module in BRIEFER_MODULES:
             assert module in content
 
+    def test_module_descriptions_included(self):
+        """M259: briefer receives module descriptions, not just names."""
+        msgs = build_briefer_messages("planner", "task", {})
+        content = msgs[1]["content"]
+        # Each module line has "- name: description" format
+        assert "- planning_rules: general planning rules" in content
+        assert "- web: website interaction rules" in content
+        assert "- replan: replan strategy" in content
+        assert "- plugin_install: plugin discovery" in content
+
+    def test_briefer_prompt_zero_module_guidance(self):
+        """M259: briefer system prompt includes zero-module guidance."""
+        msgs = build_briefer_messages("planner", "task", {})
+        system = msgs[0]["content"]
+        # Should mention that simple lookups need zero modules
+        assert "zero modules" in system or "core is sufficient" in system
+
+    def test_briefer_prompt_sys_env_guidance(self):
+        """M259: briefer prompt includes sys_env filtering guidance."""
+        msgs = build_briefer_messages("planner", "task", {})
+        system = msgs[0]["content"]
+        assert "System Environment" in system
+
 
 class TestValidateBriefing:
     """Tests for validate_briefing."""
