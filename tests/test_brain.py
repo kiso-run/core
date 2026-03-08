@@ -5414,6 +5414,128 @@ class TestM258SysEnvAndGapFiltering:
 
 
 # ---------------------------------------------------------------------------
+# M266 — Web module: warn when browser not installed
+# ---------------------------------------------------------------------------
+
+
+class TestM266BrowserAvailability:
+    """M266: planner gets browser warning when web module active but browser not installed."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self, briefer_enabled=True):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(
+                context_messages=3,
+                briefer_enabled=briefer_enabled,
+            ),
+            raw={},
+        )
+
+    async def test_web_module_no_browser_shows_warning(self, db):
+        """Briefer selects web module, browser not installed → warning present."""
+        briefing = {
+            "modules": ["web"],
+            "skills": [],
+            "context": "User wants to visit guidance.studio.",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "vai su guidance.studio",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## Browser Availability" in user_content
+        assert "browser skill is NOT currently installed" in user_content
+
+    async def test_web_module_with_browser_installed_no_warning(self, db):
+        """Briefer selects web module, browser IS installed → no warning."""
+        briefing = {
+            "modules": ["web"],
+            "skills": ["browser — navigate pages"],
+            "context": "User wants to visit guidance.studio.",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+
+        fake_skill = {
+            "name": "browser", "summary": "browser automation",
+            "args": [], "guide": "",
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[fake_skill]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "vai su guidance.studio",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## Browser Availability" not in user_content
+
+    async def test_no_web_module_no_warning(self, db):
+        """Briefer does NOT select web module → no warning regardless."""
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "User wants a joke.",
+            "output_indices": [],
+            "relevant_tags": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "tell me a joke",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## Browser Availability" not in user_content
+
+    async def test_fallback_path_web_module_no_browser(self, db):
+        """Fallback path (no briefer) also shows warning when web module active."""
+        config = self._config(briefer_enabled=False)
+        with patch("kiso.brain.discover_skills", return_value=[]):
+            # "go to" triggers web module via fallback_modules (web is always included)
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "user", "go to guidance.studio",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "## Browser Availability" in user_content
+
+
+# ---------------------------------------------------------------------------
 # M261 — End-to-end token reduction validation
 # ---------------------------------------------------------------------------
 

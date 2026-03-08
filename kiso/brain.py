@@ -818,6 +818,15 @@ async def build_planner_messages(
     elif full_skill_list:
         context_parts.append(f"## Skills\n{full_skill_list}")
 
+    # M266: warn planner when web module is active but browser isn't installed.
+    if "web" in (modules if briefing else fallback_modules) and "browser" not in installed_names:
+        context_parts.append(
+            "## Browser Availability\n"
+            "Note: the browser skill is NOT currently installed. "
+            "To visit a URL, first install it with an exec task: "
+            "'kiso skill install browser', then replan."
+        )
+
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")
 
