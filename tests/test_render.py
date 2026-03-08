@@ -775,6 +775,34 @@ def test_render_plan_detail_multiline_detail():
     assert "second line" not in result
 
 
+def test_render_plan_detail_msg_strips_answer_prefix():
+    """M236: msg detail strips 'Answer in <lang>.' prefix in plan overview."""
+    tasks = [{"type": "msg", "detail": "Answer in Italian. Tell the user the result"}]
+    result = render_plan_detail(tasks, _PLAIN)
+    assert "Tell the user the result" in result
+    assert "Answer in Italian" not in result
+
+
+def test_render_plan_detail_truncates_long_detail():
+    """M236: detail lines are truncated to terminal width."""
+    narrow = _caps(color=False, unicode=False, width=50, tty=False)
+    long_detail = "A" * 200
+    tasks = [{"type": "exec", "detail": long_detail}]
+    result = render_plan_detail(tasks, narrow)
+    # max_detail = max(50 - 16, 40) = 40; so detail → 39 chars + "…"
+    # Full line: "  1. [exec]   " + truncated detail
+    assert "…" in result
+    assert "A" * 200 not in result
+
+
+def test_render_plan_detail_msg_answer_prefix_english():
+    """M236: also works for English prefix."""
+    tasks = [{"type": "msg", "detail": "Answer in English. Summarize findings"}]
+    result = render_plan_detail(tasks, _PLAIN)
+    assert "Summarize findings" in result
+    assert "Answer in English" not in result
+
+
 # ── render_command ──────────────────────────────────────────
 
 

@@ -250,9 +250,19 @@ def render_plan_detail(tasks: list[dict], caps: TermCaps) -> str:
     if not tasks:
         return ""
     lines: list[str] = []
+    # Reserve space for prefix: "  1. [skill]  " ≈ 16 chars
+    max_detail = max(caps.width - 16, 40)
     for i, t in enumerate(tasks, 1):
         ttype = t.get("type", "?")
         detail = (t.get("detail") or "").split("\n", 1)[0].strip()
+        # Strip "Answer in <lang>." prefix from msg detail — it's an
+        # instruction for the messenger, not useful in the plan overview.
+        if ttype == "msg" and detail.startswith("Answer in "):
+            dot = detail.find(".", 10)
+            if dot != -1:
+                detail = detail[dot + 1 :].strip()
+        if len(detail) > max_detail:
+            detail = detail[: max_detail - 1] + "…"
         # Pad type label for alignment
         label = f"[{ttype}]"
         line = f"  {i}. {label:8s} {detail}" if detail else f"  {i}. {label}"
