@@ -68,13 +68,13 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 MODEL_DEFAULTS: dict[str, str] = {
     "briefer": "google/gemini-2.5-flash-lite",
     "classifier": "google/gemini-2.5-flash-lite",
-    "planner": "glm/glm-4.7",
-    "reviewer": "step/step-3.5-flash",
+    "planner": "z-ai/glm-4.7",
+    "reviewer": "stepfun/step-3.5-flash",
     "curator": "google/gemini-2.5-flash-lite",
-    "worker": "step/step-3.5-flash",
+    "worker": "stepfun/step-3.5-flash",
     "summarizer": "google/gemini-2.5-flash-lite",
     "paraphraser": "google/gemini-2.5-flash-lite",
-    "messenger": "qwen/qwen-3.5-flash",
+    "messenger": "qwen/qwen3.5-flash-02-23",
     "searcher": "perplexity/sonar",
 }
 
@@ -116,13 +116,13 @@ role = "admin"
 # See docs/model-selection.md for rationale and alternatives
 briefer     = "google/gemini-2.5-flash-lite"  # context selection (150 t/s, cheapest)
 classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, simple)
-planner     = "glm/glm-4.7"                   # plan generation (MMLU 83, 130 t/s)
-reviewer    = "step/step-3.5-flash"            # output review (LCB 86, structured)
+planner     = "z-ai/glm-4.7"                   # plan generation (MMLU 83, 130 t/s)
+reviewer    = "stepfun/step-3.5-flash"            # output review (LCB 86, structured)
 curator     = "google/gemini-2.5-flash-lite"   # knowledge curation (simple classification)
-worker      = "step/step-3.5-flash"            # command translation (LCB 86, coding)
+worker      = "stepfun/step-3.5-flash"            # command translation (LCB 86, coding)
 summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
-messenger   = "qwen/qwen-3.5-flash"            # user-facing responses (MMLU 82, natural)
+messenger   = "qwen/qwen3.5-flash-02-23"            # user-facing responses (MMLU 82, natural)
 searcher    = "perplexity/sonar"               # web search (native search API)
 
 [settings]

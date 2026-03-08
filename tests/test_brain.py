@@ -3769,7 +3769,7 @@ class TestM106DefaultPlannerModel:
 
     def test_default_planner_model(self):
         from kiso.config import MODEL_DEFAULTS
-        assert MODEL_DEFAULTS["planner"] == "glm/glm-4.7"
+        assert MODEL_DEFAULTS["planner"] == "z-ai/glm-4.7"
 
 
 class TestM106PlannerKisoNativeFirst:

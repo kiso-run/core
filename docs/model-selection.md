@@ -11,10 +11,10 @@ All models accessed via OpenRouter. Prices in USD per million tokens.
 | Model | t/s | Input $/M | Output $/M | Context | MMLU | LiveCodeBench |
 |---|---|---|---|---|---|---|
 | google/gemini-2.5-flash-lite | ~150 | 0.10 | 0.40 | 1M | 70 | 59 |
-| glm/glm-4.7 | ~130 | 0.38 | 1.98 | 200K | 83 | 85 |
-| kimi/kimi-k2.5 | ~100 | 0.45 | 2.20 | 262K | 85 | 84 |
-| qwen/qwen-3.5-flash | ~90 | ~0.20 | ~0.60 | 1M | 82 | 82 |
-| step/step-3.5-flash | ~85 | 0.10 | 0.30 | 256K | 80 | 86 |
+| z-ai/glm-4.7 | ~130 | 0.38 | 1.98 | 200K | 83 | 85 |
+| moonshotai/kimi-k2.5 | ~100 | 0.45 | 2.20 | 262K | 85 | 84 |
+| qwen/qwen3.5-flash-02-23 | ~90 | ~0.20 | ~0.60 | 1M | 82 | 82 |
+| stepfun/step-3.5-flash | ~85 | 0.10 | 0.30 | 256K | 80 | 86 |
 | google/gemini-2.5-flash | ~70 | 0.30 | 2.50 | 1M | 81 | 80 |
 | google/gemini-3-flash-preview | ~65 | 0.50 | 3.00 | 1M | 86 | 91 |
 | llama-3.1-70b-instruct | ~45 | ~0.90 | ~2.40 | 128K | 79 | 73 |
@@ -31,13 +31,13 @@ All models accessed via OpenRouter. Prices in USD per million tokens.
 ```toml
 briefer     = "google/gemini-2.5-flash-lite"
 classifier  = "google/gemini-2.5-flash-lite"
-planner     = "glm/glm-4.7"
-reviewer    = "step/step-3.5-flash"
+planner     = "z-ai/glm-4.7"
+reviewer    = "stepfun/step-3.5-flash"
 curator     = "google/gemini-2.5-flash-lite"
-worker      = "step/step-3.5-flash"
+worker      = "stepfun/step-3.5-flash"
 summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "qwen/qwen-3.5-flash"
+messenger   = "qwen/qwen3.5-flash-02-23"
 searcher    = "perplexity/sonar"
 ```
 
@@ -139,7 +139,7 @@ quality) and searcher.
 ```toml
 briefer     = "google/gemini-2.5-flash-lite"
 classifier  = "google/gemini-2.5-flash-lite"
-planner     = "step/step-3.5-flash"            # LCB 86, $0.10/$0.30
+planner     = "stepfun/step-3.5-flash"            # LCB 86, $0.10/$0.30
 reviewer    = "google/gemini-2.5-flash-lite"
 curator     = "google/gemini-2.5-flash-lite"
 worker      = "google/gemini-2.5-flash-lite"
@@ -156,15 +156,15 @@ searcher    = "perplexity/sonar"
 Strongest models for critical roles. Higher cost, better results for complex tasks.
 
 ```toml
-briefer     = "step/step-3.5-flash"
+briefer     = "stepfun/step-3.5-flash"
 classifier  = "google/gemini-2.5-flash-lite"
-planner     = "kimi/kimi-k2.5"                 # MMLU 85, LCB 84
-reviewer    = "glm/glm-4.7"                    # MMLU 83 for better judgment
-curator     = "step/step-3.5-flash"
-worker      = "step/step-3.5-flash"
+planner     = "moonshotai/kimi-k2.5"                 # MMLU 85, LCB 84
+reviewer    = "z-ai/glm-4.7"                    # MMLU 83 for better judgment
+curator     = "stepfun/step-3.5-flash"
+worker      = "stepfun/step-3.5-flash"
 summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "kimi/kimi-k2.5"                 # MMLU 85 for best language
+messenger   = "moonshotai/kimi-k2.5"                 # MMLU 85 for best language
 searcher    = "perplexity/sonar"
 ```
 
@@ -176,15 +176,15 @@ For the most demanding tasks. Use reasoning models for planner. Very slow but
 highest accuracy.
 
 ```toml
-briefer     = "step/step-3.5-flash"
+briefer     = "stepfun/step-3.5-flash"
 classifier  = "google/gemini-2.5-flash-lite"
 planner     = "deepseek/deepseek-r1"            # MMLU 90, LCB 92 (slow: 20 t/s)
-reviewer    = "glm/glm-4.7"
-curator     = "step/step-3.5-flash"
-worker      = "step/step-3.5-flash"
+reviewer    = "z-ai/glm-4.7"
+curator     = "stepfun/step-3.5-flash"
+worker      = "stepfun/step-3.5-flash"
 summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "kimi/kimi-k2.5"
+messenger   = "moonshotai/kimi-k2.5"
 searcher    = "perplexity/sonar"
 ```
 
@@ -234,5 +234,5 @@ base_url = "http://localhost:11434/v1"
 
 [models]
 worker = "ollama:codellama"   # route worker through local Ollama
-planner = "glm/glm-4.7"      # route through first provider (OpenRouter)
+planner = "z-ai/glm-4.7"      # route through first provider (OpenRouter)
 ```

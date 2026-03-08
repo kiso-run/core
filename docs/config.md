@@ -63,13 +63,13 @@ skills = ["search", "aider"]
 [models]
 briefer     = "google/gemini-2.5-flash-lite"
 classifier  = "google/gemini-2.5-flash-lite"
-planner     = "glm/glm-4.7"
-reviewer    = "step/step-3.5-flash"
+planner     = "z-ai/glm-4.7"
+reviewer    = "stepfun/step-3.5-flash"
 curator     = "google/gemini-2.5-flash-lite"
-worker      = "step/step-3.5-flash"
+worker      = "stepfun/step-3.5-flash"
 summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "qwen/qwen-3.5-flash"
+messenger   = "qwen/qwen3.5-flash-02-23"
 searcher    = "perplexity/sonar"
 
 [settings]
@@ -207,7 +207,7 @@ base_url = "http://localhost:11434/v1"
 Model strings use `:` to specify a non-default provider. No `:` means the first listed provider.
 
 ```
-glm/glm-4.7                      → first provider, model "glm/glm-4.7"
+z-ai/glm-4.7                      → first provider, model "z-ai/glm-4.7"
 perplexity/sonar                 → first provider, model "perplexity/sonar"
 ollama:llama3                    → provider "ollama", model "llama3"
 ```
