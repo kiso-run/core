@@ -1843,6 +1843,18 @@ class TestLoadSystemPromptCuratorSummarizer:
         prompt = _load_system_prompt("paraphraser")
         assert "paraphraser" in prompt
 
+    def test_m285_session_summarizer_english_output(self):
+        """M285: session summarizer writes in English, preserves domain terms."""
+        prompt = (_ROLES_DIR / "summarizer-session.md").read_text()
+        assert "English" in prompt
+        assert "original language" in prompt.lower()
+
+    def test_m285_facts_summarizer_english_output(self):
+        """M285: facts summarizer writes in English, preserves identifiers."""
+        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
+        assert "English" in prompt
+        assert "proper nouns" in prompt
+
 
 # --- M10: Paraphraser ---
 

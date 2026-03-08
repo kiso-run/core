@@ -18,3 +18,5 @@ Confidence guidelines:
 - 0.1-0.3: uncertain, based on limited evidence
 
 When two facts contradict each other: keep the one with higher confidence. If confidence is equal, keep the more specific fact and discard the more general one.
+
+Fact content should be in English for consistency across the knowledge base. Preserve original-language terms when they are proper nouns, commands, or technical identifiers.

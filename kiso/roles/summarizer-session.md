@@ -25,3 +25,4 @@ Rules:
 - Focus on: user goals, decisions made, important facts discovered, current state.
 - If a section has no items, omit it entirely.
 - Return ONLY the structured text, no JSON or extra formatting.
+- Write the summary in English (it is consumed by internal LLM stages, not shown to the user). Preserve key terms, names, and technical vocabulary in their original language when they are domain-specific or when translation would lose precision.
