@@ -243,23 +243,49 @@ KISO_USER=""
 ask_username() {
     local default_user
     default_user="$(whoami)"
+
+    # List available system users (UID >= 1000, non-nobody) as hints
+    local available_users
+    available_users="$(awk -F: '$3 >= 1000 && $1 != "nobody" { print $1 }' /etc/passwd 2>/dev/null | sort | head -20)"
+
     if [[ -n "$ARG_USER" ]]; then
         if [[ ! "$ARG_USER" =~ $USERNAME_RE ]]; then
             red "Error: username '$ARG_USER' is invalid (must match $USERNAME_RE)"
             exit 1
         fi
+        if ! id "$ARG_USER" &>/dev/null; then
+            red "Error: Linux user '$ARG_USER' does not exist on this system."
+            echo "  Create it first:  sudo useradd -m $ARG_USER"
+            echo "  Then re-run the installer."
+            exit 1
+        fi
         KISO_USER="$ARG_USER"
         return
     fi
+
+    echo ""
+    echo "  Kiso needs a Linux system user to own files and run tasks."
+    if [[ -n "$available_users" ]]; then
+        echo "  Available users: $(echo "$available_users" | tr '\n' ', ' | sed 's/,$//')"
+    fi
+    echo ""
+
     local kiso_user
     while true; do
         read -rp "Username [$default_user]: " kiso_user
         kiso_user="${kiso_user:-$default_user}"
-        if [[ "$kiso_user" =~ $USERNAME_RE ]]; then
-            KISO_USER="$kiso_user"
-            return
+        if [[ ! "$kiso_user" =~ $USERNAME_RE ]]; then
+            red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
+            continue
         fi
-        red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
+        if ! id "$kiso_user" &>/dev/null; then
+            red "  Linux user '$kiso_user' does not exist."
+            echo "  Create it first:  sudo useradd -m $kiso_user"
+            echo "  Then enter the name again, or press Ctrl+C to abort."
+            continue
+        fi
+        KISO_USER="$kiso_user"
+        return
     done
 }
 

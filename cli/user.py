@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import pwd
 import sys
 import tomllib
 from pathlib import Path
@@ -83,6 +84,15 @@ def _call_reload(args) -> None:
     cli_post(args, "/admin/reload-config", params={"user": user})
 
 
+def _system_user_exists(username: str) -> bool:
+    """Check if a Linux system user exists via the passwd database."""
+    try:
+        pwd.getpwnam(username)
+        return True
+    except KeyError:
+        return False
+
+
 def _user_list(args) -> None:
     """List all users with their role, skills, and aliases."""
     require_admin()
@@ -132,6 +142,17 @@ def _user_add(args) -> None:
     if not NAME_RE.match(username):
         print(f"error: invalid username '{username}' (must match {NAME_RE.pattern})", file=sys.stderr)
         sys.exit(1)
+
+    # Check if the Linux system user exists; warn with instructions if not
+    if not _system_user_exists(username):
+        print(
+            f"warning: Linux user '{username}' does not exist on this system.\n"
+            f"  Kiso users map to Linux system users. To create one, run on the host:\n"
+            f"    sudo useradd -m {username}\n"
+            f"  The kiso config entry will be created now, but won't be functional\n"
+            f"  until the Linux user exists and the container is restarted.",
+            file=sys.stderr,
+        )
 
     if role not in ("admin", "user"):
         print("error: --role must be 'admin' or 'user'", file=sys.stderr)
