@@ -2136,6 +2136,30 @@ class TestBuildMessengerMessages:
         assert user_pos < goal_pos
 
 
+    def test_briefing_context_replaces_summary_facts(self):
+        """M260: briefing_context replaces raw summary and facts."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "Old summary", [{"content": "Old fact"}], "say hi",
+            briefing_context="Synthesized context from briefer.",
+        )
+        content = msgs[1]["content"]
+        assert "## Context\nSynthesized context from briefer." in content
+        assert "## Session Summary" not in content
+        assert "## Known Facts" not in content
+
+    def test_no_briefing_context_uses_raw(self):
+        """M260: without briefing_context, raw summary/facts are used."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "Session summary here", [{"content": "A fact"}], "say hi",
+        )
+        content = msgs[1]["content"]
+        assert "## Session Summary" in content
+        assert "## Known Facts" in content
+        assert "## Context\n" not in content
+
+
 class TestRunMessenger:
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -2238,6 +2262,32 @@ class TestRunMessenger:
 
         assert "helpful robot" in captured_messages[0]["content"]
         assert "{bot_name}" not in captured_messages[0]["content"]
+
+
+    async def test_briefing_context_skips_db_queries(self, db):
+        """M260: when briefing_context is provided, skip summary/facts DB queries."""
+        config = _make_brain_config()
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_messages.extend(messages)
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture), \
+             patch("kiso.brain.get_session") as mock_sess, \
+             patch("kiso.brain.get_facts") as mock_facts:
+            await run_messenger(
+                db, config, "sess1", "say hi",
+                briefing_context="Briefer context here.",
+            )
+
+        # DB queries for summary/facts should NOT be called
+        mock_sess.assert_not_called()
+        mock_facts.assert_not_called()
+        # Briefing context should appear in messenger input
+        user_content = captured_messages[1]["content"]
+        assert "## Context\nBriefer context here." in user_content
+        assert "## Session Summary" not in user_content
 
 
 class TestLoadSystemPromptMessenger:

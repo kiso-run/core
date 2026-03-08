@@ -34,6 +34,7 @@ from kiso.brain import (
     WORKER_PHASE_EXECUTING,
     WORKER_PHASE_IDLE,
     WORKER_PHASE_PLANNING,
+    _MAX_MESSENGER_FACTS,
     BrieferError,
     ClassifierError,
     CuratorError,
@@ -203,33 +204,50 @@ async def _msg_task(
     """Generate a user-facing message via the messenger brain role.
 
     When the briefer is enabled, it selects which plan_outputs are relevant
-    to the msg task, reducing noise in the messenger context.
+    to the msg task and synthesizes context, reducing noise in the messenger.
     """
     selected_outputs = plan_outputs
-    if plan_outputs and setting_bool(config.settings, "briefer_enabled"):
+    briefing_context: str | None = None
+
+    if setting_bool(config.settings, "briefer_enabled"):
         try:
-            context_pool: dict = {
-                "plan_outputs": _format_plan_outputs_for_msg(plan_outputs),
-            }
+            # Build full context pool for the briefer
+            context_pool: dict = {}
+            if plan_outputs:
+                context_pool["plan_outputs"] = _format_plan_outputs_for_msg(plan_outputs)
             if goal:
                 context_pool["goal"] = goal
             if user_message:
                 context_pool["recent_messages"] = user_message
+            # Fetch summary/facts for the briefer to filter
+            sess = await get_session(db, session)
+            if sess and sess["summary"]:
+                context_pool["summary"] = sess["summary"]
+            facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
+            if facts:
+                context_pool["facts"] = "\n".join(f"- {f['content']}" for f in facts)
+
             briefing = await run_briefer(
                 config, "messenger", detail, context_pool, session=session,
             )
-            indices = set(briefing.get("output_indices", []))
-            if indices:
-                selected_outputs = [o for o in plan_outputs if o["index"] in indices]
-                if not selected_outputs:
-                    selected_outputs = plan_outputs  # safety: don't pass empty
+            # Filter plan_outputs by selected indices
+            if plan_outputs:
+                indices = set(briefing.get("output_indices", []))
+                if indices:
+                    selected_outputs = [o for o in plan_outputs if o["index"] in indices]
+                    if not selected_outputs:
+                        selected_outputs = plan_outputs  # safety: don't pass empty
+            # Use briefer's synthesized context instead of raw summary/facts
+            if briefing.get("context"):
+                briefing_context = briefing["context"]
         except Exception:
-            log.debug("Briefer failed for messenger, using all plan_outputs")
+            log.debug("Briefer failed for messenger, using full context")
 
     outputs_text = _format_plan_outputs_for_msg(selected_outputs) if selected_outputs else ""
     return await run_messenger(
         db, config, session, detail, outputs_text, goal=goal,
         include_recent=include_recent, user_message=user_message,
+        briefing_context=briefing_context,
     )
 
 

@@ -10327,21 +10327,29 @@ class TestMsgTaskBrieferIntegration:
         # Briefer was called and failed, then messenger was called
         assert call_count[0] >= 2  # at least briefer + messenger
 
-    async def test_no_plan_outputs_skips_briefer(self, db):
-        """When there are no plan_outputs, briefer is not called."""
+    async def test_no_plan_outputs_still_calls_briefer(self, db):
+        """M260: briefer is called even without plan_outputs to filter context."""
         config = _make_config(settings={"briefer_enabled": True})
 
         call_roles = []
 
         async def _capture(cfg, role, messages, **kw):
+            if role == "briefer":
+                call_roles.append(role)
+                return json.dumps({
+                    "modules": [], "skills": [],
+                    "context": "Filtered context.",
+                    "output_indices": [], "relevant_tags": [],
+                })
             call_roles.append(role)
             return "response"
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
             await _msg_task(config, db, "sess1", "Say hello")
 
-        # No briefer call — only messenger
-        assert "briefer" not in call_roles
+        # Briefer is called to filter summary/facts context
+        assert "briefer" in call_roles
+        assert "messenger" in call_roles
 
 
 # ---------------------------------------------------------------------------

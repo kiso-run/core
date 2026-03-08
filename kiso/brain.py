@@ -1434,6 +1434,7 @@ def build_messenger_messages(
     goal: str = "",
     recent_messages: list[dict] | None = None,
     user_message: str = "",
+    briefing_context: str | None = None,
 ) -> list[dict]:
     """Build the message list for the messenger LLM call.
 
@@ -1446,6 +1447,8 @@ def build_messenger_messages(
         goal: The plan goal (user's original request for this turn).
         recent_messages: Recent conversation messages (for chat mode context).
         user_message: The original user message (for language/context inference).
+        briefing_context: Synthesized context from the briefer (replaces
+            raw summary/facts when provided).
     """
     bot_name = config.settings["bot_name"]
     system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
@@ -1457,11 +1460,16 @@ def build_messenger_messages(
         )
     if goal:
         context_parts.append(f"## Current User Request\n{goal}")
-    if summary:
-        context_parts.append(f"## Session Summary (background only)\n{summary}")
-    if facts:
-        facts_text = "\n".join(f"- {f['content']}" for f in facts)
-        context_parts.append(f"## Known Facts\n{facts_text}")
+    if briefing_context:
+        # Briefer path: synthesized context replaces raw summary/facts
+        context_parts.append(f"## Context\n{briefing_context}")
+    else:
+        # Fallback: full raw context
+        if summary:
+            context_parts.append(f"## Session Summary (background only)\n{summary}")
+        if facts:
+            facts_text = "\n".join(f"- {f['content']}" for f in facts)
+            context_parts.append(f"## Known Facts\n{facts_text}")
     if recent_messages:
         msgs_text = "\n".join(
             f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
@@ -1485,29 +1493,26 @@ async def run_messenger(
     goal: str = "",
     include_recent: bool = False,
     user_message: str = "",
+    briefing_context: str | None = None,
 ) -> str:
     """Run the messenger: generate a user-facing response.
 
     Loads session summary and facts, builds context, and calls the
     messenger LLM to produce text for the user.
 
-    When *goal* is provided it is included as ``## Current User Request``
-    so the messenger knows the original intent behind the plan.
-
-    When *include_recent* is True (chat fast-path), recent conversation
-    messages are injected so the messenger can reference prior exchanges
-    instead of hallucinating.
-
-    When *user_message* is provided it is included as
-    ``## Original User Message`` so the messenger can infer language
-    and context from the user's actual words.
+    When *briefing_context* is provided (from the briefer), it replaces
+    the raw summary and facts in the messenger prompt.
 
     Returns the generated text.
     Raises MessengerError on failure.
     """
-    sess = await get_session(db, session)
-    summary = sess["summary"] if sess else ""
-    facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
+    summary = ""
+    facts: list[dict] = []
+    if not briefing_context:
+        # Only fetch summary/facts when briefer hasn't already filtered them
+        sess = await get_session(db, session)
+        summary = sess["summary"] if sess else ""
+        facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
     recent = None
     if include_recent:
         context_limit = int(config.settings["context_messages"])
@@ -1515,6 +1520,7 @@ async def run_messenger(
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
         recent_messages=recent or None, user_message=user_message,
+        briefing_context=briefing_context,
     )
     try:
         return await call_llm(config, "messenger", messages, session=session)
