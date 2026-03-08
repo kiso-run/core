@@ -299,7 +299,9 @@ BRIEFER_SCHEMA: dict = {
 }
 
 # Available prompt modules that the briefer can select.
+# core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
+    "planning_rules", "kiso_native", "skills_rules",
     "web", "replan", "scripting", "skill_recovery", "data_flow",
 })
 _BRIEFER_MODULES_STR = ", ".join(sorted(BRIEFER_MODULES))

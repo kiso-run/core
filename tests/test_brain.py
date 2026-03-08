@@ -4696,16 +4696,20 @@ class TestLoadModularPrompt:
     """Tests for _load_modular_prompt — module marker parsing."""
 
     def test_planner_core_only(self):
-        """Loading only core returns identity + rules without conditional modules."""
+        """Loading only core returns identity + task types without any other modules."""
         result = _load_modular_prompt("planner", [])
         assert "Kiso planner" in result
         assert "Task types:" in result
-        # Conditional modules should be absent
+        assert "Last task MUST" in result
+        # All conditional modules should be absent
         assert "Web interaction:" not in result
         assert "Scripting:" not in result
         assert "extend_replan" not in result
         assert "Broken skill recovery" not in result
         assert "File-based data flow" not in result
+        assert "Skills efficiency:" not in result
+        assert "Kiso-native first" not in result
+        assert "Recent Messages" not in result
 
     def test_planner_core_plus_web(self):
         """Loading core + web includes web rules but not others."""
@@ -4746,9 +4750,38 @@ class TestLoadModularPrompt:
         assert "File-based data flow" in result
         assert "truncated at 4KB" in result
 
+    def test_planner_core_plus_planning_rules(self):
+        """Loading core + planning_rules includes general planning rules."""
+        result = _load_modular_prompt("planner", ["planning_rules"])
+        assert "Kiso planner" in result
+        assert "Recent Messages" in result
+        assert "non-null `expect`" in result
+        assert "fabricate" in result
+        # Other modules absent
+        assert "Skills efficiency:" not in result
+        assert "Kiso-native first" not in result
+
+    def test_planner_core_plus_kiso_native(self):
+        """Loading core + kiso_native includes kiso-first policy."""
+        result = _load_modular_prompt("planner", ["kiso_native"])
+        assert "Kiso-native first" in result
+        assert "kiso env set" in result.lower()
+        # Other modules absent
+        assert "Skills efficiency:" not in result
+        assert "Recent Messages" not in result
+
+    def test_planner_core_plus_skills_rules(self):
+        """Loading core + skills_rules includes skill efficiency rules."""
+        result = _load_modular_prompt("planner", ["skills_rules"])
+        assert "Skills efficiency:" in result
+        assert "Atomic operations" in result
+        assert "Task ordering" in result
+        # Other modules absent
+        assert "Kiso-native first" not in result
+        assert "Recent Messages" not in result
+
     def test_all_modules_returns_full_content(self):
         """Loading all modules returns content equivalent to the full prompt."""
-        full = _load_system_prompt("planner")
         modular = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # All key sections present
         assert "Kiso planner" in modular
@@ -4757,6 +4790,9 @@ class TestLoadModularPrompt:
         assert "extend_replan" in modular
         assert "Broken skill recovery" in modular
         assert "File-based data flow" in modular
+        assert "Skills efficiency:" in modular
+        assert "Kiso-native first" in modular
+        assert "Recent Messages" in modular
 
     def test_no_markers_returns_full_prompt(self):
         """Prompt without markers returns the full text (backward compat)."""
