@@ -2928,6 +2928,18 @@ class TestClassifierPromptContent:
         assert "doubt" in prompt.lower()
         assert "plan" in prompt
 
+    def test_classifier_prompt_covers_urls(self):
+        """Classifier prompt should explicitly mention URLs/websites as 'plan' (M230)."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "url" in prompt or "website" in prompt
+        assert "domain" in prompt
+
+    def test_classifier_prompt_covers_imperative_any_language(self):
+        """Classifier prompt should mention action commands in any language (M230)."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "any language" in prompt
+        assert "imperative" in prompt
+
 
 # --- M33: retry_hint in REVIEW_SCHEMA ---
 
