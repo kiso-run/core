@@ -2525,11 +2525,11 @@ class TestM192PlannerNavigateAndInstallGuard:
 
     def test_navigate_requires_browser_skill(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "browser skill is REQUIRED" in prompt
+        assert "requires the `browser` skill" in prompt
 
-    def test_search_may_return_wrong_site(self):
+    def test_search_not_for_page_interaction(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "completely different website" in prompt
+        assert "search queries search engines, not the actual page" in prompt
 
     def test_cannot_use_uninstalled_skill(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -2547,9 +2547,9 @@ class TestM207CompositeRequestDecomposition:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "Composite requests" in prompt
 
-    def test_snapshot_warning_present(self):
+    def test_composite_requests_no_extra_steps(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "interactive element metadata" in prompt
+        assert "do not add extra steps" in prompt
 
 
 class TestM199PluginInstallIdempotent:
@@ -3404,7 +3404,7 @@ class TestPlannerContextualRules:
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
-                "fammi uno screenshot di example.com",
+                "take a screenshot of example.com",
             )
         system = msgs[0]["content"]
         assert "Plugin installation:" in system
@@ -3417,7 +3417,7 @@ class TestPlannerContextualRules:
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
-                "fammi uno screenshot di example.com",
+                "take a screenshot of example.com",
             )
         system = msgs[0]["content"]
         assert "Plugin installation:" not in system
@@ -3428,7 +3428,7 @@ class TestPlannerContextualRules:
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
-                "navigate to example.com",
+                "take a screenshot of the homepage",
             )
         context = msgs[1]["content"]
         assert "Capability Analysis" in context
@@ -3443,7 +3443,7 @@ class TestPlannerContextualRules:
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
-                "navigate to example.com",
+                "take a screenshot of the homepage",
             )
         context = msgs[1]["content"]
         assert "Capability Analysis" not in context
@@ -3453,11 +3453,22 @@ class TestPlannerContextualRules:
         with patch("kiso.brain.discover_skills", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
-                "fammi uno screenshot",
+                "take a screenshot please",
             )
         context = msgs[1]["content"]
         assert "Capability Analysis" in context
         assert "browser" in context
+
+    async def test_capability_gap_no_trigger_on_generic_words(self, db):
+        """M223: generic words like 'browse', 'form', 'click' don't trigger capability gap."""
+        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
+        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "browse the web and fill the form",
+            )
+        context = msgs[1]["content"]
+        assert "Capability Analysis" not in context
 
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""

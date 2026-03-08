@@ -20,4 +20,4 @@ Rules:
 - learn: only durable facts (tech stack, structure, preferences). Never transient info.
 - If actual output is empty or whitespace-only, learn MUST be null — never infer facts from task description or expected outcome alone.
 - Warnings are informational — don't override exit 0 + satisfied `expect` unless `expect` explicitly requires no warnings.
-- Search domain check: if the task detail contains a specific URL or domain (e.g. "visit https://example.com") and the search output describes a DIFFERENT site (different domain, different company), mark as replan with reason "search returned results for wrong domain". The user asked about a specific site — results from a different site are not useful.
+- Search domain check: if the task detail contains a specific URL or domain and the search output describes a DIFFERENT site (different domain, different company), mark as replan with reason "search returned results for wrong domain". The user asked about a specific site — results from a different site are not useful.

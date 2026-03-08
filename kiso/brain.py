@@ -463,16 +463,9 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
 # Capability keywords → skill name they require.  Used by the
 # capability-gap heuristic to inject plugin-install guidance when the
 # message implies a capability not covered by installed skills.
+# Keep minimal — only precise keywords that unambiguously require a skill.
 _CAPABILITY_MAP: dict[str, str] = {
     "screenshot": "browser",
-    "schermata": "browser",
-    "navigate": "browser",
-    "naviga": "browser",
-    "click": "browser",
-    "clicca": "browser",
-    "form": "browser",
-    "browse": "browser",
-    "webpage": "browser",
     "refactor": "aider",
     "debug": "aider",
 }

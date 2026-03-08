@@ -9823,7 +9823,7 @@ class TestE2EWebScenario:
         with patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, installed, *_ = await build_planner_messages(
                 db, config, "sess1", "admin",
-                "fammi uno screenshot di example.com",
+                "take a screenshot of example.com",
             )
         system = msgs[0]["content"]
         # Plugin-install appendix should be injected (capability gap: screenshot → browser)
