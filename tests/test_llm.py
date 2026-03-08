@@ -14,6 +14,7 @@ from kiso.llm import (
     LLMBudgetExceeded,
     LLMError,
     _inflight_calls,
+    _json_object_only_models,
     call_llm,
     clear_llm_budget,
     close_http_client,
@@ -1173,3 +1174,159 @@ class TestInflightCallTracking:
                 )
 
         assert "" not in captured_keys
+
+
+class TestJsonSchemaFallback:
+    """M262: json_schema → json_object fallback for incompatible models."""
+
+    _SCHEMA = {"type": "json_schema", "json_schema": {"name": "review", "strict": True, "schema": {"type": "object"}}}
+
+    def setup_method(self):
+        _json_object_only_models.discard("gpt-4")
+        _json_object_only_models.discard("gpt-3.5")
+
+    def teardown_method(self):
+        _json_object_only_models.discard("gpt-4")
+        _json_object_only_models.discard("gpt-3.5")
+
+    @pytest.mark.asyncio
+    async def test_fallback_on_response_format_400(self):
+        """400 with 'response_format' in body triggers json_object retry."""
+        config = _make_config()
+        call_count = 0
+
+        async def _mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            payload = kwargs.get("json", {})
+            rf = payload.get("response_format", {})
+            if rf.get("type") == "json_schema":
+                return httpx.Response(
+                    400,
+                    text='{"error":{"message":"Request param: response_format is invalid"}}',
+                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                )
+            # json_object succeeds
+            assert rf.get("type") == "json_object"
+            return _ok_response('{"status":"ok"}')
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _mock_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=self._SCHEMA,
+                )
+
+        assert result == '{"status":"ok"}'
+        assert call_count == 2  # first json_schema → 400, then json_object → 200
+        assert "gpt-4" in _json_object_only_models
+
+    @pytest.mark.asyncio
+    async def test_cache_skips_json_schema_on_second_call(self):
+        """After caching, subsequent calls go directly to json_object."""
+        config = _make_config()
+        _json_object_only_models.add("gpt-4")
+        payloads = []
+
+        async def _mock_post(*args, **kwargs):
+            payloads.append(kwargs.get("json", {}))
+            return _ok_response('{"status":"ok"}')
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _mock_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=self._SCHEMA,
+                )
+
+        assert len(payloads) == 1
+        assert payloads[0]["response_format"] == {"type": "json_object"}
+
+    @pytest.mark.asyncio
+    async def test_non_matching_400_not_retried(self):
+        """400 without 'response_format' in body raises normally."""
+        config = _make_config()
+
+        async def _mock_post(*args, **kwargs):
+            return httpx.Response(
+                400,
+                text='{"error":{"message":"Invalid model specified"}}',
+                request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+            )
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _mock_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError, match="Invalid model"):
+                    await call_llm(
+                        config, "planner",
+                        [{"role": "user", "content": "hi"}],
+                        response_format=self._SCHEMA,
+                    )
+
+        assert "gpt-4" not in _json_object_only_models
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_without_response_format(self):
+        """400 on non-structured call doesn't trigger fallback logic."""
+        config = _make_config()
+
+        async def _mock_post(*args, **kwargs):
+            return httpx.Response(
+                400,
+                text='{"error":{"message":"response_format is invalid"}}',
+                request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+            )
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _mock_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                with pytest.raises(LLMError):
+                    await call_llm(
+                        config, "worker",
+                        [{"role": "user", "content": "hi"}],
+                    )
+
+    @pytest.mark.asyncio
+    async def test_json_object_format_not_downgraded(self):
+        """Calls already using json_object are not affected by fallback."""
+        config = _make_config()
+        json_object_format = {"type": "json_object"}
+
+        async def _mock_post(*args, **kwargs):
+            return _ok_response('{"result": true}')
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = AsyncMock()
+                mock_client.post.side_effect = _mock_post
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                result = await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=json_object_format,
+                )
+
+        assert result == '{"result": true}'

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
 import time
 
@@ -13,8 +14,18 @@ from kiso import audit
 from kiso.config import Config, LLM_API_KEY_ENV, Provider
 from kiso.text import extract_thinking
 
+log = logging.getLogger(__name__)
+
 # Roles that require structured output (response_format with json_schema).
 STRUCTURED_ROLES = {"planner", "reviewer", "curator", "briefer"}
+
+# response_format type values (OpenAI API).
+_FMT_JSON_SCHEMA = "json_schema"
+_FMT_JSON_OBJECT = "json_object"
+
+# Models that rejected json_schema and need json_object instead.
+# Cached per model string to avoid retrying the json_schema format on every call.
+_json_object_only_models: set[str] = set()
 
 # Shared long-lived HTTP client, initialized by main.py lifespan.
 # When set, call_llm reuses the connection pool instead of opening a new
@@ -195,21 +206,19 @@ async def call_llm(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    payload: dict = {
-        "model": model_name,
-        "messages": messages,
-    }
-    if response_format:
-        payload["response_format"] = response_format
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
+    # Downgrade json_schema → json_object for models known to not support it.
+    effective_format = response_format
+    if (
+        response_format
+        and response_format.get("type") == _FMT_JSON_SCHEMA
+        and model_name in _json_object_only_models
+    ):
+        effective_format = {"type": _FMT_JSON_OBJECT}
 
     url = provider.base_url.rstrip("/") + "/chat/completions"
 
     # Resolve provider name for audit
     provider_name = model_string.split(":", 1)[0] if ":" in model_string else next(iter(config.providers))
-
-    t0 = time.perf_counter()
 
     # Pick the right timeout for this role.
     if role == "planner":
@@ -226,33 +235,66 @@ async def call_llm(
     # can correlate inflight input panels with completed call entries.
     call_ts = time.time()
 
-    # Track inflight call so the CLI can show it in real-time
-    if session:
-        stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
-        _inflight_calls[session] = {
-            "role": role,
+    # Retry loop: at most one fallback retry (json_schema → json_object).
+    for _attempt in range(2):
+        payload: dict = {
             "model": model_name,
-            "messages": stripped_messages,
-            "ts": call_ts,
+            "messages": messages,
         }
-    try:
-        if _http_client is not None:
-            resp = await _http_client.post(url, headers=headers, json=payload, timeout=llm_timeout)
-        else:
-            async with httpx.AsyncClient(timeout=llm_timeout) as _client:
-                resp = await _client.post(url, headers=headers, json=payload)
-    except httpx.TimeoutException:
-        duration_ms = int((time.perf_counter() - t0) * 1000)
-        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-        raise LLMError(f"LLM call timed out ({role}, {model_name})")
-    except httpx.RequestError as e:
-        duration_ms = int((time.perf_counter() - t0) * 1000)
-        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-        raise LLMError(f"LLM request failed: {e}")
-    finally:
-        _inflight_calls.pop(session, None)
+        if effective_format:
+            payload["response_format"] = effective_format
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
-    duration_ms = int((time.perf_counter() - t0) * 1000)
+        t0 = time.perf_counter()
+
+        # Track inflight call so the CLI can show it in real-time
+        if session:
+            if stripped_messages is None:
+                stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+            _inflight_calls[session] = {
+                "role": role,
+                "model": model_name,
+                "messages": stripped_messages,
+                "ts": call_ts,
+            }
+        try:
+            if _http_client is not None:
+                resp = await _http_client.post(url, headers=headers, json=payload, timeout=llm_timeout)
+            else:
+                async with httpx.AsyncClient(timeout=llm_timeout) as _client:
+                    resp = await _client.post(url, headers=headers, json=payload)
+        except httpx.TimeoutException:
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+            raise LLMError(f"LLM call timed out ({role}, {model_name})")
+        except httpx.RequestError as e:
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+            raise LLMError(f"LLM request failed: {e}")
+        finally:
+            _inflight_calls.pop(session, None)
+
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+
+        # On success or non-retryable error, exit the loop.
+        if resp.status_code != 200:
+            # Detect json_schema rejection → retry once with json_object.
+            if (
+                _attempt == 0
+                and resp.status_code == 400
+                and effective_format
+                and effective_format.get("type") == _FMT_JSON_SCHEMA
+                and "response_format" in (resp.text or "").lower()
+            ):
+                _json_object_only_models.add(model_name)
+                log.warning(
+                    "Model %s does not support json_schema, falling back to json_object",
+                    model_name,
+                )
+                effective_format = {"type": _FMT_JSON_OBJECT}
+                continue  # retry with json_object
+        break  # success or non-retryable error
 
     if resp.status_code != 200:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
