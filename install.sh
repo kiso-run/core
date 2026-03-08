@@ -270,9 +270,16 @@ ask_username() {
     fi
     echo ""
 
+    # Tab-completion for available usernames (read -e uses readline)
+    if [[ -n "$available_users" ]]; then
+        local _user_words
+        _user_words="$(echo "$available_users" | tr '\n' ' ')"
+        complete -W "$_user_words" -E 2>/dev/null || true
+    fi
+
     local kiso_user
     while true; do
-        read -rp "User [$default_user]: " kiso_user
+        read -erp "User [$default_user]: " kiso_user
         kiso_user="${kiso_user:-$default_user}"
         if [[ ! "$kiso_user" =~ $USERNAME_RE ]]; then
             red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
@@ -285,6 +292,7 @@ ask_username() {
             continue
         fi
         KISO_USER="$kiso_user"
+        complete -r -E 2>/dev/null || true
         return
     done
 }

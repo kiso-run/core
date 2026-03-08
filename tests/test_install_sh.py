@@ -247,6 +247,39 @@ class TestSignalHandling:
         assert "sleep 2 || true" in content
 
 
+class TestAskUsernameCompletion:
+    """Tab-completion for ask_username prompt."""
+
+    def test_read_uses_readline(self):
+        """ask_username uses 'read -e' for readline support (tab completion)."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        # The read command in ask_username must use -e for readline
+        assert "read -erp" in content, "ask_username should use 'read -e' for readline"
+
+    def test_complete_setup_for_usernames(self):
+        """ask_username sets up bash completion for available usernames."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "complete -W" in content, "Should set up word completion for usernames"
+        assert "complete -r -E" in content, "Should clean up completion after use"
+
+    def test_ask_username_with_arg_skips_prompt(self):
+        """When ARG_USER is set, ask_username validates and skips the prompt."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            ARG_USER="$(whoami)"
+            ask_username
+            echo "KISO_USER=$KISO_USER"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "KISO_USER=" in result.stdout
+        assert result.stdout.strip().endswith(os.environ.get("USER", ""))
+
+
 class TestM200VersionTracking:
     """M200: instance version tracking — Dockerfile, install.sh, /health."""
 
