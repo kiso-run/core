@@ -775,10 +775,14 @@ async def _handle_msg_task(
     try:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
         idx_msg = get_usage_index()
+        # Track index after briefer flush so post-messenger flush
+        # doesn't re-append briefer calls (M273 fix).
+        idx_after_briefer = [idx_msg]  # mutated by callback
 
         async def _flush_briefer():
             """M273: flush briefer calls so CLI renders panels before messenger runs."""
             await _append_calls(ctx.db, task_id, idx_msg)
+            idx_after_briefer[0] = get_usage_index()
 
         try:
             text = await asyncio.wait_for(
@@ -808,7 +812,7 @@ async def _handle_msg_task(
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
-        await _append_calls(ctx.db, task_id, idx_msg)
+        await _append_calls(ctx.db, task_id, idx_after_briefer[0])
         await _store_step_usage(ctx.db, task_id, usage_idx_before)
         return _TaskHandlerResult(
             completed_row=task_row,
