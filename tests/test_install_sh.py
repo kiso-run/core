@@ -259,12 +259,13 @@ class TestAskUsernameCompletion:
         assert "read -erp" in content, "ask_username should use 'read -e' for readline"
 
     def test_complete_setup_for_usernames(self):
-        """ask_username sets up bash completion for available usernames."""
+        """ask_username binds a custom readline TAB function for usernames."""
         script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
         with open(script_path) as f:
             content = f.read()
-        assert "complete -W" in content, "Should set up word completion for usernames"
-        assert "complete -r -E" in content, "Should clean up completion after use"
+        assert "bind -x" in content, "Should bind custom TAB handler via bind -x"
+        assert "compgen -W" in content, "Should use compgen for username matching"
+        assert 'bind \'\"\\t": complete\'' in content, "Should restore default TAB after use"
 
     def test_ask_username_with_arg_skips_prompt(self):
         """When ARG_USER is set, ask_username validates and skips the prompt."""

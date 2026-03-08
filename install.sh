@@ -270,16 +270,37 @@ ask_username() {
     fi
     echo ""
 
-    # Tab-completion for available usernames (read -e uses readline)
+    # Tab-completion for available usernames.
+    # `read -e` uses readline, but `complete -W` only works for command-line
+    # completion, not inside read.  We bind a custom function via `bind -x`
+    # that edits the readline buffer directly (READLINE_LINE/READLINE_POINT).
+    local _kiso_user_words=""
+    local _kiso_user_prompt="User [$default_user]: "
     if [[ -n "$available_users" ]]; then
-        local _user_words
-        _user_words="$(echo "$available_users" | tr '\n' ' ')"
-        complete -W "$_user_words" -E 2>/dev/null || true
+        _kiso_user_words="${available_users//$'\n'/ }"
+        _kiso_complete_user() {
+            local cur="${READLINE_LINE:0:$READLINE_POINT}"
+            cur="${cur#"${cur%%[![:space:]]*}"}"
+            local matches
+            matches="$(compgen -W "$_kiso_user_words" -- "$cur")"
+            [[ -z "$matches" ]] && return
+            local -a match_arr
+            IFS=$'\n' read -r -d '' -a match_arr <<< "$matches"
+            if [[ ${#match_arr[@]} -eq 1 ]]; then
+                READLINE_LINE="$matches"
+                READLINE_POINT=${#READLINE_LINE}
+            else
+                echo ""
+                echo "$matches"
+                printf "%s%s" "$_kiso_user_prompt" "$cur"
+            fi
+        }
+        bind -x '"\t": _kiso_complete_user' 2>/dev/null || true
     fi
 
     local kiso_user
     while true; do
-        read -erp "User [$default_user]: " kiso_user
+        read -erp "$_kiso_user_prompt" kiso_user
         kiso_user="${kiso_user:-$default_user}"
         if [[ ! "$kiso_user" =~ $USERNAME_RE ]]; then
             red "  Invalid: must be lowercase, start with a-z or _, max 32 chars."
@@ -292,7 +313,9 @@ ask_username() {
             continue
         fi
         KISO_USER="$kiso_user"
-        complete -r -E 2>/dev/null || true
+        # Restore default readline TAB behavior
+        bind '"\t": complete' 2>/dev/null || true
+        unset -f _kiso_complete_user 2>/dev/null || true
         return
     done
 }

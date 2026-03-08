@@ -76,6 +76,7 @@ searcher    = "perplexity/sonar"
 # --- conversation ---
 context_messages          = 5        # recent messages sent to planner
 summarize_threshold       = 30       # message count before summarizer runs
+summarize_messages_limit  = 100      # max messages sent to summarizer LLM per run
 bot_name                  = "Kiso"
 
 # --- knowledge / memory ---
@@ -86,16 +87,23 @@ fact_archive_threshold        = 0.3
 fact_consolidation_min_ratio  = 0.3
 
 # --- planning ---
-max_replan_depth          = 3
+max_replan_depth          = 5
 max_validation_retries    = 3
 max_plan_tasks            = 20
 
 # --- execution ---
-exec_timeout              = 120      # seconds; also used for post-plan LLM calls
+classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
+llm_timeout               = 300      # seconds; timeout for post-plan LLM calls (curator, summarizer)
 planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
 messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
-max_worker_retries        = 1
+max_worker_retries        = 2
+
+# --- resource limits ---
+max_memory_gb             = 4        # container RAM limit
+max_cpus                  = 2        # container CPU limit
+max_disk_gb               = 32       # app-level disk limit
+max_pids                  = 512      # container PID limit
 
 # --- limits ---
 max_llm_calls_per_message = 200
@@ -109,6 +117,9 @@ worker_idle_timeout       = 300
 
 # --- fast path ---
 fast_path_enabled         = true     # skip planner for conversational messages
+
+# --- briefer (context intelligence layer) ---
+briefer_enabled           = true     # LLM-based context selection for each pipeline stage
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check
@@ -127,7 +138,7 @@ webhook_max_payload       = 1048576
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
 | `users.*.skills` | Required for `user` role. `"*"` for all skills, or a list of skill names. Ignored for admins (always all). |
-| `[models]` | All 9 roles required: `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
+| `[models]` | All 10 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
 | `[settings]` | All fields required. See table below. |
 
 ### Settings reference
@@ -137,20 +148,26 @@ webhook_max_payload       = 1048576
 | `users.*.aliases.*` | (none) | Platform identity per connector. Key = connector/token name, value = platform user. See [security.md](security.md). |
 | `context_messages` | `5` | Number of recent raw messages sent to the planner. |
 | `summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value. |
+| `summarize_messages_limit` | `100` | Max messages sent to summarizer LLM per run. |
 | `bot_name` | `"Kiso"` | Name used by the messenger when referring to itself. |
 | `knowledge_max_facts` | `50` | Max global facts before consolidation. |
 | `fact_decay_days` | `7` | Facts not used in this many days lose `fact_decay_rate` confidence per post-plan cycle. |
 | `fact_decay_rate` | `0.1` | How much confidence is subtracted per decay cycle (0.0–1.0). |
 | `fact_archive_threshold` | `0.3` | Facts with confidence below this are moved to `facts_archive` and removed from active context. |
 | `fact_consolidation_min_ratio` | `0.3` | Minimum fraction of facts that must survive consolidation. If the LLM returns fewer than this fraction, consolidation is aborted and the original facts are kept. |
-| `max_replan_depth` | `3` | Max replan cycles per original message. |
+| `max_replan_depth` | `5` | Max replan cycles per original message. |
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
-| `exec_timeout` | `120` | Seconds before exec or skill subprocess is killed. Also used for post-plan LLM calls (curator, summarizer, fact consolidation) and graceful shutdown per worker. Also the HTTP timeout for non-planner/non-messenger LLM calls. |
+| `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
+| `llm_timeout` | `300` | Seconds for post-plan LLM calls (curator, summarizer, fact consolidation) and graceful shutdown per worker. Also the HTTP timeout for non-planner/non-messenger LLM calls. |
 | `planner_timeout` | `300` | Seconds before a planner LLM call is cancelled (both HTTP timeout and asyncio wrapper). Higher default for reasoning models that need time to think. |
 | `messenger_timeout` | `120` | Seconds before a messenger LLM call is cancelled (applies to fast-path chat and `msg` plan tasks). Tune independently from `planner_timeout` when planner and messenger use different models with different latency profiles. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or skill task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
-| `max_worker_retries` | `1` | Max worker-level retries per exec/search task before escalating to a full replan. |
+| `max_worker_retries` | `2` | Max worker-level retries per exec/search task before escalating to a full replan. |
+| `max_memory_gb` | `4` | Container RAM limit (applied via docker run/update). |
+| `max_cpus` | `2` | Container CPU limit (applied via docker run/update). |
+| `max_disk_gb` | `32` | App-level disk limit (applied immediately). |
+| `max_pids` | `512` | Container PID limit (applied via docker run/update). |
 | `max_llm_calls_per_message` | `200` | Budget cap on LLM calls per user message. Prevents runaway replan loops. |
 | `max_message_size` | `65536` | Max bytes for POST /msg content. Requests exceeding this return 413. See [security.md — Input Validation](security.md#input-validation). |
 | `max_queue_size` | `50` | Max queued messages per session before backpressure (429). See [security.md — Queue Backpressure](security.md#queue-backpressure). |
@@ -158,6 +175,7 @@ webhook_max_payload       = 1048576
 | `port` | `8333` | Server port. |
 | `worker_idle_timeout` | `300` | Seconds before idle worker shuts down. |
 | `fast_path_enabled` | `true` | Skip planner for conversational messages (classifier decides). |
+| `briefer_enabled` | `true` | LLM-based context selection for each pipeline stage. When disabled, all context is passed to every LLM call. |
 | `webhook_allow_list` | `[]` | IPs exempt from webhook SSRF validation (e.g. `["127.0.0.1"]` for local connectors). See [security.md — Webhook Validation](security.md#7-webhook-validation). |
 | `webhook_require_https` | `true` | Reject plain `http://` webhook URLs. Set to `false` for local development. |
 | `webhook_secret` | `""` | HMAC-SHA256 secret for webhook signatures. Empty = no signature. |
