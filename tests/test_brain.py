@@ -3439,8 +3439,12 @@ class TestM47WorkerHintPriority:
     def test_worker_prompt_hint_takes_priority(self):
         prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "hint" in prompt.lower()
-        # Hint must override literal re-translation (various phrasings accepted)
-        assert "priority" in prompt.lower() or "over" in prompt.lower()
+        assert "ABSOLUTE priority" in prompt
+
+    def test_m284_skill_path_awareness(self):
+        """M284: worker prompt mentions skill venv PATH."""
+        prompt = (_ROLES_DIR / "worker.md").read_text()
+        assert "Skill binaries" in prompt or "skill venv PATH" in prompt
 
     def test_retry_context_with_hint_is_visible_to_translator(self):
         """Hint in retry context is present in the messages sent to the exec translator."""
