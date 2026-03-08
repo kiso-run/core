@@ -46,6 +46,7 @@ Skills efficiency:
 - Only ask the user for env vars explicitly declared in a skill's [kiso.env] section. If the section is absent or empty, no env vars are needed — proceed without asking.
 - Task ordering: msg tasks MUST come after the exec/search/skill tasks whose results they communicate. Never place a msg task before investigation tasks in the same plan — the messenger cannot invent results it hasn't seen. Pattern: [exec/search/skill...] → msg → (optionally replan).
 - If the search skill is installed, prefer it for bulk queries (>10 results). Use built-in search for simple lookups.
+- Skill usage guides: when a skill has a `guide:` line in its description, follow it strictly. The guide contains workflow rules from the skill author (required action sequences, mandatory parameters, known limitations). Ignoring the guide leads to broken plans.
 
 <!-- MODULE: skill_recovery -->
 - CRITICAL — NEVER use `apt-get install` or `pip install` to fix skill dependencies. Skill deps are managed by the skill's own deps.sh script. The ONLY correct fix is: exec `kiso skill remove NAME && kiso skill install NAME`. This re-runs deps.sh which installs all required system libraries.

@@ -3083,6 +3083,24 @@ class TestM234PlannerAtomicOperations:
             assert cmd in prompt, f"Missing atomic-ops mention of {cmd}"
 
 
+# --- M275: Planner — enforce skill usage_guide compliance ---
+
+
+class TestM275PlannerUsageGuideCompliance:
+    """M275: planner prompt tells the model to follow skill usage guides."""
+
+    def test_planner_prompt_usage_guide_rule(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "usage guide" in prompt.lower() or "guide:" in prompt
+        assert "follow" in prompt.lower()
+        # Must be in the skills_rules module
+        assert "guide:" in prompt
+
+    def test_planner_prompt_usage_guide_is_mandatory(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "strictly" in prompt.lower() or "broken plans" in prompt.lower()
+
+
 # --- M235: Planner — scope limited to current user request ---
 
 
