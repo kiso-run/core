@@ -303,6 +303,7 @@ BRIEFER_SCHEMA: dict = {
 BRIEFER_MODULES: frozenset[str] = frozenset({
     "planning_rules", "kiso_native", "skills_rules",
     "web", "replan", "scripting", "skill_recovery", "data_flow",
+    "kiso_commands", "user_mgmt", "plugin_install",
 })
 _BRIEFER_MODULES_STR = ", ".join(sorted(BRIEFER_MODULES))
 
@@ -683,50 +684,38 @@ async def build_planner_messages(
             log.warning("Briefer failed for planner, falling back to full context: %s", exc)
 
     # --- Build system prompt ---
-    if briefing:
-        system_prompt = _load_modular_prompt("planner", briefing["modules"])
-    else:
-        system_prompt = _load_system_prompt("planner")
-
-    # Contextual appendix blocks — injected only when the message touches
-    # the relevant topic.  False positives are harmless (extra guidance);
-    # false negatives degrade gracefully (planner lacks detail, may ask).
     msg_lower = new_message.lower()
-    appendix_parts: list[str] = []
+    _gap = _detect_capability_gap(msg_lower, set(installed_names))
 
-    _kiso_kw = {"skill", "connector", "env", "instance", "kiso"}
-    if _kiso_kw & set(msg_lower.split()):
-        appendix_parts.append(_load_system_prompt("planner-kiso-commands"))
-
-    _user_kw = {"user", "utente", "admin", "alias"}
-    if _user_kw & set(msg_lower.split()):
-        appendix_parts.append(_load_system_prompt("planner-user-mgmt"))
-
-    _plugin_kw = {"install", "installa", "plugin", "add"}
-    _plugin_install_needed = (
-        _plugin_kw & set(msg_lower.split())
-        or "not installed" in msg_lower
-        or "registry" in msg_lower
-    )
-    if _plugin_install_needed:
-        appendix_parts.append(_load_system_prompt("planner-plugin-install"))
-
-    if appendix_parts:
-        system_prompt = system_prompt.rstrip() + "\n\n" + "\n\n".join(appendix_parts)
+    if briefing:
+        # Briefer path: modules selected by the briefer LLM.
+        # Safety net: force plugin_install when no skills or capability gap.
+        modules = list(briefing["modules"])
+        if not installed or _gap:
+            if "plugin_install" not in modules:
+                modules.append("plugin_install")
+        system_prompt = _load_modular_prompt("planner", modules)
+    else:
+        # Fallback path: keyword-based module selection (no briefer).
+        fallback_modules: list[str] = list(BRIEFER_MODULES - {
+            "kiso_commands", "user_mgmt", "plugin_install",
+        })
+        msg_words = set(msg_lower.split())
+        if {"skill", "connector", "env", "instance", "kiso"} & msg_words:
+            fallback_modules.append("kiso_commands")
+        if {"user", "utente", "admin", "alias"} & msg_words:
+            fallback_modules.append("user_mgmt")
+        _plugin_kw_hit = (
+            {"install", "installa", "plugin", "add"} & msg_words
+            or "not installed" in msg_lower
+            or "registry" in msg_lower
+        )
+        if _plugin_kw_hit or not installed or _gap:
+            fallback_modules.append("plugin_install")
+        system_prompt = _load_modular_prompt("planner", fallback_modules)
 
     if not installed:
         log.warning("discover_skills() returned empty — no skills available for planner")
-        if not _plugin_install_needed:
-            system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
-            _plugin_install_needed = True
-
-    # Capability-gap heuristic
-    _gap = _detect_capability_gap(msg_lower, set(installed_names))
-    if _gap:
-        log.info("Capability gap detected: message needs %r but not installed", _gap)
-        if not _plugin_install_needed:
-            system_prompt = system_prompt.rstrip() + "\n\n" + _load_system_prompt("planner-plugin-install")
-            _plugin_install_needed = True
 
     is_admin = user_role == "admin"
 

@@ -71,3 +71,41 @@ Scripting:
 - Replan context: if a previous plan already confirmed a fact (skill installed, env var set, binary available), do not re-verify it. Build on confirmed facts from plan_outputs.
 - Act on reviewer fixes: when the Suggested Fixes section contains a specific actionable fix (install command, flag change, path correction, dependency install), your first task MUST execute that fix. Do not re-investigate what the reviewer already diagnosed — investigation is for unknown problems, not for problems with known solutions.
 - Strategy diversification: if previous replan attempts show 2+ failures with the same approach, you MUST try a fundamentally different strategy. Examples: `search` instead of `exec curl`; write a Python/Node script to a file then execute it for data processing; save to file then process; use a different tool entirely. Never submit the same failing approach a third time.
+
+<!-- MODULE: kiso_commands -->
+Kiso management commands (use these in exec tasks when managing kiso itself):
+- Skills: `kiso skill install <name>`, `kiso skill update <name|all>`, `kiso skill remove <name>`, `kiso skill list`, `kiso skill search [query]`
+- Connectors: `kiso connector install <name>`, `kiso connector update <name|all>`, `kiso connector remove <name>`, `kiso connector run <name>`, `kiso connector stop <name>`, `kiso connector status <name>`, `kiso connector list`
+- Env: `kiso env set KEY VALUE`, `kiso env get KEY`, `kiso env delete KEY`, `kiso env reload`
+- Instance: `kiso instance status [name]`, `kiso instance restart [name]`, `kiso instance logs [name]`
+- Users (admin only): `kiso user add <name> --role admin|user [--skills "*"|s1,s2] [--alias connector:id ...]`, `kiso user remove <name>`, `kiso user list`, `kiso user alias <name> --connector <conn> --id <id>`, `kiso user alias <name> --connector <conn> --remove`
+
+<!-- MODULE: user_mgmt -->
+User management rules:
+- PROTECTION: if Caller Role is "user", NEVER generate `kiso user` tasks — respond with a single msg task explaining that user management requires admin access.
+- For `kiso user add` with `--role user`: `--skills` is REQUIRED (use `"*"` or a comma-separated list). For `--role admin`: `--skills` must be omitted.
+- Before running `kiso user add`, collect all required information first. If role is not specified in the request, emit a msg task asking for role (and skills if role=user) before proceeding. If running connectors are listed in System Environment, ask for the user's alias on each connector in the same msg task (e.g. "What is X's user on Discord?"). Only after all information is collected, emit the exec task with all flags.
+
+<!-- MODULE: plugin_install -->
+Note: `kiso skill install NAME` is idempotent — if already installed, it prints a notice and exits 0. You do NOT need to check if a skill is installed before running install. Just install it directly.
+
+Plugin installation: when the user asks for a capability and no matching skill/connector is installed:
+
+1. **Named request** ("install skill X", "installa il connector Y") → go to step 3.
+2. **Ambiguous request** (user asks for a capability, not a specific plugin): exec `curl <registry_url>` (see "Plugin registry" in System Environment) to discover matching plugins. NEVER use `kiso skill search` or web search for plugin discovery. Then replan to evaluate results.
+3. **Read requirements**: exec `curl https://raw.githubusercontent.com/kiso-run/skill-{name}/main/kiso.toml` (or `connector-{name}`) to read env var requirements and descriptions.
+4. **Check env vars**: if the kiso.toml shows required env vars:
+   - If ALL required vars are already set (confirmed in prior outputs) → proceed to step 5.
+   - If vars are MISSING → msg user asking for each value (include the description from kiso.toml). Then replan.
+5. **Install** (can combine with step 3 in one plan when no env vars are needed):
+   - exec `kiso env set KEY VALUE` for each required var (if user provided them).
+   - exec `kiso skill install {name}` (or `kiso connector install {name}`).
+   - exec `kiso connector run {name}` if it is a connector.
+6. **Replan after install** to use the newly installed skill (the next planner call sees the fresh skill list).
+
+Key principle: minimize replans. Steps 3+5 can be in ONE plan when no env vars are missing. The only mandatory replan points are:
+- After registry discovery (step 2) when the result needs evaluation
+- After asking user for env vars (step 4)
+- After install (step 6) so the planner sees the new skill in its Skills section
+
+When writing msg task details that refer to kiso commands, always use the exact syntax from the Kiso management commands list.

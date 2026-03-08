@@ -2409,19 +2409,19 @@ class TestPlannerPromptContent:
 
     def test_m45_plugin_install_uses_registry_not_search(self):
         """M45: planner plugin-install appendix must forbid web search for kiso plugin discovery."""
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "NEVER use" in prompt or "NEVER" in prompt
         assert "registry" in prompt.lower()
         assert "web search" in prompt.lower()
 
     def test_m45_plugin_install_rule_is_mandatory(self):
         """M45: plugin installation appendix must be marked MANDATORY."""
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "Plugin installation:" in prompt
 
     def test_m46_plugin_install_checks_kiso_toml_before_install(self):
         """M46: planner must curl kiso.toml from GitHub before installing to discover env requirements."""
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "raw.githubusercontent.com" in prompt
         assert "kiso.toml" in prompt
         # Step ordering: curl kiso.toml (step 3) must come before "kiso connector install {name}" (step 6).
@@ -2431,13 +2431,13 @@ class TestPlannerPromptContent:
 
     def test_m46_plugin_install_includes_env_description_in_msg(self):
         """M46: planner plugin-install appendix must include env var descriptions from kiso.toml."""
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "description" in prompt
         assert "description from kiso.toml" in prompt.lower() or "descriptions from kiso.toml" in prompt.lower()
 
     def test_m102a_plugin_discovery_never_single_type_search(self):
         """M102a: planner must NEVER use single-type search for initial plugin discovery."""
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "NEVER" in prompt
         assert "kiso skill search" in prompt
 
@@ -2588,11 +2588,11 @@ class TestM199PluginInstallIdempotent:
     """M199: planner-plugin-install.md tells planner that install is idempotent."""
 
     def test_idempotent_note_present(self):
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "idempotent" in prompt
 
     def test_no_need_to_check_first(self):
-        prompt = (_ROLES_DIR / "planner-plugin-install.md").read_text()
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "do NOT need to check" in prompt.lower() or "do not need to check" in prompt.lower()
 
 
@@ -2726,7 +2726,7 @@ class TestM73cPlannerUserManagement:
 
     def test_kiso_user_commands_listed(self):
         """kiso user commands must appear in the kiso-commands appendix."""
-        prompt = (_ROLES_DIR / "planner-kiso-commands.md").read_text()
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
         assert "kiso user add" in prompt
         assert "kiso user remove" in prompt
         assert "kiso user list" in prompt
@@ -2734,14 +2734,14 @@ class TestM73cPlannerUserManagement:
 
     def test_user_management_admin_only_label(self):
         """The user commands must be labelled as admin only."""
-        prompt = (_ROLES_DIR / "planner-kiso-commands.md").read_text()
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
         idx = prompt.index("kiso user add")
         section = prompt[max(0, idx - 100):idx + 50]
         assert "admin only" in section
 
     def test_protection_rule_blocks_non_admin(self):
         """Planner user-mgmt appendix must refuse kiso user tasks when Caller Role is 'user'."""
-        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
+        prompt = _load_modular_prompt("planner", ["user_mgmt"])
         assert "Caller Role" in prompt
         assert "NEVER" in prompt
         protection_idx = prompt.index("PROTECTION")
@@ -2751,19 +2751,19 @@ class TestM73cPlannerUserManagement:
 
     def test_skills_required_for_role_user(self):
         """User-mgmt appendix must document that --skills is required when role=user."""
-        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
+        prompt = _load_modular_prompt("planner", ["user_mgmt"])
         assert "--skills" in prompt
         assert "--role user" in prompt
 
     def test_ask_for_role_before_add(self):
         """Planner user-mgmt appendix must ask for role if not specified."""
-        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
+        prompt = _load_modular_prompt("planner", ["user_mgmt"])
         assert "role is not specified" in prompt or "role not specified" in prompt or \
                "role" in prompt and "msg task" in prompt
 
     def test_ask_for_connector_aliases(self):
         """Planner user-mgmt appendix must ask for connector aliases."""
-        prompt = (_ROLES_DIR / "planner-user-mgmt.md").read_text()
+        prompt = _load_modular_prompt("planner", ["user_mgmt"])
         assert "connector" in prompt.lower()
         assert "System Environment" in prompt
 
@@ -4780,6 +4780,27 @@ class TestLoadModularPrompt:
         assert "Kiso-native first" not in result
         assert "Recent Messages" not in result
 
+    def test_planner_core_plus_kiso_commands(self):
+        """Loading core + kiso_commands includes CLI commands."""
+        result = _load_modular_prompt("planner", ["kiso_commands"])
+        assert "kiso skill install" in result
+        assert "kiso connector install" in result
+        assert "kiso env set" in result
+        assert "kiso instance status" in result
+
+    def test_planner_core_plus_user_mgmt(self):
+        """Loading core + user_mgmt includes user management rules."""
+        result = _load_modular_prompt("planner", ["user_mgmt"])
+        assert "PROTECTION" in result
+        assert "kiso user add" in result
+
+    def test_planner_core_plus_plugin_install(self):
+        """Loading core + plugin_install includes plugin installation procedure."""
+        result = _load_modular_prompt("planner", ["plugin_install"])
+        assert "Plugin installation:" in result
+        assert "raw.githubusercontent.com" in result
+        assert "kiso.toml" in result
+
     def test_all_modules_returns_full_content(self):
         """Loading all modules returns content equivalent to the full prompt."""
         modular = _load_modular_prompt("planner", list(BRIEFER_MODULES))
@@ -4793,6 +4814,10 @@ class TestLoadModularPrompt:
         assert "Skills efficiency:" in modular
         assert "Kiso-native first" in modular
         assert "Recent Messages" in modular
+        # Former appendixes now modules
+        assert "kiso skill install" in modular
+        assert "PROTECTION" in modular
+        assert "Plugin installation:" in modular
 
     def test_no_markers_returns_full_prompt(self):
         """Prompt without markers returns the full text (backward compat)."""
