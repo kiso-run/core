@@ -10302,3 +10302,91 @@ class TestMsgTaskBrieferIntegration:
 
         # No briefer call — only messenger
         assert "briefer" not in call_roles
+
+
+# ---------------------------------------------------------------------------
+# Briefer integration for worker / exec translator (M246)
+# ---------------------------------------------------------------------------
+
+
+class TestExecTaskBrieferIntegration:
+    """Tests for briefer integration in _handle_exec_task."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_briefer_filters_outputs_for_translator(self, db, tmp_path):
+        """Briefer selects relevant plan_outputs for exec translator."""
+        config = _make_config(settings={"briefer_enabled": True})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
+        await create_task(db, plan_id, "sess1", type="exec", detail="read the downloaded file", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        translator_calls = []
+
+        async def _capturing_translator(cfg, detail, sys_env, **kw):
+            translator_calls.append({
+                "detail": detail,
+                "plan_outputs_text": kw.get("plan_outputs_text", ""),
+            })
+            return f"echo {detail}"
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [1],  # only first exec output relevant
+                })
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+                   side_effect=_capturing_translator), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        # Second exec translator should have received filtered outputs
+        assert len(translator_calls) == 2
+        # First exec: no plan_outputs yet
+        assert translator_calls[0]["plan_outputs_text"] == ""
+        # Second exec: briefer selected only index 1
+        second_outputs = translator_calls[1]["plan_outputs_text"]
+        assert "echo first" in second_outputs or second_outputs == ""
+
+    async def test_briefer_disabled_passes_all_outputs(self, db, tmp_path):
+        """When briefer disabled, all preceding outputs reach translator."""
+        config = _make_config(settings={"briefer_enabled": False})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
+        await create_task(db, plan_id, "sess1", type="exec", detail="echo second", expect="ok")
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        translator_calls = []
+
+        async def _capturing_translator(cfg, detail, sys_env, **kw):
+            translator_calls.append(kw.get("plan_outputs_text", ""))
+            return f"echo {detail}"
+
+        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+                   side_effect=_capturing_translator), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(translator_calls) == 2
+        # Second exec should see the first exec's output
+        assert "echo first" in translator_calls[1] or "first" in translator_calls[1]

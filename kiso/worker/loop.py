@@ -963,6 +963,22 @@ async def _handle_exec_task(
             plan_output=_make_plan_output(i + 1, TASK_TYPE_EXEC, detail, disk_err, "failed", session=ctx.session),
         )
 
+    # Briefer: select relevant plan_outputs for this exec task
+    briefed_outputs = ctx.plan_outputs
+    if ctx.plan_outputs and setting_bool(ctx.config.settings, "briefer_enabled"):
+        try:
+            pool = {"plan_outputs": _format_plan_outputs_for_msg(ctx.plan_outputs)}
+            briefing = await run_briefer(
+                ctx.config, "worker", detail, pool, session=ctx.session,
+            )
+            indices = set(briefing.get("output_indices", []))
+            if indices:
+                filtered = [o for o in ctx.plan_outputs if o["index"] in indices]
+                if filtered:
+                    briefed_outputs = filtered
+        except Exception:
+            log.debug("Briefer failed for worker task %d, using all plan_outputs", task_id)
+
     retry_context = ""
     exec_retries = 0
     local_plan_output: "dict | None" = None
@@ -970,7 +986,7 @@ async def _handle_exec_task(
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_TRANSLATING)
         sys_env = get_system_env(ctx.config)
         sys_env_text = build_system_env_section(sys_env, session=ctx.session)
-        _exec_outputs = ctx.plan_outputs + ([local_plan_output] if local_plan_output else [])
+        _exec_outputs = briefed_outputs + ([local_plan_output] if local_plan_output else [])
         outputs_text = _format_plan_outputs_for_msg(_exec_outputs)
         idx_translate = get_usage_index()
         try:
