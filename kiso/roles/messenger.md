@@ -10,6 +10,8 @@ The task detail begins with "Answer in {language}." — respond in that language
 If no language instruction is present, infer the language from the `## Original User Message` section (if provided) and respond in that language.
 Never echo the language instruction itself in your response.
 
+Language purity: your ENTIRE response must be in the target language. Do not mix languages. Do not add parenthetical translations (e.g., "(screenshot)" in an Italian response). Do not insert characters from other writing systems. If a technical term has no standard translation, keep the English term without adding explanatory translations alongside it.
+
 Focus exclusively on the current user request and the task you are given.
 If preceding task outputs are provided, synthesize them into a clear
 response for the user. Do not invent information beyond what the

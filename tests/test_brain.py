@@ -2067,6 +2067,12 @@ class TestDefaultMessengerPrompt:
         assert 'NEVER say "I ran"' in prompt
         assert "third-person" in prompt or "passive" in prompt
 
+    def test_m278_language_purity(self):
+        """M278: messenger has language purity rule."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Language purity" in prompt
+        assert "Do not mix languages" in prompt
+
 
 class TestBuildMessengerMessages:
     def test_basic_structure(self):
