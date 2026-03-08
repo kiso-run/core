@@ -69,9 +69,9 @@ MODEL_DEFAULTS: dict[str, str] = {
     "briefer": "google/gemini-2.5-flash-lite",
     "classifier": "google/gemini-2.5-flash-lite",
     "planner": "z-ai/glm-4.7",
-    "reviewer": "stepfun/step-3.5-flash",
+    "reviewer": "google/gemini-2.5-flash-lite",
     "curator": "google/gemini-2.5-flash-lite",
-    "worker": "stepfun/step-3.5-flash",
+    "worker": "google/gemini-2.5-flash-lite",
     "summarizer": "google/gemini-2.5-flash-lite",
     "paraphraser": "google/gemini-2.5-flash-lite",
     "messenger": "qwen/qwen3.5-flash-02-23",
@@ -117,9 +117,9 @@ role = "admin"
 briefer     = "google/gemini-2.5-flash-lite"  # context selection (150 t/s, cheapest)
 classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, simple)
 planner     = "z-ai/glm-4.7"                   # plan generation (MMLU 83, 130 t/s)
-reviewer    = "stepfun/step-3.5-flash"            # output review (LCB 86, structured)
+reviewer    = "google/gemini-2.5-flash-lite"   # output review (1.8s, json_schema native)
 curator     = "google/gemini-2.5-flash-lite"   # knowledge curation (simple classification)
-worker      = "stepfun/step-3.5-flash"            # command translation (LCB 86, coding)
+worker      = "google/gemini-2.5-flash-lite"   # command translation (1.3s, cheapest)
 summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
 messenger   = "qwen/qwen3.5-flash-02-23"            # user-facing responses (MMLU 82, natural)

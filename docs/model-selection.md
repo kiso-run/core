@@ -32,9 +32,9 @@ All models accessed via OpenRouter. Prices in USD per million tokens.
 briefer     = "google/gemini-2.5-flash-lite"
 classifier  = "google/gemini-2.5-flash-lite"
 planner     = "z-ai/glm-4.7"
-reviewer    = "stepfun/step-3.5-flash"
+reviewer    = "google/gemini-2.5-flash-lite"
 curator     = "google/gemini-2.5-flash-lite"
-worker      = "stepfun/step-3.5-flash"
+worker      = "google/gemini-2.5-flash-lite"
 summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
 messenger   = "qwen/qwen3.5-flash-02-23"
@@ -71,17 +71,23 @@ needs understanding more than raw coding, so MMLU matters more here.
 **Why not deepseek-v3.2?** Dominated by step-3.5-flash: MMLU 80>79, LCB 86>60,
 speed 85>25 t/s, input cost $0.10<$0.28. No advantage in any dimension.
 
-### Worker — `step-3.5-flash`
+### Worker — `gemini-2.5-flash-lite`
 
-**Requirement:** coding ability. Translates task descriptions to shell commands.
-Runs 3+ times per plan, so speed and cost matter. Step-3.5-flash has the highest
-LCB (86) among the affordable models at $0.10/$0.30.
+**Requirement:** fast command translation. Translates task descriptions to shell
+commands. Runs 3+ times per plan, so speed and cost matter most. Measured 1.3s
+latency and $0.000006/call — 6x cheaper and 50% faster than step-3.5-flash.
 
-### Reviewer — `step-3.5-flash`
+**Why not step-3.5-flash?** It's a reasoning model that spends ~900 tokens of
+chain-of-thought for trivial translations ("echo hello" → "echo hello"), adding
+latency and cost with no quality benefit. Also does not support `json_schema`
+response format (returns 400 on StepFun/OpenRouter).
 
-**Requirement:** judgment + structured output. Evaluates if task output matches
-expectations, decides ok/replan. Runs once per task (3+ per plan). LCB 86 helps
-when reviewing code output; MMLU 80 provides adequate judgment.
+### Reviewer — `gemini-2.5-flash-lite`
+
+**Requirement:** judgment + structured output (`json_schema`). Evaluates if task
+output matches expectations, decides ok/replan. Measured 1.8s latency and
+$0.00004/call — 4x faster and 7x cheaper than step-3.5-flash. Supports
+`json_schema` natively (step-3.5-flash rejects it with HTTP 400).
 
 ### Curator — `gemini-2.5-flash-lite`
 
@@ -121,10 +127,10 @@ Typical request with 3 tasks (with briefer-enabled deep context filtering):
 |---|---|---|---|---|
 | Briefer | gemini-flash-lite | 800 | 200 | $0.00016 |
 | Planner | glm-4.7 | 800–1500 | 500 | $0.00065–0.00156 |
-| Worker x3 | step-3.5-flash | 500 x3 | 100 x3 | $0.00024 |
-| Reviewer x3 | step-3.5-flash | 400 x3 | 100 x3 | $0.00021 |
+| Worker x3 | gemini-flash-lite | 500 x3 | 100 x3 | $0.00012 |
+| Reviewer x3 | gemini-flash-lite | 400 x3 | 100 x3 | $0.00010 |
 | Messenger | qwen-3.5-flash | 600–1000 | 300 | $0.00024–0.00038 |
-| **Total** | | | | **~$0.0015–0.0026** |
+| **Total** | | | | **~$0.0013–0.0024** |
 
 The briefer reduces planner input by selecting only relevant prompt modules
 (core-only: ~300 tok vs all modules: ~2800 tok) and filtering context
@@ -156,7 +162,8 @@ messenger   = "google/gemini-2.5-flash-lite"
 searcher    = "perplexity/sonar"
 ```
 
-~$0.0008/request. Trade-off: worker and reviewer lose coding ability (LCB 59 vs 86).
+~$0.0008/request. Now identical to the default for worker/reviewer. Trade-off:
+planner uses step-3.5-flash (LCB 86 but only 80 MMLU) instead of glm-4.7.
 
 ### Quality — maximize intelligence
 
