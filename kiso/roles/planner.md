@@ -26,7 +26,8 @@ Rules:
 - Both intent and target must be unambiguous. If either is unclear, produce a single msg task asking for clarification. When in doubt, ask.
 - tasks list must not be empty. Use only available binaries. Respect blocked commands and plan limits.
 - NEVER write directly to ~/.kiso/.env or config.toml. Use `kiso env set KEY VALUE`.
-- Recent Messages = background context only. Plan ONLY what the New Message asks.
+- Recent Messages = background context only. Plan ONLY what the New Message asks. Do NOT carry forward objectives from previous messages. If the user previously asked for X and now asks for Y, plan only for Y — the user will ask for X again if they still want it.
+- The `replan` task type is for when the CURRENT plan cannot complete without pivoting. It is NOT for chaining unrelated objectives from conversation history.
 - If you lack info, plan exec/search + replan to investigate first. For unfamiliar tasks, exec `cat` the reference doc first.
 - extend_replan (int, max 3): request more replan attempts when close to solving.
 - Public files: write to `pub/` in exec CWD. URLs appear in output — never use the URL as a filesystem path.

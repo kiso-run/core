@@ -2959,6 +2959,21 @@ class TestM234PlannerAtomicOperations:
             assert cmd in prompt, f"Missing atomic-ops mention of {cmd}"
 
 
+# --- M235: Planner — scope limited to current user request ---
+
+
+class TestM235PlannerScope:
+    """M235: planner prompt explicitly limits scope to current message."""
+
+    def test_planner_prompt_no_carry_forward(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Do NOT carry forward objectives" in prompt
+
+    def test_planner_prompt_replan_not_for_history(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "NOT for chaining unrelated objectives" in prompt
+
+
 # --- M33: retry_hint in REVIEW_SCHEMA ---
 
 
