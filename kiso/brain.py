@@ -110,8 +110,12 @@ async def _retry_llm_with_validation(
 ) -> dict:
     """Generic retry loop: call LLM, parse JSON, validate, retry on errors.
 
+    Uses two separate retry budgets:
+    - ``max_llm_retries`` (config) for LLM-level failures (timeout, stall, HTTP).
+    - ``max_validation_retries`` (config) for JSON parse / schema validation.
+
     Args:
-        config: App config (reads max_validation_retries).
+        config: App config.
         role: LLM model route name (e.g. "planner", "reviewer", "curator").
         messages: Initial message list (mutated in-place with retries).
         schema: JSON schema for structured output.
@@ -125,12 +129,20 @@ async def _retry_llm_with_validation(
     Returns:
         The validated parsed dict.
     """
-    max_retries = int(config.settings["max_validation_retries"])
+    max_validation_retries = int(config.settings["max_validation_retries"])
+    max_llm_retries = int(config.settings.get("max_llm_retries", 3))
+    max_total = max_validation_retries + max_llm_retries
+
     last_errors: list[str] = []
     prev_error_set: frozenset[str] = frozenset()  # M186: track repeated identical errors
     repeat_count: int = 0
+    llm_errors = 0
+    validation_errors = 0
+    attempt = 0
 
-    for attempt in range(1, max_retries + 1):
+    while attempt < max_total:
+        attempt += 1
+
         if last_errors:
             error_lines = [f"- {e}" for e in last_errors]
             # M186: escalate after 2+ identical error patterns
@@ -153,28 +165,36 @@ async def _retry_llm_with_validation(
                 session=session,
             )
         except LLMError as e:
-            # M269: treat LLM errors (empty response, transient failures) as
-            # retriable — only give up after exhausting all attempts.
-            log.warning("LLM error (attempt %d/%d): %s", attempt, max_retries, e)
-            if attempt == max_retries:
-                exc = error_class(f"LLM call failed after {max_retries} attempts: {e}")
+            llm_errors += 1
+            log.warning("LLM error (%d/%d LLM retries): %s", llm_errors, max_llm_retries, e)
+            if llm_errors >= max_llm_retries:
+                exc = error_class(f"LLM call failed after {llm_errors} attempts: {e}")
                 exc.last_errors = last_errors  # preserve for M195 auto-correction
                 raise exc
             # M297: notify caller before retry
             if on_retry is not None:
-                on_retry(attempt + 1, max_retries, str(e))
+                on_retry(attempt + 1, max_total, str(e))
             continue
 
         try:
             result = json.loads(_repair_json(raw))
         except json.JSONDecodeError as e:
-            log.warning("%s returned invalid JSON (attempt %d/%d): %s",
-                        error_noun, attempt, max_retries, e)
+            validation_errors += 1
+            log.warning("%s returned invalid JSON (%d/%d validation retries): %s",
+                        error_noun, validation_errors, max_validation_retries, e)
+            if validation_errors >= max_validation_retries:
+                exc = error_class(
+                    f"{error_noun} validation failed after {validation_errors} attempts: {last_errors}"
+                )
+                exc.last_errors = last_errors
+                raise exc
             last_errors = [
                 f"Invalid JSON at line {e.lineno} col {e.colno}: {e.msg} — "
                 "return ONLY the JSON object, no markdown, no trailing commas"
             ]
             messages.append({"role": "assistant", "content": raw})
+            if on_retry is not None:
+                on_retry(attempt + 1, max_total, f"JSON parse error: {e}")
             continue
 
         errors = validate_fn(result)
@@ -182,8 +202,16 @@ async def _retry_llm_with_validation(
             log.info("%s accepted (attempt %d)", error_noun, attempt)
             return result
 
-        log.warning("%s validation failed (attempt %d/%d): %s",
-                    error_noun, attempt, max_retries, errors)
+        validation_errors += 1
+        log.warning("%s validation failed (%d/%d validation retries): %s",
+                    error_noun, validation_errors, max_validation_retries, errors)
+        if validation_errors >= max_validation_retries:
+            exc = error_class(
+                f"{error_noun} validation failed after {validation_errors} attempts: {errors}"
+            )
+            exc.last_errors = errors
+            raise exc
+
         # M186: track consecutive identical errors for escalation
         error_set = frozenset(errors)
         if error_set == prev_error_set:
@@ -193,11 +221,14 @@ async def _retry_llm_with_validation(
             repeat_count = 1
         last_errors = errors
         messages.append({"role": "assistant", "content": raw})
+        if on_retry is not None:
+            on_retry(attempt + 1, max_total, f"Validation: {errors}")
 
+    # Safety net: should not reach here normally
     exc = error_class(
-        f"{error_noun} validation failed after {max_retries} attempts: {last_errors}"
+        f"{error_noun} failed after {attempt} total attempts"
     )
-    exc.last_errors = last_errors  # M195: expose raw errors for auto-correction
+    exc.last_errors = last_errors
     raise exc
 
 

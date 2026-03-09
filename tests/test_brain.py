@@ -6331,7 +6331,7 @@ class TestM297RetryNotification:
             )
         assert len(retry_calls) == 1
         assert retry_calls[0][0] == 2  # attempt 2
-        assert retry_calls[0][1] == 3  # max 3
+        assert retry_calls[0][1] == 6  # max_total = max_llm_retries(3) + max_validation_retries(3)
         assert "timeout" in retry_calls[0][2]
 
     async def test_on_retry_not_called_on_success(self, config):

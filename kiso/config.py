@@ -34,6 +34,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     # planning
     "max_replan_depth": 5,
     "max_validation_retries": 3,
+    "max_llm_retries": 3,
     "max_plan_tasks": 20,
     # execution
     "classifier_timeout": 30,
@@ -166,6 +167,7 @@ fact_consolidation_min_ratio = 0.3  # abort consolidation if fewer than this fra
 # --- planning ---
 max_replan_depth          = 5
 max_validation_retries    = 3
+max_llm_retries           = 3        # retries for LLM-level failures (timeout, stall, HTTP errors)
 max_plan_tasks            = 20
 
 # --- execution ---
