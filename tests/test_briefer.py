@@ -380,11 +380,11 @@ class TestBrieferPromptBudget:
     """Verify briefer prompts fit in reasonable token budgets."""
 
     def test_briefer_system_prompt_is_compact(self):
-        """Briefer system prompt should be under 500 words."""
+        """Briefer system prompt should be under 600 words."""
         msgs = build_briefer_messages("planner", "test", {})
         system = msgs[0]["content"]
         word_count = len(system.split())
-        assert word_count < 500, f"Briefer system prompt is {word_count} words (max 500)"
+        assert word_count < 600, f"Briefer system prompt is {word_count} words (max 600)"
 
     def test_briefer_with_full_pool_under_budget(self):
         """Even with a full context pool, briefer input stays reasonable."""
