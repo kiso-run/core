@@ -1771,3 +1771,50 @@ def test_extract_thinking_unicode_content():
     thinking, clean = extract_thinking(text)
     assert "考えています" in thinking
     assert clean == "答え"
+
+
+# --- M303: render_partial_content ---
+
+
+class TestM303RenderPartialContent:
+    """M303: render_partial_content shows live streaming output."""
+
+    def test_empty_returns_empty(self):
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
+        assert render_partial_content("", caps) == ""
+
+    def test_basic_content(self):
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
+        result = render_partial_content("hello world", caps)
+        assert "hello world" in result
+        assert ">" in result  # non-unicode icon
+
+    def test_unicode_icon(self):
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=True, tty=False, width=80, height=24)
+        result = render_partial_content("test", caps)
+        assert "\u25b8" in result
+
+    def test_max_lines_truncation(self):
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
+        text = "\n".join(f"line{i}" for i in range(20))
+        result = render_partial_content(text, caps, max_lines=3)
+        lines = result.strip().split("\n")
+        assert len(lines) == 3
+        # Should show last 3 lines
+        assert "line17" in result
+        assert "line18" in result
+        assert "line19" in result
+        assert "line0" not in result
+
+    def test_multiline_content(self):
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
+        text = "line1\nline2\nline3"
+        result = render_partial_content(text, caps)
+        assert "line1" in result
+        assert "line2" in result
+        assert "line3" in result

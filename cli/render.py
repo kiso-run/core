@@ -833,6 +833,21 @@ def render_inflight_indicator(call: dict, caps: TermCaps) -> str:
     return _style(text, _DIM, caps=caps)
 
 
+def render_partial_content(text: str, caps: TermCaps, max_lines: int = 6) -> str:
+    """Render a compact partial-content block from live streaming output.
+
+    Shows the last *max_lines* lines of *text*, dimmed, with a streaming icon.
+    """
+    if not text:
+        return ""
+    lines = text.splitlines()
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    icon = "\u25b8" if caps.unicode else ">"
+    styled = [_style(f"  {icon} {line}", _DIM, caps=caps) for line in lines]
+    return "\n".join(styled)
+
+
 def render_cancel_done(
     done: int,
     total: int,

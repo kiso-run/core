@@ -175,10 +175,13 @@ class LLMStallError(LLMError):
 async def _read_sse_stream(
     response: httpx.Response,
     stall_timeout: float = 60,
+    inflight_dict: dict | None = None,
 ) -> tuple[str, str, int, int]:
     """Read an OpenAI-compatible SSE stream with stall detection.
 
     If no line arrives within *stall_timeout* seconds, raises LLMStallError.
+    When *inflight_dict* is provided, updates its ``partial_content`` key on
+    each content chunk so the CLI can display live streaming output.
 
     Returns (content, reasoning_content, prompt_tokens, completion_tokens).
     """
@@ -215,6 +218,8 @@ async def _read_sse_stream(
             c = delta.get("content")
             if c:
                 content_parts.append(c)
+                if inflight_dict is not None:
+                    inflight_dict["partial_content"] = "".join(content_parts)
             r = delta.get("reasoning_content")
             if r:
                 reasoning_parts.append(r)
@@ -367,9 +372,10 @@ async def call_llm(
                         continue  # retry with json_object
                     break  # non-retryable error, handle after loop
 
-                # Read SSE stream
+                # Read SSE stream — pass inflight dict for live partial output
+                _inflight = _inflight_calls.get(session) if session else None
                 content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(
-                    resp, stall_timeout=stall_timeout,
+                    resp, stall_timeout=stall_timeout, inflight_dict=_inflight,
                 )
 
             break  # success

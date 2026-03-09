@@ -1339,9 +1339,9 @@ class TestM300StallDetection:
         from kiso.llm import _read_sse_stream as orig_read
         _orig_read = orig_read
 
-        async def _capturing_read(resp, stall_timeout=60):
+        async def _capturing_read(resp, stall_timeout=60, inflight_dict=None):
             captured_stall.append(stall_timeout)
-            return await _orig_read(resp, stall_timeout=stall_timeout)
+            return await _orig_read(resp, stall_timeout=stall_timeout, inflight_dict=inflight_dict)
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
@@ -1398,3 +1398,119 @@ class TestM300RaisedTimeouts:
 
     def test_stall_timeout_default(self):
         assert SETTINGS_DEFAULTS["stall_timeout"] == 60
+
+
+# --- M303: Partial content accumulation during streaming ---
+
+
+class TestM303PartialContent:
+    """M303: _read_sse_stream updates inflight_dict with partial_content."""
+
+    @pytest.mark.asyncio
+    async def test_partial_content_accumulated(self):
+        """Each content chunk updates inflight_dict['partial_content']."""
+        from kiso.llm import _read_sse_stream
+
+        lines = [
+            'data: {"choices":[{"delta":{"content":"Hello"},"index":0}]}',
+            'data: {"choices":[{"delta":{"content":" world"},"index":0}]}',
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
+        inflight = {"role": "worker", "model": "test"}
+        resp = _MockStreamResp(200, lines)
+        content, _, _, _ = await _read_sse_stream(resp, inflight_dict=inflight)
+        assert content == "Hello world"
+        assert inflight["partial_content"] == "Hello world"
+
+    @pytest.mark.asyncio
+    async def test_partial_content_progressive(self):
+        """partial_content grows with each chunk."""
+        from kiso.llm import _read_sse_stream
+
+        seen_partials: list[str] = []
+        original_inflight: dict = {"role": "worker"}
+
+        class _TrackingResp:
+            status_code = 200
+
+            async def aiter_lines(self):
+                yield 'data: {"choices":[{"delta":{"content":"A"},"index":0}]}'
+                seen_partials.append(original_inflight.get("partial_content", ""))
+                yield 'data: {"choices":[{"delta":{"content":"B"},"index":0}]}'
+                seen_partials.append(original_inflight.get("partial_content", ""))
+                yield 'data: {"choices":[{"delta":{"content":"C"},"index":0}]}'
+                seen_partials.append(original_inflight.get("partial_content", ""))
+                yield "data: [DONE]"
+
+        await _read_sse_stream(_TrackingResp(), inflight_dict=original_inflight)
+        assert seen_partials == ["A", "AB", "ABC"]
+        assert original_inflight["partial_content"] == "ABC"
+
+    @pytest.mark.asyncio
+    async def test_no_inflight_dict_no_error(self):
+        """Without inflight_dict, streaming works normally."""
+        from kiso.llm import _read_sse_stream
+
+        lines = [
+            'data: {"choices":[{"delta":{"content":"ok"},"index":0}]}',
+            "data: [DONE]",
+        ]
+        resp = _MockStreamResp(200, lines)
+        content, _, _, _ = await _read_sse_stream(resp, inflight_dict=None)
+        assert content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_chunks_not_in_partial(self):
+        """reasoning_content chunks do NOT update partial_content."""
+        from kiso.llm import _read_sse_stream
+
+        lines = [
+            'data: {"choices":[{"delta":{"reasoning_content":"think"},"index":0}]}',
+            'data: {"choices":[{"delta":{"content":"answer"},"index":0}]}',
+            "data: [DONE]",
+        ]
+        inflight: dict = {}
+        resp = _MockStreamResp(200, lines)
+        content, reasoning, _, _ = await _read_sse_stream(resp, inflight_dict=inflight)
+        assert content == "answer"
+        assert reasoning == "think"
+        # partial_content should only have the content, not reasoning
+        assert inflight["partial_content"] == "answer"
+
+    @pytest.mark.asyncio
+    async def test_call_llm_populates_partial_content(self):
+        """call_llm passes inflight dict to _read_sse_stream for partial tracking."""
+        config = _make_config()
+        messages = [{"role": "user", "content": "hi"}]
+
+        # Multi-chunk stream to verify partial_content is set
+        lines = [
+            'data: {"choices":[{"delta":{"content":"chunk1"},"index":0}]}',
+            'data: {"choices":[{"delta":{"content":"chunk2"},"index":0}]}',
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
+            "data: [DONE]",
+        ]
+        stream_cm = _StreamCM(_MockStreamResp(200, lines))
+
+        captured_partial = {}
+
+        # Intercept _read_sse_stream to capture the inflight_dict argument
+        original_read = None
+        import kiso.llm as _llm_module
+        original_read = _llm_module._read_sse_stream
+
+        async def _capturing_read(resp, stall_timeout=60, inflight_dict=None):
+            if inflight_dict is not None:
+                captured_partial["got_dict"] = True
+            return await original_read(resp, stall_timeout=stall_timeout, inflight_dict=inflight_dict)
+
+        with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "test-key"}), \
+             patch("kiso.llm.audit"), \
+             patch.object(_llm_module, "_read_sse_stream", side_effect=_capturing_read):
+            _setup_mock(mock_cls, stream_cm)
+            result = await call_llm(config, "worker", messages, session="test-sess")
+
+        assert result == "chunk1chunk2"
+        assert captured_partial.get("got_dict") is True

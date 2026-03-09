@@ -470,7 +470,7 @@ async def get_status(
     # Inflight LLM call (live call in progress)
     inflight = _llm_mod.get_inflight_call(session)
     if inflight and not verbose:
-        inflight = {k: v for k, v in inflight.items() if k != "messages"}
+        inflight = {k: v for k, v in inflight.items() if k not in ("messages", "partial_content")}
 
     return {
         "tasks": tasks,

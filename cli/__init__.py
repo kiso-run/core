@@ -551,6 +551,7 @@ class _PollRenderState:
     seen_inflight_ts: set = dataclasses.field(default_factory=set)  # timestamps of rendered inflight indicators
     inflight_roles_shown: set = dataclasses.field(default_factory=set)  # roles with active (unresolved) inflight indicators
     inflight_in_shown: set = dataclasses.field(default_factory=set)  # ts values whose IN panel was rendered from inflight
+    partial_content_len: int = 0  # length of partial_content already printed
 
 
 def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> None:
@@ -952,6 +953,20 @@ def _render_plan_status(
                         print(render_inflight_indicator(inflight, caps))
                     if inflight_role is not None:
                         state.inflight_roles_shown.add(inflight_role)
+
+        # M303: show live partial content from streaming chunks
+        partial = inflight.get("partial_content", "") if inflight else ""
+        if partial and len(partial) > state.partial_content_len:
+            from cli.render import render_partial_content
+            _clear_spinner()
+            rendered = render_partial_content(partial, caps)
+            if rendered:
+                # Use carriage return to overwrite previous partial lines
+                print(rendered)
+            state.partial_content_len = len(partial)
+        elif not inflight:
+            # Call completed — reset partial tracking for next call
+            state.partial_content_len = 0
 
     # Restore spinner for running tasks after inflight/phase rendering
     # may have cleared it via _clear_spinner().
