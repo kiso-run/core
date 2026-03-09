@@ -6391,3 +6391,157 @@ class TestM297RetryNotification:
                     [{"role": "user", "content": "test"}],
                     PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
                 )
+
+
+# --- M302: Integration tests — stall simulation, retry separation ---
+
+
+class TestM302StallRetryIntegration:
+    """M302: end-to-end stall detection + separate retry budgets."""
+
+    async def test_stall_detected_and_retry_succeeds(self):
+        """Mock server sends 2 chunks then stalls → stall detected → retry succeeds."""
+        import asyncio
+        from kiso.llm import LLMStallError
+
+        call_count = [0]
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _stall_then_ok(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise LLMStallError("LLM stream stalled (no data for 60s)")
+            return valid_plan
+
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            raw={},
+        )
+        with patch("kiso.brain.call_llm", side_effect=_stall_then_ok):
+            result = await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+            )
+        assert result["goal"] == "ok"
+        assert call_count[0] == 2
+
+    async def test_llm_budget_exhausted_separately(self):
+        """LLM retry budget exhausted independently from validation budget."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_llm_retries=2, max_validation_retries=5),
+            raw={},
+        )
+
+        async def _always_timeout(cfg, role, messages, **kw):
+            raise LLMError("timeout")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_timeout):
+            with pytest.raises(PlanError, match="after 2 attempts"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                )
+
+    async def test_validation_budget_exhausted_separately(self):
+        """Validation retry budget exhausted independently from LLM budget."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_llm_retries=5, max_validation_retries=2),
+            raw={},
+        )
+
+        async def _bad_json(cfg, role, messages, **kw):
+            return "not valid json"
+
+        with patch("kiso.brain.call_llm", side_effect=_bad_json):
+            with pytest.raises(PlanError, match="validation failed after 2"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: ["bad"], PlanError, "Plan",
+                )
+
+    async def test_on_retry_fires_for_both_types(self):
+        """on_retry callback receives calls for both LLM and validation errors."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            raw={},
+        )
+        retry_calls: list[tuple] = []
+        call_count = [0]
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _mixed_failures(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise LLMError("stall timeout")
+            if call_count[0] == 2:
+                return "invalid json{{"
+            return valid_plan
+
+        def _on_retry(attempt, max_attempts, reason):
+            retry_calls.append((attempt, max_attempts, reason))
+
+        with patch("kiso.brain.call_llm", side_effect=_mixed_failures):
+            result = await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                on_retry=_on_retry,
+            )
+        assert result["goal"] == "ok"
+        assert len(retry_calls) == 2  # one for LLM error, one for JSON error
+        assert "stall" in retry_calls[0][2].lower()
+        assert "json" in retry_calls[1][2].lower()
+
+    async def test_full_timeout_not_partitioned(self):
+        """Each LLM attempt uses the full role timeout (no partitioning)."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(planner_timeout=600, max_llm_retries=3, max_validation_retries=3),
+            raw={},
+        )
+        captured_kwargs: list[dict] = []
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _capture(cfg, role, messages, **kw):
+            captured_kwargs.append(kw)
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+            )
+        # No timeout_override should be passed (removed in M298)
+        assert "timeout_override" not in captured_kwargs[0]
