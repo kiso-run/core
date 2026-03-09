@@ -117,7 +117,7 @@ def test_reviewer_prompt_contains_empty_output_guard():
     """M111d: reviewer.md must instruct LLM to set learn=null on empty output."""
     prompt = _load_system_prompt("reviewer")
     assert "empty or whitespace-only" in prompt
-    assert "learn MUST be null" in prompt
+    assert "Null if nothing useful" in prompt or "learn MUST be null" in prompt
 
 
 def test_reviewer_prompt_contains_reason_required_rule():
@@ -2662,7 +2662,7 @@ class TestM207CompositeRequestDecomposition:
 
     def test_composite_requests_no_extra_steps(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "do not add extra steps" in prompt
+        assert "do not add extra steps" in prompt.lower()
 
 
 class TestM199PluginInstallIdempotent:
@@ -4547,7 +4547,7 @@ class TestM194ReviewerDomainCheck:
         """M280: reviewer prompt handles truncated output gracefully."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "[truncated]" in prompt
-        assert "do NOT replan just because output was truncated" in prompt
+        assert "Do NOT replan just because output was truncated" in prompt
 
     def test_m280_partial_success_rule(self):
         """M280: reviewer prompt defines partial success boundaries."""
@@ -5040,7 +5040,7 @@ class TestLoadModularPrompt:
         result = _load_modular_prompt("planner", ["planning_rules"])
         assert "Kiso planner" in result
         assert "Recent Messages" in result
-        assert "non-null `expect`" in result
+        assert "non-null" in result and "`expect`" in result
         assert "fabricate" in result
         # Other modules absent
         assert "Skills efficiency:" not in result

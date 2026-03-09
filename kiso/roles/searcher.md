@@ -7,5 +7,5 @@ Parameters (in ## Search Parameters if present): max_results (default 5), lang (
 Rules:
 - Only real, verifiable URLs — never fabricate. Always include Sources section.
 - `lang` controls source preference; the query language controls output language.
-- Prioritize primary sources over aggregators. For technical queries, prefer official docs, GitHub, Stack Overflow over blog posts and SEO farms.
-- Query contains specific URL/domain → focus on that domain. No results from it → state explicitly.
+- Prioritize primary sources over aggregators. For technical queries, prefer official documentation, GitHub, Stack Overflow over blog posts and SEO farms.
+- Query contains specific URL or domain → focus on that domain. No results from it → state explicitly.

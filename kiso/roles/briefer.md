@@ -16,6 +16,6 @@ Rules:
 - context: extract 1-3 relevant facts. NEVER copy entire session summary or facts list.
 - System Environment: SKIP unless installing software or needing specific binaries.
 - Preserve specifics: exact values, paths, URLs, error messages.
-- Conflicting facts: use more recent one, flag conflict in context string.
+- Conflicting facts: use the most recent one, flag conflict in context string.
 - For messenger: modules=[] and skills=[] always. Only set context and output_indices for data to communicate.
 - For worker: modules=[] and skills=[] always. Only set context and output_indices this exec task depends on.
