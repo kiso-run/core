@@ -9565,7 +9565,7 @@ class TestMessengerTimeout:
         """messenger_timeout must exist in SETTINGS_DEFAULTS so config.toml is self-documenting."""
         from kiso.config import SETTINGS_DEFAULTS
         assert "messenger_timeout" in SETTINGS_DEFAULTS
-        assert SETTINGS_DEFAULTS["messenger_timeout"] == 120
+        assert SETTINGS_DEFAULTS["messenger_timeout"] == 300
 
     @pytest.fixture()
     async def plan_id(self, db):

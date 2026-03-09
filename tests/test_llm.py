@@ -1283,3 +1283,118 @@ class TestM299SSEStreamParsing:
         _, _, pt, ct = await _read_sse_stream(resp)
         assert pt == 42
         assert ct == 7
+
+
+# --- M300: Stall detection & raised timeouts ---
+
+
+class TestM300StallDetection:
+    """M300: stall_timeout aborts stream if no chunk arrives."""
+
+    @pytest.mark.asyncio
+    async def test_stall_raises_after_timeout(self):
+        """Stream that goes silent raises LLMStallError."""
+        import asyncio
+        from kiso.llm import _read_sse_stream, LLMStallError
+
+        class _StallingResp:
+            status_code = 200
+
+            async def aiter_lines(self):
+                yield 'data: {"choices":[{"delta":{"content":"hi"},"index":0}]}'
+                # Stall forever
+                await asyncio.sleep(999)
+                yield "data: [DONE]"
+
+        resp = _StallingResp()
+        with pytest.raises(LLMStallError, match="no data for 0.1s"):
+            await _read_sse_stream(resp, stall_timeout=0.1)
+
+    @pytest.mark.asyncio
+    async def test_no_stall_when_chunks_arrive(self):
+        """Normal stream completes without stall error."""
+        from kiso.llm import _read_sse_stream
+        lines = [
+            'data: {"choices":[{"delta":{"content":"ok"},"index":0}]}',
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
+        resp = _MockStreamResp(200, lines)
+        content, _, _, _ = await _read_sse_stream(resp, stall_timeout=0.1)
+        assert content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_stall_error_is_llm_error_subclass(self):
+        """LLMStallError inherits from LLMError for retry compatibility."""
+        from kiso.llm import LLMStallError, LLMError
+        assert issubclass(LLMStallError, LLMError)
+
+    @pytest.mark.asyncio
+    async def test_stall_timeout_from_config(self):
+        """call_llm passes stall_timeout from config to _read_sse_stream."""
+        config = _make_config(settings={"stall_timeout": 42, "llm_timeout": 600})
+        captured_stall: list[float] = []
+        _orig_read = None
+
+        from kiso.llm import _read_sse_stream as orig_read
+        _orig_read = orig_read
+
+        async def _capturing_read(resp, stall_timeout=60):
+            captured_stall.append(stall_timeout)
+            return await _orig_read(resp, stall_timeout=stall_timeout)
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm._read_sse_stream", side_effect=_capturing_read):
+                _setup_mock(mock_cls, _ok_stream("ok"))
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+        assert captured_stall == [42]
+
+    @pytest.mark.asyncio
+    async def test_stall_error_logged_as_error(self):
+        """Stall error triggers error audit log."""
+        import asyncio
+        from kiso.llm import LLMStallError
+
+        class _StallingResp:
+            status_code = 200
+            async def aiter_lines(self):
+                yield 'data: {"choices":[{"delta":{"content":"hi"},"index":0}]}'
+                await asyncio.sleep(999)
+
+            async def aread(self):
+                return b""
+
+        stall_cm = _StreamCM(_StallingResp())
+
+        config = _make_config(settings={"stall_timeout": 0, "llm_timeout": 600})
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                _setup_mock(mock_cls, stall_cm)
+                with pytest.raises(LLMStallError):
+                    await call_llm(
+                        config, "worker",
+                        [{"role": "user", "content": "hi"}],
+                        session="s1",
+                    )
+                mock_audit.assert_called_once()
+                args = mock_audit.call_args[0]
+                assert args[7] == "error"
+
+
+class TestM300RaisedTimeouts:
+    """M300: verify updated default timeout values."""
+
+    def test_llm_timeout_raised(self):
+        assert SETTINGS_DEFAULTS["llm_timeout"] == 600
+
+    def test_planner_timeout_raised(self):
+        assert SETTINGS_DEFAULTS["planner_timeout"] == 600
+
+    def test_messenger_timeout_raised(self):
+        assert SETTINGS_DEFAULTS["messenger_timeout"] == 300
+
+    def test_stall_timeout_default(self):
+        assert SETTINGS_DEFAULTS["stall_timeout"] == 60

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
 import logging
@@ -167,10 +168,17 @@ def _get_api_key() -> str | None:
     return os.environ.get(LLM_API_KEY_ENV)
 
 
+class LLMStallError(LLMError):
+    """Raised when the LLM stream stalls (no chunks for stall_timeout seconds)."""
+
+
 async def _read_sse_stream(
     response: httpx.Response,
+    stall_timeout: float = 60,
 ) -> tuple[str, str, int, int]:
-    """Read an OpenAI-compatible SSE stream.
+    """Read an OpenAI-compatible SSE stream with stall detection.
+
+    If no line arrives within *stall_timeout* seconds, raises LLMStallError.
 
     Returns (content, reasoning_content, prompt_tokens, completion_tokens).
     """
@@ -179,7 +187,17 @@ async def _read_sse_stream(
     prompt_tokens = 0
     completion_tokens = 0
 
-    async for raw_line in response.aiter_lines():
+    line_iter = response.aiter_lines().__aiter__()
+    while True:
+        try:
+            raw_line = await asyncio.wait_for(line_iter.__anext__(), timeout=stall_timeout)
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError:
+            raise LLMStallError(
+                f"LLM stream stalled (no data for {stall_timeout}s)"
+            )
+
         line = raw_line.strip()
         if not line or line.startswith(":"):
             continue
@@ -270,6 +288,8 @@ async def call_llm(
     else:
         llm_timeout = int(config.settings["llm_timeout"])
 
+    stall_timeout = int(config.settings.get("stall_timeout", 60))
+
     # Stripped message list — computed lazily for inflight tracking and usage logging
     stripped_messages: list[dict] | None = None
 
@@ -348,9 +368,15 @@ async def call_llm(
                     break  # non-retryable error, handle after loop
 
                 # Read SSE stream
-                content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(resp)
+                content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(
+                    resp, stall_timeout=stall_timeout,
+                )
 
             break  # success
+        except LLMStallError:
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+            raise  # already an LLMError subclass — propagate for retry
         except httpx.TimeoutException:
             duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")

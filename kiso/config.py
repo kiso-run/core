@@ -37,9 +37,10 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "max_plan_tasks": 20,
     # execution
     "classifier_timeout": 30,
-    "llm_timeout": 300,
-    "planner_timeout": 300,
-    "messenger_timeout": 120,
+    "llm_timeout": 600,
+    "planner_timeout": 600,
+    "messenger_timeout": 300,
+    "stall_timeout": 60,
     "max_output_size": 1048576,
     "max_worker_retries": 2,
     # limits
@@ -169,9 +170,10 @@ max_plan_tasks            = 20
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
-llm_timeout               = 300      # seconds; timeout for post-plan LLM calls (curator, summarizer)
-planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
-messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
+llm_timeout               = 600      # seconds; hard timeout for LLM calls (safety net)
+planner_timeout           = 600      # seconds for planner LLM calls (hard timeout)
+messenger_timeout         = 300      # seconds for messenger LLM calls (hard timeout)
+stall_timeout             = 60       # seconds; abort streaming if no chunk arrives within this window
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 2
 
