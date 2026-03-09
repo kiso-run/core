@@ -419,8 +419,22 @@ async def call_llm(
         )
 
     if not content:
-        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-        raise LLMError(f"Empty response from LLM ({role}, {model_name})")
+        # M305: reasoning→content fallback for structured roles.
+        # Some models put JSON output in reasoning_content instead of content.
+        if reasoning_api.strip() and role in STRUCTURED_ROLES and reasoning_api.strip().startswith("{"):
+            log.warning(
+                "Empty content but reasoning contains JSON (%d chars) for %s/%s — using as fallback",
+                len(reasoning_api), role, model_name,
+            )
+            content = reasoning_api.strip()
+        else:
+            if reasoning_api.strip():
+                log.warning(
+                    "Empty content with reasoning (%d chars) for %s/%s — cannot use as fallback",
+                    len(reasoning_api), role, model_name,
+                )
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+            raise LLMError(f"Empty response from LLM ({role}, {model_name})")
 
     # Extract thinking/reasoning content.
     # 1) API-level field from streaming deltas

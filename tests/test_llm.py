@@ -1514,3 +1514,106 @@ class TestM303PartialContent:
 
         assert result == "chunk1chunk2"
         assert captured_partial.get("got_dict") is True
+
+
+# --- M305: Empty response reasoning fallback ---
+
+
+def _reasoning_only_stream(reasoning: str, usage: dict | None = None) -> _StreamCM:
+    """Build a stream where all output is in reasoning_content, content is empty."""
+    lines: list[str] = []
+    r_chunk = {"choices": [{"delta": {"reasoning_content": reasoning}, "index": 0}]}
+    lines.append(f"data: {json.dumps(r_chunk)}")
+    final: dict = {"choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}]}
+    if usage:
+        final["usage"] = usage
+    lines.append(f"data: {json.dumps(final)}")
+    lines.append("data: [DONE]")
+    return _StreamCM(_MockStreamResp(200, lines))
+
+
+def _empty_stream(usage: dict | None = None) -> _StreamCM:
+    """Build a stream with no content and no reasoning — truly empty."""
+    lines: list[str] = []
+    final: dict = {"choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}]}
+    if usage:
+        final["usage"] = usage
+    lines.append(f"data: {json.dumps(final)}")
+    lines.append("data: [DONE]")
+    return _StreamCM(_MockStreamResp(200, lines))
+
+
+class TestM305ReasoningFallback:
+    """M305: empty content with reasoning JSON → fallback for structured roles."""
+
+    @pytest.mark.asyncio
+    async def test_structured_role_uses_reasoning_json_as_content(self):
+        """Planner with empty content but JSON in reasoning → uses reasoning."""
+        config = _make_config()
+        plan_json = '{"goal": "test", "tasks": []}'
+        stream = _reasoning_only_stream(plan_json, {"prompt_tokens": 10, "completion_tokens": 5})
+        fmt = {"type": "json_object"}
+
+        with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            _setup_mock(mock_cls, stream)
+            result = await call_llm(config, "planner", [{"role": "user", "content": "hi"}],
+                                     response_format=fmt)
+        assert result == plan_json
+
+    @pytest.mark.asyncio
+    async def test_structured_role_reasoning_not_json_still_raises(self):
+        """Planner with reasoning that doesn't start with { → still raises."""
+        config = _make_config()
+        stream = _reasoning_only_stream("Let me think about this...")
+        fmt = {"type": "json_object"}
+
+        with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            _setup_mock(mock_cls, stream)
+            with pytest.raises(LLMError, match="Empty response"):
+                await call_llm(config, "planner", [{"role": "user", "content": "hi"}],
+                               response_format=fmt)
+
+    @pytest.mark.asyncio
+    async def test_non_structured_role_reasoning_still_raises(self):
+        """Worker with reasoning JSON → still raises (not a structured role)."""
+        config = _make_config()
+        stream = _reasoning_only_stream('{"command": "ls"}')
+
+        with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            _setup_mock(mock_cls, stream)
+            with pytest.raises(LLMError, match="Empty response"):
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_truly_empty_response_raises(self):
+        """No content and no reasoning → raises LLMError as before."""
+        config = _make_config()
+        stream = _empty_stream()
+
+        with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            _setup_mock(mock_cls, stream)
+            with pytest.raises(LLMError, match="Empty response"):
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_reviewer_reasoning_fallback(self):
+        """Reviewer (structured role) with JSON reasoning → uses fallback."""
+        config = _make_config()
+        review_json = '{"status": "ok", "reason": null}'
+        stream = _reasoning_only_stream(review_json, {"prompt_tokens": 5, "completion_tokens": 3})
+
+        with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            _setup_mock(mock_cls, stream)
+            result = await call_llm(config, "reviewer", [{"role": "user", "content": "hi"}],
+                                     response_format={"type": "json_object"})
+        assert result == review_json
