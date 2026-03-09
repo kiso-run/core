@@ -174,6 +174,7 @@ async def call_llm(
     response_format: dict | None = None,
     session: str = "",
     max_tokens: int | None = None,
+    timeout_override: int | None = None,
 ) -> str:
     """Call an LLM. Returns the response content string.
 
@@ -220,8 +221,10 @@ async def call_llm(
     # Resolve provider name for audit
     provider_name = model_string.split(":", 1)[0] if ":" in model_string else next(iter(config.providers))
 
-    # Pick the right timeout for this role.
-    if role == "planner":
+    # Pick the right timeout for this role (timeout_override takes priority).
+    if timeout_override is not None:
+        llm_timeout = timeout_override
+    elif role == "planner":
         llm_timeout = int(config.settings.get("planner_timeout", config.settings["llm_timeout"]))
     elif role == "messenger":
         llm_timeout = int(config.settings.get("messenger_timeout", config.settings["llm_timeout"]))
