@@ -6114,11 +6114,11 @@ class TestM274NoItalianKeywords:
         assert "PROTECTION" in system
 
 
-# --- M295: Per-call timeout partitioning ---
+# --- M298: No timeout partitioning — each attempt uses full role timeout ---
 
 
-class TestM295TimeoutPartitioning:
-    """M295: _retry_llm_with_validation splits timeout across retry attempts."""
+class TestM298NoTimeoutPartitioning:
+    """M298: _retry_llm_with_validation does NOT partition timeout across retries."""
 
     @pytest.fixture()
     def config(self):
@@ -6131,8 +6131,8 @@ class TestM295TimeoutPartitioning:
             raw={},
         )
 
-    async def test_per_call_timeout_passed_to_call_llm(self, config):
-        """call_llm receives timeout_override = total / (retries + 1)."""
+    async def test_no_timeout_override_passed(self, config):
+        """call_llm is called without timeout_override (uses role default)."""
         captured_kwargs: list[dict] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
@@ -6149,39 +6149,10 @@ class TestM295TimeoutPartitioning:
                 [{"role": "user", "content": "test"}],
                 PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
             )
-        assert captured_kwargs[0]["timeout_override"] == 75  # 300 / (3+1)
+        assert "timeout_override" not in captured_kwargs[0]
 
-    async def test_per_call_timeout_has_floor(self):
-        """Per-call timeout never goes below 30s."""
-        config = Config(
-            tokens={"cli": "tok"},
-            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-            users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=10, llm_timeout=60),
-            raw={},
-        )
-        captured_kwargs: list[dict] = []
-        valid_review = json.dumps({
-            "status": "ok", "reason": None, "learn": None,
-            "retry_hint": None, "summary": None,
-        })
-
-        async def _capture(cfg, role, messages, **kw):
-            captured_kwargs.append(kw)
-            return valid_review
-
-        with patch("kiso.brain.call_llm", side_effect=_capture):
-            await _retry_llm_with_validation(
-                config, "reviewer",
-                [{"role": "user", "content": "test"}],
-                REVIEW_SCHEMA, lambda r: validate_review(r), ReviewError, "Review",
-            )
-        # 60 / (10+1) = 5, but floor is 30
-        assert captured_kwargs[0]["timeout_override"] == 30
-
-    async def test_timeout_override_used_by_call_llm(self):
-        """call_llm uses timeout_override instead of config timeout."""
+    async def test_call_llm_uses_role_timeout(self):
+        """call_llm uses role-based timeout from config, not a partitioned value."""
         from kiso.llm import call_llm
         config = Config(
             tokens={"cli": "tok"},
@@ -6201,14 +6172,12 @@ class TestM295TimeoutPartitioning:
                 config, "planner",
                 [{"role": "user", "content": "test"}],
                 response_format=PLAN_SCHEMA,
-                timeout_override=42,
             )
-            # Verify the timeout was passed to httpx
             _, call_kwargs = mock_client.post.call_args
-            assert call_kwargs["timeout"] == 42
+            assert call_kwargs["timeout"] == 300  # full planner_timeout, not partitioned
 
-    async def test_retry_fires_on_timeout_within_budget(self, config):
-        """When first attempt times out, retry fires with remaining budget."""
+    async def test_retry_fires_on_timeout(self, config):
+        """When first attempt times out, retry fires (each attempt gets full timeout)."""
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,

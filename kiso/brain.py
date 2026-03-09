@@ -130,19 +130,6 @@ async def _retry_llm_with_validation(
     prev_error_set: frozenset[str] = frozenset()  # M186: track repeated identical errors
     repeat_count: int = 0
 
-    # M295: compute per-call timeout so all retry attempts fit within the
-    # outer asyncio.wait_for budget.  Without this, the inner httpx timeout
-    # equals the outer timeout and the first attempt can consume the entire
-    # budget, leaving no time for retries.
-    _MIN_PER_CALL_TIMEOUT = 30  # seconds — floor to avoid absurdly short calls
-    if role == "planner":
-        _total = int(config.settings.get("planner_timeout", config.settings["llm_timeout"]))
-    elif role == "messenger":
-        _total = int(config.settings.get("messenger_timeout", config.settings["llm_timeout"]))
-    else:
-        _total = int(config.settings["llm_timeout"])
-    per_call_timeout = max(_MIN_PER_CALL_TIMEOUT, _total // (max_retries + 1))
-
     for attempt in range(1, max_retries + 1):
         if last_errors:
             error_lines = [f"- {e}" for e in last_errors]
@@ -163,7 +150,7 @@ async def _retry_llm_with_validation(
         try:
             raw = await call_llm(
                 config, role, messages, response_format=schema,
-                session=session, timeout_override=per_call_timeout,
+                session=session,
             )
         except LLMError as e:
             # M269: treat LLM errors (empty response, transient failures) as
