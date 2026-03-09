@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jsonschema as _jsonschema
 import pytest
@@ -6114,6 +6114,48 @@ class TestM274NoItalianKeywords:
         assert "PROTECTION" in system
 
 
+# --- Streaming mock helpers for tests that mock _http_client directly ---
+
+
+class _MockStreamResp:
+    """Mock httpx streaming response with SSE lines."""
+    def __init__(self, status_code, sse_lines=None):
+        self.status_code = status_code
+        self._sse_lines = sse_lines or []
+
+    async def aiter_lines(self):
+        for line in self._sse_lines:
+            yield line
+
+    async def aread(self):
+        return b""
+
+
+class _BrainStreamCM:
+    """Async context manager wrapping a mock stream response."""
+    def __init__(self, response):
+        self._resp = response
+
+    async def __aenter__(self):
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def _brain_stream_cm(content: str, usage: dict | None = None) -> _BrainStreamCM:
+    """Build a streaming mock context manager for a successful LLM call."""
+    lines = []
+    if content:
+        lines.append(f'data: {json.dumps({"choices": [{"delta": {"content": content}, "index": 0}]})}')
+    final: dict = {"choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}]}
+    if usage:
+        final["usage"] = usage
+    lines.append(f"data: {json.dumps(final)}")
+    lines.append("data: [DONE]")
+    return _BrainStreamCM(_MockStreamResp(200, lines))
+
+
 # --- M298: No timeout partitioning — each attempt uses full role timeout ---
 
 
@@ -6162,18 +6204,15 @@ class TestM298NoTimeoutPartitioning:
             settings=_full_settings(planner_timeout=300),
             raw={},
         )
+        plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"d","skill":null,"args":null,"expect":null}]}'
         with patch("kiso.llm._http_client") as mock_client:
-            mock_resp = type("R", (), {
-                "status_code": 200,
-                "json": lambda self: {"choices": [{"message": {"content": '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"d","skill":null,"args":null,"expect":null}]}'}}]},
-            })()
-            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client.stream = MagicMock(return_value=_brain_stream_cm(plan_content))
             await call_llm(
                 config, "planner",
                 [{"role": "user", "content": "test"}],
                 response_format=PLAN_SCHEMA,
             )
-            _, call_kwargs = mock_client.post.call_args
+            call_kwargs = mock_client.stream.call_args[1]
             assert call_kwargs["timeout"] == 300  # full planner_timeout, not partitioned
 
     async def test_retry_fires_on_timeout(self, config):
@@ -6222,13 +6261,9 @@ class TestM296MaxTokensDefaults:
         from kiso.config import MAX_TOKENS_DEFAULTS
         config = self._config()
         with patch("kiso.llm._http_client") as mock_client:
-            mock_resp = type("R", (), {
-                "status_code": 200,
-                "json": lambda self: {"choices": [{"message": {"content": "ls"}}]},
-            })()
-            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client.stream = MagicMock(return_value=_brain_stream_cm("ls"))
             await call_llm(config, "worker", [{"role": "user", "content": "test"}])
-            payload = mock_client.post.call_args[1]["json"]
+            payload = mock_client.stream.call_args[1]["json"]
             assert payload["max_tokens"] == MAX_TOKENS_DEFAULTS["worker"]
 
     async def test_explicit_max_tokens_overrides_default(self):
@@ -6236,17 +6271,13 @@ class TestM296MaxTokensDefaults:
         from kiso.llm import call_llm
         config = self._config()
         with patch("kiso.llm._http_client") as mock_client:
-            mock_resp = type("R", (), {
-                "status_code": 200,
-                "json": lambda self: {"choices": [{"message": {"content": "ls"}}]},
-            })()
-            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client.stream = MagicMock(return_value=_brain_stream_cm("ls"))
             await call_llm(
                 config, "worker",
                 [{"role": "user", "content": "test"}],
                 max_tokens=999,
             )
-            payload = mock_client.post.call_args[1]["json"]
+            payload = mock_client.stream.call_args[1]["json"]
             assert payload["max_tokens"] == 999
 
     def test_all_roles_have_max_tokens_default(self):

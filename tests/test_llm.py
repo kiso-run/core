@@ -1,4 +1,4 @@
-"""Tests for kiso/llm.py — LLM client."""
+"""Tests for kiso/llm.py — LLM client with SSE streaming."""
 
 from __future__ import annotations
 
@@ -44,6 +44,79 @@ def _make_config(**overrides) -> Config:
     )
     defaults.update(overrides)
     return Config(**defaults)
+
+
+# --- SSE streaming mock helpers ---
+
+class _MockStreamResp:
+    """Mock httpx streaming response with SSE lines."""
+
+    def __init__(self, status_code: int, sse_lines: list[str] | None = None, body: str = ""):
+        self.status_code = status_code
+        self._sse_lines = sse_lines or []
+        self._body = body
+
+    async def aiter_lines(self):
+        for line in self._sse_lines:
+            yield line
+
+    async def aread(self) -> bytes:
+        return self._body.encode() if isinstance(self._body, str) else self._body
+
+
+class _StreamCM:
+    """Async context manager wrapping a mock stream response."""
+
+    def __init__(self, response: _MockStreamResp):
+        self._resp = response
+
+    async def __aenter__(self):
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def _ok_stream(
+    content: str = "hello",
+    usage: dict | None = None,
+    reasoning_content: str | None = None,
+) -> _StreamCM:
+    """Build a mock SSE streaming response for a successful LLM call."""
+    lines: list[str] = []
+    # Content chunk
+    if content:
+        delta: dict = {"content": content}
+        chunk: dict = {"choices": [{"delta": delta, "index": 0}]}
+        lines.append(f"data: {json.dumps(chunk)}")
+    # Reasoning chunk (separate from content)
+    if reasoning_content:
+        r_chunk = {"choices": [{"delta": {"reasoning_content": reasoning_content}, "index": 0}]}
+        lines.append(f"data: {json.dumps(r_chunk)}")
+    # Final chunk with finish_reason + usage
+    final: dict = {"choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}]}
+    if usage:
+        final["usage"] = usage
+    lines.append(f"data: {json.dumps(final)}")
+    lines.append("data: [DONE]")
+    return _StreamCM(_MockStreamResp(200, lines))
+
+
+def _error_stream(status_code: int, body: str = "") -> _StreamCM:
+    """Build a mock streaming response for an error (non-200 status)."""
+    return _StreamCM(_MockStreamResp(status_code, body=body))
+
+
+def _setup_mock(mock_cls, stream_cm):
+    """Set up httpx.AsyncClient mock for streaming. Returns mock_client."""
+    mock_client = AsyncMock()
+    # stream() must be a regular MagicMock — it returns a sync context manager,
+    # not a coroutine.  AsyncMock would wrap it in a coroutine which breaks
+    # ``async with client.stream(...)``.
+    mock_client.stream = MagicMock(return_value=stream_cm)
+    mock_client.aclose = AsyncMock()
+    mock_cls.return_value = mock_client
+    return mock_client
 
 
 # --- get_provider ---
@@ -114,24 +187,6 @@ class TestGetApiKey:
 
 # --- call_llm ---
 
-def _ok_response(
-    content: str = "hello",
-    usage: dict | None = None,
-    reasoning_content: str | None = None,
-) -> httpx.Response:
-    msg: dict = {"content": content}
-    if reasoning_content is not None:
-        msg["reasoning_content"] = reasoning_content
-    body: dict = {"choices": [{"message": msg}]}
-    if usage is not None:
-        body["usage"] = usage
-    return httpx.Response(
-        200,
-        json=body,
-        request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-    )
-
-
 class TestCallLlm:
     @pytest.mark.asyncio
     async def test_no_model_for_role_raises(self):
@@ -151,11 +206,7 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("response text")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("response text"))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 assert result == "response text"
 
@@ -165,11 +216,7 @@ class TestCallLlm:
         schema = {"type": "json_schema", "json_schema": {"name": "test"}}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response('{"goal":"test"}')
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream('{"goal":"test"}'))
                 result = await call_llm(config, "planner", [{"role": "user", "content": "hi"}], response_format=schema)
                 assert result == '{"goal":"test"}'
 
@@ -178,11 +225,8 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = httpx.TimeoutException("timeout")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.TimeoutException("timeout")
                 with pytest.raises(LLMError, match="timed out"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
@@ -191,11 +235,8 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = httpx.ConnectError("refused")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.ConnectError("refused")
                 with pytest.raises(LLMError, match="request failed"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
@@ -204,14 +245,7 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    429, text="rate limited",
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(429, "rate limited"))
                 with pytest.raises(LLMError, match="429.*rate limited"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
@@ -220,14 +254,7 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    400, text="",
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(400, ""))
                 with pytest.raises(LLMError, match="400.*model may be unavailable"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
@@ -236,14 +263,7 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    401, text="unauthorized",
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(401, "unauthorized"))
                 with pytest.raises(LLMError, match="401.*check your API key"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
@@ -252,31 +272,23 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    402, text="payment required",
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(402, "payment required"))
                 with pytest.raises(LLMError, match="402.*insufficient credits"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
-    async def test_malformed_response_raises(self):
+    async def test_empty_content_raises_error(self):
+        """Stream with no content chunks raises Empty response error."""
         config = _make_config()
+        # Send only a finish chunk with no content
+        lines = [
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    200, json={"choices": []},
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                with pytest.raises(LLMError, match="Unexpected LLM response"):
+                _setup_mock(mock_cls, _StreamCM(_MockStreamResp(200, lines)))
+                with pytest.raises(LLMError, match="Empty response"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
@@ -284,16 +296,10 @@ class TestCallLlm:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response()
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
-                call_kwargs = mock_client.post.call_args
-                headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
-                assert headers.get("Authorization") == "Bearer sk-test"
+                call_kwargs = mock_client.stream.call_args[1]
+                assert call_kwargs["headers"].get("Authorization") == "Bearer sk-test"
 
     @pytest.mark.asyncio
     async def test_no_auth_header_without_api_key(self):
@@ -302,16 +308,10 @@ class TestCallLlm:
         }, models={"worker": "llama3"})
         with patch.dict(os.environ, {}, clear=True), \
              patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = _ok_response()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+            mock_client = _setup_mock(mock_cls, _ok_stream())
             await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
-            call_kwargs = mock_client.post.call_args
-            headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
-            assert "Authorization" not in headers
+            call_kwargs = mock_client.stream.call_args[1]
+            assert "Authorization" not in call_kwargs["headers"]
 
     @pytest.mark.asyncio
     async def test_response_format_in_payload(self):
@@ -319,15 +319,9 @@ class TestCallLlm:
         schema = {"type": "json_schema", "json_schema": {"name": "plan"}}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response('{}')
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream('{}'))
                 await call_llm(config, "planner", [{"role": "user", "content": "hi"}], response_format=schema)
-
-                call_kwargs = mock_client.post.call_args
-                payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json", {})
+                payload = mock_client.stream.call_args[1]["json"]
                 assert payload["response_format"] == schema
 
     @pytest.mark.asyncio
@@ -337,16 +331,24 @@ class TestCallLlm:
             "local": Provider(base_url="http://localhost:11434/v1/"),
         }, models={"worker": "llama3"})
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = _ok_response()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+            mock_client = _setup_mock(mock_cls, _ok_stream())
             await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
-            url = mock_client.post.call_args[0][0]
+            # stream("POST", url, ...) — url is the second positional arg
+            url = mock_client.stream.call_args[0][1]
             assert url == "http://localhost:11434/v1/chat/completions"
             assert "//" not in url.split("://")[1]
+
+    @pytest.mark.asyncio
+    async def test_stream_true_in_payload(self):
+        """M299: payload always includes stream=True and stream_options."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                payload = mock_client.stream.call_args[1]["json"]
+                assert payload["stream"] is True
+                assert payload["stream_options"] == {"include_usage": True}
 
 
 # --- Audit logging ---
@@ -360,13 +362,8 @@ class TestCallLlmAudit:
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok", usage=usage)
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("ok", usage=usage))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="sess1")
-
                 mock_audit.assert_called_once()
                 args = mock_audit.call_args[0]
                 assert args[0] == "sess1"  # session
@@ -384,14 +381,10 @@ class TestCallLlmAudit:
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = httpx.TimeoutException("timeout")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.TimeoutException("timeout")
                 with pytest.raises(LLMError):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
-
                 mock_audit.assert_called_once()
                 args = mock_audit.call_args[0]
                 assert args[7] == "error"
@@ -402,17 +395,9 @@ class TestCallLlmAudit:
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    500, text="error",
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(500, "error"))
                 with pytest.raises(LLMError):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
                 mock_audit.assert_called_once()
                 args = mock_audit.call_args[0]
                 assert args[7] == "error"
@@ -423,95 +408,45 @@ class TestCallLlmAudit:
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = httpx.ConnectError("refused")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.ConnectError("refused")
                 with pytest.raises(LLMError):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
-
                 mock_audit.assert_called_once()
                 args = mock_audit.call_args[0]
                 assert args[0] == "s1"  # session
                 assert args[7] == "error"
 
     @pytest.mark.asyncio
-    async def test_audit_logged_on_malformed_response(self):
+    async def test_audit_logged_on_empty_response(self):
+        """Empty content triggers error audit."""
         config = _make_config()
+        lines = [
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = httpx.Response(
-                    200, json={"choices": []},
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _StreamCM(_MockStreamResp(200, lines)))
                 with pytest.raises(LLMError):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
-
                 mock_audit.assert_called_once()
                 args = mock_audit.call_args[0]
                 assert args[7] == "error"
 
     @pytest.mark.asyncio
     async def test_audit_defaults_tokens_to_zero(self):
-        """When no usage in response, tokens default to 0."""
+        """When no usage in stream, tokens default to 0."""
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok")  # no usage
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("ok"))  # no usage
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
                 args = mock_audit.call_args[0]
                 assert args[4] == 0  # input_tokens
                 assert args[5] == 0  # output_tokens
-
-
-# --- Empty response ---
-
-
-class TestEmptyResponse:
-    @pytest.mark.asyncio
-    async def test_empty_content_raises_error(self):
-        """Mock LLM returning content: '', verify LLMError raised."""
-        config = _make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                with pytest.raises(LLMError, match="Empty response"):
-                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
-    @pytest.mark.asyncio
-    async def test_none_content_raises_error(self):
-        """Mock LLM returning content: None, verify LLMError raised."""
-        config = _make_config()
-        body = {"choices": [{"message": {"content": None}}]}
-        resp = httpx.Response(
-            200, json=body,
-            request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-        )
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = resp
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                with pytest.raises(LLMError, match="Empty response"):
-                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
 
 # --- Timeout uses config value ---
@@ -520,18 +455,14 @@ class TestEmptyResponse:
 class TestTimeoutConfig:
     @pytest.mark.asyncio
     async def test_timeout_uses_config_value(self):
-        """Verify httpx.AsyncClient receives timeout from llm_timeout config."""
+        """Verify stream request receives timeout from llm_timeout config."""
         config = _make_config(settings={"llm_timeout": 42})
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
-                mock_cls.assert_called_once_with(timeout=42)
+                call_kwargs = mock_client.stream.call_args[1]
+                assert call_kwargs["timeout"] == 42
 
 
 # --- LLM budget tracking ---
@@ -555,14 +486,11 @@ class TestLLMBudget:
         set_llm_budget(10)
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 assert get_llm_call_count() == 1
-
+                # Reset stream mock for second call
+                mock_client.stream.return_value = _ok_stream("ok")
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 assert get_llm_call_count() == 2
         clear_llm_budget()
@@ -573,14 +501,9 @@ class TestLLMBudget:
         set_llm_budget(1)
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("ok"))
                 # First call succeeds (uses the 1 allowed call)
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
                 # Second call exceeds budget
                 with pytest.raises(LLMBudgetExceeded, match="budget exhausted"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -593,13 +516,9 @@ class TestLLMBudget:
         clear_llm_budget()  # Ensure no budget
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                # Should not raise even after many calls
-                for _ in range(5):
+                mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
+                for i in range(5):
+                    mock_client.stream.return_value = _ok_stream("ok")
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
         clear_llm_budget()
 
@@ -610,15 +529,11 @@ class TestLLMBudget:
         set_llm_budget(0)  # Zero budget — no calls allowed
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
                 with pytest.raises(LLMBudgetExceeded):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-
                 # HTTP client should NOT have been called
-                mock_client.post.assert_not_called()
+                mock_client.stream.assert_not_called()
         clear_llm_budget()
 
 
@@ -641,14 +556,10 @@ class TestUsageTracking:
         usage2 = {"prompt_tokens": 200, "completion_tokens": 80}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                mock_client.post.return_value = _ok_response("r1", usage=usage1)
+                mock_client = _setup_mock(mock_cls, _ok_stream("r1", usage=usage1))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
-                mock_client.post.return_value = _ok_response("r2", usage=usage2)
+                mock_client.stream.return_value = _ok_stream("r2", usage=usage2)
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         summary = get_usage_summary()
@@ -679,15 +590,11 @@ class TestUsageTracking:
         usage2 = {"prompt_tokens": 20, "completion_tokens": 8}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                mock_client.post.return_value = _ok_response("r1", usage=usage1)
+                mock_client = _setup_mock(mock_cls, _ok_stream("r1", usage=usage1))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 assert get_usage_index() == 1
 
-                mock_client.post.return_value = _ok_response("r2", usage=usage2)
+                mock_client.stream.return_value = _ok_stream("r2", usage=usage2)
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 assert get_usage_index() == 2
 
@@ -703,12 +610,7 @@ class TestUsageTracking:
         ]
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-                # First call
-                mock_client.post.return_value = _ok_response("r1", usage=usages[0])
+                mock_client = _setup_mock(mock_cls, _ok_stream("r1", usage=usages[0]))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
                 # Snapshot index after first call
@@ -716,10 +618,10 @@ class TestUsageTracking:
                 assert idx == 1
 
                 # Two more calls
-                mock_client.post.return_value = _ok_response("r2", usage=usages[1])
+                mock_client.stream.return_value = _ok_stream("r2", usage=usages[1])
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
-                mock_client.post.return_value = _ok_response("r3", usage=usages[2])
+                mock_client.stream.return_value = _ok_stream("r3", usage=usages[2])
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         delta = get_usage_since(idx)
@@ -747,11 +649,7 @@ class TestUsageTracking:
         usage = {"prompt_tokens": 50, "completion_tokens": 25}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("hello back", usage=usage)
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("hello back", usage=usage))
                 await call_llm(config, "worker", messages)
 
         from kiso.llm import _llm_usage_entries
@@ -771,11 +669,7 @@ class TestUsageTracking:
         usage = {"prompt_tokens": 10, "completion_tokens": 5}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("ok", usage=usage)
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("ok", usage=usage))
                 await call_llm(config, "worker", messages)
 
         from kiso.llm import _llm_usage_entries
@@ -795,11 +689,7 @@ class TestUsageTracking:
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("test response", usage=usage)
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("test response", usage=usage))
                 await call_llm(config, "worker", messages)
 
         delta = get_usage_since(0)
@@ -820,7 +710,7 @@ class TestSharedHttpClient:
 
         config = _make_config()
         mock_client = AsyncMock()
-        mock_client.post.return_value = _ok_response("shared client response")
+        mock_client.stream = MagicMock(return_value=_ok_stream("shared client response"))
 
         prev = llm_mod._http_client
         try:
@@ -845,11 +735,7 @@ class TestSharedHttpClient:
             llm_mod._http_client = None
             with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
                  patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("fallback response")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream("fallback response"))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 mock_cls.assert_called_once()
             assert result == "fallback response"
@@ -895,23 +781,19 @@ class TestSharedHttpClient:
 
 
 class TestThinkingExtraction:
-    """Verify call_llm extracts thinking from API response and <think> tags."""
+    """Verify call_llm extracts thinking from streaming deltas and <think> tags."""
 
     @pytest.mark.asyncio
-    async def test_reasoning_content_field(self):
-        """API-level reasoning_content is stored as 'thinking' in usage entry."""
+    async def test_reasoning_content_from_stream(self):
+        """Streaming reasoning_content deltas are stored as 'thinking' in usage entry."""
         config = _make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response(
+                _setup_mock(mock_cls, _ok_stream(
                     "final answer", usage=usage, reasoning_content="step by step",
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                ))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         assert result == "final answer"
@@ -928,13 +810,9 @@ class TestThinkingExtraction:
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response(
+                _setup_mock(mock_cls, _ok_stream(
                     "<think>reasoning here</think>clean answer", usage=usage,
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                ))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         assert result == "clean answer"
@@ -944,22 +822,18 @@ class TestThinkingExtraction:
         assert entry["response"] == "clean answer"
 
     @pytest.mark.asyncio
-    async def test_tags_take_precedence_over_api_field(self):
+    async def test_tags_take_precedence_over_stream_reasoning(self):
         """When both <think> tags and reasoning_content exist, tags win."""
         config = _make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response(
+                _setup_mock(mock_cls, _ok_stream(
                     "<think>tag thinking</think>answer",
                     usage=usage,
                     reasoning_content="api thinking",
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                ))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         assert result == "answer"
@@ -975,11 +849,7 @@ class TestThinkingExtraction:
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("plain answer", usage=usage)
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("plain answer", usage=usage))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         assert result == "plain answer"
@@ -995,13 +865,9 @@ class TestThinkingExtraction:
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response(
+                _setup_mock(mock_cls, _ok_stream(
                     "answer", usage=usage, reasoning_content="deep thought",
-                )
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                ))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
         delta = get_usage_since(0)
@@ -1020,18 +886,13 @@ class TestMaxTokensParam:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("echo hi")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream("echo hi"))
                 await call_llm(
                     config, "worker",
                     [{"role": "user", "content": "hi"}],
                     max_tokens=500,
                 )
-
-                payload = mock_client.post.call_args[1]["json"]
+                payload = mock_client.stream.call_args[1]["json"]
                 assert payload["max_tokens"] == 500
 
     @pytest.mark.asyncio
@@ -1041,17 +902,12 @@ class TestMaxTokensParam:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("echo hi")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream("echo hi"))
                 await call_llm(
                     config, "worker",
                     [{"role": "user", "content": "hi"}],
                 )
-
-                payload = mock_client.post.call_args[1]["json"]
+                payload = mock_client.stream.call_args[1]["json"]
                 assert payload["max_tokens"] == MAX_TOKENS_DEFAULTS["worker"]
 
 
@@ -1061,22 +917,19 @@ class TestMaxTokensParam:
 class TestInflightCallTracking:
     @pytest.mark.asyncio
     async def test_inflight_set_during_call(self):
-        """Inflight entry is populated while the HTTP request is in progress."""
+        """Inflight entry is populated while the streaming request is in progress."""
         config = _make_config()
         captured_inflight = {}
 
-        async def _capture_post(*args, **kwargs):
-            # Capture inflight state while the "request" is happening
+        def _capture_stream(*args, **kwargs):
+            # Capture inflight state when stream() is called (inflight already set)
             captured_inflight.update(_inflight_calls.get("test-sess", {}))
-            return _ok_response("done")
+            return _ok_stream("done")
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _capture_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture_stream
                 await call_llm(
                     config, "worker",
                     [{"role": "user", "content": "hello"}],
@@ -1094,11 +947,7 @@ class TestInflightCallTracking:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.return_value = _ok_response("done")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream("done"))
                 await call_llm(
                     config, "worker",
                     [{"role": "user", "content": "hi"}],
@@ -1113,11 +962,8 @@ class TestInflightCallTracking:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = httpx.TimeoutException("timed out")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.TimeoutException("timed out")
                 with pytest.raises(LLMError, match="timed out"):
                     await call_llm(
                         config, "worker",
@@ -1133,11 +979,8 @@ class TestInflightCallTracking:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = httpx.RequestError("connection failed")
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.RequestError("connection failed")
                 with pytest.raises(LLMError, match="request failed"):
                     await call_llm(
                         config, "worker",
@@ -1157,17 +1000,14 @@ class TestInflightCallTracking:
         config = _make_config()
         captured_keys = []
 
-        async def _capture_post(*args, **kwargs):
+        def _capture_stream(*args, **kwargs):
             captured_keys.extend(_inflight_calls.keys())
-            return _ok_response("done")
+            return _ok_stream("done")
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _capture_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture_stream
                 await call_llm(
                     config, "worker",
                     [{"role": "user", "content": "hi"}],
@@ -1196,28 +1036,24 @@ class TestJsonSchemaFallback:
         config = _make_config()
         call_count = 0
 
-        async def _mock_post(*args, **kwargs):
+        def _mock_stream(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             payload = kwargs.get("json", {})
             rf = payload.get("response_format", {})
             if rf.get("type") == "json_schema":
-                return httpx.Response(
+                return _error_stream(
                     400,
-                    text='{"error":{"message":"Request param: response_format is invalid"}}',
-                    request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
+                    '{"error":{"message":"Request param: response_format is invalid"}}',
                 )
             # json_object succeeds
             assert rf.get("type") == "json_object"
-            return _ok_response('{"status":"ok"}')
+            return _ok_stream('{"status":"ok"}')
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _mock_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _mock_stream
                 result = await call_llm(
                     config, "planner",
                     [{"role": "user", "content": "hi"}],
@@ -1235,17 +1071,14 @@ class TestJsonSchemaFallback:
         _json_object_only_models.add("gpt-4")
         payloads = []
 
-        async def _mock_post(*args, **kwargs):
+        def _mock_stream(*args, **kwargs):
             payloads.append(kwargs.get("json", {}))
-            return _ok_response('{"status":"ok"}')
+            return _ok_stream('{"status":"ok"}')
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _mock_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _mock_stream
                 await call_llm(
                     config, "planner",
                     [{"role": "user", "content": "hi"}],
@@ -1260,20 +1093,11 @@ class TestJsonSchemaFallback:
         """400 without 'response_format' in body raises normally."""
         config = _make_config()
 
-        async def _mock_post(*args, **kwargs):
-            return httpx.Response(
-                400,
-                text='{"error":{"message":"Invalid model specified"}}',
-                request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-            )
-
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _mock_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(
+                    400, '{"error":{"message":"Invalid model specified"}}',
+                ))
                 with pytest.raises(LLMError, match="Invalid model"):
                     await call_llm(
                         config, "planner",
@@ -1288,20 +1112,11 @@ class TestJsonSchemaFallback:
         """400 on non-structured call doesn't trigger fallback logic."""
         config = _make_config()
 
-        async def _mock_post(*args, **kwargs):
-            return httpx.Response(
-                400,
-                text='{"error":{"message":"response_format is invalid"}}',
-                request=httpx.Request("POST", "https://api.example.com/v1/chat/completions"),
-            )
-
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _mock_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _error_stream(
+                    400, '{"error":{"message":"response_format is invalid"}}',
+                ))
                 with pytest.raises(LLMError):
                     await call_llm(
                         config, "worker",
@@ -1314,16 +1129,9 @@ class TestJsonSchemaFallback:
         config = _make_config()
         json_object_format = {"type": "json_object"}
 
-        async def _mock_post(*args, **kwargs):
-            return _ok_response('{"result": true}')
-
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _mock_post
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                _setup_mock(mock_cls, _ok_stream('{"result": true}'))
                 result = await call_llm(
                     config, "planner",
                     [{"role": "user", "content": "hi"}],
@@ -1345,17 +1153,14 @@ class TestM271ReasoningDefaults:
         config = _make_config()
         captured_payload: list[dict] = []
 
-        async def _capture(url, *, headers, json, **kw):
-            captured_payload.append(json)
-            return _ok_response("Hello user")
+        def _capture(*args, **kwargs):
+            captured_payload.append(kwargs.get("json", {}))
+            return _ok_stream("Hello user")
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _capture
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
                 await call_llm(config, "messenger", [{"role": "user", "content": "hi"}])
 
         assert len(captured_payload) == 1
@@ -1368,18 +1173,15 @@ class TestM271ReasoningDefaults:
         config = _make_config()
         captured_payload: list[dict] = []
 
-        async def _capture(url, *, headers, json, **kw):
-            captured_payload.append(json)
-            return _ok_response('{"goal":"test","secrets":null,"tasks":[]}')
+        def _capture(*args, **kwargs):
+            captured_payload.append(kwargs.get("json", {}))
+            return _ok_stream('{"goal":"test","secrets":null,"tasks":[]}')
 
         schema = {"type": "json_schema", "json_schema": {"name": "test"}}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
-                mock_client = AsyncMock()
-                mock_client.post.side_effect = _capture
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
                 await call_llm(
                     config, "planner",
                     [{"role": "user", "content": "hi"}],
@@ -1397,4 +1199,87 @@ def test_m271_reasoning_defaults_import():
     assert "messenger" in REASONING_DEFAULTS
     assert REASONING_DEFAULTS["messenger"]["effort"] == "low"
     # Roles not in the dict get no reasoning
-    assert REASONING_DEFAULTS.get("planner") is None
+
+
+# --- M299: SSE stream parsing ---
+
+
+class TestM299SSEStreamParsing:
+    """M299: _read_sse_stream correctly parses OpenAI-compatible SSE."""
+
+    @pytest.mark.asyncio
+    async def test_multi_chunk_content(self):
+        """Multiple content chunks are reassembled."""
+        lines = [
+            'data: {"choices":[{"delta":{"content":"Hello"},"index":0}]}',
+            'data: {"choices":[{"delta":{"content":" world"},"index":0}]}',
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5}}',
+            "data: [DONE]",
+        ]
+        from kiso.llm import _read_sse_stream
+        resp = _MockStreamResp(200, lines)
+        content, reasoning, pt, ct = await _read_sse_stream(resp)
+        assert content == "Hello world"
+        assert reasoning == ""
+        assert pt == 10
+        assert ct == 5
+
+    @pytest.mark.asyncio
+    async def test_reasoning_chunks(self):
+        """reasoning_content deltas are reassembled."""
+        lines = [
+            'data: {"choices":[{"delta":{"reasoning_content":"step 1"},"index":0}]}',
+            'data: {"choices":[{"delta":{"reasoning_content":" step 2"},"index":0}]}',
+            'data: {"choices":[{"delta":{"content":"answer"},"index":0}]}',
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
+        from kiso.llm import _read_sse_stream
+        resp = _MockStreamResp(200, lines)
+        content, reasoning, pt, ct = await _read_sse_stream(resp)
+        assert content == "answer"
+        assert reasoning == "step 1 step 2"
+
+    @pytest.mark.asyncio
+    async def test_comment_and_empty_lines_ignored(self):
+        """SSE comments (: keepalive) and empty lines are skipped."""
+        lines = [
+            ": keepalive",
+            "",
+            'data: {"choices":[{"delta":{"content":"ok"},"index":0}]}',
+            "",
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
+        from kiso.llm import _read_sse_stream
+        resp = _MockStreamResp(200, lines)
+        content, _, _, _ = await _read_sse_stream(resp)
+        assert content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_chunks_skipped(self):
+        """Invalid JSON in data lines is silently skipped."""
+        lines = [
+            "data: {not valid json}",
+            'data: {"choices":[{"delta":{"content":"ok"},"index":0}]}',
+            'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+            "data: [DONE]",
+        ]
+        from kiso.llm import _read_sse_stream
+        resp = _MockStreamResp(200, lines)
+        content, _, _, _ = await _read_sse_stream(resp)
+        assert content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_usage_from_final_chunk(self):
+        """Usage info from the final chunk is captured."""
+        lines = [
+            'data: {"choices":[{"delta":{"content":"hi"},"index":0}]}',
+            'data: {"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":7}}',
+            "data: [DONE]",
+        ]
+        from kiso.llm import _read_sse_stream
+        resp = _MockStreamResp(200, lines)
+        _, _, pt, ct = await _read_sse_stream(resp)
+        assert pt == 42
+        assert ct == 7

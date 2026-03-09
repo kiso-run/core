@@ -1,4 +1,4 @@
-"""LLM client — OpenAI-compatible HTTP calls."""
+"""LLM client — OpenAI-compatible HTTP calls with SSE streaming."""
 
 from __future__ import annotations
 
@@ -167,6 +167,48 @@ def _get_api_key() -> str | None:
     return os.environ.get(LLM_API_KEY_ENV)
 
 
+async def _read_sse_stream(
+    response: httpx.Response,
+) -> tuple[str, str, int, int]:
+    """Read an OpenAI-compatible SSE stream.
+
+    Returns (content, reasoning_content, prompt_tokens, completion_tokens).
+    """
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    prompt_tokens = 0
+    completion_tokens = 0
+
+    async for raw_line in response.aiter_lines():
+        line = raw_line.strip()
+        if not line or line.startswith(":"):
+            continue
+        if line == "data: [DONE]":
+            break
+        if not line.startswith("data: "):
+            continue
+        try:
+            chunk = json.loads(line[6:])
+        except json.JSONDecodeError:
+            continue
+
+        for choice in chunk.get("choices") or []:
+            delta = choice.get("delta") or {}
+            c = delta.get("content")
+            if c:
+                content_parts.append(c)
+            r = delta.get("reasoning_content")
+            if r:
+                reasoning_parts.append(r)
+
+        usage = chunk.get("usage")
+        if usage:
+            prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+            completion_tokens = usage.get("completion_tokens", completion_tokens)
+
+    return "".join(content_parts), "".join(reasoning_parts), prompt_tokens, completion_tokens
+
+
 async def call_llm(
     config: Config,
     role: str,
@@ -175,7 +217,7 @@ async def call_llm(
     session: str = "",
     max_tokens: int | None = None,
 ) -> str:
-    """Call an LLM. Returns the response content string.
+    """Call an LLM via streaming SSE. Returns the response content string.
 
     - role: one of "planner", "reviewer", "curator", "worker", "summarizer"
     - messages: OpenAI-format message list [{"role": ..., "content": ...}]
@@ -235,11 +277,20 @@ async def call_llm(
     # can correlate inflight input panels with completed call entries.
     call_ts = time.time()
 
-    # Retry loop: at most one fallback retry (json_schema → json_object).
+    # Accumulate results across the retry loop (json_schema → json_object fallback).
+    _resp_status = 0
+    _error_body = ""
+    content = ""
+    reasoning_api = ""
+    input_tokens = 0
+    output_tokens = 0
+
     for _attempt in range(2):
         payload: dict = {
             "model": model_name,
             "messages": messages,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if effective_format:
             payload["response_format"] = effective_format
@@ -264,12 +315,42 @@ async def call_llm(
                 "messages": stripped_messages,
                 "ts": call_ts,
             }
+
+        _temp_client: httpx.AsyncClient | None = None
         try:
             if _http_client is not None:
-                resp = await _http_client.post(url, headers=headers, json=payload, timeout=llm_timeout)
+                _use_client = _http_client
             else:
-                async with httpx.AsyncClient(timeout=llm_timeout) as _client:
-                    resp = await _client.post(url, headers=headers, json=payload)
+                _temp_client = httpx.AsyncClient(timeout=llm_timeout)
+                _use_client = _temp_client
+
+            async with _use_client.stream(
+                "POST", url, headers=headers, json=payload, timeout=llm_timeout,
+            ) as resp:
+                _resp_status = resp.status_code
+                if _resp_status != 200:
+                    _error_body = (await resp.aread()).decode(errors="replace")
+                    # Detect json_schema rejection → retry once with json_object.
+                    if (
+                        _attempt == 0
+                        and _resp_status == 400
+                        and effective_format
+                        and effective_format.get("type") == _FMT_JSON_SCHEMA
+                        and "response_format" in _error_body.lower()
+                    ):
+                        _json_object_only_models.add(model_name)
+                        log.warning(
+                            "Model %s does not support json_schema, falling back to json_object",
+                            model_name,
+                        )
+                        effective_format = {"type": _FMT_JSON_OBJECT}
+                        continue  # retry with json_object
+                    break  # non-retryable error, handle after loop
+
+                # Read SSE stream
+                content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(resp)
+
+            break  # success
         except httpx.TimeoutException:
             duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
@@ -280,79 +361,45 @@ async def call_llm(
             raise LLMError(f"LLM request failed: {e}")
         finally:
             _inflight_calls.pop(session, None)
+            if _temp_client is not None:
+                await _temp_client.aclose()
 
-        duration_ms = int((time.perf_counter() - t0) * 1000)
+    duration_ms = int((time.perf_counter() - t0) * 1000)
 
-        # On success or non-retryable error, exit the loop.
-        if resp.status_code != 200:
-            # Detect json_schema rejection → retry once with json_object.
-            if (
-                _attempt == 0
-                and resp.status_code == 400
-                and effective_format
-                and effective_format.get("type") == _FMT_JSON_SCHEMA
-                and "response_format" in (resp.text or "").lower()
-            ):
-                _json_object_only_models.add(model_name)
-                log.warning(
-                    "Model %s does not support json_schema, falling back to json_object",
-                    model_name,
-                )
-                effective_format = {"type": _FMT_JSON_OBJECT}
-                continue  # retry with json_object
-        break  # success or non-retryable error
-
-    if resp.status_code != 200:
+    if _resp_status != 200:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-        # Try to extract error detail from JSON body (OpenRouter returns JSON errors)
-        detail = resp.text[:500] if resp.text else ""
+        # Try to extract error detail
+        detail = _error_body[:500] if _error_body else ""
         if not detail:
-            try:
-                err_data = resp.json()
-                detail = json.dumps(err_data, indent=None)[:500]
-            except (json.JSONDecodeError, ValueError, TypeError):
-                detail = "(empty response body)"
+            detail = "(empty response body)"
         # Add actionable hints for common HTTP errors
         hint = ""
-        if resp.status_code == 401:
+        if _resp_status == 401:
             hint = " — check your API key in ~/.kiso/.env"
-        elif resp.status_code == 402:
+        elif _resp_status == 402:
             hint = " — insufficient credits on your API account"
-        elif resp.status_code == 400:
+        elif _resp_status == 400:
             hint = " — model may be unavailable or API key invalid"
-        elif resp.status_code == 429:
+        elif _resp_status == 429:
             hint = " — rate limited, try again shortly"
         raise LLMError(
-            f"LLM returned {resp.status_code} for {role} ({model_name}): {detail}{hint}"
+            f"LLM returned {_resp_status} for {role} ({model_name}): {detail}{hint}"
         )
-
-    try:
-        data = resp.json()
-        msg = data["choices"][0]["message"]
-        content = msg["content"]
-    except (KeyError, IndexError, json.JSONDecodeError) as e:
-        audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-        raise LLMError(f"Unexpected LLM response format: {e}")
 
     if not content:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
         raise LLMError(f"Empty response from LLM ({role}, {model_name})")
 
     # Extract thinking/reasoning content.
-    # 1) API-level field (DeepSeek, OpenRouter)
-    reasoning = (msg.get("reasoning_content") or "").strip()
+    # 1) API-level field from streaming deltas
+    reasoning_field = reasoning_api.strip()
     # 2) <think>/<thinking> tags embedded in content
     tag_thinking, clean_content = extract_thinking(content)
     # Prefer tags (they're the actual response content); fall back to API field.
-    thinking = tag_thinking or reasoning
+    thinking = tag_thinking or reasoning_field
     # If tags were found, use the cleaned content as the response.
     if tag_thinking:
         content = clean_content
-
-    # Extract token usage
-    usage = data.get("usage") or {}
-    input_tokens = usage.get("prompt_tokens", 0)
-    output_tokens = usage.get("completion_tokens", 0)
 
     audit.log_llm_call(session, role, model_name, provider_name, input_tokens, output_tokens, duration_ms, "ok")
 
