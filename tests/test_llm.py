@@ -1035,8 +1035,9 @@ class TestMaxTokensParam:
                 assert payload["max_tokens"] == 500
 
     @pytest.mark.asyncio
-    async def test_max_tokens_none_omitted(self):
-        """When max_tokens is None (default), the key is absent from payload."""
+    async def test_max_tokens_none_uses_role_default(self):
+        """M296: When max_tokens is None, the role default from MAX_TOKENS_DEFAULTS applies."""
+        from kiso.config import MAX_TOKENS_DEFAULTS
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -1051,7 +1052,7 @@ class TestMaxTokensParam:
                 )
 
                 payload = mock_client.post.call_args[1]["json"]
-                assert "max_tokens" not in payload
+                assert payload["max_tokens"] == MAX_TOKENS_DEFAULTS["worker"]
 
 
 # --- Inflight call tracking (M109c) ---

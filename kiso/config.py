@@ -85,6 +85,22 @@ REASONING_DEFAULTS: dict[str, dict | None] = {
     "messenger": {"effort": "low"},
 }
 
+# M296: Per-role max_tokens defaults.  Applied when call_llm receives
+# max_tokens=None.  Prevents runaway generation and reduces cost.
+# Override per-role via config [max_tokens] section.
+MAX_TOKENS_DEFAULTS: dict[str, int] = {
+    "classifier": 10,
+    "briefer": 500,
+    "reviewer": 1000,
+    "curator": 1000,
+    "paraphraser": 500,
+    "summarizer": 2000,
+    "worker": 500,
+    "planner": 4000,
+    "messenger": 4000,
+    "searcher": 4000,
+}
+
 # Descriptions shown during interactive install. Keyed by role name.
 MODEL_DESCRIPTIONS: dict[str, str] = {
     "briefer": "selects relevant context for each LLM role",

@@ -1685,7 +1685,7 @@ async def run_exec_translator(
         retry_context=retry_context,
     )
     try:
-        raw = await call_llm(config, "worker", messages, session=session, max_tokens=500)
+        raw = await call_llm(config, "worker", messages, session=session)
     except LLMError as e:
         raise ExecTranslatorError(f"LLM call failed: {e}")
 

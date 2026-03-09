@@ -4226,16 +4226,17 @@ class TestValidatePlanPluginDiscovery:
 
 
 class TestExecTranslatorMaxTokens:
-    """M105b: run_exec_translator passes max_tokens=500 to call_llm."""
+    """M105b/M296: worker role gets max_tokens from MAX_TOKENS_DEFAULTS."""
 
     @pytest.mark.asyncio
-    async def test_exec_translator_passes_max_tokens(self):
+    async def test_exec_translator_uses_default_max_tokens(self):
         config = _make_brain_config()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="echo hi") as mock_llm:
             await run_exec_translator(config, "print hi", "Linux x86_64", session="s1")
             mock_llm.assert_called_once()
             _, kwargs = mock_llm.call_args
-            assert kwargs.get("max_tokens") == 500
+            # M296: max_tokens no longer hardcoded — applied by call_llm from defaults
+            assert "max_tokens" not in kwargs or kwargs.get("max_tokens") is None
 
 
 # --- M105c: _repair_json ---
@@ -6228,3 +6229,59 @@ class TestM295TimeoutPartitioning:
             )
         assert result["goal"] == "ok"
         assert call_count[0] == 2
+
+
+# --- M296: Per-role max_tokens defaults ---
+
+
+class TestM296MaxTokensDefaults:
+    """M296: call_llm applies per-role max_tokens defaults."""
+
+    def _config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(worker="gpt-4"),
+            settings=_full_settings(),
+            raw={},
+        )
+
+    async def test_default_max_tokens_applied(self):
+        """Worker role gets max_tokens=500 from MAX_TOKENS_DEFAULTS."""
+        from kiso.llm import call_llm
+        from kiso.config import MAX_TOKENS_DEFAULTS
+        config = self._config()
+        with patch("kiso.llm._http_client") as mock_client:
+            mock_resp = type("R", (), {
+                "status_code": 200,
+                "json": lambda self: {"choices": [{"message": {"content": "ls"}}]},
+            })()
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            await call_llm(config, "worker", [{"role": "user", "content": "test"}])
+            payload = mock_client.post.call_args[1]["json"]
+            assert payload["max_tokens"] == MAX_TOKENS_DEFAULTS["worker"]
+
+    async def test_explicit_max_tokens_overrides_default(self):
+        """Explicit max_tokens parameter overrides the role default."""
+        from kiso.llm import call_llm
+        config = self._config()
+        with patch("kiso.llm._http_client") as mock_client:
+            mock_resp = type("R", (), {
+                "status_code": 200,
+                "json": lambda self: {"choices": [{"message": {"content": "ls"}}]},
+            })()
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            await call_llm(
+                config, "worker",
+                [{"role": "user", "content": "test"}],
+                max_tokens=999,
+            )
+            payload = mock_client.post.call_args[1]["json"]
+            assert payload["max_tokens"] == 999
+
+    def test_all_roles_have_max_tokens_default(self):
+        """Every role in MODEL_DEFAULTS has a corresponding MAX_TOKENS_DEFAULTS entry."""
+        from kiso.config import MAX_TOKENS_DEFAULTS, MODEL_DEFAULTS
+        for role in MODEL_DEFAULTS:
+            assert role in MAX_TOKENS_DEFAULTS, f"Missing max_tokens default for role: {role}"
