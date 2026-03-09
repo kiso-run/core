@@ -6545,3 +6545,112 @@ class TestM302StallRetryIntegration:
             )
         # No timeout_override should be passed (removed in M298)
         assert "timeout_override" not in captured_kwargs[0]
+
+
+# --- M304: Briefer skip module validation for simple consumers ---
+
+
+class TestM304BrieferModuleValidationSkip:
+    """M304: validate_briefing skips module name check for simple consumers."""
+
+    def test_check_modules_true_rejects_unknown(self):
+        """Default: unknown modules are rejected."""
+        briefing = {
+            "modules": ["nonexistent"],
+            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
+        }
+        errors = validate_briefing(briefing, check_modules=True)
+        assert any("nonexistent" in e for e in errors)
+
+    def test_check_modules_false_accepts_unknown(self):
+        """With check_modules=False, any module names pass validation."""
+        briefing = {
+            "modules": ["hallucinated_module", "another_fake"],
+            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
+        }
+        errors = validate_briefing(briefing, check_modules=False)
+        assert errors == []
+
+    def test_check_modules_false_still_validates_type(self):
+        """Even with check_modules=False, modules must be an array."""
+        briefing = {
+            "modules": "not_a_list",
+            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
+        }
+        errors = validate_briefing(briefing, check_modules=False)
+        assert any("modules must be an array" in e for e in errors)
+
+    def test_check_modules_false_still_validates_other_fields(self):
+        """check_modules=False doesn't skip validation of other fields."""
+        briefing = {
+            "modules": ["whatever"],
+            "skills": "not_a_list",  # invalid
+            "context": None,  # invalid
+            "output_indices": [], "relevant_tags": [],
+        }
+        errors = validate_briefing(briefing, check_modules=False)
+        assert any("skills" in e for e in errors)
+        assert any("context" in e for e in errors)
+
+
+@pytest.mark.asyncio()
+class TestM304RunBrieferSimpleConsumers:
+    """M304: run_briefer skips module validation and forces modules=[] for messenger/worker."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="http://localhost")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(),
+            raw={},
+        )
+
+    async def test_messenger_accepts_hallucinated_modules(self, config):
+        """Messenger briefer doesn't retry on hallucinated module names."""
+        response = json.dumps({
+            "modules": ["install_skill", "navigate_and_summarize"],
+            "skills": [], "context": "About to install browser", "output_indices": [],
+            "relevant_tags": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "messenger", "tell user", {})
+        # Hallucinated modules accepted (no retry), then forced to []
+        assert result["modules"] == []
+        assert result["context"] == "About to install browser"
+
+    async def test_worker_accepts_hallucinated_modules(self, config):
+        """Worker briefer doesn't retry on hallucinated module names."""
+        response = json.dumps({
+            "modules": ["BrowserSkill"],
+            "skills": [], "context": "", "output_indices": [],
+            "relevant_tags": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "worker", "translate cmd", {})
+        assert result["modules"] == []
+
+    async def test_planner_still_validates_modules(self, config):
+        """Planner briefer still rejects unknown module names."""
+        response = json.dumps({
+            "modules": ["nonexistent_module"],
+            "skills": [], "context": "", "output_indices": [],
+            "relevant_tags": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            with pytest.raises(BrieferError):
+                await run_briefer(config, "planner", "plan task", {})
+
+    async def test_messenger_single_call(self, config):
+        """Messenger briefer with hallucinated modules uses exactly 1 LLM call."""
+        response = json.dumps({
+            "modules": ["fake_module"],
+            "skills": [], "context": "test", "output_indices": [],
+            "relevant_tags": [],
+        })
+        mock_llm = AsyncMock(return_value=response)
+        with patch("kiso.brain.call_llm", mock_llm):
+            await run_briefer(config, "messenger", "tell user", {})
+        assert mock_llm.call_count == 1  # no retries

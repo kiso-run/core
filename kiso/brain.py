@@ -1049,12 +1049,18 @@ def build_briefer_messages(
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
-def validate_briefing(briefing: dict) -> list[str]:
-    """Validate briefing semantics. Returns list of error strings."""
+def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str]:
+    """Validate briefing semantics. Returns list of error strings.
+
+    When *check_modules* is False, module names are not checked against
+    ``BRIEFER_MODULES``.  Used for simple consumers (messenger, worker)
+    that never use modules — avoids wasted retries when the model
+    hallucinates module names it was never shown.
+    """
     errors: list[str] = []
     if not isinstance(briefing.get("modules"), list):
         errors.append("modules must be an array")
-    else:
+    elif check_modules:
         for m in briefing["modules"]:
             if m not in BRIEFER_MODULES:
                 errors.append(f"unknown module: {m!r}")
@@ -1082,12 +1088,23 @@ async def run_briefer(
     Raises BrieferError on failure.
     """
     messages = build_briefer_messages(consumer_role, task_description, context_pool)
+
+    # M304: simple consumers never use modules — skip module name validation
+    # to avoid wasted retries when the model hallucinates names.
+    _simple = consumer_role in ("messenger", "worker")
+    vfn = (lambda b: validate_briefing(b, check_modules=False)) if _simple else validate_briefing
+
     briefing = await _retry_llm_with_validation(
         config, "briefer", messages, BRIEFER_SCHEMA,
-        validate_briefing,
+        vfn,
         BrieferError, "Briefing",
         session=session,
     )
+
+    # M304: force modules=[] for simple consumers (defensive cleanup)
+    if _simple:
+        briefing["modules"] = []
+
     log.info(
         "Briefer for %s: %d modules, %d skills, %d output_indices, %d tags",
         consumer_role,
