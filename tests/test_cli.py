@@ -3312,3 +3312,149 @@ def test_m267_role_reset_after_out_panel(capsys):
     _render_plan_status(data3, 1, False, True, caps, "Bot", state)
     out3 = capsys.readouterr().out
     assert "REPLAN_V2" in out3
+
+
+# --- M306: partial content role filter + ANSI overwrite ---
+
+
+def test_m306_partial_content_filtered_for_structured_roles(capsys):
+    """Partial content from planner/briefer/reviewer is NOT shown."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    data = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "planner", "model": "gpt-4",
+            "messages": [{"role": "user", "content": "hi"}],
+            "ts": 2000000001.0,
+            "partial_content": '{"goal": "test plan',
+        },
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out = capsys.readouterr().out
+    # Partial JSON should NOT be shown
+    assert "test plan" not in out
+    assert state.partial_content_len == 0
+
+
+def test_m306_partial_content_shown_for_messenger(capsys):
+    """Partial content from messenger IS shown."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    data = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "messenger", "model": "qwen",
+            "messages": [{"role": "user", "content": "hi"}],
+            "ts": 2000000002.0,
+            "partial_content": "Il sistema sta installando",
+        },
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out = capsys.readouterr().out
+    assert "Il sistema sta installando" in out
+    assert state.partial_content_len == len("Il sistema sta installando")
+
+
+def test_m306_partial_content_shown_for_summarizer(capsys):
+    """Partial content from summarizer IS shown."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    data = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "summarizer", "model": "qwen",
+            "messages": [{"role": "user", "content": "hi"}],
+            "ts": 2000000003.0,
+            "partial_content": "Summary so far",
+        },
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out = capsys.readouterr().out
+    assert "Summary so far" in out
+
+
+def test_m306_ansi_overwrite_on_tty(capsys):
+    """On TTY, previous partial lines are overwritten via ANSI escape."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    # First render — no ANSI overwrite (nothing to overwrite)
+    data1 = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "messenger", "model": "m",
+            "messages": [{"role": "user", "content": "x"}],
+            "ts": 2000000004.0,
+            "partial_content": "First chunk",
+        },
+    }
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    out1 = capsys.readouterr().out
+    assert "First chunk" in out1
+    assert state.partial_lines_rendered > 0
+    first_rendered = state.partial_lines_rendered
+
+    # Second render — should contain ANSI overwrite sequence
+    data2 = dict(data1)
+    data2["inflight_call"] = dict(data1["inflight_call"])
+    data2["inflight_call"]["partial_content"] = "First chunk\nSecond chunk"
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    # Should contain cursor-up escape to overwrite previous partial lines
+    assert f"\033[{first_rendered}A" in out2
+    assert "Second chunk" in out2
+
+
+def test_m306_no_ansi_on_non_tty(capsys):
+    """On non-TTY, no ANSI escapes even on repeated renders."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    data = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "messenger", "model": "m",
+            "messages": [{"role": "user", "content": "x"}],
+            "ts": 2000000005.0,
+            "partial_content": "Some text",
+        },
+    }
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    capsys.readouterr()  # consume first
+
+    data["inflight_call"]["partial_content"] = "Some text extended"
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+    out2 = capsys.readouterr().out
+    assert "\033[" not in out2  # no ANSI on non-TTY
+
+
+def test_m306_reset_on_inflight_complete(capsys):
+    """When inflight call completes, partial tracking resets."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    # Render with partial content
+    data1 = {
+        "plan": plan, "tasks": [], "worker_running": True,
+        "inflight_call": {
+            "role": "messenger", "model": "m",
+            "messages": [{"role": "user", "content": "x"}],
+            "ts": 2000000006.0,
+            "partial_content": "partial text",
+        },
+    }
+    _render_plan_status(data1, 1, False, True, caps, "Bot", state)
+    assert state.partial_content_len > 0
+
+    # Render without inflight → should reset
+    data2 = {"plan": plan, "tasks": [], "worker_running": True}
+    _render_plan_status(data2, 1, False, True, caps, "Bot", state)
+    assert state.partial_content_len == 0
+    assert state.partial_lines_rendered == 0
