@@ -106,6 +106,7 @@ async def _retry_llm_with_validation(
     error_class: type[Exception],
     error_noun: str,
     session: str = "",
+    on_retry: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Generic retry loop: call LLM, parse JSON, validate, retry on errors.
 
@@ -118,6 +119,8 @@ async def _retry_llm_with_validation(
         error_class: Exception type to raise on exhaustion.
         error_noun: Human noun for error messages (e.g. "Plan", "Review").
         session: Session name for LLM call tracking.
+        on_retry: Optional callback(attempt, max_attempts, reason) called before
+            each retry attempt (not called on the first attempt).
 
     Returns:
         The validated parsed dict.
@@ -165,13 +168,14 @@ async def _retry_llm_with_validation(
         except LLMError as e:
             # M269: treat LLM errors (empty response, transient failures) as
             # retriable — only give up after exhausting all attempts.
-            # Don't set last_errors: there's no LLM output to "fix", so
-            # error feedback would be misleading.  Next attempt is a clean retry.
             log.warning("LLM error (attempt %d/%d): %s", attempt, max_retries, e)
             if attempt == max_retries:
                 exc = error_class(f"LLM call failed after {max_retries} attempts: {e}")
                 exc.last_errors = last_errors  # preserve for M195 auto-correction
                 raise exc
+            # M297: notify caller before retry
+            if on_retry is not None:
+                on_retry(attempt + 1, max_retries, str(e))
             continue
 
         try:
@@ -924,6 +928,7 @@ async def run_planner(
     user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     on_context_ready: Callable | None = None,
+    on_retry: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -932,6 +937,8 @@ async def run_planner(
             completes but before the planner LLM call.  The caller can use
             this to flush intermediate usage so the CLI can render briefer
             panels while the planner is still running.
+        on_retry: Optional callback(attempt, max_attempts, reason) called
+            before each retry attempt (M297).
 
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
@@ -952,6 +959,7 @@ async def run_planner(
                                     installed_skills_info=skills_by_name),
             PlanError, "Plan",
             session=session,
+            on_retry=on_retry,
         )
     except PlanError as exc:
         # M195: auto-correct when last errors are about uninstalled skills

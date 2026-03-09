@@ -6285,3 +6285,109 @@ class TestM296MaxTokensDefaults:
         from kiso.config import MAX_TOKENS_DEFAULTS, MODEL_DEFAULTS
         for role in MODEL_DEFAULTS:
             assert role in MAX_TOKENS_DEFAULTS, f"Missing max_tokens default for role: {role}"
+
+
+# --- M297: Retry status notification ---
+
+
+class TestM297RetryNotification:
+    """M297: on_retry callback fires before each retry, not on first attempt."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3),
+            raw={},
+        )
+
+    async def test_on_retry_called_on_llm_error(self, config):
+        """on_retry fires before retry after LLMError, not on first attempt."""
+        retry_calls: list[tuple] = []
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+        call_count = [0]
+
+        async def _flaky(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise LLMError("timeout")
+            return valid_plan
+
+        def _on_retry(attempt, max_attempts, reason):
+            retry_calls.append((attempt, max_attempts, reason))
+
+        with patch("kiso.brain.call_llm", side_effect=_flaky):
+            await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                on_retry=_on_retry,
+            )
+        assert len(retry_calls) == 1
+        assert retry_calls[0][0] == 2  # attempt 2
+        assert retry_calls[0][1] == 3  # max 3
+        assert "timeout" in retry_calls[0][2]
+
+    async def test_on_retry_not_called_on_success(self, config):
+        """on_retry is never called when first attempt succeeds."""
+        retry_calls: list[tuple] = []
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _ok(cfg, role, messages, **kw):
+            return valid_plan
+
+        def _on_retry(attempt, max_attempts, reason):
+            retry_calls.append((attempt, max_attempts, reason))
+
+        with patch("kiso.brain.call_llm", side_effect=_ok):
+            await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                on_retry=_on_retry,
+            )
+        assert len(retry_calls) == 0
+
+    async def test_on_retry_none_is_safe(self, config):
+        """on_retry=None (default) doesn't crash on retry."""
+        call_count = [0]
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _flaky(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise LLMError("timeout")
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_flaky):
+            result = await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+            )
+        assert result["goal"] == "ok"
+
+    async def test_error_message_includes_attempt_count(self, config):
+        """Final error message includes the retry count."""
+        async def _always_fail(cfg, role, messages, **kw):
+            raise LLMError("timeout")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_fail):
+            with pytest.raises(PlanError, match="after 3 attempts"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                )

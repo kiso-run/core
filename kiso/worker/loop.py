@@ -1825,12 +1825,17 @@ async def _run_planning_loop(
         replan_context = _build_replan_context(completed, remaining, replan_reason, replan_history)
         enriched_message = f"{content}\n\n{replan_context}"
 
+        def _on_replan_retry(attempt: int, max_attempts: int, reason: str) -> None:
+            log.info("Retrying replan (attempt %d/%d) session=%s: %s",
+                     attempt, max_attempts, session, reason)
+
         replan_usage_idx = get_usage_index()
         try:
             new_plan = await asyncio.wait_for(
                 run_planner(
                     db, config, session, user_role, enriched_message,
                     user_skills=user_skills,
+                    on_retry=_on_replan_retry,
                 ),
                 timeout=planner_timeout,
             )
@@ -2050,6 +2055,10 @@ async def _process_message(
                 usage["model"], llm_calls=usage.get("calls"),
             )
 
+    def _on_planner_retry(attempt: int, max_attempts: int, reason: str) -> None:
+        log.info("Retrying planner (attempt %d/%d) session=%s: %s",
+                 attempt, max_attempts, session, reason)
+
     try:
         plan = await asyncio.wait_for(
             run_planner(
@@ -2057,6 +2066,7 @@ async def _process_message(
                 user_skills=user_skills,
                 paraphrased_context=paraphrased_context,
                 on_context_ready=_flush_pre_planner_usage,
+                on_retry=_on_planner_retry,
             ),
             timeout=planner_timeout,
         )
