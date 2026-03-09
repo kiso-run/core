@@ -266,7 +266,7 @@ ask_username() {
     echo ""
     echo "  Kiso needs a Linux system user to own files and run tasks."
     if [[ -n "$available_users" ]]; then
-        echo "  Available users: $(echo "$available_users" | tr '\n' ', ' | sed 's/,$//')"
+        echo "  Available users: $(echo "$available_users" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')"
     fi
     echo ""
 
