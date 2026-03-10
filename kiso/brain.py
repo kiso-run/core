@@ -65,6 +65,7 @@ WORKER_PHASES: frozenset[str] = frozenset({
 _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user"})
+_ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept"})
 
 
 def _strip_fences(text: str) -> str:
@@ -1432,8 +1433,13 @@ CURATOR_SCHEMA: dict = {
                                 {"type": "array", "items": {"type": "string"}, "maxItems": 5},
                                 {"type": "null"},
                             ]},
+                            "entity_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "entity_kind": {"anyOf": [
+                                {"type": "string", "enum": sorted(_ENTITY_KINDS)},
+                                {"type": "null"},
+                            ]},
                         },
-                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags"],
+                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags", "entity_name", "entity_kind"],
                         "additionalProperties": False,
                     },
                 },
@@ -1477,17 +1483,24 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
             elif len(fact) < _MIN_PROMOTED_FACT_LEN:
                 errors.append(f"Evaluation {i}: promoted fact too short ({len(fact)} chars, min {_MIN_PROMOTED_FACT_LEN})")
         if verdict == CURATOR_VERDICT_PROMOTE and ev.get("category") is not None:
-            valid_categories = {"project", "user", "tool", "general"}
-            if ev["category"] not in valid_categories:
-                errors.append(f"Evaluation {i}: category must be one of {sorted(valid_categories)}")
+            if ev["category"] not in _VALID_FACT_CATEGORIES:
+                errors.append(f"Evaluation {i}: category must be one of {sorted(_VALID_FACT_CATEGORIES)}")
         if verdict == CURATOR_VERDICT_ASK and not ev.get("question"):
             errors.append(f"Evaluation {i}: ask verdict requires a non-empty question")
+        # M343: entity required for promote
+        if verdict == CURATOR_VERDICT_PROMOTE:
+            if not ev.get("entity_name"):
+                errors.append(f"Evaluation {i}: promoted fact must have entity_name")
+            kind = ev.get("entity_kind")
+            if not kind or kind not in _ENTITY_KINDS:
+                errors.append(f"Evaluation {i}: promoted fact must have valid entity_kind")
     return errors
 
 
 def build_curator_messages(
     learnings: list[dict],
     available_tags: list[str] | None = None,
+    available_entities: list[dict] | None = None,
 ) -> list[dict]:
     """Build the message list for the curator LLM call."""
     system_prompt = _load_system_prompt("curator")
@@ -1498,6 +1511,9 @@ def build_curator_messages(
     parts = [f"## Learnings\n{items}"]
     if available_tags:
         parts.append(f"## Existing Tags\n{', '.join(available_tags)}")
+    if available_entities:
+        entity_lines = "\n".join(f"{e['name']} ({e['kind']})" for e in available_entities)
+        parts.append(f"## Existing Entities\n{entity_lines}")
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 

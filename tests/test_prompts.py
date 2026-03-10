@@ -230,10 +230,11 @@ class TestCuratorCriticalRules:
     def test_no_secrets(self):
         assert "secrets" in self.prompt.lower()
 
-    def test_m334_entity_tags(self):
-        """M334: curator has entity tag rule."""
-        assert "entity:" in self.prompt
-        assert "entity-scoped retrieval" in self.prompt
+    def test_m343_entity_assignment(self):
+        """M343: curator has entity_name + entity_kind assignment rules."""
+        assert "entity_name" in self.prompt
+        assert "entity_kind" in self.prompt
+        assert "Entity reuse" in self.prompt
 
 
 class TestSearcherCriticalRules:

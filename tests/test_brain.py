@@ -1534,7 +1534,8 @@ class TestRunReviewer:
 class TestValidateCurator:
     def test_promote_valid(self):
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "question": None, "reason": "Good fact"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "question": None, "reason": "Good fact",
+             "entity_name": "myproject", "entity_kind": "project"},
         ]}
         assert validate_curator(result) == []
 
@@ -1573,7 +1574,8 @@ class TestValidateCurator:
 
     def test_multiple_evaluations(self):
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Project uses Python 3.11", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Project uses Python 3.11", "question": None, "reason": "Good",
+             "entity_name": "myproject", "entity_kind": "project"},
             {"learning_id": 2, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
             {"learning_id": 3, "verdict": "ask", "fact": None, "question": "What DB?", "reason": "Unclear"},
         ]}
@@ -1582,14 +1584,16 @@ class TestValidateCurator:
     def test_validate_curator_fewer_than_expected_ok(self):
         """M322: fewer evaluations than learnings is OK (consolidation)."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Consolidated fact here", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Consolidated fact here", "question": None, "reason": "Good",
+             "entity_name": "myproject", "entity_kind": "project"},
         ]}
         assert validate_curator(result, expected_count=3) == []
 
     def test_validate_curator_more_than_expected_error(self):
         """M322: more evaluations than learnings is an error."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Fact A is valid", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Fact A is valid", "question": None, "reason": "Good",
+             "entity_name": "myproject", "entity_kind": "project"},
             {"learning_id": 2, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
             {"learning_id": 3, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
         ]}
@@ -1599,7 +1603,8 @@ class TestValidateCurator:
     def test_validate_curator_no_count_check(self):
         """No error when expected_count is None (backwards compat)."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Some valid fact here", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Some valid fact here", "question": None, "reason": "Good",
+             "entity_name": "myproject", "entity_kind": "project"},
         ]}
         assert validate_curator(result, expected_count=None) == []
 
@@ -1614,7 +1619,8 @@ class TestValidateCurator:
     def test_validate_curator_fact_exactly_10_ok(self):
         """M322: promoted fact with exactly 10 chars passes."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "1234567890", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "1234567890", "question": None, "reason": "Good",
+             "entity_name": "myproject", "entity_kind": "project"},
         ]}
         assert validate_curator(result) == []
 
@@ -1660,7 +1666,7 @@ class TestBuildCuratorMessages:
 # --- M9: run_curator ---
 
 VALID_CURATOR = json.dumps({"evaluations": [
-    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good", "tags": ["tech-stack"]},
+    {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good", "tags": ["tech-stack"], "entity_name": "myproject", "entity_kind": "project"},
 ]})
 
 INVALID_CURATOR = json.dumps({"evaluations": [
@@ -3992,7 +3998,7 @@ class TestM48CuratorCategoryField:
     def test_48d_validate_curator_accepts_valid_category(self):
         """48d: validate_curator passes when promote has a valid category."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": "project", "question": None, "reason": "Good", "entity_name": "myproject", "entity_kind": "project"},
         ]}
         errors = validate_curator(result)
         assert errors == []
@@ -4000,7 +4006,7 @@ class TestM48CuratorCategoryField:
     def test_48d_validate_curator_accepts_null_category(self):
         """48d: validate_curator passes when category is null (defaults to general at runtime)."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": None, "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python", "category": None, "question": None, "reason": "Good", "entity_name": "myproject", "entity_kind": "project"},
         ]}
         errors = validate_curator(result)
         assert errors == []
@@ -4040,6 +4046,93 @@ class TestM48CuratorCategoryField:
         ]}
         errors = validate_curator(result)
         assert errors == []
+
+
+# --- M343: curator entity_name + entity_kind ---
+
+
+class TestM343CuratorEntityFields:
+    """M343: validate_curator enforces entity_name + entity_kind for promote."""
+
+    def test_promote_missing_entity_name_error(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python framework", "category": "project",
+             "question": None, "reason": "Good", "tags": ["tech-stack"],
+             "entity_name": None, "entity_kind": "project"},
+        ]}
+        errors = validate_curator(result)
+        assert any("entity_name" in e for e in errors)
+
+    def test_promote_missing_entity_kind_error(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python framework", "category": "project",
+             "question": None, "reason": "Good", "tags": ["tech-stack"],
+             "entity_name": "myproject", "entity_kind": None},
+        ]}
+        errors = validate_curator(result)
+        assert any("entity_kind" in e for e in errors)
+
+    def test_promote_invalid_entity_kind_error(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python framework", "category": "project",
+             "question": None, "reason": "Good", "tags": ["tech-stack"],
+             "entity_name": "myproject", "entity_kind": "unknown_kind"},
+        ]}
+        errors = validate_curator(result)
+        assert any("entity_kind" in e for e in errors)
+
+    def test_discard_without_entity_ok(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "discard", "fact": None, "category": None,
+             "question": None, "reason": "Transient"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+    def test_ask_without_entity_ok(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "ask", "fact": None, "category": None,
+             "question": "Which database?", "reason": "Unclear"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+    def test_promote_with_valid_entity_ok(self):
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Uses Python framework", "category": "project",
+             "question": None, "reason": "Good", "tags": ["tech-stack"],
+             "entity_name": "myproject", "entity_kind": "project"},
+        ]}
+        errors = validate_curator(result)
+        assert errors == []
+
+    def test_schema_has_entity_fields(self):
+        item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
+        assert "entity_name" in item_props
+        assert "entity_kind" in item_props
+
+    def test_schema_entity_kind_enum(self):
+        item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
+        kind = item_props["entity_kind"]
+        enum_values = [x.get("enum", []) for x in kind.get("anyOf", []) if x.get("type") == "string"]
+        flat = [v for sub in enum_values for v in sub]
+        for v in ("website", "company", "tool", "person", "project", "concept"):
+            assert v in flat
+
+    def test_build_curator_messages_with_entities(self):
+        entities = [{"name": "flask", "kind": "tool"}, {"name": "myproject", "kind": "project"}]
+        msgs = build_curator_messages(
+            [{"id": 1, "content": "test"}],
+            available_entities=entities,
+        )
+        user_content = msgs[1]["content"]
+        assert "## Existing Entities" in user_content
+        assert "flask" in user_content
+        assert "myproject" in user_content
+
+    def test_build_curator_messages_no_entities(self):
+        msgs = build_curator_messages([{"id": 1, "content": "test"}])
+        assert "## Existing Entities" not in msgs[1]["content"]
 
 
 # --- M321: curator consolidation + learning_id rules ---
