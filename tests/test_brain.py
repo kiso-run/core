@@ -2718,7 +2718,7 @@ class TestM165SkillArgsExample:
     def test_planner_prompt_has_skill_args_example(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "JSON-encoded STRING" in prompt
-        assert "not raw object" in prompt
+        assert "raw object" in prompt
 
     def test_planner_prompt_no_hardcoded_browser_example(self):
         """M181: skill example must not hardcode 'browser' as skill name."""

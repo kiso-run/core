@@ -311,6 +311,19 @@ class TestM316PromptOptimizationIntegration:
             assert len(content.strip()) > 50, f"{filename} has too little content"
 
 
+class TestM340SkillArgsRequirement:
+    """M340: planner prompt emphasizes skill args must never be null."""
+
+    def test_skills_rules_contains_never_null(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["skills_rules"])
+        assert "NEVER null" in prompt
+
+    def test_core_contains_args_example(self):
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert '{"action":' in prompt or "NEVER null" in prompt
+
+
 class TestM323LearningPipelineQuality:
     """M323: integration tests for the reviewer→curator learning pipeline."""
 
