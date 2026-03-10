@@ -3968,7 +3968,7 @@ class TestM106DefaultPlannerModel:
 
     def test_default_planner_model(self):
         from kiso.config import MODEL_DEFAULTS
-        assert MODEL_DEFAULTS["planner"] == "z-ai/glm-4.7"
+        assert MODEL_DEFAULTS["planner"] == "deepseek/deepseek-v3.2"
 
 
 class TestM106PlannerKisoNativeFirst:
@@ -5939,7 +5939,7 @@ class TestM269RetryOnLLMError:
         async def _flaky(cfg, role, messages, **kw):
             call_count[0] += 1
             if call_count[0] == 1:
-                raise LLMError("Empty response from LLM (planner, glm-4.7)")
+                raise LLMError("Empty response from LLM (planner, deepseek-v3.2)")
             return valid_plan
 
         with patch("kiso.brain.call_llm", side_effect=_flaky):

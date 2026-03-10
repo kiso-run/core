@@ -71,7 +71,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 MODEL_DEFAULTS: dict[str, str] = {
     "briefer": "google/gemini-2.5-flash-lite",
     "classifier": "google/gemini-2.5-flash-lite",
-    "planner": "z-ai/glm-4.7",
+    "planner": "deepseek/deepseek-v3.2",
     "reviewer": "google/gemini-2.5-flash-lite",
     "curator": "google/gemini-2.5-flash-lite",
     "worker": "google/gemini-2.5-flash-lite",
@@ -142,7 +142,7 @@ role = "admin"
 # See docs/model-selection.md for rationale and alternatives
 briefer     = "google/gemini-2.5-flash-lite"  # context selection (150 t/s, cheapest)
 classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, simple)
-planner     = "z-ai/glm-4.7"                   # plan generation (MMLU 83, 130 t/s)
+planner     = "deepseek/deepseek-v3.2"          # plan generation (fast, structured output)
 reviewer    = "google/gemini-2.5-flash-lite"   # output review (1.8s, json_schema native)
 curator     = "google/gemini-2.5-flash-lite"   # knowledge curation (simple classification)
 worker      = "google/gemini-2.5-flash-lite"   # command translation (1.3s, cheapest)
