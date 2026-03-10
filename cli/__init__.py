@@ -640,9 +640,9 @@ def _render_msg_task(
 ) -> None:
     """Render a msg task: header + spinner when running, header + output when done."""
     from cli.render import (
+        _parse_llm_calls,
         get_last_thinking,
         render_llm_calls,
-        render_llm_calls_verbose,
         render_msg_output,
         render_separator,
         render_task_header,
@@ -666,11 +666,7 @@ def _render_msg_task(
         if llm_detail:
             print(llm_detail)
         if verbose:
-            verbose_detail = render_llm_calls_verbose(
-                llm_calls_raw, caps,
-            )
-            if verbose_detail:
-                print(verbose_detail)
+            _emit_verbose_calls(task, caps, state, len(_parse_llm_calls(llm_calls_raw)))
         print(render_msg_output(output, caps, bot_name, thinking=get_last_thinking(llm_calls_raw)))
         print(render_separator(caps))
     elif status == "running":
