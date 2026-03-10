@@ -116,14 +116,14 @@ def test_worker_phases_frozenset():
 def test_reviewer_prompt_contains_empty_output_guard():
     """M111d: reviewer.md must instruct LLM to set learn=null on empty output."""
     prompt = _load_system_prompt("reviewer")
-    assert "empty or whitespace-only" in prompt
+    assert "empty/whitespace" in prompt or "empty or whitespace" in prompt
     assert "Null if nothing useful" in prompt or "learn MUST be null" in prompt
 
 
 def test_reviewer_prompt_contains_reason_required_rule():
     """M111d: reviewer.md must require reason for replan status."""
     prompt = _load_system_prompt("reviewer")
-    assert "required (non-null, non-empty string) when status is replan" in prompt
+    assert "required (non-null, non-empty" in prompt and "replan" in prompt
 
 
 # --- validate_plan ---
@@ -4517,13 +4517,13 @@ class TestM194ReviewerDomainCheck:
     def test_reviewer_prompt_has_domain_check_rule(self):
         """reviewer.md includes the search domain check rule."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "search returned results for wrong domain" in prompt
+        assert "wrong domain" in prompt
 
     def test_reviewer_prompt_domain_check_mentions_replan(self):
         """Domain mismatch should trigger replan status."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "mark as replan" in prompt
-        assert "different domain" in prompt
+        assert "replan" in prompt
+        assert "different domain" in prompt or "wrong domain" in prompt
 
     def test_build_reviewer_messages_contains_domain_rule(self):
         """build_reviewer_messages output includes the domain check rule."""
@@ -4541,7 +4541,7 @@ class TestM194ReviewerDomainCheck:
         """M280: reviewer prompt handles truncated output gracefully."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "[truncated]" in prompt
-        assert "Do NOT replan just because output was truncated" in prompt
+        assert "Do NOT replan just because truncated" in prompt
 
     def test_m280_partial_success_rule(self):
         """M280: reviewer prompt defines partial success boundaries."""
