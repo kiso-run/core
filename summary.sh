@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Signal handling convention:
+# - Ctrl+C must NOT close the terminal. Use `exit 130`, never `kill -INT $$`.
+# - Use EXIT trap for cleanup (temp files, backups).
+# - Use INT trap only for a graceful message + exit 130.
+
 # summary.sh — compact a verbose Kiso CLI session into deduplicated JSON.
 #
 # The script parses the terminal output produced by /verbose-on and:
@@ -17,7 +22,8 @@ set -euo pipefail
 IN_TMP="$(mktemp -t flow_in.XXXXXX)"
 OUT_TMP="$(mktemp -t flow_out.XXXXXX)"
 cleanup() { rm -f "$IN_TMP" "$OUT_TMP"; }
-trap cleanup EXIT INT
+trap cleanup EXIT
+trap 'printf "\nInterrupted.\n" >&2; exit 130' INT
 
 # -------- CLI flags --------
 DO_CLEAR=0

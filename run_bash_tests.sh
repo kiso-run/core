@@ -2,6 +2,11 @@
 # Run kiso bash tests (kiso-host.sh + install.sh) using bats-core.
 # Install bats: npm install -g bats  |  or: sudo apt-get install bats
 set -euo pipefail
+
+# Signal handling convention:
+# - Ctrl+C must NOT close the terminal. Use `exit 130`, never `kill -INT $$`.
+# - Use EXIT trap for cleanup (temp files, backups).
+# - Use INT trap only for a graceful message + exit 130.
 trap 'exit 130' INT
 
 BATS=$(command -v bats 2>/dev/null || true)

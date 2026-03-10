@@ -2,6 +2,11 @@
 # Count Python lines in the core agent code (./kiso directory).
 # Adapted from nanobot's core_agent_lines.sh for Kiso's structure.
 set -euo pipefail
+
+# Signal handling convention:
+# - Ctrl+C must NOT close the terminal. Use `exit 130`, never `kill -INT $$`.
+# - Use EXIT trap for cleanup (temp files, backups).
+# - Use INT trap only for a graceful message + exit 130.
 trap 'exit 130' INT
 
 KISO_DIR="$(cd "$(dirname "$0")/kiso" && pwd)"

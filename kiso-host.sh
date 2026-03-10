@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Signal handling convention:
+# - Ctrl+C must NOT close the terminal. Use `exit 130`, never `kill -INT $$`.
+# - Use EXIT trap for cleanup (temp files, backups).
+# - Use INT trap only for a graceful message + exit 130.
 trap 'printf "\nInterrupted.\n" >&2; exit 130' INT
 trap '_ec=$?; [[ $_ec -gt 128 ]] || printf "\n\033[0;31mError: command failed (exit %d):\n  %s\033[0m\n" "$_ec" "${BASH_COMMAND:-unknown}" >&2' ERR
 
