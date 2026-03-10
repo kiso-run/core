@@ -8441,6 +8441,78 @@ class TestHandleLoopFailure:
             "Fallback must save the raw _build_failure_summary text"
         )
 
+    async def test_msg_task_created_before_plan_status_change(self, db):
+        """M307: msg task is created and set to 'running' BEFORE plan status changes."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        call_order: list[str] = []
+
+        original_create_task = create_task
+
+        async def tracking_create_task(*args, **kwargs):
+            result = await original_create_task(*args, **kwargs)
+            call_order.append("create_task")
+            return result
+
+        async def tracking_msg(*args, **kwargs):
+            # Check plan status is still 'running' while messenger is composing
+            cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+            row = await cur.fetchone()
+            call_order.append(f"msg_compose:plan_status={row['status']}")
+            return "fail msg"
+
+        with patch("kiso.worker.loop.create_task", side_effect=tracking_create_task), \
+             patch("kiso.worker.loop._msg_task_with_fallback", side_effect=tracking_msg), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        assert "create_task" in call_order
+        assert "msg_compose:plan_status=running" in call_order
+        # create_task must come before msg compose
+        assert call_order.index("create_task") < call_order.index("msg_compose:plan_status=running")
+
+    async def test_usage_updated_before_plan_status_change(self, db):
+        """M307: plan usage is updated before plan status changes to 'failed'."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        call_order: list[str] = []
+
+        async def tracking_update_usage(*args, **kwargs):
+            from kiso.store import update_plan_usage as real_update
+            await real_update(*args, **kwargs)
+            call_order.append("update_usage")
+
+        async def tracking_update_status(*args, **kwargs):
+            from kiso.store import update_plan_status as real_update
+            await real_update(*args, **kwargs)
+            call_order.append("update_status")
+
+        with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="fail msg"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock), \
+             patch("kiso.worker.loop.get_usage_summary", return_value={"input_tokens": 100, "output_tokens": 50, "model": "test-model"}), \
+             patch("kiso.worker.loop.update_plan_usage", side_effect=tracking_update_usage), \
+             patch("kiso.worker.loop.update_plan_status", side_effect=tracking_update_status):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        assert call_order == ["update_usage", "update_status"]
+
+    async def test_msg_task_gets_done_with_composed_text(self, db):
+        """M307: the placeholder msg task is updated to 'done' with composed text."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="composed failure"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        cur = await db.execute(
+            "SELECT status, output FROM tasks WHERE plan_id = ? AND type = 'msg'", (plan_id,)
+        )
+        row = await cur.fetchone()
+        assert row is not None
+        assert row["status"] == "done"
+        assert row["output"] == "composed failure"
+
 
 class TestHandleLoopCancel:
     """Unit tests for _handle_loop_cancel (M94c)."""
@@ -8518,6 +8590,76 @@ class TestHandleLoopCancel:
         assert any("The user cancelled the plan: goal" in row["content"] for row in rows), (
             "Fallback must save the raw _build_cancel_summary text"
         )
+
+    async def test_msg_task_created_before_plan_status_change(self, db):
+        """M307: msg task is created and set to 'running' BEFORE plan status changes."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        call_order: list[str] = []
+
+        original_create_task = create_task
+
+        async def tracking_create_task(*args, **kwargs):
+            result = await original_create_task(*args, **kwargs)
+            call_order.append("create_task")
+            return result
+
+        async def tracking_msg(*args, **kwargs):
+            cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+            row = await cur.fetchone()
+            call_order.append(f"msg_compose:plan_status={row['status']}")
+            return "cancel msg"
+
+        with patch("kiso.worker.loop.create_task", side_effect=tracking_create_task), \
+             patch("kiso.worker.loop._msg_task_with_fallback", side_effect=tracking_msg), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(db, config, "sess1", plan_id, [], [], "goal")
+
+        assert "create_task" in call_order
+        assert "msg_compose:plan_status=running" in call_order
+        assert call_order.index("create_task") < call_order.index("msg_compose:plan_status=running")
+
+    async def test_usage_updated_before_plan_status_change(self, db):
+        """M307: plan usage is updated before plan status changes to 'cancelled'."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        call_order: list[str] = []
+
+        async def tracking_update_usage(*args, **kwargs):
+            from kiso.store import update_plan_usage as real_update
+            await real_update(*args, **kwargs)
+            call_order.append("update_usage")
+
+        async def tracking_update_status(*args, **kwargs):
+            from kiso.store import update_plan_status as real_update
+            await real_update(*args, **kwargs)
+            call_order.append("update_status")
+
+        with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="cancel msg"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock), \
+             patch("kiso.worker.loop.get_usage_summary", return_value={"input_tokens": 100, "output_tokens": 50, "model": "test-model"}), \
+             patch("kiso.worker.loop.update_plan_usage", side_effect=tracking_update_usage), \
+             patch("kiso.worker.loop.update_plan_status", side_effect=tracking_update_status):
+            await _handle_loop_cancel(db, config, "sess1", plan_id, [], [], "goal")
+
+        assert call_order == ["update_usage", "update_status"]
+
+    async def test_msg_task_gets_done_with_composed_text(self, db):
+        """M307: the placeholder msg task is updated to 'done' with composed text."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+
+        with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="composed cancel"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(db, config, "sess1", plan_id, [], [], "goal")
+
+        cur = await db.execute(
+            "SELECT status, output FROM tasks WHERE plan_id = ? AND type = 'msg'", (plan_id,)
+        )
+        row = await cur.fetchone()
+        assert row is not None
+        assert row["status"] == "done"
+        assert row["output"] == "composed cancel"
 
 
 class TestMsgTaskWithFallback:
@@ -10570,3 +10712,142 @@ class TestM273FlushBrieferUsage:
         assert success is True
         # 2 calls: briefer flush (no-op) + after messenger
         assert mock_append.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# M307 Integration: verify DB state transitions during failure/cancel
+# ---------------------------------------------------------------------------
+
+
+class TestM307FailureMsgRaceIntegration:
+    """M307: integration tests verifying failure/cancel msg task is visible
+    in the DB while the messenger is composing, BEFORE plan status changes.
+
+    Simulates the real race condition by inspecting DB state at each step.
+    """
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_failure_msg_task_visible_during_composition(self, db):
+        """During failure msg composition, a 'running' msg task must exist
+        and plan status must still be 'running' — CLI can see both."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        snapshots: list[dict] = []
+
+        async def inspecting_msg(*args, **kwargs):
+            # Snapshot DB state while messenger is "composing"
+            plan_cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+            plan_row = await plan_cur.fetchone()
+            task_cur = await db.execute(
+                "SELECT type, status FROM tasks WHERE plan_id = ? AND type = 'msg'",
+                (plan_id,),
+            )
+            task_rows = await task_cur.fetchall()
+            snapshots.append({
+                "plan_status": plan_row["status"],
+                "msg_tasks": [(r["type"], r["status"]) for r in task_rows],
+            })
+            return "failure summary text"
+
+        with patch("kiso.worker.loop._msg_task_with_fallback", side_effect=inspecting_msg), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        # During composition: plan still "running", msg task exists and is "running"
+        assert len(snapshots) == 1
+        snap = snapshots[0]
+        assert snap["plan_status"] == "running", "Plan must remain 'running' during msg composition"
+        assert ("msg", "running") in snap["msg_tasks"], "Msg task must exist with 'running' status"
+
+        # After completion: plan is "failed", msg task is "done"
+        plan_cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+        assert (await plan_cur.fetchone())["status"] == "failed"
+        task_cur = await db.execute(
+            "SELECT status, output FROM tasks WHERE plan_id = ? AND type = 'msg'",
+            (plan_id,),
+        )
+        task_row = await task_cur.fetchone()
+        assert task_row["status"] == "done"
+        assert task_row["output"] == "failure summary text"
+
+    async def test_cancel_msg_task_visible_during_composition(self, db):
+        """During cancel msg composition, a 'running' msg task must exist
+        and plan status must still be 'running' — CLI can see both."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        snapshots: list[dict] = []
+
+        async def inspecting_msg(*args, **kwargs):
+            plan_cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+            plan_row = await plan_cur.fetchone()
+            task_cur = await db.execute(
+                "SELECT type, status FROM tasks WHERE plan_id = ? AND type = 'msg'",
+                (plan_id,),
+            )
+            task_rows = await task_cur.fetchall()
+            snapshots.append({
+                "plan_status": plan_row["status"],
+                "msg_tasks": [(r["type"], r["status"]) for r in task_rows],
+            })
+            return "cancel summary text"
+
+        event = asyncio.Event()
+        event.set()
+        with patch("kiso.worker.loop._msg_task_with_fallback", side_effect=inspecting_msg), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
+            await _handle_loop_cancel(
+                db, config, "sess1", plan_id, [], [], "goal",
+                cancel_event=event,
+            )
+
+        assert len(snapshots) == 1
+        snap = snapshots[0]
+        assert snap["plan_status"] == "running", "Plan must remain 'running' during msg composition"
+        assert ("msg", "running") in snap["msg_tasks"], "Msg task must exist with 'running' status"
+
+        plan_cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+        assert (await plan_cur.fetchone())["status"] == "cancelled"
+        task_cur = await db.execute(
+            "SELECT status, output FROM tasks WHERE plan_id = ? AND type = 'msg'",
+            (plan_id,),
+        )
+        task_row = await task_cur.fetchone()
+        assert task_row["status"] == "done"
+        assert task_row["output"] == "cancel summary text"
+        assert not event.is_set()
+
+    async def test_failure_usage_reflects_in_plan_before_status_change(self, db):
+        """Plan usage must be updated before status changes to 'failed',
+        so CLI shows accurate token counts at break time."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        status_at_usage_time: list[str] = []
+
+        async def tracking_update_usage(conn, pid, inp, out, model, **kw):
+            from kiso.store import update_plan_usage as real_fn
+            # Check plan status at the time usage is updated
+            cur = await conn.execute("SELECT status FROM plans WHERE id = ?", (pid,))
+            row = await cur.fetchone()
+            status_at_usage_time.append(row["status"])
+            await real_fn(conn, pid, inp, out, model, **kw)
+
+        with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="fail"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock), \
+             patch("kiso.worker.loop.get_usage_summary", return_value={"input_tokens": 500, "output_tokens": 200, "model": "test"}), \
+             patch("kiso.worker.loop.update_plan_usage", side_effect=tracking_update_usage):
+            await _handle_loop_failure(db, config, "sess1", plan_id, [], [], "goal")
+
+        assert status_at_usage_time == ["running"], "Usage must be updated while plan is still 'running'"
+        # Verify final state
+        cur = await db.execute("SELECT status, total_input_tokens, total_output_tokens FROM plans WHERE id = ?", (plan_id,))
+        row = await cur.fetchone()
+        assert row["status"] == "failed"
+        assert row["total_input_tokens"] == 500
+        assert row["total_output_tokens"] == 200

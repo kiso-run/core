@@ -1568,15 +1568,27 @@ async def _handle_loop_cancel(
     cancel_event: "asyncio.Event | None" = None,
     user_message: str = "",
 ) -> None:
-    """Mark plan cancelled, send cancel summary, clear cancel event."""
-    await update_plan_status(db, plan_id, "cancelled")
+    """Mark plan cancelled, send cancel summary, clear cancel event.
+
+    M307: create the msg task BEFORE changing plan status so the CLI's
+    stability window doesn't expire while the messenger is composing.
+    """
     cancel_detail = _build_cancel_summary(completed, remaining, goal)
+    # Create placeholder task first — CLI will see it and wait for it to finish
+    cancel_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, cancel_detail)
+    await update_task(db, cancel_task_id, "running")
     cancel_text = await _msg_task_with_fallback(
         config, db, session, cancel_detail, goal, messenger_timeout,
         user_message=user_message,
     )
-    cancel_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, cancel_detail)
     await update_task(db, cancel_task_id, status="done", output=cancel_text)
+    # Update plan usage before status change so CLI shows accurate totals
+    usage = get_usage_summary()
+    if usage["input_tokens"] or usage["output_tokens"]:
+        await update_plan_usage(
+            db, plan_id, usage["input_tokens"], usage["output_tokens"], usage["model"],
+        )
+    await update_plan_status(db, plan_id, "cancelled")
     await save_message(db, session, None, "system", cancel_text, trusted=True, processed=True)
     await _deliver_webhook_if_configured(
         db, config, session, 0, cancel_text, True,
@@ -1602,15 +1614,27 @@ async def _handle_loop_failure(
     deliver_webhook: bool = True,
     user_message: str = "",
 ) -> None:
-    """Mark plan failed, send failure message, optionally deliver webhook."""
-    await update_plan_status(db, plan_id, "failed")
+    """Mark plan failed, send failure message, optionally deliver webhook.
+
+    M307: create the msg task BEFORE changing plan status so the CLI's
+    stability window doesn't expire while the messenger is composing.
+    """
     fail_detail = _build_failure_summary(completed, remaining, goal, reason=reason)
+    # Create placeholder task first — CLI will see it and wait for it to finish
+    fail_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, fail_detail)
+    await update_task(db, fail_task_id, "running")
     fail_text = await _msg_task_with_fallback(
         config, db, session, fail_detail, goal, messenger_timeout,
         user_message=user_message,
     )
-    fail_task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, fail_detail)
     await update_task(db, fail_task_id, status="done", output=fail_text)
+    # Update plan usage before status change so CLI shows accurate totals
+    usage = get_usage_summary()
+    if usage["input_tokens"] or usage["output_tokens"]:
+        await update_plan_usage(
+            db, plan_id, usage["input_tokens"], usage["output_tokens"], usage["model"],
+        )
+    await update_plan_status(db, plan_id, "failed")
     await save_message(db, session, None, "system", fail_text, trusted=True, processed=True)
     if deliver_webhook:
         await _deliver_webhook_if_configured(
