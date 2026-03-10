@@ -700,6 +700,38 @@ def render_llm_call_input_panel(call: dict, caps: TermCaps) -> str:
     return _rich_buf_to_str(buf)
 
 
+def _format_curator_output(parsed: dict, esc) -> str:
+    """Format curator evaluations for readable verbose output."""
+    lines: list[str] = []
+    for ev in parsed["evaluations"]:
+        verdict = ev.get("verdict", "?")
+        lid = ev.get("learning_id", "?")
+        if verdict == "promote":
+            fact = ev.get("fact", "")
+            tags = ev.get("tags") or []
+            entity = ev.get("entity_name") or ""
+            kind = ev.get("entity_kind") or ""
+            tags_str = ", ".join(tags) if tags else ""
+            entity_str = f"{entity} ({kind})" if entity else ""
+            lines.append(f"[bold green]promote[/bold green] [dim]\\[id={lid}][/dim] {esc(fact)}")
+            meta: list[str] = []
+            if entity_str:
+                meta.append(f"entity: {esc(entity_str)}")
+            if tags_str:
+                meta.append(f"tags: {esc(tags_str)}")
+            if meta:
+                lines.append(f"  [dim]{' | '.join(meta)}[/dim]")
+        elif verdict == "ask":
+            question = ev.get("question", "")
+            lines.append(f"[bold yellow]ask[/bold yellow]     [dim]\\[id={lid}][/dim] {esc(question)}")
+        elif verdict == "discard":
+            reason = ev.get("reason", "")
+            lines.append(f"[dim]discard  \\[id={lid}] {esc(reason)}[/dim]")
+        else:
+            lines.append(f"{esc(verdict):8s} [dim]\\[id={lid}][/dim]")
+    return "\n".join(lines)
+
+
 def render_llm_call_output_panel(call: dict, caps: TermCaps) -> str:
     """Render the *summary line + output panel* for a single LLM call.
 
@@ -741,7 +773,10 @@ def render_llm_call_output_panel(call: dict, caps: TermCaps) -> str:
         parts.append("")
     try:
         parsed = _json.loads(response)
-        parts.append(_esc(_json.dumps(parsed, indent=2, ensure_ascii=False)))
+        if role == "curator" and isinstance(parsed.get("evaluations"), list):
+            parts.append(_format_curator_output(parsed, _esc))
+        else:
+            parts.append(_esc(_json.dumps(parsed, indent=2, ensure_ascii=False)))
     except (ValueError, TypeError):
         parts.append(_esc(response))
 

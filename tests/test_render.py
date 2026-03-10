@@ -1386,6 +1386,34 @@ def test_render_llm_call_output_panel_no_messages():
     assert render_llm_call_output_panel(call, _PLAIN) == ""
 
 
+def test_render_llm_call_output_panel_curator_formatted():
+    """Curator output panel shows formatted evaluations with tags and entity."""
+    import json
+    curator_response = json.dumps({"evaluations": [
+        {"learning_id": 1, "verdict": "promote",
+         "fact": "Uses Flask for web API", "reason": "Tech choice",
+         "tags": ["tech-stack", "web"], "entity_name": "flask", "entity_kind": "tool"},
+        {"learning_id": 2, "verdict": "discard",
+         "fact": None, "reason": "Transient state"},
+        {"learning_id": 3, "verdict": "ask",
+         "fact": None, "question": "Which database?", "reason": "Unclear"},
+    ]})
+    call = {
+        "role": "curator", "model": "gpt-4",
+        "input_tokens": 500, "output_tokens": 100,
+        "messages": [{"role": "user", "content": "learnings"}],
+        "response": curator_response,
+    }
+    result = render_llm_call_output_panel(call, _PLAIN)
+    assert "promote" in result
+    assert "Uses Flask for web API" in result
+    assert "flask (tool)" in result
+    assert "tech-stack, web" in result
+    assert "discard" in result
+    assert "ask" in result
+    assert "Which database?" in result
+
+
 def test_render_llm_calls_verbose_escapes_markup():
     """Content with Rich markup-like brackets is rendered literally."""
     import json
