@@ -3458,3 +3458,184 @@ def test_m306_reset_on_inflight_complete(capsys):
     _render_plan_status(data2, 1, False, True, caps, "Bot", state)
     assert state.partial_content_len == 0
     assert state.partial_lines_rendered == 0
+
+
+# ---------------------------------------------------------------------------
+# M326 — Integration test: no duplicate IN panels in verbose mode
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+from cli import _render_msg_task, _emit_verbose_calls
+
+
+def _make_llm_calls_json(*calls):
+    """Build an llm_calls JSON string from call dicts."""
+    return _json.dumps(calls)
+
+
+class TestM326VerbosePanelDedup:
+    """M326: verify IN panels are never duplicated for msg tasks in verbose mode."""
+
+    def _caps(self):
+        return TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+
+    def _make_msg_task(self, *, status="done", llm_calls=None):
+        return {
+            "id": 42,
+            "type": "msg",
+            "status": status,
+            "detail": "reply to user",
+            "output": "Hello!",
+            "llm_calls": llm_calls,
+        }
+
+    def _two_call_json(self):
+        """Two LLM calls: briefer + messenger, each with a unique ts."""
+        return _make_llm_calls_json(
+            {
+                "role": "briefer",
+                "model": "test-model",
+                "ts": 1000.0,
+                "messages": [
+                    {"role": "system", "content": "Brief this."},
+                    {"role": "user", "content": "briefer input"},
+                ],
+                "output": "briefer output",
+                "input_tokens": 10,
+                "output_tokens": 5,
+            },
+            {
+                "role": "messenger",
+                "model": "test-model",
+                "ts": 2000.0,
+                "messages": [
+                    {"role": "system", "content": "Messenger prompt."},
+                    {"role": "user", "content": "messenger input"},
+                ],
+                "output": "Hello!",
+                "input_tokens": 20,
+                "output_tokens": 10,
+            },
+        )
+
+    def test_msg_verbose_dedup_after_inflight(self, capsys):
+        """IN panels shown by inflight must NOT be repeated by _render_msg_task."""
+        caps = self._caps()
+        state = _PollRenderState(seen={}, verbose_shown={})
+        calls_json = self._two_call_json()
+
+        # Simulate inflight rendering: both timestamps were already shown as IN panels
+        state.inflight_in_shown.add(1000.0)
+        state.inflight_in_shown.add(2000.0)
+
+        task = self._make_msg_task(status="done", llm_calls=calls_json)
+        _render_msg_task(task, quiet=False, verbose=True, caps=caps,
+                         bot_name="Bot", state=state, idx=1, total=1)
+
+        out = capsys.readouterr().out
+        # OUT panels should still appear
+        assert "OUT" in out
+        # IN panels should NOT appear because they were already shown by inflight
+        # Count occurrences of "IN" marker — should be 0 since both were inflight-shown
+        in_count = out.count("\u2500 IN \u2500") + out.count("- IN -")
+        assert in_count == 0, f"Expected 0 IN panels but found {in_count}"
+
+    def test_msg_verbose_no_inflight_shows_in_panels(self, capsys):
+        """When no inflight happened, IN panels should appear normally."""
+        caps = self._caps()
+        state = _PollRenderState(seen={}, verbose_shown={})
+        calls_json = self._two_call_json()
+
+        task = self._make_msg_task(status="done", llm_calls=calls_json)
+        _render_msg_task(task, quiet=False, verbose=True, caps=caps,
+                         bot_name="Bot", state=state, idx=1, total=1)
+
+        out = capsys.readouterr().out
+        # Both IN panels should appear
+        assert "briefer input" in out
+        assert "messenger input" in out
+
+    def test_msg_verbose_partial_inflight_dedup(self, capsys):
+        """Only the inflight-shown IN panel is skipped; the other still appears."""
+        caps = self._caps()
+        state = _PollRenderState(seen={}, verbose_shown={})
+        calls_json = self._two_call_json()
+
+        # Only briefer was shown as inflight
+        state.inflight_in_shown.add(1000.0)
+
+        task = self._make_msg_task(status="done", llm_calls=calls_json)
+        _render_msg_task(task, quiet=False, verbose=True, caps=caps,
+                         bot_name="Bot", state=state, idx=1, total=1)
+
+        out = capsys.readouterr().out
+        # Messenger IN should appear (not inflight-shown)
+        assert "messenger input" in out
+        # Briefer IN should NOT reappear — check that briefer input is only in OUT or absent
+        # The briefer OUT panel contains "briefer output", not "briefer input"
+        # So "briefer input" appearing means the IN panel was rendered
+        lines_with_briefer_in = [l for l in out.split("\n") if "briefer input" in l]
+        assert len(lines_with_briefer_in) == 0, "Briefer IN panel should be deduped"
+
+    def test_msg_intermediate_verbose_rendering(self, capsys):
+        """Intermediate update path emits verbose panels for msg tasks (M325)."""
+        caps = self._caps()
+        state = _PollRenderState(seen={}, verbose_shown={})
+        one_call_json = _make_llm_calls_json({
+            "role": "briefer",
+            "model": "test-model",
+            "ts": 3000.0,
+            "messages": [
+                {"role": "system", "content": "Brief."},
+                {"role": "user", "content": "briefer stuff"},
+            ],
+            "output": "briefed",
+            "input_tokens": 10,
+            "output_tokens": 5,
+        })
+        task = self._make_msg_task(status="running", llm_calls=one_call_json)
+
+        # _emit_verbose_calls should work for msg tasks
+        _emit_verbose_calls(task, caps, state, 1)
+        out = capsys.readouterr().out
+
+        # Should have rendered the briefer call
+        assert "briefer stuff" in out or "briefed" in out
+        # verbose_shown should track that 1 call was rendered
+        assert state.verbose_shown.get(42) == 1
+
+    def test_msg_intermediate_no_repeat(self, capsys):
+        """Second intermediate call with same llm_call_count emits nothing new."""
+        caps = self._caps()
+        state = _PollRenderState(seen={}, verbose_shown={})
+        one_call_json = _make_llm_calls_json({
+            "role": "briefer",
+            "model": "test-model",
+            "ts": 4000.0,
+            "messages": [
+                {"role": "system", "content": "Brief."},
+                {"role": "user", "content": "stuff"},
+            ],
+            "output": "done",
+            "input_tokens": 10,
+            "output_tokens": 5,
+        })
+        task = self._make_msg_task(status="running", llm_calls=one_call_json)
+
+        # First call renders
+        _emit_verbose_calls(task, caps, state, 1)
+        capsys.readouterr()  # drain
+
+        # Second call with same count — nothing new
+        _emit_verbose_calls(task, caps, state, 1)
+        out2 = capsys.readouterr().out
+        assert out2.strip() == "", f"Expected no output on repeat, got: {out2!r}"
+
+    def test_msg_not_using_render_llm_calls_verbose(self):
+        """_render_msg_task must NOT call render_llm_calls_verbose (uses _emit_verbose_calls)."""
+        import inspect
+        from cli import _render_msg_task as fn
+        source = inspect.getsource(fn)
+        assert "render_llm_calls_verbose" not in source, \
+            "_render_msg_task should use _emit_verbose_calls, not render_llm_calls_verbose"
