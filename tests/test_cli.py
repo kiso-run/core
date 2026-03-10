@@ -3639,3 +3639,69 @@ class TestM326VerbosePanelDedup:
         source = inspect.getsource(fn)
         assert "render_llm_calls_verbose" not in source, \
             "_render_msg_task should use _emit_verbose_calls, not render_llm_calls_verbose"
+
+
+class TestM331SuppressPendingHeaders:
+    """M331: pending tasks should not render individual task headers."""
+
+    def _caps(self):
+        return TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+
+    def _state(self):
+        return _PollRenderState(seen={}, verbose_shown={})
+
+    def _make_task(self, tid, status="pending", ttype="exec"):
+        return {
+            "id": tid, "plan_id": 1, "type": ttype, "status": status,
+            "detail": f"task {tid}", "output": "", "review_verdict": None,
+            "substatus": None, "llm_calls": None, "command": None,
+        }
+
+    def test_pending_tasks_produce_no_task_header(self, capsys):
+        """All-pending tasks should produce no individual task header output."""
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g",
+                "llm_calls": None}
+        tasks = [self._make_task(i, "pending") for i in range(1, 6)]
+        data = {"plan": plan, "tasks": tasks, "worker_running": True}
+        state = self._state()
+        state.shown_plan_id = 1
+        state.shown_plan_goal = "g"  # plan already fully shown
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        out = capsys.readouterr().out
+        # No individual task headers should appear for pending tasks
+        for i in range(1, 6):
+            assert f"task {i}" not in out
+
+    def test_pending_tracked_in_seen(self):
+        """Pending tasks should still be tracked in state.seen for dedup."""
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g",
+                "llm_calls": None}
+        tasks = [self._make_task(1, "pending")]
+        data = {"plan": plan, "tasks": tasks, "worker_running": True}
+        state = self._state()
+        state.shown_plan_id = 1
+        state.shown_plan_goal = "g"
+        _render_plan_status(data, 1, False, False, self._caps(), "Bot", state)
+        assert 1 in state.seen
+
+    def test_transition_to_running_shows_header(self, capsys):
+        """When a task transitions from pending to running, header appears."""
+        plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g",
+                "llm_calls": None}
+        state = self._state()
+        state.shown_plan_id = 1
+        state.shown_plan_goal = "g"
+
+        # First: pending — no output
+        tasks_pending = [self._make_task(1, "pending")]
+        data1 = {"plan": plan, "tasks": tasks_pending, "worker_running": True}
+        _render_plan_status(data1, 1, False, False, self._caps(), "Bot", state)
+        out1 = capsys.readouterr().out
+        assert "task 1" not in out1
+
+        # Second: running — header appears
+        tasks_running = [self._make_task(1, "running")]
+        data2 = {"plan": plan, "tasks": tasks_running, "worker_running": True}
+        _render_plan_status(data2, 1, False, False, self._caps(), "Bot", state)
+        out2 = capsys.readouterr().out
+        assert "task 1" in out2

@@ -867,6 +867,11 @@ def _render_plan_status(
         if state.seen.get(tid) == task_key:
             continue
 
+        # M331: suppress pending task headers — only show when status transitions
+        if status == "pending":
+            state.seen[tid] = task_key
+            continue
+
         prev_key = state.seen.get(tid)
         state.seen[tid] = task_key
         prev_status = prev_key[0] if prev_key else None
