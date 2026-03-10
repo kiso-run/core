@@ -272,9 +272,9 @@ class TestM316PromptOptimizationIntegration:
         assert len(prompt) < 1800, f"Messenger prompt too large: {len(prompt)} chars"
 
     def test_reviewer_prompt_size_regression(self):
-        """Reviewer prompt must stay under 2200 chars (was 2256 before M314)."""
+        """Reviewer prompt must stay under 2600 chars (was 2026 before M318 learn rules)."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert len(prompt) < 2200, f"Reviewer prompt too large: {len(prompt)} chars"
+        assert len(prompt) < 2600, f"Reviewer prompt too large: {len(prompt)} chars"
 
     def test_all_role_prompts_nonempty(self):
         """Every role prompt must have substantive content."""

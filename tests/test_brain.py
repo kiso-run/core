@@ -126,6 +126,37 @@ def test_reviewer_prompt_contains_reason_required_rule():
     assert "required (non-null, non-empty" in prompt and "replan" in prompt
 
 
+# --- M318: reviewer learn quality rules ---
+
+
+def test_reviewer_prompt_max_3_learns():
+    """M318: reviewer learn cap reduced from 5 to 3."""
+    prompt = _load_system_prompt("reviewer")
+    assert "max 3" in prompt
+
+
+def test_reviewer_prompt_self_contained_rule():
+    """M318: learnings must be self-contained with subject context."""
+    prompt = _load_system_prompt("reviewer")
+    assert "self-contained" in prompt
+    assert "include subject" in prompt
+
+
+def test_reviewer_prompt_consolidation_rule():
+    """M318: learnings must consolidate related observations."""
+    prompt = _load_system_prompt("reviewer")
+    assert "consolidate" in prompt.lower()
+    assert "Never split per-field" in prompt
+
+
+def test_reviewer_prompt_ephemeral_rule():
+    """M318: learnings must not include ephemeral data."""
+    prompt = _load_system_prompt("reviewer")
+    assert "ephemeral" in prompt.lower()
+    assert "element indices" in prompt.lower()
+    assert "installed/loaded successfully" in prompt
+
+
 # --- validate_plan ---
 
 class TestValidatePlan:
@@ -1096,8 +1127,8 @@ class TestM83ReviewSchema:
     def test_valid_replan_full(self):
         self._valid({"status": "replan", "reason": "wrong path", "learn": ["Fact 1"], "retry_hint": "try /opt", "summary": "Found page with title X"})
 
-    def test_valid_learn_exactly_5(self):
-        self._valid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e"], "retry_hint": None, "summary": None})
+    def test_valid_learn_exactly_3(self):
+        self._valid({"status": "ok", "reason": None, "learn": ["a", "b", "c"], "retry_hint": None, "summary": None})
 
     # Invalid ---
 
@@ -1114,7 +1145,7 @@ class TestM83ReviewSchema:
         self._invalid({"status": "ok", "reason": None, "learn": None, "retry_hint": None, "summary": None, "extra": "x"})
 
     def test_learn_exceeds_max_items(self):
-        self._invalid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d", "e", "f"], "retry_hint": None, "summary": None})
+        self._invalid({"status": "ok", "reason": None, "learn": ["a", "b", "c", "d"], "retry_hint": None, "summary": None})
 
     def test_learn_non_string_item(self):
         self._invalid({"status": "ok", "reason": None, "learn": [42], "retry_hint": None, "summary": None})
