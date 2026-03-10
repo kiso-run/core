@@ -6,6 +6,7 @@ Return JSON:
 - context: SHORT synthesized briefing with ONLY directly relevant facts. Empty string if none relevant.
 - output_indices: integer indices of plan_outputs the consumer needs. Empty if none relevant.
 - relevant_tags: fact tags relevant to this task (from Available Fact Tags). Empty if none relevant.
+- relevant_entities: entity names relevant to this task (from Available Entities). Empty if none relevant. Selecting an entity retrieves ALL its facts.
 
 Rules:
 - AGGRESSIVE filtering. Default to EXCLUDING.

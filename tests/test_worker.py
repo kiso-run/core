@@ -10547,6 +10547,7 @@ class TestMsgTaskBrieferIntegration:
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
+                    "relevant_entities": [],
                 })
             # messenger
             captured_outputs_text.append(messages[1]["content"])
@@ -10622,6 +10623,7 @@ class TestMsgTaskBrieferIntegration:
                     "modules": [], "skills": [],
                     "context": "Filtered context.",
                     "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
                 })
             call_roles.append(role)
             return "response"
@@ -10672,6 +10674,7 @@ class TestExecTaskBrieferIntegration:
                     "modules": [], "skills": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
                     "relevant_tags": [],
+                    "relevant_entities": [],
                 })
             return "ok"
 
