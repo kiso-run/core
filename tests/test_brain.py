@@ -55,6 +55,8 @@ from kiso.brain import (
     validate_curator,
     validate_plan,
     validate_review,
+    REVIEW_STATUSES,
+    REVIEW_STATUS_STUCK,
     _retry_llm_with_validation,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
@@ -1079,20 +1081,33 @@ class TestValidateReview:
         review = {"status": "replan", "reason": "Wrong path", "learn": ["Project is in /opt"]}
         assert validate_review(review) == []
 
-    def test_replan_without_reason_invalid(self):
-        review = {"status": "replan", "reason": None, "learn": None}
+    @pytest.mark.parametrize("status", ["replan", "stuck"])
+    def test_non_ok_without_reason_invalid(self, status):
+        review = {"status": status, "reason": None, "learn": None}
         errors = validate_review(review)
         assert any("non-null, non-empty reason" in e for e in errors)
 
-    def test_replan_empty_reason_invalid(self):
-        review = {"status": "replan", "reason": "", "learn": None}
+    @pytest.mark.parametrize("status", ["replan", "stuck"])
+    def test_non_ok_empty_reason_invalid(self, status):
+        review = {"status": status, "reason": "", "learn": None}
         errors = validate_review(review)
         assert any("non-null, non-empty reason" in e for e in errors)
+
+    def test_stuck_with_reason(self):
+        review = {"status": "stuck", "reason": "CAPTCHA requires human verification", "learn": None}
+        assert validate_review(review) == []
+
+    def test_stuck_in_statuses(self):
+        assert REVIEW_STATUS_STUCK in REVIEW_STATUSES
+
+    def test_stuck_in_schema_enum(self):
+        enum_values = REVIEW_SCHEMA["json_schema"]["schema"]["properties"]["status"]["enum"]
+        assert "stuck" in enum_values
 
     def test_invalid_status(self):
         review = {"status": "maybe", "reason": None, "learn": None}
         errors = validate_review(review)
-        assert any("must be 'ok' or 'replan'" in e for e in errors)
+        assert any("stuck" in e for e in errors)
 
     def test_missing_status(self):
         review = {"reason": None, "learn": None}

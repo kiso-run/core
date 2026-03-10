@@ -35,7 +35,10 @@ TASK_TYPES: frozenset[str] = frozenset({
 # Review status constants
 REVIEW_STATUS_OK = "ok"
 REVIEW_STATUS_REPLAN = "replan"
-REVIEW_STATUSES: frozenset[str] = frozenset({REVIEW_STATUS_OK, REVIEW_STATUS_REPLAN})
+REVIEW_STATUS_STUCK = "stuck"
+REVIEW_STATUSES: frozenset[str] = frozenset({
+    REVIEW_STATUS_OK, REVIEW_STATUS_REPLAN, REVIEW_STATUS_STUCK,
+})
 
 # Curator verdict constants
 CURATOR_VERDICT_PROMOTE = "promote"
@@ -314,7 +317,7 @@ REVIEW_SCHEMA: dict = {
             "properties": {
                 "status": {
                     "type": "string",
-                    "enum": ["ok", "replan"],
+                    "enum": ["ok", "replan", "stuck"],
                 },
                 "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 "learn": {"anyOf": [
@@ -1192,10 +1195,10 @@ def validate_review(review: dict) -> list[str]:
     errors: list[str] = []
     status = review.get("status")
     if status not in REVIEW_STATUSES:
-        errors.append(f"status must be 'ok' or 'replan', got {status!r}")
+        errors.append(f"status must be 'ok', 'replan', or 'stuck', got {status!r}")
         return errors
-    if status == REVIEW_STATUS_REPLAN and not review.get("reason"):
-        errors.append("replan status requires a non-null, non-empty reason")
+    if status in (REVIEW_STATUS_REPLAN, REVIEW_STATUS_STUCK) and not review.get("reason"):
+        errors.append(f"{status} status requires a non-null, non-empty reason")
     return errors
 
 
