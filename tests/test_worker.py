@@ -10970,3 +10970,73 @@ class TestM310Phase13Integration:
 
         assert len(planner_kwargs_captured) == 1
         assert planner_kwargs_captured[0].get("is_replan") is True
+
+
+class TestM332DetectUserLang:
+    """M332: detect user language for replan notifications."""
+
+    def test_italian(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("vai su guidance.studio") == "it"
+
+    def test_english_default(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("go to guidance.studio") == "en"
+
+    def test_spanish(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("busca información sobre el tema") == "es"
+
+    def test_french(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("cherche des informations") == "fr"
+
+    def test_german(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("suche nach Informationen") == "de"
+
+    def test_portuguese(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("busque informações sobre isso") == "pt"
+
+    def test_unknown_defaults_to_english(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("ここに行ってください") == "en"
+
+    def test_empty_string(self):
+        from kiso.worker.utils import detect_user_lang
+        assert detect_user_lang("") == "en"
+
+
+class TestM332GetReplanMessage:
+    """M332: localized replan messages."""
+
+    def test_english_replanning(self):
+        from kiso.worker.utils import get_replan_message
+        msg = get_replan_message("en", "replanning", 1, 3, reason="timeout")
+        assert "Replanning (attempt 1/3): timeout" == msg
+
+    def test_italian_replanning(self):
+        from kiso.worker.utils import get_replan_message
+        msg = get_replan_message("it", "replanning", 2, 3, reason="errore")
+        assert "Ripianificazione" in msg
+        assert "2/3" in msg
+        assert "errore" in msg
+
+    def test_investigating(self):
+        from kiso.worker.utils import get_replan_message
+        msg = get_replan_message("it", "investigating", 1, 3)
+        assert "Indagine in corso" in msg
+        assert "1/3" in msg
+
+    def test_stuck_with_tried(self):
+        from kiso.worker.utils import get_replan_message
+        msg = get_replan_message("en", "stuck", 3, 3, reason="timeout", tried="attempt1; attempt2")
+        assert "I'm having trouble" in msg
+        assert "timeout" in msg
+        assert "attempt1; attempt2" in msg
+
+    def test_fallback_to_english(self):
+        from kiso.worker.utils import get_replan_message
+        msg = get_replan_message("ja", "replanning", 1, 3, reason="error")
+        assert "Replanning" in msg  # falls back to English

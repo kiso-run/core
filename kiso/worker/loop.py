@@ -129,6 +129,8 @@ from kiso.worker.utils import (
     _session_workspace,
     _snapshot_workspace,
     _write_plan_outputs,
+    detect_user_lang,
+    get_replan_message,
 )
 from kiso.worker.exec import _exec_task
 from kiso.worker.skill import _skill_task
@@ -1815,23 +1817,23 @@ async def _run_planning_loop(
                                     jaccard * 100, replan_reason)
 
         # Notify user about replan (as a visible msg task + webhook)
+        user_lang = detect_user_lang(content)
         if stuck_detected:
             tried_summary = "; ".join(
                 f"{h['goal']}: {h['failure']}" for h in replan_history[-2:]
             )
-            msg_text = (
-                f"I'm having trouble with this request. "
-                f"I've tried replanning {replan_depth} times but keep hitting "
-                f"the same issue: {replan_reason}\n"
-                f"Previous attempts: {tried_summary}\n"
-                f"Can you help me with more details or a different approach?"
+            msg_text = get_replan_message(
+                user_lang, "stuck", replan_depth, max_replan_depth,
+                reason=replan_reason, tried=tried_summary,
             )
         elif is_self_directed:
-            msg_text = f"Investigating... ({replan_depth}/{max_replan_depth})"
+            msg_text = get_replan_message(
+                user_lang, "investigating", replan_depth, max_replan_depth,
+            )
         else:
-            msg_text = (
-                f"Replanning (attempt {replan_depth}/{max_replan_depth}): "
-                f"{replan_reason}"
+            msg_text = get_replan_message(
+                user_lang, "replanning", replan_depth, max_replan_depth,
+                reason=replan_reason,
             )
         replan_notify_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, msg_text)
         await update_task(db, replan_notify_id, status="done", output=msg_text)
