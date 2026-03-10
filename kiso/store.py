@@ -222,6 +222,15 @@ CREATE TABLE IF NOT EXISTS learnings (
 );
 CREATE INDEX IF NOT EXISTS idx_learnings_status ON learnings(status) WHERE status = 'pending';
 
+CREATE TABLE IF NOT EXISTS entities (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE,
+    kind       TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name);
+
 CREATE TABLE IF NOT EXISTS pending (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     content    TEXT NOT NULL,
@@ -255,6 +264,15 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     existing_cols = {row[1] for row in await cur.fetchall()}
     if "duration_ms" not in existing_cols:
         await db.execute("ALTER TABLE tasks ADD COLUMN duration_ms INTEGER DEFAULT NULL")
+        await db.commit()
+
+    # M342: add entity_id to facts table
+    cur = await db.execute("PRAGMA table_info(facts)")
+    fact_cols = {row[1] for row in await cur.fetchall()}
+    if "entity_id" not in fact_cols:
+        await db.execute(
+            "ALTER TABLE facts ADD COLUMN entity_id INTEGER REFERENCES entities(id)"
+        )
         await db.commit()
 
     return db
@@ -804,12 +822,13 @@ async def save_fact(
     category: str = "general",
     confidence: float = 1.0,
     tags: list[str] | None = None,
+    entity_id: int | None = None,
 ) -> int:
     """Insert a fact row and optional tags. Returns fact id."""
     cur = await db.execute(
-        "INSERT INTO facts (content, source, session, category, confidence) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (content, source, session, category, confidence),
+        "INSERT INTO facts (content, source, session, category, confidence, entity_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (content, source, session, category, confidence, entity_id),
     )
     fact_id: int = cur.lastrowid  # type: ignore[assignment]
     if tags:
@@ -895,6 +914,48 @@ async def search_facts_by_tags(
         params.append(session)
     query += " GROUP BY f.id ORDER BY tag_overlap DESC, f.use_count DESC"
     cur = await db.execute(query, params)
+    return [dict(r) for r in await cur.fetchall()]
+
+
+def _normalize_entity_name(name: str) -> str:
+    """Canonical entity name: lowercase, no www/http prefix, no trailing slash."""
+    n = name.lower().strip()
+    for prefix in ("https://", "http://", "www."):
+        if n.startswith(prefix):
+            n = n[len(prefix):]
+    return n.rstrip("/")
+
+
+async def find_or_create_entity(
+    db: aiosqlite.Connection, name: str, kind: str,
+) -> int:
+    """Find entity by canonical name or create it. Returns entity_id."""
+    canonical = _normalize_entity_name(name)
+    cur = await db.execute("SELECT id FROM entities WHERE name = ?", (canonical,))
+    existing = await cur.fetchone()
+    if existing:
+        return existing[0]
+    cur = await db.execute(
+        "INSERT INTO entities (name, kind) VALUES (?, ?)", (canonical, kind),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+async def get_all_entities(db: aiosqlite.Connection) -> list[dict]:
+    """Return all entities as [{id, name, kind}, ...]."""
+    cur = await db.execute("SELECT id, name, kind FROM entities ORDER BY name")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def search_facts_by_entity(
+    db: aiosqlite.Connection, entity_id: int,
+) -> list[dict]:
+    """Return all facts for a given entity, ordered by last_used desc."""
+    cur = await db.execute(
+        "SELECT * FROM facts WHERE entity_id = ? ORDER BY last_used DESC, id DESC",
+        (entity_id,),
+    )
     return [dict(r) for r in await cur.fetchall()]
 
 

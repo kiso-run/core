@@ -50,6 +50,10 @@ from kiso.store import (
     update_task_substatus,
     update_task_usage,
     save_learning,
+    find_or_create_entity,
+    get_all_entities,
+    search_facts_by_entity,
+    _normalize_entity_name,
     SessionDict,
 )
 
@@ -64,8 +68,8 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
         if not r[0].startswith("sqlite_") and not r[0].startswith("kiso_facts_fts_")
     )
     expected = [
-        "fact_tags", "facts", "facts_archive", "kiso_facts_fts", "learnings",
-        "messages", "pending", "plans", "sessions", "tasks",
+        "entities", "fact_tags", "facts", "facts_archive", "kiso_facts_fts",
+        "learnings", "messages", "pending", "plans", "sessions", "tasks",
     ]
     assert tables == expected
 
@@ -2157,3 +2161,82 @@ async def test_fact_tags_cascade_on_delete(db: aiosqlite.Connection):
     await db.commit()
     cur = await db.execute("SELECT COUNT(*) FROM fact_tags WHERE fact_id = ?", (fid,))
     assert (await cur.fetchone())[0] == 0
+
+
+# --- M342: Entity table + store functions ---
+
+
+async def test_find_or_create_entity_new(db: aiosqlite.Connection):
+    """Creating a new entity returns a valid id."""
+    eid = await find_or_create_entity(db, "guidance.studio", "website")
+    assert eid > 0
+    entities = await get_all_entities(db)
+    assert len(entities) == 1
+    assert entities[0]["name"] == "guidance.studio"
+    assert entities[0]["kind"] == "website"
+
+
+async def test_find_or_create_entity_idempotent(db: aiosqlite.Connection):
+    """Calling again with same name returns same id."""
+    eid1 = await find_or_create_entity(db, "guidance.studio", "website")
+    eid2 = await find_or_create_entity(db, "guidance.studio", "website")
+    assert eid1 == eid2
+    entities = await get_all_entities(db)
+    assert len(entities) == 1
+
+
+async def test_find_or_create_entity_normalizes_www(db: aiosqlite.Connection):
+    """www.guidance.studio normalizes to guidance.studio."""
+    eid1 = await find_or_create_entity(db, "guidance.studio", "website")
+    eid2 = await find_or_create_entity(db, "www.guidance.studio", "website")
+    assert eid1 == eid2
+
+
+async def test_find_or_create_entity_normalizes_https(db: aiosqlite.Connection):
+    """https://GUIDANCE.studio/ normalizes to guidance.studio."""
+    eid1 = await find_or_create_entity(db, "guidance.studio", "website")
+    eid2 = await find_or_create_entity(db, "https://GUIDANCE.studio/", "website")
+    assert eid1 == eid2
+
+
+async def test_normalize_entity_name():
+    """Entity name normalization works correctly."""
+    assert _normalize_entity_name("Guidance.Studio") == "guidance.studio"
+    assert _normalize_entity_name("www.guidance.studio") == "guidance.studio"
+    assert _normalize_entity_name("https://guidance.studio/") == "guidance.studio"
+    assert _normalize_entity_name("http://www.guidance.studio/") == "guidance.studio"
+    assert _normalize_entity_name("Flask") == "flask"
+
+
+async def test_search_facts_by_entity(db: aiosqlite.Connection):
+    """Facts linked to entity are returned by search_facts_by_entity."""
+    eid = await find_or_create_entity(db, "guidance.studio", "website")
+    fid1 = await save_fact(db, "guidance.studio has a contact form", "curator",
+                           entity_id=eid)
+    fid2 = await save_fact(db, "guidance.studio uses Webflow", "curator",
+                           entity_id=eid)
+    # Unlinked fact
+    await save_fact(db, "Python uses pytest for testing", "curator")
+
+    results = await search_facts_by_entity(db, eid)
+    assert len(results) == 2
+    result_ids = {r["id"] for r in results}
+    assert fid1 in result_ids
+    assert fid2 in result_ids
+
+
+async def test_save_fact_with_entity_id(db: aiosqlite.Connection):
+    """save_fact stores entity_id in facts table."""
+    eid = await find_or_create_entity(db, "flask", "tool")
+    fid = await save_fact(db, "Flask uses Jinja2 templates", "curator", entity_id=eid)
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
+    row = await cur.fetchone()
+    assert row[0] == eid
+
+
+async def test_entities_table_exists(db: aiosqlite.Connection):
+    """Entities table is created by init_db."""
+    cur = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
+    )
+    assert await cur.fetchone() is not None
