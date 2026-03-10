@@ -709,10 +709,22 @@ _SENSITIVE_PATTERN = re.compile(
 )
 
 
+_DEDUP_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "has", "have", "had",
+    "on", "in", "at", "for", "with", "of", "to", "and", "or", "but",
+    "it", "its", "this", "that", "be", "been", "being",
+})
+
+
 def _word_overlap_ratio(a: str, b: str) -> float:
-    """Return the Jaccard similarity of word sets from *a* and *b*."""
-    wa = set(a.lower().split())
-    wb = set(b.lower().split())
+    """Return the Jaccard similarity of word sets from *a* and *b*.
+
+    Strips stopwords and trailing punctuation before computing overlap (M339).
+    """
+    wa = {w.strip(".,;:!?\"'()") for w in a.lower().split()} - _DEDUP_STOPWORDS
+    wb = {w.strip(".,;:!?\"'()") for w in b.lower().split()} - _DEDUP_STOPWORDS
+    wa.discard("")
+    wb.discard("")
     if not wa or not wb:
         return 0.0
     return len(wa & wb) / len(wa | wb)
@@ -752,7 +764,7 @@ async def save_learning(
         (session,),
     )
     for row in await cur.fetchall():
-        if _word_overlap_ratio(content, row[1]) >= 0.7:
+        if _word_overlap_ratio(content, row[1]) >= 0.55:
             log.debug("Learning deduped against id=%d", row[0])
             return 0
     cur = await db.execute(

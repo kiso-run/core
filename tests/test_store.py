@@ -1657,6 +1657,58 @@ async def test_save_learning_dedup_skips_promoted(db: aiosqlite.Connection):
     assert r2 != 0
 
 
+# --- M339: learning dedup stopword normalization ---
+
+
+async def test_word_overlap_stopword_normalization(db: aiosqlite.Connection):
+    """M339: stopwords removed before overlap — paraphrases are caught."""
+    from kiso.store import _word_overlap_ratio
+
+    # Without stopword removal these share 6/9 words = 0.67 (under old 0.7 threshold).
+    # With stopword removal: {guidance.studio, captcha, contact, form} vs
+    # {guidance.studio, contact, form, captcha, detection} = 4/5 = 0.80 → deduped at 0.55.
+    ratio = _word_overlap_ratio(
+        "guidance.studio has a CAPTCHA on the contact form",
+        "guidance.studio contact form has CAPTCHA detection",
+    )
+    assert ratio >= 0.55, f"Paraphrase should be caught after stopword removal, got {ratio}"
+
+
+async def test_word_overlap_genuinely_different(db: aiosqlite.Connection):
+    """M339: genuinely different facts have low overlap even after stopword removal."""
+    from kiso.store import _word_overlap_ratio
+
+    ratio = _word_overlap_ratio(
+        "guidance.studio has a CAPTCHA",
+        "flask uses SQLAlchemy for database ORM",
+    )
+    assert ratio < 0.55, f"Different facts should not overlap, got {ratio}"
+
+
+async def test_word_overlap_all_stopwords(db: aiosqlite.Connection):
+    """M339: all-stopword strings produce 0.0 overlap."""
+    from kiso.store import _word_overlap_ratio
+
+    assert _word_overlap_ratio("the a is", "and or but") == 0.0
+
+
+async def test_word_overlap_punctuation_stripped(db: aiosqlite.Connection):
+    """M339: punctuation doesn't break matching."""
+    from kiso.store import _word_overlap_ratio
+
+    ratio = _word_overlap_ratio("guidance.studio has form.", "guidance.studio has form")
+    assert ratio >= 0.99, f"Punctuation should not affect matching, got {ratio}"
+
+
+async def test_save_learning_dedup_paraphrase(db: aiosqlite.Connection):
+    """M339: paraphrases are deduped with lowered threshold."""
+    await create_session(db, "sess1")
+    r1 = await save_learning(db, "guidance.studio has a CAPTCHA on contact form", "sess1")
+    assert r1 != 0
+    r2 = await save_learning(db, "guidance.studio contact form has CAPTCHA detection", "sess1")
+    assert r2 == 0, "Paraphrase should be deduped"
+
+
 # --- M44e: update_task_usage sentinel (preserves llm_calls when omitted) ---
 
 
