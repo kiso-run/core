@@ -373,7 +373,7 @@ def _format_plan_outputs_for_msg(
     return "\n\n".join(parts)
 
 
-_REPLAN_OUTPUT_LIMIT = 2000      # chars per exec/skill task output
+_REPLAN_OUTPUT_LIMIT = 1000      # chars per exec/skill task output (M309: reduced from 2000)
 _REPLAN_SEARCH_OUTPUT_LIMIT = 2000  # chars per search task output
 _REPLAN_CONTEXT_CHAR_BUDGET = 20000  # ~5000 tokens total
 _LARGE_OUTPUT_THRESHOLD = 4096   # chars — above this, save to file
@@ -493,6 +493,8 @@ def _build_replan_context(
     replan_history: list[dict],
 ) -> str:
     """Build extra context for replanning."""
+    # M309: strip msg-type tasks — intent messages are noise for replanning
+    completed = [t for t in completed if t.get("type") != "msg"]
     parts: list[str] = []
 
     # Collect all retry hints from replan history — prominent section at top (M147)

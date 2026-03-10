@@ -1860,6 +1860,7 @@ async def _run_planning_loop(
                     db, config, session, user_role, enriched_message,
                     user_skills=user_skills,
                     on_retry=_on_replan_retry,
+                    is_replan=True,
                 ),
                 timeout=planner_timeout,
             )

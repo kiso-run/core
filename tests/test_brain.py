@@ -6132,6 +6132,104 @@ class TestM308FallbackModel:
         assert any("fallback" in r.lower() for r in retry_reasons)
 
 
+class TestM309ReplanContextDedup:
+    """M309: build_planner_messages excludes system_env from context_pool on replan,
+    and run_planner passes is_replan to validate_plan preserving extend_replan."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_system_env_excluded_from_context_pool_on_replan(self, db):
+        """On replan, system_env is removed from context_pool before briefer."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(briefer_enabled=True),
+            raw={},
+        )
+        captured_pool: list[dict] = []
+
+        async def _mock_briefer(cfg, role, msg, pool, **kw):
+            captured_pool.append(dict(pool))
+            return {"modules": ["core"], "skills": [], "context": "ctx",
+                    "output_indices": [], "relevant_tags": []}
+
+        with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            await build_planner_messages(
+                db, config, "sess1", "user", "test msg", is_replan=True,
+            )
+
+        assert len(captured_pool) == 1
+        assert "system_env" not in captured_pool[0]
+
+    async def test_system_env_present_on_initial_plan(self, db):
+        """On initial plan, system_env is included in context_pool."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(briefer_enabled=True),
+            raw={},
+        )
+        captured_pool: list[dict] = []
+
+        async def _mock_briefer(cfg, role, msg, pool, **kw):
+            captured_pool.append(dict(pool))
+            return {"modules": ["core"], "skills": [], "context": "ctx",
+                    "output_indices": [], "relevant_tags": []}
+
+        with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
+             patch("kiso.brain.discover_skills", return_value=[]):
+            await build_planner_messages(
+                db, config, "sess1", "user", "test msg", is_replan=False,
+            )
+
+        assert len(captured_pool) == 1
+        assert "system_env" in captured_pool[0]
+
+    async def test_run_planner_passes_is_replan_to_validate(self):
+        """run_planner(is_replan=True) passes is_replan to validate_plan,
+        preserving extend_replan in the plan."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(briefer_enabled=False),
+            raw={},
+        )
+        plan_with_extend = json.dumps({
+            "goal": "test", "secrets": None, "extend_replan": 2,
+            "tasks": [{"type": "msg", "detail": "hi", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _mock_llm(cfg, role, messages, **kw):
+            return plan_with_extend
+
+        async def _mock_build(db, cfg, sess, role, msg, **kw):
+            return [{"role": "user", "content": "test"}], [], []
+
+        with patch("kiso.brain.build_planner_messages", side_effect=_mock_build) as mock_build, \
+             patch("kiso.brain.call_llm", side_effect=_mock_llm):
+            result = await run_planner(
+                None, config, "sess1", "user", "test msg", is_replan=True,
+            )
+
+        # is_replan=True means extend_replan is preserved
+        assert result.get("extend_replan") == 2
+        # verify build_planner_messages received is_replan=True
+        _, kwargs = mock_build.call_args
+        assert kwargs.get("is_replan") is True
+
+
 # --- M272: Briefer omits irrelevant sections for messenger/worker ---
 
 

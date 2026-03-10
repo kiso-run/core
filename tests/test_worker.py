@@ -1443,14 +1443,14 @@ class TestBuildReplanContext:
         assert "Permission denied" in ctx
         assert "[exec] cat /etc/shadow" in ctx
 
-    def test_output_truncated_to_2000(self):
+    def test_output_truncated_to_limit(self):
         long_output = "x" * 5000
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
         ctx = _build_replan_context(completed, [], "broke", [])
         # Output should be truncated with "... (truncated)" marker
         assert "... (truncated)" in ctx
-        # Should NOT contain the full 5000 chars
-        assert "x" * 2001 not in ctx
+        # Should NOT contain more than _REPLAN_OUTPUT_LIMIT (1000) chars
+        assert "x" * 1001 not in ctx
 
     def test_output_under_limit_not_truncated(self):
         output = "short output"
@@ -1460,18 +1460,31 @@ class TestBuildReplanContext:
         assert "truncated" not in ctx
 
     def test_smart_truncate_at_newline(self):
-        # 3 lines — the 3rd line pushes past 2000 chars
-        line1 = "a" * 900 + "\n"
-        line2 = "b" * 900 + "\n"
-        line3 = "c" * 900
+        # 3 lines — the 3rd line pushes past _REPLAN_OUTPUT_LIMIT (1000 chars)
+        line1 = "a" * 400 + "\n"
+        line2 = "b" * 400 + "\n"
+        line3 = "c" * 400
         long_output = line1 + line2 + line3
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
         ctx = _build_replan_context(completed, [], "broke", [])
         # Should include line1 + line2 but truncate at newline before line3
-        assert "a" * 900 in ctx
-        assert "b" * 900 in ctx
-        assert "c" * 900 not in ctx
+        assert "a" * 400 in ctx
+        assert "b" * 400 in ctx
+        assert "c" * 400 not in ctx
         assert "... (truncated)" in ctx
+
+    def test_msg_tasks_stripped_from_completed(self):
+        """M309: msg-type tasks are excluded from completed tasks in replan context."""
+        completed = [
+            {"type": "exec", "detail": "install", "status": "done", "output": "installed ok"},
+            {"type": "msg", "detail": "intent message", "status": "done", "output": "hello user"},
+            {"type": "skill", "detail": "run tool", "status": "done", "output": "result"},
+        ]
+        ctx = _build_replan_context(completed, [], "failed", [])
+        assert "install" in ctx
+        assert "run tool" in ctx
+        assert "intent message" not in ctx
+        assert "hello user" not in ctx
 
     def test_history_without_what_was_tried(self):
         """Handles legacy history entries without what_was_tried."""
@@ -6599,15 +6612,15 @@ class TestBuildReplanContextSearchLimit:
         assert "... (truncated)" in context
         assert "x" * 2001 not in context
 
-    def test_exec_output_truncated_at_2000(self):
-        """Exec task output uses 2000 char limit in replan context."""
+    def test_exec_output_truncated_at_limit(self):
+        """Exec task output uses _REPLAN_OUTPUT_LIMIT (1000) char limit in replan context."""
         long_output = "x" * 5000
         completed = [
             {"type": "exec", "detail": "run command", "status": "done", "output": long_output},
         ]
         context = _build_replan_context(completed, [], "replan reason", [])
         assert "... (truncated)" in context
-        assert "x" * 2001 not in context
+        assert "x" * 1001 not in context
 
     def test_budget_overflow_summarizes(self):
         """Tasks exceeding char budget are summarized as one-liners."""

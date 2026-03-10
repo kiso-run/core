@@ -721,6 +721,7 @@ async def build_planner_messages(
     new_message: str,
     user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
+    is_replan: bool = False,
 ) -> tuple[list[dict], list[str], list[dict]]:
     """Build the message list for the planner LLM call.
 
@@ -740,6 +741,11 @@ async def build_planner_messages(
         await _gather_planner_context(
             db, config, session, user_role, new_message, paraphrased_context,
         )
+
+    # M309: system env doesn't change between plan and replan — exclude from
+    # briefer context pool to reduce redundant tokens.
+    if is_replan:
+        context_pool.pop("system_env", None)
 
     # Skill discovery — rescan on each planner call
     installed = discover_skills()
@@ -964,6 +970,7 @@ async def run_planner(
     paraphrased_context: str | None = None,
     on_context_ready: Callable | None = None,
     on_retry: Callable[[int, int, str], None] | None = None,
+    is_replan: bool = False,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -980,7 +987,7 @@ async def run_planner(
     """
     messages, installed_names, installed_info = await build_planner_messages(
         db, config, session, user_role, new_message, user_skills=user_skills,
-        paraphrased_context=paraphrased_context,
+        paraphrased_context=paraphrased_context, is_replan=is_replan,
     )
     if on_context_ready:
         await on_context_ready()
@@ -992,7 +999,7 @@ async def run_planner(
         plan = await _retry_llm_with_validation(
             config, "planner", messages, PLAN_SCHEMA,
             lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
-                                    installed_skills_info=skills_by_name),
+                                    installed_skills_info=skills_by_name, is_replan=is_replan),
             PlanError, "Plan",
             session=session,
             on_retry=on_retry,
