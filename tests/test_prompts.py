@@ -84,6 +84,11 @@ class TestMessengerCriticalRules:
         assert "Voice rules" in self.prompt
         assert 'NEVER say "I ran"' in self.prompt
 
+    def test_m327_upcoming_actions_first_person(self):
+        """M327: upcoming actions use first person, not third person."""
+        assert "Upcoming actions: first person" in self.prompt
+        assert "The user sees you as one entity" in self.prompt
+
     def test_language_purity(self):
         """M278: no language mixing."""
         assert "Language purity" in self.prompt
