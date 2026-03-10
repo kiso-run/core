@@ -702,29 +702,29 @@ def render_llm_call_input_panel(call: dict, caps: TermCaps) -> str:
 
 def _format_curator_output(parsed: dict, esc) -> str:
     """Format curator evaluations for readable verbose output."""
+    from kiso.brain import CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD
+
     lines: list[str] = []
     for ev in parsed["evaluations"]:
         verdict = ev.get("verdict", "?")
         lid = ev.get("learning_id", "?")
-        if verdict == "promote":
+        if verdict == CURATOR_VERDICT_PROMOTE:
             fact = ev.get("fact", "")
-            tags = ev.get("tags") or []
-            entity = ev.get("entity_name") or ""
-            kind = ev.get("entity_kind") or ""
-            tags_str = ", ".join(tags) if tags else ""
-            entity_str = f"{entity} ({kind})" if entity else ""
             lines.append(f"[bold green]promote[/bold green] [dim]\\[id={lid}][/dim] {esc(fact)}")
             meta: list[str] = []
-            if entity_str:
-                meta.append(f"entity: {esc(entity_str)}")
-            if tags_str:
-                meta.append(f"tags: {esc(tags_str)}")
+            entity = ev.get("entity_name")
+            if entity:
+                kind = ev.get("entity_kind", "")
+                meta.append(f"entity: {esc(entity)} ({esc(kind)})")
+            tags = ev.get("tags")
+            if tags:
+                meta.append(f"tags: {esc(', '.join(tags))}")
             if meta:
                 lines.append(f"  [dim]{' | '.join(meta)}[/dim]")
-        elif verdict == "ask":
+        elif verdict == CURATOR_VERDICT_ASK:
             question = ev.get("question", "")
             lines.append(f"[bold yellow]ask[/bold yellow]     [dim]\\[id={lid}][/dim] {esc(question)}")
-        elif verdict == "discard":
+        elif verdict == CURATOR_VERDICT_DISCARD:
             reason = ev.get("reason", "")
             lines.append(f"[dim]discard  \\[id={lid}] {esc(reason)}[/dim]")
         else:

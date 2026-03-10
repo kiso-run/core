@@ -492,9 +492,12 @@ response_format = {
                             "fact": {"type": ["string", "null"]},
                             "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
                             "question": {"type": ["string", "null"]},
-                            "reason": {"type": ["string", "null"]}
+                            "reason": {"type": "string"},
+                            "tags": {"anyOf": [{"type": "array", "items": {"type": "string"}, "maxItems": 5}, {"type": "null"}]},
+                            "entity_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "entity_kind": {"anyOf": [{"type": "string", "enum": ["website", "company", "tool", "person", "project", "concept"]}, {"type": "null"}]}
                         },
-                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason"],
+                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags", "entity_name", "entity_kind"],
                         "additionalProperties": False
                     }
                 }
@@ -510,7 +513,7 @@ response_format = {
 
 | Verdict | Meaning | Effect |
 |---|---|---|
-| `promote` | Learning is a confirmed, important fact | `fact` + `category` become a new entry in `store.facts`. `category` determines session scoping: `"user"` facts are session-scoped; `"project"`, `"tool"`, `"general"` facts are global. Learning marked `promoted`. |
+| `promote` | Learning is a confirmed, important fact | `fact` + `category` become a new entry in `store.facts`. `tags` (1-5) enable semantic retrieval. `entity_name` + `entity_kind` link the fact to an entity record (created if new). `category` determines session scoping: `"user"` facts are session-scoped; `"project"`, `"tool"`, `"general"` facts are global. Learning marked `promoted`. |
 | `ask` | Uncertain but potentially important | `question` field becomes a new entry in `store.pending` (scope = session). The planner will ask the user for confirmation. |
 | `discard` | Trivial, transient, or already covered | Learning marked `discarded`. `reason` explains why. |
 

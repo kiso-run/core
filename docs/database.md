@@ -134,6 +134,7 @@ CREATE TABLE facts (
     confidence REAL DEFAULT 1.0,    -- 0.0–1.0; decays with disuse, raises with use
     last_used  TEXT,                -- ISO timestamp of last inclusion in planner context
     use_count  INTEGER DEFAULT 0,   -- how many times included in a plan context
+    entity_id  INTEGER REFERENCES entities(id),  -- linked entity (null for unlinked facts)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -156,6 +157,35 @@ id=1  content="Project uses Flask 2.3"  category="project"  confidence=0.9  sour
 id=2  content="Team: marco (backend)"   category="user"     confidence=1.0  source="curator"
 id=3  content="snake_case conventions"  category="project"  confidence=0.6  source="manual"
 ```
+
+### entities
+
+Named subjects that facts can be linked to. Each entity has a canonical name and a kind.
+
+```sql
+CREATE TABLE entities (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE,  -- canonical lowercase name (e.g. "flask", "guidance.studio")
+    kind       TEXT NOT NULL,         -- "website" | "company" | "tool" | "person" | "project" | "concept"
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Entity names are normalized: lowercase, stripped of `www.`/`http(s)://` prefixes and trailing slashes. The curator assigns `entity_name` + `entity_kind` for each promoted fact; `find_or_create_entity()` ensures dedup by canonical name.
+
+### fact_tags
+
+Tags for semantic retrieval of facts. Each fact can have 1-5 tags assigned by the curator.
+
+```sql
+CREATE TABLE fact_tags (
+    fact_id INTEGER NOT NULL REFERENCES facts(id),
+    tag     TEXT NOT NULL,
+    PRIMARY KEY (fact_id, tag)
+);
+```
+
+Tags are lowercase, hyphenated (e.g. `"tech-stack"`, `"browser"`). The briefer selects `relevant_tags` to retrieve additional facts beyond FTS5 search results. Similarly, `relevant_entities` retrieves all facts linked to selected entities.
 
 ### facts_archive
 

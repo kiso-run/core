@@ -80,7 +80,7 @@ Toggle with `/verbose-on` and `/verbose-off` during a chat session. When enabled
 
 - **Messages sent**: each message with its role label (`[system]`, `[user]`, etc.)
 - **Thinking/reasoning** (if present): models that return reasoning content — via the API-level `reasoning_content` field (DeepSeek, OpenRouter) or `<think>`/`<thinking>` tags embedded in the response — get a separate `🤔 reasoning` section displayed in yellow between the input and the response. Thinking is extracted at the LLM layer (`kiso/text.py`) and stored in each call's usage entry, so it is available both in verbose panels and in the messenger output.
-- **Response received**: the full LLM response (with thinking tags already stripped), with JSON responses pretty-printed
+- **Response received**: the full LLM response (with thinking tags already stripped), with JSON responses pretty-printed. Curator output uses a human-readable format showing verdict, fact, entity (name + kind), and tags for each evaluation instead of raw JSON.
 
 Example verbose flow for an exec task:
 
