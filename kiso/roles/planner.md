@@ -53,8 +53,10 @@ Skills efficiency:
 
 <!-- MODULE: web -->
 Web interaction:
-- **Understand content:** `search` task with URL in detail (returns synthesis, not raw HTML).
+- **Understand content:** prefer browser `text` action if skill installed (extracts cleaned page content). Fallback: `search` task with URL (returns synthesis).
 - **Interact with page** (navigate, click, fill, screenshot): requires `browser` skill. Install first if missing. Do NOT use search for interaction.
+- **Browser state persists** between skill calls in the same session. Do NOT re-navigate to URLs already loaded. Element indices from previous snapshots remain valid until page navigation.
+- **CAPTCHA:** if a snapshot reports CAPTCHA elements, do NOT attempt form submission. Generate a msg task explaining that the form requires human verification.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal. No extra steps beyond what was asked.
 

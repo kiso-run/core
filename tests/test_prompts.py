@@ -71,6 +71,19 @@ class TestPlannerCriticalRules:
         """M286: explicit language handling rule."""
         assert "Msg detail:" in self.prompt
 
+    def test_m328_web_module_browser_state(self):
+        """M328: web module mentions browser state persistence."""
+        assert "Browser state persists" in self.prompt
+
+    def test_m328_web_module_captcha(self):
+        """M328: web module has CAPTCHA awareness."""
+        assert "CAPTCHA" in self.prompt
+        assert "human verification" in self.prompt
+
+    def test_m328_web_module_text_action(self):
+        """M328: web module prefers browser text action."""
+        assert "browser `text` action" in self.prompt
+
 
 class TestMessengerCriticalRules:
     """Critical messenger rules that must not be removed."""
