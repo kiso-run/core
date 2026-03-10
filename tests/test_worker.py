@@ -1138,7 +1138,7 @@ class TestReviewTask:
 
     async def test_stores_learning(self, db):
         config = _make_config()
-        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Flask"]}
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Project uses Flask framework"]}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn):
@@ -1147,7 +1147,7 @@ class TestReviewTask:
         cur = await db.execute("SELECT content FROM learnings WHERE session = 'sess1'")
         rows = await cur.fetchall()
         assert len(rows) == 1
-        assert rows[0][0] == "Uses Flask"
+        assert rows[0][0] == "Project uses Flask framework"
 
     async def test_no_learning_when_null(self, db):
         config = _make_config()
@@ -1163,7 +1163,7 @@ class TestReviewTask:
     async def test_learn_string_wrapped(self, db):
         """If reviewer returns learn as a plain string (malformed), wrap it in a list."""
         config = _make_config()
-        review_str_learn = {"status": "ok", "reason": None, "learn": "Uses Flask"}
+        review_str_learn = {"status": "ok", "reason": None, "learn": "Project uses Flask framework"}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_str_learn):
@@ -1172,7 +1172,7 @@ class TestReviewTask:
         cur = await db.execute("SELECT content FROM learnings WHERE session = 'sess1'")
         rows = await cur.fetchall()
         assert len(rows) == 1
-        assert rows[0][0] == "Uses Flask"
+        assert rows[0][0] == "Project uses Flask framework"
 
     async def test_includes_stderr_in_output(self, db):
         config = _make_config()
@@ -1230,7 +1230,7 @@ class TestReviewTask:
 
     async def test_review_replan_fields_persisted(self, db):
         config = _make_config()
-        replan_with_learn = {"status": "replan", "reason": "Bad output", "learn": ["Needs retry"]}
+        replan_with_learn = {"status": "replan", "reason": "Bad output", "learn": ["Task needs a different retry approach"]}
         tid = await self._make_task(db, "bad cmd", "ok")
         task_row = {"id": tid, "detail": "bad cmd", "expect": "ok", "output": "", "stderr": "err"}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=replan_with_learn):
@@ -1242,7 +1242,7 @@ class TestReviewTask:
         row = await cur.fetchone()
         assert row[0] == "replan"
         assert row[1] == "Bad output"
-        assert row[2] == "Needs retry"
+        assert row[2] == "Task needs a different retry approach"
 
 
     async def test_review_task_empty_output_discards_learnings(self, db):
@@ -1276,7 +1276,7 @@ class TestReviewTask:
     async def test_review_task_nonempty_output_keeps_learnings(self, db):
         """M111d: learnings are kept when output has real content."""
         config = _make_config()
-        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Flask"]}
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Project uses Flask framework"]}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok",
                     "output": "Flask==2.0", "stderr": ""}
@@ -2139,7 +2139,7 @@ class TestExecutePlanAudit:
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Flask"]}
+        review_with_learn = {"status": "ok", "reason": None, "learn": ["Project uses Flask framework"]}
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_learn), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \

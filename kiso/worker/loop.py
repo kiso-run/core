@@ -55,6 +55,7 @@ from kiso.brain import (
     run_reviewer,
     run_summarizer,
     prepare_reviewer_output,
+    clean_learn_items,
 )
 from kiso.config import Config, setting_bool, setting_float, setting_int
 from kiso.llm import (
@@ -643,6 +644,8 @@ async def _review_task(
             log.warning("Discarding %d learning(s) for task %d — empty output",
                         len(learn_items), task_row.get("id", 0))
         learn_items = []
+    # Filter low-quality items (M320)
+    learn_items = clean_learn_items(learn_items)
     has_learning = bool(learn_items)
     for item in learn_items:
         await save_learning(db, item, session)

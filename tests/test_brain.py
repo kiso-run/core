@@ -157,6 +157,64 @@ def test_reviewer_prompt_ephemeral_rule():
     assert "installed/loaded successfully" in prompt
 
 
+# --- M320: clean_learn_items ---
+
+
+class TestCleanLearnItems:
+    def test_filters_short_items(self):
+        from kiso.brain import clean_learn_items
+        result = clean_learn_items(["too short", "This is a valid learning about guidance.studio"])
+        assert result == ["This is a valid learning about guidance.studio"]
+
+    def test_filters_transient_installed(self):
+        from kiso.brain import clean_learn_items
+        result = clean_learn_items(["browser skill installed successfully"])
+        assert result == []
+
+    def test_filters_transient_loaded(self):
+        from kiso.brain import clean_learn_items
+        result = clean_learn_items(["guidance.studio homepage loaded successfully"])
+        assert result == []
+
+    def test_filters_ephemeral_indices(self):
+        from kiso.brain import clean_learn_items
+        result = clean_learn_items([
+            "The contact form includes Name [8], Email [9], and details [10]."
+        ])
+        assert result == []
+
+    def test_preserves_valid_learnings(self):
+        from kiso.brain import clean_learn_items
+        items = [
+            "guidance.studio has a contact form at /venture-launchpad",
+            "Python project uses pytest for testing",
+        ]
+        result = clean_learn_items(items)
+        assert result == items
+
+    def test_boundary_exactly_15_chars(self):
+        from kiso.brain import clean_learn_items
+        item = "exactly15chars!!"  # 16 chars
+        assert len(item) >= 15
+        result = clean_learn_items([item])
+        assert result == [item]
+
+    def test_single_index_preserved(self):
+        """A single [N] is fine — only 2+ triggers the filter."""
+        from kiso.brain import clean_learn_items
+        result = clean_learn_items(["guidance.studio uses port [443] for HTTPS"])
+        assert len(result) == 1
+
+    def test_empty_list(self):
+        from kiso.brain import clean_learn_items
+        assert clean_learn_items([]) == []
+
+    def test_ran_successfully_filtered(self):
+        from kiso.brain import clean_learn_items
+        result = clean_learn_items(["the test suite ran successfully on the project"])
+        assert result == []
+
+
 # --- validate_plan ---
 
 class TestValidatePlan:

@@ -1199,6 +1199,41 @@ def validate_review(review: dict) -> list[str]:
     return errors
 
 
+# --- Learning quality filters (M320) ---
+
+_EPHEMERAL_LEARN_RE = re.compile(
+    r"\[\d+\].*\[\d+\]"  # 2+ browser element indices like [8], [9]
+)
+_TRANSIENT_LEARN_RE = re.compile(
+    r"\b(installed|loaded|ran|started|completed|finished)\s+successfully\b",
+    re.IGNORECASE,
+)
+_MIN_LEARN_LEN = 15
+
+
+def clean_learn_items(items: list[str]) -> list[str]:
+    """Filter out low-quality learn items from a reviewer response.
+
+    Removes items that are:
+    - Too short (< 15 chars) — fragmentary
+    - Contain 2+ browser element indices ``[N]`` — ephemeral session data
+    - Match transient patterns like "X installed successfully"
+    """
+    kept: list[str] = []
+    for item in items:
+        if len(item) < _MIN_LEARN_LEN:
+            log.debug("Learn item filtered (too short): %s", item)
+            continue
+        if _EPHEMERAL_LEARN_RE.search(item):
+            log.debug("Learn item filtered (ephemeral indices): %s", item[:80])
+            continue
+        if _TRANSIENT_LEARN_RE.search(item):
+            log.debug("Learn item filtered (transient): %s", item[:80])
+            continue
+        kept.append(item)
+    return kept
+
+
 _EXIT_CODE_NOTES: dict[int, str] = {
     1: "Note: exit 1 from grep/which/find/dpkg means 'no matches found', not an error.",
     2: "Note: exit 2 often indicates a usage/syntax error in the command.",
