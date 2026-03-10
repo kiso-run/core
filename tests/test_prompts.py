@@ -47,7 +47,7 @@ class TestPlannerCriticalRules:
 
     def test_browser_workflow_via_usage_guide(self):
         """M275: planner follows skill usage guides."""
-        assert "usage guide" in self.prompt.lower()
+        assert "guide:" in self.prompt.lower()
         assert "follow" in self.prompt.lower()
 
     def test_language_universal(self):
@@ -69,7 +69,7 @@ class TestPlannerCriticalRules:
 
     def test_language_handling(self):
         """M286: explicit language handling rule."""
-        assert "Language handling" in self.prompt
+        assert "Msg detail:" in self.prompt
 
 
 class TestMessengerCriticalRules:

@@ -218,11 +218,11 @@ class TestBrieferScenarios:
 
         system = msgs[0]["content"]
         assert "Web interaction:" in system
-        assert "File-based data flow" in system
-        assert "Scripting:" in system
+        assert "Download/fetch content" in system
+        assert "One-liner execution" in system
         # Replan and skill_recovery NOT included
         assert "extend_replan" not in system
-        assert "Broken skill recovery" not in system
+        assert "Broken skill deps" not in system
 
 
 # ---------------------------------------------------------------------------

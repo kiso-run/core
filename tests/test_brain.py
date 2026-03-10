@@ -2458,10 +2458,10 @@ class TestExecTranslatorPromptContent:
 
 class TestPlannerPromptContent:
     def test_planner_prompt_contains_reference_docs_instruction(self):
-        """The default planner prompt should mention reference docs."""
+        """The default planner prompt should mention confirmed facts and reuse."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "reference doc" in prompt.lower()
-        assert "plan_outputs" in prompt
+        assert "confirmed facts" in prompt.lower()
+        assert "never re-investigate" in prompt.lower() or "re-verify" in prompt.lower()
 
     def test_planner_prompt_contains_replan_task_type(self):
         """The default planner prompt should mention the replan task type."""
@@ -2486,14 +2486,13 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "filesystem path" in prompt
         # Files served at URLs — must not use the URL as a path
-        assert "never use the url" in prompt.lower() or "served at url" in prompt.lower()
+        assert "never use urls as filesystem paths" in prompt.lower()
 
     def test_m45_plugin_install_uses_registry_not_search(self):
         """M45: planner plugin-install appendix must forbid web search for kiso plugin discovery."""
         prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "NEVER use" in prompt or "NEVER" in prompt
+        assert "never kiso skill search" in prompt.lower()
         assert "registry" in prompt.lower()
-        assert "web search" in prompt.lower()
 
     def test_m45_plugin_install_rule_is_mandatory(self):
         """M45: plugin installation appendix must be marked MANDATORY."""
@@ -2505,9 +2504,9 @@ class TestPlannerPromptContent:
         prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "raw.githubusercontent.com" in prompt
         assert "kiso.toml" in prompt
-        # Step ordering: curl kiso.toml (step 3) must come before "kiso connector install {name}" (step 6).
+        # Step ordering: curl kiso.toml must come before "kiso skill install {name}".
         toml_pos = prompt.index("kiso.toml")
-        install_pos = prompt.index("kiso connector install {name}")
+        install_pos = prompt.index("kiso skill install {name}")
         assert toml_pos < install_pos
 
     def test_m46_plugin_install_includes_env_description_in_msg(self):
@@ -2517,10 +2516,9 @@ class TestPlannerPromptContent:
         assert "description from kiso.toml" in prompt.lower() or "descriptions from kiso.toml" in prompt.lower()
 
     def test_m102a_plugin_discovery_never_single_type_search(self):
-        """M102a: planner must NEVER use single-type search for initial plugin discovery."""
+        """M102a: planner must never use kiso skill search for initial plugin discovery."""
         prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "NEVER" in prompt
-        assert "kiso skill search" in prompt
+        assert "never kiso skill search" in prompt.lower()
 
     def test_m4_skill_reuse_rule(self):
         """M4: planner must use listed skills directly without re-verification."""
@@ -2531,14 +2529,13 @@ class TestPlannerPromptContent:
     def test_m4_no_reinstall_listed_skills(self):
         """M4: planner must not reinstall skills already in Skills section."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "reinstall" in prompt
-        assert "already-listed" in prompt
+        assert "no verification or reinstall needed" in prompt
 
     def test_m4_replan_no_reverify(self):
-        """M4: planner must build on confirmed facts from plan_outputs, not re-verify."""
+        """M4: planner must build on confirmed facts, not re-verify."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "confirmed facts" in prompt.lower() or "confirmed fact" in prompt.lower()
-        assert "plan_outputs" in prompt
+        assert "never re-investigate" in prompt.lower() or "re-verify" in prompt.lower()
 
     def test_m5_env_var_rule(self):
         """M5: planner must only ask for env vars declared in [kiso.env]."""
@@ -2554,19 +2551,19 @@ class TestPlannerPromptContent:
     def test_m142_file_based_data_flow(self):
         """M142: planner prompt requires file-based data flow for large outputs."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "save to a file" in prompt
-        assert "Never embed raw data in task details" in prompt
+        assert "save to file" in prompt
+        assert "never embed raw data in details" in prompt.lower()
 
     def test_m143_strategy_diversification(self):
         """M143: planner must diversify strategy after repeated failures."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "fundamentally different strategy" in prompt
-        assert "Never submit the same failing approach a third time" in prompt
+        assert "MUST try a fundamentally different strategy" in prompt
 
     def test_m144_detail_natural_language(self):
         """M144: planner prompt forbids commands/data in detail field."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "never embed shell commands" in prompt.lower() or "never embed shell commands" in prompt
+        assert "never embed commands" in prompt.lower()
 
     def test_m144_long_exec_detail_rejected(self):
         """M144: exec task with >500 char detail is rejected."""
@@ -2592,10 +2589,8 @@ class TestM165SkillArgsExample:
 
     def test_planner_prompt_has_skill_args_example(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        # M181: example uses generic names, not hardcoded "browser"
-        assert '"param": "value"' in prompt or '\\"param\\": \\"value\\"' in prompt
         assert "JSON-encoded STRING" in prompt
-        assert "not a raw object" in prompt
+        assert "not raw object" in prompt
 
     def test_planner_prompt_no_hardcoded_browser_example(self):
         """M181: skill example must not hardcode 'browser' as skill name."""
@@ -2611,7 +2606,7 @@ class TestM180BrokenSkillRecoveryGuidance:
 
     def test_planner_prompt_has_broken_skill_guidance(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Broken skill recovery" in prompt
+        assert "Broken skill deps" in prompt
         assert "kiso skill remove" in prompt
         assert "kiso skill install" in prompt
         assert "[BROKEN]" in prompt
@@ -2638,15 +2633,15 @@ class TestM192PlannerNavigateAndInstallGuard:
 
     def test_navigate_requires_browser_skill(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "requires the `browser` skill" in prompt
+        assert "requires `browser` skill" in prompt
 
     def test_search_not_for_page_interaction(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "search queries search engines, not the actual page" in prompt
+        assert "Do NOT use search for interaction" in prompt
 
     def test_cannot_use_uninstalled_skill(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "CANNOT use a skill that is not listed" in prompt
+        assert "CANNOT be used" in prompt
 
     def test_install_then_replan_pattern(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -2662,7 +2657,7 @@ class TestM207CompositeRequestDecomposition:
 
     def test_composite_requests_no_extra_steps(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "do not add extra steps" in prompt.lower()
+        assert "no extra steps" in prompt.lower()
 
 
 class TestM199PluginInstallIdempotent:
@@ -2674,7 +2669,7 @@ class TestM199PluginInstallIdempotent:
 
     def test_no_need_to_check_first(self):
         prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "do NOT need to check" in prompt.lower() or "do not need to check" in prompt.lower()
+        assert "no need to check" in prompt.lower()
 
 
 class TestM166ValidatePlanSkillArgs:
@@ -2809,8 +2804,7 @@ class TestM73cPlannerUserManagement:
         """kiso user commands must appear in the kiso-commands appendix."""
         prompt = _load_modular_prompt("planner", ["kiso_commands"])
         assert "kiso user add" in prompt
-        assert "kiso user remove" in prompt
-        assert "kiso user list" in prompt
+        assert "kiso user remove|list" in prompt
         assert "kiso user alias" in prompt
 
     def test_user_management_admin_only_label(self):
@@ -2846,7 +2840,7 @@ class TestM73cPlannerUserManagement:
         """Planner user-mgmt appendix must ask for connector aliases."""
         prompt = _load_modular_prompt("planner", ["user_mgmt"])
         assert "connector" in prompt.lower()
-        assert "System Environment" in prompt
+        assert "aliases" in prompt.lower()
 
 
 # --- M82: planner ask-then-add workflow (functional) ---
@@ -3132,9 +3126,9 @@ class TestM234PlannerAtomicOperations:
 
     def test_planner_prompt_atomic_operations_rule(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Atomic operations" in prompt
+        assert "atomic" in prompt.lower()
         assert "kiso skill install" in prompt
-        assert "Never decompose" in prompt
+        assert "never decompose" in prompt.lower()
 
     def test_planner_prompt_atomic_covers_package_managers(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -3173,8 +3167,8 @@ class TestM286PlannerLanguageUniversal:
 
     def test_planner_language_handling_rule(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Language handling" in prompt
-        assert "messenger handles translation" in prompt
+        assert "Msg detail:" in prompt
+        assert "messenger translates" in prompt.lower()
 
 
 class TestM235PlannerScope:
@@ -3186,7 +3180,7 @@ class TestM235PlannerScope:
 
     def test_planner_prompt_replan_not_for_history(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "NOT for chaining unrelated objectives" in prompt
+        assert "background context only" in prompt.lower()
 
 
 # --- M33: retry_hint in REVIEW_SCHEMA ---
@@ -3321,7 +3315,7 @@ class TestM47PlannerIdentityAndTwoLayer:
         """expect must be task-scoped, not plan-goal-scoped."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "THIS task's output" in prompt
-        assert "overall plan goal" in prompt
+        assert "not the overall goal" in prompt
 
 
 class TestM47ReviewerPlanContext:
@@ -3567,10 +3561,9 @@ class TestM47PlannerExpectScopingEdgeCases:
     """Edge cases for planner expect scoping guidance."""
 
     def test_planner_prompt_maintenance_commands_mentioned(self):
-        """Prompt explicitly calls out maintenance commands as edge case for expect."""
+        """Prompt mentions apt-get install as a known command pattern."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        # apt-get install -f or similar maintenance commands should be mentioned
-        assert "apt-get install -f" in prompt or "maintenance" in prompt or "cleanup" in prompt
+        assert "apt-get install" in prompt
 
     def test_planner_prompt_clarification_rule_not_just_unclear(self):
         """New rule is more than 'if unclear, ask' — requires unambiguous intent AND target."""
@@ -3622,7 +3615,7 @@ class TestM48PlannerMergedRules:
         """48c: single expect rule combines 'non-null' and 'task-specific' guidance."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "non-null" in prompt
-        assert "not the overall plan goal" in prompt or "task's output alone" in prompt
+        assert "not the overall goal" in prompt or "THIS task's output" in prompt
 
     def test_48c_no_redundant_standalone_nonnull_rule(self):
         """48c: old fragmented 'non-null expect field' standalone line must be gone."""
@@ -3633,7 +3626,7 @@ class TestM48PlannerMergedRules:
         """48c/M144: detail must be natural language, not commands/data."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "natural language" in prompt
-        assert "never embed shell commands" in prompt.lower()
+        assert "never embed commands" in prompt.lower()
 
     def test_48c_no_redundant_standalone_specific_rule(self):
         """48c: old fragmented 'exec task detail must be specific' standalone line must be gone."""
@@ -4419,8 +4412,8 @@ class TestM147PlannerActOnHints:
         from kiso.brain import _load_system_prompt, invalidate_prompt_cache
         invalidate_prompt_cache()
         prompt = _load_system_prompt("planner")
-        assert "Suggested Fixes" in prompt
-        assert "do not re-investigate" in prompt.lower() or "Do not re-investigate" in prompt
+        assert "reviewer fixes" in prompt.lower()
+        assert "never re-investigate" in prompt.lower() or "re-verify" in prompt.lower()
 
 
 # --- M148: Reviewer summary covers failures too ---
@@ -5012,28 +5005,28 @@ class TestLoadModularPrompt:
         result = _load_modular_prompt("planner", ["replan"])
         assert "extend_replan" in result
         assert "Strategy diversification" in result
-        assert "Act on reviewer fixes" in result
+        assert "reviewer fixes" in result
         # Others absent
         assert "Web interaction:" not in result
-        assert "Scripting:" not in result
+        assert "One-liner execution" not in result
 
     def test_planner_core_plus_scripting(self):
         """Loading core + scripting includes scripting rules."""
         result = _load_modular_prompt("planner", ["scripting"])
-        assert "Scripting:" in result
+        assert "One-liner execution" in result
         assert "python -c" in result
         assert "Web interaction:" not in result
 
     def test_planner_core_plus_skill_recovery(self):
-        """Loading core + skill_recovery includes deps.sh and broken skill rules."""
+        """Loading core + skill_recovery includes broken skill rules."""
         result = _load_modular_prompt("planner", ["skill_recovery"])
-        assert "deps.sh" in result
-        assert "Broken skill recovery" in result
+        assert "Broken skill deps" in result
+        assert "kiso skill remove" in result
 
     def test_planner_core_plus_data_flow(self):
         """Loading core + data_flow includes file-based data flow rules."""
         result = _load_modular_prompt("planner", ["data_flow"])
-        assert "File-based data flow" in result
+        assert "save to file" in result
         assert "truncated at 4KB" in result
 
     def test_planner_core_plus_planning_rules(self):
@@ -5060,7 +5053,7 @@ class TestLoadModularPrompt:
         """Loading core + skills_rules includes skill efficiency rules."""
         result = _load_modular_prompt("planner", ["skills_rules"])
         assert "Skills efficiency:" in result
-        assert "Atomic operations" in result
+        assert "atomic" in result
         assert "Task ordering" in result
         # Other modules absent
         assert "Kiso-native first" not in result
@@ -5093,10 +5086,10 @@ class TestLoadModularPrompt:
         # All key sections present
         assert "Kiso planner" in modular
         assert "Web interaction:" in modular
-        assert "Scripting:" in modular
+        assert "One-liner execution" in modular
         assert "extend_replan" in modular
-        assert "Broken skill recovery" in modular
-        assert "File-based data flow" in modular
+        assert "Broken skill deps" in modular
+        assert "save to file" in modular
         assert "Skills efficiency:" in modular
         assert "Kiso-native first" in modular
         assert "Recent Messages" in modular
@@ -5116,10 +5109,10 @@ class TestLoadModularPrompt:
         """Loading multiple modules concatenates them with core."""
         result = _load_modular_prompt("planner", ["web", "scripting", "data_flow"])
         assert "Web interaction:" in result
-        assert "Scripting:" in result
-        assert "File-based data flow" in result
+        assert "One-liner execution" in result
+        assert "save to file" in result
         assert "extend_replan" not in result
-        assert "Broken skill recovery" not in result
+        assert "Broken skill deps" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -5760,10 +5753,10 @@ class TestM261PromptSizeReduction:
         # Key content from each module should be present
         assert "Kiso planner" in all_modules  # core
         assert "Kiso-native first" in all_modules  # kiso_native
-        assert "task `detail` must be natural language" in all_modules  # planning_rules
-        assert "Atomic operations" in all_modules  # skills_rules
+        assert "natural language describing WHAT" in all_modules  # planning_rules
+        assert "atomic" in all_modules  # skills_rules
         assert "NEVER use `apt-get install`" in all_modules  # skill_recovery
-        assert "File-based data flow" in all_modules  # data_flow
+        assert "save to file" in all_modules  # data_flow
         assert "Web interaction" in all_modules  # web
         assert "One-liner execution" in all_modules  # scripting
         assert "extend_replan" in all_modules  # replan
