@@ -16,6 +16,7 @@ from kiso.store import (
     create_plan,
     create_session,
     create_task,
+    get_all_entities,
     get_facts,
     get_pending_items,
     get_plan_for_session,
@@ -3671,6 +3672,85 @@ class TestApplyCuratorResult:
         assert (await cur.fetchone())[0] == "discarded"
         items = await get_pending_items(db, "sess1")
         assert len(items) == 0
+
+
+# --- M344: _apply_curator_result — entity creation + fact linking ---
+
+
+class TestM344CuratorEntityFlow:
+    """M344: promote creates entity and links fact."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_promote_creates_entity_and_links_fact(self, db):
+        lid = await save_learning(db, "Flask is used for the web API", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote",
+             "fact": "Project uses Flask for web API",
+             "question": None, "reason": "Good",
+             "entity_name": "flask", "entity_kind": "tool"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        facts = await get_facts(db)
+        assert len(facts) == 1
+        assert facts[0]["entity_id"] is not None
+        entities = await get_all_entities(db)
+        assert len(entities) == 1
+        assert entities[0]["name"] == "flask"
+        assert entities[0]["kind"] == "tool"
+
+    async def test_promote_reuses_existing_entity(self, db):
+        from kiso.store import find_or_create_entity
+        eid = await find_or_create_entity(db, "flask", "tool")
+        lid = await save_learning(db, "Flask uses Jinja2 templates", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote",
+             "fact": "Flask uses Jinja2 templating engine",
+             "question": None, "reason": "Good",
+             "entity_name": "flask", "entity_kind": "tool"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        entities = await get_all_entities(db)
+        assert len(entities) == 1
+        facts = await get_facts(db)
+        assert facts[0]["entity_id"] == eid
+
+    async def test_promote_without_entity_fields_still_works(self, db):
+        """Graceful fallback when entity fields are missing."""
+        lid = await save_learning(db, "Something important to know", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid, "verdict": "promote",
+             "fact": "Something important to know",
+             "question": None, "reason": "Good"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        facts = await get_facts(db)
+        assert len(facts) == 1
+        assert facts[0]["entity_id"] is None
+
+    async def test_multiple_entities_created(self, db):
+        lid1 = await save_learning(db, "Uses Flask web framework", "sess1")
+        lid2 = await save_learning(db, "Docker is used for deployment", "sess1")
+        result = {"evaluations": [
+            {"learning_id": lid1, "verdict": "promote",
+             "fact": "Project uses Flask web framework",
+             "question": None, "reason": "Good",
+             "entity_name": "flask", "entity_kind": "tool"},
+            {"learning_id": lid2, "verdict": "promote",
+             "fact": "Docker is used for deployment",
+             "question": None, "reason": "Good",
+             "entity_name": "docker", "entity_kind": "tool"},
+        ]}
+        await _apply_curator_result(db, "sess1", result)
+        entities = await get_all_entities(db)
+        assert len(entities) == 2
+        names = {e["name"] for e in entities}
+        assert names == {"flask", "docker"}
 
 
 # --- M9: Knowledge processing in run_worker ---

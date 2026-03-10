@@ -1693,6 +1693,18 @@ class TestRunCurator:
         assert len(result["evaluations"]) == 1
         assert result["evaluations"][0]["verdict"] == "promote"
 
+    async def test_entities_forwarded_to_messages(self, config):
+        """M344: run_curator forwards available_entities to build_curator_messages."""
+        learnings = [{"id": 1, "content": "Uses Python"}]
+        entities = [{"name": "flask", "kind": "tool"}]
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_CURATOR) as mock_llm:
+            await run_curator(config, learnings, available_entities=entities)
+        # The user message should contain the entities section
+        messages = mock_llm.call_args[1].get("messages") or mock_llm.call_args[0][2]
+        user_msg = [m for m in messages if m["role"] == "user"][0]
+        assert "flask" in user_msg["content"]
+        assert "## Existing Entities" in user_msg["content"]
+
     async def test_validation_retry(self, config):
         learnings = [{"id": 1, "content": "Uses Python"}]
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,

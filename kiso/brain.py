@@ -1522,13 +1522,16 @@ async def run_curator(
     learnings: list[dict],
     session: str = "",
     available_tags: list[str] | None = None,
+    available_entities: list[dict] | None = None,
 ) -> dict:
     """Run the curator on pending learnings.
 
     Returns dict with key "evaluations".
     Raises CuratorError if all retries exhausted.
     """
-    messages = build_curator_messages(learnings, available_tags=available_tags)
+    messages = build_curator_messages(
+        learnings, available_tags=available_tags, available_entities=available_entities,
+    )
     expected = len(learnings)
     result = await _retry_llm_with_validation(
         config, "curator", messages, CURATOR_SCHEMA,

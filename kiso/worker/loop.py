@@ -87,6 +87,8 @@ from kiso.store import (
     create_task,
     decay_facts,
     delete_facts,
+    find_or_create_entity,
+    get_all_entities,
     get_all_tags,
     get_facts,
     get_oldest_messages,
@@ -318,8 +320,10 @@ async def _post_plan_knowledge(
             return
         try:
             tags = await get_all_tags(db)
+            entities = await get_all_entities(db)
             curator_result = await asyncio.wait_for(
-                run_curator(config, learnings, session=session, available_tags=tags),
+                run_curator(config, learnings, session=session,
+                            available_tags=tags, available_entities=entities),
                 timeout=llm_timeout,
             )
             await _apply_curator_result(db, session, curator_result)
@@ -1456,9 +1460,13 @@ async def _apply_curator_result(
             category = ev.get("category") or "general"
             fact_session = session if category == "user" else None
             tags = ev.get("tags") or None
+            entity_id = None
+            if ev.get("entity_name") and ev.get("entity_kind"):
+                entity_id = await find_or_create_entity(db, ev["entity_name"], ev["entity_kind"])
             await save_fact(
                 db, fact_content, source="curator",
                 session=fact_session, category=category, tags=tags,
+                entity_id=entity_id,
             )
             await update_learning(db, lid, "promoted")
         elif verdict == CURATOR_VERDICT_ASK:
