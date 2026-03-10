@@ -1973,10 +1973,14 @@ async def _run_planning_loop(
             )
 
         # Handle extend_replan: planner can request extra attempts, capped globally
+        # M338: deny extensions when stuck pattern detected
         extend = new_plan.get("extend_replan")
         if extend and isinstance(extend, int) and extend > 0:
             remaining_budget = _MAX_EXTEND_REPLAN - total_extensions
-            if remaining_budget <= 0:
+            if stuck_detected:
+                log.info("Planner requested extend_replan=%d but stuck pattern detected — denied",
+                         extend)
+            elif remaining_budget <= 0:
                 log.info("Planner requested extend_replan=%d but global cap (%d) reached",
                          extend, _MAX_EXTEND_REPLAN)
             else:

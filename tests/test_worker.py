@@ -6310,10 +6310,26 @@ class TestExtendReplan:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
 
+        # Use very different failure reasons per replan to avoid M337 stuck detection
+        _distinct_reasons = [
+            "network timeout while connecting to remote server",
+            "disk space insufficient for temporary files",
+            "permission denied accessing configuration directory",
+            "syntax error in generated shell script",
+            "package version conflict during installation",
+        ]
+        review_idx = [0]
+
+        async def _reviewer(*a, **kw):
+            idx = min(review_idx[0], len(_distinct_reasons) - 1)
+            review_idx[0] += 1
+            return {"status": "replan", "reason": _distinct_reasons[idx],
+                    "learn": None, "retry_hint": None, "summary": None}
+
         with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Failed after max depth"), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
@@ -11191,4 +11207,76 @@ class TestM337BroadenedCircularDetection:
         stuck_msgs = [m for m in saved_messages if "trouble" in m.lower() or "stuck" in m.lower()]
         assert len(stuck_msgs) >= 1, (
             f"Broadened detection should catch non-consecutive overlap. Messages: {saved_messages}"
+        )
+
+
+# --- M338: Block extend_replan when stuck detected ---
+
+
+@pytest.mark.asyncio
+class TestM338BlockExtendWhenStuck:
+    """M338: deny extend_replan when circular/stuck pattern detected."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_extend_denied_when_stuck(self, db, tmp_path):
+        """With stuck pattern, extend_replan is denied after detection kicks in.
+
+        max_replan_depth=1, so only 1 replan allowed initially.
+        Replan 1: only 1 history entry → no stuck → extend granted (+3 → depth=4).
+        Replan 2: 2 entries, same failure → stuck → extend denied.
+        Without M338: each replan would grant +3, allowing many more attempts.
+        With M338: only the first extend is granted (before stuck detected).
+        """
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "llm_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 1,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "do task", processed=False)
+
+        call_count = [0]
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            call_count[0] += 1
+            return {
+                "goal": "Do task",
+                "secrets": None,
+                "extend_replan": 3,  # always request extension
+                "tasks": [
+                    {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                ],
+            }
+
+        # Same failure reason → stuck detected from replan 2 onward
+        async def _reviewer(*a, **kw):
+            return {"status": "replan", "reason": "button not found on page"}
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "do task", "user_role": "admin"})
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Failed"), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        # Replan 1: extend +3 granted (no stuck yet) → depth becomes 4
+        # Replans 2-4: stuck detected, extend denied each time
+        # Hits depth 4, terminates
+        # Total: 1 initial + 4 replans = 5 planner calls
+        # Without M338: would get 1 + 4 + more (because extends keep granting)
+        assert call_count[0] == 5, (
+            f"Expected 5 planner calls (1 initial + 4 replans), got {call_count[0]}"
         )
