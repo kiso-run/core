@@ -166,7 +166,7 @@ class TestBrieferCriticalRules:
         assert "Conflicting facts" in self.prompt
 
     def test_messenger_no_modules(self):
-        assert "For messenger: modules=[] and skills=[] always" in self.prompt
+        assert "For messenger/worker: modules=[] and skills=[] always" in self.prompt
 
 
 class TestWorkerCriticalRules:

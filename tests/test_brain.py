@@ -3889,13 +3889,13 @@ class TestM48CuratorCategoryField:
         """M282: curator prompt enforces tag reuse over synonyms."""
         prompt = (_ROLES_DIR / "curator.md").read_text()
         assert "Tag reuse" in prompt
-        assert "NEVER create a tag that is a synonym" in prompt
+        assert "NEVER create a synonym" in prompt
 
     def test_m282_contradiction_rule(self):
         """M282: curator prompt handles contradicting facts."""
         prompt = (_ROLES_DIR / "curator.md").read_text()
         assert "Contradicting facts" in prompt
-        assert "Newer observations take precedence" in prompt
+        assert "newer takes precedence" in prompt.lower()
 
     def test_48d_validate_curator_ignores_category_for_ask(self):
         """48d: validate_curator does not enforce category for ask verdicts."""
@@ -4760,13 +4760,13 @@ class TestBrieferMessages:
         """M265: briefer prompt says messenger gets modules=[] and skills=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
         system = msgs[0]["content"]
-        assert "For messenger: modules=[] and skills=[] always" in system
+        assert "For messenger/worker: modules=[] and skills=[] always" in system
 
     def test_m265_worker_no_modules_or_skills_rule(self):
         """M265: briefer prompt says worker gets modules=[] and skills=[] always."""
         msgs = build_briefer_messages("worker", "translate command", {})
         system = msgs[0]["content"]
-        assert "For worker: modules=[] and skills=[] always" in system
+        assert "For messenger/worker: modules=[] and skills=[] always" in system
 
 
 class TestValidateBriefing:

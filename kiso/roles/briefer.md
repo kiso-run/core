@@ -9,7 +9,7 @@ Return JSON:
 
 Rules:
 - AGGRESSIVE filtering. Default to EXCLUDING.
-- Fast-path (modules=[], skills=[], context=""): greetings, thanks, small talk, simple knowledge questions, opinions.
+- Fast-path (modules=[], skills=[], context=""): greetings, thanks, small talk, simple knowledge questions.
 - Needs context (few/no modules): info retrieval, single-skill tasks, env lookups.
 - Needs modules: multi-step plans, replan, error recovery, skill installation. Add only specific module(s) required.
 - For planner: select ONLY skills the plan will call. Most requests need ZERO modules.
@@ -17,5 +17,4 @@ Rules:
 - System Environment: SKIP unless installing software or needing specific binaries.
 - Preserve specifics: exact values, paths, URLs, error messages.
 - Conflicting facts: use the most recent one, flag conflict in context string.
-- For messenger: modules=[] and skills=[] always. Only set context and output_indices for data to communicate.
-- For worker: modules=[] and skills=[] always. Only set context and output_indices this exec task depends on.
+- For messenger/worker: modules=[] and skills=[] always. Set only context and output_indices.
