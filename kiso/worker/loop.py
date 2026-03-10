@@ -1831,24 +1831,27 @@ async def _run_planning_loop(
             history_entry["retry_hints"] = retry_hints
         replan_history.append(history_entry)
 
-        # Detect circular replanning via two methods:
-        # 1. Word overlap in failure reasons (>60%)
-        # 2. Strategy fingerprint similarity (>50% Jaccard)
+        # Detect circular replanning (M337: scan ALL history, not just [-2] vs [-1])
+        # 1. Word overlap in failure reasons (>60%) against any previous entry
+        # 2. Strategy fingerprint similarity (>50% Jaccard) against any previous entry
         stuck_detected = False
         if len(replan_history) >= 2:
-            prev_failure = replan_history[-2]["failure"].lower().split()
-            curr_failure = replan_history[-1]["failure"].lower().split()
-            if prev_failure and curr_failure:
-                overlap = len(set(prev_failure) & set(curr_failure))
-                ratio = overlap / max(len(set(prev_failure)), len(set(curr_failure)))
-                if ratio > 0.6:
-                    stuck_detected = True
-                    log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
-                                ratio * 100, replan_reason)
-
-            if not stuck_detected:
-                prev_fp = replan_history[-2].get("strategy_fingerprint", frozenset())
-                curr_fp = replan_history[-1].get("strategy_fingerprint", frozenset())
+            curr_words = set(replan_history[-1]["failure"].lower().split())
+            curr_fp = replan_history[-1].get("strategy_fingerprint", frozenset())
+            for prev in replan_history[:-1]:
+                if stuck_detected:
+                    break
+                # Word overlap check
+                prev_words = set(prev["failure"].lower().split())
+                if prev_words and curr_words:
+                    ratio = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
+                    if ratio > 0.6:
+                        stuck_detected = True
+                        log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
+                                    ratio * 100, replan_reason)
+                        break
+                # Strategy fingerprint check
+                prev_fp = prev.get("strategy_fingerprint", frozenset())
                 if prev_fp and curr_fp:
                     union = prev_fp | curr_fp
                     jaccard = len(prev_fp & curr_fp) / len(union) if union else 0
