@@ -107,6 +107,7 @@ async def _retry_llm_with_validation(
     error_noun: str,
     session: str = "",
     on_retry: Callable[[int, int, str], None] | None = None,
+    fallback_model: str | None = None,
 ) -> dict:
     """Generic retry loop: call LLM, parse JSON, validate, retry on errors.
 
@@ -125,6 +126,9 @@ async def _retry_llm_with_validation(
         session: Session name for LLM call tracking.
         on_retry: Optional callback(attempt, max_attempts, reason) called before
             each retry attempt (not called on the first attempt).
+        fallback_model: Optional model to switch to when primary model exhausts
+            LLM retries (M308).  Only used once — after fallback, exhaustion
+            raises normally.
 
     Returns:
         The validated parsed dict.
@@ -139,6 +143,7 @@ async def _retry_llm_with_validation(
     llm_errors = 0
     validation_errors = 0
     attempt = 0
+    active_model: str | None = None  # M308: None means use default from config
 
     while attempt < max_total:
         attempt += 1
@@ -162,12 +167,24 @@ async def _retry_llm_with_validation(
         try:
             raw = await call_llm(
                 config, role, messages, response_format=schema,
-                session=session,
+                session=session, model_override=active_model,
             )
         except LLMError as e:
             llm_errors += 1
             log.warning("LLM error (%d/%d LLM retries): %s", llm_errors, max_llm_retries, e)
             if llm_errors >= max_llm_retries:
+                # M308: switch to fallback model instead of raising
+                if fallback_model and active_model != fallback_model:
+                    log.warning(
+                        "Primary model exhausted %d retries; switching to fallback %s",
+                        llm_errors, fallback_model,
+                    )
+                    active_model = fallback_model
+                    llm_errors = 0
+                    max_total += max_llm_retries  # extend budget for fallback
+                    if on_retry is not None:
+                        on_retry(attempt + 1, max_total, f"Switching to fallback model: {fallback_model}")
+                    continue
                 exc = error_class(f"LLM call failed after {llm_errors} attempts: {e}")
                 exc.last_errors = last_errors  # preserve for M195 auto-correction
                 raise exc
@@ -970,6 +987,7 @@ async def run_planner(
     skills_by_name = {s["name"]: s for s in installed_info}
 
     max_tasks = int(config.settings["max_plan_tasks"])
+    fallback = config.settings.get("planner_fallback_model") or None
     try:
         plan = await _retry_llm_with_validation(
             config, "planner", messages, PLAN_SCHEMA,
@@ -978,6 +996,7 @@ async def run_planner(
             PlanError, "Plan",
             session=session,
             on_retry=on_retry,
+            fallback_model=fallback,
         )
     except PlanError as exc:
         # M195: auto-correct when last errors are about uninstalled skills

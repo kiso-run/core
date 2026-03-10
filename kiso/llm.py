@@ -239,6 +239,7 @@ async def call_llm(
     response_format: dict | None = None,
     session: str = "",
     max_tokens: int | None = None,
+    model_override: str | None = None,
 ) -> str:
     """Call an LLM via streaming SSE. Returns the response content string.
 
@@ -257,7 +258,7 @@ async def call_llm(
             )
         _llm_budget_count.set(count + 1)
 
-    model_string = config.models.get(role)
+    model_string = model_override or config.models.get(role)
     if not model_string:
         raise LLMError(f"No model configured for role '{role}'")
 

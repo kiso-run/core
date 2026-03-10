@@ -6009,6 +6009,129 @@ class TestM269RetryOnLLMError:
         assert hasattr(exc_info.value, "last_errors")
 
 
+class TestM308FallbackModel:
+    """M308: _retry_llm_with_validation switches to fallback_model when primary exhausts LLM retries."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3, max_llm_retries=2),
+            raw={},
+        )
+
+    async def test_switches_to_fallback_after_primary_exhausted(self, config):
+        """After 2 LLM errors, switches to fallback model and succeeds."""
+        call_count = [0]
+        models_seen: list[str | None] = []
+        valid_plan = json.dumps({
+            "goal": "test", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "hi", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _mock_llm(cfg, role, messages, model_override=None, **kw):
+            call_count[0] += 1
+            models_seen.append(model_override)
+            if call_count[0] <= 2:
+                raise LLMError("Empty response")
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_mock_llm):
+            result = await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                fallback_model="fallback-model-v1",
+            )
+
+        assert result["goal"] == "test"
+        assert call_count[0] == 3
+        # First 2 calls used primary (None override), 3rd used fallback
+        assert models_seen[:2] == [None, None]
+        assert models_seen[2] == "fallback-model-v1"
+
+    async def test_fallback_also_fails_raises_error(self, config):
+        """If fallback model also exhausts retries, raises PlanError."""
+        async def _always_fail(cfg, role, messages, **kw):
+            raise LLMError("Empty response")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_fail):
+            with pytest.raises(PlanError, match="LLM call failed after 2 attempts"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                    fallback_model="fallback-model-v1",
+                )
+
+    async def test_no_fallback_raises_normally(self, config):
+        """Without fallback_model, exhaustion raises immediately."""
+        async def _always_fail(cfg, role, messages, **kw):
+            raise LLMError("Empty response")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_fail):
+            with pytest.raises(PlanError, match="LLM call failed after 2 attempts"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                )
+
+    async def test_fallback_not_used_when_primary_succeeds(self, config):
+        """If primary model succeeds, fallback is never used."""
+        models_seen: list[str | None] = []
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _ok(cfg, role, messages, model_override=None, **kw):
+            models_seen.append(model_override)
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_ok):
+            await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                fallback_model="fallback-model-v1",
+            )
+
+        assert models_seen == [None]  # only primary model used
+
+    async def test_on_retry_callback_notified_of_fallback_switch(self, config):
+        """on_retry is called with fallback switch message."""
+        call_count = [0]
+        retry_reasons: list[str] = []
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "d", "skill": None, "args": None, "expect": None}],
+        })
+
+        async def _mock_llm(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                raise LLMError("Empty response")
+            return valid_plan
+
+        def _on_retry(attempt, max_attempts, reason):
+            retry_reasons.append(reason)
+
+        with patch("kiso.brain.call_llm", side_effect=_mock_llm):
+            await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                fallback_model="fb-model",
+                on_retry=_on_retry,
+            )
+
+        assert any("fallback" in r.lower() for r in retry_reasons)
+
+
 # --- M272: Briefer omits irrelevant sections for messenger/worker ---
 
 
