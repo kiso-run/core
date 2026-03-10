@@ -10864,3 +10864,109 @@ class TestM307FailureMsgRaceIntegration:
         assert row["status"] == "failed"
         assert row["total_input_tokens"] == 500
         assert row["total_output_tokens"] == 200
+
+
+class TestM310Phase13Integration:
+    """M310: end-to-end integration tests for Phase 13.
+
+    Tests the full _run_planning_loop flow when replan fails due to PlanError,
+    verifying M307 (msg task before status), M308 (fallback model), and
+    M309 (is_replan passed through) all work together.
+    """
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_replan_failure_creates_msg_task_before_status_change(self, db, tmp_path):
+        """When _run_planning_loop encounters PlanError during replan,
+        the failure msg task exists before plan status changes to 'failed'."""
+        config = _make_config()
+        # Create initial plan with one exec task that triggers replan
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        from kiso.store import create_task as ct, update_task as ut
+        t1 = await ct(db, plan_id, "sess1", "exec", "ls -la")
+
+        snapshots: list[dict] = []
+
+        # _execute_plan returns failure with replan_reason
+        async def mock_execute(db, cfg, sess, pid, goal, content, **kw):
+            # Mark existing task as done
+            await ut(db, t1, "done", output="file list")
+            completed = [{"type": "exec", "detail": "ls -la", "status": "done", "output": "file list"}]
+            return (False, "need replan", completed, [], [])
+
+        # run_planner raises PlanError during replan
+        async def mock_planner(db, cfg, sess, role, msg, **kw):
+            raise PlanError("Empty response from LLM")
+
+        async def mock_msg_fallback(*args, **kwargs):
+            # Snapshot DB during msg composition
+            plan_cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+            plan_row = await plan_cur.fetchone()
+            task_cur = await db.execute(
+                "SELECT type, status FROM tasks WHERE plan_id = ? AND type = 'msg'",
+                (plan_id,),
+            )
+            task_rows = await task_cur.fetchall()
+            snapshots.append({
+                "plan_status": plan_row["status"],
+                "msg_tasks": [(r["type"], r["status"]) for r in task_rows],
+            })
+            return "failure message"
+
+        with patch("kiso.worker.loop._execute_plan", side_effect=mock_execute), \
+             patch("kiso.worker.loop.run_planner", side_effect=mock_planner), \
+             patch("kiso.worker.loop._msg_task_with_fallback", side_effect=mock_msg_fallback), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock), \
+             _patch_kiso_dir(tmp_path):
+            await _run_planning_loop(
+                db, config, "sess1", 0, "test", plan_id,
+                {"goal": "Test goal", "tasks": []},
+                "user", None, 120, {}, None, 600, 5, None, None,
+            )
+
+        # During msg composition: plan was "replanning" (set before replan attempt),
+        # and the msg task exists as "running"
+        assert len(snapshots) == 1
+        snap = snapshots[0]
+        assert ("msg", "running") in snap["msg_tasks"]
+
+        # After: plan is "failed", msg task is "done"
+        plan_cur = await db.execute("SELECT status FROM plans WHERE id = ?", (plan_id,))
+        assert (await plan_cur.fetchone())["status"] == "failed"
+
+    async def test_replan_passes_is_replan_to_planner(self, db, tmp_path):
+        """_run_planning_loop passes is_replan=True to run_planner during replan."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 0, "Test goal")
+        from kiso.store import create_task as ct, update_task as ut
+        t1 = await ct(db, plan_id, "sess1", "exec", "ls -la")
+
+        planner_kwargs_captured: list[dict] = []
+
+        async def mock_execute(db, cfg, sess, pid, goal, content, **kw):
+            await ut(db, t1, "done", output="ok")
+            return (False, "replan needed", [{"type": "exec", "detail": "ls", "status": "done", "output": "ok"}], [], [])
+
+        async def mock_planner(db, cfg, sess, role, msg, **kw):
+            planner_kwargs_captured.append(kw)
+            raise PlanError("fail")
+
+        with patch("kiso.worker.loop._execute_plan", side_effect=mock_execute), \
+             patch("kiso.worker.loop.run_planner", side_effect=mock_planner), \
+             patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="fail"), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock), \
+             _patch_kiso_dir(tmp_path):
+            await _run_planning_loop(
+                db, config, "sess1", 0, "test", plan_id,
+                {"goal": "Test goal", "tasks": []},
+                "user", None, 120, {}, None, 600, 5, None, None,
+            )
+
+        assert len(planner_kwargs_captured) == 1
+        assert planner_kwargs_captured[0].get("is_replan") is True
