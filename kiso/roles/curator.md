@@ -12,4 +12,5 @@ Rules:
 - Every evaluation needs non-empty "reason". "promote" needs non-null "fact" + "tags". "ask" needs non-null "question".
 - Tags: lowercase, hyphenated (e.g., "browser", "tech-stack"). Enable semantic retrieval across languages.
 - Tag reuse (CRITICAL): check Existing Tags first. NEVER create a synonym of an existing tag. Prefer broad over narrow.
+- Entity tags: if a fact relates to a specific named entity (website, company, tool, person, project), include an "entity:" prefixed tag (e.g., "entity:guidance.studio", "entity:docker", "entity:flask"). Always use the entity's canonical name. This enables entity-scoped retrieval.
 - Contradicting facts: newer takes precedence. Promote noting it supersedes the old — never discard contradictions.

@@ -230,6 +230,11 @@ class TestCuratorCriticalRules:
     def test_no_secrets(self):
         assert "secrets" in self.prompt.lower()
 
+    def test_m334_entity_tags(self):
+        """M334: curator has entity tag rule."""
+        assert "entity:" in self.prompt
+        assert "entity-scoped retrieval" in self.prompt
+
 
 class TestSearcherCriticalRules:
     @pytest.fixture(autouse=True)
