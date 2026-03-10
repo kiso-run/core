@@ -25,6 +25,7 @@ from kiso.brain import (
     CURATOR_VERDICT_DISCARD,
     CURATOR_VERDICT_PROMOTE,
     REVIEW_STATUS_REPLAN,
+    REVIEW_STATUS_STUCK,
     TASK_TYPE_EXEC,
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
@@ -702,6 +703,7 @@ class _TaskHandlerResult:
     stop: bool = False           # True → return early from _execute_plan
     stop_success: bool = False   # success value when stop=True
     stop_replan: "str | None" = None   # replan reason when stop=True
+    stop_stuck: "str | None" = None    # stuck reason when stop=True (no replan)
     completed_row: "dict | None" = None  # if set, append to completed
     plan_output: "dict | None" = None   # if set, append to ctx.plan_outputs
 
@@ -955,6 +957,14 @@ async def _handle_skill_task(
                                       stop_replan=f"Review failed: {review_error}",
                                       plan_output=plan_output_entry)
 
+        if review["status"] == REVIEW_STATUS_STUCK:
+            stuck_reason = review.get("reason", "")
+            if ctx.slog:
+                ctx.slog.info("Review → stuck: %s", stuck_reason)
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False, stop_stuck=stuck_reason,
+                                      plan_output=plan_output_entry)
+
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
             # M204: internal retry for transient skill failures
@@ -1117,6 +1127,14 @@ async def _handle_exec_task(
                                       stop_replan=f"Review failed: {review_error}",
                                       plan_output=local_plan_output)
 
+        if review["status"] == REVIEW_STATUS_STUCK:
+            stuck_reason = review.get("reason", "")
+            if ctx.slog:
+                ctx.slog.info("Review → stuck: %s", stuck_reason)
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False, stop_stuck=stuck_reason,
+                                      plan_output=local_plan_output)
+
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
             if retry_hint and exec_retries < ctx.max_worker_retries:
@@ -1221,6 +1239,15 @@ async def _handle_search_task(
                                       stop_replan=f"Review failed: {review_error}",
                                       plan_output=local_plan_output)
 
+        if review["status"] == REVIEW_STATUS_STUCK:
+            stuck_reason = review.get("reason", "")
+            if ctx.slog:
+                ctx.slog.info("Review → stuck: %s", stuck_reason)
+            await update_task(ctx.db, task_id, "done", output=search_result)
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(stop=True, stop_success=False, stop_stuck=stuck_reason,
+                                      plan_output=local_plan_output)
+
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
             if retry_hint and search_retries < ctx.max_worker_retries:
@@ -1293,8 +1320,8 @@ async def _execute_plan(
     cancel_event: asyncio.Event | None = None,
     slog: SessionLogger | None = None,
     base_url: str = "",
-) -> tuple[bool, str | None, list[dict], list[dict], list[dict]]:
-    """Execute a plan's tasks. Returns (success, replan_reason, completed, remaining, plan_outputs).
+) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
+    """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
     - success: True if all tasks completed successfully
     - replan_reason: reviewer reason if replan needed, None otherwise
@@ -1339,7 +1366,7 @@ async def _execute_plan(
                     session_secrets=session_secrets or {},
                 )
             await _cleanup_plan_outputs(session)
-            return False, "cancelled", completed, [dict(t) for t in tasks[i:]], ctx.plan_outputs
+            return False, "cancelled", None, completed, [dict(t) for t in tasks[i:]], ctx.plan_outputs
 
         task_id = task_row["id"]
         task_type = task_row["type"]
@@ -1365,7 +1392,7 @@ async def _execute_plan(
             )
             remaining = [dict(t) for t in tasks[i + 1:]]
             await _cleanup_plan_outputs(session)
-            return False, None, completed, remaining, ctx.plan_outputs
+            return False, None, None, completed, remaining, ctx.plan_outputs
 
         sandbox_uid = await _ensure_sandbox_user(session) if perm.role == "user" else None
         if sandbox_uid is not None:
@@ -1385,7 +1412,7 @@ async def _execute_plan(
             await update_task(db, task_id, "failed", output=f"Unknown task type: {task_type}")
             remaining = [dict(t) for t in tasks[i + 1:]]
             await _cleanup_plan_outputs(session)
-            return False, None, completed, remaining, ctx.plan_outputs
+            return False, None, None, completed, remaining, ctx.plan_outputs
 
         is_final = i == len(tasks) - 1
         result = await handler(ctx, task_row, i, is_final, usage_idx_before)
@@ -1404,10 +1431,10 @@ async def _execute_plan(
         if result.stop:
             remaining = [dict(t) for t in tasks[i + 1:]]
             await _cleanup_plan_outputs(session)
-            return result.stop_success, result.stop_replan, completed, remaining, ctx.plan_outputs
+            return result.stop_success, result.stop_replan, result.stop_stuck, completed, remaining, ctx.plan_outputs
 
     await _cleanup_plan_outputs(session)
-    return True, None, completed, [], ctx.plan_outputs
+    return True, None, None, completed, [], ctx.plan_outputs
 
 
 async def _apply_curator_result(
@@ -1690,7 +1717,7 @@ async def _run_planning_loop(
     total_extensions = 0
 
     while True:
-        success, replan_reason, completed, remaining, plan_outputs = await _execute_plan(
+        success, replan_reason, stuck_reason, completed, remaining, plan_outputs = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
             content, messenger_timeout=messenger_timeout,
             session_secrets=session_secrets, username=username,
@@ -1699,6 +1726,20 @@ async def _run_planning_loop(
 
         if success:
             await _handle_loop_success(db, session, current_plan_id, content, user_role, slog)
+            break
+
+        # --- Stuck handling (M336): unsolvable task, skip replan entirely ---
+        if stuck_reason:
+            log.info("Task stuck (unsolvable): %s", stuck_reason)
+            if slog:
+                slog.info("Task stuck (unsolvable): %s", stuck_reason)
+            await _handle_loop_failure(
+                db, config, session, current_plan_id, completed, remaining, current_goal,
+                messenger_timeout=messenger_timeout,
+                reason=f"Unsolvable: {stuck_reason}",
+                session_secrets=session_secrets,
+                user_message=content,
+            )
             break
 
         # --- Cancel handling ---
