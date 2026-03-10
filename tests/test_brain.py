@@ -1558,26 +1558,50 @@ class TestValidateCurator:
 
     def test_multiple_evaluations(self):
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Fact A", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Project uses Python 3.11", "question": None, "reason": "Good"},
             {"learning_id": 2, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
             {"learning_id": 3, "verdict": "ask", "fact": None, "question": "What DB?", "reason": "Unclear"},
         ]}
         assert validate_curator(result) == []
 
-    def test_validate_curator_wrong_count(self):
-        """Returns error when evaluation count doesn't match expected."""
+    def test_validate_curator_fewer_than_expected_ok(self):
+        """M322: fewer evaluations than learnings is OK (consolidation)."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Fact", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Consolidated fact here", "question": None, "reason": "Good"},
         ]}
-        errors = validate_curator(result, expected_count=3)
-        assert any("Expected 3 evaluations, got 1" in e for e in errors)
+        assert validate_curator(result, expected_count=3) == []
+
+    def test_validate_curator_more_than_expected_error(self):
+        """M322: more evaluations than learnings is an error."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Fact A is valid", "question": None, "reason": "Good"},
+            {"learning_id": 2, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
+            {"learning_id": 3, "verdict": "discard", "fact": None, "question": None, "reason": "Noise"},
+        ]}
+        errors = validate_curator(result, expected_count=2)
+        assert any("at most 2" in e for e in errors)
 
     def test_validate_curator_no_count_check(self):
         """No error when expected_count is None (backwards compat)."""
         result = {"evaluations": [
-            {"learning_id": 1, "verdict": "promote", "fact": "Fact", "question": None, "reason": "Good"},
+            {"learning_id": 1, "verdict": "promote", "fact": "Some valid fact here", "question": None, "reason": "Good"},
         ]}
         assert validate_curator(result, expected_count=None) == []
+
+    def test_validate_curator_short_fact_error(self):
+        """M322: promoted fact with < 10 chars fails validation."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "Short", "question": None, "reason": "Good"},
+        ]}
+        errors = validate_curator(result)
+        assert any("too short" in e for e in errors)
+
+    def test_validate_curator_fact_exactly_10_ok(self):
+        """M322: promoted fact with exactly 10 chars passes."""
+        result = {"evaluations": [
+            {"learning_id": 1, "verdict": "promote", "fact": "1234567890", "question": None, "reason": "Good"},
+        ]}
+        assert validate_curator(result) == []
 
 
 # --- M9: build_curator_messages ---

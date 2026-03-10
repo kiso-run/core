@@ -1450,18 +1450,29 @@ class SummarizerError(Exception):
     """Summarizer generation failure."""
 
 
+_MIN_PROMOTED_FACT_LEN = 10
+
+
 def validate_curator(result: dict, expected_count: int | None = None) -> list[str]:
-    """Validate curator result semantics. Returns list of error strings."""
+    """Validate curator result semantics. Returns list of error strings.
+
+    *expected_count* is the number of input learnings. The curator may return
+    **fewer** evaluations (consolidation) but never **more** than expected.
+    """
     errors: list[str] = []
     evals = result.get("evaluations", [])
-    if expected_count is not None and len(evals) != expected_count:
-        errors.append(f"Expected {expected_count} evaluations, got {len(evals)}")
+    if expected_count is not None and len(evals) > expected_count:
+        errors.append(f"Expected at most {expected_count} evaluations, got {len(evals)}")
     for i, ev in enumerate(evals, 1):
         verdict = ev.get("verdict")
         if not ev.get("reason"):
             errors.append(f"Evaluation {i}: reason is required")
-        if verdict == CURATOR_VERDICT_PROMOTE and not ev.get("fact"):
-            errors.append(f"Evaluation {i}: promote verdict requires a non-empty fact")
+        if verdict == CURATOR_VERDICT_PROMOTE:
+            fact = ev.get("fact")
+            if not fact:
+                errors.append(f"Evaluation {i}: promote verdict requires a non-empty fact")
+            elif len(fact) < _MIN_PROMOTED_FACT_LEN:
+                errors.append(f"Evaluation {i}: promoted fact too short ({len(fact)} chars, min {_MIN_PROMOTED_FACT_LEN})")
         if verdict == CURATOR_VERDICT_PROMOTE and ev.get("category") is not None:
             valid_categories = {"project", "user", "tool", "general"}
             if ev["category"] not in valid_categories:
