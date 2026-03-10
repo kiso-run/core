@@ -275,6 +275,22 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         )
         await db.commit()
 
+    # M345: migrate entity: tags to entity records
+    cur = await db.execute("SELECT DISTINCT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
+    entity_tags = await cur.fetchall()
+    for row in entity_tags:
+        tag = row[0]
+        name = tag[len("entity:"):]
+        entity_id = await find_or_create_entity(db, name, "tool")
+        await db.execute(
+            "UPDATE facts SET entity_id = ? WHERE id IN "
+            "(SELECT fact_id FROM fact_tags WHERE tag = ?)",
+            (entity_id, tag),
+        )
+        await db.execute("DELETE FROM fact_tags WHERE tag = ?", (tag,))
+    if entity_tags:
+        await db.commit()
+
     return db
 
 

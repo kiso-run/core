@@ -2240,3 +2240,78 @@ async def test_entities_table_exists(db: aiosqlite.Connection):
         "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
     )
     assert await cur.fetchone() is not None
+
+
+# --- M345: entity: tag migration ---
+
+
+async def test_m345_migration_converts_entity_tags(tmp_path):
+    """M345: entity: prefixed tags are migrated to entity records on init_db."""
+    from kiso.store import init_db
+    # First init to create tables
+    db = await init_db(tmp_path / "test.db")
+    fid1 = await save_fact(db, "Uses Flask for web API", "curator")
+    fid2 = await save_fact(db, "Flask has good documentation", "curator")
+    # Manually insert entity: tags (simulating pre-M345 data)
+    await save_fact_tags(db, fid1, ["entity:flask", "tech-stack"])
+    await save_fact_tags(db, fid2, ["entity:flask"])
+    await db.close()
+
+    # Re-open — migration should run
+    db = await init_db(tmp_path / "test.db")
+    # entity: tags should be gone
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
+    assert await cur.fetchall() == []
+    # Entity record should exist
+    entities = await get_all_entities(db)
+    assert len(entities) == 1
+    assert entities[0]["name"] == "flask"
+    assert entities[0]["kind"] == "tool"
+    # Facts should be linked
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid1,))
+    assert (await cur.fetchone())[0] == entities[0]["id"]
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid2,))
+    assert (await cur.fetchone())[0] == entities[0]["id"]
+    # Non-entity tags should be preserved
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ?", (fid1,))
+    tags = [r[0] for r in await cur.fetchall()]
+    assert "tech-stack" in tags
+    assert "entity:flask" not in tags
+    await db.close()
+
+
+async def test_m345_migration_multiple_entities(tmp_path):
+    """M345: migration handles multiple distinct entity: tags."""
+    from kiso.store import init_db
+    db = await init_db(tmp_path / "test.db")
+    fid1 = await save_fact(db, "Uses Flask for web API", "curator")
+    fid2 = await save_fact(db, "Docker for deployment environment", "curator")
+    await save_fact_tags(db, fid1, ["entity:flask"])
+    await save_fact_tags(db, fid2, ["entity:docker"])
+    await db.close()
+
+    db = await init_db(tmp_path / "test.db")
+    entities = await get_all_entities(db)
+    assert len(entities) == 2
+    names = {e["name"] for e in entities}
+    assert names == {"flask", "docker"}
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
+    assert await cur.fetchall() == []
+    await db.close()
+
+
+async def test_m345_migration_no_entity_tags_noop(tmp_path):
+    """M345: migration is a no-op when no entity: tags exist."""
+    from kiso.store import init_db
+    db = await init_db(tmp_path / "test.db")
+    fid = await save_fact(db, "Uses Python for backend", "curator")
+    await save_fact_tags(db, fid, ["tech-stack"])
+    await db.close()
+
+    db = await init_db(tmp_path / "test.db")
+    entities = await get_all_entities(db)
+    assert len(entities) == 0
+    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ?", (fid,))
+    tags = [r[0] for r in await cur.fetchall()]
+    assert tags == ["tech-stack"]
+    await db.close()
