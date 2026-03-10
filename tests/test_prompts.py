@@ -281,3 +281,53 @@ class TestM316PromptOptimizationIntegration:
         for filename in _EXPECTED_ROLES:
             content = (_ROLES_DIR / filename).read_text()
             assert len(content.strip()) > 50, f"{filename} has too little content"
+
+
+class TestM323LearningPipelineQuality:
+    """M323: integration tests for the reviewer→curator learning pipeline."""
+
+    def test_reviewer_enforces_max_3_learns(self):
+        """Reviewer schema caps learn array at 3."""
+        from kiso.brain import REVIEW_SCHEMA
+        learn_schema = REVIEW_SCHEMA["json_schema"]["schema"]["properties"]["learn"]
+        array_schema = learn_schema["anyOf"][0]
+        assert array_schema["maxItems"] == 3
+
+    def test_reviewer_prompt_self_contained_rule(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "self-contained" in prompt
+        assert "include subject" in prompt
+
+    def test_reviewer_prompt_consolidation_rule(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "consolidate" in prompt.lower()
+
+    def test_reviewer_prompt_ephemeral_rule(self):
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "ephemeral" in prompt.lower()
+
+    def test_curator_prompt_consolidation_rule(self):
+        prompt = (_ROLES_DIR / "curator.md").read_text()
+        assert "consolidat" in prompt.lower()
+        assert "learning_id" in prompt
+
+    def test_clean_learn_items_filters_fragmented(self):
+        """clean_learn_items + save_learning dedup survive a realistic bad batch."""
+        from kiso.brain import clean_learn_items
+        # Simulate the kind of garbage the old reviewer produced
+        bad_batch = [
+            "browser skill installed successfully",
+            "The page title is 'Guidance'.",  # too short? no, 32 chars — but transient-ish
+            "The contact form includes Name [8], Email [9], and details [10].",
+            "A submit button [14] is available for the contact form.",
+            "guidance.studio has a contact form with name and email fields",
+        ]
+        cleaned = clean_learn_items(bad_batch)
+        # "installed successfully" filtered, [8] [9] [10] filtered, [14] alone kept
+        assert len(cleaned) <= 3
+        # The valid self-contained learning survives
+        assert any("guidance.studio" in item for item in cleaned)
+        # The transient "installed successfully" is gone
+        assert not any("installed successfully" in item for item in cleaned)
+        # Items with 2+ element indices are gone
+        assert not any("[8]" in item and "[9]" in item for item in cleaned)
