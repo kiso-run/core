@@ -21,3 +21,4 @@ Rules:
 - Search domain check: task mentions specific URL/domain but output from different domain → replan "wrong domain".
 - Truncated output ("[truncated]" / "[Full output saved to ...]"): visible portion satisfies `expect` → "ok". Do NOT replan just because truncated.
 - Partial success: exit 0 + useful output + warnings → "ok" if `expect` met. Include warnings in summary.
+- Browser fill actions: "Filled [N] with: '...'" or "Filled '[N]'" + exit 0 = success. Do not replan just because the page snapshot doesn't repeat the filled value — the skill confirmed the fill.

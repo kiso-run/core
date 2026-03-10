@@ -164,6 +164,11 @@ class TestReviewerCriticalRules:
     def test_domain_check(self):
         assert "wrong domain" in self.prompt
 
+    def test_m329_browser_fill_tolerance(self):
+        """M329: reviewer tolerates browser fill confirmation."""
+        assert "Browser fill actions" in self.prompt
+        assert "skill confirmed the fill" in self.prompt
+
 
 class TestBrieferCriticalRules:
     """Critical briefer rules that must not be removed."""
@@ -290,9 +295,9 @@ class TestM316PromptOptimizationIntegration:
         assert len(prompt) < 1800, f"Messenger prompt too large: {len(prompt)} chars"
 
     def test_reviewer_prompt_size_regression(self):
-        """Reviewer prompt must stay under 2600 chars (was 2026 before M318 learn rules)."""
+        """Reviewer prompt must stay under 2800 chars (was 2026 before M318 learn rules, +M329 fill rule)."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert len(prompt) < 2600, f"Reviewer prompt too large: {len(prompt)} chars"
+        assert len(prompt) < 2800, f"Reviewer prompt too large: {len(prompt)} chars"
 
     def test_all_role_prompts_nonempty(self):
         """Every role prompt must have substantive content."""
