@@ -879,12 +879,15 @@ def _render_plan_status(
         # If only review/llm_calls changed (status unchanged),
         # show just the review line without re-rendering the task
         if prev_status == status and prev_status is not None:
-            if not quiet and ttype != "msg":
-                prev_review = prev_key[1] if prev_key else None
-                if review_verdict != prev_review:
-                    review_line = render_review(task, caps)
-                    if review_line:
-                        print(review_line)
+            if not quiet:
+                # msg tasks don't show review lines (output is rendered separately)
+                if ttype != "msg":
+                    prev_review = prev_key[1] if prev_key else None
+                    if review_verdict != prev_review:
+                        review_line = render_review(task, caps)
+                        if review_line:
+                            print(review_line)
+                # Verbose panels for ALL task types (including msg)
                 if verbose:
                     _emit_verbose_calls(task, caps, state, llm_call_count)
             continue
