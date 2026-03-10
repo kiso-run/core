@@ -4003,6 +4003,28 @@ class TestM48CuratorCategoryField:
         assert errors == []
 
 
+# --- M321: curator consolidation + learning_id rules ---
+
+
+def test_curator_prompt_consolidation_rule():
+    """M321: curator prompt instructs consolidation of duplicate learnings."""
+    prompt = _load_system_prompt("curator")
+    assert "consolidat" in prompt.lower()
+    assert "ONE evaluation" in prompt
+
+
+def test_curator_prompt_learning_id_rule():
+    """M321: curator prompt explicitly mentions learning_id matching."""
+    prompt = _load_system_prompt("curator")
+    assert "learning_id" in prompt
+
+
+def test_curator_prompt_discard_transient_examples():
+    """M321: curator prompt lists concrete transient discard examples."""
+    prompt = _load_system_prompt("curator")
+    assert "loaded/installed successfully" in prompt
+
+
 class TestM48SummarizerFactsTiebreaker:
     """48e: summarizer-facts tiebreaker rule for contradictions."""
 
