@@ -11280,3 +11280,132 @@ class TestM338BlockExtendWhenStuck:
         assert call_count[0] == 5, (
             f"Expected 5 planner calls (1 initial + 4 replans), got {call_count[0]}"
         )
+
+
+# --- M341: Integration test: stuck → user notification flow ---
+
+
+@pytest.mark.asyncio
+class TestM341StuckFlow:
+    """M341: full flow from reviewer 'stuck' to user notification, no replan."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_stuck_skips_replan_sends_message(self, db, tmp_path):
+        """Reviewer returns stuck → no replan, failure message sent to user."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "llm_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 5,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "submit form", processed=False)
+
+        plan = {
+            "goal": "Submit form",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "fill form", "skill": None, "args": None, "expect": "submitted"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = [0]
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls[0] += 1
+            return plan
+
+        # First review returns stuck
+        review_stuck = {
+            "status": "stuck", "reason": "CAPTCHA requires human verification",
+            "learn": None, "retry_hint": None, "summary": "Blocked by CAPTCHA",
+        }
+
+        async def _reviewer(*a, **kw):
+            return review_stuck
+
+        messenger_calls = [0]
+
+        async def _messenger(*a, **kw):
+            messenger_calls[0] += 1
+            return "I couldn't complete the task because it requires CAPTCHA verification."
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "submit form", "user_role": "admin"})
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", side_effect=_messenger), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        # Only 1 planner call (no replans triggered)
+        assert planner_calls[0] == 1, (
+            f"Stuck should prevent replan — got {planner_calls[0]} planner calls"
+        )
+        # Messenger called for failure notification
+        assert messenger_calls[0] >= 1, "Messenger should be called for stuck notification"
+
+    async def test_stuck_after_replan_terminates(self, db, tmp_path):
+        """First attempt replans, second returns stuck → terminates without further replan."""
+        config = _make_config(settings={
+            "worker_idle_timeout": 1,
+            "llm_timeout": 5,
+            "max_validation_retries": 1,
+            "context_messages": 5,
+            "max_replan_depth": 5,
+        })
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "browse site", processed=False)
+
+        plan = {
+            "goal": "Browse site",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "curl site", "skill": None, "args": None, "expect": "page loaded"},
+                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            ],
+        }
+
+        planner_calls = [0]
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            planner_calls[0] += 1
+            return plan
+
+        review_call = [0]
+
+        async def _reviewer(*a, **kw):
+            review_call[0] += 1
+            if review_call[0] == 1:
+                return {"status": "replan", "reason": "Page not loaded completely",
+                        "learn": None, "retry_hint": None, "summary": None}
+            return {"status": "stuck", "reason": "Login wall requires credentials",
+                    "learn": None, "retry_hint": None, "summary": "Blocked by login"}
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg_id, "content": "browse site", "user_role": "admin"})
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Couldn't do it"), \
+             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
+             _patch_translator(), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
+
+        # 2 planner calls: initial + 1 replan (then stuck stops it)
+        assert planner_calls[0] == 2, (
+            f"Expected 2 planner calls (initial + 1 replan before stuck), got {planner_calls[0]}"
+        )
