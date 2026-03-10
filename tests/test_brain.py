@@ -4147,6 +4147,60 @@ class TestM343CuratorEntityFields:
         assert "## Existing Entities" not in msgs[1]["content"]
 
 
+# --- M347: curator dedup — existing entity facts ---
+
+
+class TestM347CuratorExistingFacts:
+    """M347: build_curator_messages injects existing facts for dedup."""
+
+    def test_existing_facts_section_injected(self):
+        facts = [
+            {"content": "guidance.studio has CAPTCHA", "entity_name": "guidance.studio"},
+            {"content": "guidance.studio uses Webflow", "entity_name": "guidance.studio"},
+        ]
+        msgs = build_curator_messages(
+            [{"id": 1, "content": "guidance.studio form has CAPTCHA"}],
+            existing_facts=facts,
+        )
+        user_content = msgs[1]["content"]
+        assert "## Existing Facts (already in knowledge base)" in user_content
+        assert "guidance.studio has CAPTCHA" in user_content
+        assert "[entity: guidance.studio]" in user_content
+
+    def test_no_existing_facts_no_section(self):
+        msgs = build_curator_messages([{"id": 1, "content": "test"}])
+        assert "## Existing Facts" not in msgs[1]["content"]
+
+    def test_existing_facts_empty_no_section(self):
+        msgs = build_curator_messages(
+            [{"id": 1, "content": "test"}], existing_facts=[],
+        )
+        assert "## Existing Facts" not in msgs[1]["content"]
+
+    def test_curator_prompt_dedup_rule(self):
+        prompt = _load_system_prompt("curator")
+        assert "Existing Fact" in prompt
+        assert "discard" in prompt.lower()
+
+    async def test_run_curator_forwards_existing_facts(self):
+        """M347: run_curator forwards existing_facts to build_curator_messages."""
+        facts = [{"content": "Flask is used", "entity_name": "flask"}]
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(curator="gpt-4"),
+            settings=_full_settings(max_validation_retries=3),
+            raw={},
+        )
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_CURATOR) as mock_llm:
+            await run_curator(config, [{"id": 1, "content": "test"}], existing_facts=facts)
+        messages = mock_llm.call_args[1].get("messages") or mock_llm.call_args[0][2]
+        user_msg = [m for m in messages if m["role"] == "user"][0]
+        assert "Flask is used" in user_msg["content"]
+        assert "## Existing Facts" in user_msg["content"]
+
+
 # --- M321: curator consolidation + learning_id rules ---
 
 

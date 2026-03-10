@@ -1538,6 +1538,7 @@ def build_curator_messages(
     learnings: list[dict],
     available_tags: list[str] | None = None,
     available_entities: list[dict] | None = None,
+    existing_facts: list[dict] | None = None,
 ) -> list[dict]:
     """Build the message list for the curator LLM call."""
     system_prompt = _load_system_prompt("curator")
@@ -1551,6 +1552,11 @@ def build_curator_messages(
     if available_entities:
         entity_lines = "\n".join(f"{e['name']} ({e['kind']})" for e in available_entities)
         parts.append(f"## Existing Entities\n{entity_lines}")
+    if existing_facts:
+        fact_lines = "\n".join(
+            f"[entity: {f.get('entity_name', '?')}] {f['content']}" for f in existing_facts
+        )
+        parts.append(f"## Existing Facts (already in knowledge base)\n{fact_lines}")
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
@@ -1560,6 +1566,7 @@ async def run_curator(
     session: str = "",
     available_tags: list[str] | None = None,
     available_entities: list[dict] | None = None,
+    existing_facts: list[dict] | None = None,
 ) -> dict:
     """Run the curator on pending learnings.
 
@@ -1567,7 +1574,9 @@ async def run_curator(
     Raises CuratorError if all retries exhausted.
     """
     messages = build_curator_messages(
-        learnings, available_tags=available_tags, available_entities=available_entities,
+        learnings, available_tags=available_tags,
+        available_entities=available_entities,
+        existing_facts=existing_facts,
     )
     expected = len(learnings)
     result = await _retry_llm_with_validation(

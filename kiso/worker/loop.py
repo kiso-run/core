@@ -90,6 +90,7 @@ from kiso.store import (
     find_or_create_entity,
     get_all_entities,
     get_all_tags,
+    search_facts_by_entity,
     get_facts,
     get_oldest_messages,
     get_pending_learnings,
@@ -321,9 +322,23 @@ async def _post_plan_knowledge(
         try:
             tags = await get_all_tags(db)
             entities = await get_all_entities(db)
+            # M347: find existing facts for entities mentioned in learnings
+            relevant_facts: list[dict] = []
+            seen_entity_ids: set[int] = set()
+            for entity in entities:
+                for learning in learnings:
+                    if entity["name"] in learning["content"].lower():
+                        if entity["id"] not in seen_entity_ids:
+                            seen_entity_ids.add(entity["id"])
+                            efacts = await search_facts_by_entity(db, entity["id"])
+                            for f in efacts:
+                                f["entity_name"] = entity["name"]
+                            relevant_facts.extend(efacts)
+                        break
             curator_result = await asyncio.wait_for(
                 run_curator(config, learnings, session=session,
-                            available_tags=tags, available_entities=entities),
+                            available_tags=tags, available_entities=entities,
+                            existing_facts=relevant_facts or None),
                 timeout=llm_timeout,
             )
             await _apply_curator_result(db, session, curator_result)

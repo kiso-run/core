@@ -16,4 +16,5 @@ Rules:
 - Entity naming: use shortest canonical form. "guidance.studio" not "www.guidance.studio". "flask" not "Flask framework".
 - Entity reuse: check Existing Entities before creating. Prefer existing names. Never create a duplicate under a different name.
 - One entity per fact: choose the primary subject. "guidance.studio uses Webflow" → entity is "guidance.studio".
+- Dedup against Existing Facts: if a learning duplicates or is a subset of an Existing Fact, discard it. Only promote if it adds genuinely new information.
 - Contradicting facts: newer takes precedence. Promote noting it supersedes the old — never discard contradictions.
