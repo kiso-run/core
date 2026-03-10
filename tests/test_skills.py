@@ -22,6 +22,7 @@ from kiso.skills import (
     check_deps,
     discover_skills,
     invalidate_skills_cache,
+    auto_correct_skill_args,
     validate_skill_args,
 )
 from kiso.plugins import _validate_plugin_manifest_base
@@ -726,6 +727,46 @@ class TestValidateSkillArgs:
     def test_empty_args_empty_schema(self):
         errors = validate_skill_args({}, {})
         assert errors == []
+
+
+# --- auto_correct_skill_args ---
+
+class TestAutoCorrectSkillArgs:
+    """M330: fix common LLM arg name hallucinations."""
+
+    BROWSER_SCHEMA = {
+        "action": {"type": "string", "required": True},
+        "element": {"type": "string", "required": False},
+        "value": {"type": "string", "required": False},
+        "url": {"type": "string", "required": False},
+    }
+
+    def test_corrects_selector_and_text(self):
+        args = {"selector": "[8]", "action": "fill", "text": "hello"}
+        result = auto_correct_skill_args(args, self.BROWSER_SCHEMA)
+        assert result == {"element": "[8]", "action": "fill", "value": "hello"}
+
+    def test_no_overwrite_existing_canonical(self):
+        args = {"selector": "[8]", "element": "[5]", "action": "click"}
+        result = auto_correct_skill_args(args, self.BROWSER_SCHEMA)
+        assert result["element"] == "[5]"
+        assert "selector" in result  # not removed since canonical exists
+
+    def test_unknown_alias_passthrough(self):
+        args = {"action": "click", "foobar": "baz"}
+        result = auto_correct_skill_args(args, self.BROWSER_SCHEMA)
+        assert result == {"action": "click", "foobar": "baz"}
+
+    def test_no_correction_when_canonical_not_in_schema(self):
+        schema = {"action": {"type": "string", "required": True}}
+        args = {"action": "fill", "text": "hello"}
+        result = auto_correct_skill_args(args, schema)
+        assert result == {"action": "fill", "text": "hello"}  # no change
+
+    def test_query_alias_to_value(self):
+        args = {"action": "fill", "query": "test input"}
+        result = auto_correct_skill_args(args, self.BROWSER_SCHEMA)
+        assert result == {"action": "fill", "value": "test input"}
 
 
 # --- _check_args_depth ---

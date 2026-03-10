@@ -72,6 +72,7 @@ from kiso.skills import (
     SkillError,
     discover_skills,
     invalidate_skills_cache,
+    auto_correct_skill_args,
     validate_skill_args,
 )
 from kiso.sysenv import get_system_env, build_system_env_section, invalidate_cache
@@ -857,6 +858,10 @@ async def _handle_skill_task(
         except json.JSONDecodeError as e:
             setup_error = f"Invalid skill args JSON: {e}"
         else:
+            corrected = auto_correct_skill_args(args, skill_info["args_schema"])
+            if corrected != args:
+                log.warning("Auto-corrected skill args for task %d: %s → %s", task_id, args, corrected)
+                args = corrected
             validation_errors = validate_skill_args(args, skill_info["args_schema"])
             if validation_errors:
                 setup_error = "Skill args validation failed: " + "; ".join(validation_errors)

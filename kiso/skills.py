@@ -312,6 +312,22 @@ def _coerce_value(value: object, expected_type: str) -> object:
     raise ValueError(f"unknown type {expected_type!r}")
 
 
+_ARG_ALIASES: dict[str, str] = {
+    "selector": "element",
+    "text": "value",
+    "query": "value",
+}
+
+
+def auto_correct_skill_args(args: dict, args_schema: dict) -> dict:
+    """Fix common LLM arg name hallucinations. Returns corrected copy."""
+    corrected = dict(args)
+    for alias, canonical in _ARG_ALIASES.items():
+        if alias in corrected and canonical not in corrected and canonical in args_schema:
+            corrected[canonical] = corrected.pop(alias)
+    return corrected
+
+
 def validate_skill_args(args: dict, args_schema: dict) -> list[str]:
     """Validate parsed skill args against the schema. Returns list of errors."""
     errors: list[str] = []
