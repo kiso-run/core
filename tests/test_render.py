@@ -630,6 +630,37 @@ def test_render_review_ok_with_learning():
     assert "Uses Flask" in lines[1]
 
 
+def test_m333_render_review_with_learning_tags():
+    """M333: learning tags shown in dim style."""
+    task = {
+        "review_verdict": "ok",
+        "review_learning": "guidance.studio has a contact form",
+        "review_learning_tags": "entity:guidance.studio, homepage",
+    }
+    result = render_review(task, _PLAIN)
+    assert "learning:" in result
+    assert "[entity:guidance.studio, homepage]" in result
+
+
+def test_m333_render_review_without_learning_tags():
+    """M333: no brackets when tags absent."""
+    task = {"review_verdict": "ok", "review_learning": "Uses Flask framework extensively"}
+    result = render_review(task, _PLAIN)
+    assert "learning:" in result
+    assert "[" not in result
+
+
+def test_m333_render_review_empty_learning_tags():
+    """M333: empty tags string produces no brackets."""
+    task = {
+        "review_verdict": "ok",
+        "review_learning": "guidance.studio has a contact form",
+        "review_learning_tags": "",
+    }
+    result = render_review(task, _PLAIN)
+    assert "[" not in result
+
+
 # ── render_task_header width truncation ─────────────────────
 
 

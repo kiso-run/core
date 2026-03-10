@@ -816,7 +816,13 @@ def render_review(task: dict, caps: TermCaps) -> str:
     learning = task.get("review_learning")
     if learning:
         prefix = "  📝 learning: " if caps.unicode else "  + learning: "
-        lines.append(_style(f'{prefix}"{learning}"', _MAGENTA, caps=caps))
+        learn_line = f'{prefix}"{learning}"'
+        learning_tags = task.get("review_learning_tags")
+        if learning_tags:
+            tags = [t.strip() for t in learning_tags.split(",") if t.strip()]
+            if tags:
+                learn_line += _style(f" [{', '.join(tags)}]", _DIM, caps=caps)
+        lines.append(_style(learn_line, _MAGENTA, caps=caps))
     return "\n".join(lines)
 
 
