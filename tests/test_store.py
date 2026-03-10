@@ -1594,6 +1594,69 @@ async def test_save_learning_case_insensitive_filter(db: aiosqlite.Connection):
     assert len(learnings) == 0
 
 
+# --- M319: learning dedup at save time ---
+
+
+async def test_save_learning_dedup_exact_duplicate(db: aiosqlite.Connection):
+    """Saving the exact same learning twice returns 0 on second call."""
+    await create_session(db, "sess1")
+    r1 = await save_learning(db, "guidance.studio has a contact form", "sess1")
+    assert r1 != 0
+    r2 = await save_learning(db, "guidance.studio has a contact form", "sess1")
+    assert r2 == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 1
+
+
+async def test_save_learning_dedup_near_duplicate(db: aiosqlite.Connection):
+    """Near-duplicate (high word overlap) is deduped."""
+    await create_session(db, "sess1")
+    r1 = await save_learning(
+        db, "guidance.studio has a contact form with name and email fields", "sess1"
+    )
+    assert r1 != 0
+    r2 = await save_learning(
+        db, "guidance.studio has a contact form with name email and details", "sess1"
+    )
+    assert r2 == 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 1
+
+
+async def test_save_learning_dedup_different_content(db: aiosqlite.Connection):
+    """Genuinely different learning is saved normally."""
+    await create_session(db, "sess1")
+    r1 = await save_learning(db, "guidance.studio has a contact form", "sess1")
+    assert r1 != 0
+    r2 = await save_learning(db, "Python uses pytest for testing", "sess1")
+    assert r2 != 0
+    learnings = await get_pending_learnings(db)
+    assert len(learnings) == 2
+
+
+async def test_save_learning_dedup_cross_session(db: aiosqlite.Connection):
+    """Learnings in different sessions are NOT deduped against each other."""
+    await create_session(db, "sess1")
+    await create_session(db, "sess2")
+    r1 = await save_learning(db, "guidance.studio has a contact form", "sess1")
+    assert r1 != 0
+    r2 = await save_learning(db, "guidance.studio has a contact form", "sess2")
+    assert r2 != 0
+
+
+async def test_save_learning_dedup_skips_promoted(db: aiosqlite.Connection):
+    """Already-promoted learnings are not considered for dedup (only pending)."""
+    from kiso.store import update_learning
+
+    await create_session(db, "sess1")
+    lid = await save_learning(db, "guidance.studio has a contact form", "sess1")
+    assert lid != 0
+    await update_learning(db, lid, "promoted")
+    # Same content again — should succeed since the original is no longer pending
+    r2 = await save_learning(db, "guidance.studio has a contact form", "sess1")
+    assert r2 != 0
+
+
 # --- M44e: update_task_usage sentinel (preserves llm_calls when omitted) ---
 
 

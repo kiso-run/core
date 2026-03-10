@@ -709,6 +709,15 @@ _SENSITIVE_PATTERN = re.compile(
 )
 
 
+def _word_overlap_ratio(a: str, b: str) -> float:
+    """Return the Jaccard similarity of word sets from *a* and *b*."""
+    wa = set(a.lower().split())
+    wb = set(b.lower().split())
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
+
 async def save_learning(
     db: aiosqlite.Connection,
     content: str,
@@ -721,6 +730,8 @@ async def save_learning(
     - *content* is empty or whitespace-only
     - *content* matches secret-like patterns (password/passwd/token keywords,
       hex strings ≥ 32 chars) — logged as a warning to prevent fact poisoning
+    - *content* is a near-duplicate of an existing pending learning in the same
+      session (word overlap ≥ 70%)
 
     Raises ``TypeError`` if *content* is not a ``str``.
     """
@@ -735,6 +746,15 @@ async def save_learning(
             "Learning rejected (contains secret-like content): %s", content[:80]
         )
         return 0
+    # Dedup against pending learnings in the same session
+    cur = await db.execute(
+        "SELECT id, content FROM learnings WHERE session = ? AND status = 'pending'",
+        (session,),
+    )
+    for row in await cur.fetchall():
+        if _word_overlap_ratio(content, row[1]) >= 0.7:
+            log.debug("Learning deduped against id=%d", row[0])
+            return 0
     cur = await db.execute(
         "INSERT INTO learnings (content, session, user) VALUES (?, ?, ?)",
         (content, session, user),
