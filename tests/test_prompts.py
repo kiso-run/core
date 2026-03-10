@@ -232,3 +232,52 @@ class TestSummarizerCriticalRules:
         """M285: facts in English."""
         prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
         assert "English" in prompt
+
+
+class TestM316PromptOptimizationIntegration:
+    """M316: Verify prompt optimization preserved all modules and kept sizes reasonable."""
+
+    _ALL_MODULES = [
+        "core", "kiso_native", "planning_rules", "skills_rules",
+        "skill_recovery", "data_flow", "web", "scripting", "replan",
+        "kiso_commands", "user_mgmt", "plugin_install",
+    ]
+
+    def test_all_12_planner_modules_parseable(self):
+        """All 12 planner modules must be individually loadable."""
+        from kiso.brain import _load_modular_prompt
+        for mod in self._ALL_MODULES:
+            if mod == "core":
+                continue  # core is always included
+            result = _load_modular_prompt("planner", [mod])
+            assert len(result) > 100, f"Module {mod} produced too little output"
+
+    def test_all_modules_combined(self):
+        """Loading all modules together produces a complete prompt."""
+        from kiso.brain import _load_modular_prompt
+        non_core = [m for m in self._ALL_MODULES if m != "core"]
+        result = _load_modular_prompt("planner", non_core)
+        for mod in self._ALL_MODULES:
+            assert f"<!-- MODULE: {mod} -->" not in result or mod == "core", \
+                f"Module marker for {mod} leaked into output"
+
+    def test_planner_prompt_size_regression(self):
+        """Planner prompt must stay under 7500 chars (was 9098 before M312)."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert len(prompt) < 7500, f"Planner prompt too large: {len(prompt)} chars"
+
+    def test_messenger_prompt_size_regression(self):
+        """Messenger prompt must stay under 1800 chars (was 2115 before M313)."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert len(prompt) < 1800, f"Messenger prompt too large: {len(prompt)} chars"
+
+    def test_reviewer_prompt_size_regression(self):
+        """Reviewer prompt must stay under 2200 chars (was 2256 before M314)."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert len(prompt) < 2200, f"Reviewer prompt too large: {len(prompt)} chars"
+
+    def test_all_role_prompts_nonempty(self):
+        """Every role prompt must have substantive content."""
+        for filename in _EXPECTED_ROLES:
+            content = (_ROLES_DIR / filename).read_text()
+            assert len(content.strip()) > 50, f"{filename} has too little content"
