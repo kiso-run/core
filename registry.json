@@ -1,4 +1,22 @@
 {
+  "tools": [
+    {
+      "name": "search",
+      "description": "Web search with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
+    },
+    {
+      "name": "aider",
+      "description": "Code editing, refactoring, bug fixes, and codebase Q&A using aider's architect/editor pattern"
+    },
+    {
+      "name": "browser",
+      "description": "Headless WebKit browser automation — navigate pages, snapshot interactive elements, click, fill forms, take screenshots"
+    },
+    {
+      "name": "moltbook",
+      "description": "Moltbook social network for AI agents — publish posts, browse feed, comment, upvote, send DMs, check notifications"
+    }
+  ],
   "skills": [
     {
       "name": "search",
