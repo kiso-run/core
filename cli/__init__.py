@@ -315,6 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
     rf = reset_sub.add_parser("factory", help="factory reset")
     rf.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
 
+    cancel_p = sub.add_parser("cancel", help="cancel the active job in a session")
+    cancel_p.add_argument(
+        "cancel_session", nargs="?", default=None,
+        help="session to cancel (default: current session)",
+    )
+
     return parser
 
 
@@ -358,6 +364,8 @@ def main() -> None:
         import importlib.resources
         script = importlib.resources.files("kiso") / "completions" / f"kiso.{args.shell}"
         print(script.read_text(encoding="utf-8"), end="")
+    elif args.command == "cancel":
+        _cancel_cmd(args)
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()
@@ -369,6 +377,47 @@ def main() -> None:
             root = Path(__file__).resolve().parent.parent
             total = count_loc(root)["total"]
             print(f"kiso {__version__}  ({_fmt_loc(total)} lines)")
+
+
+def _cancel_cmd(args: argparse.Namespace) -> None:
+    """Cancel the active job in a session.
+
+    Usage:
+        kiso cancel            Cancel current session's job
+        kiso cancel <session>  Cancel a specific session's job
+
+    Programmatic use:
+        Wrappers and bots should prefer the REST API directly:
+        POST /sessions/{sid}/cancel
+        No --all flag in core; cancel-all is a wrapper concern.
+    """
+    import httpx
+
+    ctx = _setup_client_context(args)
+    session = args.cancel_session or ctx.session
+    try:
+        resp = ctx.client.post(f"/sessions/{session}/cancel")
+        resp.raise_for_status()
+    except httpx.ConnectError:
+        print(f"error: cannot connect to {args.api}", file=sys.stderr)
+        ctx.client.close()
+        sys.exit(1)
+    except httpx.HTTPStatusError as exc:
+        print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
+        ctx.client.close()
+        sys.exit(1)
+    finally:
+        ctx.client.close()
+
+    data = resp.json()
+    if data.get("cancelled"):
+        print(f"Job cancelled in session {session} (plan {data.get('plan_id')})")
+        drained = data.get("drained", 0)
+        if drained:
+            print(f"  {drained} queued message(s) drained")
+    else:
+        print("No active job to cancel.", file=sys.stderr)
+        sys.exit(1)
 
 
 def _fmt_loc(n: int) -> str:

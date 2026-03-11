@@ -3750,3 +3750,91 @@ class TestM331SuppressPendingHeaders:
         _render_plan_status(data2, 1, False, False, self._caps(), "Bot", state)
         out2 = capsys.readouterr().out
         assert "task 1" in out2
+
+
+# ── M404: kiso cancel ──────────────────────────────────────
+
+
+def test_cancel_cmd_success(capsys):
+    """kiso cancel → POST /sessions/{sid}/cancel → success output."""
+    from cli import _cancel_cmd
+
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"cancelled": True, "plan_id": 42, "drained": 0}
+    mock_resp.raise_for_status = MagicMock()
+    mock_client.post.return_value = mock_resp
+
+    args = _make_args(session="mysess")
+    args.cancel_session = None
+
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("httpx.Client", return_value=mock_client),
+        patch("getpass.getuser", return_value="alice"),
+        patch("socket.gethostname", return_value="h"),
+    ):
+        _cancel_cmd(args)
+
+    out = capsys.readouterr().out
+    assert "cancelled" in out.lower()
+    assert "42" in out
+    # Verify cancel POST was sent to correct session
+    cancel_calls = [c for c in mock_client.post.call_args_list if "/cancel" in str(c)]
+    assert len(cancel_calls) == 1
+
+
+def test_cancel_cmd_no_active_job(capsys):
+    """kiso cancel with no active job → stderr + exit 1."""
+    from cli import _cancel_cmd
+
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"cancelled": False}
+    mock_resp.raise_for_status = MagicMock()
+    mock_client.post.return_value = mock_resp
+
+    args = _make_args(session="mysess")
+    args.cancel_session = None
+
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("httpx.Client", return_value=mock_client),
+        patch("getpass.getuser", return_value="alice"),
+        patch("socket.gethostname", return_value="h"),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        _cancel_cmd(args)
+
+    err = capsys.readouterr().err
+    assert "no active job" in err.lower()
+
+
+def test_cancel_cmd_explicit_session(capsys):
+    """kiso cancel <session> → POST to that specific session."""
+    from cli import _cancel_cmd
+
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"cancelled": True, "plan_id": 7, "drained": 2}
+    mock_resp.raise_for_status = MagicMock()
+    mock_client.post.return_value = mock_resp
+
+    args = _make_args(session="default")
+    args.cancel_session = "other-session"
+
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        patch("cli.render.detect_caps", return_value=TermCaps(False, False, 80, 24, False)),
+        patch("httpx.Client", return_value=mock_client),
+        patch("getpass.getuser", return_value="alice"),
+        patch("socket.gethostname", return_value="h"),
+    ):
+        _cancel_cmd(args)
+
+    out = capsys.readouterr().out
+    assert "other-session" in str(mock_client.post.call_args_list)
+    assert "drained" in out.lower()
+    assert "2" in out
