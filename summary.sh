@@ -273,7 +273,8 @@ for idx, b in enumerate(blocks, start=1):
 
     events.append({
         "i": idx, "t": "box", "l": [start, end],
-        "role": role, "model": model, "in_tok": intok, "out_tok": outtok,
+        "it": int(intok.replace(",", "")) if intok else None,
+        "ot": int(outtok.replace(",", "")) if outtok else None,
         "r": ref
     })
 
