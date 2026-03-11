@@ -10,6 +10,7 @@ from kiso.store import (
     session_owned_by,
     upsert_session,
     archive_low_confidence_facts,
+    get_safety_facts,
     search_facts,
     count_messages,
     create_plan,
@@ -2561,3 +2562,76 @@ async def test_scored_keywords_only(db: aiosqlite.Connection):
     assert f1 in ids
     # f2 shouldn't match (no keyword overlap)
     assert f2 not in ids
+
+
+# ---------------------------------------------------------------------------
+# M410 — Safety fact category
+# ---------------------------------------------------------------------------
+
+
+async def test_get_safety_facts(db: aiosqlite.Connection):
+    """save_fact with category='safety' → get_safety_facts returns it."""
+    await create_session(db, "s1")
+    fid = await save_fact(db, "Never delete /data without confirmation", "admin",
+                          category="safety")
+    facts = await get_safety_facts(db)
+    assert len(facts) >= 1
+    assert any(f["id"] == fid for f in facts)
+    assert any("Never delete" in f["content"] for f in facts)
+
+
+async def test_get_safety_facts_empty(db: aiosqlite.Connection):
+    """get_safety_facts returns empty list when no safety facts exist."""
+    facts = await get_safety_facts(db)
+    assert facts == []
+
+
+async def test_decay_skips_safety_facts(db: aiosqlite.Connection):
+    """decay_facts does not reduce confidence of safety-category facts."""
+    await create_session(db, "s1")
+    safety_id = await save_fact(db, "Production DB is read-only", "admin",
+                                category="safety")
+    normal_id = await save_fact(db, "Flask uses port 5000", "curator",
+                                category="general")
+    # Backdate both facts
+    await db.execute(
+        "UPDATE facts SET created_at = datetime('now', '-30 days'), "
+        "last_used = datetime('now', '-30 days')",
+    )
+    await db.commit()
+
+    affected = await decay_facts(db, decay_days=7, decay_rate=0.5)
+    assert affected >= 1
+
+    # Safety fact should still have confidence=1.0
+    cur = await db.execute("SELECT confidence FROM facts WHERE id = ?", (safety_id,))
+    row = await cur.fetchone()
+    assert row["confidence"] == 1.0
+
+    # Normal fact should have been decayed
+    cur = await db.execute("SELECT confidence FROM facts WHERE id = ?", (normal_id,))
+    row = await cur.fetchone()
+    assert row["confidence"] < 1.0
+
+
+async def test_archive_skips_safety_facts(db: aiosqlite.Connection):
+    """archive_low_confidence_facts does not archive safety-category facts."""
+    await create_session(db, "s1")
+    safety_id = await save_fact(db, "Never run rm -rf /", "admin",
+                                category="safety")
+    normal_id = await save_fact(db, "Some old fact", "curator",
+                                category="general")
+    # Set both to low confidence
+    await db.execute("UPDATE facts SET confidence = 0.1")
+    await db.commit()
+
+    archived = await archive_low_confidence_facts(db, threshold=0.3)
+    assert archived >= 1
+
+    # Safety fact should still exist
+    cur = await db.execute("SELECT id FROM facts WHERE id = ?", (safety_id,))
+    assert await cur.fetchone() is not None
+
+    # Normal fact should be deleted (archived)
+    cur = await db.execute("SELECT id FROM facts WHERE id = ?", (normal_id,))
+    assert await cur.fetchone() is None

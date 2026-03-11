@@ -65,7 +65,7 @@ WORKER_PHASES: frozenset[str] = frozenset({
 # Fact constants
 _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
-_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system"})
+_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety"})
 _ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
 
 # In-flight message classification

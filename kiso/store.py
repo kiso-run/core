@@ -1249,15 +1249,28 @@ async def update_fact_usage(
     await db.commit()
 
 
+async def get_safety_facts(db: aiosqlite.Connection) -> list[dict]:
+    """Return all safety-category facts, ordered by creation time."""
+    cur = await db.execute(
+        "SELECT id, content FROM facts WHERE category = 'safety' "
+        "ORDER BY created_at",
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
 async def decay_facts(
     db: aiosqlite.Connection,
     decay_days: int = 7,
     decay_rate: float = 0.1,
 ) -> int:
-    """Reduce confidence of facts not used in decay_days. Returns rows affected."""
+    """Reduce confidence of facts not used in decay_days. Returns rows affected.
+
+    Safety facts are excluded — they never decay.
+    """
     cur = await db.execute(
         "UPDATE facts SET confidence = MAX(0.0, confidence - ?) "
-        "WHERE COALESCE(last_used, created_at) < datetime('now', ?)",
+        "WHERE COALESCE(last_used, created_at) < datetime('now', ?) "
+        "AND category != 'safety'",
         (decay_rate, f"-{decay_days} days"),
     )
     await db.commit()
@@ -1267,17 +1280,24 @@ async def decay_facts(
 async def archive_low_confidence_facts(
     db: aiosqlite.Connection, threshold: float = 0.3
 ) -> int:
-    """Copy facts with confidence < threshold to facts_archive, then delete. Returns rows archived."""
+    """Copy facts with confidence < threshold to facts_archive, then delete. Returns rows archived.
+
+    Safety facts are excluded — they are never archived or deleted.
+    """
     cur = await db.execute(
         "INSERT INTO facts_archive (original_id, content, source, session, "
         "category, confidence, last_used, use_count, created_at) "
         "SELECT id, content, source, session, category, confidence, "
-        "last_used, use_count, created_at FROM facts WHERE confidence < ?",
+        "last_used, use_count, created_at FROM facts "
+        "WHERE confidence < ? AND category != 'safety'",
         (threshold,),
     )
     archived = cur.rowcount
     if archived:
-        await db.execute("DELETE FROM facts WHERE confidence < ?", (threshold,))
+        await db.execute(
+            "DELETE FROM facts WHERE confidence < ? AND category != 'safety'",
+            (threshold,),
+        )
     await db.commit()
     return archived
 
