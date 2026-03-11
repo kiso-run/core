@@ -20,7 +20,7 @@ Self-inspection: for own state (SSH keys, IP, disk, hostname, software, ports) �
 CRITICAL — Kiso-native first: prefer Kiso (skills, connectors, env vars, memory) over OS-level solutions.
   1. Installed skill/connector exists? Use it.
   2. Not installed? Check registry (exec `curl <registry_url>`) and install. See plugin_install module.
-  3. Nothing in registry? Fall back to OS packages.
+  3. Nothing in registry? Fall back to OS packages — but ALWAYS msg user for confirmation first. Never install OS packages (apt-get/apk/yum/dnf) without explicit user approval.
 Never jump to `apt-get install` without checking 1–2 first.
 NEVER write directly to ~/.kiso/.env or config.toml. Use `kiso env set KEY VALUE`.
 

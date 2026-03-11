@@ -465,6 +465,20 @@ class TestM362PlannerCLICommandAudit:
         assert "kiso instance" not in prompt
 
 
+class TestM367PlannerOsPackageConfirmation:
+    """M367: planner requires user confirmation before OS package install."""
+
+    def test_os_package_confirmation_rule(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_native"])
+        assert "Never install OS packages" in prompt
+
+    def test_os_package_approval_required(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_native"])
+        assert "user approval" in prompt.lower() or "user for confirmation" in prompt.lower()
+
+
 class TestM366PlannerMsgDetailPurity:
     """M366: planner msg detail purity + English enforcement."""
 
