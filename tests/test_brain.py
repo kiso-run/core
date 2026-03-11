@@ -3791,6 +3791,20 @@ class TestM48ReviewerPromptHygiene:
         assert "not sufficient" in prompt.lower()
 
 
+class TestM354ReviewerLearnGuards:
+    """M354: reviewer learn rules guard against false causal inferences."""
+
+    def test_no_causal_inference_rule(self):
+        """M354: reviewer must not infer causal relationships from single failures."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "never infer CAUSAL" in prompt
+
+    def test_cli_usage_errors_rule(self):
+        """M354: CLI usage errors should not become durable learnings."""
+        prompt = (_ROLES_DIR / "reviewer.md").read_text()
+        assert "CLI usage errors" in prompt
+
+
 class TestM48PlannerMergedRules:
     """48c: planner expect and detail rules are merged (no redundant duplicates)."""
 

@@ -19,6 +19,8 @@ Rules:
 - learn MUST be self-contained: include subject (site, project, tool). Bad: `"has a contact form"`. Good: `"guidance.studio has a contact form"`.
 - learn: consolidate related observations into one item. Never split per-field or per-element. Bad: 3 items for each form field. Good: 1 item describing the whole form.
 - learn: never include ephemeral data — browser element indices `[N]`, internal IDs, session paths. `"X installed/loaded successfully"` = transient state → null.
+- learn: never infer CAUSAL relationships from a single failure. "Command X failed" does not mean "feature Y requires Z". Only record what the output EXPLICITLY states, not what you deduce.
+- learn: CLI usage errors (wrong subcommand, missing args) are NOT durable facts about the system's capabilities. The user may simply have used the wrong command. Null for usage errors unless the output reveals a genuinely useful fact (e.g., the correct list of valid subcommands).
 - Warnings: informational — don't override exit 0 + satisfied `expect` unless `expect` requires absence of warnings.
 - Search domain check: task mentions specific URL/domain but output from different domain → replan "wrong domain".
 - Truncated output ("[truncated]" / "[Full output saved to ...]"): visible portion satisfies `expect` → "ok". Do NOT replan just because truncated.
