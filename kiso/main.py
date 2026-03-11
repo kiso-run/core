@@ -120,6 +120,56 @@ def _init_kiso_dirs() -> None:
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to sync reference docs: %s", e)
 
+    # --- SSH key generation (M355) ---
+    _init_ssh_keys()
+
+
+def _init_ssh_keys() -> None:
+    """Generate SSH key pair if none exists, plus config and known_hosts."""
+    import platform
+    import subprocess
+
+    ssh_dir = KISO_DIR / "sys" / "ssh"
+    key_file = ssh_dir / "id_ed25519"
+    if not key_file.exists():
+        hostname = platform.node() or "kiso"
+        try:
+            subprocess.run(
+                ["ssh-keygen", "-t", "ed25519", "-C", f"kiso@{hostname}",
+                 "-f", str(key_file), "-N", ""],
+                check=True, capture_output=True, timeout=30,
+            )
+            log.info("Generated SSH key pair at %s", key_file)
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired) as e:
+            log.warning("Failed to generate SSH key: %s", e)
+
+    # SSH config
+    config_file = ssh_dir / "config"
+    if not config_file.exists() and key_file.exists():
+        config_file.write_text(
+            "Host *\n"
+            "  IdentityFile ~/.kiso/sys/ssh/id_ed25519\n"
+            "  StrictHostKeyChecking accept-new\n"
+            "  UserKnownHostsFile ~/.kiso/sys/ssh/known_hosts\n"
+        )
+
+    # known_hosts with common hosts
+    known_hosts = ssh_dir / "known_hosts"
+    if not known_hosts.exists() and key_file.exists():
+        try:
+            result = subprocess.run(
+                ["ssh-keyscan", "github.com", "gitlab.com", "bitbucket.org"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.stdout:
+                known_hosts.write_text(result.stdout)
+                log.info("Populated known_hosts with common hosts")
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired) as e:
+            log.warning("Failed to populate known_hosts: %s", e)
+
+
 # Per-session workers: session → WorkerEntry
 _workers: dict[str, WorkerEntry] = {}
 

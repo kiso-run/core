@@ -13,7 +13,7 @@ import pytest
 import re
 
 from kiso.config import ConfigError
-from kiso.main import _init_kiso_dirs, _init_app_state, _load_env_file
+from kiso.main import _init_kiso_dirs, _init_ssh_keys, _init_app_state, _load_env_file
 from kiso.store import (
     create_plan,
     create_session,
@@ -257,6 +257,103 @@ class TestInitKisoDirs:
             with caplog.at_level(logging.WARNING, logger="kiso.main"):
                 _init_kiso_dirs()  # must not raise
         assert "Failed to sync reference file failing.md" in caplog.text
+
+
+# ── _init_ssh_keys (M355) ────────────────────────────────────
+
+
+class TestInitSshKeys:
+    """M355: SSH key generation at boot."""
+
+    def test_generates_key_when_missing(self, tmp_path):
+        """ssh-keygen called when no key exists."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+
+        def _fake_subprocess(cmd, **kw):
+            if "ssh-keygen" in cmd:
+                # Simulate ssh-keygen creating the key files
+                key_file = Path(cmd[cmd.index("-f") + 1])
+                key_file.write_text("PRIVATE_KEY")
+                key_file.with_suffix(".pub").write_text(
+                    "ssh-ed25519 AAAA kiso@test")
+                return MagicMock(returncode=0)
+            # ssh-keyscan
+            result = MagicMock()
+            result.stdout = "github.com ssh-ed25519 AAAA..."
+            return result
+
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("subprocess.run", side_effect=_fake_subprocess) as mock_run:
+            _init_ssh_keys()
+
+        assert mock_run.called
+        first_call = mock_run.call_args_list[0][0][0]
+        assert "ssh-keygen" in first_call
+        assert "-t" in first_call and "ed25519" in first_call
+
+    def test_skips_when_key_exists(self, tmp_path):
+        """ssh-keygen NOT called when key already exists."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+        (ssh_dir / "id_ed25519").write_text("existing_key")
+
+        scan_result = MagicMock()
+        scan_result.stdout = "github.com ssh-ed25519 AAAA..."
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("subprocess.run", return_value=scan_result) as mock_run:
+            _init_ssh_keys()
+
+        # ssh-keygen should not be called (only ssh-keyscan may be)
+        for call in mock_run.call_args_list:
+            assert "ssh-keygen" not in call[0][0]
+
+    def test_keygen_failure_logs_warning(self, tmp_path, caplog):
+        """ssh-keygen failure → warning logged, no crash."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+        import subprocess as sp
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("subprocess.run",
+                   side_effect=sp.CalledProcessError(1, "ssh-keygen")):
+            with caplog.at_level(logging.WARNING, logger="kiso.main"):
+                _init_ssh_keys()
+        assert "Failed to generate SSH key" in caplog.text
+
+    def test_creates_ssh_config(self, tmp_path):
+        """SSH config created when key exists but config doesn't."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+        (ssh_dir / "id_ed25519").write_text("key")
+
+        scan_result = MagicMock()
+        scan_result.stdout = "github.com ssh-ed25519 AAAA..."
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("subprocess.run", return_value=scan_result):
+            _init_ssh_keys()
+
+        config = ssh_dir / "config"
+        assert config.exists()
+        text = config.read_text()
+        assert "IdentityFile" in text
+        assert "StrictHostKeyChecking" in text
+
+    def test_populates_known_hosts(self, tmp_path):
+        """known_hosts populated with common hosts."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+        (ssh_dir / "id_ed25519").write_text("key")
+
+        mock_result = MagicMock()
+        mock_result.stdout = "github.com ssh-ed25519 AAAA..."
+
+        with patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("subprocess.run", return_value=mock_result):
+            _init_ssh_keys()
+
+        kh = ssh_dir / "known_hosts"
+        assert kh.exists()
+        assert "github.com" in kh.read_text()
 
 
 # --- Dockerfile entrypoint consistency ---
