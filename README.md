@@ -18,6 +18,8 @@ Kiso installs and configures in one command. It's built to be trusted with real 
 
 **In-flight message triage.** New messages arriving during an active job aren't blindly queued. A fast-path catches stop commands ("ferma", "STOP", "cancel") in milliseconds without LLM calls. Everything else is classified: updates modify the running plan, conflicts replace it, independent requests wait their turn with an immediate ack.
 
+**No silent installs.** If a task needs a skill, connector, or package that isn't installed, the bot asks first and offers alternatives. The install only happens after the user confirms — enforced structurally by plan validation, not just by prompt instructions.
+
 **Safety rules.** Persistent, admin-defined constraints (`kiso rules add "never delete /data"`) that are always injected into the planner — not gated by the briefer, not subject to decay or compression. The reviewer flags violations as stuck, blocking execution.
 
 **Knowledge that doesn't rot.** Curated facts (user/project/tool/general) with confidence scores, decay, consolidation, and session scoping. A curator evaluates learnings before promoting them. Memory stays signal, not noise.

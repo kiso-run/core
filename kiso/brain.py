@@ -102,6 +102,10 @@ def _repair_json(text: str) -> str:
     return _TRAILING_COMMA_RE.sub(r"\1", s)
 
 
+_INSTALL_CMD_RE = re.compile(
+    r"kiso\s+(skill|connector)\s+install", re.IGNORECASE,
+)
+
 _PLUGIN_DISCOVERY_RE = re.compile(
     r"(?:skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
     r"|(?:registr|kiso).*(?:skill|connector|plugin)",
@@ -620,10 +624,9 @@ def validate_plan(
     # M420: install execs are ONLY allowed in replans (user approved in prior
     # cycle).  In a first plan the planner must end with a msg asking the user.
     if not is_replan:
-        _INSTALL_RE = re.compile(r"kiso\s+(skill|connector)\s+install", re.IGNORECASE)
         first_install_idx = next(
             (i for i, t in enumerate(tasks)
-             if t.get("type") == TASK_TYPE_EXEC and _INSTALL_RE.search(t.get("detail", ""))),
+             if t.get("type") == TASK_TYPE_EXEC and _INSTALL_CMD_RE.search(t.get("detail", ""))),
             None,
         )
         if first_install_idx is not None:
