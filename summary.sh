@@ -17,7 +17,7 @@ set -euo pipefail
 # The resulting JSON has three sections:
 #   meta   — compression stats (blk, ud, ev, cb/ca, tb/ta)
 #   defs   — unique content definitions (D1, D2, …); p=string→full, p={h,t,omit}→head/tail
-#   events — ordered list referencing defs by id (t=type, l=lines, r=ref)
+#   events — positional arrays: text=[i,"t",start,end,ref] box=[i,"b",start,end,ref,it,ot]
 
 IN_TMP="$(mktemp -t flow_in.XXXXXX)"
 OUT_TMP="$(mktemp -t flow_out.XXXXXX)"
@@ -240,7 +240,7 @@ for idx, b in enumerate(blocks, start=1):
                 "tok": approx_tokens(text),
                 "p": summarize_text(text),
             }
-        events.append({"i": idx, "t": "text", "l": [start, end], "r": ref})
+        events.append([idx, "t", start, end, ref])
         continue
 
     # box
@@ -270,12 +270,9 @@ for idx, b in enumerate(blocks, start=1):
             "p": summarize_text(content),
         }
 
-    events.append({
-        "i": idx, "t": "box", "l": [start, end],
-        "it": int(intok.replace(",", "")) if intok else None,
-        "ot": int(outtok.replace(",", "")) if outtok else None,
-        "r": ref
-    })
+    events.append([idx, "b", start, end, ref,
+        int(intok.replace(",", "")) if intok else None,
+        int(outtok.replace(",", "")) if outtok else None])
 
 meta = {
     "stats": {
