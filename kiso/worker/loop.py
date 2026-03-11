@@ -1137,6 +1137,14 @@ async def _handle_exec_task(
         stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
         status = "done" if success else "failed"
 
+        # M371: invalidate sysenv cache after package install so new binaries are visible
+        if success and any(pkg_cmd in command for pkg_cmd in (
+            "apt-get install", "apt install", "apk add",
+            "yum install", "dnf install", "pip install",
+        )):
+            invalidate_cache()
+            log.debug("Sysenv cache invalidated after package install: %s", command[:80])
+
         pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
         if pub_urls:
             pub_note = "\n\nPublished files:\n" + "\n".join(
@@ -1903,6 +1911,21 @@ async def _run_planning_loop(
                         stuck_detected = True
                         log.warning("Circular replan detected (%.0f%% strategy overlap): %s",
                                     jaccard * 100, replan_reason)
+
+        # M371: detect install→use→fail loops
+        if not stuck_detected and len(replan_history) >= 2:
+            _install_kws = {"install", "apt-get", "apt", "apk", "yum", "dnf", "pip"}
+            _fail_kws = {"not found", "cannot_translate", "command not found",
+                         "no such file", "not installed"}
+            has_install = any(
+                _install_kws & set(h["failure"].lower().split())
+                for h in replan_history[:-1]
+            )
+            curr_fail_lower = replan_history[-1]["failure"].lower()
+            has_not_found = any(kw in curr_fail_lower for kw in _fail_kws)
+            if has_install and has_not_found:
+                stuck_detected = True
+                log.warning("Install loop detected: installed package but binary still not found")
 
         # Notify user about replan (as a visible msg task + webhook)
         user_lang = detect_user_lang(content)
