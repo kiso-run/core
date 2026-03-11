@@ -652,6 +652,65 @@ class TestValidatePlan:
         ]}
         assert validate_plan(plan) == []
 
+    # --- M420: install-without-confirmation ---
+
+    def test_m420_install_without_msg_rejected(self):
+        """exec install as first task without prior msg → error."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("without asking" in e for e in errors)
+
+    def test_m420_msg_then_install_accepted(self):
+        """msg before exec install → passes."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. Ask to install browser skill", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("without asking" in e for e in errors)
+
+    def test_m420_msg_before_install_exec_accepted(self):
+        """msg + exec install + replan → passes (consent then install)."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. Confirm install", "expect": None},
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "replan", "detail": "continue after install", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("without asking" in e for e in errors)
+
+    def test_m420_replan_skips_check(self):
+        """is_replan=True skips install-without-msg check."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "replan", "detail": "continue", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=True)
+        assert not any("without asking" in e for e in errors)
+
+    def test_m420_multiple_installs_single_error(self):
+        """Multiple install execs without msg → only one error (first install)."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso connector install slack", "expect": "installed"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        install_errors = [e for e in errors if "without asking" in e]
+        assert len(install_errors) == 1
+        assert "Task 1:" in install_errors[0]
+
+    def test_m420_connector_install_also_caught(self):
+        """kiso connector install also triggers the check."""
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso connector install telegram", "expect": "installed"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("without asking" in e for e in errors)
+
 
 # --- _load_system_prompt ---
 
