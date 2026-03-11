@@ -15,9 +15,9 @@ set -euo pipefail
 #   4. Summarises long blocks with head/tail previews
 #
 # The resulting JSON has three sections:
-#   meta   — compression stats (blocks, defs, chars/tokens before/after)
+#   meta   — compression stats (blk, ud, ev, cb/ca, tb/ta)
 #   defs   — unique content definitions (D00001, D00002, …)
-#   events — ordered list referencing defs by id
+#   events — ordered list referencing defs by id (t=type, l=lines, r=ref)
 
 IN_TMP="$(mktemp -t flow_in.XXXXXX)"
 OUT_TMP="$(mktemp -t flow_out.XXXXXX)"
@@ -181,7 +181,7 @@ def summarize_text(text: str, head_lines: int = 14, tail_lines: int = 8):
         "mode": "head_tail",
         "head": "\n".join(ls[:head_lines]),
         "tail": "\n".join(ls[-tail_lines:]),
-        "omitted_lines": max(0, len(ls) - head_lines - tail_lines),
+        "omit": max(0, len(ls) - head_lines - tail_lines),
     }
 
 def split_blocks(lines):
@@ -239,11 +239,11 @@ for idx, b in enumerate(blocks, start=1):
             defs[ref] = {
                 "sha1": h,
                 "kind": "text",
-                "chars": len(text),
-                "approx_tokens": approx_tokens(text),
-                "preview": summarize_text(text),
+                "c": len(text),
+                "tok": approx_tokens(text),
+                "p": summarize_text(text),
             }
-        events.append({"i": idx, "type": "text", "lines": [start, end], "ref": ref})
+        events.append({"i": idx, "t": "text", "l": [start, end], "r": ref})
         continue
 
     # box
@@ -270,26 +270,26 @@ for idx, b in enumerate(blocks, start=1):
             "kind": "box",
             "role": role,
             "model": model,
-            "chars": len(content),
-            "approx_tokens": approx_tokens(content),
-            "preview": summarize_text(content),
+            "c": len(content),
+            "tok": approx_tokens(content),
+            "p": summarize_text(content),
         }
 
     events.append({
-        "i": idx, "type": "box", "lines": [start, end],
+        "i": idx, "t": "box", "l": [start, end],
         "role": role, "model": model, "in_tok": intok, "out_tok": outtok,
-        "ref": ref
+        "r": ref
     })
 
 meta = {
     "stats": {
-        "blocks_total": len(blocks),
-        "events_emitted": len(events),
-        "defs_unique": len(defs),
-        "chars_before": len(raw),
-        "chars_after": 0,  # filled after serialization
-        "approx_tokens_before": approx_tokens(raw),
-        "approx_tokens_after": 0,
+        "blk": len(blocks),
+        "ev": len(events),
+        "ud": len(defs),
+        "cb": len(raw),
+        "ca": 0,  # filled after serialization
+        "tb": approx_tokens(raw),
+        "ta": 0,
     }
 }
 out = {"meta": meta, "defs": defs, "events": events}
@@ -300,8 +300,8 @@ else:
     text = json.dumps(out, ensure_ascii=False, separators=(",", ":"))
 
 # Update post-serialization stats
-out["meta"]["stats"]["chars_after"] = len(text)
-out["meta"]["stats"]["approx_tokens_after"] = approx_tokens(text)
+out["meta"]["stats"]["ca"] = len(text)
+out["meta"]["stats"]["ta"] = approx_tokens(text)
 if pretty:
     text = json.dumps(out, ensure_ascii=False, indent=2)
 else:
@@ -330,8 +330,8 @@ STATS=$(python3 -c "
 import json, sys
 d = json.load(open('$OUT_TMP'))
 s = d['meta']['stats']
-ratio = 100 * (1 - s['chars_after'] / max(1, s['chars_before']))
-print(f\"{s['defs_unique']} unique defs, {s['events_emitted']} events, {ratio:.0f}% reduction\")
+ratio = 100 * (1 - s['ca'] / max(1, s['cb']))
+print(f\"{s['ud']} unique defs, {s['ev']} events, {ratio:.0f}% reduction\")
 " 2>/dev/null || true)
 if [[ -n "$STATS" ]]; then
   echo "${C_DIM}${STATS}${C_RESET}" >&2
