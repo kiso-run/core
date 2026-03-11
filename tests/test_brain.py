@@ -5403,8 +5403,9 @@ class TestRunBriefer:
             "relevant_tags": ["browser"],
             "relevant_entities": [],
         })
+        ctx = {"skills": "Available skills:\n- browser — Navigate, click, fill"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
-            result = await run_briefer(config, "planner", "visit a website", {"skills": "browser"})
+            result = await run_briefer(config, "planner", "visit a website", ctx)
         assert result["modules"] == ["web"]
         assert result["skills"] == ["browser: navigate"]
         assert result["context"] == "User wants to browse"
@@ -5451,7 +5452,7 @@ class TestRunBriefer:
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "browser: navigate, click, fill, screenshot, text"}
+        ctx = {"skills": "Available skills:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit example.com", ctx)
         # "browser" matches context pool, "Retrieve CPU details" does not
@@ -5469,7 +5470,7 @@ class TestRunBriefer:
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "search: web search for queries, max_results option"}
+        ctx = {"skills": "Available skills:\n- search — web search for queries, max_results option"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "find info", ctx)
         assert len(result["skills"]) == 1

@@ -226,8 +226,25 @@ class TestBrieferSkillFilterNoSkills:
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "browser: navigate, click, fill, screenshot"}
+        ctx = {"skills": "Available skills:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
         assert any("browser" in s for s in result["skills"])
         assert not any("fake_skill" in s for s in result["skills"])
+
+    @pytest.mark.asyncio
+    async def test_skill_filter_exact_name_no_substring(self, config):
+        """M394: 'git' installed must NOT match briefer skill 'github'."""
+        response = json.dumps({
+            "modules": [],
+            "skills": ["github: integration", "git: version control"],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        ctx = {"skills": "Available skills:\n- git — version control operations"}
+        with patch("kiso.brain.call_llm", return_value=response):
+            result = await run_briefer(config, "planner", "test", ctx)
+        assert any("git:" in s for s in result["skills"])
+        assert not any("github" in s for s in result["skills"])

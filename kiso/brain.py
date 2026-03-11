@@ -1178,12 +1178,16 @@ async def run_briefer(
                       len(briefing["skills"]))
             briefing["skills"] = []
         else:
-            pool_skills_lower = context_pool["skills"].lower()
+            # M394: extract installed skill names for exact matching
+            installed_skill_names: set[str] = set()
+            for line in context_pool["skills"].split("\n"):
+                m = re.match(r"^-\s+(\S+)", line)
+                if m:
+                    installed_skill_names.add(m.group(1).lower())
             original_count = len(briefing["skills"])
             briefing["skills"] = [
                 s for s in briefing["skills"]
-                if any(word.strip(":.,;-").lower() in pool_skills_lower
-                       for word in s.split()[:3] if len(word.strip(":.,;-")) > 3)
+                if s.split(":")[0].split()[0].strip().lower() in installed_skill_names
             ]
             filtered = original_count - len(briefing["skills"])
             if filtered:
