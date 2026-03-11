@@ -103,6 +103,44 @@ class TestEntityTagEnrichment:
 # F12 — messenger quality
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# F13 — chat_kb classification for user-defined entity
+# ---------------------------------------------------------------------------
+
+
+class TestF13ChatKBClassification:
+    """F13: chat_kb fast path for user-defined entity with pre-seeded facts."""
+
+    async def test_chat_kb_user_entity(self, func_db, run_message):
+        """Pre-seed entity 'guidance.studio' → ask about it → msg-only plan."""
+        from kiso.store import find_or_create_entity, save_fact
+
+        eid = await find_or_create_entity(func_db, "guidance.studio", "website")
+        await save_fact(
+            func_db,
+            "guidance.studio is a SaaS platform for interactive user onboarding workflows",
+            source="curator", category="general",
+            tags=["website", "saas", "onboarding"], entity_id=eid,
+        )
+        result = await run_message("cosa sai di guidance.studio?", timeout=120)
+        assert result.success
+        assert_italian(result.msg_output)
+        # Response should contain pre-seeded fact content
+        output_lower = result.msg_output.lower()
+        assert "onboarding" in output_lower or "saas" in output_lower or "workflow" in output_lower
+        # chat_kb fast path: no exec or skill tasks, only msg
+        types = result.task_types()
+        assert "exec" not in types, f"Expected no exec tasks, got: {types}"
+        assert "skill" not in types, f"Expected no skill tasks, got: {types}"
+        # Should have exactly 1 msg task (fast-path produces single msg)
+        msg_tasks = [t for t in result.tasks if t.get("type") == "msg"]
+        assert len(msg_tasks) >= 1, f"Expected at least 1 msg task, got: {types}"
+
+
+# ---------------------------------------------------------------------------
+# F12 — messenger quality
+# ---------------------------------------------------------------------------
+
 _EMOJI_RE = re.compile(
     "[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA9F]"
 )
