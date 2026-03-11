@@ -291,9 +291,9 @@ class TestM316PromptOptimizationIntegration:
                 f"Module marker for {mod} leaked into output"
 
     def test_planner_prompt_size_regression(self):
-        """Planner prompt must stay under 7500 chars (was 9098 before M312)."""
+        """Planner prompt must stay under 8500 chars (+M353 self-identity rules)."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert len(prompt) < 7500, f"Planner prompt too large: {len(prompt)} chars"
+        assert len(prompt) < 8500, f"Planner prompt too large: {len(prompt)} chars"
 
     def test_messenger_prompt_size_regression(self):
         """Messenger prompt must stay under 2100 chars (+M351 language rules)."""

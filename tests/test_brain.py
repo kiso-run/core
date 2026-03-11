@@ -2745,6 +2745,21 @@ class TestPlannerPromptContent:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "kiso instance" not in prompt
 
+    def test_m353_planner_self_identity(self):
+        """M353: planner prompt declares 'You ARE Kiso'."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "You ARE Kiso" in prompt
+
+    def test_m353_planner_self_entity(self):
+        """M353: planner prompt references entity 'self' for knowledge base."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert 'entity "self"' in prompt
+
+    def test_m353_planner_no_kiso_cli_for_self_inspection(self):
+        """M353: planner prompt forbids kiso CLI for self-inspection."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "Do NOT use kiso CLI commands for self-inspection" in prompt
+
 
 class TestM165SkillArgsExample:
     """M165: planner prompt must include a skill args example."""
