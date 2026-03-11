@@ -43,6 +43,7 @@ from kiso.brain import (
     build_summarizer_messages,
     classify_message,
     CLASSIFIER_CATEGORIES,
+    _sanitize_messenger_output,
     run_briefer,
     run_curator,
     run_exec_translator,
@@ -2484,6 +2485,53 @@ class TestLoadSystemPromptMessenger:
         prompt = _load_system_prompt("messenger")
         assert "{bot_name}" in prompt
         assert "friendly" in prompt
+
+
+class TestM369MessengerSanitizer:
+    """M369: messenger output sanitization."""
+
+    def test_strips_tool_call_blocks(self):
+        text = 'Hello <tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call> world'
+        assert _sanitize_messenger_output(text) == "Hello  world"
+
+    def test_strips_function_call_blocks(self):
+        text = 'Hi <function_call>something</function_call> there'
+        assert _sanitize_messenger_output(text) == "Hi  there"
+
+    def test_strips_orphaned_tags(self):
+        text = 'Text </tool_call> more'
+        assert _sanitize_messenger_output(text) == "Text  more"
+
+    def test_preserves_normal_text(self):
+        text = "La tua chiave SSH pubblica è: ssh-ed25519 AAAA..."
+        assert _sanitize_messenger_output(text) == text
+
+    def test_strips_multiline_tool_call(self):
+        text = 'Before\n<tool_call>\n{"name": "x"}\n</tool_call>\nAfter'
+        result = _sanitize_messenger_output(text)
+        assert "<tool_call>" not in result
+        assert "After" in result
+
+    def test_empty_string(self):
+        assert _sanitize_messenger_output("") == ""
+
+    async def test_run_messenger_applies_sanitizer(self, tmp_path):
+        """run_messenger applies sanitization to LLM output."""
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        config = _make_brain_config()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value='Ciao! <tool_call>{"name": "x"}</tool_call>'):
+            result = await run_messenger(db, config, "sess1", "greet")
+        assert result == "Ciao!"
+        assert "<tool_call>" not in result
+        await db.close()
+
+    def test_messenger_prompt_prohibits_xml(self):
+        """M369: messenger prompt forbids XML/tool_call output."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "NEVER emit XML" in prompt
+        assert "tool_call" in prompt
 
 
 # --- Exec Translator ---

@@ -1782,9 +1782,24 @@ async def run_messenger(
         briefing_context=briefing_context,
     )
     try:
-        return await call_llm(config, "messenger", messages, session=session)
+        text = await call_llm(config, "messenger", messages, session=session)
+        return _sanitize_messenger_output(text)
     except LLMError as e:
         raise MessengerError(f"LLM call failed: {e}")
+
+
+# M369: strip hallucinated XML/tool markup from messenger output
+_TOOL_CALL_BLOCK_RE = re.compile(
+    r"<(tool_call|function_call)[^>]*>.*?</\1>", re.DOTALL,
+)
+_TOOL_CALL_TAG_RE = re.compile(r"</?(tool_call|function_call)[^>]*>")
+
+
+def _sanitize_messenger_output(text: str) -> str:
+    """Strip hallucinated tool_call/function_call XML from messenger output."""
+    cleaned = _TOOL_CALL_BLOCK_RE.sub("", text)
+    cleaned = _TOOL_CALL_TAG_RE.sub("", cleaned)
+    return cleaned.strip()
 
 
 # ---------------------------------------------------------------------------
