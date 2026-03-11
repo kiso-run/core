@@ -545,6 +545,7 @@ async def _fast_path_chat(
             text = await asyncio.wait_for(
                 _msg_task(config, db, session, content, goal=content,
                           include_recent=True,
+                          user_message=content,
                           on_briefer_done=_flush_briefer),
                 timeout=messenger_timeout,
             )
