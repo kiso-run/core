@@ -2200,6 +2200,31 @@ async def test_find_or_create_entity_normalizes_https(db: aiosqlite.Connection):
     assert eid1 == eid2
 
 
+async def test_find_or_create_entity_updates_kind(db: aiosqlite.Connection):
+    """M395: calling with different kind updates the entity."""
+    eid = await find_or_create_entity(db, "flask", "tool")
+    cur = await db.execute("SELECT kind FROM entities WHERE id = ?", (eid,))
+    assert (await cur.fetchone())[0] == "tool"
+
+    eid2 = await find_or_create_entity(db, "flask", "framework")
+    assert eid2 == eid  # same entity
+    cur = await db.execute("SELECT kind FROM entities WHERE id = ?", (eid,))
+    assert (await cur.fetchone())[0] == "framework"
+
+
+async def test_find_or_create_entity_same_kind_no_update(db: aiosqlite.Connection):
+    """M395: same kind does not trigger update."""
+    eid = await find_or_create_entity(db, "flask", "framework")
+    cur = await db.execute("SELECT updated_at FROM entities WHERE id = ?", (eid,))
+    ts1 = (await cur.fetchone())[0]
+
+    eid2 = await find_or_create_entity(db, "flask", "framework")
+    assert eid2 == eid
+    cur = await db.execute("SELECT updated_at FROM entities WHERE id = ?", (eid,))
+    ts2 = (await cur.fetchone())[0]
+    assert ts1 == ts2
+
+
 async def test_normalize_entity_name():
     """Entity name normalization works correctly."""
     assert _normalize_entity_name("Guidance.Studio") == "guidance.studio"

@@ -947,10 +947,18 @@ async def find_or_create_entity(
 ) -> int:
     """Find entity by canonical name or create it. Returns entity_id."""
     canonical = _normalize_entity_name(name)
-    cur = await db.execute("SELECT id FROM entities WHERE name = ?", (canonical,))
+    cur = await db.execute("SELECT id, kind FROM entities WHERE name = ?", (canonical,))
     existing = await cur.fetchone()
     if existing:
-        return existing[0]
+        # M395: update kind if caller provides different classification
+        if existing["kind"] != kind:
+            await db.execute(
+                "UPDATE entities SET kind = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (kind, existing["id"]),
+            )
+            await db.commit()
+            log.info("Entity '%s' kind updated: %s → %s", canonical, existing["kind"], kind)
+        return existing["id"]
     cur = await db.execute(
         "INSERT INTO entities (name, kind) VALUES (?, ?)", (canonical, kind),
     )
