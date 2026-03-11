@@ -4,8 +4,6 @@ End-to-end checks that the system prevents silent skill/connector
 installation without user approval.
 """
 
-import importlib
-
 import pytest
 
 from kiso.brain import (
@@ -43,36 +41,37 @@ class TestPlannerPromptInstallRules:
         assert "approved" in self.full.lower() or "consent" in self.full.lower()
 
 
-# --- 2–4. validate_plan install checks ---
+# --- 2–4. validate_plan: install only in replan ---
 
 
 class TestValidatePlanInstallConfirmation:
-    """validate_plan must reject install-without-msg and accept proper flows."""
+    """Install execs are blocked in first plan; only allowed in replan."""
 
-    def test_install_without_msg_rejected(self):
+    def test_install_in_first_plan_rejected(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("without asking" in e for e in errors)
+        assert any("first plan" in e for e in errors)
 
-    def test_install_with_preceding_msg_accepted(self):
+    def test_msg_then_install_same_plan_rejected(self):
+        """msg + exec install in same first plan → rejected (user can't reply)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Install browser?", "expect": None},
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("without asking" in e for e in errors)
+        assert any("first plan" in e for e in errors)
 
-    def test_replan_skips_install_check(self):
+    def test_replan_allows_install(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True)
-        assert not any("without asking" in e for e in errors)
+        assert not any("first plan" in e for e in errors)
 
     def test_connector_install_also_caught(self):
         plan = {"tasks": [
@@ -80,7 +79,15 @@ class TestValidatePlanInstallConfirmation:
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("without asking" in e for e in errors)
+        assert any("first plan" in e for e in errors)
+
+    def test_msg_only_asking_to_install_accepted(self):
+        """Plan with just a msg asking about install (no exec) → passes."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. Shall I install browser?", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("first plan" in e for e in errors)
 
 
 # --- 5. Capability gap text ---
@@ -91,7 +98,6 @@ class TestCapabilityGapText:
 
     def test_gap_mentions_asking_user(self):
         text = _detect_capability_gap("navigate to example.com", [])
-        # When browser is not installed, gap text should mention asking user
         if text:
             assert "ask" in text.lower() or "user" in text.lower()
 

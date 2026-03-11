@@ -617,6 +617,24 @@ def validate_plan(
             f"Msg tasks communicate results — place them after investigation."
         )
 
+    # M420: install execs are ONLY allowed in replans (user approved in prior
+    # cycle).  In a first plan the planner must end with a msg asking the user.
+    if not is_replan:
+        _INSTALL_RE = re.compile(r"kiso\s+(skill|connector)\s+install", re.IGNORECASE)
+        first_install_idx = next(
+            (i for i, t in enumerate(tasks)
+             if t.get("type") == TASK_TYPE_EXEC and _INSTALL_RE.search(t.get("detail", ""))),
+            None,
+        )
+        if first_install_idx is not None:
+            errors.append(
+                f"Task {first_install_idx + 1}: installs a skill/connector in the first plan. "
+                f"You CANNOT install in the same plan that asks for permission — the user "
+                f"hasn't replied yet. Plan a SINGLE msg task asking whether to install, "
+                f"offer alternatives, and end the plan there. The install happens in the "
+                f"next cycle after the user approves."
+            )
+
     last = tasks[-1]
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")

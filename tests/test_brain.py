@@ -652,64 +652,64 @@ class TestValidatePlan:
         ]}
         assert validate_plan(plan) == []
 
-    # --- M420: install-without-confirmation ---
+    # --- M420: install only allowed in replan ---
 
-    def test_m420_install_without_msg_rejected(self):
-        """exec install as first task without prior msg → error."""
+    def test_m420_install_in_first_plan_rejected(self):
+        """exec install in first plan (is_replan=False) → error."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("without asking" in e for e in errors)
+        assert any("first plan" in e for e in errors)
 
-    def test_m420_msg_then_install_accepted(self):
-        """msg before exec install → passes."""
-        plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. Ask to install browser skill", "expect": None},
-        ]}
-        errors = validate_plan(plan)
-        assert not any("without asking" in e for e in errors)
-
-    def test_m420_msg_before_install_exec_accepted(self):
-        """msg + exec install + replan → passes (consent then install)."""
+    def test_m420_msg_then_install_still_rejected(self):
+        """msg + exec install in same first plan → still rejected (user can't reply)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Confirm install", "expect": None},
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "replan", "detail": "continue after install", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("without asking" in e for e in errors)
+        assert any("first plan" in e for e in errors)
 
-    def test_m420_replan_skips_check(self):
-        """is_replan=True skips install-without-msg check."""
+    def test_m420_msg_only_no_install_accepted(self):
+        """msg asking about install (no exec install) → passes."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. Ask to install browser skill", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("first plan" in e for e in errors)
+
+    def test_m420_replan_allows_install(self):
+        """is_replan=True allows exec install (user approved in prior cycle)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True)
-        assert not any("without asking" in e for e in errors)
+        assert not any("first plan" in e for e in errors)
 
     def test_m420_multiple_installs_single_error(self):
-        """Multiple install execs without msg → only one error (first install)."""
+        """Multiple install execs → only one error (first install)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "exec", "detail": "kiso connector install slack", "expect": "installed"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        install_errors = [e for e in errors if "without asking" in e]
+        install_errors = [e for e in errors if "first plan" in e]
         assert len(install_errors) == 1
         assert "Task 1:" in install_errors[0]
 
     def test_m420_connector_install_also_caught(self):
-        """kiso connector install also triggers the check."""
+        """kiso connector install also blocked in first plan."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso connector install telegram", "expect": "installed"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("without asking" in e for e in errors)
+        assert any("first plan" in e for e in errors)
 
 
 # --- _load_system_prompt ---
