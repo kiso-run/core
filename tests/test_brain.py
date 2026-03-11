@@ -5327,10 +5327,16 @@ class TestBrieferMessages:
         msgs = build_briefer_messages("planner", "task", {})
         content = msgs[1]["content"]
         # Each module line has "- name: description" format
-        assert "- planning_rules: general planning rules" in content
-        assert "- web: website interaction rules" in content
+        assert "- planning_rules: task ordering" in content
+        assert "- web: URLs, websites" in content
         assert "- replan: replan strategy" in content
         assert "- plugin_install: plugin discovery" in content
+
+    def test_m426_module_descriptions_concise(self):
+        """M426: each module description is ≤60 chars."""
+        from kiso.brain import _BRIEFER_MODULE_DESCRIPTIONS
+        for name, desc in _BRIEFER_MODULE_DESCRIPTIONS.items():
+            assert len(desc) <= 60, f"{name}: '{desc}' is {len(desc)} chars (max 60)"
 
     def test_briefer_prompt_zero_module_guidance(self):
         """M259: briefer system prompt includes zero-module guidance."""
