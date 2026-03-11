@@ -391,6 +391,8 @@ class TestCollectBootFacts:
         facts = await search_facts_by_entity(db, self_ent[0]["id"])
         contents = [f["content"] for f in facts]
         assert any("ssh-ed25519 AAAA" in c for c in contents)
+        # M372: boot fact includes file path
+        assert any("id_ed25519.pub" in c for c in contents)
 
     async def test_stores_hostname_fact(self, tmp_path, db):
         """Boot facts include hostname and user."""

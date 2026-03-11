@@ -184,7 +184,10 @@ async def _collect_boot_facts(db) -> None:
     pub_key = KISO_DIR / "sys" / "ssh" / "id_ed25519.pub"
     if pub_key.exists():
         key_text = pub_key.read_text().strip()
-        facts.append((f"Instance SSH public key: {key_text}", ["ssh", "credentials"]))
+        facts.append((
+            f"Instance SSH public key (at {pub_key}): {key_text}",
+            ["ssh", "credentials"],
+        ))
 
     # Hostname and user
     hostname = _plat.node() or "unknown"
