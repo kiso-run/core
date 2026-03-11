@@ -42,6 +42,7 @@ from kiso.brain import (
     build_reviewer_messages,
     build_summarizer_messages,
     classify_message,
+    CLASSIFIER_CATEGORIES,
     run_briefer,
     run_curator,
     run_exec_translator,
@@ -3160,6 +3161,13 @@ class TestClassifyMessage:
             result = await classify_message(config, "hello")
         assert result == "chat"
 
+    async def test_returns_chat_kb(self):
+        """M364: classify_message returns 'chat_kb' for knowledge-enriched chat."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat_kb"):
+            result = await classify_message(config, "cosa sai su te stesso?")
+        assert result == "chat_kb"
+
     async def test_returns_plan(self):
         """classify_message returns 'plan' when LLM says 'plan'."""
         config = _make_config_for_classifier()
@@ -3228,9 +3236,10 @@ class TestClassifierPromptContent:
         assert len(prompt) > 0
 
     def test_classifier_prompt_mentions_categories(self):
-        """Classifier prompt should define plan and chat categories."""
+        """Classifier prompt should define plan, chat_kb, and chat categories."""
         prompt = (_ROLES_DIR / "classifier.md").read_text()
         assert "plan" in prompt
+        assert "chat_kb" in prompt
         assert "chat" in prompt
 
     def test_classifier_prompt_safe_fallback(self):
@@ -3262,6 +3271,28 @@ class TestClassifierPromptContent:
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
         assert "system introspection" in prompt
         assert "ssh key" in prompt or "ssh keys" in prompt
+
+    def test_classifier_prompt_defines_chat_kb(self):
+        """M364: classifier prompt defines chat_kb category."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text()
+        assert "chat_kb" in prompt
+
+    def test_classifier_prompt_chat_kb_self_referential(self):
+        """M364: chat_kb covers self-referential knowledge queries."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "what do you know" in prompt
+        assert "cosa sai" in prompt
+
+    def test_classifier_prompt_chat_kb_entities(self):
+        """M364: chat_kb covers questions about known entities."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "entities" in prompt
+
+    def test_classifier_categories_constant(self):
+        """M364: CLASSIFIER_CATEGORIES includes plan, chat, and chat_kb."""
+        assert "plan" in CLASSIFIER_CATEGORIES
+        assert "chat" in CLASSIFIER_CATEGORIES
+        assert "chat_kb" in CLASSIFIER_CATEGORIES
 
 
 class TestM276ClassifierContext:

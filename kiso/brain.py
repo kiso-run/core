@@ -1202,14 +1202,17 @@ def build_classifier_messages(
     return _build_messages(_load_system_prompt("classifier"), user_text)
 
 
+CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({"plan", "chat", "chat_kb"})
+
+
 async def classify_message(
     config: Config, content: str, session: str = "",
     recent_context: str = "",
 ) -> str:
-    """Classify a user message as 'plan' or 'chat'.
+    """Classify a user message as 'plan', 'chat_kb', or 'chat'.
 
-    Returns ``"plan"`` or ``"chat"``.  On any error or ambiguous output,
-    returns ``"plan"`` (safe fallback — the planner handles everything).
+    Returns one of :data:`CLASSIFIER_CATEGORIES`.  On any error or ambiguous
+    output, returns ``"plan"`` (safe fallback — the planner handles everything).
     """
     messages = build_classifier_messages(content, recent_context=recent_context)
     try:
@@ -1219,7 +1222,7 @@ async def classify_message(
         return "plan"
 
     result = raw.strip().lower()
-    if result in ("plan", "chat"):
+    if result in CLASSIFIER_CATEGORIES:
         log.info("Classifier: %s", result)
         return result
 

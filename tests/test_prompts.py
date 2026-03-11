@@ -124,8 +124,9 @@ class TestClassifierCriticalRules:
     def _load(self):
         self.prompt = (_ROLES_DIR / "classifier.md").read_text()
 
-    def test_two_categories(self):
+    def test_three_categories(self):
         assert '"plan"' in self.prompt
+        assert '"chat_kb"' in self.prompt
         assert '"chat"' in self.prompt
 
     def test_safe_fallback(self):
