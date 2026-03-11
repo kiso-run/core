@@ -1263,6 +1263,30 @@ async def classify_message(
     return "plan"
 
 
+# --- Stop pattern fast-path (M407) ---
+
+_STOP_PATTERNS = re.compile(
+    r"^(stop|ferma|fermati|annulla|cancel|abort|basta|quit)[\s!.]*$",
+    re.IGNORECASE,
+)
+_URGENT_RE = re.compile(r"^[A-Z\s!]{4,}$")
+
+
+def is_stop_message(text: str) -> bool:
+    """Return True if *text* is an obvious stop/cancel command.
+
+    Matches single stop words (with optional trailing punctuation) and
+    ALL-CAPS urgent messages (≥4 chars).  Does NOT match messages with
+    content after the stop word (e.g. "stop using port 80").
+    """
+    s = text.strip()
+    if _STOP_PATTERNS.match(s):
+        return True
+    if _URGENT_RE.match(s):
+        return True
+    return False
+
+
 # --- In-flight message classification (M406) ---
 
 _INFLIGHT_PROMPT = """\

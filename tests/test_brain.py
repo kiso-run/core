@@ -46,6 +46,7 @@ from kiso.brain import (
     build_inflight_classifier_messages,
     CLASSIFIER_CATEGORIES,
     INFLIGHT_CATEGORIES,
+    is_stop_message,
     _sanitize_messenger_output,
     run_briefer,
     run_curator,
@@ -7740,3 +7741,43 @@ class TestInflightCategories:
     def test_contains_expected_values(self):
         """INFLIGHT_CATEGORIES contains all four expected values."""
         assert INFLIGHT_CATEGORIES == {"stop", "update", "independent", "conflict"}
+
+
+# ---------------------------------------------------------------------------
+# M407 — Stop pattern fast-path
+# ---------------------------------------------------------------------------
+
+
+class TestIsStopMessage:
+    @pytest.mark.parametrize("text", [
+        "stop", "STOP", "ferma", "ferma!", "fermati", "Annulla",
+        "cancel", "abort", "basta", "quit", "stop!", "STOP!",
+        "basta.", "  ferma  ", "FERMATI",
+    ])
+    def test_matches_stop_words(self, text):
+        """Single stop words (with optional trailing punctuation) match."""
+        assert is_stop_message(text) is True
+
+    @pytest.mark.parametrize("text", [
+        "FERMATI ORA", "STOP NOW", "BASTA!", "AIUTO",
+    ])
+    def test_matches_urgent_caps(self, text):
+        """ALL-CAPS messages ≥4 chars match as urgent."""
+        assert is_stop_message(text) is True
+
+    @pytest.mark.parametrize("text", [
+        "stop using port 80", "cancel the deploy and use 8080",
+        "fermati dopo il secondo task", "quit smoking",
+        "hello", "deploy to staging", "che ore sono?",
+    ])
+    def test_no_match_with_content(self, text):
+        """Messages with content after the stop word do NOT match."""
+        assert is_stop_message(text) is False
+
+    def test_empty_string(self):
+        assert is_stop_message("") is False
+
+    def test_short_caps(self):
+        """ALL-CAPS under 4 chars should not match."""
+        assert is_stop_message("NO") is False
+        assert is_stop_message("OK") is False
