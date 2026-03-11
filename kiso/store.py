@@ -1118,7 +1118,8 @@ async def backfill_fact_entities(db: aiosqlite.Connection) -> int:
     for row in orphans:
         content_lower = row["content"].lower()
         for entity in entities:
-            if entity["name"] in content_lower:
+            # M393: word-boundary match to avoid "java" matching "javascript"
+            if re.search(r'\b' + re.escape(entity["name"]) + r'\b', content_lower):
                 await db.execute(
                     "UPDATE facts SET entity_id = ? WHERE id = ?",
                     (entity["id"], row["id"]),

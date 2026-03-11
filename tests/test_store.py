@@ -2296,6 +2296,46 @@ async def test_backfill_fact_entities_already_linked(db: aiosqlite.Connection):
     assert await backfill_fact_entities(db) == 0
 
 
+# --- M393: backfill word-boundary matching ---
+
+
+async def test_backfill_word_boundary_java_not_javascript(db: aiosqlite.Connection):
+    """M393: entity 'java' must NOT match fact about 'javascript'."""
+    from kiso.store import backfill_fact_entities
+
+    fid = await save_fact(db, "JavaScript is used for frontend development", "curator")
+    await find_or_create_entity(db, "java", "language")
+
+    updated = await backfill_fact_entities(db)
+    assert updated == 0
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
+    assert (await cur.fetchone())[0] is None
+
+
+async def test_backfill_word_boundary_sql_not_sqlite(db: aiosqlite.Connection):
+    """M393: entity 'sql' must NOT match fact about 'sqlite'."""
+    from kiso.store import backfill_fact_entities
+
+    fid = await save_fact(db, "SQLite is used for local storage", "curator")
+    await find_or_create_entity(db, "sql", "language")
+
+    updated = await backfill_fact_entities(db)
+    assert updated == 0
+
+
+async def test_backfill_word_boundary_exact_match(db: aiosqlite.Connection):
+    """M393: entity 'flask' matches fact about 'Flask uses Jinja2'."""
+    from kiso.store import backfill_fact_entities
+
+    fid = await save_fact(db, "Flask uses Jinja2 for rendering", "curator")
+    eid = await find_or_create_entity(db, "flask", "framework")
+
+    updated = await backfill_fact_entities(db)
+    assert updated == 1
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
+    assert (await cur.fetchone())[0] == eid
+
+
 # --- M345: entity: tag migration ---
 
 
