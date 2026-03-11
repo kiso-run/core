@@ -1561,6 +1561,7 @@ async def run_worker(
     cancel_event: asyncio.Event | None = None,
     set_phase: Callable[[str], None] | None = None,
     pending_messages: list | None = None,
+    update_hints: list | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
@@ -1613,7 +1614,8 @@ async def run_worker(
                     llm_timeout, planner_timeout,
                     max_replan_depth, classifier_timeout=classifier_timeout,
                     messenger_timeout=messenger_timeout,
-                    slog=slog, set_phase=set_phase)
+                    slog=slog, set_phase=set_phase,
+                    update_hints=update_hints)
             except Exception:
                 log.exception("Unexpected error processing message in session=%s", session)
                 slog.error("Unexpected error processing message")
@@ -1797,6 +1799,7 @@ async def _run_planning_loop(
     slog: "SessionLogger | None",
     set_phase: "Callable[[str], None] | None" = None,
     base_url: str = "",
+    update_hints: "list | None" = None,
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
     def _phase(p: str) -> None:
@@ -2008,7 +2011,14 @@ async def _run_planning_loop(
 
         # Call planner with enriched context
         _phase(WORKER_PHASE_PLANNING)
-        replan_context = _build_replan_context(completed, remaining, replan_reason, replan_history)
+        # M409: drain update hints into replan context, then clear them
+        consumed_hints = list(update_hints) if update_hints else None
+        if update_hints:
+            update_hints.clear()
+        replan_context = _build_replan_context(
+            completed, remaining, replan_reason, replan_history,
+            update_hints=consumed_hints,
+        )
         enriched_message = f"{content}\n\n{replan_context}"
 
         def _on_replan_retry(attempt: int, max_attempts: int, reason: str) -> None:
@@ -2142,6 +2152,7 @@ async def _process_message(
     messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
     set_phase: Callable[[str], None] | None = None,
+    update_hints: list | None = None,
 ) -> asyncio.Task | None:
     """Process a single message. Returns a background knowledge task (or None)."""
     msg_id: int = msg["id"]
@@ -2318,6 +2329,7 @@ async def _process_message(
         plan_id, plan, user_role, user_skills, messenger_timeout,
         session_secrets, cancel_event, planner_timeout, max_replan_depth,
         username, slog, set_phase=set_phase, base_url=base_url,
+        update_hints=update_hints,
     )
 
     # --- Store token usage on the final plan ---

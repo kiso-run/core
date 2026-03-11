@@ -280,20 +280,44 @@ async def test_inflight_independent_queued_to_pending(client: httpx.AsyncClient)
         await _cleanup_worker(sess, blocked, task)
 
 
-async def test_inflight_update_falls_through_to_queue(client: httpx.AsyncClient):
-    """M408: update/conflict messages fall through to normal queue (M409)."""
+async def test_inflight_update_adds_hint(client: httpx.AsyncClient):
+    """M409: update message adds to update_hints with ack."""
     sess = "inflight-update"
     blocked, _, _, task = _make_busy_worker(sess)
     try:
+        from kiso.main import _workers
+        entry = _workers[sess]
         with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="update"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "usa porta 8080",
             }, headers=AUTH_HEADER)
         assert resp.status_code == 202
         data = resp.json()
-        assert data["queued"] is True
-        # "inflight" key should NOT be present for update/conflict
-        assert "inflight" not in data
+        assert data["inflight"] == "update"
+        assert "ack" in data
+        assert len(entry.update_hints) == 1
+        assert entry.update_hints[0] == "usa porta 8080"
+    finally:
+        await _cleanup_worker(sess, blocked, task)
+
+
+async def test_inflight_conflict_cancels_and_queues(client: httpx.AsyncClient):
+    """M409: conflict cancels current job and queues new message first."""
+    sess = "inflight-conflict"
+    blocked, cancel_event, pending, task = _make_busy_worker(sess)
+    try:
+        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="conflict"):
+            resp = await client.post("/msg", json={
+                "session": sess, "user": "testuser", "content": "no fai X invece",
+            }, headers=AUTH_HEADER)
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["inflight"] == "conflict"
+        assert "ack" in data
+        assert cancel_event.is_set()
+        # New message is at the front of pending
+        assert len(pending) == 1
+        assert pending[0]["content"] == "no fai X invece"
     finally:
         await _cleanup_worker(sess, blocked, task)
 

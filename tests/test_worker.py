@@ -1444,6 +1444,25 @@ class TestBuildReplanContext:
         assert "Permission denied" in ctx
         assert "[exec] cat /etc/shadow" in ctx
 
+    def test_update_hints_injected(self):
+        """M409: update_hints appear at the top of replan context."""
+        ctx = _build_replan_context([], [], "broke", [],
+                                     update_hints=["use port 8080", "change DB host"])
+        assert "## User Updates" in ctx
+        assert "use port 8080" in ctx
+        assert "change DB host" in ctx
+        # Update hints should appear before failure reason
+        hints_pos = ctx.index("User Updates")
+        failure_pos = ctx.index("Failure Reason")
+        assert hints_pos < failure_pos
+
+    def test_update_hints_empty_not_shown(self):
+        """M409: empty/None update_hints don't add a section."""
+        ctx1 = _build_replan_context([], [], "broke", [], update_hints=None)
+        assert "User Updates" not in ctx1
+        ctx2 = _build_replan_context([], [], "broke", [], update_hints=[])
+        assert "User Updates" not in ctx2
+
     def test_output_truncated_to_limit(self):
         long_output = "x" * 5000
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]

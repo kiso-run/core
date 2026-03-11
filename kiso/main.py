@@ -96,6 +96,7 @@ class WorkerEntry:
     task: asyncio.Task
     cancel_event: asyncio.Event
     pending_messages: list = field(default_factory=list)
+    update_hints: list = field(default_factory=list)
 
 
 def _init_kiso_dirs() -> None:
@@ -263,10 +264,11 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
     cancel_event = asyncio.Event()
     pending: list = []
+    hints: list = []
     task = asyncio.create_task(
         run_worker(db, config, session, queue, cancel_event=cancel_event,
                    set_phase=lambda phase, s=session: _set_worker_phase(s, phase),
-                   pending_messages=pending)
+                   pending_messages=pending, update_hints=hints)
     )
 
     def _cleanup(t, s=session):
@@ -274,7 +276,7 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
         _worker_phases.pop(s, None)
 
     task.add_done_callback(_cleanup)
-    _workers[session] = WorkerEntry(queue, task, cancel_event, pending)
+    _workers[session] = WorkerEntry(queue, task, cancel_event, pending, hints)
     return queue
 
 
@@ -578,7 +580,17 @@ async def post_msg(
                 return {"queued": False, "session": body.session, "message_id": msg_id,
                         "inflight": "independent",
                         "ack": "Got it — I'll handle this after the current job finishes."}
-            # update/conflict: fall through to normal queue for now (M409)
+            if category == "update":
+                entry.update_hints.append(body.content)
+                return {"queued": False, "session": body.session, "message_id": msg_id,
+                        "inflight": "update",
+                        "ack": "Noted — will apply at the next step."}
+            if category == "conflict":
+                entry.cancel_event.set()
+                entry.pending_messages.insert(0, msg_payload)
+                return {"queued": False, "session": body.session, "message_id": msg_id,
+                        "inflight": "conflict",
+                        "ack": "Cancelling current job, starting new request."}
 
         queue = _ensure_worker(body.session, db, config)
         try:

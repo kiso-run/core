@@ -491,11 +491,20 @@ def _build_replan_context(
     remaining: list[dict],
     replan_reason: str,
     replan_history: list[dict],
+    update_hints: list[str] | None = None,
 ) -> str:
     """Build extra context for replanning."""
     # M309: strip msg-type tasks — intent messages are noise for replanning
     completed = [t for t in completed if t.get("type") != "msg"]
     parts: list[str] = []
+
+    # M409: inject user update hints (in-flight parameter changes)
+    if update_hints:
+        bullets = "\n".join(f"- {h}" for h in update_hints)
+        parts.append(
+            "## User Updates (received during execution — apply these changes)\n"
+            + bullets
+        )
 
     # Collect all retry hints from replan history — prominent section at top (M147)
     all_hints: list[str] = []
