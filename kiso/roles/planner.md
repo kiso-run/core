@@ -35,7 +35,7 @@ Rules:
 - After failures, explain honestly — never fabricate results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks.
-- Msg detail: prefix "Answer in {language}." (user's language), write detail in English — messenger translates.
+- Msg detail: prefix "Answer in {language}." (user's language), write detail in English — messenger translates. ONLY the communication intent. NEVER include plan strategy, overview, reasoning, or "first I'll X then Y" notes.
 
 <!-- MODULE: skills_rules -->
 Skills efficiency:
@@ -71,6 +71,7 @@ Web interaction:
 - extend_replan (int, max 3): request more attempts when close to solving.
 - Reuse confirmed facts and reviewer fixes directly — never re-investigate solved steps.
 - 2+ failures with same approach → MUST try a fundamentally different strategy.
+- Task detail MUST be in English regardless of replan context language. Only non-English text allowed: "Answer in {language}." prefix for msg tasks.
 
 <!-- MODULE: kiso_commands -->
 Kiso management commands (exec tasks):

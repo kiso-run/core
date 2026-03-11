@@ -463,3 +463,23 @@ class TestM362PlannerCLICommandAudit:
             assert cmd in actual, f"Prompt mentions '{cmd}' but not in CLI"
         # Ensure 'instance' is NOT in prompt (not a real CLI command)
         assert "kiso instance" not in prompt
+
+
+class TestM366PlannerMsgDetailPurity:
+    """M366: planner msg detail purity + English enforcement."""
+
+    def test_msg_detail_no_strategy(self):
+        """Planner prompt forbids plan strategy in msg detail."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "NEVER include plan strategy" in prompt
+
+    def test_msg_detail_no_overview(self):
+        """Planner prompt forbids overview/reasoning in msg detail."""
+        prompt = (_ROLES_DIR / "planner.md").read_text().lower()
+        assert "overview" in prompt or "reasoning" in prompt
+
+    def test_replan_english_enforcement(self):
+        """Planner prompt enforces English detail even in replan context."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["replan"])
+        assert "detail MUST be in English regardless" in prompt
