@@ -16,8 +16,8 @@ from kiso.security import fence_content
 from kiso.skills import discover_skills, build_planner_skill_list, validate_skill_args
 from kiso.store import (
     get_all_entities, get_all_tags, get_facts, get_pending_items,
-    get_recent_messages, get_session, search_facts, search_facts_by_entity,
-    search_facts_by_tags, search_facts_scored,
+    get_recent_messages, get_safety_facts, get_session, search_facts,
+    search_facts_by_entity, search_facts_by_tags, search_facts_scored,
 )
 from kiso.sysenv import get_system_env, build_system_env_section
 
@@ -944,6 +944,12 @@ async def build_planner_messages(
             "To visit a URL, first install it with an exec task: "
             "'kiso skill install browser', then replan."
         )
+
+    # M411: always-inject safety facts (not gated by briefer)
+    safety_facts = await get_safety_facts(db)
+    if safety_facts:
+        safety_text = "\n".join(f"- {f['content']}" for f in safety_facts)
+        context_parts.append(f"## Safety Rules (MUST OBEY)\n{safety_text}")
 
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")

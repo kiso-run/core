@@ -982,6 +982,27 @@ class TestBuildPlannerMessages:
         content = msgs[1]["content"]
         assert "## Skills" not in content
 
+    async def test_safety_facts_injected(self, db, config):
+        """M411: safety facts appear in planner messages as ## Safety Rules."""
+        from kiso.store import save_fact
+        await create_session(db, "sess1")
+        await save_fact(db, "Never delete /data without confirmation", "admin",
+                        category="safety")
+        await save_fact(db, "Production DB is read-only", "admin",
+                        category="safety")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "## Safety Rules (MUST OBEY)" in content
+        assert "Never delete /data" in content
+        assert "Production DB is read-only" in content
+
+    async def test_no_safety_section_when_empty(self, db, config):
+        """M411: no safety section when no safety facts exist."""
+        await create_session(db, "sess1")
+        msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "Safety Rules" not in content
+
     async def test_user_skills_filtered(self, db, config):
         await create_session(db, "sess1")
         fake_skills = [
