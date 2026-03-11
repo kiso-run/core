@@ -313,9 +313,9 @@ class TestM316PromptOptimizationIntegration:
         assert len(prompt) < 8000, f"Planner prompt too large: {len(prompt)} chars"
 
     def test_messenger_prompt_size_regression(self):
-        """Messenger prompt must stay under 2000 chars (M369 expanded)."""
+        """Messenger prompt must stay under 2500 chars (M384 expanded)."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert len(prompt) < 2000, f"Messenger prompt too large: {len(prompt)} chars"
+        assert len(prompt) < 2500, f"Messenger prompt too large: {len(prompt)} chars"
 
     def test_reviewer_prompt_size_regression(self):
         """Reviewer prompt must stay under 3200 chars (M360 optimized)."""
@@ -327,6 +327,22 @@ class TestM316PromptOptimizationIntegration:
         for filename in _EXPECTED_ROLES:
             content = (_ROLES_DIR / filename).read_text()
             assert len(content.strip()) > 50, f"{filename} has too little content"
+
+
+class TestM384MessengerAntiHallucination:
+    """M384: messenger prompt has verb blocklist and no-emoji rule."""
+
+    def test_no_emoji_rule(self):
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "No emoji" in prompt
+
+    def test_no_false_action_claims(self):
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Never claim to have performed" in prompt
+
+    def test_report_only_outputs(self):
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Report ONLY what the outputs show" in prompt
 
 
 class TestM340SkillArgsRequirement:
