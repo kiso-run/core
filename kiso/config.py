@@ -77,16 +77,14 @@ MODEL_DEFAULTS: dict[str, str] = {
     "worker": "google/gemini-2.5-flash-lite",
     "summarizer": "google/gemini-2.5-flash-lite",
     "paraphraser": "google/gemini-2.5-flash-lite",
-    "messenger": "qwen/qwen3.5-flash-02-23",
+    "messenger": "deepseek/deepseek-v3.2",
     "searcher": "perplexity/sonar",
 }
 
 # M271: Per-role reasoning config sent to OpenRouter.  Roles not listed here
 # (or mapped to None) get no reasoning parameter — the provider's default applies.
 # Valid effort levels: "minimal", "low", "medium", "high".
-REASONING_DEFAULTS: dict[str, dict | None] = {
-    "messenger": {"effort": "low"},
-}
+REASONING_DEFAULTS: dict[str, dict | None] = {}
 
 # M296: Per-role max_tokens defaults.  Applied when call_llm receives
 # max_tokens=None.  Prevents runaway generation and reduces cost.

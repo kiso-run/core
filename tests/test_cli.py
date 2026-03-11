@@ -3214,7 +3214,7 @@ def test_m376_spinner_restored_for_msg_task():
         "status": "running", "output": "", "substatus": "composing",
     }
     inflight = {
-        "role": "messenger", "model": "qwen/qwen3.5-flash",
+        "role": "messenger", "model": "deepseek/deepseek-v3.2",
         "messages": [{"role": "user", "content": "compose reply"}],
         "ts": 66666.0,
     }

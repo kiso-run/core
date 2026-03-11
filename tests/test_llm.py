@@ -1148,8 +1148,8 @@ class TestM271ReasoningDefaults:
     """M271: per-role reasoning config is included in API payload."""
 
     @pytest.mark.asyncio
-    async def test_messenger_includes_reasoning(self):
-        """Messenger role sends reasoning config in payload."""
+    async def test_messenger_no_reasoning_after_m383(self):
+        """M383: messenger switched to deepseek — no reasoning config sent."""
         config = _make_config()
         captured_payload: list[dict] = []
 
@@ -1164,8 +1164,7 @@ class TestM271ReasoningDefaults:
                 await call_llm(config, "messenger", [{"role": "user", "content": "hi"}])
 
         assert len(captured_payload) == 1
-        assert "reasoning" in captured_payload[0]
-        assert captured_payload[0]["reasoning"]["effort"] == "low"
+        assert "reasoning" not in captured_payload[0]
 
     @pytest.mark.asyncio
     async def test_planner_no_reasoning(self):
@@ -1196,9 +1195,8 @@ def test_m271_reasoning_defaults_import():
     """REASONING_DEFAULTS is importable from config and has expected structure."""
     from kiso.config import REASONING_DEFAULTS
     assert isinstance(REASONING_DEFAULTS, dict)
-    assert "messenger" in REASONING_DEFAULTS
-    assert REASONING_DEFAULTS["messenger"]["effort"] == "low"
-    # Roles not in the dict get no reasoning
+    # M383: messenger removed from REASONING_DEFAULTS (deepseek doesn't need it)
+    assert "messenger" not in REASONING_DEFAULTS
 
 
 # --- M299: SSE stream parsing ---
