@@ -2231,6 +2231,17 @@ class TestDefaultMessengerPrompt:
         assert "Language purity" in prompt
         assert "Do not mix languages" in prompt
 
+    def test_m351_language_fallback_never_english(self):
+        """M351: messenger defaults to user's language, never English."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "never English" in prompt
+
+    def test_m351_recent_messages_language_inference(self):
+        """M351: messenger infers language from Recent Messages when no instruction."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "Recent Messages" in prompt
+        assert "most recent user message" in prompt
+
 
 class TestBuildMessengerMessages:
     def test_basic_structure(self):

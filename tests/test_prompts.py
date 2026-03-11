@@ -296,9 +296,9 @@ class TestM316PromptOptimizationIntegration:
         assert len(prompt) < 7500, f"Planner prompt too large: {len(prompt)} chars"
 
     def test_messenger_prompt_size_regression(self):
-        """Messenger prompt must stay under 1800 chars (was 2115 before M313)."""
+        """Messenger prompt must stay under 2100 chars (+M351 language rules)."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert len(prompt) < 1800, f"Messenger prompt too large: {len(prompt)} chars"
+        assert len(prompt) < 2100, f"Messenger prompt too large: {len(prompt)} chars"
 
     def test_reviewer_prompt_size_regression(self):
         """Reviewer prompt must stay under 3200 chars (+M335 stuck status)."""
