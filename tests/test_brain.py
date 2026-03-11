@@ -3227,6 +3227,12 @@ class TestClassifierPromptContent:
         assert "Recent Context" in prompt
         assert "follow-up" in prompt.lower() or "follow up" in prompt.lower()
 
+    def test_classifier_prompt_covers_system_introspection(self):
+        """M350: classifier should route system self-inspection queries to plan."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "system introspection" in prompt
+        assert "ssh key" in prompt or "ssh keys" in prompt
+
 
 class TestM276ClassifierContext:
     """M276: classifier receives conversation context for follow-up detection."""
