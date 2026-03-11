@@ -2242,6 +2242,59 @@ async def test_entities_table_exists(db: aiosqlite.Connection):
     assert await cur.fetchone() is not None
 
 
+# --- M382: backfill_fact_entities ---
+
+
+async def test_backfill_fact_entities_links_orphans(db: aiosqlite.Connection):
+    """backfill_fact_entities sets entity_id for facts matching known entities."""
+    from kiso.store import backfill_fact_entities
+
+    # Create a fact without entity_id that mentions "self"
+    fid = await save_fact(db, "Instance runs as user root on host self-machine", "system")
+    # Create entity after the fact
+    eid = await find_or_create_entity(db, "self", "system")
+    # Verify fact has no entity_id
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
+    assert (await cur.fetchone())[0] is None
+
+    updated = await backfill_fact_entities(db)
+    assert updated >= 1
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
+    assert (await cur.fetchone())[0] == eid
+
+
+async def test_backfill_fact_entities_no_match(db: aiosqlite.Connection):
+    """Facts not matching any entity remain unchanged."""
+    from kiso.store import backfill_fact_entities
+
+    fid = await save_fact(db, "Python uses pytest for testing", "curator")
+    await find_or_create_entity(db, "self", "system")
+
+    updated = await backfill_fact_entities(db)
+    # "self" is not in "Python uses pytest for testing"
+    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
+    assert (await cur.fetchone())[0] is None
+
+
+async def test_backfill_fact_entities_no_entities(db: aiosqlite.Connection):
+    """No entities → returns 0."""
+    from kiso.store import backfill_fact_entities
+
+    await save_fact(db, "Some orphan fact about something", "system")
+    assert await backfill_fact_entities(db) == 0
+
+
+async def test_backfill_fact_entities_already_linked(db: aiosqlite.Connection):
+    """Already-linked facts are not re-processed."""
+    from kiso.store import backfill_fact_entities
+
+    eid = await find_or_create_entity(db, "self", "system")
+    await save_fact(db, "Instance self SSH key", "system", entity_id=eid)
+
+    # No orphans → returns 0
+    assert await backfill_fact_entities(db) == 0
+
+
 # --- M345: entity: tag migration ---
 
 

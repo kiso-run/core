@@ -363,6 +363,9 @@ async def _post_plan_knowledge(
                 timeout=llm_timeout,
             )
             await _apply_curator_result(db, session, curator_result)
+            # M382: backfill entity_id for older facts matching newly created entities
+            from kiso.store import backfill_fact_entities
+            await backfill_fact_entities(db)
         except asyncio.TimeoutError:
             log.warning("Curator timed out after %ds", llm_timeout)
         except CuratorError as e:

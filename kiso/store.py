@@ -975,6 +975,38 @@ async def search_facts_by_entity(
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def backfill_fact_entities(db: aiosqlite.Connection) -> int:
+    """Backfill entity_id for facts that match known entities by content.
+
+    Facts created before the entity model (M342) have entity_id=NULL and are
+    invisible to entity-scoped queries.  This scans NULL-entity facts and links
+    them when the fact content mentions a known entity name.
+    """
+    entities = await get_all_entities(db)
+    if not entities:
+        return 0
+    orphan_cur = await db.execute(
+        "SELECT id, content FROM facts WHERE entity_id IS NULL",
+    )
+    orphans = await orphan_cur.fetchall()
+    if not orphans:
+        return 0
+    updated = 0
+    for row in orphans:
+        content_lower = row["content"].lower()
+        for entity in entities:
+            if entity["name"] in content_lower:
+                await db.execute(
+                    "UPDATE facts SET entity_id = ? WHERE id = ?",
+                    (entity["id"], row["id"]),
+                )
+                updated += 1
+                break  # first matching entity wins
+    if updated:
+        await db.commit()
+    return updated
+
+
 async def save_pending_item(
     db: aiosqlite.Connection,
     content: str,

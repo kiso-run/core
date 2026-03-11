@@ -362,6 +362,12 @@ async def lifespan(app: FastAPI):
 
     await _collect_boot_facts(db)
 
+    # M382: backfill entity_id for facts created before entity model
+    from kiso.store import backfill_fact_entities
+    backfilled = await backfill_fact_entities(db)
+    if backfilled:
+        log.info("Backfilled entity_id for %d orphan fact(s)", backfilled)
+
     await _startup_recovery(db, config)
 
     # Auto-repair unhealthy skills (re-run deps.sh for missing binaries)
