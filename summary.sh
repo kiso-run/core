@@ -16,7 +16,7 @@ set -euo pipefail
 #
 # The resulting JSON has three sections:
 #   meta   — compression stats (blk, ud, ev, cb/ca, tb/ta)
-#   defs   — unique content definitions (D00001, D00002, …)
+#   defs   — unique content definitions (D1, D2, …); p=string→full, p={h,t,omit}→head/tail
 #   events — ordered list referencing defs by id (t=type, l=lines, r=ref)
 
 IN_TMP="$(mktemp -t flow_in.XXXXXX)"
@@ -176,11 +176,10 @@ def clean_box_line(line: str) -> str:
 def summarize_text(text: str, head_lines: int = 14, tail_lines: int = 8):
     ls = text.splitlines()
     if len(ls) <= head_lines + tail_lines + 2:
-        return {"mode": "full", "text": text}
+        return text  # bare string = full text
     return {
-        "mode": "head_tail",
-        "head": "\n".join(ls[:head_lines]),
-        "tail": "\n".join(ls[-tail_lines:]),
+        "h": "\n".join(ls[:head_lines]),
+        "t": "\n".join(ls[-tail_lines:]),
         "omit": max(0, len(ls) - head_lines - tail_lines),
     }
 
@@ -214,7 +213,7 @@ events = []
 next_def = 1
 
 def make_def_id(k: int) -> str:
-    return f"D{k:05d}"
+    return f"D{k}"
 
 for idx, b in enumerate(blocks, start=1):
     kind = b["kind"]
