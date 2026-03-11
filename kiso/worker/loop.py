@@ -688,8 +688,8 @@ async def _review_task(
             log.warning("Discarding %d learning(s) for task %d — empty output",
                         len(learn_items), task_row.get("id", 0))
         learn_items = []
-    # Filter low-quality items (M320)
-    learn_items = clean_learn_items(learn_items)
+    # Filter low-quality items (M320, M373)
+    learn_items = clean_learn_items(learn_items, task_output=full_output)
     has_learning = bool(learn_items)
     for item in learn_items:
         await save_learning(db, item, session)

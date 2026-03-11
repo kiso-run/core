@@ -219,6 +219,44 @@ class TestCleanLearnItems:
         assert result == []
 
 
+# --- M373: output-backed learning validation ---
+
+class TestLearningContradictsOutput:
+    def test_negative_claim_contradicted_by_output(self):
+        from kiso.brain import clean_learn_items
+        items = ["kernel release not stated in the output"]
+        output = "Linux 6.1.0-20-amd64 kernel release info"
+        result = clean_learn_items(items, task_output=output)
+        assert result == []
+
+    def test_negative_claim_not_contradicted(self):
+        from kiso.brain import clean_learn_items
+        items = ["ssh key not found on this system"]
+        output = "total 0\nno files here"
+        result = clean_learn_items(items, task_output=output)
+        assert len(result) == 1
+
+    def test_normal_learning_preserved(self):
+        from kiso.brain import clean_learn_items
+        items = ["Project uses Flask framework for web serving"]
+        output = "Flask==2.3.0 installed"
+        result = clean_learn_items(items, task_output=output)
+        assert len(result) == 1
+
+    def test_no_output_skips_check(self):
+        from kiso.brain import clean_learn_items
+        items = ["docker version not available on this host"]
+        result = clean_learn_items(items, task_output=None)
+        assert len(result) == 1
+
+    def test_not_installed_contradicted(self):
+        from kiso.brain import clean_learn_items
+        items = ["python package not installed on the system"]
+        output = "python3 3.11.2 is installed at /usr/bin/python3"
+        result = clean_learn_items(items, task_output=output)
+        assert result == []
+
+
 # --- validate_plan ---
 
 class TestValidatePlan:

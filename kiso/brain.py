@@ -1268,13 +1268,41 @@ _TRANSIENT_LEARN_RE = re.compile(
 _MIN_LEARN_LEN = 15
 
 
-def clean_learn_items(items: list[str]) -> list[str]:
+def _learning_contradicts_output(learning: str, output: str) -> bool:
+    """Check if a negative-claim learning is contradicted by the task output.
+
+    Returns True when the learning says something is "not found" / "not available"
+    but the subject term actually appears in the output.
+    """
+    neg_patterns = [
+        "not found", "not available", "not stated",
+        "does not support", "not installed",
+    ]
+    learning_lower = learning.lower()
+    output_lower = output.lower()
+    for neg in neg_patterns:
+        if neg in learning_lower:
+            idx = learning_lower.index(neg)
+            subject_words = learning[:idx].strip().split()[-2:]
+            if any(
+                w.lower() in output_lower
+                for w in subject_words
+                if len(w) > 3
+            ):
+                return True
+    return False
+
+
+def clean_learn_items(
+    items: list[str], task_output: str | None = None,
+) -> list[str]:
     """Filter out low-quality learn items from a reviewer response.
 
     Removes items that are:
     - Too short (< 15 chars) — fragmentary
     - Contain 2+ browser element indices ``[N]`` — ephemeral session data
     - Match transient patterns like "X installed successfully"
+    - Negative claims contradicted by task output (M373)
     """
     kept: list[str] = []
     for item in items:
@@ -1286,6 +1314,9 @@ def clean_learn_items(items: list[str]) -> list[str]:
             continue
         if _TRANSIENT_LEARN_RE.search(item):
             log.debug("Learn item filtered (transient): %s", item[:80])
+            continue
+        if task_output and _learning_contradicts_output(item, task_output):
+            log.debug("Learn item filtered (contradicts output): %s", item[:80])
             continue
         kept.append(item)
     return kept
