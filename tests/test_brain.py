@@ -5955,11 +5955,11 @@ class TestBrieferTagRetrieval:
         user_content = msgs[1]["content"]
         # Tag-matched fact appears in additional section
         assert "Redis cache on port 6379" in user_content
-        assert "## Additional Facts (tag-matched)" in user_content
+        assert "## Relevant Facts" in user_content
 
     async def test_no_duplicate_facts(self, db):
-        """M250: facts already in FTS5 results are not duplicated in tag section."""
-        # Save a fact that matches both FTS5 (via keyword) and tags
+        """M390: facts matching both tags and keywords appear exactly once."""
+        # Save a fact that matches both keywords and tags
         fid = await save_fact(db, "Python version 3.12 deployed", "test", category="project")
         await save_fact_tags(db, fid, ["tech-stack"])
 
@@ -5985,8 +5985,9 @@ class TestBrieferTagRetrieval:
             )
 
         user_content = msgs[1]["content"]
-        # No additional facts section since the tag-matched fact is already in FTS5
-        assert "## Additional Facts (tag-matched)" not in user_content
+        # Fact appears in unified Relevant Facts section, exactly once
+        assert "## Relevant Facts" in user_content
+        assert user_content.count("Python version 3.12 deployed") == 1
 
     async def test_empty_relevant_tags_no_section(self, db):
         """M250: empty relevant_tags produces no additional facts section."""
@@ -6012,7 +6013,7 @@ class TestBrieferTagRetrieval:
             )
 
         user_content = msgs[1]["content"]
-        assert "## Additional Facts (tag-matched)" not in user_content
+        assert "## Relevant Facts" not in user_content
 
     async def test_available_tags_in_briefer_context(self, db):
         """M250: available tags are passed to the briefer in the context pool."""
@@ -6125,13 +6126,13 @@ class TestM346BrieferEntityRetrieval:
         user_content = msgs[1]["content"]
         assert "acmecorp uses Webflow CMS" in user_content
         assert "acmecorp has contact form" in user_content
-        assert "## Additional Facts (entity-matched)" in user_content
+        assert "## Relevant Facts" in user_content
 
-    async def test_entity_facts_dedup_against_fts(self, db):
-        """M346: entity facts already in FTS5 results are not duplicated."""
+    async def test_entity_facts_dedup_against_keywords(self, db):
+        """M390: entity facts matching keywords appear exactly once in scored results."""
         from kiso.store import find_or_create_entity
         eid = await find_or_create_entity(db, "flask", "tool")
-        # This fact will match both FTS5 (keyword "flask") and entity
+        # This fact matches both entity and keywords
         await save_fact(db, "Flask web framework version 3.0", "curator", entity_id=eid)
 
         briefing = {
@@ -6152,8 +6153,9 @@ class TestM346BrieferEntityRetrieval:
             )
 
         user_content = msgs[1]["content"]
-        # Should not appear in entity-matched section since FTS5 already has it
-        assert "## Additional Facts (entity-matched)" not in user_content
+        # Fact appears once in unified Relevant Facts section
+        assert "## Relevant Facts" in user_content
+        assert user_content.count("Flask web framework version 3.0") == 1
 
     async def test_entities_in_briefer_context_pool(self, db):
         """M346: available entities appear in briefer context pool."""
@@ -6201,7 +6203,7 @@ class TestM346BrieferEntityRetrieval:
                 db, self._config(), "sess1", "user", "hello",
             )
 
-        assert "## Additional Facts (entity-matched)" not in msgs[1]["content"]
+        assert "## Relevant Facts" not in msgs[1]["content"]
 
 
 # ---------------------------------------------------------------------------

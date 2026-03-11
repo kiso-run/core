@@ -359,7 +359,7 @@ class TestBrieferTagPipeline:
 
         user_content = msgs[1]["content"]
         assert "Redis cluster on port 6379" in user_content
-        assert "## Additional Facts (tag-matched)" in user_content
+        assert "## Relevant Facts" in user_content
 
     async def test_no_tags_no_extra_section(self, db):
         """When briefer returns empty relevant_tags, no additional section."""
@@ -376,7 +376,7 @@ class TestBrieferTagPipeline:
                 db, _config(), "sess1", "user", "hi",
             )
 
-        assert "## Additional Facts (tag-matched)" not in msgs[1]["content"]
+        assert "## Relevant Facts" not in msgs[1]["content"]
 
 
 # ---------------------------------------------------------------------------

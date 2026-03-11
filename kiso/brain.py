@@ -17,7 +17,7 @@ from kiso.skills import discover_skills, build_planner_skill_list, validate_skil
 from kiso.store import (
     get_all_entities, get_all_tags, get_facts, get_pending_items,
     get_recent_messages, get_session, search_facts, search_facts_by_entity,
-    search_facts_by_tags,
+    search_facts_by_tags, search_facts_scored,
 )
 from kiso.sysenv import get_system_env, build_system_env_section
 
@@ -839,38 +839,28 @@ async def build_planner_messages(
 
     is_admin = user_role == "admin"
 
-    # --- Tag-based fact enrichment (briefer path only) ---
-    tag_facts_text = ""
-    fts_ids = {f["id"] for f in facts}
-    enriched_ids: set[int] = set()
-    if briefing and briefing.get("relevant_tags"):
-        tag_facts = await search_facts_by_tags(
-            db, briefing["relevant_tags"],
-            session=session, is_admin=is_admin,
+    # --- M390: Scored fact retrieval (briefer path only) ---
+    scored_facts_text = ""
+    if briefing:
+        entity_id = None
+        if briefing.get("relevant_entities"):
+            all_entities = await get_all_entities(db)
+            entity_map = {e["name"]: e["id"] for e in all_entities}
+            for ename in briefing["relevant_entities"]:
+                eid = entity_map.get(ename.lower().strip())
+                if eid is not None:
+                    entity_id = eid
+                    break  # primary entity
+        scored_facts = await search_facts_scored(
+            db,
+            entity_id=entity_id,
+            tags=briefing.get("relevant_tags") or None,
+            keywords=new_message.lower().split()[:10] if new_message else None,
+            session=session if not is_admin else None,
+            is_admin=is_admin,
         )
-        new_tag_facts = [f for f in tag_facts if f["id"] not in fts_ids]
-        if new_tag_facts:
-            tag_facts_text = "\n".join(f"- {f['content']}" for f in new_tag_facts)
-            enriched_ids.update(f["id"] for f in new_tag_facts)
-
-    # --- M346: Entity-based fact enrichment (briefer path only) ---
-    entity_facts_text = ""
-    if briefing and briefing.get("relevant_entities"):
-        all_entities = await get_all_entities(db)
-        entity_map = {e["name"]: e["id"] for e in all_entities}
-        entity_facts: list[dict] = []
-        for ename in briefing["relevant_entities"]:
-            eid = entity_map.get(ename.lower().strip())
-            if eid is not None:
-                efacts = await search_facts_by_entity(db, eid)
-                entity_facts.extend(efacts)
-        # Deduplicate against FTS5 and tag-enriched facts
-        new_entity_facts = [
-            f for f in entity_facts
-            if f["id"] not in fts_ids and f["id"] not in enriched_ids
-        ]
-        if new_entity_facts:
-            entity_facts_text = "\n".join(f"- {f['content']}" for f in new_entity_facts)
+        if scored_facts:
+            scored_facts_text = "\n".join(f"- {f['content']}" for f in scored_facts)
 
     # --- Build context block ---
     context_parts: list[str] = []
@@ -879,10 +869,8 @@ async def build_planner_messages(
         # Briefer path: use synthesized context + filtered skills
         if briefing["context"]:
             context_parts.append(f"## Context\n{briefing['context']}")
-        if tag_facts_text:
-            context_parts.append(f"## Additional Facts (tag-matched)\n{tag_facts_text}")
-        if entity_facts_text:
-            context_parts.append(f"## Additional Facts (entity-matched)\n{entity_facts_text}")
+        if scored_facts_text:
+            context_parts.append(f"## Relevant Facts\n{scored_facts_text}")
     else:
         # Fallback path: full context dump (original behavior)
         if summary:
