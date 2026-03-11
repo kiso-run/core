@@ -143,7 +143,7 @@ role = "admin"
     assert "BADTOKEN" in _die_msg(capsys)
 
 
-def test_user_role_user_without_skills(tmp_path: Path, capsys):
+def test_user_role_user_without_tools(tmp_path: Path, capsys):
     text = """\
 [tokens]
 cli = "tok"
@@ -156,7 +156,7 @@ role = "user"
         load_config(_write(tmp_path, text))
     err = _die_msg(capsys)
     assert "bob" in err
-    assert "skills" in err
+    assert "tools" in err
 
 
 def test_duplicate_alias(tmp_path: Path, capsys):
@@ -306,7 +306,7 @@ role = "superadmin"
     assert "superadmin" in err
 
 
-def test_skills_invalid_type(tmp_path: Path, capsys):
+def test_tools_invalid_type(tmp_path: Path, capsys):
     text = """\
 [tokens]
 cli = "tok"
@@ -314,11 +314,11 @@ cli = "tok"
 base_url = "http://x"
 [users.bob]
 role = "user"
-skills = 42
+tools = 42
 """
     with pytest.raises(SystemExit):
         load_config(_write(tmp_path, text))
-    assert "skills" in _die_msg(capsys)
+    assert "tools" in _die_msg(capsys)
 
 
 def test_aliases_not_a_table(tmp_path: Path, capsys):

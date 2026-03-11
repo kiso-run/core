@@ -139,14 +139,14 @@ class PermissionResult:
     allowed: bool
     reason: str = ""
     role: str = ""
-    skills: str | list[str] | None = None
+    tools: str | list[str] | None = None
 
 
 def revalidate_permissions(
     config: Config,
     username: str | None,
     task_type: str,
-    skill_name: str | None = None,
+    tool_name: str | None = None,
 ) -> PermissionResult:
     """Re-check user permissions against current config."""
     if username is None:
@@ -162,14 +162,14 @@ def revalidate_permissions(
 
     # search tasks are safe (no shell execution, no sandbox) — always allowed
     if task_type == "search":
-        return PermissionResult(allowed=True, role=user.role, skills=user.skills)
+        return PermissionResult(allowed=True, role=user.role, tools=user.tools)
 
-    if task_type == "skill" and skill_name and user.role == "user":
-        if user.skills != "*":
-            if skill_name not in (user.skills or []):
+    if task_type in ("skill", "tool") and tool_name and user.role == "user":
+        if user.tools != "*":
+            if tool_name not in (user.tools or []):
                 return PermissionResult(
                     allowed=False,
-                    reason=f"Skill '{skill_name}' not in user's allowed skills",
+                    reason=f"Tool '{tool_name}' not in user's allowed tools",
                 )
 
-    return PermissionResult(allowed=True, role=user.role, skills=user.skills)
+    return PermissionResult(allowed=True, role=user.role, tools=user.tools)

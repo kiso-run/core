@@ -252,7 +252,7 @@ async def run_message(func_config, func_db, func_session):
             "id": msg_id,
             "content": content,
             "user_role": "admin",
-            "user_skills": "*",
+            "user_tools": "*",
             "username": "testadmin",
             "base_url": base_url,
         }

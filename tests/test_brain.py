@@ -1059,7 +1059,7 @@ class TestBuildPlannerMessages:
         content = msgs[1]["content"]
         assert "Safety Rules" not in content
 
-    async def test_user_skills_filtered(self, db, config):
+    async def test_user_tools_filtered(self, db, config):
         await create_session(db, "sess1")
         fake_skills = [
             {"name": "search", "summary": "Search", "args_schema": {},
@@ -1069,7 +1069,7 @@ class TestBuildPlannerMessages:
         ]
         with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(
-                db, config, "sess1", "user", "hello", user_skills=["search"],
+                db, config, "sess1", "user", "hello", user_tools=["search"],
             )
         content = msgs[1]["content"]
         # Tools section should only show search, not aider (restricted user)

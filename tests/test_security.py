@@ -409,8 +409,8 @@ class TestFenceContent:
 def _perm_config(**user_overrides) -> Config:
     users = {
         "alice": User(role="admin"),
-        "bob": User(role="user", skills=["search", "deploy"]),
-        "charlie": User(role="user", skills="*"),
+        "bob": User(role="user", tools=["search", "deploy"]),
+        "charlie": User(role="user", tools="*"),
     }
     users.update(user_overrides)
     return Config(
@@ -434,18 +434,18 @@ class TestRevalidatePermissions:
 
     def test_revalidate_skill_allowed(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "skill", skill_name="search")
+        result = revalidate_permissions(cfg, "bob", "skill", tool_name="search")
         assert result.allowed is True
 
     def test_revalidate_skill_denied(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "skill", skill_name="forbidden")
+        result = revalidate_permissions(cfg, "bob", "skill", tool_name="forbidden")
         assert result.allowed is False
-        assert "not in user's allowed skills" in result.reason
+        assert "not in user's allowed tools" in result.reason
 
     def test_revalidate_admin_all_skills(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "alice", "skill", skill_name="anything")
+        result = revalidate_permissions(cfg, "alice", "skill", tool_name="anything")
         assert result.allowed is True
 
     def test_revalidate_no_username(self):
@@ -456,7 +456,7 @@ class TestRevalidatePermissions:
 
     def test_revalidate_wildcard_skills(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "charlie", "skill", skill_name="anything")
+        result = revalidate_permissions(cfg, "charlie", "skill", tool_name="anything")
         assert result.allowed is True
 
     def test_revalidate_exec_allowed_for_user_role(self):
@@ -467,16 +467,16 @@ class TestRevalidatePermissions:
         assert result.role == "user"
 
     def test_revalidate_skill_name_none_skips_check(self):
-        """skill_name=None with task_type='skill' skips skill-level check."""
+        """tool_name=None with task_type='skill' skips tool-level check."""
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "skill", skill_name=None)
+        result = revalidate_permissions(cfg, "bob", "skill", tool_name=None)
         assert result.allowed is True
 
-    def test_revalidate_returns_skills_field(self):
-        """PermissionResult.skills populated from user config."""
+    def test_revalidate_returns_tools_field(self):
+        """PermissionResult.tools populated from user config."""
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "bob", "exec")
-        assert result.skills == ["search", "deploy"]
+        assert result.tools == ["search", "deploy"]
 
     def test_revalidate_msg_allowed_for_user_role(self):
         """msg tasks allowed for user role."""
@@ -495,7 +495,7 @@ class TestRevalidatePermissions:
         result = revalidate_permissions(cfg, "bob", "search")
         assert result.allowed is True
         assert result.role == "user"
-        assert result.skills == ["search", "deploy"]
+        assert result.tools == ["search", "deploy"]
 
 
 # --- Double masking proof ---

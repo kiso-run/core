@@ -783,7 +783,7 @@ async def build_planner_messages(
     session: str,
     user_role: str,
     new_message: str,
-    user_skills: str | list[str] | None = None,
+    user_tools: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     is_replan: bool = False,
 ) -> tuple[list[dict], list[str], list[dict]]:
@@ -816,7 +816,7 @@ async def build_planner_messages(
     installed_names = [s["name"] for s in installed]
 
     # Build the tool list text for context pool
-    full_tool_list = build_planner_tool_list(installed, user_role, user_skills)
+    full_tool_list = build_planner_tool_list(installed, user_role, user_tools)
     if full_tool_list:
         context_pool["skills"] = full_tool_list  # context pool key stays "skills" until M445
 
@@ -994,7 +994,7 @@ async def run_planner(
     session: str,
     user_role: str,
     new_message: str,
-    user_skills: str | list[str] | None = None,
+    user_tools: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     on_context_ready: Callable | None = None,
     on_retry: Callable[[int, int, str], None] | None = None,
@@ -1015,7 +1015,7 @@ async def run_planner(
     Raises PlanError if all retries exhausted.
     """
     messages, installed_names, installed_info = await build_planner_messages(
-        db, config, session, user_role, new_message, user_skills=user_skills,
+        db, config, session, user_role, new_message, user_tools=user_tools,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
     )
     if on_context_ready:

@@ -336,16 +336,16 @@ async def _startup_recovery(db, config) -> None:
     for sess_id, msgs in by_session.items():
         queue = _ensure_worker(sess_id, db, config)
         for msg in msgs:
-            # Re-resolve user role/skills from current config
+            # Re-resolve user role/tools from current config
             resolved = resolve_user(config, msg["user"] or "", "")
             user_role = resolved.user.role if resolved.user else "user"
-            user_skills = resolved.user.skills if resolved.user else None
+            user_tools = resolved.user.tools if resolved.user else None
             try:
                 queue.put_nowait({
                     "id": msg["id"],
                     "content": msg["content"],
                     "user_role": user_role,
-                    "user_skills": user_skills,
+                    "user_tools": user_tools,
                     "username": msg["user"],
                     "base_url": "",
                 })
@@ -540,13 +540,13 @@ async def post_msg(
             trusted=True, processed=False,
         )
         user_role = resolved.user.role if resolved.user else "user"
-        user_skills = resolved.user.skills if resolved.user else None
+        user_tools = resolved.user.tools if resolved.user else None
 
         msg_payload = {
             "id": msg_id,
             "content": body.content,
             "user_role": user_role,
-            "user_skills": user_skills,
+            "user_tools": user_tools,
             "username": resolved.username,
             "base_url": str(request.base_url).rstrip("/"),
         }

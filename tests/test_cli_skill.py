@@ -198,7 +198,7 @@ def test_require_admin_non_admin_exits(capsys):
     from cli.skill import _require_admin
 
     cfg = MagicMock()
-    cfg.users = {"bob": User(role="user", skills="*")}
+    cfg.users = {"bob": User(role="user", tools="*")}
     with (
         patch("cli.plugin_ops.load_config", return_value=cfg),
         patch("cli.plugin_ops.getpass.getuser", return_value="bob"),

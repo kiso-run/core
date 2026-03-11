@@ -212,7 +212,7 @@ class Provider:
 @dataclass(frozen=True)
 class User:
     role: str  # "admin" | "user"
-    skills: str | list[str] | None = None  # None for admin, "*" or list for user
+    tools: str | list[str] | None = None  # None for admin, "*" or list for user
     aliases: dict[str, str] = field(default_factory=dict)
 
 
@@ -340,13 +340,13 @@ def _build_config(path: Path, on_error) -> Config:
         if role not in ("admin", "user"):
             on_error(f"user '{uname}': role must be 'admin' or 'user', got '{role}'")
 
-        # skills
-        skills = udata.get("skills")
+        # tools (backward compat: accept "skills" key too)
+        tools = udata.get("tools", udata.get("skills"))
         if role == "user":
-            if skills is None:
-                on_error(f"user '{uname}' has role=user but no 'skills' field")
-            if skills != "*" and not isinstance(skills, list):
-                on_error(f"user '{uname}': skills must be '*' or a list of skill names")
+            if tools is None:
+                on_error(f"user '{uname}' has role=user but no 'tools' field")
+            if tools != "*" and not isinstance(tools, list):
+                on_error(f"user '{uname}': tools must be '*' or a list of tool names")
 
         # aliases
         aliases_raw = udata.get("aliases", {})
@@ -363,7 +363,7 @@ def _build_config(path: Path, on_error) -> Config:
             all_aliases[key] = uname
             aliases[connector] = platform_id
 
-        users[uname] = User(role=role, skills=skills, aliases=aliases)
+        users[uname] = User(role=role, tools=tools, aliases=aliases)
 
     # --- models: all roles required ---
     models_raw = raw.get("models", {})

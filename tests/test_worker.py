@@ -4309,7 +4309,7 @@ class TestPermissionRevalidation:
 
     async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
         """Skill removed from user's allowed list → fails."""
-        config = _make_config(users={"bob": User(role="user", skills=["search"])})
+        config = _make_config(users={"bob": User(role="user", tools=["search"])})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="skill", detail="deploy",
                           skill="deploy", args="{}", expect="ok")
@@ -4325,7 +4325,7 @@ class TestPermissionRevalidation:
 
         assert success is False
         tasks = await get_tasks_for_plan(db, plan_id)
-        assert "not in user's allowed skills" in tasks[0]["output"]
+        assert "not in user's allowed tools" in tasks[0]["output"]
 
     async def test_config_reload_failure_uses_cached(self, db, tmp_path):
         """ConfigError → falls back to cached config, execution continues."""
@@ -4498,7 +4498,7 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_exec_allowed_for_user_role(self, db, tmp_path):
         """User role can run exec tasks (permission check only blocks removed users/skills)."""
-        config = _make_config(users={"bob": User(role="user", skills=["search"])})
+        config = _make_config(users={"bob": User(role="user", tools=["search"])})
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -5273,7 +5273,7 @@ class TestSandboxWorkspaceInExecutePlan:
         """When revalidate_permissions returns role='user' and sandbox UID is set,
         _session_workspace is called with sandbox_uid."""
         config = _make_config(
-            users={"bob": User(role="user", skills="*")},
+            users={"bob": User(role="user", tools="*")},
         )
         plan_id = await create_plan(db, "sess1", 1, "Test sandbox")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -7362,7 +7362,7 @@ class TestFastPathIntegration:
         await conn.close()
 
     def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_skills": None, "username": "u1"}
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": "u1"}
 
     async def test_chat_message_skips_planner(self, db, tmp_path):
         """When classifier returns 'chat', planner should not be called."""
@@ -9967,7 +9967,7 @@ class TestProcessMessagePhaseCallback:
         await conn.close()
 
     def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_skills": None, "username": "u1"}
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": "u1"}
 
     @pytest.mark.asyncio
     async def test_phase_transitions_for_chat(self, db, tmp_path):
@@ -10005,7 +10005,7 @@ class TestProcessMessagePhaseCallback:
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
         # Use username=None to bypass runtime permission re-validation
         # (test config has no users defined)
-        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_skills": None, "username": None}
+        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": None}
         phases = []
 
         fail_plan = {
