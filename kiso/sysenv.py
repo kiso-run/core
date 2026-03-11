@@ -21,18 +21,35 @@ log = logging.getLogger(__name__)
 
 PROBE_BINARIES: list[str] = [
     "kiso",
+    # Languages / package managers
     "git", "python3", "python", "uv", "pip",
     "node", "npm", "npx",
-    "docker", "docker-compose",
-    "curl", "wget", "ssh", "rsync",
-    "jq", "yq",
-    "ffmpeg", "imagemagick",
-    "tar", "gzip", "zip", "unzip",
-    "grep", "sed", "awk", "find", "xargs",
     "make", "gcc", "go", "rustc", "cargo",
+    # Containers
+    "docker", "docker-compose",
+    # Network / transfer
+    "curl", "wget", "ssh", "scp", "rsync",
+    "ssh-keygen", "ssh-keyscan",
+    "ping", "dig", "nslookup", "ifconfig",
+    # System info
+    "free", "ps", "uptime", "uname", "id", "groups",
+    "lscpu", "lsblk", "mount", "df",
+    "ip", "ss", "netstat", "lsb_release", "hostname",
+    # Data / JSON
+    "jq", "yq",
+    # Media
+    "ffmpeg", "imagemagick",
+    # Archive
+    "tar", "gzip", "zip", "unzip", "bzip2", "xz",
+    # Text processing
+    "grep", "sed", "awk", "find", "xargs",
+    "rg", "head", "tail", "wc", "sort", "cut", "tr", "tee", "uniq", "paste",
+    # Browsers
     "chromium", "chromium-browser", "lynx", "w3m", "html2text",
-    "rg", "head", "tail", "wc", "sort", "cut", "tr", "tee",
+    # File ops
     "diff", "file", "stat", "du", "cat",
+    # Process
+    "kill", "pkill",
 ]
 
 _CACHE_TTL = 300  # seconds

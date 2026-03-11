@@ -86,6 +86,26 @@ class TestCollectBinaries:
         """M45: 'kiso' must be in PROBE_BINARIES so the planner sees it as an available binary."""
         assert "kiso" in PROBE_BINARIES
 
+    def test_m370_system_info_tools(self):
+        """M370: PROBE_BINARIES includes common system info tools."""
+        for tool in ("free", "ps", "uptime", "uname", "id", "hostname", "df"):
+            assert tool in PROBE_BINARIES, f"Missing system tool: {tool}"
+
+    def test_m370_ssh_tools(self):
+        """M370: PROBE_BINARIES includes SSH tools."""
+        for tool in ("ssh", "ssh-keygen", "ssh-keyscan", "scp"):
+            assert tool in PROBE_BINARIES, f"Missing SSH tool: {tool}"
+
+    def test_m370_network_tools(self):
+        """M370: PROBE_BINARIES includes network tools."""
+        for tool in ("ss", "ip", "ping", "dig"):
+            assert tool in PROBE_BINARIES, f"Missing network tool: {tool}"
+
+    def test_m370_process_tools(self):
+        """M370: PROBE_BINARIES includes process management tools."""
+        for tool in ("kill", "pkill"):
+            assert tool in PROBE_BINARIES, f"Missing process tool: {tool}"
+
 
 # --- _collect_connectors ---
 
