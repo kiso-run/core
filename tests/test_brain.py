@@ -392,15 +392,16 @@ class TestValidatePlan:
         assert any("Available skills: echo" in e for e in errors)
 
     def test_skill_not_installed_suggests_asking_user(self):
-        """M418: validation error guides LLM to ask user, not silently install."""
+        """M418/M419: validation error guides LLM to ask user, end plan with msg."""
         plan = {"tasks": [
             {"type": "skill", "detail": "browse", "expect": "ok", "skill": "browser", "args": "{}"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
         assert any("CANNOT use 'browser'" in e for e in errors)
-        assert any("msg task asking the user" in e for e in errors)
+        assert any("SINGLE msg task" in e for e in errors)
         assert any("offer alternatives" in e for e in errors)
+        assert any("End the plan" in e for e in errors)
 
     def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [

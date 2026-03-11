@@ -482,17 +482,33 @@ class TestM362PlannerCLICommandAudit:
 
 
 class TestM367PlannerOsPackageConfirmation:
-    """M367: planner requires user confirmation before OS package install."""
+    """M367/M419: planner requires user confirmation before ANY install."""
 
-    def test_os_package_confirmation_rule(self):
+    def test_never_install_anything_rule(self):
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["kiso_native"])
-        assert "Never install OS packages" in prompt
+        assert "NEVER install anything" in prompt
 
-    def test_os_package_approval_required(self):
+    def test_user_approval_required(self):
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["kiso_native"])
-        assert "user approval" in prompt.lower() or "user for confirmation" in prompt.lower()
+        assert "user approval" in prompt.lower()
+
+    def test_web_module_offers_search_alternative(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["web"])
+        assert "search" in prompt.lower()
+        assert "Install first if missing" not in prompt
+
+    def test_skills_rules_ask_user(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["skills_rules"])
+        assert "msg" in prompt.lower() and "approval" in prompt.lower()
+
+    def test_plugin_install_prerequisite(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["plugin_install"])
+        assert "approved" in prompt.lower() or "consent" in prompt.lower()
 
 
 class TestM366PlannerMsgDetailPurity:

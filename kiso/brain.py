@@ -575,9 +575,9 @@ def validate_plan(
                     f"Task {i}: skill '{skill_name}' is not installed. "
                     f"Available skills: {available}. "
                     f"You CANNOT use '{skill_name}' in this plan. Remove the skill task. "
-                    f"Plan a msg task asking the user whether to install '{skill_name}', "
+                    f"Plan a SINGLE msg task asking the user whether to install '{skill_name}', "
                     f"and offer alternatives (e.g. search instead of browser). "
-                    f"Then replan based on user response."
+                    f"End the plan with that msg — the user's reply triggers the next cycle."
                 )
             elif installed_skills_info and skill_name in installed_skills_info:
                 # Validate args against schema (M166)
@@ -799,7 +799,9 @@ async def build_planner_messages(
     if _gap:
         _gap_text = (
             f"Skill '{_gap}' is needed for this request but not installed. "
-            f"Install it with: exec `kiso skill install {_gap}`, then replan."
+            f"Plan a single msg task asking the user whether to install it, "
+            f"offer alternatives (e.g. search for read-only content), and end the plan there. "
+            f"Never install without user approval."
         )
         context_pool["capability_gap"] = _gap_text
 
