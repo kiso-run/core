@@ -526,6 +526,16 @@ def validate_plan(
             for field in ("expect", "skill", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
+            # M386: msg detail must have substantive content beyond language prefix
+            msg_detail = (task.get("detail") or "").strip()
+            has_lang_prefix = bool(re.match(r'^Answer in \w+\.', msg_detail))
+            if has_lang_prefix:
+                cleaned = re.sub(r'^Answer in \w+\.\s*', '', msg_detail).strip()
+                if len(cleaned) < 5:
+                    errors.append(
+                        f"Task {i}: msg detail is empty after language prefix — "
+                        f"must contain WHAT to tell the user"
+                    )
         if t == TASK_TYPE_SEARCH:
             if _is_plugin_discovery_search(task.get("detail", "")):
                 errors.append(
