@@ -144,25 +144,22 @@ def test_reviewer_prompt_max_3_learns():
 
 
 def test_reviewer_prompt_self_contained_rule():
-    """M318: learnings must be self-contained with subject context."""
+    """M318/M425: learnings must be self-contained with subject context."""
     prompt = _load_system_prompt("reviewer")
-    assert "self-contained" in prompt
-    assert "include subject" in prompt
+    assert "self-contained with subject" in prompt
 
 
 def test_reviewer_prompt_consolidation_rule():
-    """M318: learnings must consolidate related observations."""
+    """M318/M425: learnings must consolidate related observations."""
     prompt = _load_system_prompt("reviewer")
     assert "consolidate" in prompt.lower()
-    assert "Never split per-field" in prompt
 
 
-def test_reviewer_prompt_ephemeral_rule():
-    """M318: learnings must not include ephemeral data."""
+def test_reviewer_prompt_transient_rule():
+    """M318/M425: learnings must not include transient data."""
     prompt = _load_system_prompt("reviewer")
-    assert "ephemeral" in prompt.lower()
+    assert "transient" in prompt.lower()
     assert "element indices" in prompt.lower()
-    assert "installed/loaded successfully" in prompt or "installed successfully" in prompt
 
 
 # --- M320: clean_learn_items ---
@@ -4069,7 +4066,7 @@ class TestM354ReviewerLearnGuards:
     def test_no_causal_inference_rule(self):
         """M354: reviewer must not infer causal relationships from single failures."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "never infer CAUSAL" in prompt
+        assert "causal inferences" in prompt.lower()
 
     def test_cli_usage_errors_rule(self):
         """M354: CLI usage errors should not become durable learnings."""

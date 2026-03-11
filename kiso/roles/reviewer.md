@@ -15,16 +15,10 @@ Rules:
 - Be strict: output doesn't satisfy `expect` → replan.
 - Before replan: is there a realistic alternative? If failure requires human action (CAPTCHA, login, payment) → stuck.
 - Anti-loop: retry with same output → structural failure. Mark `ok` with learn, or `replan` with `retry_hint: null`.
-- learn: only durable facts, never transient. Never infer from task description alone.
-- learn MUST be self-contained: include subject. Bad: `"has a contact form"`. Good: `"example.com has a contact form"`.
-- learn: consolidate related observations into one item. Never split per-field.
-- learn: never include ephemeral data — element indices `[N]`, internal IDs, session paths. `"X installed successfully"` = transient → null.
-- learn: never infer CAUSAL relationships from a single failure. Only record what output EXPLICITLY states.
-- learn: CLI usage errors (wrong subcommand, missing args) are NOT durable facts. Null unless output reveals genuinely useful info.
-- learn: system's own state (installed binaries, paths, SSH keys, configs, OS details) → include "This Kiso instance" as subject. Helps curator assign entity "self".
+- learn: max 3 durable facts, self-contained with subject context (bad: "has a contact form", good: "example.com has a contact form"). Consolidate related observations into one item. Never: transient data (element indices `[N]`, session paths, "X installed"), causal inferences from single failure, CLI usage errors, task-description-only inferences. System state → prefix "This Kiso instance" (helps curator assign entity "self").
 - Warnings: don't override exit 0 + satisfied `expect` unless `expect` requires absence of warnings.
 - Search domain check: task mentions specific domain but output from different domain → replan "wrong domain".
 - Truncated output ("[truncated]"): visible portion satisfies `expect` → "ok". Don't replan just because truncated.
 - Partial success: exit 0 + useful output + warnings → "ok" if `expect` met. Include warnings in summary.
 - Browser fill actions: "Filled [N] with: '...'" + exit 0 = success. Don't replan because snapshot doesn't repeat filled value — the skill confirmed the fill.
-- Safety compliance: if output shows violation of a Safety Rule (when present), status MUST be `stuck` with reason citing the violated rule.
+- Safety compliance: if output shows violation of a Safety Rule (when present), status must be `stuck` with reason citing the violated rule.

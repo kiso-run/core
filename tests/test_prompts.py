@@ -370,16 +370,15 @@ class TestM323LearningPipelineQuality:
 
     def test_reviewer_prompt_self_contained_rule(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "self-contained" in prompt
-        assert "include subject" in prompt
+        assert "self-contained with subject" in prompt
 
     def test_reviewer_prompt_consolidation_rule(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "consolidate" in prompt.lower()
 
-    def test_reviewer_prompt_ephemeral_rule(self):
+    def test_reviewer_prompt_transient_rule(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "ephemeral" in prompt.lower()
+        assert "transient" in prompt.lower()
 
     def test_curator_prompt_consolidation_rule(self):
         prompt = (_ROLES_DIR / "curator.md").read_text()
