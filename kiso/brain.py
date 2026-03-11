@@ -68,6 +68,17 @@ _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM contex
 _VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system"})
 _ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
 
+# In-flight message classification
+INFLIGHT_CATEGORIES: frozenset[str] = frozenset({"stop", "update", "independent", "conflict"})
+INFLIGHT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "category": {"type": "string", "enum": sorted(INFLIGHT_CATEGORIES)},
+        "reason": {"type": "string"},
+    },
+    "required": ["category", "reason"],
+}
+
 
 def _strip_fences(text: str) -> str:
     """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
@@ -1250,6 +1261,57 @@ async def classify_message(
     # Ambiguous output — safe fallback
     log.warning("Classifier returned unexpected value %r, falling back to plan", raw.strip())
     return "plan"
+
+
+# --- In-flight message classification (M406) ---
+
+_INFLIGHT_PROMPT = """\
+A job is currently running with this goal: "{plan_goal}"
+The user sent a new message: "{new_message}"
+
+Classify the intent of the new message into exactly one category:
+- stop: user wants to cancel or abort the current job
+- update: user is modifying parameters of the current job (e.g. "use port 8080 instead")
+- independent: unrelated request that can wait until the current job finishes
+- conflict: contradicts or replaces the current job entirely (e.g. "no, do X instead")
+
+Respond with ONLY the category word (stop/update/independent/conflict), nothing else."""
+
+
+def build_inflight_classifier_messages(
+    plan_goal: str, new_message: str,
+) -> list[dict]:
+    """Build the message list for in-flight message classification."""
+    user_text = _INFLIGHT_PROMPT.format(
+        plan_goal=plan_goal, new_message=new_message,
+    )
+    return [{"role": "user", "content": user_text}]
+
+
+async def classify_inflight(
+    config: Config, plan_goal: str, new_message: str,
+    session: str = "",
+) -> str:
+    """Classify an in-flight message as stop/update/independent/conflict.
+
+    Returns one of :data:`INFLIGHT_CATEGORIES`. On any error, returns
+    ``"independent"`` (safe fallback — message will be queued for later).
+    """
+    messages = build_inflight_classifier_messages(plan_goal, new_message)
+    try:
+        raw = await call_llm(config, "classifier", messages, session=session)
+    except LLMError as e:
+        log.warning("Inflight classifier LLM failed, falling back to independent: %s", e)
+        return "independent"
+
+    result = raw.strip().lower()
+    if result in INFLIGHT_CATEGORIES:
+        log.info("Inflight classifier: %s", result)
+        return result
+
+    log.warning("Inflight classifier returned unexpected value %r, falling back to independent",
+                raw.strip())
+    return "independent"
 
 
 def validate_review(review: dict) -> list[str]:

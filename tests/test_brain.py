@@ -42,7 +42,10 @@ from kiso.brain import (
     build_reviewer_messages,
     build_summarizer_messages,
     classify_message,
+    classify_inflight,
+    build_inflight_classifier_messages,
     CLASSIFIER_CATEGORIES,
+    INFLIGHT_CATEGORIES,
     _sanitize_messenger_output,
     run_briefer,
     run_curator,
@@ -7639,3 +7642,101 @@ class TestM304RunBrieferSimpleConsumers:
         with patch("kiso.brain.call_llm", mock_llm):
             await run_briefer(config, "messenger", "tell user", {})
         assert mock_llm.call_count == 1  # no retries
+
+
+# ---------------------------------------------------------------------------
+# M406 — In-flight message classifier
+# ---------------------------------------------------------------------------
+
+
+class TestBuildInflightClassifierMessages:
+    def test_basic_structure(self):
+        """build_inflight_classifier_messages returns a user message."""
+        msgs = build_inflight_classifier_messages("deploy to staging", "usa porta 8080")
+        assert len(msgs) == 1
+        assert msgs[0]["role"] == "user"
+        assert "deploy to staging" in msgs[0]["content"]
+        assert "usa porta 8080" in msgs[0]["content"]
+
+    def test_contains_all_categories(self):
+        """Prompt mentions all four inflight categories."""
+        msgs = build_inflight_classifier_messages("goal", "msg")
+        text = msgs[0]["content"]
+        for cat in INFLIGHT_CATEGORIES:
+            assert cat in text
+
+
+class TestClassifyInflight:
+    async def test_returns_stop(self):
+        """classify_inflight returns 'stop' when LLM says 'stop'."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="stop"):
+            result = await classify_inflight(config, "deploy app", "fermati")
+        assert result == "stop"
+
+    async def test_returns_update(self):
+        """classify_inflight returns 'update' for parameter changes."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="update"):
+            result = await classify_inflight(config, "deploy app", "usa porta 8080")
+        assert result == "update"
+
+    async def test_returns_independent(self):
+        """classify_inflight returns 'independent' for unrelated messages."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="independent"):
+            result = await classify_inflight(config, "deploy app", "che ore sono?")
+        assert result == "independent"
+
+    async def test_returns_conflict(self):
+        """classify_inflight returns 'conflict' for contradicting messages."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="conflict"):
+            result = await classify_inflight(config, "deploy app", "no fai X invece")
+        assert result == "conflict"
+
+    async def test_strips_whitespace(self):
+        """classify_inflight handles LLM output with whitespace."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  stop\n"):
+            result = await classify_inflight(config, "goal", "msg")
+        assert result == "stop"
+
+    async def test_case_insensitive(self):
+        """classify_inflight handles uppercase responses."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="STOP"):
+            result = await classify_inflight(config, "goal", "msg")
+        assert result == "stop"
+
+    async def test_unexpected_output_falls_back_to_independent(self):
+        """classify_inflight returns 'independent' for unexpected LLM output."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value="I think this is a stop"):
+            result = await classify_inflight(config, "goal", "msg")
+        assert result == "independent"
+
+    async def test_llm_error_falls_back_to_independent(self):
+        """classify_inflight returns 'independent' when LLM call fails."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=LLMError("timeout")):
+            result = await classify_inflight(config, "goal", "msg")
+        assert result == "independent"
+
+    async def test_uses_classifier_role(self):
+        """classify_inflight should call LLM with 'classifier' role."""
+        config = _make_config_for_classifier()
+        mock_llm = AsyncMock(return_value="stop")
+        with patch("kiso.brain.call_llm", mock_llm):
+            await classify_inflight(config, "goal", "msg", session="s1")
+        mock_llm.assert_called_once()
+        assert mock_llm.call_args[0][1] == "classifier"
+        assert mock_llm.call_args[1].get("session") == "s1"
+
+
+class TestInflightCategories:
+    def test_contains_expected_values(self):
+        """INFLIGHT_CATEGORIES contains all four expected values."""
+        assert INFLIGHT_CATEGORIES == {"stop", "update", "independent", "conflict"}
