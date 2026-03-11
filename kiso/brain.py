@@ -1172,6 +1172,19 @@ async def run_briefer(
     if _simple:
         briefing["modules"] = []
 
+    # M368: post-validation filtering — remove hallucinated skills not in context pool
+    if context_pool.get("skills") and briefing["skills"]:
+        pool_skills_lower = context_pool["skills"].lower()
+        original_count = len(briefing["skills"])
+        briefing["skills"] = [
+            s for s in briefing["skills"]
+            if any(word.strip(":.,;-").lower() in pool_skills_lower
+                   for word in s.split()[:3] if len(word.strip(":.,;-")) > 3)
+        ]
+        filtered = original_count - len(briefing["skills"])
+        if filtered:
+            log.debug("Briefer: filtered %d hallucinated skill(s)", filtered)
+
     log.info(
         "Briefer for %s: %d modules, %d skills, %d output_indices, %d tags",
         consumer_role,

@@ -14,7 +14,7 @@ Rules:
 - Needs context (few/no modules): info retrieval, single-skill tasks, env lookups.
 - Needs modules: multi-step plans, replan, error recovery, skill installation. Add only specific module(s) required.
 - For planner: select ONLY skills the plan will call. Most requests need ZERO modules.
-- context: extract 1-3 relevant facts. NEVER copy entire summary or facts list.
+- context: extract 1-3 relevant facts verbatim or compressed from the context pool. NEVER copy entire summary or facts list. NEVER add opinions, interpretations, inferences, or information not present in the input. No relevant facts → empty string.
 - System Environment: SKIP unless installing software or needing specific binaries.
 - Preserve specifics: exact values, paths, URLs, error messages.
 - Conflicting facts: use most recent, flag conflict.

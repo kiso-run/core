@@ -5147,6 +5147,17 @@ class TestBrieferMessages:
         assert "Conflicting facts" in prompt
         assert "most recent" in prompt.lower()
 
+    def test_m368_briefer_prompt_no_opinions(self):
+        """M368: briefer prompt prohibits opinions/interpretations in context."""
+        prompt = (_ROLES_DIR / "briefer.md").read_text()
+        assert "NEVER add opinions" in prompt
+
+    def test_m368_briefer_prompt_no_inferences(self):
+        """M368: briefer prompt prohibits inferences not in input."""
+        prompt = (_ROLES_DIR / "briefer.md").read_text()
+        assert "inferences" in prompt.lower()
+        assert "not present in the input" in prompt.lower()
+
     def test_m265_messenger_no_modules_or_skills_rule(self):
         """M265: briefer prompt says messenger gets modules=[] and skills=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
@@ -5317,6 +5328,57 @@ class TestRunBriefer:
                     return_value="not json at all"):
             with pytest.raises(BrieferError):
                 await run_briefer(config, "planner", "task", {})
+
+    @pytest.mark.asyncio
+    async def test_m368_filters_hallucinated_skills(self, config):
+        """M368: run_briefer filters skills not matching context pool."""
+        response = json.dumps({
+            "modules": [],
+            "skills": ["browser: navigate and screenshot", "Retrieve CPU details"],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        ctx = {"skills": "browser: navigate, click, fill, screenshot, text"}
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "visit example.com", ctx)
+        # "browser" matches context pool, "Retrieve CPU details" does not
+        assert any("browser" in s for s in result["skills"])
+        assert not any("Retrieve" in s for s in result["skills"])
+
+    @pytest.mark.asyncio
+    async def test_m368_preserves_valid_skills(self, config):
+        """M368: run_briefer preserves skills that match context pool."""
+        response = json.dumps({
+            "modules": [],
+            "skills": ["search: web search for queries"],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        ctx = {"skills": "search: web search for queries, max_results option"}
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "find info", ctx)
+        assert len(result["skills"]) == 1
+        assert "search" in result["skills"][0]
+
+    @pytest.mark.asyncio
+    async def test_m368_no_filtering_without_skills_in_pool(self, config):
+        """M368: no skill filtering when context pool has no skills key."""
+        response = json.dumps({
+            "modules": [],
+            "skills": ["browser: navigate"],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "task", {})
+        # No filtering — skills key not in context_pool
+        assert len(result["skills"]) == 1
 
 
 class TestBrieferSchema:
