@@ -91,6 +91,7 @@ from kiso.store import (
     get_all_entities,
     get_all_tags,
     search_facts_by_entity,
+    search_facts_scored,
     get_facts,
     get_oldest_messages,
     get_pending_learnings,
@@ -266,21 +267,27 @@ async def _msg_task(
             # Use briefer's synthesized context instead of raw summary/facts
             if briefing.get("context"):
                 briefing_context = briefing["context"]
-            # M365: fetch entity facts for relevant_entities from briefer
+            # M391: scored fact retrieval for messenger
+            entity_id = None
             if briefing.get("relevant_entities") and all_entities:
                 entity_map = {e["name"]: e["id"] for e in all_entities}
-                entity_facts_parts: list[str] = []
                 for ename in briefing["relevant_entities"]:
                     eid = entity_map.get(ename.lower().strip())
                     if eid is not None:
-                        efacts = await search_facts_by_entity(db, eid)
-                        entity_facts_parts.extend(f"- {f['content']}" for f in efacts)
-                if entity_facts_parts:
-                    entity_section = "\n".join(entity_facts_parts)
-                    if briefing_context:
-                        briefing_context += f"\n\n## Entity Facts\n{entity_section}"
-                    else:
-                        briefing_context = f"## Entity Facts\n{entity_section}"
+                        entity_id = eid
+                        break
+            scored_facts = await search_facts_scored(
+                db,
+                entity_id=entity_id,
+                tags=briefing.get("relevant_tags") or None,
+                keywords=detail.lower().split()[:10] if detail else None,
+            )
+            if scored_facts:
+                facts_text = "\n".join(f"- {f['content']}" for f in scored_facts)
+                if briefing_context:
+                    briefing_context += f"\n\n## Relevant Facts\n{facts_text}"
+                else:
+                    briefing_context = f"## Relevant Facts\n{facts_text}"
         except Exception:
             log.debug("Briefer failed for messenger, using full context")
 

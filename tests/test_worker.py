@@ -10736,7 +10736,7 @@ class TestM365MsgTaskEntityEnrichment:
             await _msg_task(config, db, "sess1", "Hello")
 
         user_content = messenger_msgs[0][1]["content"]
-        assert "Entity Facts" not in user_content
+        assert "Relevant Facts" not in user_content
 
     async def test_chat_kb_uses_fast_path(self, db, tmp_path):
         """chat_kb classification routes through _fast_path_chat like chat."""

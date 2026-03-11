@@ -92,7 +92,7 @@ class TestChatKBEntityFlow:
         # Messenger received entity facts in context
         user_content = messenger_msgs[0][1]["content"]
         assert "ssh-ed25519 AAAA" in user_content
-        assert "Entity Facts" in user_content
+        assert "Relevant Facts" in user_content
 
     async def test_chat_kb_no_entities_still_works(self, db):
         """chat_kb with no relevant entities → messenger runs normally."""
