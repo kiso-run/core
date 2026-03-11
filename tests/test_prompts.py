@@ -351,11 +351,11 @@ class TestM340SkillArgsRequirement:
     def test_skills_rules_contains_never_null(self):
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["skills_rules"])
-        assert "NEVER null" in prompt
+        assert "Never null" in prompt
 
     def test_core_contains_args_example(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert '{"action":' in prompt or "NEVER null" in prompt
+        assert "JSON string" in prompt
 
 
 class TestM323LearningPipelineQuality:
@@ -487,7 +487,7 @@ class TestM367PlannerOsPackageConfirmation:
     def test_never_install_anything_rule(self):
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["kiso_native"])
-        assert "NEVER install anything" in prompt
+        assert "Never install anything" in prompt
 
     def test_user_approval_required(self):
         from kiso.brain import _load_modular_prompt
@@ -517,7 +517,7 @@ class TestM366PlannerMsgDetailPurity:
     def test_msg_detail_no_strategy(self):
         """Planner prompt forbids plan strategy in msg detail."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "NEVER include plan strategy" in prompt
+        assert "Never include plan strategy" in prompt
 
     def test_msg_detail_no_overview(self):
         """Planner prompt forbids overview/reasoning in msg detail."""
@@ -528,4 +528,4 @@ class TestM366PlannerMsgDetailPurity:
         """Planner prompt enforces English detail even in replan context."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["replan"])
-        assert "detail MUST be in English regardless" in prompt
+        assert "detail must be in English regardless" in prompt

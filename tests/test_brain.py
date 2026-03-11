@@ -2923,7 +2923,7 @@ class TestPlannerPromptContent:
     def test_m5_msg_after_tasks(self):
         """M5/M137: msg tasks must come after data-gathering tasks."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "msg tasks MUST come after" in prompt
+        assert "msg tasks must come after" in prompt
 
     def test_m142_file_based_data_flow(self):
         """M142: planner prompt requires file-based data flow for large outputs."""
@@ -2935,7 +2935,7 @@ class TestPlannerPromptContent:
         """M143: planner must diversify strategy after repeated failures."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "fundamentally different strategy" in prompt
-        assert "MUST try a fundamentally different strategy" in prompt
+        assert "try a fundamentally different strategy" in prompt
 
     def test_m144_detail_natural_language(self):
         """M144: planner prompt forbids commands/data in detail field."""
@@ -2978,7 +2978,30 @@ class TestPlannerPromptContent:
     def test_m353_planner_no_kiso_cli_for_self_inspection(self):
         """M353: planner prompt forbids kiso CLI for self-inspection."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Do NOT use kiso CLI for self-inspection" in prompt
+        assert "Do not use kiso CLI for self-inspection" in prompt
+
+    def test_m423_answer_in_lang_once_in_planning_rules(self):
+        """M423: 'Answer in {lang' appears once in planning_rules module."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        # Extract planning_rules module content between markers
+        start = prompt.index("<!-- MODULE: planning_rules -->")
+        end = prompt.index("<!-- MODULE:", start + 1)
+        planning_rules_text = prompt[start:end]
+        assert planning_rules_text.count("Answer in {lang") == 1
+
+    def test_m423_core_module_no_verbose_args(self):
+        """M423: core module skill type doesn't mention 'NEVER null'."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        start = prompt.index("<!-- MODULE: core -->")
+        end = prompt.index("<!-- MODULE:", start + 1)
+        core_text = prompt[start:end]
+        assert "NEVER null" not in core_text
+
+    def test_m423_all_task_types_present(self):
+        """M423: planner prompt still contains all task types."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        for tt in ("exec:", "skill:", "msg:", "search:", "replan:"):
+            assert tt in prompt, f"Missing task type: {tt}"
 
 
 class TestM165SkillArgsExample:
@@ -2986,8 +3009,8 @@ class TestM165SkillArgsExample:
 
     def test_planner_prompt_has_skill_args_example(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "JSON-encoded STRING" in prompt
-        assert "raw object" in prompt
+        assert "JSON string" in prompt
+        assert "required args" in prompt
 
     def test_planner_prompt_no_hardcoded_browser_example(self):
         """M181: skill example must not hardcode 'browser' as skill name."""
@@ -3038,11 +3061,11 @@ class TestM192PlannerNavigateAndInstallGuard:
 
     def test_cannot_use_uninstalled_skill(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "CANNOT be used" in prompt
+        assert "cannot be used" in prompt
 
     def test_install_then_replan_pattern(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "NEVER put a skill task for an uninstalled skill" in prompt or "NEVER skill-task an uninstalled skill" in prompt
+        assert "Never skill-task an uninstalled skill" in prompt
 
 
 class TestM207CompositeRequestDecomposition:
@@ -3215,9 +3238,7 @@ class TestM73cPlannerUserManagement:
         """Planner user-mgmt appendix must refuse kiso user tasks when Caller Role is 'user'."""
         prompt = _load_modular_prompt("planner", ["user_mgmt"])
         assert "Caller Role" in prompt
-        assert "NEVER" in prompt
-        assert "Caller Role" in prompt
-        assert "NEVER" in prompt
+        assert "never" in prompt.lower()
         assert "kiso user" in prompt
 
     def test_skills_required_for_role_user(self):
@@ -5666,7 +5687,7 @@ class TestLoadModularPrompt:
         result = _load_modular_prompt("planner", [])
         assert "Kiso planner" in result
         assert "Task types:" in result
-        assert "Last task MUST" in result
+        assert "Last task must" in result
         # All conditional modules should be absent
         assert "Web interaction:" not in result
         assert "Scripting:" not in result
@@ -6603,7 +6624,7 @@ class TestM261PromptSizeReduction:
         assert "One-liner" in all_modules  # scripting
         assert "extend_replan" in all_modules  # replan
         assert "kiso skill install" in all_modules  # kiso_commands
-        assert "NEVER generate" in all_modules  # user_mgmt
+        assert "never generate" in all_modules  # user_mgmt
         assert "Plugin installation" in all_modules  # plugin_install
 
 
