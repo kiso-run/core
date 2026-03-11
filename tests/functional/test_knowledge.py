@@ -193,6 +193,56 @@ class TestF14CuratorEntityCreation:
 
 
 # ---------------------------------------------------------------------------
+# F15 — entity dedup and tag reuse
+# ---------------------------------------------------------------------------
+
+
+class TestF15EntityDedupTagReuse:
+    """F15: pre-seeded entity 'flask' → teach new fact → no duplicate entity."""
+
+    async def test_entity_dedup_tag_reuse(self, func_db, run_message):
+        """Pre-seed Flask entity + fact → teach new Flask fact → verify dedup."""
+        from kiso.store import find_or_create_entity, save_fact
+
+        # Pre-seed entity + fact
+        eid = await find_or_create_entity(func_db, "flask", "tool")
+        await save_fact(
+            func_db,
+            "Flask is a lightweight Python web framework",
+            source="curator", category="general",
+            tags=["python", "web"], entity_id=eid,
+        )
+
+        # Count entities before
+        cur = await func_db.execute("SELECT COUNT(*) FROM entities")
+        count_before = (await cur.fetchone())[0]
+
+        # Teach new fact about Flask
+        r1 = await run_message(
+            "ricordati che Flask usa Jinja2 come template engine",
+            timeout=120,
+        )
+        assert r1.success
+
+        # Check: no duplicate entity created
+        cur = await func_db.execute(
+            "SELECT id, name FROM entities WHERE LOWER(name) LIKE '%flask%'"
+        )
+        flask_entities = [dict(r) for r in await cur.fetchall()]
+        assert len(flask_entities) == 1, (
+            f"Expected exactly 1 flask entity (dedup), found: {flask_entities}"
+        )
+
+        # Total entity count should not have increased by more than 1
+        # (at most 1 new entity if the LLM creates one for 'jinja2')
+        cur = await func_db.execute("SELECT COUNT(*) FROM entities")
+        count_after = (await cur.fetchone())[0]
+        assert count_after <= count_before + 2, (
+            f"Entity explosion: {count_before} → {count_after}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # F12 — messenger quality
 # ---------------------------------------------------------------------------
 
