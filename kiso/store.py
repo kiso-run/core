@@ -975,6 +975,129 @@ async def search_facts_by_entity(
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def search_facts_scored(
+    db: aiosqlite.Connection,
+    *,
+    entity_id: int | None = None,
+    tags: list[str] | None = None,
+    keywords: list[str] | None = None,
+    session: str | None = None,
+    is_admin: bool = True,
+    limit: int = 50,
+) -> list[dict]:
+    """Score and rank facts by relevance.
+
+    Score = (entity_match × 10) + (tag_overlap_count × 3) + (keyword_hit × 1).
+    Returns top *limit* facts ordered by score desc, then last_used desc.
+
+    At least one of *entity_id*, *tags*, or *keywords* must be provided.
+    """
+    if not entity_id and not tags and not keywords:
+        return []
+
+    # --- Phase 1: entity + tag scoring via SQL ---
+    params: list = []
+    select_parts = ["f.*"]
+    join_parts: list[str] = []
+    where_clauses: list[str] = []
+
+    # Entity score
+    if entity_id is not None:
+        select_parts.append("CASE WHEN f.entity_id = ? THEN 10 ELSE 0 END AS entity_score")
+        params.append(entity_id)
+    else:
+        select_parts.append("0 AS entity_score")
+
+    # Tag score
+    if tags:
+        placeholders = ", ".join("?" for _ in tags)
+        join_parts.append(
+            f"LEFT JOIN ("
+            f"  SELECT fact_id, COUNT(*) AS tag_count"
+            f"  FROM fact_tags WHERE tag IN ({placeholders})"
+            f"  GROUP BY fact_id"
+            f") _tc ON _tc.fact_id = f.id"
+        )
+        params.extend(tags)
+        select_parts.append("COALESCE(_tc.tag_count, 0) * 3 AS tag_score")
+    else:
+        select_parts.append("0 AS tag_score")
+
+    # Build WHERE: need at least one signal to match
+    or_conditions: list[str] = []
+    if entity_id is not None:
+        or_conditions.append("f.entity_id = ?")
+        params.append(entity_id)
+    if tags:
+        or_conditions.append("_tc.tag_count > 0")
+
+    # Session scoping
+    session_filter = ""
+    if not is_admin and session:
+        session_filter = " AND (f.category != 'user' OR f.session = ?)"
+        params.append(session)
+
+    # If we only have keywords and no entity/tags, use FTS5 to get candidates
+    if not or_conditions:
+        # Keywords-only path: FTS5 filter → Python scoring
+        fts_q = _fts5_query(" ".join(keywords or []))
+        if not fts_q:
+            return []
+        query = (
+            "SELECT f.*, 0 AS entity_score, 0 AS tag_score "
+            "FROM facts f "
+            "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
+            "WHERE kiso_facts_fts MATCH ?"
+        )
+        kw_params: list = [fts_q]
+        if not is_admin and session:
+            query += " AND (f.category != 'user' OR f.session = ?)"
+            kw_params.append(session)
+        query += " ORDER BY rank LIMIT ?"
+        kw_params.append(limit * 2)  # over-fetch for Python re-rank
+        try:
+            cur = await db.execute(query, kw_params)
+            rows = [dict(r) for r in await cur.fetchall()]
+        except Exception:
+            return []
+    else:
+        where_sql = " OR ".join(or_conditions)
+        query = (
+            f"SELECT {', '.join(select_parts)} "
+            f"FROM facts f "
+            f"{' '.join(join_parts)} "
+            f"WHERE ({where_sql}){session_filter} "
+            f"ORDER BY (entity_score + tag_score) DESC, "
+            f"COALESCE(f.last_used, f.created_at) DESC "
+            f"LIMIT ?"
+        )
+        params.append(limit * 2)  # over-fetch for keyword re-rank
+        cur = await db.execute(query, params)
+        rows = [dict(r) for r in await cur.fetchall()]
+
+    # --- Phase 2: keyword scoring in Python ---
+    kw_set = {w.lower() for w in (keywords or [])} if keywords else set()
+    scored: list[tuple[int, dict]] = []
+    for row in rows:
+        base = row.get("entity_score", 0) + row.get("tag_score", 0)
+        if kw_set:
+            content_lower = row["content"].lower()
+            kw_hits = sum(1 for kw in kw_set if kw in content_lower)
+            base += kw_hits
+        scored.append((base, row))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    # Clean up scoring columns from output
+    results: list[dict] = []
+    for _, row in scored[:limit]:
+        row.pop("entity_score", None)
+        row.pop("tag_score", None)
+        row.pop("tag_count", None)
+        results.append(row)
+    return results
+
+
 async def backfill_fact_entities(db: aiosqlite.Connection) -> int:
     """Backfill entity_id for facts that match known entities by content.
 

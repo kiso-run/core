@@ -53,6 +53,7 @@ from kiso.store import (
     find_or_create_entity,
     get_all_entities,
     search_facts_by_entity,
+    search_facts_scored,
     _normalize_entity_name,
     SessionDict,
 )
@@ -2368,3 +2369,130 @@ async def test_m345_migration_no_entity_tags_noop(tmp_path):
     tags = [r[0] for r in await cur.fetchall()]
     assert tags == ["tech-stack"]
     await db.close()
+
+
+# ---------------------------------------------------------------------------
+# M389 — search_facts_scored
+# ---------------------------------------------------------------------------
+
+
+async def test_scored_entity_only(db: aiosqlite.Connection):
+    """Facts matching entity_id score 10, others 0."""
+    await create_session(db, "s1")
+    eid = await find_or_create_entity(db, "flask", "framework")
+    f1 = await save_fact(db, "Flask uses Jinja2 templates", "curator", entity_id=eid)
+    f2 = await save_fact(db, "Redis is an in-memory cache", "curator")
+
+    results = await search_facts_scored(db, entity_id=eid)
+    ids = [r["id"] for r in results]
+    assert f1 in ids
+    assert f2 not in ids
+
+
+async def test_scored_tags_only(db: aiosqlite.Connection):
+    """Fact with 3 matching tags scores 9, 1 tag scores 3."""
+    await create_session(db, "s1")
+    f1 = await save_fact(db, "PostgreSQL on port 5432", "curator")
+    await save_fact_tags(db, f1, ["database", "postgres", "infra"])
+    f2 = await save_fact(db, "Nginx is a web server", "curator")
+    await save_fact_tags(db, f2, ["infra"])
+
+    results = await search_facts_scored(db, tags=["database", "postgres", "infra"])
+    assert len(results) >= 2
+    # f1 (3 tags = score 9) beats f2 (1 tag = score 3)
+    assert results[0]["id"] == f1
+    assert results[1]["id"] == f2
+
+
+async def test_scored_combined_entity_and_tags(db: aiosqlite.Connection):
+    """Entity + 2 tags = 16 beats entity-only (10) and tags-only (6)."""
+    await create_session(db, "s1")
+    eid = await find_or_create_entity(db, "flask", "framework")
+    f_both = await save_fact(db, "Flask uses Jinja2 templates", "curator", entity_id=eid)
+    await save_fact_tags(db, f_both, ["web", "python"])
+    f_entity = await save_fact(db, "Flask config file", "curator", entity_id=eid)
+    f_tags = await save_fact(db, "Django uses templates too", "curator")
+    await save_fact_tags(db, f_tags, ["web", "python"])
+
+    results = await search_facts_scored(db, entity_id=eid, tags=["web", "python"])
+    assert len(results) >= 3
+    # f_both (10 + 6 = 16) > f_entity (10) > f_tags (6)
+    assert results[0]["id"] == f_both
+    assert results[1]["id"] == f_entity
+    assert results[2]["id"] == f_tags
+
+
+async def test_scored_keywords_boost(db: aiosqlite.Connection):
+    """Among same-score facts, keyword matches rank higher."""
+    await create_session(db, "s1")
+    eid = await find_or_create_entity(db, "flask", "framework")
+    f1 = await save_fact(db, "Flask uses Jinja2 for rendering", "curator", entity_id=eid)
+    f2 = await save_fact(db, "Flask config is in TOML format", "curator", entity_id=eid)
+
+    results = await search_facts_scored(
+        db, entity_id=eid, keywords=["jinja2", "rendering"],
+    )
+    assert len(results) >= 2
+    # f1 has 2 keyword hits, f2 has 0 → f1 first
+    assert results[0]["id"] == f1
+
+
+async def test_scored_limit_respected(db: aiosqlite.Connection):
+    """Limit parameter caps results."""
+    await create_session(db, "s1")
+    eid = await find_or_create_entity(db, "test", "system")
+    for i in range(10):
+        await save_fact(db, f"Test fact number {i}", "curator", entity_id=eid)
+
+    results = await search_facts_scored(db, entity_id=eid, limit=3)
+    assert len(results) == 3
+
+
+async def test_scored_session_scoping(db: aiosqlite.Connection):
+    """Non-admin users don't see other sessions' user-category facts."""
+    await create_session(db, "s1")
+    await create_session(db, "s2")
+    eid = await find_or_create_entity(db, "flask", "framework")
+    f_global = await save_fact(db, "Flask is a web framework", "curator",
+                                entity_id=eid, category="general")
+    f_s1 = await save_fact(db, "Flask user preference: dark mode", "curator",
+                            entity_id=eid, session="s1", category="user")
+    f_s2 = await save_fact(db, "Flask user preference: light mode", "curator",
+                            entity_id=eid, session="s2", category="user")
+
+    # Non-admin in s1: sees global + s1, not s2
+    results = await search_facts_scored(
+        db, entity_id=eid, session="s1", is_admin=False,
+    )
+    ids = [r["id"] for r in results]
+    assert f_global in ids
+    assert f_s1 in ids
+    assert f_s2 not in ids
+
+    # Admin: sees all
+    results = await search_facts_scored(db, entity_id=eid, is_admin=True)
+    ids = [r["id"] for r in results]
+    assert f_global in ids
+    assert f_s1 in ids
+    assert f_s2 in ids
+
+
+async def test_scored_empty_input_returns_empty(db: aiosqlite.Connection):
+    """No entity, no tags, no keywords → empty list."""
+    await create_session(db, "s1")
+    await save_fact(db, "Some fact", "curator")
+    results = await search_facts_scored(db)
+    assert results == []
+
+
+async def test_scored_keywords_only(db: aiosqlite.Connection):
+    """Keywords-only query uses FTS5 and ranks by keyword hits."""
+    await create_session(db, "s1")
+    f1 = await save_fact(db, "Flask uses Jinja2 for web templates", "curator")
+    f2 = await save_fact(db, "Redis is fast", "curator")
+
+    results = await search_facts_scored(db, keywords=["flask", "jinja2"])
+    ids = [r["id"] for r in results]
+    assert f1 in ids
+    # f2 shouldn't match (no keyword overlap)
+    assert f2 not in ids
