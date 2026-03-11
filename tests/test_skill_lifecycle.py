@@ -78,7 +78,7 @@ class TestSkillLifecycleRecovery:
         skill_list = build_planner_skill_list(skills, "admin")
         assert "[BROKEN" in skill_list
         assert "missing: nonexistent_playwright_xyz" in skill_list
-        assert "kiso skill remove browser" in skill_list
+        assert "kiso tool remove browser" in skill_list
 
     async def test_repair_fixes_broken_skill(self, tmp_path):
         """Step 3: repair_unhealthy_skills runs deps.sh which installs

@@ -128,7 +128,7 @@ class TestSkillInstallHealthSmoke:
         result = build_planner_skill_list(skills)
         assert "[BROKEN" in result
         assert "fake_binary" in result
-        assert "kiso skill remove" in result
+        assert "kiso tool remove" in result
 
     def test_planner_prompt_has_reinstall_guidance(self):
         """M185: planner prompt blocks apt-get and has reinstall rule."""

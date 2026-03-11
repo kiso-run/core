@@ -1042,7 +1042,7 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
         ))
 
     out = capsys.readouterr().out
-    assert "KISO_SKILL_SEARCH_API_KEY not set" in out
+    assert "KISO_TOOL_SEARCH_API_KEY not set" in out
     assert "installed successfully" in out
 
 
