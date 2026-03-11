@@ -389,3 +389,76 @@ class TestM323LearningPipelineQuality:
         assert not any("installed successfully" in item for item in cleaned)
         # Items with 2+ element indices are gone
         assert not any("[8]" in item and "[9]" in item for item in cleaned)
+
+
+class TestM362PlannerCLICommandAudit:
+    """M362: planner kiso_commands module must match actual CLI entrypoints."""
+
+    def _get_actual_subcommands(self):
+        """Extract all subcommands from the actual CLI parser."""
+        import argparse as _argparse
+        from cli import build_parser
+        parser = build_parser()
+        result = {}
+        for action in parser._subparsers._actions:
+            if not isinstance(action, _argparse._SubParsersAction):
+                continue
+            for name, subparser in action.choices.items():
+                subs = []
+                if subparser._subparsers is not None:
+                    for sub_action in subparser._subparsers._actions:
+                        if isinstance(sub_action, _argparse._SubParsersAction):
+                            subs = list(sub_action.choices.keys())
+                result[name] = sorted(subs)
+        return result
+
+    def test_skill_subcommands_match(self):
+        """Planner prompt lists all actual skill subcommands."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        actual = self._get_actual_subcommands()
+        for sub in actual.get("skill", []):
+            assert sub in prompt, f"Missing skill subcommand in prompt: {sub}"
+
+    def test_connector_subcommands_match(self):
+        """Planner prompt lists all actual connector subcommands."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        actual = self._get_actual_subcommands()
+        for sub in actual.get("connector", []):
+            assert sub in prompt, f"Missing connector subcommand in prompt: {sub}"
+
+    def test_env_subcommands_match(self):
+        """Planner prompt lists all actual env subcommands."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        actual = self._get_actual_subcommands()
+        for sub in actual.get("env", []):
+            assert sub in prompt, f"Missing env subcommand in prompt: {sub}"
+
+    def test_user_subcommands_match(self):
+        """Planner prompt lists all actual user subcommands."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        actual = self._get_actual_subcommands()
+        for sub in actual.get("user", []):
+            assert sub in prompt, f"Missing user subcommand in prompt: {sub}"
+
+    def test_reset_subcommands_match(self):
+        """Planner prompt lists all actual reset subcommands."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        actual = self._get_actual_subcommands()
+        for sub in actual.get("reset", []):
+            assert sub in prompt, f"Missing reset subcommand in prompt: {sub}"
+
+    def test_no_phantom_commands(self):
+        """Planner prompt does not reference commands that don't exist."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        actual = self._get_actual_subcommands()
+        # Verify main command groups mentioned in prompt exist
+        for cmd in ["skill", "connector", "env", "user"]:
+            assert cmd in actual, f"Prompt mentions '{cmd}' but not in CLI"
+        # Ensure 'instance' is NOT in prompt (not a real CLI command)
+        assert "kiso instance" not in prompt
