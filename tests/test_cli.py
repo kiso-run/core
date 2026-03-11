@@ -3202,6 +3202,35 @@ def test_spinner_restored_after_inflight_clears_it():
     assert state.active_spinner_task is running_task
 
 
+# ---------- M376: spinner restored for msg tasks after inflight clears it ----------
+
+
+def test_m376_spinner_restored_for_msg_task():
+    """Spinner must be restored for msg tasks after inflight clears it."""
+    caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+    plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
+    msg_task = {
+        "id": 20, "plan_id": 1, "type": "msg", "detail": "reply to user",
+        "status": "running", "output": "", "substatus": "composing",
+    }
+    inflight = {
+        "role": "messenger", "model": "qwen/qwen3.5-flash",
+        "messages": [{"role": "user", "content": "compose reply"}],
+        "ts": 66666.0,
+    }
+    data = {
+        "plan": plan, "tasks": [msg_task],
+        "worker_running": True, "inflight_call": inflight,
+    }
+    state = _PollRenderState(seen={}, verbose_shown={})
+
+    _render_plan_status(data, 1, False, True, caps, "Bot", state)
+
+    # Spinner must point to the msg task despite inflight clearing
+    assert state.active_spinner_task is msg_task
+    assert state.active_spinner_index == 1
+
+
 # ---------- M267: deduplicate inflight indicator on validation retry ----------
 
 

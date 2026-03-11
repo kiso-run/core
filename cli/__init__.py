@@ -986,7 +986,7 @@ def _render_plan_status(
     # may have cleared it via _clear_spinner().
     if not state.active_spinner_task:
         for idx, task in enumerate(tasks, 1):
-            if task.get("status") == "running" and task.get("type") != "msg":
+            if task.get("status") == "running":
                 state.active_spinner_task = task
                 state.active_spinner_index = idx
                 state.active_spinner_total = len(tasks)
