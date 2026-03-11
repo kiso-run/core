@@ -138,6 +138,61 @@ class TestF13ChatKBClassification:
 
 
 # ---------------------------------------------------------------------------
+# F14 — curator entity creation across turns
+# ---------------------------------------------------------------------------
+
+
+class TestF14CuratorEntityCreation:
+    """F14: teach about entity → curator creates entity + tags → recall."""
+
+    async def test_curator_entity_creation_and_recall(self, func_db, run_message):
+        """Turn 1: search Python 3.12 → Turn 2: recall what was learned."""
+        # Turn 1: trigger learning about a specific entity
+        r1 = await run_message(
+            "cerca info su Python 3.12 — dimmi cosa trovi",
+            timeout=180,
+        )
+        assert r1.success
+
+        # Check DB: entity should exist
+        cur = await func_db.execute(
+            "SELECT id, name, kind FROM entities WHERE LOWER(name) LIKE '%python%'"
+        )
+        entities = [dict(r) for r in await cur.fetchall()]
+        assert len(entities) >= 1, (
+            f"Expected entity matching 'python', found: {entities}"
+        )
+
+        # Check: at least 1 fact with entity_id pointing to python entity
+        entity_ids = [e["id"] for e in entities]
+        placeholders = ",".join("?" * len(entity_ids))
+        cur = await func_db.execute(
+            f"SELECT id, content FROM facts WHERE entity_id IN ({placeholders})",
+            entity_ids,
+        )
+        facts = [dict(r) for r in await cur.fetchall()]
+        assert len(facts) >= 1, (
+            f"Expected ≥1 fact with python entity_id, found none"
+        )
+
+        # Check: at least 1 tag assigned
+        fact_ids = [f["id"] for f in facts]
+        placeholders = ",".join("?" * len(fact_ids))
+        cur = await func_db.execute(
+            f"SELECT fact_id, tag FROM fact_tags WHERE fact_id IN ({placeholders})",
+            fact_ids,
+        )
+        tags = await cur.fetchall()
+        assert len(tags) >= 1, "Expected ≥1 tag on python-entity facts"
+
+        # Turn 2: ask back → should recall learned information
+        r2 = await run_message("cosa sai di python?", timeout=120)
+        assert r2.success
+        assert_italian(r2.msg_output)
+        assert "python" in r2.msg_output.lower()
+
+
+# ---------------------------------------------------------------------------
 # F12 — messenger quality
 # ---------------------------------------------------------------------------
 
