@@ -243,6 +243,68 @@ class TestF15EntityDedupTagReuse:
 
 
 # ---------------------------------------------------------------------------
+# F16 — scored fact retrieval via briefer
+# ---------------------------------------------------------------------------
+
+
+class TestF16ScoredFactRetrieval:
+    """F16: pre-seeded entities → query targets specific ones, not all."""
+
+    async def test_scored_retrieval_filters_irrelevant(self, func_db, run_message):
+        """Pre-seed Flask+Django+guidance → ask about Python → only Python entities."""
+        from kiso.store import find_or_create_entity, save_fact
+
+        # Pre-seed 3 entities
+        flask_id = await find_or_create_entity(func_db, "flask", "tool")
+        await save_fact(
+            func_db, "Flask is a lightweight Python web framework with Jinja2 templates",
+            source="curator", category="general",
+            tags=["python", "web"], entity_id=flask_id,
+        )
+        await save_fact(
+            func_db, "Flask uses Werkzeug as its WSGI toolkit",
+            source="curator", category="general",
+            tags=["python", "web"], entity_id=flask_id,
+        )
+
+        django_id = await find_or_create_entity(func_db, "django", "tool")
+        await save_fact(
+            func_db, "Django is a batteries-included Python web framework with ORM",
+            source="curator", category="general",
+            tags=["python", "web"], entity_id=django_id,
+        )
+        await save_fact(
+            func_db, "Django uses its own template engine",
+            source="curator", category="general",
+            tags=["python", "web"], entity_id=django_id,
+        )
+
+        guidance_id = await find_or_create_entity(func_db, "guidance.studio", "website")
+        await save_fact(
+            func_db, "guidance.studio is a SaaS platform for user onboarding flows",
+            source="curator", category="general",
+            tags=["saas", "onboarding"], entity_id=guidance_id,
+        )
+
+        # Query targets Python frameworks specifically
+        result = await run_message(
+            "quali framework Python conosci?",
+            timeout=120,
+        )
+        assert result.success
+        assert_italian(result.msg_output)
+        output_lower = result.msg_output.lower()
+        # Should mention Flask and/or Django
+        assert "flask" in output_lower or "django" in output_lower, (
+            f"Expected Flask/Django in response: {result.msg_output[:300]}"
+        )
+        # Should NOT mention guidance.studio (irrelevant to Python frameworks)
+        assert "guidance.studio" not in output_lower, (
+            f"guidance.studio should not appear for Python query: {result.msg_output[:300]}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # F12 — messenger quality
 # ---------------------------------------------------------------------------
 
