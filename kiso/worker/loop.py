@@ -843,12 +843,14 @@ async def _handle_msg_task(
     task_id = task_row["id"]
     detail = task_row["detail"]
     t0 = time.perf_counter()
+    idx_msg = get_usage_index()
+    idx_after_briefer = [idx_msg]  # mutated by callback
     try:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
         idx_msg = get_usage_index()
         # Track index after briefer flush so post-messenger flush
         # doesn't re-append briefer calls (M273 fix).
-        idx_after_briefer = [idx_msg]  # mutated by callback
+        idx_after_briefer = [idx_msg]
 
         async def _flush_briefer():
             """M273: flush briefer calls so CLI renders panels before messenger runs."""
@@ -899,6 +901,9 @@ async def _handle_msg_task(
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
+        # M396: append LLM calls so verbose panels show attempted messenger/briefer
+        await _append_calls(ctx.db, task_id, idx_after_briefer[0])
+        await _store_step_usage(ctx.db, task_id, usage_idx_before)
         return _TaskHandlerResult(stop=True, stop_success=False)
 
 
