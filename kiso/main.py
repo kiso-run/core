@@ -170,6 +170,54 @@ def _init_ssh_keys() -> None:
             log.warning("Failed to populate known_hosts: %s", e)
 
 
+async def _collect_boot_facts(db) -> None:
+    """Collect and store system self-knowledge facts at boot (M356)."""
+    import platform as _plat
+
+    from kiso.store import find_or_create_entity, save_fact
+
+    entity_id = await find_or_create_entity(db, "self", "system")
+
+    facts: list[tuple[str, list[str]]] = []  # (content, tags)
+
+    # SSH public key
+    pub_key = KISO_DIR / "sys" / "ssh" / "id_ed25519.pub"
+    if pub_key.exists():
+        key_text = pub_key.read_text().strip()
+        facts.append((f"Instance SSH public key: {key_text}", ["ssh", "credentials"]))
+
+    # Hostname and user
+    hostname = _plat.node() or "unknown"
+    user = os.environ.get("USER", "root")
+    facts.append((
+        f"Instance runs as user '{user}' on host '{hostname}'",
+        ["instance", "identity"],
+    ))
+
+    # Kiso version
+    from importlib.metadata import version as _pkg_version
+    try:
+        _ver = _pkg_version("kiso")
+    except Exception:
+        _ver = "unknown"
+    facts.append((f"Kiso version: {_ver}", ["instance", "version"]))
+
+    for content, tags in facts:
+        # Idempotent: skip if exact content already exists for this entity
+        cur = await db.execute(
+            "SELECT id FROM facts WHERE entity_id = ? AND content = ?",
+            (entity_id, content),
+        )
+        if await cur.fetchone():
+            continue
+        await save_fact(
+            db, content, source="system", session=None,
+            category="system", tags=tags, entity_id=entity_id,
+        )
+
+    log.info("Boot facts: %d stored for entity 'self'", len(facts))
+
+
 # Per-session workers: session → WorkerEntry
 _workers: dict[str, WorkerEntry] = {}
 
@@ -308,6 +356,8 @@ async def lifespan(app: FastAPI):
              config.settings["port"])
     db = await init_db(KISO_DIR / "store.db")
     _init_app_state(app, config, db)
+
+    await _collect_boot_facts(db)
 
     await _startup_recovery(db, config)
 

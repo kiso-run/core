@@ -1,6 +1,6 @@
 # Development Plan
 
-Active devplan: [devplan/v0.5_wip.md](devplan/v0.5_wip.md) (M318-M348 — Learning Quality + Replan Intelligence + Entity Model)
+Active devplan: [devplan/v0.5_wip.md](devplan/v0.5_wip.md) (M318-M359 — Learning Quality + Replan Intelligence + Entity Model + Self-Awareness)
 
 Previous:
 - [devplan/v0.4.md](devplan/v0.4.md) (M242-M317 completed)

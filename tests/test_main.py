@@ -13,7 +13,10 @@ import pytest
 import re
 
 from kiso.config import ConfigError
-from kiso.main import _init_kiso_dirs, _init_ssh_keys, _init_app_state, _load_env_file
+from kiso.main import (
+    _init_kiso_dirs, _init_ssh_keys, _collect_boot_facts,
+    _init_app_state, _load_env_file,
+)
 from kiso.store import (
     create_plan,
     create_session,
@@ -354,6 +357,92 @@ class TestInitSshKeys:
         kh = ssh_dir / "known_hosts"
         assert kh.exists()
         assert "github.com" in kh.read_text()
+
+
+# ── _collect_boot_facts (M356) ───────────────────────────────
+
+
+@pytest.mark.asyncio
+class TestCollectBootFacts:
+    """M356: system boot facts stored with entity 'self'."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import init_db
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_stores_ssh_key_fact(self, tmp_path, db):
+        """Boot facts include SSH public key when present."""
+        ssh_dir = tmp_path / "sys" / "ssh"
+        ssh_dir.mkdir(parents=True)
+        (ssh_dir / "id_ed25519.pub").write_text("ssh-ed25519 AAAA kiso@test")
+
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            await _collect_boot_facts(db)
+
+        from kiso.store import get_all_entities, search_facts_by_entity
+        entities = await get_all_entities(db)
+        self_ent = [e for e in entities if e["name"] == "self"]
+        assert len(self_ent) == 1
+        assert self_ent[0]["kind"] == "system"
+
+        facts = await search_facts_by_entity(db, self_ent[0]["id"])
+        contents = [f["content"] for f in facts]
+        assert any("ssh-ed25519 AAAA" in c for c in contents)
+
+    async def test_stores_hostname_fact(self, tmp_path, db):
+        """Boot facts include hostname and user."""
+        (tmp_path / "sys" / "ssh").mkdir(parents=True)
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            await _collect_boot_facts(db)
+
+        from kiso.store import get_all_entities, search_facts_by_entity
+        entities = await get_all_entities(db)
+        self_ent = [e for e in entities if e["name"] == "self"]
+        facts = await search_facts_by_entity(db, self_ent[0]["id"])
+        contents = [f["content"] for f in facts]
+        assert any("Instance runs as user" in c for c in contents)
+
+    async def test_stores_version_fact(self, tmp_path, db):
+        """Boot facts include Kiso version."""
+        (tmp_path / "sys" / "ssh").mkdir(parents=True)
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            await _collect_boot_facts(db)
+
+        from kiso.store import get_all_entities, search_facts_by_entity
+        entities = await get_all_entities(db)
+        self_ent = [e for e in entities if e["name"] == "self"]
+        facts = await search_facts_by_entity(db, self_ent[0]["id"])
+        contents = [f["content"] for f in facts]
+        assert any("Kiso version" in c for c in contents)
+
+    async def test_idempotent_no_duplicates(self, tmp_path, db):
+        """Calling twice doesn't create duplicate facts."""
+        (tmp_path / "sys" / "ssh").mkdir(parents=True)
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            await _collect_boot_facts(db)
+            await _collect_boot_facts(db)
+
+        from kiso.store import get_all_entities, search_facts_by_entity
+        entities = await get_all_entities(db)
+        self_ent = [e for e in entities if e["name"] == "self"]
+        assert len(self_ent) == 1
+        facts = await search_facts_by_entity(db, self_ent[0]["id"])
+        version_facts = [f for f in facts if "Kiso version" in f["content"]]
+        assert len(version_facts) == 1
+
+    async def test_entity_self_created_with_system_kind(self, tmp_path, db):
+        """Entity 'self' has kind 'system'."""
+        (tmp_path / "sys" / "ssh").mkdir(parents=True)
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            await _collect_boot_facts(db)
+
+        from kiso.store import get_all_entities
+        entities = await get_all_entities(db)
+        self_ent = [e for e in entities if e["name"] == "self"]
+        assert self_ent[0]["kind"] == "system"
 
 
 # --- Dockerfile entrypoint consistency ---
