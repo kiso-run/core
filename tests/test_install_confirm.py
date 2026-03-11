@@ -1,4 +1,4 @@
-"""M421 — Integration tests for install confirmation flow (P71).
+"""M421/M435 — Integration tests for install confirmation flow (P71, P74).
 
 End-to-end checks that the system prevents silent skill/connector
 installation without user approval.
@@ -193,4 +193,62 @@ class TestSessionHasInstallProposal:
         await create_task(db, pid, "sess1", "msg", "Here is the result of your search.")
         await update_plan_status(db, pid, "done")
         assert await session_has_install_proposal(db, "sess1") is False
+        await db.close()
+
+
+# --- M435: additional install-consent edge cases ---
+
+
+@pytest.mark.asyncio
+class TestM435InstallConsentEdgeCases:
+    """M435: edge cases for session-aware install approval."""
+
+    async def test_connector_install_proposal_detected(self, tmp_path):
+        """'connector' keyword + approval language → True."""
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, session_has_install_proposal, save_message,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+        pid = await create_plan(db, "sess1", msg_id, "Ask connector")
+        await create_task(db, pid, "sess1", "msg",
+                          "Would you like me to install the Slack connector?")
+        await update_plan_status(db, pid, "done")
+        assert await session_has_install_proposal(db, "sess1") is True
+        await db.close()
+
+    async def test_different_session_not_counted(self, tmp_path):
+        """Proposal in session A should not affect session B."""
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, session_has_install_proposal, save_message,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sessA")
+        await create_session(db, "sessB")
+        msg_id = await save_message(db, "sessA", "alice", "user", "hi")
+        pid = await create_plan(db, "sessA", msg_id, "Ask install")
+        await create_task(db, pid, "sessA", "msg",
+                          "Shall I install the browser skill?")
+        await update_plan_status(db, pid, "done")
+        assert await session_has_install_proposal(db, "sessA") is True
+        assert await session_has_install_proposal(db, "sessB") is False
+        await db.close()
+
+    async def test_permission_keyword_detected(self, tmp_path):
+        """'permission' approval language variant → True."""
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, session_has_install_proposal, save_message,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+        pid = await create_plan(db, "sess1", msg_id, "Ask permission")
+        await create_task(db, pid, "sess1", "msg",
+                          "I need your permission to install the search skill.")
+        await update_plan_status(db, pid, "done")
+        assert await session_has_install_proposal(db, "sess1") is True
         await db.close()
