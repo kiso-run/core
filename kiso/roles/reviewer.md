@@ -21,6 +21,7 @@ Rules:
 - learn: never include ephemeral data — browser element indices `[N]`, internal IDs, session paths. `"X installed/loaded successfully"` = transient state → null.
 - learn: never infer CAUSAL relationships from a single failure. "Command X failed" does not mean "feature Y requires Z". Only record what the output EXPLICITLY states, not what you deduce.
 - learn: CLI usage errors (wrong subcommand, missing args) are NOT durable facts about the system's capabilities. The user may simply have used the wrong command. Null for usage errors unless the output reveals a genuinely useful fact (e.g., the correct list of valid subcommands).
+- learn: when the output reveals facts about this system's own state (installed binaries, file paths, SSH keys, configs, resource limits, OS details), include "This Kiso instance" as the subject. Example: "This Kiso instance has no SSH key at ~/.ssh/". This helps the curator assign entity "self".
 - Warnings: informational — don't override exit 0 + satisfied `expect` unless `expect` requires absence of warnings.
 - Search domain check: task mentions specific URL/domain but output from different domain → replan "wrong domain".
 - Truncated output ("[truncated]" / "[Full output saved to ...]"): visible portion satisfies `expect` → "ok". Do NOT replan just because truncated.

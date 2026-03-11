@@ -169,6 +169,11 @@ class TestReviewerCriticalRules:
         assert "Browser fill actions" in self.prompt
         assert "skill confirmed the fill" in self.prompt
 
+    def test_m359_self_entity_hint(self):
+        """M359: reviewer learn hints 'This Kiso instance' for self-entity."""
+        assert "This Kiso instance" in self.prompt
+        assert "entity" in self.prompt.lower()
+
 
 class TestBrieferCriticalRules:
     """Critical briefer rules that must not be removed."""
@@ -241,6 +246,12 @@ class TestCuratorCriticalRules:
         assert "entity_kind" in self.prompt
         assert "Entity reuse" in self.prompt
 
+    def test_m359_self_entity_rule(self):
+        """M359: curator assigns entity 'self' for system learnings."""
+        assert 'Entity "self"' in self.prompt
+        assert 'entity_name="self"' in self.prompt
+        assert 'entity_kind="system"' in self.prompt
+
 
 class TestSearcherCriticalRules:
     @pytest.fixture(autouse=True)
@@ -306,9 +317,9 @@ class TestM316PromptOptimizationIntegration:
         assert len(prompt) < 2100, f"Messenger prompt too large: {len(prompt)} chars"
 
     def test_reviewer_prompt_size_regression(self):
-        """Reviewer prompt must stay under 3800 chars (+M354 learn guards)."""
+        """Reviewer prompt must stay under 4100 chars (+M359 self-entity hint)."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert len(prompt) < 3800, f"Reviewer prompt too large: {len(prompt)} chars"
+        assert len(prompt) < 4100, f"Reviewer prompt too large: {len(prompt)} chars"
 
     def test_all_role_prompts_nonempty(self):
         """Every role prompt must have substantive content."""
