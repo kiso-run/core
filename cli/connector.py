@@ -17,7 +17,7 @@ from kiso.connectors import (
     _validate_connector_manifest,
     discover_connectors,
 )
-from kiso.skills import check_deps
+from kiso.tools import check_deps
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
@@ -289,7 +289,7 @@ def _connector_update(args) -> None:
         )
 
         # check deps
-        from kiso.skills import check_deps
+        from kiso.tools import check_deps
         connector_info = {"path": str(connector_dir)}
         missing = check_deps(connector_info)
         if missing:

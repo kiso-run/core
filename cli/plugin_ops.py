@@ -112,9 +112,13 @@ def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None
     function checks the other type ("skills") for matches.  Returns a hint
     string like 'Did you mean `kiso skill search browser`?' or None.
     """
-    other_type = "skills" if current_type == "connectors" else "connectors"
-    other_cmd = "skill" if other_type == "skills" else "connector"
-    other_entries = registry.get(other_type, [])
+    if current_type == "connectors":
+        other_type = "tools"
+        other_cmd = "tool"
+    else:
+        other_type = "connectors"
+        other_cmd = "connector"
+    other_entries = registry.get(other_type, registry.get("skills", []) if other_type == "tools" else [])
     matches = search_entries(other_entries, query)
     if matches:
         names = ", ".join(m["name"] for m in matches)
@@ -264,7 +268,7 @@ def _plugin_install(
             missing = check_deps_fn(plugin_info)
         if missing:
             print(f"warning: still missing binaries after install: {', '.join(missing)}")
-            print(f"  The skill may not work correctly. Try: kiso skill remove {name} && kiso skill install {name}")
+            print(f"  The {plugin_type} may not work correctly. Try: kiso {plugin_type} remove {name} && kiso {plugin_type} install {name}")
             print(f"  Or run deps.sh manually: bash {plugin_dir / 'deps.sh'}")
 
         # Type-specific post-install steps (env var check, config copy, etc.)
@@ -278,8 +282,8 @@ def _plugin_install(
 
         print(f"{plugin_type.capitalize()} '{name}' installed successfully.")
         invalidate_cache()
-        from kiso.skills import invalidate_skills_cache
-        invalidate_skills_cache()
+        from kiso.tools import invalidate_tools_cache
+        invalidate_tools_cache()
 
     except Exception:
         if plugin_dir.exists():

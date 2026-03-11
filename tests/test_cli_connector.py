@@ -292,7 +292,7 @@ def test_connector_list_shows_connectors(capsys):
 
 
 FAKE_REGISTRY = {
-    "skills": [
+    "tools": [
         {"name": "search", "description": "Web search"},
     ],
     "connectors": [
@@ -360,11 +360,11 @@ def test_cross_type_hint_returns_hint_for_other_type():
 
     registry = {
         "connectors": [{"name": "discord", "description": "Discord bridge"}],
-        "skills": [{"name": "browser", "description": "Web browser"}],
+        "tools": [{"name": "browser", "description": "Web browser"}],
     }
     result = cross_type_hint(registry, "connectors", "browser")
     assert result is not None
-    assert "kiso skill search browser" in result
+    assert "kiso tool search browser" in result
     assert "browser" in result
 
 
@@ -374,20 +374,20 @@ def test_cross_type_hint_returns_none_when_no_match():
 
     registry = {
         "connectors": [{"name": "discord", "description": "Discord bridge"}],
-        "skills": [{"name": "search", "description": "Web search"}],
+        "tools": [{"name": "search", "description": "Web search"}],
     }
     assert cross_type_hint(registry, "connectors", "nonexistent") is None
 
 
-def test_cross_type_hint_skills_to_connectors():
-    """cross_type_hint works symmetrically: skills → connectors."""
+def test_cross_type_hint_tools_to_connectors():
+    """cross_type_hint works symmetrically: tools → connectors."""
     from cli.plugin_ops import cross_type_hint
 
     registry = {
         "connectors": [{"name": "discord", "description": "Discord bridge"}],
-        "skills": [{"name": "search", "description": "Web search"}],
+        "tools": [{"name": "search", "description": "Web search"}],
     }
-    result = cross_type_hint(registry, "skills", "discord")
+    result = cross_type_hint(registry, "tools", "discord")
     assert result is not None
     assert "kiso connector search discord" in result
 
@@ -408,7 +408,7 @@ def test_connector_search_cross_type_hint_shown(capsys):
         _connector_search(argparse.Namespace(query="search"))
     out = capsys.readouterr().out
     assert "No connectors found." in out
-    assert "kiso skill search" in out
+    assert "kiso tool search" in out
     assert "search" in out
 
 
@@ -420,19 +420,19 @@ def test_connector_search_cross_type_hint_not_shown_when_no_match(capsys):
         _connector_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No connectors found." in out
-    assert "kiso skill search" not in out
+    assert "kiso tool search" not in out
 
 
 def test_connector_search_cross_type_hint_not_shown_on_empty_query(capsys):
     """M102b: no cross-type hint when query is empty (all results shown)."""
     from cli.connector import _connector_search
 
-    empty_registry = {"connectors": [], "skills": [{"name": "search", "description": "Web search"}]}
+    empty_registry = {"connectors": [], "tools": [{"name": "search", "description": "Web search"}]}
     with patch("cli.connector.fetch_registry", return_value=empty_registry):
         _connector_search(argparse.Namespace(query=""))
     out = capsys.readouterr().out
     assert "No connectors found." in out
-    assert "kiso skill search" not in out
+    assert "kiso tool search" not in out
 
 
 # ── _connector_install ───────────────────────────────────────

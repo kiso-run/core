@@ -42,10 +42,10 @@ class TestSkillInstallHealthSmoke:
 
     def test_install_detects_missing_binary(self, tmp_path, capsys, mock_admin):
         """M183/M187: _plugin_install passes deps from manifest to check_deps."""
-        from cli.skill import _skill_install
+        from cli.tool import _tool_install
 
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
+        tools_dir = tmp_path / "skills"
+        tools_dir.mkdir()
 
         def fake_clone(cmd, **kwargs):
             dest = Path(cmd[3])
@@ -73,11 +73,11 @@ class TestSkillInstallHealthSmoke:
             return ["fake_binary"]
 
         with (
-            patch("cli.skill.SKILLS_DIR", skills_dir),
+            patch("cli.tool.TOOLS_DIR", tools_dir),
             patch("subprocess.run", side_effect=run_dispatch),
-            patch("cli.skill.check_deps", side_effect=spy_check_deps),
+            patch("cli.tool.check_deps", side_effect=spy_check_deps),
         ):
-            _skill_install(argparse.Namespace(
+            _tool_install(argparse.Namespace(
                 target="browser", name=None, no_deps=False, show_deps=False,
             ))
 
@@ -134,7 +134,8 @@ class TestSkillInstallHealthSmoke:
         """M185: planner prompt blocks apt-get and has reinstall rule."""
         prompt = (Path(__file__).parent.parent / "kiso" / "roles" / "planner.md").read_text()
         assert "NEVER use `apt-get install`" in prompt or "Never jump to `apt-get install`" in prompt
-        assert "kiso skill remove NAME && kiso skill install NAME" in prompt
+        assert ("kiso tool remove NAME && kiso tool install NAME" in prompt
+                or "kiso skill remove NAME && kiso skill install NAME" in prompt)
 
     def test_validation_error_includes_args_example(self):
         """M184: validation error for null args includes example format."""

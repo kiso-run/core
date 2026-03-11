@@ -150,27 +150,28 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     msg_parser = sub.add_parser("msg", help="send a message and print the response")
     msg_parser.add_argument("message", help="message text")
-    skill_parser = sub.add_parser("skill", help="manage skills")
-    skill_sub = skill_parser.add_subparsers(dest="skill_command")
+    def _add_tool_subcommands(parent_parser):
+        """Add tool subcommands to a parser (shared by 'tool' and 'skill' alias)."""
+        tool_sub = parent_parser.add_subparsers(dest="tool_command")
+        tool_sub.add_parser("list", help="list installed tools")
+        sp = tool_sub.add_parser("search", help="search official tools on GitHub")
+        sp.add_argument("query", nargs="?", default="", help="search filter")
+        ip = tool_sub.add_parser("install", help="install a tool")
+        ip.add_argument("target", help="tool name or git URL")
+        ip.add_argument("--name", default=None, help="custom install name")
+        ip.add_argument("--no-deps", action="store_true", help="skip deps.sh")
+        ip.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
+        up = tool_sub.add_parser("update", help="update a tool")
+        up.add_argument("target", help="tool name or 'all'")
+        rp = tool_sub.add_parser("remove", help="remove a tool")
+        rp.add_argument("name", help="tool name")
 
-    skill_sub.add_parser("list", help="list installed skills")
+    tool_parser = sub.add_parser("tool", help="manage tools")
+    _add_tool_subcommands(tool_parser)
 
-    search_p = skill_sub.add_parser("search", help="search official skills on GitHub")
-    search_p.add_argument("query", nargs="?", default="", help="search filter")
-
-    install_p = skill_sub.add_parser("install", help="install a skill")
-    install_p.add_argument("target", help="skill name or git URL")
-    install_p.add_argument("--name", default=None, help="custom install name")
-    install_p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
-    install_p.add_argument(
-        "--show-deps", action="store_true", help="show deps.sh without installing"
-    )
-
-    update_p = skill_sub.add_parser("update", help="update a skill")
-    update_p.add_argument("target", help="skill name or 'all'")
-
-    remove_p = skill_sub.add_parser("remove", help="remove a skill")
-    remove_p.add_argument("name", help="skill name")
+    # Backward compat: "skill" as hidden alias for "tool"
+    skill_parser = sub.add_parser("skill")
+    _add_tool_subcommands(skill_parser)
 
     connector_parser = sub.add_parser("connector", help="manage connectors")
     connector_sub = connector_parser.add_subparsers(dest="connector_command")
@@ -341,10 +342,10 @@ def main() -> None:
         _chat(args)
     elif args.command == "msg":
         _msg_cmd(args)
-    elif args.command == "skill":
-        from cli.skill import run_skill_command
+    elif args.command in ("tool", "skill"):
+        from cli.tool import run_tool_command
 
-        run_skill_command(args)
+        run_tool_command(args)
     elif args.command == "connector":
         from cli.connector import run_connector_command
 
