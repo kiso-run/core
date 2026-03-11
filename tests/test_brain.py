@@ -1506,6 +1506,30 @@ class TestBuildReviewerMessages:
         content = msgs[1]["content"]
         assert "FAILED (non-zero exit code)" in content
 
+    async def test_safety_rules_injected(self):
+        """M412: safety rules appear in reviewer context."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            safety_rules=["Never delete /data", "Production DB is read-only"],
+        )
+        content = msgs[1]["content"]
+        assert "## Safety Rules" in content
+        assert "Never delete /data" in content
+        assert "Production DB is read-only" in content
+
+    async def test_no_safety_section_when_empty(self):
+        """M412: no safety section when safety_rules is None/empty."""
+        msgs1 = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            safety_rules=None,
+        )
+        assert "Safety Rules" not in msgs1[1]["content"]
+        msgs2 = build_reviewer_messages(
+            goal="g", detail="d", expect="e", output="o", user_message="m",
+            safety_rules=[],
+        )
+        assert "Safety Rules" not in msgs2[1]["content"]
+
 
 # --- run_reviewer ---
 

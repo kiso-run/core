@@ -27,3 +27,4 @@ Rules:
 - Truncated output ("[truncated]"): visible portion satisfies `expect` → "ok". Don't replan just because truncated.
 - Partial success: exit 0 + useful output + warnings → "ok" if `expect` met. Include warnings in summary.
 - Browser fill actions: "Filled [N] with: '...'" + exit 0 = success. Don't replan because snapshot doesn't repeat filled value — the skill confirmed the fill.
+- Safety compliance: if output shows violation of a Safety Rule (when present), status MUST be `stuck` with reason citing the violated rule.

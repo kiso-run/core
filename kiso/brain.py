@@ -1530,6 +1530,7 @@ def build_reviewer_messages(
     user_message: str,
     success: bool | None = None,
     exit_code: int | None = None,
+    safety_rules: list[str] | None = None,
 ) -> list[dict]:
     """Build the message list for the reviewer LLM call."""
     system_prompt = _load_system_prompt("reviewer")
@@ -1555,6 +1556,11 @@ def build_reviewer_messages(
             status_text = "succeeded (exit code 0)" if success else "FAILED (non-zero exit code)"
         context += f"\n\n## Command Status\n{status_text}"
 
+    # M412: inject safety rules for compliance check
+    if safety_rules:
+        rules_text = "\n".join(f"- {r}" for r in safety_rules)
+        context += f"\n\n## Safety Rules (violations → stuck)\n{rules_text}"
+
     return _build_messages(system_prompt, context)
 
 
@@ -1568,6 +1574,7 @@ async def run_reviewer(
     session: str = "",
     success: bool | None = None,
     exit_code: int | None = None,
+    safety_rules: list[str] | None = None,
 ) -> dict:
     """Run the reviewer on a task output.
 
@@ -1577,6 +1584,7 @@ async def run_reviewer(
     messages = build_reviewer_messages(
         goal, detail, expect, output, user_message,
         success=success, exit_code=exit_code,
+        safety_rules=safety_rules,
     )
     review = await _retry_llm_with_validation(
         config, "reviewer", messages, REVIEW_SCHEMA,

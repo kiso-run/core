@@ -94,6 +94,7 @@ from kiso.store import (
     search_facts_scored,
     get_facts,
     get_oldest_messages,
+    get_safety_facts,
     get_pending_learnings,
     get_plan_for_session,
     get_session,
@@ -683,6 +684,10 @@ async def _review_task(
     stderr = task_row.get("stderr") or ""
     full_output = prepare_reviewer_output(output, stderr)
 
+    # M412: fetch safety rules for compliance check
+    safety_facts = await get_safety_facts(db)
+    safety_rules = [f["content"] for f in safety_facts] if safety_facts else None
+
     success = task_row.get("status") == "done"
     exit_code = task_row.get("exit_code")
     review = await run_reviewer(
@@ -695,6 +700,7 @@ async def _review_task(
         session=session,
         success=success,
         exit_code=exit_code,
+        safety_rules=safety_rules,
     )
 
     learn_raw = review.get("learn")
