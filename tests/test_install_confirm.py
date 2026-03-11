@@ -120,3 +120,77 @@ class TestAutoCorrectRemoved:
     def test_regex_not_in_module(self):
         import kiso.brain as brain_mod
         assert not hasattr(brain_mod, "_SKILL_NOT_INSTALLED_RE")
+
+
+# --- M428: session-aware install approval ---
+
+
+class TestValidatePlanInstallApproved:
+    """M428: install_approved=True allows install execs in first plan."""
+
+    def test_install_approved_allows_first_plan_install(self):
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "replan", "detail": "continue", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=False, install_approved=True)
+        assert not any("first plan" in e for e in errors)
+
+    def test_install_not_approved_blocks_first_plan(self):
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "msg", "detail": "done", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=False, install_approved=False)
+        assert any("first plan" in e for e in errors)
+
+    def test_replan_still_works_without_approval(self):
+        plan = {"tasks": [
+            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "replan", "detail": "continue", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=True, install_approved=False)
+        assert not any("first plan" in e for e in errors)
+
+
+@pytest.mark.asyncio
+class TestSessionHasInstallProposal:
+    """M428: session_has_install_proposal helper."""
+
+    async def test_empty_session_returns_false(self, tmp_path):
+        from kiso.store import init_db, create_session, session_has_install_proposal
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        assert await session_has_install_proposal(db, "sess1") is False
+        await db.close()
+
+    async def test_msg_with_install_proposal_returns_true(self, tmp_path):
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, session_has_install_proposal,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        from kiso.store import save_message
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+        pid = await create_plan(db, "sess1", msg_id, "Ask to install")
+        await create_task(db, pid, "sess1", "msg",
+                          "Answer in English. Would you like me to install the browser skill?")
+        await update_plan_status(db, pid, "done")
+        assert await session_has_install_proposal(db, "sess1") is True
+        await db.close()
+
+    async def test_msg_without_approval_language_returns_false(self, tmp_path):
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, session_has_install_proposal,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        from kiso.store import save_message
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+        pid = await create_plan(db, "sess1", msg_id, "Just a msg")
+        await create_task(db, pid, "sess1", "msg", "Here is the result of your search.")
+        await update_plan_status(db, pid, "done")
+        assert await session_has_install_proposal(db, "sess1") is False
+        await db.close()

@@ -500,6 +500,7 @@ def validate_plan(
     max_tasks: int | None = None,
     installed_skills_info: dict[str, dict] | None = None,
     is_replan: bool = False,
+    install_approved: bool = False,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
@@ -621,9 +622,9 @@ def validate_plan(
             f"Msg tasks communicate results — place them after investigation."
         )
 
-    # M420: install execs are ONLY allowed in replans (user approved in prior
-    # cycle).  In a first plan the planner must end with a msg asking the user.
-    if not is_replan:
+    # M420/M428: install execs allowed in replans or when user approved in prior
+    # msg cycle.  In a first plan without prior approval the planner must ask.
+    if not is_replan and not install_approved:
         first_install_idx = next(
             (i for i, t in enumerate(tasks)
              if t.get("type") == TASK_TYPE_EXEC and _INSTALL_CMD_RE.search(t.get("detail", ""))),
@@ -992,6 +993,7 @@ async def run_planner(
     on_context_ready: Callable | None = None,
     on_retry: Callable[[int, int, str], None] | None = None,
     is_replan: bool = False,
+    install_approved: bool = False,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -1019,7 +1021,8 @@ async def run_planner(
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,
         lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
-                                installed_skills_info=skills_by_name, is_replan=is_replan),
+                                installed_skills_info=skills_by_name, is_replan=is_replan,
+                                install_approved=install_approved),
         PlanError, "Plan",
         session=session,
         on_retry=on_retry,

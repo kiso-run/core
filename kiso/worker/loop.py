@@ -105,6 +105,7 @@ from kiso.store import (
     save_facts_batch,
     save_learning,
     save_message,
+    session_has_install_proposal,
     save_pending_item,
     search_facts,
     update_fact_usage,
@@ -2251,6 +2252,9 @@ async def _process_message(
         log.info("Retrying planner (attempt %d/%d) session=%s: %s",
                  attempt, max_attempts, session, reason)
 
+    # M428: check if user approved install in a prior msg cycle
+    _install_approved = await session_has_install_proposal(db, session)
+
     try:
         plan = await run_planner(
             db, config, session, user_role, content,
@@ -2258,6 +2262,7 @@ async def _process_message(
             paraphrased_context=paraphrased_context,
             on_context_ready=_flush_pre_planner_usage,
             on_retry=_on_planner_retry,
+            install_approved=_install_approved,
         )
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)

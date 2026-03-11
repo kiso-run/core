@@ -434,6 +434,28 @@ async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> PlanDi
     return dict(row) if row else None
 
 
+async def session_has_install_proposal(db: aiosqlite.Connection, session: str) -> bool:
+    """Check if the most recent completed plan proposed an installation to the user.
+
+    Returns True if the last task of the most recent done/failed plan is a msg
+    whose detail mentions skill/connector install keywords and approval language.
+    """
+    cur = await db.execute(
+        "SELECT t.detail FROM plans p "
+        "JOIN tasks t ON t.plan_id = p.id "
+        "WHERE p.session = ? AND p.status IN ('done', 'failed') "
+        "ORDER BY p.id DESC, t.id DESC LIMIT 1",
+        (session,),
+    )
+    row = await cur.fetchone()
+    if not row:
+        return False
+    detail = (row["detail"] or "").lower()
+    has_install_keyword = any(kw in detail for kw in ("install", "skill", "connector"))
+    has_approval_language = any(kw in detail for kw in ("permission", "approve", "want me to", "would you like", "shall i"))
+    return has_install_keyword and has_approval_language
+
+
 async def get_recent_messages(
     db: aiosqlite.Connection, session: str, limit: int = 5
 ) -> list[MessageDict]:
