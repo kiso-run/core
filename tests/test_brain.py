@@ -6241,14 +6241,14 @@ class TestM261PromptSizeReduction:
         """Core-only prompt (no modules) is significantly smaller than all modules."""
         core_only = _load_modular_prompt("planner", [])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Core-only should be less than 25% of full prompt
-        assert len(core_only) < len(all_modules) * 0.25
+        # Core-only should be less than 30% of full prompt (+M353 self-identity rules)
+        assert len(core_only) < len(all_modules) * 0.30
 
     def test_core_plus_web_is_small(self):
         """Core + web module is much smaller than full prompt."""
         core_web = _load_modular_prompt("planner", ["web"])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        assert len(core_web) < len(all_modules) * 0.35
+        assert len(core_web) < len(all_modules) * 0.40
 
     def test_install_scenario_moderate(self):
         """Install scenario includes only relevant modules, not all."""
