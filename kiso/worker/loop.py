@@ -242,6 +242,10 @@ async def _msg_task(
             facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
             if facts:
                 context_pool["facts"] = "\n".join(f"- {f['content']}" for f in facts)
+            # M385: inject available tags for briefer relevant_tags selection
+            all_tags = await get_all_tags(db)
+            if all_tags:
+                context_pool["available_tags"] = ", ".join(all_tags)
             # M365: inject available entities so briefer can select relevant ones
             all_entities = await get_all_entities(db)
             if all_entities:

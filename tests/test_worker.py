@@ -10788,6 +10788,56 @@ class TestM365MsgTaskEntityEnrichment:
         assert "self (system)" in user_content
         assert "flask (tool)" in user_content
 
+    async def test_tags_injected_into_briefer_context_pool(self, db):
+        """M385: available_tags injected into briefer context pool."""
+        from kiso.store import save_fact, save_fact_tags
+        config = _make_config(settings={"briefer_enabled": True})
+        # Create a fact with tags so get_all_tags returns them
+        fid = await save_fact(db, "Flask uses Jinja2 for templates", "curator")
+        await save_fact_tags(db, fid, ["flask", "web-framework"])
+
+        briefer_msgs = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                briefer_msgs.append(messages)
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            await _msg_task(config, db, "sess1", "Tell me about flask")
+
+        user_content = briefer_msgs[0][1]["content"]
+        assert "flask" in user_content
+        assert "web-framework" in user_content
+
+    async def test_no_tags_key_when_no_tags_exist(self, db):
+        """M385: when no tags exist, available_tags not in context pool."""
+        config = _make_config(settings={"briefer_enabled": True})
+
+        briefer_msgs = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                briefer_msgs.append(messages)
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            await _msg_task(config, db, "sess1", "Hello")
+
+        user_content = briefer_msgs[0][1]["content"]
+        # No tags section should be present
+        assert "available_tags" not in user_content.lower()
+
 
 # ---------------------------------------------------------------------------
 # Briefer integration for worker / exec translator (M246)
