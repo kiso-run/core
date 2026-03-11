@@ -129,10 +129,16 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
+        # M387: provide browser skill so briefer selection isn't cleared
+        fake_skills = [
+            {"name": "browser", "summary": "Navigate, click, fill, screenshot",
+             "args_schema": {}, "env": {}, "session_secrets": [],
+             "path": "/fake", "version": "0.1.0", "description": ""},
+        ]
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, _, _ = await build_planner_messages(
-                db, _config(), "sess1", "user", "vai su gazzetta.it",
+                db, _config(), "sess1", "admin", "vai su gazzetta.it",
             )
 
         system = msgs[0]["content"]

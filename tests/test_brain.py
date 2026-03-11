@@ -5476,8 +5476,24 @@ class TestRunBriefer:
         assert "search" in result["skills"][0]
 
     @pytest.mark.asyncio
-    async def test_m368_no_filtering_without_skills_in_pool(self, config):
-        """M368: no skill filtering when context pool has no skills key."""
+    async def test_m387_clears_skills_when_none_installed(self, config):
+        """M387: all briefer skills cleared when no skills in context pool."""
+        response = json.dumps({
+            "modules": [],
+            "skills": ["browser: navigate", "aider: code refactoring"],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "task", {})
+        # No skills installed → all hallucinated skills cleared
+        assert result["skills"] == []
+
+    @pytest.mark.asyncio
+    async def test_m387_clears_skills_with_empty_string_pool(self, config):
+        """M387: all briefer skills cleared when skills key is empty string."""
         response = json.dumps({
             "modules": [],
             "skills": ["browser: navigate"],
@@ -5487,9 +5503,23 @@ class TestRunBriefer:
             "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "task", {"skills": ""})
+        assert result["skills"] == []
+
+    @pytest.mark.asyncio
+    async def test_m387_no_skills_returned_passes_through(self, config):
+        """M387: when briefer returns no skills, nothing to filter."""
+        response = json.dumps({
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
-        # No filtering — skills key not in context_pool
-        assert len(result["skills"]) == 1
+        assert result["skills"] == []
 
 
 class TestBrieferSchema:
@@ -5737,11 +5767,17 @@ class TestBrieferPlannerIntegration:
                            "skill": None, "args": None, "expect": None}],
             })
 
+        # M387: provide browser skill so briefer skill selection isn't cleared
+        fake_skills = [
+            {"name": "browser", "summary": "Navigate, click, fill, screenshot, text",
+             "args_schema": {}, "env": {}, "session_secrets": [],
+             "path": "/fake", "version": "0.1.0", "description": ""},
+        ]
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_skills", return_value=fake_skills):
             msgs, _, _ = await build_planner_messages(
-                db, config, "sess1", "user", "go to example.com",
+                db, config, "sess1", "admin", "go to example.com",
             )
 
         system = msgs[0]["content"]
