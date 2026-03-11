@@ -331,3 +331,52 @@ async def test_idle_worker_skips_inflight(client: httpx.AsyncClient):
     data = resp.json()
     assert data["queued"] is True
     assert "inflight" not in data
+
+
+# ---------------------------------------------------------------------------
+# M413 — Safety rules API endpoints
+# ---------------------------------------------------------------------------
+
+ADMIN_HEADER = AUTH_HEADER  # testadmin token in conftest
+
+
+async def test_safety_rules_crud(client: httpx.AsyncClient):
+    """M413: add → list → remove safety rules via API."""
+    # List — initially empty
+    resp = await client.get("/safety-rules", headers=ADMIN_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["rules"] == []
+
+    # Add a rule
+    resp = await client.post("/safety-rules", json={"content": "Never delete /data"},
+                             headers=ADMIN_HEADER)
+    assert resp.status_code == 201
+    rule_id = resp.json()["id"]
+    assert resp.json()["content"] == "Never delete /data"
+
+    # List — now has one rule
+    resp = await client.get("/safety-rules", headers=ADMIN_HEADER)
+    assert len(resp.json()["rules"]) == 1
+    assert resp.json()["rules"][0]["content"] == "Never delete /data"
+
+    # Remove the rule
+    resp = await client.delete(f"/safety-rules/{rule_id}", headers=ADMIN_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
+
+    # List — empty again
+    resp = await client.get("/safety-rules", headers=ADMIN_HEADER)
+    assert resp.json()["rules"] == []
+
+
+async def test_safety_rule_empty_content_rejected(client: httpx.AsyncClient):
+    """M413: empty content rejected with 400."""
+    resp = await client.post("/safety-rules", json={"content": "   "},
+                             headers=ADMIN_HEADER)
+    assert resp.status_code == 400
+
+
+async def test_safety_rule_delete_nonexistent(client: httpx.AsyncClient):
+    """M413: deleting nonexistent rule returns 404."""
+    resp = await client.delete("/safety-rules/99999", headers=ADMIN_HEADER)
+    assert resp.status_code == 404

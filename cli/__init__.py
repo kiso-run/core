@@ -321,6 +321,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="session to cancel (default: current session)",
     )
 
+    # --- M413: rules subcommand ---
+    rules_parser = sub.add_parser("rules", help="manage safety rules")
+    rules_sub = rules_parser.add_subparsers(dest="rules_cmd")
+    rules_sub.add_parser("list", help="list all safety rules")
+    rules_add_p = rules_sub.add_parser("add", help="add a safety rule")
+    rules_add_p.add_argument("rule_content", help="rule text")
+    rules_rm_p = rules_sub.add_parser("remove", help="remove a safety rule by ID")
+    rules_rm_p.add_argument("rule_id", type=int, help="rule ID to remove")
+
     return parser
 
 
@@ -366,6 +375,15 @@ def main() -> None:
         print(script.read_text(encoding="utf-8"), end="")
     elif args.command == "cancel":
         _cancel_cmd(args)
+    elif args.command == "rules":
+        from cli.rules import rules_add, rules_list, rules_remove
+
+        if args.rules_cmd == "list" or args.rules_cmd is None:
+            rules_list(args)
+        elif args.rules_cmd == "add":
+            rules_add(args)
+        elif args.rules_cmd == "remove":
+            rules_remove(args)
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()

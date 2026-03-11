@@ -3838,3 +3838,80 @@ def test_cancel_cmd_explicit_session(capsys):
     assert "other-session" in str(mock_client.post.call_args_list)
     assert "drained" in out.lower()
     assert "2" in out
+
+
+# ---------------------------------------------------------------------------
+# M413 — kiso rules CLI
+# ---------------------------------------------------------------------------
+
+
+def _mock_http_for_rules(return_value):
+    """Create a mock for httpx.request that returns a given JSON body."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = return_value
+    mock_resp.raise_for_status = MagicMock()
+    return patch("httpx.request", return_value=mock_resp)
+
+
+def test_rules_list(capsys):
+    """kiso rules list → shows rules."""
+    from cli.rules import rules_list
+
+    args = argparse.Namespace(api="http://localhost:8333")
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        _mock_http_for_rules({"rules": [
+            {"id": 1, "content": "Never delete /data"},
+            {"id": 2, "content": "Production DB read-only"},
+        ]}),
+    ):
+        rules_list(args)
+    out = capsys.readouterr().out
+    assert "Never delete /data" in out
+    assert "Production DB read-only" in out
+    assert "[1]" in out
+    assert "[2]" in out
+
+
+def test_rules_list_empty(capsys):
+    """kiso rules list with no rules → shows message."""
+    from cli.rules import rules_list
+
+    args = argparse.Namespace(api="http://localhost:8333")
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        _mock_http_for_rules({"rules": []}),
+    ):
+        rules_list(args)
+    out = capsys.readouterr().out
+    assert "no safety rules" in out.lower()
+
+
+def test_rules_add(capsys):
+    """kiso rules add → adds rule and prints confirmation."""
+    from cli.rules import rules_add
+
+    args = argparse.Namespace(api="http://localhost:8333", rule_content="Never run rm -rf /")
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        _mock_http_for_rules({"id": 42, "content": "Never run rm -rf /"}),
+    ):
+        rules_add(args)
+    out = capsys.readouterr().out
+    assert "42" in out
+    assert "Never run rm -rf /" in out
+
+
+def test_rules_remove(capsys):
+    """kiso rules remove → removes rule and prints confirmation."""
+    from cli.rules import rules_remove
+
+    args = argparse.Namespace(api="http://localhost:8333", rule_id=42)
+    with (
+        patch("kiso.config.load_config", return_value=_mock_config()),
+        _mock_http_for_rules({"deleted": True, "id": 42}),
+    ):
+        rules_remove(args)
+    out = capsys.readouterr().out
+    assert "42" in out
+    assert "removed" in out.lower()

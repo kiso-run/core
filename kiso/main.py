@@ -36,10 +36,12 @@ from kiso.store import (
     create_session,
     get_all_sessions,
     get_plan_for_session,
+    get_safety_facts,
     get_session,
     get_sessions_for_user,
     get_tasks_for_session,
     mark_messages_processed as mark_messages_processed_batch,
+    save_fact,
     session_owned_by,
     get_unprocessed_trusted_messages,
     init_db,
@@ -738,6 +740,60 @@ async def post_cancel(
         log.info("Cancel: drained %d queued messages for session=%s", len(drained_ids), session)
 
     return {"cancelled": True, "plan_id": plan["id"], "drained": len(drained_ids)}
+
+
+# --- M413: Safety rules API ---
+
+
+class SafetyRuleRequest(BaseModel):
+    content: str
+
+
+@app.get("/safety-rules")
+async def list_safety_rules(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    db = request.app.state.db
+    facts = await get_safety_facts(db)
+    return {"rules": facts}
+
+
+@app.post("/safety-rules", status_code=201)
+async def add_safety_rule(
+    body: SafetyRuleRequest,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Rule content cannot be empty")
+
+    fact_id = await save_fact(db, content, "admin", category="safety")
+    return {"id": fact_id, "content": content}
+
+
+@app.delete("/safety-rules/{rule_id}")
+async def delete_safety_rule(
+    rule_id: int,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+
+    cur = await db.execute(
+        "DELETE FROM facts WHERE id = ? AND category = 'safety'", (rule_id,),
+    )
+    await db.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Safety rule not found")
+
+    return {"deleted": True, "id": rule_id}
 
 
 @app.get("/admin/stats")

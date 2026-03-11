@@ -14,6 +14,12 @@ Kiso installs and configures in one command. It's built to be trusted with real 
 
 **Review gates on every risky step.** A reviewer evaluates each exec, skill, and search task before the next one runs. Automatic and non-blocking, but structurally sound — errors don't cascade.
 
+**Runtime kill switch.** Any running job can be cancelled instantly — via CLI (`kiso cancel`), REST API (`POST /sessions/{sid}/cancel`), or programmatically from a wrapper. No session destruction required, no process kill. The bot confirms what was completed, what was cancelled.
+
+**In-flight message triage.** New messages arriving during an active job aren't blindly queued. A fast-path catches stop commands ("ferma", "STOP", "cancel") in milliseconds without LLM calls. Everything else is classified: updates modify the running plan, conflicts replace it, independent requests wait their turn with an immediate ack.
+
+**Safety rules.** Persistent, admin-defined constraints (`kiso rules add "never delete /data"`) that are always injected into the planner — not gated by the briefer, not subject to decay or compression. The reviewer flags violations as stuck, blocking execution.
+
 **Knowledge that doesn't rot.** Curated facts (user/project/tool/general) with confidence scores, decay, consolidation, and session scoping. A curator evaluates learnings before promoting them. Memory stays signal, not noise.
 
 **Fail loud.** Missing config → explicit error with the exact field name. No silent defaults, no undocumented fallbacks.
@@ -171,6 +177,11 @@ kiso shell                # bash inside the container
 kiso skill install search # install a skill
 kiso env set KEY VALUE    # set a deploy secret
 kiso env reload           # hot-reload secrets
+kiso cancel               # cancel the active job in current session
+kiso cancel <session>     # cancel a specific session's job
+kiso rules list           # show safety rules
+kiso rules add "..."      # add a safety rule
+kiso rules remove <id>    # remove a safety rule
 ```
 
 Users can share credentials during conversation — the planner extracts them as **ephemeral secrets** (in-memory only, lost on worker shutdown). See [security.md — Secrets](docs/security.md#5-secrets).
@@ -190,3 +201,4 @@ Users can share credentials during conversation — the planner extracts them as
 - [docker.md](docs/docker.md) — Docker setup, volumes, pre-installing packages
 - [audit.md](docs/audit.md) — Audit trail (JSONL logs, secret masking)
 - [logging.md](docs/logging.md) — Logs
+- [safety.md](docs/safety.md) — Safety rules, job cancellation, in-flight message handling

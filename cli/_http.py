@@ -5,7 +5,11 @@ from __future__ import annotations
 import sys
 
 
-def _cli_request(method: str, args, path: str, params: dict | None = None):
+def _cli_request(
+    method: str, args, path: str,
+    params: dict | None = None,
+    json_body: dict | None = None,
+):
     """Make an authenticated request to the kiso server.
 
     Loads the 'cli' token from config, attaches it as a Bearer header,
@@ -30,6 +34,7 @@ def _cli_request(method: str, args, path: str, params: dict | None = None):
             method,
             url,
             params=params,
+            json=json_body,
             headers={"Authorization": f"Bearer {token}"},
             timeout=10.0,
         )
@@ -49,6 +54,11 @@ def cli_get(args, path: str, params: dict | None = None):
     return _cli_request("GET", args, path, params)
 
 
-def cli_post(args, path: str, params: dict | None = None):
+def cli_post(args, path: str, params: dict | None = None, json_body: dict | None = None):
     """Authenticated POST request to the kiso server. Exits on error."""
-    return _cli_request("POST", args, path, params)
+    return _cli_request("POST", args, path, params, json_body=json_body)
+
+
+def cli_delete(args, path: str, params: dict | None = None):
+    """Authenticated DELETE request to the kiso server. Exits on error."""
+    return _cli_request("DELETE", args, path, params)
