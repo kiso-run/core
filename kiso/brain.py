@@ -575,10 +575,9 @@ def validate_plan(
                     f"Task {i}: skill '{skill_name}' is not installed. "
                     f"Available skills: {available}. "
                     f"You CANNOT use '{skill_name}' in this plan. Remove the skill task. "
-                    f"Correct structure: "
-                    f'[{{"type": "exec", "detail": "Install the {skill_name} skill using '
-                    f'kiso skill install {skill_name}", "expect": "install succeeds", ...}}, '
-                    f'{{"type": "replan", "detail": "Use {skill_name} after install", ...}}]'
+                    f"Plan a msg task asking the user whether to install '{skill_name}', "
+                    f"and offer alternatives (e.g. search instead of browser). "
+                    f"Then replan based on user response."
                 )
             elif installed_skills_info and skill_name in installed_skills_info:
                 # Validate args against schema (M166)
@@ -959,60 +958,6 @@ async def build_planner_messages(
     return _build_messages(system_prompt, context_block), installed_names, installed
 
 
-_SKILL_NOT_INSTALLED_RE = re.compile(r"skill '([^']+)' is not installed")
-
-
-def _auto_correct_uninstalled_skills(errors: list[str], messages: list[dict]) -> dict | None:
-    """M195: Build a corrected plan when validation fails due to uninstalled skills.
-
-    Extracts skill names from the raw validation error list, and replaces the plan
-    with exec install + replan.
-    Returns None if no errors are about uninstalled skills.
-    """
-    skill_names: list[str] = []
-    all_skill_errors = True
-    for e in errors:
-        m = _SKILL_NOT_INSTALLED_RE.search(e)
-        if m:
-            skill_names.append(m.group(1))
-        else:
-            all_skill_errors = False
-    if not skill_names or not all_skill_errors:
-        return None
-
-    # Extract goal from the last assistant response
-    goal = "install missing skills"
-    for m in reversed(messages):
-        if m["role"] == "assistant":
-            try:
-                parsed = json.loads(m["content"])
-                goal = parsed.get("goal", goal)
-            except (json.JSONDecodeError, TypeError):
-                pass
-            break
-
-    # Build corrected plan: install each missing skill, then replan
-    tasks: list[dict] = []
-    unique_skills = list(dict.fromkeys(skill_names))  # dedupe preserving order
-    for name in unique_skills:
-        tasks.append({
-            "type": TASK_TYPE_EXEC,
-            "detail": f"Install the {name} skill using kiso skill install {name}",
-            "skill": None,
-            "args": None,
-            "expect": "install succeeds",
-        })
-    tasks.append({
-        "type": TASK_TYPE_REPLAN,
-        "detail": f"Use {', '.join(unique_skills)} after install",
-        "skill": None,
-        "args": None,
-        "expect": None,
-    })
-
-    return {"goal": goal, "secrets": None, "tasks": tasks}
-
-
 async def run_planner(
     db: aiosqlite.Connection,
     config: Config,
@@ -1048,23 +993,15 @@ async def run_planner(
 
     max_tasks = int(config.settings["max_plan_tasks"])
     fallback = config.settings.get("planner_fallback_model") or None
-    try:
-        plan = await _retry_llm_with_validation(
-            config, "planner", messages, PLAN_SCHEMA,
-            lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
-                                    installed_skills_info=skills_by_name, is_replan=is_replan),
-            PlanError, "Plan",
-            session=session,
-            on_retry=on_retry,
-            fallback_model=fallback,
-        )
-    except PlanError as exc:
-        # M195: auto-correct when last errors are about uninstalled skills
-        last_errors = getattr(exc, "last_errors", [])
-        plan = _auto_correct_uninstalled_skills(last_errors, messages)
-        if plan is None:
-            raise
-        log.warning("Auto-corrected plan: replaced uninstalled skill tasks with install + replan")
+    plan = await _retry_llm_with_validation(
+        config, "planner", messages, PLAN_SCHEMA,
+        lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
+                                installed_skills_info=skills_by_name, is_replan=is_replan),
+        PlanError, "Plan",
+        session=session,
+        on_retry=on_retry,
+        fallback_model=fallback,
+    )
     log.info("Plan: goal=%r, %d tasks", plan["goal"], len(plan["tasks"]))
     return plan
 

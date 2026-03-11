@@ -391,17 +391,16 @@ class TestValidatePlan:
         assert any("skill 'search' is not installed" in e for e in errors)
         assert any("Available skills: echo" in e for e in errors)
 
-    def test_skill_not_installed_suggests_fix(self):
-        """M193: validation error includes CANNOT use and correct plan structure."""
+    def test_skill_not_installed_suggests_asking_user(self):
+        """M418: validation error guides LLM to ask user, not silently install."""
         plan = {"tasks": [
             {"type": "skill", "detail": "browse", "expect": "ok", "skill": "browser", "args": "{}"},
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
         assert any("CANNOT use 'browser'" in e for e in errors)
-        assert any('"type": "exec"' in e for e in errors)
-        assert any('"type": "replan"' in e for e in errors)
-        assert any("kiso skill install browser" in e for e in errors)
+        assert any("msg task asking the user" in e for e in errors)
+        assert any("offer alternatives" in e for e in errors)
 
     def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [
@@ -5122,8 +5121,8 @@ class TestM283SearcherPrompt:
         assert "specific URL or domain" in prompt
 
 
-class TestM195AutoCorrectUninstalledSkill:
-    """M195: Auto-correct plan when planner keeps using uninstalled skills."""
+class TestM418NoSilentAutoCorrect:
+    """M418: Uninstalled skill plans raise PlanError (no silent auto-correction)."""
 
     UNINSTALLED_SKILL_PLAN = json.dumps({
         "goal": "Navigate to example.com",
@@ -5153,19 +5152,12 @@ class TestM195AutoCorrectUninstalledSkill:
             raw={},
         )
 
-    async def test_auto_corrects_to_install_plus_replan(self, db, config):
-        """When planner always uses uninstalled skill, auto-correct plan is returned."""
+    async def test_uninstalled_skill_raises_plan_error(self, db, config):
+        """When planner always uses uninstalled skill, PlanError is raised (not auto-corrected)."""
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value=self.UNINSTALLED_SKILL_PLAN):
-            plan = await run_planner(db, config, "sess1", "admin", "visit example.com")
-
-        # Should have exec install + replan instead of skill + msg
-        assert len(plan["tasks"]) == 2
-        assert plan["tasks"][0]["type"] == "exec"
-        assert "kiso skill install browser" in plan["tasks"][0]["detail"]
-        assert plan["tasks"][1]["type"] == "replan"
-        assert "browser" in plan["tasks"][1]["detail"]
-        assert plan["goal"] == "Navigate to example.com"
+            with pytest.raises(PlanError, match="validation failed"):
+                await run_planner(db, config, "sess1", "admin", "visit example.com")
 
     async def test_non_skill_error_still_raises(self, db, config):
         """Non-skill validation errors still raise PlanError."""
@@ -5180,30 +5172,10 @@ class TestM195AutoCorrectUninstalledSkill:
             with pytest.raises(PlanError, match="validation failed"):
                 await run_planner(db, config, "sess1", "admin", "do something")
 
-    async def test_auto_correct_multiple_skills(self, db, config):
-        """Auto-correct handles multiple uninstalled skills."""
-        multi_skill_plan = json.dumps({
-            "goal": "Complex task",
-            "secrets": None,
-            "tasks": [
-                {"type": "skill", "detail": "browse", "skill": "browser",
-                 "args": "{}", "expect": "ok"},
-                {"type": "skill", "detail": "screenshot", "skill": "screenshotter",
-                 "args": "{}", "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
-            ],
-        })
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                    return_value=multi_skill_plan):
-            plan = await run_planner(db, config, "sess1", "admin", "do complex task")
-
-        # exec install browser + exec install screenshotter + replan
-        assert len(plan["tasks"]) == 3
-        assert plan["tasks"][0]["type"] == "exec"
-        assert "browser" in plan["tasks"][0]["detail"]
-        assert plan["tasks"][1]["type"] == "exec"
-        assert "screenshotter" in plan["tasks"][1]["detail"]
-        assert plan["tasks"][2]["type"] == "replan"
+    async def test_auto_correct_function_removed(self, db, config):
+        """_auto_correct_uninstalled_skills no longer exists in brain module."""
+        import kiso.brain
+        assert not hasattr(kiso.brain, "_auto_correct_uninstalled_skills")
 
 
 # ---------------------------------------------------------------------------
