@@ -777,7 +777,7 @@ async def save_learning(
     - *content* matches secret-like patterns (password/passwd/token keywords,
       hex strings ≥ 32 chars) — logged as a warning to prevent fact poisoning
     - *content* is a near-duplicate of an existing pending learning in the same
-      session (word overlap ≥ 70%)
+      session (word overlap ≥ 55%)
 
     Raises ``TypeError`` if *content* is not a ``str``.
     """
