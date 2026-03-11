@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 import pytest
 
@@ -15,10 +15,8 @@ from kiso.config import Config, Provider
 from kiso.store import (
     create_session,
     find_or_create_entity,
-    get_facts,
     init_db,
     save_fact,
-    save_learning,
 )
 from kiso.worker.loop import _fast_path_chat, _msg_task
 

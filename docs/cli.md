@@ -102,6 +102,8 @@ Example verbose flow for an exec task:
   ✓ review: ok
 ```
 
+**Panel ordering invariant:** Verbose panels must always appear in strict IN→OUT→IN→OUT order. Each LLM call shows its input (IN) panel first, then after the call completes, the output (OUT) panel. When multiple roles run sequentially (e.g. briefer → messenger), the briefer's LLM calls are flushed to the database before the messenger starts — this ensures the CLI renders briefer IN→briefer OUT→messenger IN→messenger OUT, never two consecutive IN panels. This flush happens via the `on_briefer_done` callback in both the main plan loop (`_handle_msg_task`) and the fast path (`_fast_path_chat`).
+
 This is useful for debugging prompt issues, verifying what context the LLM receives, and inspecting structured output. The data is fetched via `GET /status/{session}?verbose=true` — the default `/status` response omits message/response data to keep payloads small. The verbose endpoint is also available for API consumers directly.
 
 > **M41 — spinner before the plan exists**: The planning spinner activates as soon as `worker_running=True`, even before the plan is written to the database. This covers the classifier + planner LLM calls (typically 4–15 s) that previously left the CLI appearing frozen.

@@ -7820,7 +7820,7 @@ class TestIncrementalLLMCalls:
         assert mock_append.call_count >= 2
 
     async def test_fast_path_appends_calls_after_messenger(self, db, tmp_path):
-        """fast path: _append_calls called once — after messenger."""
+        """fast path: _append_calls called twice — briefer flush + messenger."""
         config = _make_config()
 
         mock_append = AsyncMock()
@@ -7829,7 +7829,7 @@ class TestIncrementalLLMCalls:
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
 
-        assert mock_append.call_count == 1
+        assert mock_append.call_count == 2
 
     async def test_update_task_usage_not_passed_llm_calls(self, db, tmp_path):
         """M44e: update_task_usage is called WITHOUT llm_calls (sentinel path)."""
@@ -7896,7 +7896,7 @@ class TestM44gAppendCallsRobustness:
         assert mock_append.call_count >= 1
 
     async def test_fast_path_success_and_failure_append_same_count(self, db, tmp_path):
-        """Both success and failure paths call _append_calls exactly once."""
+        """Both success and failure paths call _append_calls the same number of times."""
         config = _make_config()
 
         # Success path
@@ -7918,7 +7918,42 @@ class TestM44gAppendCallsRobustness:
             await _fast_path_chat(db, config, "sess2", 2, "hello")
         failure_calls = mock_append_fail.call_count
 
-        assert success_calls == failure_calls == 1
+        # 2 calls each: briefer flush + messenger flush
+        assert success_calls == failure_calls == 2
+
+    async def test_fast_path_flushes_briefer_before_messenger(self, db, tmp_path):
+        """Fast path flushes briefer calls before messenger runs (panel ordering)."""
+        config = _make_config(settings={"briefer_enabled": True})
+        call_order: list[str] = []
+        real_append = AsyncMock(side_effect=lambda *a, **kw: call_order.append("append"))
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                call_order.append("briefer")
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            call_order.append("messenger")
+            return "Hi"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.worker.loop._append_calls", real_append), \
+             _patch_kiso_dir(tmp_path):
+            await _fast_path_chat(db, config, "sess1", 1, "hello")
+
+        # Briefer flush (append) must happen before messenger
+        assert "briefer" in call_order
+        assert "messenger" in call_order
+        briefer_idx = call_order.index("briefer")
+        messenger_idx = call_order.index("messenger")
+        # There must be an append between briefer and messenger
+        appends_between = [
+            i for i, c in enumerate(call_order)
+            if c == "append" and briefer_idx < i < messenger_idx
+        ]
+        assert len(appends_between) >= 1, f"No briefer flush before messenger: {call_order}"
 
 
 @pytest.mark.asyncio

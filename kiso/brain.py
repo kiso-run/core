@@ -1266,6 +1266,10 @@ _TRANSIENT_LEARN_RE = re.compile(
     re.IGNORECASE,
 )
 _MIN_LEARN_LEN = 15
+_NEG_CLAIM_PATTERNS = (
+    "not found", "not available", "not stated",
+    "does not support", "not installed",
+)
 
 
 def _learning_contradicts_output(learning: str, output: str) -> bool:
@@ -1274,13 +1278,9 @@ def _learning_contradicts_output(learning: str, output: str) -> bool:
     Returns True when the learning says something is "not found" / "not available"
     but the subject term actually appears in the output.
     """
-    neg_patterns = [
-        "not found", "not available", "not stated",
-        "does not support", "not installed",
-    ]
     learning_lower = learning.lower()
     output_lower = output.lower()
-    for neg in neg_patterns:
+    for neg in _NEG_CLAIM_PATTERNS:
         if neg in learning_lower:
             idx = learning_lower.index(neg)
             subject_words = learning[:idx].strip().split()[-2:]

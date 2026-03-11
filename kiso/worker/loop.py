@@ -518,12 +518,20 @@ async def _fast_path_chat(
         )
 
     usage_idx_before = get_usage_index()
+    idx_after_briefer = [usage_idx_before]  # mutated by callback
+
+    async def _flush_briefer():
+        """Flush briefer calls so CLI renders panels before messenger runs."""
+        await _append_calls(db, task_id, usage_idx_before)
+        idx_after_briefer[0] = get_usage_index()
+
     t0 = time.perf_counter()
     try:
         try:
             text = await asyncio.wait_for(
                 _msg_task(config, db, session, content, goal=content,
-                          include_recent=True),
+                          include_recent=True,
+                          on_briefer_done=_flush_briefer),
                 timeout=messenger_timeout,
             )
         except asyncio.TimeoutError:
@@ -536,7 +544,7 @@ async def _fast_path_chat(
         error_text = f"Chat response failed: {e}"
         # Persist any partial LLM calls collected before the failure so verbose
         # panels still show the attempted messenger call.
-        await _append_calls(db, task_id, usage_idx_before)
+        await _append_calls(db, task_id, idx_after_briefer[0])
         await update_task(db, task_id, "failed", output=error_text, duration_ms=task_duration_ms)
         await update_plan_status(db, plan_id, "failed")
         audit.log_task(
@@ -559,7 +567,7 @@ async def _fast_path_chat(
     )
 
     # Append messenger call immediately (incremental rendering)
-    await _append_calls(db, task_id, usage_idx_before)
+    await _append_calls(db, task_id, idx_after_briefer[0])
 
     # Store messenger token totals
     step_usage = get_usage_since(usage_idx_before)
