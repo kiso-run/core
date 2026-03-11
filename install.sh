@@ -641,6 +641,17 @@ for k,v in d.items():
         fi
     fi
     BOT_NAME="${INST_NAME^}"
+
+    # Show what version will be installed
+    _new_ver=$(grep -oP '^version\s*=\s*"\K[^"]+' "$REPO_DIR/pyproject.toml" 2>/dev/null || echo "unknown")
+    _new_hash=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
+    _cur_ver=$(python3 -c "import json; v=json.load(open('$INSTANCES_JSON')).get('$INST_NAME',{}); print(v.get('version',''))" 2>/dev/null || echo "")
+    if [[ -n "$_cur_ver" && "$_cur_ver" != "$_new_ver" ]]; then
+        green "  Updating '$INST_NAME': v${_cur_ver} → v${_new_ver} (${_new_hash})"
+    else
+        green "  Updating '$INST_NAME' to v${_new_ver} (${_new_hash})"
+    fi
+
     echo
     yellow "  Reset data? This wipes EVERYTHING: conversations, messages, learnings,"
     yellow "  skills, connectors, installed binaries, and all session files."
