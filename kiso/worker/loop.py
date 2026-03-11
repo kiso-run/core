@@ -69,12 +69,12 @@ from kiso.llm import (
     reset_usage_tracking,
     set_llm_budget,
 )
-from kiso.skills import (
-    SkillError,
-    discover_skills,
-    invalidate_skills_cache,
-    auto_correct_skill_args,
-    validate_skill_args,
+from kiso.tools import (
+    ToolError,
+    discover_tools,
+    invalidate_tools_cache,
+    auto_correct_tool_args,
+    validate_tool_args,
 )
 from kiso.sysenv import get_system_env, build_system_env_section, invalidate_cache
 from kiso.webhook import deliver_webhook
@@ -140,7 +140,7 @@ from kiso.worker.utils import (
     get_replan_message,
 )
 from kiso.worker.exec import _exec_task
-from kiso.worker.skill import _skill_task
+from kiso.worker.tool import _tool_task
 
 log = logging.getLogger(__name__)
 
@@ -680,7 +680,7 @@ async def _review_task(
     task_row: dict,
     user_message: str,
 ) -> dict:
-    """Review an exec/skill task. Returns review dict. Stores learning if present."""
+    """Review an exec/tool task. Returns review dict. Stores learning if present."""
     output = task_row.get("output") or ""
     stderr = task_row.get("stderr") or ""
     full_output = prepare_reviewer_output(output, stderr)
@@ -754,16 +754,16 @@ class _PlanCtx:
     max_output_size: int
     max_worker_retries: int
     messenger_timeout: int
-    installed_skills: list[dict]
+    installed_tools: list[dict]
     slog: "SessionLogger | None"
     sandbox_uid: "int | None"
     base_url: str = ""
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
-    # Derived from installed_skills for O(1) lookup by name (populated in __post_init__)
-    installed_skills_by_name: dict[str, dict] = field(init=False)
+    # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
+    installed_tools_by_name: dict[str, dict] = field(init=False)
 
     def __post_init__(self) -> None:
-        self.installed_skills_by_name = {s["name"]: s for s in self.installed_skills}
+        self.installed_tools_by_name = {s["name"]: s for s in self.installed_tools}
 
 
 @dataclass
@@ -915,50 +915,50 @@ async def _handle_msg_task(
         return _TaskHandlerResult(stop=True, stop_success=False)
 
 
-async def _handle_skill_task(
+async def _handle_tool_task(
     ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
-    """Handle a skill task (external subprocess via skill plugin)."""
+    """Handle a tool task (external subprocess via tool plugin)."""
     task_id = task_row["id"]
     detail = task_row["detail"]
-    skill_name = task_row.get("skill")
+    tool_name = task_row.get("skill")  # DB field still "skill" until schema migration
     args_raw = task_row.get("args") or "{}"
-    skill_info = ctx.installed_skills_by_name.get(skill_name)
+    tool_info = ctx.installed_tools_by_name.get(tool_name)
     t0 = time.perf_counter()
 
-    # Pre-flight: skill installed, args valid
+    # Pre-flight: tool installed, args valid
     setup_error: str | None = None
     args: dict | None = None
-    if skill_info is None:
-        setup_error = f"Skill '{skill_name}' not installed"
+    if tool_info is None:
+        setup_error = f"Tool '{tool_name}' not installed"
     else:
         try:
             args = json.loads(args_raw)
         except json.JSONDecodeError as e:
-            setup_error = f"Invalid skill args JSON: {e}"
+            setup_error = f"Invalid tool args JSON: {e}"
         else:
-            corrected = auto_correct_skill_args(args, skill_info["args_schema"])
+            corrected = auto_correct_tool_args(args, tool_info["args_schema"])
             if corrected != args:
-                log.warning("Auto-corrected skill args for task %d: %s → %s", task_id, args, corrected)
+                log.warning("Auto-corrected tool args for task %d: %s → %s", task_id, args, corrected)
                 args = corrected
-            validation_errors = validate_skill_args(args, skill_info["args_schema"])
+            validation_errors = validate_tool_args(args, tool_info["args_schema"])
             if validation_errors:
-                setup_error = "Skill args validation failed: " + "; ".join(validation_errors)
+                setup_error = "Tool args validation failed: " + "; ".join(validation_errors)
 
     if setup_error:
-        log.error("Skill setup failed for task %d: %s", task_id, setup_error)
+        log.error("Tool setup failed for task %d: %s", task_id, setup_error)
         await update_task(ctx.db, task_id, "failed", output=setup_error)
         audit.log_task(
-            ctx.session, task_id, "skill", detail, "failed", 0, 0,
+            ctx.session, task_id, "tool", detail, "failed", 0, 0,
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
         plan_output = _make_plan_output(
-            i + 1, "skill", detail, setup_error, "failed", session=ctx.session,
+            i + 1, "tool", detail, setup_error, "failed", session=ctx.session,
         )
         return _TaskHandlerResult(
             stop=True, stop_success=False,
-            stop_replan=f"Skill task failed: {setup_error}",
+            stop_replan=f"Tool task failed: {setup_error}",
             plan_output=plan_output,
         )
 
@@ -983,13 +983,13 @@ async def _handle_skill_task(
     # Snapshot workspace before execution to detect new files (M215)
     pre_snapshot = _snapshot_workspace(ctx.session)
 
-    skill_retries = 0
+    tool_retries = 0
     plan_output_entry: "dict | None" = None
     while True:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
-        stdout, stderr, success, exit_code = await _skill_task(
-            ctx.session, skill_info, args, ctx.plan_outputs,
+        stdout, stderr, success, exit_code = await _tool_task(
+            ctx.session, tool_info, args, ctx.plan_outputs,
             ctx.session_secrets,
             sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
@@ -1012,16 +1012,16 @@ async def _handle_skill_task(
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
         audit.log_task(
-            ctx.session, task_id, "skill", detail, task_row["status"],
+            ctx.session, task_id, "tool", detail, task_row["status"],
             task_duration_ms, len(task_row.get("output") or ""),
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
         if ctx.slog:
-            ctx.slog.info("Task %d done: [skill] %s (%dms)", task_id, task_row["status"], task_duration_ms)
+            ctx.slog.info("Task %d done: [tool] %s (%dms)", task_id, task_row["status"], task_duration_ms)
 
         plan_output_entry = _make_plan_output(
-            i + 1, "skill", detail, task_row.get("output") or "", task_row["status"],
+            i + 1, "tool", detail, task_row.get("output") or "", task_row["status"],
             session=ctx.session,
         )
 
@@ -1042,20 +1042,20 @@ async def _handle_skill_task(
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
-            # M204: internal retry for transient skill failures
-            if retry_hint and skill_retries < ctx.max_worker_retries:
-                skill_retries += 1
-                await update_task_retry_count(ctx.db, task_id, skill_retries)
+            # M204: internal retry for transient tool failures
+            if retry_hint and tool_retries < ctx.max_worker_retries:
+                tool_retries += 1
+                await update_task_retry_count(ctx.db, task_id, tool_retries)
                 if ctx.slog:
-                    ctx.slog.info("Task %d skill retry %d/%d: %s",
-                                  task_id, skill_retries, ctx.max_worker_retries, retry_hint)
+                    ctx.slog.info("Task %d tool retry %d/%d: %s",
+                                  task_id, tool_retries, ctx.max_worker_retries, retry_hint)
                 continue
 
             replan_reason = review.get("reason", "")
             if ctx.slog:
-                if skill_retries > 0:
+                if tool_retries > 0:
                     ctx.slog.info("Review → replan (retried %dx before escalating): %s",
-                                  skill_retries, replan_reason)
+                                  tool_retries, replan_reason)
                 else:
                     ctx.slog.info("Review → replan: %s", replan_reason)
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
@@ -1384,8 +1384,8 @@ async def _handle_search_task(
 _TASK_HANDLERS: dict = {
     TASK_TYPE_EXEC: _handle_exec_task,
     TASK_TYPE_MSG: _handle_msg_task,
-    TASK_TYPE_SKILL: _handle_skill_task,
-    "skill": _handle_skill_task,  # backward compat — PLAN_SCHEMA still uses "skill" until M445
+    TASK_TYPE_SKILL: _handle_tool_task,
+    "skill": _handle_tool_task,  # backward compat — PLAN_SCHEMA still uses "skill" until M445
     TASK_TYPE_SEARCH: _handle_search_task,
     TASK_TYPE_REPLAN: _handle_replan_task,
 }
@@ -1418,8 +1418,8 @@ async def _execute_plan(
     deploy_secrets = collect_deploy_secrets()
     max_output_size = setting_int(config.settings, "max_output_size", lo=0)
     max_worker_retries = setting_int(config.settings, "max_worker_retries", lo=0)
-    # Cache installed skills for the whole plan execution (avoid rescanning per task)
-    installed_skills = discover_skills()
+    # Cache installed tools for the whole plan execution (avoid rescanning per task)
+    installed_tools = discover_tools()
 
     ctx = _PlanCtx(
         db=db,
@@ -1432,7 +1432,7 @@ async def _execute_plan(
         max_output_size=max_output_size,
         max_worker_retries=max_worker_retries,
         messenger_timeout=messenger_timeout,
-        installed_skills=installed_skills,
+        installed_tools=installed_tools,
         slog=slog,
         base_url=base_url,
         sandbox_uid=None,
@@ -1501,11 +1501,11 @@ async def _execute_plan(
         is_final = i == len(tasks) - 1
         result = await handler(ctx, task_row, i, is_final, usage_idx_before)
 
-        # Refresh skill cache after exec/skill tasks (may have installed new skills)
+        # Refresh tool cache after exec/tool tasks (may have installed new tools)
         if task_type in (TASK_TYPE_EXEC, TASK_TYPE_SKILL):
-            invalidate_skills_cache()
-            ctx.installed_skills = discover_skills()
-            ctx.installed_skills_by_name = {s["name"]: s for s in ctx.installed_skills}
+            invalidate_tools_cache()
+            ctx.installed_tools = discover_tools()
+            ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
 
         if result.plan_output is not None:
             ctx.plan_outputs.append(result.plan_output)

@@ -34,7 +34,7 @@ from kiso.worker import (
     _apply_curator_result,
     _build_cancel_summary, _build_exec_env, _build_failure_summary,
     _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
-    _report_pub_files, _run_subprocess, _skill_task, _session_workspace,
+    _report_pub_files, _run_subprocess, _tool_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output, _save_large_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks, _maybe_inject_intent_msg,
     _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
@@ -58,7 +58,7 @@ from kiso.worker.loop import (
     _handle_plan_error,
     _handle_replan_task,
     _handle_search_task,
-    _handle_skill_task,
+    _handle_tool_task,
     _make_plan_output,
     _run_planning_loop,
     _spawn_knowledge_task,
@@ -565,7 +565,7 @@ class TestRunWorker:
         plan = await get_plan_for_session(db, "sess1")
         assert plan["status"] == "failed"
 
-    async def test_skill_task_fails_not_implemented(self, db, tmp_path):
+    async def test_tool_task_fails_not_implemented(self, db, tmp_path):
         config = _make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
@@ -1761,14 +1761,14 @@ class TestExecutePlan:
             goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_skills=[skill_info],
+            messenger_timeout=5, installed_tools=[skill_info],
             slog=None, sandbox_uid=None,
         )
-        result = await _handle_skill_task(ctx, task_row, 0, False, 0)
+        result = await _handle_tool_task(ctx, task_row, 0, False, 0)
         assert result.stop is True
         assert result.stop_success is False
         assert result.stop_replan is not None
-        assert "Invalid skill args JSON" in result.stop_replan
+        assert "Invalid tool args JSON" in result.stop_replan
         assert result.plan_output is not None
 
     async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
@@ -1789,10 +1789,10 @@ class TestExecutePlan:
             goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_skills=[skill_info],
+            messenger_timeout=5, installed_tools=[skill_info],
             slog=None, sandbox_uid=None,
         )
-        result = await _handle_skill_task(ctx, task_row, 0, False, 0)
+        result = await _handle_tool_task(ctx, task_row, 0, False, 0)
         assert result.stop is True
         assert result.stop_replan is not None
         assert "validation failed" in result.stop_replan
@@ -1814,16 +1814,16 @@ class TestExecutePlan:
             goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_skills=[skill_info],
+            messenger_timeout=5, installed_tools=[skill_info],
             slog=None, sandbox_uid=None,
         )
-        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+        with patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
                     return_value=("error output", "skill crashed", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                     return_value=REVIEW_REPLAN), \
              patch("kiso.worker.loop._write_plan_outputs", new_callable=AsyncMock), \
              patch("kiso.worker.loop._check_disk_limit", return_value=None):
-            result = await _handle_skill_task(ctx, task_row, 0, False, 0)
+            result = await _handle_tool_task(ctx, task_row, 0, False, 0)
         assert result.stop is True
         assert result.stop_success is False
         assert result.stop_replan == "Task failed"
@@ -3032,7 +3032,7 @@ class TestExecutePlanOutputChaining:
         assert "not installed" in tasks[0]["output"]
 
 
-# --- M7: _skill_task ---
+# --- M7: _tool_task ---
 
 def _create_echo_skill(tmp_path: Path) -> dict:
     """Create a minimal echo skill for testing and return its info dict."""
@@ -3065,7 +3065,7 @@ class TestSkillTask:
     async def test_successful_skill(self, tmp_path):
         skill = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _skill_task(
+            stdout, stderr, success, _ = await _tool_task(
                 "sess1", skill, {"text": "hello"}, None, None,
             )
         assert success is True
@@ -3091,7 +3091,7 @@ class TestSkillTask:
 
         plan_outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "files", "status": "done"}]
         with _patch_kiso_dir(tmp_path):
-            stdout, _, success, _ = await _skill_task(
+            stdout, _, success, _ = await _tool_task(
                 "sess1", skill, {}, plan_outputs, None,
             )
         assert success is True
@@ -3118,7 +3118,7 @@ class TestSkillTask:
 
         secrets = {"api_token": "tok_123", "other": "should_not_appear"}
         with _patch_kiso_dir(tmp_path):
-            stdout, _, success, _ = await _skill_task(
+            stdout, _, success, _ = await _tool_task(
                 "sess1", skill, {}, None, secrets,
             )
         assert success is True
@@ -3140,7 +3140,7 @@ class TestSkillTask:
         }
 
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _skill_task(
+            stdout, stderr, success, _ = await _tool_task(
                 "sess1", skill, {}, None, None,
             )
         assert success is False
@@ -3166,7 +3166,7 @@ class TestSkillTask:
         }
 
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _skill_task(
+            stdout, stderr, success, _ = await _tool_task(
                 "sess1", skill, {}, None, None,
             )
         assert success is False
@@ -3188,7 +3188,7 @@ class TestSkillTask:
         }
 
         with _patch_kiso_dir(tmp_path):
-            stdout, _, success, _ = await _skill_task(
+            stdout, _, success, _ = await _tool_task(
                 "sess1", skill, {}, None, None,
             )
         assert success is True
@@ -3235,7 +3235,7 @@ class TestExecutePlanSkill:
         skills_dir = tmp_path / "skills"
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3243,7 +3243,7 @@ class TestExecutePlanSkill:
 
         assert success is False
         tasks = await get_tasks_for_plan(db, plan_id)
-        assert "Invalid skill args JSON" in tasks[0]["output"]
+        assert "Invalid tool args JSON" in tasks[0]["output"]
 
     async def test_skill_args_validation_error(self, db, tmp_path):
         config = _make_config()
@@ -3256,7 +3256,7 @@ class TestExecutePlanSkill:
         skill = _create_echo_skill(tmp_path)
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3278,7 +3278,7 @@ class TestExecutePlanSkill:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3320,7 +3320,7 @@ class TestExecutePlanSkill:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3342,7 +3342,7 @@ class TestExecutePlanSkill:
         skill = _create_echo_skill(tmp_path)
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3369,7 +3369,7 @@ class TestExecutePlanSkill:
         }
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_hint), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, plan_outputs = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3378,7 +3378,7 @@ class TestExecutePlanSkill:
         assert success is False
         assert reason == "Task failed"
         # The skill task's plan_output should carry the retry_hint
-        skill_outputs = [po for po in plan_outputs if po.get("type") == "skill"]
+        skill_outputs = [po for po in plan_outputs if po.get("type") == "tool"]
         assert len(skill_outputs) == 1
         assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
 
@@ -3400,10 +3400,10 @@ class TestExecutePlanSkill:
         # Second call: reviewer says ok (retry succeeds)
         reviewer_side = AsyncMock(side_effect=[review_replan_with_hint, REVIEW_OK])
 
-        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+        with patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
                     return_value=("ok output", "", True, 0)), \
              patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
             success, reason, _stuck, completed, remaining, _po = await _execute_plan(
@@ -3432,10 +3432,10 @@ class TestExecutePlanSkill:
         # Both calls return replan with hint — retry once, then escalate
         reviewer_side = AsyncMock(return_value=review_replan_with_hint)
 
-        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+        with patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
                     return_value=("error", "crash", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, plan_outputs = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3446,7 +3446,7 @@ class TestExecutePlanSkill:
         # Reviewed twice: initial + 1 retry
         assert reviewer_side.call_count == 2
         # retry_hint carried to plan_output
-        skill_outputs = [po for po in plan_outputs if po.get("type") == "skill"]
+        skill_outputs = [po for po in plan_outputs if po.get("type") == "tool"]
         assert skill_outputs[0].get("retry_hint") == "try something else"
 
     async def test_skill_no_retry_without_hint(self, db, tmp_path):
@@ -3462,10 +3462,10 @@ class TestExecutePlanSkill:
         # replan without retry_hint → immediate escalation, no retry
         reviewer_side = AsyncMock(return_value=REVIEW_REPLAN)
 
-        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+        with patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
                     return_value=("error", "crash", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -4465,7 +4465,7 @@ class TestPerSessionSandbox:
         skill = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _skill_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=9999)
+            await _tool_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=9999)
 
         assert captured_kwargs.get("user") == 9999
 
@@ -4483,7 +4483,7 @@ class TestPerSessionSandbox:
         skill = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _skill_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=None)
+            await _tool_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=None)
 
         assert "user" not in captured_kwargs
 
@@ -4929,7 +4929,7 @@ class TestOutputTruncation:
             "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
         }
         with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _skill_task(
+            stdout, stderr, success, _ = await _tool_task(
                 "sess1", skill, {}, None, None, max_output_size=100,
             )
         assert success is True
@@ -5759,7 +5759,7 @@ class TestSanitizeTaskDetail:
 
         with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=plan_with_secret), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Results"), \
-             patch("kiso.worker.loop.discover_skills", return_value=[]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[]), \
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
@@ -8185,11 +8185,13 @@ class TestM48ApplyCuratorCategory:
 # M62: Tests for task handlers (62a) and planning loop (62c)
 # ---------------------------------------------------------------------------
 
-def _make_ctx(db, config=None, plan_outputs=None, installed_skills=None) -> _PlanCtx:
+def _make_ctx(db, config=None, plan_outputs=None, installed_skills=None, installed_tools=None) -> _PlanCtx:
     """Build a minimal _PlanCtx for handler tests."""
     from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
     if config is None:
         config = _make_config()
+    # Accept both old and new kwarg names for backward compat in tests
+    tools = installed_tools if installed_tools is not None else (installed_skills or [])
     return _PlanCtx(
         db=db,
         config=config,
@@ -8201,7 +8203,7 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_skills=None) -> _Pla
         max_output_size=1024 * 1024,
         max_worker_retries=1,
         messenger_timeout=30,
-        installed_skills=installed_skills or [],
+        installed_tools=tools,
         slog=None,
         sandbox_uid=None,
         plan_outputs=plan_outputs if plan_outputs is not None else [],
@@ -8294,9 +8296,9 @@ class TestTaskHandlers:
         assert result.stop_success is False
         assert result.completed_row is None
 
-    # --- _handle_skill_task ---
+    # --- _handle_tool_task ---
 
-    async def test_handle_skill_task_not_installed_returns_stop(self, db, plan_id, tmp_path):
+    async def test_handle_tool_task_not_installed_returns_stop(self, db, plan_id, tmp_path):
         """skill handler returns stop=True when skill is not installed."""
         task_row = await _make_task_row(
             db, plan_id, "skill", "Search for something",
@@ -8304,13 +8306,13 @@ class TestTaskHandlers:
         )
         ctx = _make_ctx(db, installed_skills=[])  # no skills installed
         with _patch_kiso_dir(tmp_path):
-            result = await _handle_skill_task(ctx, task_row, 0, True, 0)
+            result = await _handle_tool_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.stop_success is False
         assert result.completed_row is None
 
-    async def test_handle_skill_task_invalid_json_args_returns_stop(self, db, plan_id, tmp_path):
+    async def test_handle_tool_task_invalid_json_args_returns_stop(self, db, plan_id, tmp_path):
         """skill handler returns stop=True when args JSON is malformed."""
         skill_info = {
             "name": "test-skill",
@@ -8326,7 +8328,7 @@ class TestTaskHandlers:
         )
         ctx = _make_ctx(db, installed_skills=[skill_info])
         with _patch_kiso_dir(tmp_path):
-            result = await _handle_skill_task(ctx, task_row, 0, True, 0)
+            result = await _handle_tool_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is True
         assert result.completed_row is None
@@ -8408,7 +8410,7 @@ class TestTaskHandlers:
         assert result.plan_output is not None
         assert result.completed_row is None
 
-    async def test_handle_skill_task_success_returns_plan_output(self, db, plan_id, tmp_path):
+    async def test_handle_tool_task_success_returns_plan_output(self, db, plan_id, tmp_path):
         """skill handler returns plan_output with correct fields on success."""
         skill_info = {
             "name": "test-skill",
@@ -8421,16 +8423,16 @@ class TestTaskHandlers:
         task_row = await _make_task_row(db, plan_id, "skill", "run the skill",
                                         skill="test-skill", args="{}")
         ctx = _make_ctx(db, installed_skills=[skill_info])
-        with patch("kiso.worker.loop._skill_task", new_callable=AsyncMock,
+        with patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
                    return_value=("skill output", "", True, 0)), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
-            result = await _handle_skill_task(ctx, task_row, 0, True, 0)
+            result = await _handle_tool_task(ctx, task_row, 0, True, 0)
 
         assert result.stop is False
         assert result.plan_output is not None
-        assert result.plan_output["type"] == "skill"
+        assert result.plan_output["type"] == "tool"
         assert result.plan_output["index"] == 1
         assert result.plan_output["output"] == "skill output"
         assert result.plan_output["status"] == "done"
@@ -8459,27 +8461,27 @@ class TestSkillCacheInvalidation:
         """After exec task completes, skill cache is invalidated and ctx refreshed."""
         task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
         ctx = _make_ctx(db)
-        assert ctx.installed_skills == []
+        assert ctx.installed_tools == []
 
         new_skills = [{"name": "new-skill", "summary": "Just installed"}]
         with _patch_translator(), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path), \
-             patch("kiso.worker.loop.invalidate_skills_cache") as mock_invalidate, \
-             patch("kiso.worker.loop.discover_skills", return_value=new_skills):
+             patch("kiso.worker.loop.invalidate_tools_cache") as mock_invalidate, \
+             patch("kiso.worker.loop.discover_tools", return_value=new_skills):
             result = await _handle_exec_task(ctx, task_row, 0, True, 0)
 
         # invalidation itself happens in execute_plan_tasks, not the handler
         # So we test the import is correct and function exists
-        from kiso.worker.loop import invalidate_skills_cache as imported_fn
-        from kiso.skills import invalidate_skills_cache as original_fn
+        from kiso.worker.loop import invalidate_tools_cache as imported_fn
+        from kiso.tools import invalidate_tools_cache as original_fn
         assert imported_fn is original_fn
 
-    async def test_skill_cache_invalidation_import(self):
-        """invalidate_skills_cache is importable from worker/loop.py."""
-        from kiso.worker.loop import invalidate_skills_cache
-        assert callable(invalidate_skills_cache)
+    async def test_tool_cache_invalidation_import(self):
+        """invalidate_tools_cache is importable from worker/loop.py."""
+        from kiso.worker.loop import invalidate_tools_cache
+        assert callable(invalidate_tools_cache)
 
 
 # --- M91a: _handle_plan_error ---
@@ -9593,11 +9595,11 @@ class TestPlanCtxTypeAnnotations:
         hints = typing.get_type_hints(_PlanCtx)
         assert hints["session_secrets"] == dict[str, str]
 
-    def test_installed_skills_typed_as_list_dict(self):
-        """installed_skills field must be annotated list[dict], not bare list."""
+    def test_installed_tools_typed_as_list_dict(self):
+        """installed_tools field must be annotated list[dict], not bare list."""
         import typing
         hints = typing.get_type_hints(_PlanCtx)
-        assert hints["installed_skills"] == list[dict]
+        assert hints["installed_tools"] == list[dict]
 
     def test_plan_outputs_typed_as_list_dict(self):
         """plan_outputs field must be annotated list[dict], not bare list."""
@@ -9652,30 +9654,30 @@ class TestBumpFactUsage:
         assert facts[0]["use_count"] == 0  # not bumped — wrong session for non-admin
 
 
-# --- M85d: _PlanCtx.installed_skills_by_name ---
+# --- M85d: _PlanCtx.installed_tools_by_name ---
 
 
-class TestPlanCtxSkillsDict:
+class TestPlanCtxToolsDict:
     def test_post_init_builds_dict(self, db):
-        """_PlanCtx.__post_init__ derives installed_skills_by_name from installed_skills."""
+        """_PlanCtx.__post_init__ derives installed_tools_by_name from installed_tools."""
         skills = [
             {"name": "alpha", "summary": "A"},
             {"name": "beta", "summary": "B"},
         ]
         ctx = _make_ctx(db, installed_skills=skills)
-        assert ctx.installed_skills_by_name == {
+        assert ctx.installed_tools_by_name == {
             "alpha": {"name": "alpha", "summary": "A"},
             "beta": {"name": "beta", "summary": "B"},
         }
 
     def test_empty_skills_gives_empty_dict(self, db):
         ctx = _make_ctx(db, installed_skills=[])
-        assert ctx.installed_skills_by_name == {}
+        assert ctx.installed_tools_by_name == {}
 
     def test_missing_skill_returns_none(self, db):
         """Dict lookup for unknown skill name returns None (not KeyError)."""
         ctx = _make_ctx(db, installed_skills=[{"name": "echo", "summary": "x"}])
-        assert ctx.installed_skills_by_name.get("unknown") is None
+        assert ctx.installed_tools_by_name.get("unknown") is None
 
 
 # ---------------------------------------------------------------------------
@@ -11412,7 +11414,7 @@ class TestM336StuckHandling:
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_STUCK), \
-             patch("kiso.worker.loop.discover_skills", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[skill]), \
              _patch_kiso_dir(tmp_path):
             success, replan, stuck, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,

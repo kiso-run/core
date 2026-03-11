@@ -24,7 +24,7 @@ from kiso.worker.utils import (
 )
 from kiso.worker.exec import _exec_task
 from kiso.worker.search import _parse_search_args, _search_task
-from kiso.worker.skill import _skill_task
+from kiso.worker.tool import _tool_task
 from kiso.worker.loop import (
     _apply_curator_result,
     _deliver_webhook_if_configured,
@@ -34,7 +34,7 @@ from kiso.worker.loop import (
     _handle_msg_task,
     _handle_replan_task,
     _handle_search_task,
-    _handle_skill_task,
+    _handle_tool_task,
     _msg_task,
     _maybe_inject_intent_msg,
     _persist_plan_tasks,
@@ -73,8 +73,8 @@ __all__ = [
     # search
     "_parse_search_args",
     "_search_task",
-    # skill
-    "_skill_task",
+    # tool
+    "_tool_task",
     # loop
     "_apply_curator_result",
     "_deliver_webhook_if_configured",
@@ -84,7 +84,7 @@ __all__ = [
     "_handle_msg_task",
     "_handle_replan_task",
     "_handle_search_task",
-    "_handle_skill_task",
+    "_handle_tool_task",
     "_msg_task",
     "_maybe_inject_intent_msg",
     "_persist_plan_tasks",
