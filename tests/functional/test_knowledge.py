@@ -67,3 +67,33 @@ class TestMultiTurnLearning:
         assert_italian(r2.msg_output)
         # Should mention Flask
         assert "flask" in r2.msg_output.lower()
+
+
+# ---------------------------------------------------------------------------
+# F11 — entity/tag enrichment
+# ---------------------------------------------------------------------------
+
+
+class TestEntityTagEnrichment:
+    """F11: pre-seeded entity + tagged facts surface in responses."""
+
+    async def test_entity_tag_enrichment(self, func_db, run_message):
+        """Pre-seed fact with entity + tags → query → fact content in output."""
+        from kiso.store import find_or_create_entity, save_fact
+
+        # Pre-seed a fact with entity + tag
+        eid = await find_or_create_entity(func_db, "guidance.studio", "website")
+        await save_fact(
+            func_db, "guidance.studio is a SaaS platform for user onboarding",
+            source="curator", category="general",
+            tags=["website", "saas", "onboarding"], entity_id=eid,
+        )
+        result = await run_message(
+            "cosa sai su guidance.studio?",
+            timeout=120,
+        )
+        assert result.success
+        assert_italian(result.msg_output)
+        # Should mention onboarding or SaaS from the pre-seeded fact
+        output_lower = result.msg_output.lower()
+        assert "onboarding" in output_lower or "saas" in output_lower
