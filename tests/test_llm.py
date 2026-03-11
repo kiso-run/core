@@ -464,6 +464,19 @@ class TestTimeoutConfig:
                 call_kwargs = mock_client.stream.call_args[1]
                 assert call_kwargs["timeout"] == 42
 
+    @pytest.mark.asyncio
+    async def test_all_roles_use_llm_timeout(self):
+        """M422: planner and messenger use unified llm_timeout, not per-role."""
+        config = _make_config(settings={"llm_timeout": 99})
+        # Test non-structured roles (structured roles require response_format)
+        for role in ("messenger", "worker", "summarizer"):
+            with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+                with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                    mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
+                    await call_llm(config, role, [{"role": "user", "content": "hi"}])
+                    call_kwargs = mock_client.stream.call_args[1]
+                    assert call_kwargs["timeout"] == 99, f"{role} should use llm_timeout"
+
 
 # --- LLM budget tracking ---
 
@@ -1383,16 +1396,15 @@ class TestM300StallDetection:
 
 
 class TestM300RaisedTimeouts:
-    """M300: verify updated default timeout values."""
+    """M300/M422: verify unified timeout defaults."""
 
     def test_llm_timeout_raised(self):
         assert SETTINGS_DEFAULTS["llm_timeout"] == 600
 
-    def test_planner_timeout_raised(self):
-        assert SETTINGS_DEFAULTS["planner_timeout"] == 600
-
-    def test_messenger_timeout_raised(self):
-        assert SETTINGS_DEFAULTS["messenger_timeout"] == 300
+    def test_no_per_role_timeouts(self):
+        """M422: per-role timeouts removed from defaults."""
+        assert "planner_timeout" not in SETTINGS_DEFAULTS
+        assert "messenger_timeout" not in SETTINGS_DEFAULTS
 
     def test_stall_timeout_default(self):
         assert SETTINGS_DEFAULTS["stall_timeout"] == 60

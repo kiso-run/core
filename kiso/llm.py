@@ -286,13 +286,7 @@ async def call_llm(
     # Resolve provider name for audit
     provider_name = model_string.split(":", 1)[0] if ":" in model_string else next(iter(config.providers))
 
-    # Pick the right timeout for this role.
-    if role == "planner":
-        llm_timeout = int(config.settings.get("planner_timeout", config.settings["llm_timeout"]))
-    elif role == "messenger":
-        llm_timeout = int(config.settings.get("messenger_timeout", config.settings["llm_timeout"]))
-    else:
-        llm_timeout = int(config.settings["llm_timeout"])
+    llm_timeout = int(config.settings["llm_timeout"])
 
     stall_timeout = int(config.settings.get("stall_timeout", 60))
 

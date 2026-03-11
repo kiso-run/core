@@ -39,7 +39,6 @@ def _full_settings(**overrides) -> dict:
     from kiso.config import SETTINGS_DEFAULTS
     s = dict(SETTINGS_DEFAULTS)
     s.setdefault("classifier_timeout", 30)
-    s.setdefault("messenger_timeout", 120)
     s.update(overrides)
     return s
 

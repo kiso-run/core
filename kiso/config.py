@@ -40,8 +40,6 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     # execution
     "classifier_timeout": 30,
     "llm_timeout": 600,
-    "planner_timeout": 600,
-    "messenger_timeout": 300,
     "stall_timeout": 60,
     "max_output_size": 1048576,
     "max_worker_retries": 2,
@@ -171,9 +169,7 @@ max_plan_tasks            = 20
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
-llm_timeout               = 600      # seconds; hard timeout for LLM calls (safety net)
-planner_timeout           = 600      # seconds for planner LLM calls (hard timeout)
-messenger_timeout         = 300      # seconds for messenger LLM calls (hard timeout)
+llm_timeout               = 600      # seconds; hard timeout for all LLM calls
 stall_timeout             = 60       # seconds; abort streaming if no chunk arrives within this window
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 2
@@ -386,6 +382,9 @@ def _build_config(path: Path, on_error) -> Config:
         settings_raw["llm_timeout"] = settings_raw.pop("exec_timeout")
     elif "exec_timeout" in settings_raw:
         del settings_raw["exec_timeout"]
+    # Backward compat: ignore removed per-role timeouts (M422)
+    settings_raw.pop("planner_timeout", None)
+    settings_raw.pop("messenger_timeout", None)
     settings = dict(SETTINGS_DEFAULTS)
     settings.update(settings_raw)
 

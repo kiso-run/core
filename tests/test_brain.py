@@ -7251,15 +7251,15 @@ class TestM298NoTimeoutPartitioning:
             )
         assert "timeout_override" not in captured_kwargs[0]
 
-    async def test_call_llm_uses_role_timeout(self):
-        """call_llm uses role-based timeout from config, not a partitioned value."""
+    async def test_call_llm_uses_unified_timeout(self):
+        """M422: all roles use llm_timeout (no per-role overrides)."""
         from kiso.llm import call_llm
         config = Config(
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
             models=_full_models(planner="gpt-4"),
-            settings=_full_settings(planner_timeout=300),
+            settings=_full_settings(llm_timeout=250),
             raw={},
         )
         plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"d","skill":null,"args":null,"expect":null}]}'
@@ -7271,7 +7271,7 @@ class TestM298NoTimeoutPartitioning:
                 response_format=PLAN_SCHEMA,
             )
             call_kwargs = mock_client.stream.call_args[1]
-            assert call_kwargs["timeout"] == 300  # full planner_timeout, not partitioned
+            assert call_kwargs["timeout"] == 250  # unified llm_timeout
 
     async def test_retry_fires_on_timeout(self, config):
         """When first attempt times out, retry fires (each attempt gets full timeout)."""
@@ -7582,7 +7582,7 @@ class TestM302StallRetryIntegration:
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
             models=_full_models(planner="gpt-4"),
-            settings=_full_settings(planner_timeout=600, max_llm_retries=3, max_validation_retries=3),
+            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
             raw={},
         )
         captured_kwargs: list[dict] = []

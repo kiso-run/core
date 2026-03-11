@@ -179,8 +179,7 @@ def func_config() -> Config:
     """Real Config wired to OpenRouter with generous timeouts."""
     settings = {
         **SETTINGS_DEFAULTS,
-        "llm_timeout": 120,
-        "planner_timeout": 180,
+        "llm_timeout": 180,
         "max_validation_retries": 3,
         "max_replan_depth": 5,
         "max_llm_calls_per_message": 300,
@@ -269,7 +268,7 @@ async def run_message(func_config, func_db, func_session):
                 msg,
                 cancel_event,
                 llm_timeout=func_config.settings["llm_timeout"],
-                planner_timeout=func_config.settings["planner_timeout"],
+                planner_timeout=func_config.settings["llm_timeout"],
                 max_replan_depth=func_config.settings["max_replan_depth"],
             ),
             timeout=timeout,

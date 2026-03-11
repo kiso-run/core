@@ -1573,8 +1573,8 @@ async def run_worker(
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
     classifier_timeout = setting_int(config.settings, "classifier_timeout", lo=1)
     llm_timeout = setting_int(config.settings, "llm_timeout", lo=1)
-    planner_timeout = setting_int(config.settings, "planner_timeout", lo=1)
-    messenger_timeout = setting_int(config.settings, "messenger_timeout", lo=1)
+    planner_timeout = llm_timeout  # unified (M422); wrapper removed in M430
+    messenger_timeout = llm_timeout  # unified (M422); wrapper removed in M430
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 

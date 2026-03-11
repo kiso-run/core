@@ -38,7 +38,6 @@ def _config(**settings_overrides):
         "max_replan_depth": "2", "max_llm_retries": "3",
         "max_validation_retries": "3", "worker_idle_timeout": "0.01",
         "classifier_timeout": "5", "llm_timeout": "30",
-        "planner_timeout": "30", "messenger_timeout": "10",
         "briefer_enabled": "true", "bot_name": "Kiso",
     }
     settings.update(settings_overrides)

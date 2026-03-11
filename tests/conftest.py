@@ -128,7 +128,6 @@ max_replan_depth          = 3
 max_validation_retries    = 3
 max_plan_tasks            = 20
 llm_timeout              = 5
-planner_timeout           = 5
 max_output_size           = 1048576
 max_worker_retries        = 1
 max_llm_calls_per_message = 200

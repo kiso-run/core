@@ -51,7 +51,6 @@ def _make_config(**overrides) -> Config:
         **SETTINGS_DEFAULTS,
         "worker_idle_timeout": 0.05,
         "llm_timeout": 5,
-        "planner_timeout": 5,
         "max_replan_depth": 2,
     }
     if "settings" in overrides:

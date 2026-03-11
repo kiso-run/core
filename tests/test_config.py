@@ -212,6 +212,15 @@ def test_exec_timeout_backward_compat(tmp_path: Path):
     assert "exec_timeout" not in cfg.settings
 
 
+def test_m422_per_role_timeout_backward_compat(tmp_path: Path):
+    """M422: old planner_timeout/messenger_timeout in config.toml are silently ignored."""
+    # VALID already contains planner_timeout = 60, which should be stripped
+    cfg = load_config(_write(tmp_path, VALID))
+    assert "planner_timeout" not in cfg.settings
+    assert "messenger_timeout" not in cfg.settings
+    assert cfg.settings["llm_timeout"] == 120  # unchanged
+
+
 def test_provider_missing_base_url(tmp_path: Path, capsys):
     text = """\
 [tokens]

@@ -134,7 +134,6 @@ def _make_config(**overrides) -> Config:
         **SETTINGS_DEFAULTS,
         "worker_idle_timeout": 0.05,  # sub-second for fast tests
         "llm_timeout": 5,
-        "planner_timeout": 5,
         "briefer_enabled": False,  # avoid interfering with mocked call_llm
     }
     # Merge settings overrides rather than replacing the whole dict
@@ -9866,11 +9865,10 @@ class TestMessengerTimeout:
         assert result.stop is True
         assert result.stop_success is False
 
-    def test_messenger_timeout_in_settings_defaults(self):
-        """messenger_timeout must exist in SETTINGS_DEFAULTS so config.toml is self-documenting."""
+    def test_messenger_timeout_removed_from_defaults(self):
+        """M422: messenger_timeout removed from SETTINGS_DEFAULTS (unified to llm_timeout)."""
         from kiso.config import SETTINGS_DEFAULTS
-        assert "messenger_timeout" in SETTINGS_DEFAULTS
-        assert SETTINGS_DEFAULTS["messenger_timeout"] == 300
+        assert "messenger_timeout" not in SETTINGS_DEFAULTS
 
     @pytest.fixture()
     async def plan_id(self, db):
