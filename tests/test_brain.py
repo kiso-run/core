@@ -290,7 +290,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("skill task must have a non-null expect" in e for e in errors)
+        assert any("tool task must have a non-null expect" in e for e in errors)
 
     def test_msg_with_expect(self):
         plan = {"tasks": [
@@ -377,7 +377,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("skill task must have a non-null skill name" in e for e in errors)
+        assert any("tool task must have a non-null tool name" in e for e in errors)
 
     def test_skill_not_installed(self):
         plan = {"tasks": [
@@ -385,8 +385,8 @@ class TestValidatePlan:
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["echo"])
-        assert any("skill 'search' is not installed" in e for e in errors)
-        assert any("Available skills: echo" in e for e in errors)
+        assert any("tool 'search' is not installed" in e for e in errors)
+        assert any("Available tools: echo" in e for e in errors)
 
     def test_skill_not_installed_suggests_asking_user(self):
         """M418/M419: validation error guides LLM to ask user, end plan with msg."""
@@ -406,7 +406,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "done", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
-        assert any("Available skills: none" in e for e in errors)
+        assert any("Available tools: none" in e for e in errors)
 
     def test_skill_installed_passes(self):
         plan = {"tasks": [
@@ -957,10 +957,10 @@ class TestBuildPlannerMessages:
                 "query": {"type": "string", "required": True, "description": "search query"},
             }, "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
         ]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "search for X")
         content = msgs[1]["content"]
-        assert "## Skills" in content
+        assert "## Tools" in content
         assert "search — Web search" in content
         assert "query (string, required): search query" in content
 
@@ -1033,7 +1033,7 @@ class TestBuildPlannerMessages:
 
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "## Skills" not in content
@@ -1067,14 +1067,14 @@ class TestBuildPlannerMessages:
             {"name": "aider", "summary": "Code edit", "args_schema": {},
              "env": {}, "session_secrets": [], "path": "/fake2", "version": "0.1.0", "description": ""},
         ]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(
                 db, config, "sess1", "user", "hello", user_skills=["search"],
             )
         content = msgs[1]["content"]
-        # Skills section should only show search, not aider (restricted user)
-        skills_start = content.find("## Skills")
-        skills_section = content[skills_start:skills_start + 500] if skills_start >= 0 else ""
+        # Tools section should only show search, not aider (restricted user)
+        tools_start = content.find("## Tools")
+        skills_section = content[tools_start:tools_start + 500] if tools_start >= 0 else ""
         assert "search" in skills_section
         assert "aider" not in skills_section
 
@@ -1083,12 +1083,12 @@ class TestBuildPlannerMessages:
         import logging
         await create_session(db, "sess1")
         with (
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
             caplog.at_level(logging.WARNING, logger="kiso.brain"),
         ):
             msgs, names, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert names == []
-        assert "discover_skills() returned empty" in caplog.text
+        assert "discover_tools() returned empty" in caplog.text
 
 
 # --- run_planner ---
@@ -3003,7 +3003,7 @@ class TestPlannerPromptContent:
 
 
 class TestM165SkillArgsExample:
-    """M165: planner prompt must include a skill args example."""
+    """M165: planner prompt must include a tool args example."""
 
     def test_planner_prompt_has_skill_args_example(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -3091,7 +3091,7 @@ class TestM199PluginInstallIdempotent:
 
 
 class TestM166ValidatePlanSkillArgs:
-    """M166: validate_plan checks skill args against schema."""
+    """M166: validate_plan checks tool args against schema."""
 
     def test_missing_required_arg_rejected(self):
         plan = {"tasks": [
@@ -4131,7 +4131,7 @@ class TestPlannerContextualRules:
     async def test_generic_message_has_no_appendix(self, db):
         """A message like 'what time is it' should not inject any appendix (when skills exist)."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse the web", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
@@ -4187,7 +4187,7 @@ class TestPlannerContextualRules:
 
     async def test_no_skills_injects_plugin_install(self, db):
         """M129: when no skills are installed, always inject plugin-install appendix."""
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
@@ -4196,7 +4196,7 @@ class TestPlannerContextualRules:
 
     async def test_no_skills_no_duplicate_appendix(self, db):
         """M129: if keyword already triggered plugin-install, no duplicate on empty skills."""
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "install the browser skill",
             )
@@ -4208,7 +4208,7 @@ class TestPlannerContextualRules:
         """M153: message needing uninstalled capability triggers plugin-install appendix."""
         # "screenshot" maps to "browser" skill — inject appendix when browser not installed
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "take a screenshot of example.com",
@@ -4221,7 +4221,7 @@ class TestPlannerContextualRules:
         fake_skills = [
             {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
         ]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "take a screenshot of example.com",
@@ -4232,7 +4232,7 @@ class TestPlannerContextualRules:
     async def test_capability_gap_exposes_skill_name_in_context(self, db):
         """M198: capability gap detection result is visible in planner context."""
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "take a screenshot of the homepage",
@@ -4240,14 +4240,14 @@ class TestPlannerContextualRules:
         context = msgs[1]["content"]
         assert "Capability Analysis" in context
         assert "browser" in context
-        assert "kiso skill install browser" in context
+        assert "kiso tool install browser" in context
 
     async def test_capability_gap_no_context_when_skill_installed(self, db):
         """M198: no capability analysis when the needed skill is installed."""
         fake_skills = [
             {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
         ]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "take a screenshot of the homepage",
@@ -4257,7 +4257,7 @@ class TestPlannerContextualRules:
 
     async def test_capability_gap_with_no_skills_installed(self, db):
         """M198: capability analysis works even when no skills are installed."""
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "take a screenshot please",
@@ -4269,7 +4269,7 @@ class TestPlannerContextualRules:
     async def test_capability_gap_no_trigger_on_generic_words(self, db):
         """M223: generic words like 'browse', 'form', 'click' don't trigger capability gap."""
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "browse the web and fill the form",
@@ -5294,7 +5294,7 @@ class TestBrieferMessages:
         assert "Session Summary" in content
         assert "Known Facts" in content
         assert "Recent Messages" in content
-        assert "Available Skills" in content
+        assert "Available Tools" in content
         assert "Available Connectors" in content
         assert "Pending Questions" in content
         assert "Paraphrased External Messages" in content
@@ -5309,7 +5309,7 @@ class TestBrieferMessages:
         content = msgs[1]["content"]
         assert "Session Summary" not in content
         assert "Known Facts" not in content
-        assert "Available Skills" in content
+        assert "Available Tools" in content
 
     def test_consumer_role_in_message(self):
         for role in ("planner", "messenger", "worker"):
@@ -5882,7 +5882,7 @@ class TestBrieferPlannerIntegration:
         ]
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=fake_skills):
+             patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "go to example.com",
             )
@@ -5903,7 +5903,7 @@ class TestBrieferPlannerIntegration:
     async def test_briefer_disabled_uses_full_context(self, db):
         """When briefer_enabled=False, full context is used (original behavior)."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "hello",
             )
@@ -5930,7 +5930,7 @@ class TestBrieferPlannerIntegration:
             })
 
         with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "what time is it?",
             )
@@ -5961,7 +5961,7 @@ class TestBrieferPlannerIntegration:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -5992,7 +5992,7 @@ class TestBrieferPlannerIntegration:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "install the browser skill",
             )
@@ -6054,7 +6054,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "Python version",
             )
@@ -6086,7 +6086,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "Python version",
             )
@@ -6114,7 +6114,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -6142,7 +6142,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "tell me about the db",
             )
@@ -6169,7 +6169,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -6225,7 +6225,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", "Python version",
             )
@@ -6254,7 +6254,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", "Flask web framework",
             )
@@ -6282,7 +6282,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             await build_planner_messages(
                 db, self._config(), "sess1", "user", "hello",
             )
@@ -6305,7 +6305,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", "hello",
             )
@@ -6359,7 +6359,7 @@ class TestM258SysEnvAndGapFiltering:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "tell me a joke",
             )
@@ -6371,7 +6371,7 @@ class TestM258SysEnvAndGapFiltering:
     async def test_fallback_path_has_sys_env(self, db):
         """M258: fallback path (no briefer) still includes sys_env."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "hello",
             )
@@ -6398,7 +6398,7 @@ class TestM258SysEnvAndGapFiltering:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "take a screenshot",
             )
@@ -6415,7 +6415,7 @@ class TestM258SysEnvAndGapFiltering:
     async def test_capability_gap_in_fallback_path(self, db):
         """M258: fallback path still unconditionally includes capability_gap."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "take a screenshot",
             )
@@ -6443,7 +6443,7 @@ class TestM258SysEnvAndGapFiltering:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -6499,14 +6499,14 @@ class TestM266BrowserAvailability:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "vai su guidance.studio",
             )
 
         user_content = msgs[1]["content"]
         assert "## Browser Availability" in user_content
-        assert "browser skill is NOT currently installed" in user_content
+        assert "browser tool is NOT currently installed" in user_content
 
     async def test_web_module_with_browser_installed_no_warning(self, db):
         """Briefer selects web module, browser IS installed → no warning."""
@@ -6531,7 +6531,7 @@ class TestM266BrowserAvailability:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[fake_skill]):
+             patch("kiso.brain.discover_tools", return_value=[fake_skill]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "vai su guidance.studio",
             )
@@ -6557,7 +6557,7 @@ class TestM266BrowserAvailability:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "tell me a joke",
             )
@@ -6568,7 +6568,7 @@ class TestM266BrowserAvailability:
     async def test_fallback_path_web_module_no_browser(self, db):
         """Fallback path (no briefer) also shows warning when web module active."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_skills", return_value=[]):
+        with patch("kiso.brain.discover_tools", return_value=[]):
             # "go to" triggers web module via fallback_modules (web is always included)
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "go to guidance.studio",
@@ -6673,7 +6673,7 @@ class TestM261BrieferModuleCoverage:
 
         # Provide a fake skill so plugin_install safety net doesn't trigger
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_skills", return_value=self._fake_skill()):
+             patch("kiso.brain.discover_tools", return_value=self._fake_skill()):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", message,
             )
@@ -7023,7 +7023,7 @@ class TestM309ReplanContextDedup:
                     "output_indices": [], "relevant_tags": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "test msg", is_replan=True,
             )
@@ -7049,7 +7049,7 @@ class TestM309ReplanContextDedup:
                     "output_indices": [], "relevant_tags": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
-             patch("kiso.brain.discover_skills", return_value=[]):
+             patch("kiso.brain.discover_tools", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "test msg", is_replan=False,
             )
@@ -7113,7 +7113,7 @@ class TestM272BrieferSimpleConsumers:
         msgs = build_briefer_messages("planner", "plan the task", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" in content
-        assert "Available Skills" in content
+        assert "Available Tools" in content
         assert "System Environment" in content
 
     def test_messenger_omits_modules_and_irrelevant_sections(self):
@@ -7121,7 +7121,7 @@ class TestM272BrieferSimpleConsumers:
         msgs = build_briefer_messages("messenger", "tell user", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" not in content
-        assert "Available Skills" not in content
+        assert "Available Tools" not in content
         assert "System Environment" not in content
         assert "Available Connectors" not in content
         # Relevant sections still present
@@ -7134,7 +7134,7 @@ class TestM272BrieferSimpleConsumers:
         msgs = build_briefer_messages("worker", "translate cmd", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" not in content
-        assert "Available Skills" not in content
+        assert "Available Tools" not in content
         # Worker keeps plan_outputs (needed for command context)
         assert "Plan Outputs" in content
 
@@ -7159,7 +7159,7 @@ class TestM274NoItalianKeywords:
     async def test_utente_does_not_trigger_user_mgmt(self, db):
         """Italian 'utente' no longer triggers user_mgmt module."""
         fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "crea un utente nuovo",
@@ -7170,7 +7170,7 @@ class TestM274NoItalianKeywords:
     async def test_installa_does_not_trigger_plugin_install(self, db):
         """Italian 'installa' no longer triggers plugin_install module."""
         fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "installa il browser",

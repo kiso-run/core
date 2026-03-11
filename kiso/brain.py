@@ -13,7 +13,7 @@ import aiosqlite
 from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
-from kiso.skills import discover_skills, build_planner_skill_list, validate_skill_args
+from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
 from kiso.store import (
     get_all_entities, get_all_tags, get_facts, get_pending_items,
     get_recent_messages, get_safety_facts, get_session, search_facts,
@@ -26,12 +26,15 @@ log = logging.getLogger(__name__)
 # Task type constants
 TASK_TYPE_EXEC = "exec"
 TASK_TYPE_MSG = "msg"
-TASK_TYPE_SKILL = "skill"
+TASK_TYPE_TOOL = "tool"
 TASK_TYPE_SEARCH = "search"
 TASK_TYPE_REPLAN = "replan"
 TASK_TYPES: frozenset[str] = frozenset({
-    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_SKILL, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
+    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_TOOL, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
+    "skill",  # backward compat — PLAN_SCHEMA still uses "skill" until M445
 })
+# Backward compat alias — callers migrated in M440/M446
+TASK_TYPE_SKILL = TASK_TYPE_TOOL
 
 # Review status constants
 REVIEW_STATUS_OK = "ok"
@@ -49,7 +52,7 @@ CURATOR_VERDICTS: frozenset[str] = frozenset({
     CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
 })
 
-# Example values for skill args types (used in validation error messages)
+# Example values for tool args types (used in validation error messages)
 _TYPE_EXAMPLES: dict = {"string": "value", "int": 1, "float": 1.0, "bool": True}
 
 # Worker phase constants
@@ -103,12 +106,12 @@ def _repair_json(text: str) -> str:
 
 
 _INSTALL_CMD_RE = re.compile(
-    r"kiso\s+(skill|connector)\s+install", re.IGNORECASE,
+    r"kiso\s+(tool|skill|connector)\s+install", re.IGNORECASE,
 )
 
 _PLUGIN_DISCOVERY_RE = re.compile(
-    r"(?:skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
-    r"|(?:registr|kiso).*(?:skill|connector|plugin)",
+    r"(?:tool|skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
+    r"|(?:registr|kiso).*(?:tool|skill|connector|plugin)",
     re.IGNORECASE,
 )
 
@@ -504,9 +507,9 @@ def validate_plan(
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
-    If installed_skills is provided, skill tasks are validated against it.
+    If installed_skills is provided, tool tasks are validated against it.
     If max_tasks is provided, plans with more tasks are rejected.
-    If installed_skills_info is provided (name→skill dict), skill args are
+    If installed_skills_info is provided (name→tool dict), tool args are
     validated against the schema at plan time (M166).
     If is_replan is False, extend_replan is stripped (M171).
     """
@@ -529,7 +532,10 @@ def validate_plan(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_SKILL, TASK_TYPE_SEARCH) and task.get("expect") is None:
+        # Normalize "skill" → "tool" for backward compat (PLAN_SCHEMA still uses "skill")
+        if t == "skill":
+            t = TASK_TYPE_TOOL
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_TOOL, TASK_TYPE_SEARCH) and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
         detail = task.get("detail") or ""
         if t == TASK_TYPE_EXEC and len(detail) > 500:
@@ -570,30 +576,30 @@ def validate_plan(
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
                 errors.append(f"Task {i}: replan task can only be the last task")
-        if t == TASK_TYPE_SKILL:
-            skill_name = task.get("skill")
-            if not skill_name:
-                errors.append(f"Task {i}: skill task must have a non-null skill name")
-            elif installed_skills is not None and skill_name not in installed_skills:
+        if t == TASK_TYPE_TOOL:
+            tool_name = task.get("skill")  # schema field still "skill" until M445
+            if not tool_name:
+                errors.append(f"Task {i}: tool task must have a non-null tool name")
+            elif installed_skills is not None and tool_name not in installed_skills:
                 available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
                 errors.append(
-                    f"Task {i}: skill '{skill_name}' is not installed. "
-                    f"Available skills: {available}. "
-                    f"You CANNOT use '{skill_name}' in this plan. Remove the skill task. "
-                    f"Plan a SINGLE msg task asking the user whether to install '{skill_name}', "
+                    f"Task {i}: tool '{tool_name}' is not installed. "
+                    f"Available tools: {available}. "
+                    f"You CANNOT use '{tool_name}' in this plan. Remove the tool task. "
+                    f"Plan a SINGLE msg task asking the user whether to install '{tool_name}', "
                     f"and offer alternatives (e.g. search instead of browser). "
                     f"End the plan with that msg — the user's reply triggers the next cycle."
                 )
-            elif installed_skills_info and skill_name in installed_skills_info:
+            elif installed_skills_info and tool_name in installed_skills_info:
                 # Validate args against schema (M166)
                 args_raw = task.get("args") or "{}"
                 try:
                     args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
                 except (json.JSONDecodeError, TypeError):
-                    errors.append(f"Task {i}: skill args is not valid JSON")
+                    errors.append(f"Task {i}: tool args is not valid JSON")
                 else:
-                    schema = installed_skills_info[skill_name].get("args_schema", {})
-                    arg_errors = validate_skill_args(args, schema)
+                    schema = installed_skills_info[tool_name].get("args_schema", {})
+                    arg_errors = validate_tool_args(args, schema)
                     if arg_errors:
                         # M184: include example args format
                         example_args = {
@@ -602,7 +608,7 @@ def validate_plan(
                         }
                         example_json = json.dumps(example_args)
                         errors.append(
-                            f"Task {i}: skill '{skill_name}' args invalid: "
+                            f"Task {i}: tool '{tool_name}' args invalid: "
                             + "; ".join(arg_errors)
                             + f". Set args to a JSON string like: '{example_json}'"
                         )
@@ -611,14 +617,14 @@ def validate_plan(
         errors.append("A plan can have at most one replan task")
 
     # msg tasks must not appear before all data-gathering tasks.
-    # Find the index of the first msg and the last exec/search/skill.
-    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_SKILL}
+    # Find the index of the first msg and the last exec/search/tool.
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL}
     first_msg_idx = next((i for i, t in enumerate(tasks) if t.get("type") == TASK_TYPE_MSG), None)
     last_data_idx = next((i for i, t in reversed(list(enumerate(tasks))) if t.get("type") in _DATA_TYPES), None)
     if first_msg_idx is not None and last_data_idx is not None and first_msg_idx < last_data_idx:
         errors.append(
             f"Task {first_msg_idx + 1}: msg task must come after all "
-            f"exec/search/skill tasks (task {last_data_idx + 1} is later). "
+            f"exec/search/tool tasks (task {last_data_idx + 1} is later). "
             f"Msg tasks communicate results — place them after investigation."
         )
 
@@ -632,7 +638,7 @@ def validate_plan(
         )
         if first_install_idx is not None:
             errors.append(
-                f"Task {first_install_idx + 1}: installs a skill/connector in the first plan. "
+                f"Task {first_install_idx + 1}: installs a tool/connector in the first plan. "
                 f"You CANNOT install in the same plan that asks for permission — the user "
                 f"hasn't replied yet. Plan a SINGLE msg task asking whether to install, "
                 f"offer alternatives, and end the plan there. The install happens in the "
@@ -670,10 +676,10 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
     return parts
 
 
-# Capability keywords → skill name they require.  Used by the
+# Capability keywords → tool name they require.  Used by the
 # capability-gap heuristic to inject plugin-install guidance when the
-# message implies a capability not covered by installed skills.
-# Keep minimal — only precise keywords that unambiguously require a skill.
+# message implies a capability not covered by installed tools.
+# Keep minimal — only precise keywords that unambiguously require a tool.
 _CAPABILITY_MAP: dict[str, str] = {
     "screenshot": "browser",
     "refactor": "aider",
@@ -682,11 +688,11 @@ _CAPABILITY_MAP: dict[str, str] = {
 
 
 def _detect_capability_gap(msg_lower: str, installed_names: set[str]) -> str | None:
-    """Return the missing skill name if the message implies an uninstalled capability."""
+    """Return the missing tool name if the message implies an uninstalled capability."""
     words = set(msg_lower.split())
-    for keyword, skill in _CAPABILITY_MAP.items():
-        if keyword in words and skill not in installed_names:
-            return skill
+    for keyword, tool in _CAPABILITY_MAP.items():
+        if keyword in words and tool not in installed_names:
+            return tool
     return None
 
 
@@ -784,15 +790,15 @@ async def build_planner_messages(
     """Build the message list for the planner LLM call.
 
     Assembles context from session summary, facts, pending questions,
-    system environment, skills, and recent messages.
+    system environment, tools, and recent messages.
 
     When ``briefer_enabled`` is True in config, calls the briefer LLM to
-    select prompt modules, filter skills, and synthesize context. Falls
+    select prompt modules, filter tools, and synthesize context. Falls
     back to full context on briefer failure.
 
-    Returns (messages, installed_skill_names, installed_skills_info) — the
-    caller can reuse the skill names list for plan validation and the
-    skills_info list for args validation without rescanning the filesystem.
+    Returns (messages, installed_tool_names, installed_tools_info) — the
+    caller can reuse the tool names list for plan validation and the
+    tools_info list for args validation without rescanning the filesystem.
     """
     # Gather raw context
     summary, facts, pending, recent, context_pool, sys_env_text = \
@@ -805,14 +811,14 @@ async def build_planner_messages(
     if is_replan:
         context_pool.pop("system_env", None)
 
-    # Skill discovery — rescan on each planner call
-    installed = discover_skills()
+    # Tool discovery — rescan on each planner call
+    installed = discover_tools()
     installed_names = [s["name"] for s in installed]
 
-    # Build the skill list text for context pool
-    full_skill_list = build_planner_skill_list(installed, user_role, user_skills)
-    if full_skill_list:
-        context_pool["skills"] = full_skill_list
+    # Build the tool list text for context pool
+    full_tool_list = build_planner_tool_list(installed, user_role, user_skills)
+    if full_tool_list:
+        context_pool["skills"] = full_tool_list  # context pool key stays "skills" until M445
 
     # --- Capability gap detection ---
     msg_lower = new_message.lower()
@@ -820,7 +826,7 @@ async def build_planner_messages(
     _gap_text = ""
     if _gap:
         _gap_text = (
-            f"Skill '{_gap}' is needed for this request but not installed. "
+            f"Tool '{_gap}' is needed for this request but not installed. "
             f"Plan a single msg task asking the user whether to install it, "
             f"offer alternatives (e.g. search for read-only content), and end the plan there. "
             f"Never install without user approval."
@@ -855,7 +861,7 @@ async def build_planner_messages(
             "kiso_commands", "user_mgmt", "plugin_install",
         })
         msg_words = set(msg_lower.split())
-        if {"skill", "connector", "env", "instance", "kiso"} & msg_words:
+        if {"tool", "skill", "connector", "env", "instance", "kiso"} & msg_words:
             fallback_modules.append("kiso_commands")
         if {"user", "admin", "alias"} & msg_words:
             fallback_modules.append("user_mgmt")
@@ -869,7 +875,7 @@ async def build_planner_messages(
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
     if not installed:
-        log.warning("discover_skills() returned empty — no skills available for planner")
+        log.warning("discover_tools() returned empty — no tools available for planner")
 
     is_admin = user_role == "admin"
 
@@ -953,19 +959,19 @@ async def build_planner_messages(
         # In briefer path, gap is in context_pool and briefer includes it.
         context_parts.append(f"## Capability Analysis\n{_gap_text}")
 
-    # Skills section — briefer filters or full list
-    if briefing and briefing["skills"]:
-        context_parts.append(f"## Skills\n" + "\n".join(briefing["skills"]))
-    elif full_skill_list:
-        context_parts.append(f"## Skills\n{full_skill_list}")
+    # Tools section — briefer filters or full list
+    if briefing and briefing["skills"]:  # briefer schema field still "skills" until M445
+        context_parts.append(f"## Tools\n" + "\n".join(briefing["skills"]))
+    elif full_tool_list:
+        context_parts.append(f"## Tools\n{full_tool_list}")
 
     # M266: warn planner when web module is active but browser isn't installed.
     if "web" in (modules if briefing else fallback_modules) and "browser" not in installed_names:
         context_parts.append(
             "## Browser Availability\n"
-            "Note: the browser skill is NOT currently installed. "
+            "Note: the browser tool is NOT currently installed. "
             "To visit a URL, first install it with an exec task: "
-            "'kiso skill install browser', then replan."
+            "'kiso tool install browser', then replan."
         )
 
     # M411: always-inject safety facts (not gated by briefer)
@@ -1014,14 +1020,14 @@ async def run_planner(
     )
     if on_context_ready:
         await on_context_ready()
-    skills_by_name = {s["name"]: s for s in installed_info}
+    tools_by_name = {s["name"]: s for s in installed_info}
 
     max_tasks = int(config.settings["max_plan_tasks"])
     fallback = config.settings.get("planner_fallback_model") or None
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,
         lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
-                                installed_skills_info=skills_by_name, is_replan=is_replan,
+                                installed_skills_info=tools_by_name, is_replan=is_replan,
                                 install_approved=install_approved),
         PlanError, "Plan",
         session=session,
@@ -1038,7 +1044,7 @@ async def run_planner(
 
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("skills", "Available Skills"),
+    ("skills", "Available Tools"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
     ("summary", "Session Summary"),
@@ -1150,28 +1156,28 @@ async def run_briefer(
     if _simple:
         briefing["modules"] = []
 
-    # M368/M387: post-validation filtering — remove hallucinated skills
-    if briefing["skills"]:
+    # M368/M387: post-validation filtering — remove hallucinated tools
+    if briefing["skills"]:  # briefer schema field still "skills" until M445
         if not context_pool.get("skills"):
-            # No skills installed — any briefer skill selection is hallucinated
-            log.debug("Briefer: cleared %d hallucinated skill(s) (none installed)",
+            # No tools installed — any briefer tool selection is hallucinated
+            log.debug("Briefer: cleared %d hallucinated tool(s) (none installed)",
                       len(briefing["skills"]))
             briefing["skills"] = []
         else:
-            # M394: extract installed skill names for exact matching
-            installed_skill_names: set[str] = set()
+            # M394: extract installed tool names for exact matching
+            installed_tool_names: set[str] = set()
             for line in context_pool["skills"].split("\n"):
                 m = re.match(r"^-\s+(\S+)", line)
                 if m:
-                    installed_skill_names.add(m.group(1).lower())
+                    installed_tool_names.add(m.group(1).lower())
             original_count = len(briefing["skills"])
             briefing["skills"] = [
                 s for s in briefing["skills"]
-                if s.split(":")[0].split()[0].strip().lower() in installed_skill_names
+                if s.split(":")[0].split()[0].strip().lower() in installed_tool_names
             ]
             filtered = original_count - len(briefing["skills"])
             if filtered:
-                log.debug("Briefer: filtered %d hallucinated skill(s)", filtered)
+                log.debug("Briefer: filtered %d hallucinated tool(s)", filtered)
 
     log.info(
         "Briefer for %s: %d modules, %d skills, %d output_indices, %d tags",

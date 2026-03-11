@@ -1385,6 +1385,7 @@ _TASK_HANDLERS: dict = {
     TASK_TYPE_EXEC: _handle_exec_task,
     TASK_TYPE_MSG: _handle_msg_task,
     TASK_TYPE_SKILL: _handle_skill_task,
+    "skill": _handle_skill_task,  # backward compat — PLAN_SCHEMA still uses "skill" until M445
     TASK_TYPE_SEARCH: _handle_search_task,
     TASK_TYPE_REPLAN: _handle_replan_task,
 }

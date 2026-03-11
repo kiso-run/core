@@ -8233,8 +8233,8 @@ class TestTaskHandlers:
         yield pid
 
     async def test_task_handlers_dict_has_all_types(self):
-        """_TASK_HANDLERS covers all 5 task types."""
-        assert set(_TASK_HANDLERS.keys()) == {"exec", "msg", "skill", "search", "replan"}
+        """_TASK_HANDLERS covers all task types (tool + skill backward compat)."""
+        assert set(_TASK_HANDLERS.keys()) == {"exec", "msg", "tool", "skill", "search", "replan"}
 
     # --- _handle_replan_task ---
 
@@ -10442,7 +10442,7 @@ class TestE2EWebScenario:
         config = _make_config()
         # Some skills installed, but NOT browser
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_skills", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills):
             msgs, installed, *_ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "take a screenshot of example.com",
