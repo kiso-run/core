@@ -242,6 +242,12 @@ async def _msg_task(
             facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
             if facts:
                 context_pool["facts"] = "\n".join(f"- {f['content']}" for f in facts)
+            # M365: inject available entities so briefer can select relevant ones
+            all_entities = await get_all_entities(db)
+            if all_entities:
+                context_pool["available_entities"] = "\n".join(
+                    f"{e['name']} ({e['kind']})" for e in all_entities
+                )
 
             briefing = await run_briefer(
                 config, "messenger", detail, context_pool, session=session,
@@ -256,6 +262,21 @@ async def _msg_task(
             # Use briefer's synthesized context instead of raw summary/facts
             if briefing.get("context"):
                 briefing_context = briefing["context"]
+            # M365: fetch entity facts for relevant_entities from briefer
+            if briefing.get("relevant_entities") and all_entities:
+                entity_map = {e["name"]: e["id"] for e in all_entities}
+                entity_facts_parts: list[str] = []
+                for ename in briefing["relevant_entities"]:
+                    eid = entity_map.get(ename.lower().strip())
+                    if eid is not None:
+                        efacts = await search_facts_by_entity(db, eid)
+                        entity_facts_parts.extend(f"- {f['content']}" for f in efacts)
+                if entity_facts_parts:
+                    entity_section = "\n".join(entity_facts_parts)
+                    if briefing_context:
+                        briefing_context += f"\n\n## Entity Facts\n{entity_section}"
+                    else:
+                        briefing_context = f"## Entity Facts\n{entity_section}"
         except Exception:
             log.debug("Briefer failed for messenger, using full context")
 
@@ -2110,10 +2131,10 @@ async def _process_message(
             log.warning("Classifier timed out after %ds, falling back to planner",
                         classifier_timeout)
             msg_class = "plan"
-        if msg_class == "chat":
-            log.info("Fast path: chat message, skipping planner")
+        if msg_class in ("chat", "chat_kb"):
+            log.info("Fast path: %s message, skipping planner", msg_class)
             if slog:
-                slog.info("Fast path: classified as chat, skipping planner")
+                slog.info("Fast path: classified as %s, skipping planner", msg_class)
             _phase(WORKER_PHASE_EXECUTING)
             fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content,

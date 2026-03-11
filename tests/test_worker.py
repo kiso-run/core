@@ -10637,6 +10637,124 @@ class TestMsgTaskBrieferIntegration:
 
 
 # ---------------------------------------------------------------------------
+# M365: Entity enrichment in _msg_task + chat_kb flow
+# ---------------------------------------------------------------------------
+
+
+class TestM365MsgTaskEntityEnrichment:
+    """M365: _msg_task injects available_entities and fetches entity facts."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_entity_facts_injected_when_briefer_selects_entity(self, db):
+        """When briefer returns relevant_entities, entity facts are added to context."""
+        from kiso.store import find_or_create_entity, save_fact
+        config = _make_config(settings={"briefer_enabled": True})
+        # Create entity "self" with a fact
+        eid = await find_or_create_entity(db, "self", "system")
+        await save_fact(db, "Instance SSH key: ssh-ed25519 AAAA", source="system",
+                        session=None, category="system", tags=["ssh"], entity_id=eid)
+
+        messenger_msgs = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "Instance info.",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": ["self"],
+                })
+            # messenger
+            messenger_msgs.append(messages)
+            return "Your SSH key is ..."
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            result = await _msg_task(config, db, "sess1", "What is your SSH key?")
+
+        assert result == "Your SSH key is ..."
+        # Messenger should receive entity facts in briefing context
+        user_content = messenger_msgs[0][1]["content"]
+        assert "ssh-ed25519 AAAA" in user_content
+
+    async def test_no_entity_facts_when_briefer_returns_empty_entities(self, db):
+        """When briefer returns no relevant_entities, no entity facts added."""
+        config = _make_config(settings={"briefer_enabled": True})
+
+        messenger_msgs = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "No relevant context.",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            messenger_msgs.append(messages)
+            return "I don't know"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            await _msg_task(config, db, "sess1", "Hello")
+
+        user_content = messenger_msgs[0][1]["content"]
+        assert "Entity Facts" not in user_content
+
+    async def test_chat_kb_uses_fast_path(self, db, tmp_path):
+        """chat_kb classification routes through _fast_path_chat like chat."""
+        config = _make_config(settings={"briefer_enabled": True})
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            return "Response"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             _patch_kiso_dir(tmp_path):
+            plan_id = await _fast_path_chat(
+                db, config, "sess1", 1, "cosa sai su te stesso?",
+            )
+
+        assert plan_id is not None
+        plan = await get_plan_for_session(db, "sess1")
+        assert plan["status"] == "done"
+
+    async def test_entities_in_briefer_context_pool(self, db):
+        """M365: available_entities injected into briefer context pool."""
+        from kiso.store import find_or_create_entity
+        config = _make_config(settings={"briefer_enabled": True})
+        await find_or_create_entity(db, "self", "system")
+        await find_or_create_entity(db, "flask", "tool")
+
+        briefer_msgs = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                briefer_msgs.append(messages)
+                return json.dumps({
+                    "modules": [], "skills": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            await _msg_task(config, db, "sess1", "Tell me about flask")
+
+        # Briefer should see available entities in its messages
+        user_content = briefer_msgs[0][1]["content"]
+        assert "self (system)" in user_content
+        assert "flask (tool)" in user_content
+
+
+# ---------------------------------------------------------------------------
 # Briefer integration for worker / exec translator (M246)
 # ---------------------------------------------------------------------------
 
