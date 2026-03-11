@@ -2004,6 +2004,20 @@ async def _run_planning_loop(
             session_secrets=session_secrets,
         )
 
+        # M429: stuck_detected → stop replan loop immediately
+        if stuck_detected:
+            log.info("Stuck detected — stopping replan loop session=%s", session)
+            await _handle_loop_failure(
+                db, config, session, current_plan_id, completed, remaining,
+                current_goal,
+                messenger_timeout=messenger_timeout,
+                reason=f"Circular replanning detected: {replan_reason}",
+                deliver_webhook=False,  # already sent above
+                session_secrets=session_secrets,
+                user_message=content,
+            )
+            break
+
         # --- Cancel check before replan ---
         if cancel_event is not None and cancel_event.is_set():
             await _handle_loop_cancel(
@@ -2087,10 +2101,7 @@ async def _run_planning_loop(
         extend = new_plan.get("extend_replan")
         if extend and isinstance(extend, int) and extend > 0:
             remaining_budget = _MAX_EXTEND_REPLAN - total_extensions
-            if stuck_detected:
-                log.info("Planner requested extend_replan=%d but stuck pattern detected — denied",
-                         extend)
-            elif remaining_budget <= 0:
+            if remaining_budget <= 0:
                 log.info("Planner requested extend_replan=%d but global cap (%d) reached",
                          extend, _MAX_EXTEND_REPLAN)
             else:
