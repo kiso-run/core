@@ -12,6 +12,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from fastapi import Depends, FastAPI, Query, Request
@@ -22,7 +23,10 @@ from starlette.responses import JSONResponse
 
 from kiso.auth import AuthInfo, require_auth, resolve_user
 from kiso.stats import aggregate, read_audit_entries
-from kiso.brain import WORKER_PHASE_IDLE, invalidate_prompt_cache
+from kiso.brain import (
+    WORKER_PHASE_IDLE, invalidate_prompt_cache,
+    classify_inflight, is_stop_message,
+)
 from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool, setting_int
 import kiso.llm as _llm_mod
 from kiso.log import setup_logging
@@ -85,11 +89,13 @@ class _RateLimiter:
 _rate_limiter = _RateLimiter()
 
 
-class WorkerEntry(NamedTuple):
-    """Per-session worker state: queue, asyncio task, and cancel event."""
+@dataclass
+class WorkerEntry:
+    """Per-session worker state: queue, asyncio task, cancel event, and pending messages."""
     queue: asyncio.Queue
     task: asyncio.Task
     cancel_event: asyncio.Event
+    pending_messages: list = field(default_factory=list)
 
 
 def _init_kiso_dirs() -> None:
@@ -256,9 +262,11 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
     maxsize = setting_int(config.settings, "max_queue_size", lo=1)
     queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
     cancel_event = asyncio.Event()
+    pending: list = []
     task = asyncio.create_task(
         run_worker(db, config, session, queue, cancel_event=cancel_event,
-                   set_phase=lambda phase, s=session: _set_worker_phase(s, phase))
+                   set_phase=lambda phase, s=session: _set_worker_phase(s, phase),
+                   pending_messages=pending)
     )
 
     def _cleanup(t, s=session):
@@ -266,7 +274,7 @@ def _ensure_worker(session: str, db, config) -> asyncio.Queue:
         _worker_phases.pop(s, None)
 
     task.add_done_callback(_cleanup)
-    _workers[session] = WorkerEntry(queue, task, cancel_event)
+    _workers[session] = WorkerEntry(queue, task, cancel_event, pending)
     return queue
 
 
@@ -529,16 +537,52 @@ async def post_msg(
         )
         user_role = resolved.user.role if resolved.user else "user"
         user_skills = resolved.user.skills if resolved.user else None
+
+        msg_payload = {
+            "id": msg_id,
+            "content": body.content,
+            "user_role": user_role,
+            "user_skills": user_skills,
+            "username": resolved.username,
+            "base_url": str(request.base_url).rstrip("/"),
+        }
+
+        # --- In-flight message handling (M407/M408) ---
+        entry = _workers.get(body.session)
+        worker_busy = (
+            entry is not None
+            and not entry.task.done()
+            and _worker_phases.get(body.session, WORKER_PHASE_IDLE) != WORKER_PHASE_IDLE
+        )
+
+        if worker_busy:
+            # M407: fast-path stop detection
+            if is_stop_message(body.content):
+                log.info("Fast-path stop detected: %r (session=%s)", body.content, body.session)
+                entry.cancel_event.set()
+                return {"queued": False, "session": body.session, "message_id": msg_id,
+                        "inflight": "stop"}
+
+            # M408: classify in-flight message
+            plan = await get_plan_for_session(db, body.session)
+            plan_goal = (plan.get("goal", "") if plan else "") or ""
+            category = await classify_inflight(
+                config, plan_goal, body.content, session=body.session,
+            )
+            if category == "stop":
+                entry.cancel_event.set()
+                return {"queued": False, "session": body.session, "message_id": msg_id,
+                        "inflight": "stop"}
+            if category == "independent":
+                entry.pending_messages.append(msg_payload)
+                return {"queued": False, "session": body.session, "message_id": msg_id,
+                        "inflight": "independent",
+                        "ack": "Got it — I'll handle this after the current job finishes."}
+            # update/conflict: fall through to normal queue for now (M409)
+
         queue = _ensure_worker(body.session, db, config)
         try:
-            queue.put_nowait({
-                "id": msg_id,
-                "content": body.content,
-                "user_role": user_role,
-                "user_skills": user_skills,
-                "username": resolved.username,
-                "base_url": str(request.base_url).rstrip("/"),
-            })
+            queue.put_nowait(msg_payload)
         except asyncio.QueueFull:
             raise HTTPException(status_code=429, detail="Too many queued messages")
         return {"queued": True, "session": body.session, "message_id": msg_id}

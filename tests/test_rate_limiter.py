@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 
@@ -65,37 +67,42 @@ async def test_msg_rate_limited_after_20(client: httpx.AsyncClient):
     """POST /msg returns 429 for the 21st request from the same user."""
     _rate_limiter.reset()
 
-    # 20 allowed requests
-    for _ in range(20):
-        r = await client.post(
+    # Mock classify_inflight to avoid slow LLM calls that let tokens refill
+    with patch("kiso.main.classify_inflight", new_callable=AsyncMock,
+               return_value="independent"):
+        # 20 allowed requests
+        for _ in range(20):
+            r = await client.post(
+                "/msg",
+                json={"session": "rl-sess", "user": "testuser", "content": "hi"},
+                headers=AUTH_HEADER,
+            )
+            assert r.status_code in (202, 429), f"unexpected {r.status_code}"
+            if r.status_code == 429:
+                pytest.fail("Rate limit hit before 20 requests")
+
+        # 21st should be rate-limited
+        resp = await client.post(
             "/msg",
             json={"session": "rl-sess", "user": "testuser", "content": "hi"},
             headers=AUTH_HEADER,
         )
-        assert r.status_code in (202, 429), f"unexpected {r.status_code}"
-        if r.status_code == 429:
-            pytest.fail("Rate limit hit before 20 requests")
-
-    # 21st should be rate-limited
-    resp = await client.post(
-        "/msg",
-        json={"session": "rl-sess", "user": "testuser", "content": "hi"},
-        headers=AUTH_HEADER,
-    )
-    assert resp.status_code == 429
-    assert "Rate limit exceeded" in resp.json()["detail"]
+        assert resp.status_code == 429
+        assert "Rate limit exceeded" in resp.json()["detail"]
 
 
 async def test_msg_rate_limit_is_per_user(client: httpx.AsyncClient):
     """Rate limit on /msg is per user: exhausting one user does not block another."""
     _rate_limiter.reset()
 
-    for _ in range(20):
-        await client.post(
-            "/msg",
-            json={"session": "rl-sess", "user": "testuser", "content": "hi"},
-            headers=AUTH_HEADER,
-        )
+    with patch("kiso.main.classify_inflight", new_callable=AsyncMock,
+               return_value="independent"):
+        for _ in range(20):
+            await client.post(
+                "/msg",
+                json={"session": "rl-sess", "user": "testuser", "content": "hi"},
+                headers=AUTH_HEADER,
+            )
 
     # testadmin is a separate key and should still be allowed
     resp = await client.post(

@@ -1560,6 +1560,7 @@ async def run_worker(
     queue: asyncio.Queue,
     cancel_event: asyncio.Event | None = None,
     set_phase: Callable[[str], None] | None = None,
+    pending_messages: list | None = None,
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
@@ -1579,6 +1580,18 @@ async def run_worker(
     try:
         while True:
             _phase(WORKER_PHASE_IDLE)
+
+            # M408: drain pending_messages (independent in-flight messages)
+            # into the queue before waiting for new messages
+            if pending_messages:
+                while pending_messages:
+                    pm = pending_messages.pop(0)
+                    try:
+                        queue.put_nowait(pm)
+                    except asyncio.QueueFull:
+                        log.warning("Queue full while draining pending message %d", pm.get("id", 0))
+                        break
+
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=idle_timeout)
             except asyncio.TimeoutError:

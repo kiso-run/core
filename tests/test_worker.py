@@ -11769,3 +11769,49 @@ class TestM341StuckFlow:
         assert planner_calls[0] == 2, (
             f"Expected 2 planner calls (initial + 1 replan before stuck), got {planner_calls[0]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# M408 — Pending messages drain in run_worker
+# ---------------------------------------------------------------------------
+
+
+class TestPendingMessagesDrain:
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        yield conn
+        await conn.close()
+
+    async def test_pending_messages_drained_after_job(self, db, tmp_path):
+        """Pending messages are drained into the queue after a job completes."""
+        config = _make_config()
+        await create_session(db, "sess1")
+        msg1_id = await save_message(db, "sess1", "alice", "user", "do task", processed=False)
+        msg2_id = await save_message(db, "sess1", "alice", "user", "pending task", processed=False)
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put({"id": msg1_id, "content": "do task", "user_role": "admin"})
+
+        # Second message goes to pending (simulating M408 independent classification)
+        pending = [{"id": msg2_id, "content": "pending task", "user_role": "admin"}]
+
+        planner_calls = [0]
+
+        async def _planner(*args, **kw):
+            planner_calls[0] += 1
+            return VALID_PLAN
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Done"), \
+             _patch_kiso_dir(tmp_path):
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue, pending_messages=pending),
+                timeout=5,
+            )
+
+        # Both messages should have been processed (2 planner calls)
+        assert planner_calls[0] == 2
+        # Pending list should be empty after drain
+        assert len(pending) == 0

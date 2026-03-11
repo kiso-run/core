@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 import httpx
 
 from tests.conftest import AUTH_HEADER, DISCORD_AUTH_HEADER
@@ -142,8 +145,6 @@ async def test_msg_content_one_over_limit_rejected(client: httpx.AsyncClient):
 
 async def test_msg_queue_full_returns_429(client: httpx.AsyncClient):
     """Pre-fill queue to capacity, verify next message returns 429."""
-    import asyncio
-    from unittest.mock import AsyncMock, patch
     from kiso.main import _workers
 
     # Set max_queue_size=1 so queue fills after one item
@@ -184,8 +185,125 @@ async def test_msg_queue_full_returns_429(client: httpx.AsyncClient):
     blocked.set()
     entry = _workers.pop("queue-test", None)
     if entry:
-        entry[1].cancel()
+        entry.task.cancel()
         try:
-            await entry[1]
+            await entry.task
         except asyncio.CancelledError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# M407/M408 — In-flight message handling
+# ---------------------------------------------------------------------------
+
+
+def _make_busy_worker(session: str):
+    """Set up a blocked worker + busy phase so inflight detection triggers."""
+    from kiso.main import _workers, _worker_phases, WorkerEntry
+    from kiso.brain import WORKER_PHASE_EXECUTING
+
+    blocked = asyncio.Event()
+
+    async def _blocked_worker(*args, **kwargs):
+        await blocked.wait()
+
+    queue = asyncio.Queue(maxsize=10)
+    cancel_event = asyncio.Event()
+    pending: list = []
+    task = asyncio.create_task(_blocked_worker())
+    _workers[session] = WorkerEntry(queue, task, cancel_event, pending)
+    _worker_phases[session] = WORKER_PHASE_EXECUTING
+    return blocked, cancel_event, pending, task
+
+
+async def _cleanup_worker(session: str, blocked, task):
+    from kiso.main import _workers, _worker_phases
+    blocked.set()
+    _workers.pop(session, None)
+    _worker_phases.pop(session, None)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+async def test_inflight_stop_fast_path(client: httpx.AsyncClient):
+    """M407: stop message during active job triggers fast-path cancel."""
+    sess = "inflight-stop-test"
+    blocked, cancel_event, _, task = _make_busy_worker(sess)
+    try:
+        resp = await client.post("/msg", json={
+            "session": sess, "user": "testuser", "content": "STOP",
+        }, headers=AUTH_HEADER)
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["inflight"] == "stop"
+        assert cancel_event.is_set()
+    finally:
+        await _cleanup_worker(sess, blocked, task)
+
+
+async def test_inflight_stop_via_classifier(client: httpx.AsyncClient):
+    """M408: LLM classifier returns 'stop' → cancel event set."""
+    sess = "inflight-llm-stop"
+    blocked, cancel_event, _, task = _make_busy_worker(sess)
+    try:
+        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="stop"):
+            resp = await client.post("/msg", json={
+                "session": sess, "user": "testuser", "content": "annulla tutto per favore",
+            }, headers=AUTH_HEADER)
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["inflight"] == "stop"
+        assert cancel_event.is_set()
+    finally:
+        await _cleanup_worker(sess, blocked, task)
+
+
+async def test_inflight_independent_queued_to_pending(client: httpx.AsyncClient):
+    """M408: independent message goes to pending_messages with ack."""
+    sess = "inflight-independent"
+    blocked, _, pending, task = _make_busy_worker(sess)
+    try:
+        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="independent"):
+            resp = await client.post("/msg", json={
+                "session": sess, "user": "testuser", "content": "che ore sono?",
+            }, headers=AUTH_HEADER)
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["inflight"] == "independent"
+        assert "ack" in data
+        assert len(pending) == 1
+        assert pending[0]["content"] == "che ore sono?"
+    finally:
+        await _cleanup_worker(sess, blocked, task)
+
+
+async def test_inflight_update_falls_through_to_queue(client: httpx.AsyncClient):
+    """M408: update/conflict messages fall through to normal queue (M409)."""
+    sess = "inflight-update"
+    blocked, _, _, task = _make_busy_worker(sess)
+    try:
+        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="update"):
+            resp = await client.post("/msg", json={
+                "session": sess, "user": "testuser", "content": "usa porta 8080",
+            }, headers=AUTH_HEADER)
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["queued"] is True
+        # "inflight" key should NOT be present for update/conflict
+        assert "inflight" not in data
+    finally:
+        await _cleanup_worker(sess, blocked, task)
+
+
+async def test_idle_worker_skips_inflight(client: httpx.AsyncClient):
+    """When worker is idle, stop messages go through normal queue (no fast-path)."""
+    resp = await client.post("/msg", json={
+        "session": "idle-test", "user": "testuser", "content": "STOP",
+    }, headers=AUTH_HEADER)
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["queued"] is True
+    assert "inflight" not in data
