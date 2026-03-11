@@ -117,13 +117,26 @@ fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Wrapper for read that converts Ctrl+C into a clean exit instead of letting
+# set -e terminate the script with a raw SIGINT (which closes the terminal).
+safe_read() {
+    read "$@" || {
+        local rc=$?
+        if [[ $rc -gt 128 ]]; then
+            printf '\n\033[0;33mInstallation interrupted.\033[0m\n' >&2
+            exit 130
+        fi
+        return $rc
+    }
+}
+
 confirm() {
     local prompt="$1" default="${2:-y}"
     if [[ "$default" == "y" ]]; then
-        read -rp "$prompt [Y/n] " ans
+        safe_read -rp "$prompt [Y/n] " ans
         [[ -z "$ans" || "$ans" =~ ^[Yy] ]]
     else
-        read -rp "$prompt [y/N] " ans
+        safe_read -rp "$prompt [y/N] " ans
         [[ "$ans" =~ ^[Yy] ]]
     fi
 }
@@ -202,7 +215,7 @@ ask_bot_and_instance_name() {
 
     local bot_name inst_name derived
     while true; do
-        read -rp "  Bot name [Kiso]: " bot_name
+        safe_read -rp "  Bot name [Kiso]: " bot_name
         bot_name="${bot_name:-Kiso}"
 
         derived="$(_derive_instance_name "$bot_name")"
@@ -210,7 +223,7 @@ ask_bot_and_instance_name() {
         echo >&2
         yellow "  Instance identifier (used for Docker, data dir, and CLI):" >&2
         while true; do
-            read -rp "  Identifier [$derived]: " inst_name
+            safe_read -rp "  Identifier [$derived]: " inst_name
             inst_name="${inst_name:-$derived}"
             inst_name="${inst_name,,}"
             if ! validate_instance_name "$inst_name" 2>&1 >&2; then continue; fi
@@ -326,7 +339,7 @@ ask_provider_name() {
         return
     fi
     local name
-    read -rp "Provider name [openrouter]: " name
+    safe_read -rp "Provider name [openrouter]: " name
     PROVIDER_NAME="${name:-openrouter}"
 }
 
@@ -337,7 +350,7 @@ ask_base_url() {
         return
     fi
     local url
-    read -rp "LLM provider URL [https://openrouter.ai/api/v1]: " url
+    safe_read -rp "LLM provider URL [https://openrouter.ai/api/v1]: " url
     BASE_URL="${url:-https://openrouter.ai/api/v1}"
 }
 
@@ -350,7 +363,7 @@ ask_api_key() {
     fi
     local key
     while true; do
-        read -rsp "LLM API key for $BASE_URL: " key
+        safe_read -rsp "LLM API key for $BASE_URL: " key
         echo >&2
         if [[ -n "$key" ]]; then
             API_KEY="$key"
@@ -404,7 +417,7 @@ FALLBACK
         IFS='|' read -r role desc default <<< "$entry"
         printf '  \033[1m%-12s\033[0m  \033[0;90m%s\033[0m\n' "$role" "$desc" >&2
         printf '               [\033[0;33m%s\033[0m]: ' "$default" >&2
-        read -r choice
+        safe_read -r choice
         choice="${choice:-$default}"
         result+="$role = \"$choice\"\n"
         echo >&2
@@ -427,16 +440,16 @@ ask_resource_limits() {
     echo >&2
 
     local val
-    read -rp "  RAM in GB [$MAX_MEMORY_GB]: " val
+    safe_read -rp "  RAM in GB [$MAX_MEMORY_GB]: " val
     [[ -n "$val" ]] && MAX_MEMORY_GB="$val"
 
-    read -rp "  CPUs [$MAX_CPUS]: " val
+    safe_read -rp "  CPUs [$MAX_CPUS]: " val
     [[ -n "$val" ]] && MAX_CPUS="$val"
 
-    read -rp "  Disk in GB [$MAX_DISK_GB]: " val
+    safe_read -rp "  Disk in GB [$MAX_DISK_GB]: " val
     [[ -n "$val" ]] && MAX_DISK_GB="$val"
 
-    read -rp "  Max PIDs [$MAX_PIDS]: " val
+    safe_read -rp "  Max PIDs [$MAX_PIDS]: " val
     [[ -n "$val" ]] && MAX_PIDS="$val"
 
     echo >&2
@@ -602,7 +615,7 @@ for k,v in d.items():
     echo "  Options:"
     echo "    1) Install another instance"
     echo "    2) $_opt2"
-    read -rp "  Choice [1]: " MODE_CHOICE
+    safe_read -rp "  Choice [1]: " MODE_CHOICE
     MODE_CHOICE="${MODE_CHOICE:-1}"
     if [[ "$MODE_CHOICE" == "2" ]]; then
         MODE="update-instance"
@@ -634,7 +647,7 @@ for k,v in d.items():
     print(f'    {k}  →  {label}')
 " 2>/dev/null
         echo
-        read -rp "  Instance name: " INST_NAME
+        safe_read -rp "  Instance name: " INST_NAME
         if ! _instance_exists_in_json "$INST_NAME"; then
             red "Error: instance '$INST_NAME' not found."
             exit 1
