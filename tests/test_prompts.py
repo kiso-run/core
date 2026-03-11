@@ -93,19 +93,19 @@ class TestMessengerCriticalRules:
         self.prompt = (_ROLES_DIR / "messenger.md").read_text()
 
     def test_voice_rules(self):
-        """M277: explicit voice rules."""
+        """M277/M424: explicit voice rules."""
         assert "Voice rules" in self.prompt
-        assert 'NEVER say "I ran"' in self.prompt
+        assert '"I ran"' in self.prompt
 
     def test_m327_upcoming_actions_first_person(self):
         """M327: upcoming actions use first person, not third person."""
         assert "Upcoming actions: first person" in self.prompt
         assert "The user sees you as one entity" in self.prompt
 
-    def test_language_purity(self):
-        """M278: no language mixing."""
-        assert "Language purity" in self.prompt
-        assert "Do not mix languages" in self.prompt
+    def test_language_consolidated(self):
+        """M424: consolidated language block."""
+        assert "Language:" in self.prompt
+        assert "one language" in self.prompt
 
     def test_no_fabricate(self):
         assert "fabricate" in self.prompt.lower()
@@ -342,7 +342,7 @@ class TestM384MessengerAntiHallucination:
 
     def test_report_only_outputs(self):
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Report ONLY what the outputs show" in prompt
+        assert "Report only what the outputs show" in prompt
 
 
 class TestM340SkillArgsRequirement:

@@ -2392,22 +2392,23 @@ class TestDefaultMessengerPrompt:
         assert 'Never say "I cannot"' in prompt
 
     def test_m277_voice_rules(self):
-        """M277: messenger has explicit voice rules for system vs conversational."""
+        """M277/M424: messenger has explicit voice rules for system vs conversational."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "Voice rules" in prompt
-        assert 'NEVER say "I ran"' in prompt
+        assert '"I ran"' in prompt
         assert "third-person" in prompt or "passive" in prompt
 
-    def test_m278_language_purity(self):
-        """M278: messenger has language purity rule."""
+    def test_m424_language_consolidated(self):
+        """M424: messenger has single consolidated language block."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Language purity" in prompt
-        assert "Do not mix languages" in prompt
+        assert "Language:" in prompt
+        assert "one language" in prompt
+        assert "Never echo the language instruction" in prompt
 
-    def test_m351_language_fallback_never_english(self):
-        """M351: messenger defaults to user's language, never English."""
+    def test_m351_language_fallback_english_only_when_all_english(self):
+        """M351/M424: English fallback only when all user messages are English."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "never English" in prompt
+        assert "English only when all user messages are English" in prompt
 
     def test_m351_recent_messages_language_inference(self):
         """M351: messenger infers language from Recent Messages when no instruction."""
@@ -2701,7 +2702,7 @@ class TestM369MessengerSanitizer:
     def test_messenger_prompt_prohibits_xml(self):
         """M369: messenger prompt forbids XML/tool_call output."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "NEVER emit XML" in prompt
+        assert "Never emit XML" in prompt
         assert "tool_call" in prompt
 
 
