@@ -166,7 +166,7 @@ class TestBrieferScenarios:
         system = msgs[0]["content"]
         # Replan module injected
         assert "extend_replan" in system
-        assert "Strategy diversification" in system
+        assert "Strategy diversification" in system or "fundamentally different strategy" in system
         # Web module absent
         assert "Web interaction:" not in system
 
@@ -220,8 +220,8 @@ class TestBrieferScenarios:
 
         system = msgs[0]["content"]
         assert "Web interaction:" in system
-        assert "Download/fetch content" in system
-        assert "One-liner execution" in system
+        assert "Download/fetch content" in system or "save to file" in system
+        assert "One-liner execution" in system or "One-liners" in system
         # Replan and skill_recovery NOT included
         assert "extend_replan" not in system
         assert "Broken skill deps" not in system

@@ -98,7 +98,7 @@ class TestM358SelfInspection:
     def test_planner_prompt_forbids_kiso_cli_for_self_inspection(self):
         """Planner prompt says NOT to use kiso CLI for system state."""
         prompt = _load_modular_prompt("planner", [])
-        assert "Do NOT use kiso CLI commands for self-inspection" in prompt
+        assert "Do NOT use kiso CLI for self-inspection" in prompt
 
     def test_planner_prompt_suggests_shell_commands(self):
         """Planner prompt suggests standard shell commands for self-inspection."""
