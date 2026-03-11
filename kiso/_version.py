@@ -1,4 +1,9 @@
-__version__ = "0.2.0"
+from importlib.metadata import version as _pkg_version
+
+try:
+    __version__ = _pkg_version("kiso")
+except Exception:
+    __version__ = "dev"
 
 from pathlib import Path
 

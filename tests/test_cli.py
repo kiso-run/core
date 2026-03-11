@@ -2126,6 +2126,22 @@ class TestVersionFile:
         assert isinstance(__version__, str)
         assert __version__ == __import__("kiso._version", fromlist=["__version__"]).__version__
 
+    def test_m363_version_matches_metadata(self):
+        """M363: __version__ reads from importlib.metadata, not hardcoded."""
+        from importlib.metadata import version as pkg_version
+        from kiso._version import __version__ as v
+        assert v == pkg_version("kiso"), \
+            f"__version__ ({v}) != metadata ({pkg_version('kiso')}): version is hardcoded!"
+
+    def test_m363_no_hardcoded_version_in_version_py(self):
+        """M363: _version.py must not contain a hardcoded version string."""
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent / "kiso" / "_version.py").read_text()
+        # Should not have __version__ = "X.Y.Z" pattern
+        import re
+        assert not re.search(r'^__version__\s*=\s*"[\d.]+"', src, re.MULTILINE), \
+            "_version.py still has hardcoded __version__"
+
 
 class TestVersionCommand:
     def test_version_subcommand_exists(self):
