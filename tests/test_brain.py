@@ -2740,6 +2740,11 @@ class TestPlannerPromptContent:
         errors = validate_plan(plan)
         assert not any("too long" in e for e in errors)
 
+    def test_m352_no_kiso_instance_command(self):
+        """M352: planner prompt must NOT reference nonexistent kiso instance command."""
+        prompt = (_ROLES_DIR / "planner.md").read_text()
+        assert "kiso instance" not in prompt
+
 
 class TestM165SkillArgsExample:
     """M165: planner prompt must include a skill args example."""
@@ -5402,7 +5407,6 @@ class TestLoadModularPrompt:
         assert "kiso skill install" in result
         assert "kiso connector install" in result
         assert "kiso env set" in result
-        assert "kiso instance status" in result
 
     def test_planner_core_plus_user_mgmt(self):
         """Loading core + user_mgmt includes user management rules."""

@@ -74,7 +74,6 @@ Kiso management commands (use in exec tasks):
 - Skills: `kiso skill install|update|remove|list|search <name>`
 - Connectors: `kiso connector install|update|remove|run|stop|status|list <name>`
 - Env: `kiso env set KEY VALUE | get KEY | delete KEY | reload`
-- Instance: `kiso instance status|restart|logs [name]`
 - Users (admin only): `kiso user add <name> --role admin|user [--skills "*"|s1,s2] [--alias conn:id ...]`, `kiso user remove|list`, `kiso user alias <name> --connector <conn> --id <id> | --remove`
 
 <!-- MODULE: user_mgmt -->
