@@ -237,9 +237,7 @@ for idx, b in enumerate(blocks, start=1):
             ref = make_def_id(next_def); next_def += 1
             def_ids[h] = ref
             defs[ref] = {
-                "sha1": h,
                 "kind": "text",
-                "c": len(text),
                 "tok": approx_tokens(text),
                 "p": summarize_text(text),
             }
@@ -266,11 +264,9 @@ for idx, b in enumerate(blocks, start=1):
         ref = make_def_id(next_def); next_def += 1
         def_ids[h] = ref
         defs[ref] = {
-            "sha1": h,
             "kind": "box",
             "role": role,
             "model": model,
-            "c": len(content),
             "tok": approx_tokens(content),
             "p": summarize_text(content),
         }
