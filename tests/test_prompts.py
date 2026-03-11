@@ -191,6 +191,11 @@ class TestBrieferCriticalRules:
     def test_messenger_no_modules(self):
         assert "For messenger/worker: modules=[] and skills=[] always" in self.prompt
 
+    def test_m357_self_entity_routing(self):
+        """M357: briefer routes entity 'self' for system introspection."""
+        assert 'Entity "self"' in self.prompt
+        assert "this Kiso instance" in self.prompt
+
 
 class TestWorkerCriticalRules:
     """Critical worker rules that must not be removed."""

@@ -18,4 +18,5 @@ Rules:
 - System Environment: SKIP unless installing software or needing specific binaries.
 - Preserve specifics: exact values, paths, URLs, error messages.
 - Conflicting facts: use the most recent one, flag conflict in context string.
+- Entity "self" = this Kiso instance. When the user asks about "your SSH key", "your IP", "your version", system state, or anything about the instance itself — select entity "self" from Available Entities. This retrieves all stored system facts (SSH keys, hostname, version, identity, etc.).
 - For messenger/worker: modules=[] and skills=[] always. Set only context and output_indices.
