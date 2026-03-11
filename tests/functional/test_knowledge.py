@@ -97,3 +97,34 @@ class TestEntityTagEnrichment:
         # Should mention onboarding or SaaS from the pre-seeded fact
         output_lower = result.msg_output.lower()
         assert "onboarding" in output_lower or "saas" in output_lower
+
+
+# ---------------------------------------------------------------------------
+# F12 — messenger quality
+# ---------------------------------------------------------------------------
+
+_EMOJI_RE = re.compile(
+    "[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA9F]"
+)
+_FALSE_ACTION_RE = re.compile(
+    r"\b(ho esaminato|ho verificato|ho analizzato|ho controllato)\b",
+    re.IGNORECASE,
+)
+
+
+class TestMessengerQuality:
+    """F12: messenger output quality — no emoji, no hallucinated actions."""
+
+    async def test_messenger_no_emoji_no_hallucination(self, run_message):
+        """Ask a simple question → verify output quality rules."""
+        result = await run_message("dimmi cosa sai fare", timeout=60)
+        assert result.success
+        assert_italian(result.msg_output)
+        # No emoji
+        assert not _EMOJI_RE.search(result.msg_output), (
+            f"Emoji found in output: {result.msg_output[:300]}"
+        )
+        # No hallucinated actions
+        assert not _FALSE_ACTION_RE.search(result.msg_output), (
+            f"False action claim in output: {result.msg_output[:300]}"
+        )
