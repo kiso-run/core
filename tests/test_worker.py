@@ -8914,7 +8914,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", msg_id, "hello",
                 plan_id, plan, "admin", None, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 3, None, None,
             )
 
         assert returned_id == plan_id
@@ -8943,7 +8943,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, plan, "admin", None, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 3, None, None,
             )
 
         assert returned_id == plan_id
@@ -8981,7 +8981,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, initial_plan, "admin", None, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 3, None, None,
             )
 
         # Should have auto-replanned (returned_id is the new plan id)
@@ -9002,7 +9002,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, plan, "admin", None, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 3, None, None,
             )
 
         assert returned_id == plan_id  # no replan happened
@@ -9074,7 +9074,7 @@ class TestRunPlanningLoop:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, fail_plan, "admin", None, 30,
-                {}, None, 10, 3, None, None,
+                {}, None, 3, None, None,
             )
 
         # The old plan must have been "replanning" when the new plan was created
@@ -11246,7 +11246,7 @@ class TestM310Phase13Integration:
             await _run_planning_loop(
                 db, config, "sess1", 0, "test", plan_id,
                 {"goal": "Test goal", "tasks": []},
-                "user", None, 120, {}, None, 600, 5, None, None,
+                "user", None, 120, {}, None, 5, None, None,
             )
 
         # During msg composition: plan was "replanning" (set before replan attempt),
@@ -11284,7 +11284,7 @@ class TestM310Phase13Integration:
             await _run_planning_loop(
                 db, config, "sess1", 0, "test", plan_id,
                 {"goal": "Test goal", "tasks": []},
-                "user", None, 120, {}, None, 600, 5, None, None,
+                "user", None, 120, {}, None, 5, None, None,
             )
 
         assert len(planner_kwargs_captured) == 1

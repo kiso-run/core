@@ -1573,8 +1573,7 @@ async def run_worker(
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
     classifier_timeout = setting_int(config.settings, "classifier_timeout", lo=1)
     llm_timeout = setting_int(config.settings, "llm_timeout", lo=1)
-    planner_timeout = llm_timeout  # unified (M422); wrapper removed in M430
-    messenger_timeout = llm_timeout  # unified (M422); wrapper removed in M430
+    messenger_timeout = llm_timeout  # unified (M422)
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
@@ -1617,7 +1616,7 @@ async def run_worker(
             try:
                 _pending_knowledge_task = await _process_message(
                     db, config, session, msg, cancel_event,
-                    llm_timeout, planner_timeout,
+                    llm_timeout,
                     max_replan_depth, classifier_timeout=classifier_timeout,
                     messenger_timeout=messenger_timeout,
                     slog=slog, set_phase=set_phase,
@@ -1799,7 +1798,6 @@ async def _run_planning_loop(
     messenger_timeout: int,
     session_secrets: dict,
     cancel_event: "asyncio.Event | None",
-    planner_timeout: int,
     max_replan_depth: int,
     username: "str | None",
     slog: "SessionLogger | None",
@@ -2033,25 +2031,12 @@ async def _run_planning_loop(
 
         replan_usage_idx = get_usage_index()
         try:
-            new_plan = await asyncio.wait_for(
-                run_planner(
-                    db, config, session, user_role, enriched_message,
-                    user_skills=user_skills,
-                    on_retry=_on_replan_retry,
-                    is_replan=True,
-                ),
-                timeout=planner_timeout,
+            new_plan = await run_planner(
+                db, config, session, user_role, enriched_message,
+                user_skills=user_skills,
+                on_retry=_on_replan_retry,
+                is_replan=True,
             )
-        except asyncio.TimeoutError:
-            log.error("Replan timed out after %ds", planner_timeout)
-            await _handle_loop_failure(
-                db, config, session, current_plan_id, completed, remaining, current_goal,
-                messenger_timeout=messenger_timeout,
-                reason=f"Replan timed out after {planner_timeout}s",
-                deliver_webhook=False,
-                user_message=content,
-            )
-            break
         except PlanError as e:
             log.error("Replan failed: %s", e)
             await _handle_loop_failure(
@@ -2152,7 +2137,6 @@ async def _process_message(
     msg: dict,
     cancel_event: asyncio.Event | None,
     llm_timeout: int,
-    planner_timeout: int,
     max_replan_depth: int,
     classifier_timeout: int = 30,
     messenger_timeout: int = 120,
@@ -2268,22 +2252,13 @@ async def _process_message(
                  attempt, max_attempts, session, reason)
 
     try:
-        plan = await asyncio.wait_for(
-            run_planner(
-                db, config, session, user_role, content,
-                user_skills=user_skills,
-                paraphrased_context=paraphrased_context,
-                on_context_ready=_flush_pre_planner_usage,
-                on_retry=_on_planner_retry,
-            ),
-            timeout=planner_timeout,
+        plan = await run_planner(
+            db, config, session, user_role, content,
+            user_skills=user_skills,
+            paraphrased_context=paraphrased_context,
+            on_context_ready=_flush_pre_planner_usage,
+            on_retry=_on_planner_retry,
         )
-    except asyncio.TimeoutError:
-        log.error("Planner timed out after %ds for session=%s msg=%d", planner_timeout, session, msg_id)
-        await _handle_plan_error(db, config, session, msg_id,
-                                 f"Planning timed out after {planner_timeout}s",
-                                 plan_id=plan_id)
-        return
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
         await _handle_plan_error(db, config, session, msg_id, f"Planning failed: {e}",
@@ -2333,7 +2308,7 @@ async def _process_message(
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
         plan_id, plan, user_role, user_skills, messenger_timeout,
-        session_secrets, cancel_event, planner_timeout, max_replan_depth,
+        session_secrets, cancel_event, max_replan_depth,
         username, slog, set_phase=set_phase, base_url=base_url,
         update_hints=update_hints,
     )

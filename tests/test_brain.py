@@ -7227,7 +7227,7 @@ class TestM298NoTimeoutPartitioning:
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
             models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3, planner_timeout=300),
+            settings=_full_settings(max_validation_retries=3),
             raw={},
         )
 

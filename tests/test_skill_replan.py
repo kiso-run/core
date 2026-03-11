@@ -151,7 +151,7 @@ class TestSkillArgsReplanFlow:
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "take screenshot of example.com",
                 plan_id, bad_plan, "admin", None, 30,
-                {}, None, 10, 2, None, None,
+                {}, None, 2, None, None,
             )
 
         # Should have replanned once (bad plan → replan → good plan)
