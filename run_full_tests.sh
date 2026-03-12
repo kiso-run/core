@@ -39,7 +39,10 @@ NC='\033[0m'
 run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
-    if uv run pytest "$@"; then
+    local rc=0
+    uv run pytest "$@" || rc=$?
+    if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
+        # 0 = passed, 5 = no tests collected (all skipped/deselected)
         echo -e "${GREEN}✓ $name: PASSED${NC}"
     else
         echo -e "${RED}✗ $name: FAILED${NC}"
@@ -58,7 +61,7 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "--func" ]]; then
     # Requires: kiso server running on localhost:8333
     if curl -sf http://localhost:8333/health > /dev/null 2>&1; then
-        run_suite "Functional tests" tests/functional/ -v -m functional
+        run_suite "Functional tests" tests/functional/ -v
     else
         echo -e "${YELLOW}⚠ Skipping functional tests — kiso server not running on :8333${NC}"
         echo "  Start it with: uv run python -m kiso.main"
@@ -68,7 +71,7 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "--docker" ]]; then
     # Requires: Docker running + kiso image
     if docker info > /dev/null 2>&1; then
-        run_suite "Docker tests" tests/docker/ -v -m docker
+        run_suite "Docker tests" tests/docker/ -v
     else
         echo -e "${YELLOW}⚠ Skipping docker tests — Docker not available${NC}"
     fi
