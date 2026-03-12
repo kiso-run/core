@@ -12,7 +12,7 @@ from pathlib import Path
 import aiosqlite
 
 from kiso.config import Config, KISO_DIR, setting_bool
-from kiso.llm import LLMError, call_llm
+from kiso.llm import LLMBudgetExceeded, LLMError, call_llm
 from kiso.security import fence_content
 from kiso.skill_loader import discover_md_skills, build_planner_skill_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
@@ -71,6 +71,7 @@ WORKER_PHASES: frozenset[str] = frozenset({
 _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _MESSENGER_RETRY_BACKOFF: float = 1.0  # M480: seconds between retries (0 in tests)
+_MAX_MESSENGER_RETRIES = 2  # M480: max retries on transient LLM errors
 _VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety"})
 _ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
 
@@ -1906,20 +1907,21 @@ async def run_messenger(
     # M480: retry messenger LLM call up to 2 times on transient errors.
     # Unlike structured roles (planner/reviewer) which use _retry_llm_with_validation
     # with 3 retries + fallback model, the messenger previously had zero retries.
-    _max_messenger_retries = 2
     _last_err: LLMError | None = None
-    for _attempt in range(_max_messenger_retries + 1):
+    for _attempt in range(_MAX_MESSENGER_RETRIES + 1):
         try:
             text = await call_llm(config, "messenger", messages, session=session)
             return _sanitize_messenger_output(text)
+        except LLMBudgetExceeded:
+            raise  # non-retryable — budget is exhausted
         except LLMError as e:
             _last_err = e
-            if _attempt < _max_messenger_retries:
-                log.warning("Messenger retry %d/%d: %s", _attempt + 1, _max_messenger_retries, e)
+            if _attempt < _MAX_MESSENGER_RETRIES:
+                log.warning("Messenger retry %d/%d: %s", _attempt + 1, _MAX_MESSENGER_RETRIES, e)
                 if _MESSENGER_RETRY_BACKOFF > 0:
                     await asyncio.sleep(_MESSENGER_RETRY_BACKOFF)
                 continue
-    raise MessengerError(f"LLM call failed after {_max_messenger_retries + 1} attempts: {_last_err}")
+    raise MessengerError(f"LLM call failed after {_MAX_MESSENGER_RETRIES + 1} attempts: {_last_err}")
 
 
 # M369: strip hallucinated XML/tool markup from messenger output

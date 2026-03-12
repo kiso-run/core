@@ -853,6 +853,7 @@ async def _handle_msg_task(
     t0 = time.perf_counter()
     idx_msg = get_usage_index()
     idx_after_briefer = [idx_msg]  # mutated by callback
+    text: str | None = None
     try:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
         idx_msg = get_usage_index()
@@ -878,70 +879,49 @@ async def _handle_msg_task(
             )
         except asyncio.TimeoutError:
             raise MessengerError(f"Messenger timed out after {ctx.messenger_timeout}s")
-        task_duration_ms = int((time.perf_counter() - t0) * 1000)
-        await update_task(ctx.db, task_id, "done", output=text, duration_ms=task_duration_ms)
-        task_row = {**task_row, "output": text, "status": "done"}
-        audit.log_task(
-            ctx.session, task_id, TASK_TYPE_MSG, detail, "done", task_duration_ms,
-            len(text), deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        if ctx.slog:
-            ctx.slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
-        await _deliver_webhook_if_configured(
-            ctx.db, ctx.config, ctx.session, task_id, text, is_final,
-            deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        await _append_calls(ctx.db, task_id, idx_after_briefer[0])
-        await _store_step_usage(ctx.db, task_id, usage_idx_before)
-        return _TaskHandlerResult(
-            completed_row=task_row,
-            plan_output=_make_plan_output(i + 1, TASK_TYPE_MSG, detail, text, "done", session=ctx.session),
-        )
     except (LLMError, MessengerError) as e:
-        task_duration_ms = int((time.perf_counter() - t0) * 1000)
-        # M481: when the final msg task fails but all prior tasks succeeded,
-        # fall back to raw detail instead of killing the plan. The msg task
-        # is just composing a summary — its failure shouldn't void completed work.
+        # M481: final msg task falls back to raw detail instead of killing
+        # the plan. Non-final msg errors still stop execution.
         if is_final:
-            log.warning(
-                "Final msg task %d messenger failed, falling back to raw detail: %s",
-                task_id, e,
-            )
-            await update_task(ctx.db, task_id, "done", output=detail, duration_ms=task_duration_ms)
-            task_row = {**task_row, "output": detail, "status": "done"}
+            log.warning("Final msg task %d messenger failed, falling back to raw detail: %s", task_id, e)
+            text = detail
+        else:
+            task_duration_ms = int((time.perf_counter() - t0) * 1000)
+            log.error("Msg task %d messenger error: %s", task_id, e)
+            await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
             audit.log_task(
-                ctx.session, task_id, TASK_TYPE_MSG, detail, "done",
-                task_duration_ms, len(detail),
+                ctx.session, task_id, TASK_TYPE_MSG, detail, "failed",
+                task_duration_ms, 0,
                 deploy_secrets=ctx.deploy_secrets,
                 session_secrets=ctx.session_secrets,
             )
-            await _deliver_webhook_if_configured(
-                ctx.db, ctx.config, ctx.session, task_id, detail, is_final,
-                deploy_secrets=ctx.deploy_secrets,
-                session_secrets=ctx.session_secrets,
-            )
+            # M396: append LLM calls so verbose panels show attempted messenger/briefer
             await _append_calls(ctx.db, task_id, idx_after_briefer[0])
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(
-                completed_row=task_row,
-                plan_output=_make_plan_output(
-                    i + 1, TASK_TYPE_MSG, detail, detail, "done", session=ctx.session,
-                ),
-            )
-        log.error("Msg task %d messenger error: %s", task_id, e)
-        await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
-        audit.log_task(
-            ctx.session, task_id, TASK_TYPE_MSG, detail, "failed",
-            task_duration_ms, 0,
-            deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        # M396: append LLM calls so verbose panels show attempted messenger/briefer
-        await _append_calls(ctx.db, task_id, idx_after_briefer[0])
-        await _store_step_usage(ctx.db, task_id, usage_idx_before)
-        return _TaskHandlerResult(stop=True, stop_success=False)
+            return _TaskHandlerResult(stop=True, stop_success=False)
+
+    # Shared finalization for success and is_final fallback
+    task_duration_ms = int((time.perf_counter() - t0) * 1000)
+    await update_task(ctx.db, task_id, "done", output=text, duration_ms=task_duration_ms)
+    task_row = {**task_row, "output": text, "status": "done"}
+    audit.log_task(
+        ctx.session, task_id, TASK_TYPE_MSG, detail, "done", task_duration_ms,
+        len(text), deploy_secrets=ctx.deploy_secrets,
+        session_secrets=ctx.session_secrets,
+    )
+    if ctx.slog:
+        ctx.slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
+    await _deliver_webhook_if_configured(
+        ctx.db, ctx.config, ctx.session, task_id, text, is_final,
+        deploy_secrets=ctx.deploy_secrets,
+        session_secrets=ctx.session_secrets,
+    )
+    await _append_calls(ctx.db, task_id, idx_after_briefer[0])
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    return _TaskHandlerResult(
+        completed_row=task_row,
+        plan_output=_make_plan_output(i + 1, TASK_TYPE_MSG, detail, text, "done", session=ctx.session),
+    )
 
 
 async def _handle_tool_task(

@@ -28,8 +28,9 @@ _FMT_JSON_OBJECT = "json_object"
 # Cached per model string to avoid retrying the json_schema format on every call.
 _json_object_only_models: set[str] = set()
 
-# M479: transport retry backoff multiplier (seconds). Set to 0 in tests.
+# M479: transport retry settings. Backoff set to 0 in tests.
 _TRANSPORT_RETRY_BACKOFF: float = 1.0
+_MAX_TRANSPORT_RETRIES = 2
 
 # Shared long-lived HTTP client, initialized by main.py lifespan.
 # When set, call_llm reuses the connection pool instead of opening a new
@@ -308,7 +309,6 @@ async def call_llm(
     input_tokens = 0
     output_tokens = 0
     _transport_retries = 0
-    _MAX_TRANSPORT_RETRIES = 2  # M479: retry transient network errors
 
     _json_schema_retried = False  # track whether we already fell back to json_object
 
