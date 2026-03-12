@@ -138,7 +138,7 @@ class TestMessengerBrieferTagInjection:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -204,7 +204,7 @@ class TestBrieferSkillFilterNoSkills:
         """When context_pool has no skills, briefer skills are cleared."""
         response = json.dumps({
             "modules": [],
-            "skills": ["browser: navigate", "aider: code assist"],
+            "tools": ["browser: navigate", "aider: code assist"],
             "context": "Some context",
             "output_indices": [],
             "relevant_tags": [],
@@ -212,38 +212,38 @@ class TestBrieferSkillFilterNoSkills:
         })
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", {})
-        assert result["skills"] == []
+        assert result["tools"] == []
 
     @pytest.mark.asyncio
     async def test_with_skills_filters_correctly(self, config):
         """When context_pool has skills, only matching ones pass."""
         response = json.dumps({
             "modules": [],
-            "skills": ["browser: navigate and click", "fake_skill: does nothing"],
+            "tools": ["browser: navigate and click", "fake_skill: does nothing"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "Available skills:\n- browser — navigate, click, fill, screenshot"}
+        ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
-        assert any("browser" in s for s in result["skills"])
-        assert not any("fake_skill" in s for s in result["skills"])
+        assert any("browser" in s for s in result["tools"])
+        assert not any("fake_skill" in s for s in result["tools"])
 
     @pytest.mark.asyncio
     async def test_skill_filter_exact_name_no_substring(self, config):
         """M394: 'git' installed must NOT match briefer skill 'github'."""
         response = json.dumps({
             "modules": [],
-            "skills": ["github: integration", "git: version control"],
+            "tools": ["github: integration", "git: version control"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "Available skills:\n- git — version control operations"}
+        ctx = {"tools": "Available skills:\n- git — version control operations"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
-        assert any("git:" in s for s in result["skills"])
-        assert not any("github" in s for s in result["skills"])
+        assert any("git:" in s for s in result["tools"])
+        assert not any("github" in s for s in result["tools"])

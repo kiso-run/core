@@ -23,14 +23,14 @@ class TestPlannerPromptInstallRules:
     def _load_prompt(self):
         self.full = _load_modular_prompt(
             "planner",
-            ["kiso_native", "skills_rules", "web", "plugin_install"],
+            ["kiso_native", "tools_rules", "web", "plugin_install"],
         )
 
     def test_kiso_native_never_install_without_approval(self):
         assert "Never install anything" in self.full
         assert "user approval" in self.full
 
-    def test_skills_rules_msg_before_install(self):
+    def test_tools_rules_msg_before_install(self):
         assert "single msg asking user to install" in self.full.lower() or \
                "single msg" in self.full.lower()
 

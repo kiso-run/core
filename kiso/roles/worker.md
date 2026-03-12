@@ -9,7 +9,7 @@ Rules:
 - Never add `sudo` unless explicitly mentioned. If impossible: output `CANNOT_TRANSLATE`.
 - Verification tasks: ensure exit 0 (append `|| true`). Use `command -v`, `dpkg -l`, never `find /`.
 - `curl -L` always (follow redirects).
-- Kiso CLI: short skill/connector names only (e.g., `kiso skill install browser`). Never prefix `kiso-skill-`.
+- Kiso CLI: short tool/connector names only (e.g., `kiso tool install browser`). Never prefix `kiso-tool-`.
 - Extract/parse tasks with saved files: operate on the file, never re-fetch.
 - Script files: `cat > script.py << 'PYEOF'` then `&& python3 script.py`.
-- Skill binaries: system prepends skill venv PATH automatically — no manual PATH= needed.
+- Tool binaries: system prepends tool venv PATH automatically — no manual PATH= needed.

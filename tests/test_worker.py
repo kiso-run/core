@@ -7979,7 +7979,7 @@ class TestM44gAppendCallsRobustness:
             if role == "briefer":
                 call_order.append("briefer")
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -10626,7 +10626,7 @@ class TestMsgTaskBrieferIntegration:
             if role == "briefer":
                 return json.dumps({
                     "modules": [],
-                    "skills": [],
+                    "tools": [],
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
@@ -10703,7 +10703,7 @@ class TestMsgTaskBrieferIntegration:
             if role == "briefer":
                 call_roles.append(role)
                 return json.dumps({
-                    "modules": [], "skills": [],
+                    "modules": [], "tools": [],
                     "context": "Filtered context.",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
@@ -10748,7 +10748,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "Instance info.",
+                    "modules": [], "tools": [], "context": "Instance info.",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": ["self"],
                 })
@@ -10773,7 +10773,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "No relevant context.",
+                    "modules": [], "tools": [], "context": "No relevant context.",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -10793,7 +10793,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -10822,7 +10822,7 @@ class TestM365MsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -10850,7 +10850,7 @@ class TestM365MsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -10873,7 +10873,7 @@ class TestM365MsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -10922,7 +10922,7 @@ class TestExecTaskBrieferIntegration:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
                     "relevant_tags": [],
                     "relevant_entities": [],

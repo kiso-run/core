@@ -195,7 +195,7 @@ class TestBrieferCriticalRules:
         assert "Conflicting facts" in self.prompt
 
     def test_messenger_no_modules(self):
-        assert "For messenger/worker: modules=[] and skills=[] always" in self.prompt
+        assert "For messenger/worker: modules=[] and tools=[] always" in self.prompt
 
     def test_m357_self_entity_routing(self):
         """M357: briefer routes entity 'self' for system introspection."""
@@ -220,9 +220,9 @@ class TestWorkerCriticalRules:
     def test_no_sudo(self):
         assert "sudo" in self.prompt
 
-    def test_skill_path(self):
-        """M284: skill venv PATH."""
-        assert "Skill binaries" in self.prompt
+    def test_tool_path(self):
+        """M284: tool venv PATH."""
+        assert "Tool binaries" in self.prompt
 
 
 class TestCuratorCriticalRules:
@@ -284,8 +284,8 @@ class TestM316PromptOptimizationIntegration:
     """M316: Verify prompt optimization preserved all modules and kept sizes reasonable."""
 
     _ALL_MODULES = [
-        "core", "kiso_native", "planning_rules", "skills_rules",
-        "skill_recovery", "data_flow", "web", "scripting", "replan",
+        "core", "kiso_native", "planning_rules", "tools_rules",
+        "tool_recovery", "data_flow", "web", "scripting", "replan",
         "kiso_commands", "user_mgmt", "plugin_install",
     ]
 
@@ -346,11 +346,11 @@ class TestM384MessengerAntiHallucination:
 
 
 class TestM340SkillArgsRequirement:
-    """M340: planner prompt emphasizes skill args must never be null."""
+    """M340: planner prompt emphasizes tool args must never be null."""
 
-    def test_skills_rules_contains_never_null(self):
+    def test_tools_rules_contains_never_null(self):
         from kiso.brain import _load_modular_prompt
-        prompt = _load_modular_prompt("planner", ["skills_rules"])
+        prompt = _load_modular_prompt("planner", ["tools_rules"])
         assert "Never null" in prompt
 
     def test_core_contains_args_example(self):
@@ -499,9 +499,9 @@ class TestM367PlannerOsPackageConfirmation:
         assert "search" in prompt.lower()
         assert "Install first if missing" not in prompt
 
-    def test_skills_rules_ask_user(self):
+    def test_tools_rules_ask_user(self):
         from kiso.brain import _load_modular_prompt
-        prompt = _load_modular_prompt("planner", ["skills_rules"])
+        prompt = _load_modular_prompt("planner", ["tools_rules"])
         assert "msg" in prompt.lower() and "approval" in prompt.lower()
 
     def test_plugin_install_prerequisite(self):

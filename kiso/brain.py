@@ -366,7 +366,7 @@ BRIEFER_SCHEMA: dict = {
                     "type": "array",
                     "items": {"type": "string"},
                 },
-                "skills": {
+                "tools": {
                     "type": "array",
                     "items": {"type": "string"},
                 },
@@ -384,7 +384,7 @@ BRIEFER_SCHEMA: dict = {
                     "items": {"type": "string"},
                 },
             },
-            "required": ["modules", "skills", "context", "output_indices", "relevant_tags", "relevant_entities"],
+            "required": ["modules", "tools", "context", "output_indices", "relevant_tags", "relevant_entities"],
             "additionalProperties": False,
         },
     },
@@ -393,20 +393,20 @@ BRIEFER_SCHEMA: dict = {
 # Available prompt modules that the briefer can select.
 # core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
-    "planning_rules", "kiso_native", "skills_rules",
-    "web", "replan", "scripting", "skill_recovery", "data_flow",
+    "planning_rules", "kiso_native", "tools_rules",
+    "web", "replan", "scripting", "tool_recovery", "data_flow",
     "kiso_commands", "user_mgmt", "plugin_install",
 })
 _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "planning_rules": "task ordering, expect rules, multi-step plans",
     "kiso_native": "kiso-first policy, registry checking",
-    "skills_rules": "skill usage rules, atomic operations",
-    "web": "URLs, websites, browser skill rules",
+    "tools_rules": "tool usage rules, atomic operations",
+    "web": "URLs, websites, browser tool rules",
     "data_flow": "file-based data flow for large outputs",
     "scripting": "script execution rules",
     "replan": "replan strategy, extend_replan",
-    "skill_recovery": "broken skill reinstall procedure",
-    "kiso_commands": "kiso CLI (skill/connector/env/user mgmt)",
+    "tool_recovery": "broken tool reinstall procedure",
+    "kiso_commands": "kiso CLI (tool/connector/env/user mgmt)",
     "user_mgmt": "user/alias management, role permissions",
     "plugin_install": "plugin discovery and installation",
 }
@@ -818,7 +818,7 @@ async def build_planner_messages(
     # Build the tool list text for context pool
     full_tool_list = build_planner_tool_list(installed, user_role, user_tools)
     if full_tool_list:
-        context_pool["skills"] = full_tool_list  # context pool key stays "skills" until M445
+        context_pool["tools"] = full_tool_list
 
     # --- Capability gap detection ---
     msg_lower = new_message.lower()
@@ -960,8 +960,8 @@ async def build_planner_messages(
         context_parts.append(f"## Capability Analysis\n{_gap_text}")
 
     # Tools section — briefer filters or full list
-    if briefing and briefing["skills"]:  # briefer schema field still "skills" until M445
-        context_parts.append(f"## Tools\n" + "\n".join(briefing["skills"]))
+    if briefing and briefing["tools"]:
+        context_parts.append(f"## Tools\n" + "\n".join(briefing["tools"]))
     elif full_tool_list:
         context_parts.append(f"## Tools\n{full_tool_list}")
 
@@ -1044,7 +1044,7 @@ async def run_planner(
 
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("skills", "Available Tools"),
+    ("tools", "Available Tools"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
     ("summary", "Session Summary"),
@@ -1087,7 +1087,7 @@ def build_briefer_messages(
         parts.append(f"## Available Modules\n{_BRIEFER_MODULES_STR}")
 
     # M272: skip sections irrelevant for simple consumers
-    _skip_keys = {"skills", "system_env", "connectors"} if _simple_consumer else set()
+    _skip_keys = {"tools", "system_env", "connectors"} if _simple_consumer else set()
 
     for key, heading in _CONTEXT_POOL_SECTIONS:
         if key in _skip_keys:
@@ -1113,8 +1113,8 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
         for m in briefing["modules"]:
             if m not in BRIEFER_MODULES:
                 errors.append(f"unknown module: {m!r}")
-    if not isinstance(briefing.get("skills"), list):
-        errors.append("skills must be an array")
+    if not isinstance(briefing.get("tools"), list):
+        errors.append("tools must be an array")
     if not isinstance(briefing.get("context"), str):
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
@@ -1135,7 +1135,7 @@ async def run_briefer(
 ) -> dict:
     """Run the briefer: select relevant context for a consumer role.
 
-    Returns a dict with keys: modules, skills, context, output_indices, relevant_tags.
+    Returns a dict with keys: modules, tools, context, output_indices, relevant_tags.
     Raises BrieferError on failure.
     """
     messages = build_briefer_messages(consumer_role, task_description, context_pool)
@@ -1157,33 +1157,33 @@ async def run_briefer(
         briefing["modules"] = []
 
     # M368/M387: post-validation filtering — remove hallucinated tools
-    if briefing["skills"]:  # briefer schema field still "skills" until M445
-        if not context_pool.get("skills"):
+    if briefing["tools"]:
+        if not context_pool.get("tools"):
             # No tools installed — any briefer tool selection is hallucinated
             log.debug("Briefer: cleared %d hallucinated tool(s) (none installed)",
-                      len(briefing["skills"]))
-            briefing["skills"] = []
+                      len(briefing["tools"]))
+            briefing["tools"] = []
         else:
             # M394: extract installed tool names for exact matching
             installed_tool_names: set[str] = set()
-            for line in context_pool["skills"].split("\n"):
+            for line in context_pool["tools"].split("\n"):
                 m = re.match(r"^-\s+(\S+)", line)
                 if m:
                     installed_tool_names.add(m.group(1).lower())
-            original_count = len(briefing["skills"])
-            briefing["skills"] = [
-                s for s in briefing["skills"]
+            original_count = len(briefing["tools"])
+            briefing["tools"] = [
+                s for s in briefing["tools"]
                 if s.split(":")[0].split()[0].strip().lower() in installed_tool_names
             ]
-            filtered = original_count - len(briefing["skills"])
+            filtered = original_count - len(briefing["tools"])
             if filtered:
                 log.debug("Briefer: filtered %d hallucinated tool(s)", filtered)
 
     log.info(
-        "Briefer for %s: %d modules, %d skills, %d output_indices, %d tags",
+        "Briefer for %s: %d modules, %d tools, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
-        len(briefing["skills"]),
+        len(briefing["tools"]),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),
     )

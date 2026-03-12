@@ -62,12 +62,12 @@ def _config(briefer_enabled=True) -> Config:
 
 
 def _briefing(
-    modules=None, skills=None, context="", output_indices=None,
+    modules=None, tools=None, context="", output_indices=None,
     relevant_tags=None, relevant_entities=None,
 ) -> dict:
     return {
         "modules": modules or [],
-        "skills": skills or [],
+        "tools": tools or [],
         "context": context,
         "output_indices": output_indices or [],
         "relevant_tags": relevant_tags or [],
@@ -119,7 +119,7 @@ class TestBrieferScenarios:
         """Web request → briefer selects web module + browser skill."""
         briefing = _briefing(
             modules=["web"],
-            skills=["browser: navigate to URLs, take screenshots"],
+            tools=["browser: navigate to URLs, take screenshots"],
             context="User wants to visit gazzetta.it for sports news.",
         )
 
@@ -208,7 +208,7 @@ class TestBrieferScenarios:
         """Complex request → briefer selects multiple modules."""
         briefing = _briefing(
             modules=["web", "data_flow", "scripting"],
-            skills=["browser: navigate", "python: run scripts"],
+            tools=["browser: navigate", "python: run scripts"],
             context="User wants to scrape a site and process data with Python.",
         )
 
@@ -227,9 +227,9 @@ class TestBrieferScenarios:
         assert "Web interaction:" in system
         assert "Download/fetch content" in system or "save to file" in system
         assert "One-liner execution" in system or "One-liners" in system
-        # Replan and skill_recovery NOT included
+        # Replan and tool_recovery NOT included
         assert "extend_replan" not in system
-        assert "Broken skill deps" not in system
+        assert "Broken tool deps" not in system
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +401,7 @@ class TestBrieferPromptBudget:
             "recent_messages": "\n".join(
                 f"[user] marco: message {i}" for i in range(5)
             ),
-            "skills": "\n".join(f"skill_{i}: does thing {i}" for i in range(10)),
+            "tools": "\n".join(f"tool_{i}: does thing {i}" for i in range(10)),
             "pending": "- Question about API key\n- Question about deployment",
             "plan_outputs": "\n".join(
                 f"[{i}] exec: task {i} → output {i}" for i in range(5)
@@ -419,5 +419,5 @@ class TestBrieferPromptBudget:
             BRIEFER_SCHEMA["json_schema"]["schema"]["required"]
         )
         # validate_briefing checks each of these
-        expected = {"modules", "skills", "context", "output_indices", "relevant_tags", "relevant_entities"}
+        expected = {"modules", "tools", "context", "output_indices", "relevant_tags", "relevant_entities"}
         assert schema_required == expected

@@ -2822,10 +2822,10 @@ class TestExecTranslatorPromptContent:
         prompt = (_ROLES_DIR / "worker.md").read_text()
         assert "curl -L" in prompt
 
-    def test_m205_kiso_short_skill_names(self):
-        """M205: worker prompt tells translator to use short skill/connector names."""
+    def test_m205_kiso_short_tool_names(self):
+        """M205: worker prompt tells translator to use short tool/connector names."""
         prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "short skill/connector names" in prompt
+        assert "short tool/connector names" in prompt
 
 
 # --- Planner prompt content ---
@@ -2879,9 +2879,9 @@ class TestPlannerPromptContent:
         prompt = _load_modular_prompt("planner", ["plugin_install"])
         assert "raw.githubusercontent.com" in prompt
         assert "kiso.toml" in prompt
-        # Step ordering: curl kiso.toml must come before "kiso skill install {name}".
+        # Step ordering: curl kiso.toml must come before "kiso tool install {name}".
         toml_pos = prompt.index("kiso.toml")
-        install_pos = prompt.index("kiso skill install {name}")
+        install_pos = prompt.index("kiso tool install {name}")
         assert toml_pos < install_pos
 
     def test_m46_plugin_install_includes_env_description_in_msg(self):
@@ -2898,7 +2898,7 @@ class TestPlannerPromptContent:
     def test_m4_skill_reuse_rule(self):
         """M4: planner must use listed skills directly without re-verification."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Skills efficiency" in prompt or "Skills section" in prompt
+        assert "Tools efficiency" in prompt or "Tools section" in prompt
         assert "confirmed installed" in prompt or "already-listed" in prompt
 
     def test_m4_no_reinstall_listed_skills(self):
@@ -2998,7 +2998,7 @@ class TestPlannerPromptContent:
     def test_m423_all_task_types_present(self):
         """M423: planner prompt still contains all task types."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        for tt in ("exec:", "skill:", "msg:", "search:", "replan:"):
+        for tt in ("exec:", "tool:", "msg:", "search:", "replan:"):
             assert tt in prompt, f"Missing task type: {tt}"
 
 
@@ -3020,18 +3020,18 @@ class TestM165SkillArgsExample:
 
 
 class TestM180BrokenSkillRecoveryGuidance:
-    """M180: planner prompt includes broken skill recovery guidance."""
+    """M180: planner prompt includes broken tool recovery guidance."""
 
-    def test_planner_prompt_has_broken_skill_guidance(self):
+    def test_planner_prompt_has_broken_tool_guidance(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Broken skill deps" in prompt
-        assert "kiso skill remove" in prompt
-        assert "kiso skill install" in prompt
+        assert "Broken tool deps" in prompt
+        assert "kiso tool remove" in prompt
+        assert "kiso tool install" in prompt
         assert "[BROKEN]" in prompt
 
 
-class TestM185BlockAptGetForSkillDeps:
-    """M185: planner prompt blocks manual apt-get for skill deps."""
+class TestM185BlockAptGetForToolDeps:
+    """M185: planner prompt blocks manual apt-get for tool deps."""
 
     def test_planner_prompt_blocks_apt_get(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -3043,7 +3043,7 @@ class TestM185BlockAptGetForSkillDeps:
 
     def test_reinstall_is_only_correct_fix(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "kiso skill remove NAME && kiso skill install NAME" in prompt
+        assert "kiso tool remove NAME && kiso tool install NAME" in prompt
 
 
 class TestM192PlannerNavigateAndInstallGuard:
@@ -3051,7 +3051,7 @@ class TestM192PlannerNavigateAndInstallGuard:
 
     def test_navigate_requires_browser_skill(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "requires `browser` skill" in prompt
+        assert "requires `browser` tool" in prompt
 
     def test_search_not_for_page_interaction(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
@@ -3063,7 +3063,7 @@ class TestM192PlannerNavigateAndInstallGuard:
 
     def test_install_then_replan_pattern(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Never skill-task an uninstalled skill" in prompt
+        assert "Never tool-task an uninstalled tool" in prompt
 
 
 class TestM207CompositeRequestDecomposition:
@@ -3239,10 +3239,10 @@ class TestM73cPlannerUserManagement:
         assert "never" in prompt.lower()
         assert "kiso user" in prompt
 
-    def test_skills_required_for_role_user(self):
-        """User-mgmt appendix must document that --skills is required when role=user."""
+    def test_tools_required_for_role_user(self):
+        """User-mgmt appendix must document that --tools is required when role=user."""
         prompt = _load_modular_prompt("planner", ["user_mgmt"])
-        assert "--skills" in prompt
+        assert "--tools" in prompt
         assert "--role user" in prompt
 
     def test_ask_for_role_before_add(self):
@@ -3578,7 +3578,7 @@ class TestM234PlannerAtomicOperations:
     def test_planner_prompt_atomic_operations_rule(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "atomic" in prompt.lower()
-        assert "kiso skill install" in prompt
+        assert "kiso tool install" in prompt or "Install commands are atomic" in prompt
         assert "never decompose" in prompt.lower()
 
     def test_planner_prompt_atomic_covers_package_managers(self):
@@ -3598,7 +3598,7 @@ class TestM275PlannerUsageGuideCompliance:
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "usage guide" in prompt.lower() or "guide:" in prompt
         assert "follow" in prompt.lower()
-        # Must be in the skills_rules module
+        # Must be in the tools_rules module
         assert "guide:" in prompt
 
     def test_planner_prompt_usage_guide_is_mandatory(self):
@@ -3913,10 +3913,10 @@ class TestM47WorkerHintPriority:
         assert "hint" in prompt.lower()
         assert "ABSOLUTE priority" in prompt
 
-    def test_m284_skill_path_awareness(self):
-        """M284: worker prompt mentions skill venv PATH."""
+    def test_m284_tool_path_awareness(self):
+        """M284: worker prompt mentions tool venv PATH."""
         prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "Skill binaries" in prompt or "skill venv PATH" in prompt
+        assert "Tool binaries" in prompt or "tool venv PATH" in prompt
 
     def test_retry_context_with_hint_is_visible_to_translator(self):
         """Hint in retry context is present in the messages sent to the exec translator."""
@@ -4103,7 +4103,7 @@ class TestM48PlannerMergedRules:
         """48c: merged expect rule must apply to exec/skill/search."""
         prompt = (_ROLES_DIR / "planner.md").read_text()
         # Should mention all three types together
-        assert "exec/skill/search" in prompt or ("exec" in prompt and "skill" in prompt and "search" in prompt)
+        assert "exec/tool/search" in prompt or ("exec" in prompt and "tool" in prompt and "search" in prompt)
 
     def test_48c_detail_rule_mentions_exec_commands_and_paths(self):
         """48c: merged detail rule must mention commands/paths for exec tasks."""
@@ -4146,7 +4146,7 @@ class TestPlannerContextualRules:
             db, self._config(), "test-session", "admin", "install the search skill",
         )
         system = msgs[0]["content"]
-        assert "kiso skill install" in system
+        assert "kiso tool install" in system
 
     async def test_user_keyword_injects_user_mgmt(self, db):
         """Message mentioning 'user' should inject user-mgmt appendix."""
@@ -5092,7 +5092,7 @@ class TestM186EscalatingValidationError:
             ]})
 
         def always_fail(plan):
-            return ["skill args invalid: missing required arg: action"]
+            return ["tool args invalid: missing required arg: action"]
 
         with patch("kiso.brain.call_llm", side_effect=mock_call_llm):
             with pytest.raises(PlanError):
@@ -5279,7 +5279,7 @@ class TestBrieferMessages:
             "summary": "User asked about weather",
             "facts": "- Python 3.12 is installed",
             "recent_messages": "[user] marco: ciao",
-            "skills": "browser: navigate, screenshot",
+            "tools": "browser: navigate, screenshot",
             "connectors": "telegram: messaging",
             "pending": "- What is your API key?",
             "paraphrased": "External user said hello",
@@ -5304,7 +5304,7 @@ class TestBrieferMessages:
         assert "Capability Analysis" in content
 
     def test_empty_pool_values_excluded(self):
-        pool = {"summary": "", "facts": "", "skills": "browser: navigate"}
+        pool = {"summary": "", "facts": "", "tools": "browser: navigate"}
         msgs = build_briefer_messages("planner", "do something", pool)
         content = msgs[1]["content"]
         assert "Session Summary" not in content
@@ -5376,16 +5376,16 @@ class TestBrieferMessages:
         assert "not present in the input" in prompt.lower()
 
     def test_m265_messenger_no_modules_or_skills_rule(self):
-        """M265: briefer prompt says messenger gets modules=[] and skills=[] always."""
+        """M265: briefer prompt says messenger gets modules=[] and tools=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
         system = msgs[0]["content"]
-        assert "For messenger/worker: modules=[] and skills=[] always" in system
+        assert "For messenger/worker: modules=[] and tools=[] always" in system
 
-    def test_m265_worker_no_modules_or_skills_rule(self):
-        """M265: briefer prompt says worker gets modules=[] and skills=[] always."""
+    def test_m265_worker_no_modules_or_tools_rule(self):
+        """M265: briefer prompt says worker gets modules=[] and tools=[] always."""
         msgs = build_briefer_messages("worker", "translate command", {})
         system = msgs[0]["content"]
-        assert "For messenger/worker: modules=[] and skills=[] always" in system
+        assert "For messenger/worker: modules=[] and tools=[] always" in system
 
 
 class TestValidateBriefing:
@@ -5394,7 +5394,7 @@ class TestValidateBriefing:
     def test_valid_briefing(self):
         briefing = {
             "modules": ["web"],
-            "skills": ["browser: navigate, screenshot"],
+            "tools": ["browser: navigate, screenshot"],
             "context": "User wants to visit a website",
             "output_indices": [0, 2],
             "relevant_tags": ["browser"],
@@ -5405,7 +5405,7 @@ class TestValidateBriefing:
     def test_empty_briefing(self):
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5416,7 +5416,7 @@ class TestValidateBriefing:
     def test_unknown_module(self):
         briefing = {
             "modules": ["web", "nonexistent_module"],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5429,7 +5429,7 @@ class TestValidateBriefing:
     def test_invalid_modules_type(self):
         briefing = {
             "modules": "web",
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5441,7 +5441,7 @@ class TestValidateBriefing:
     def test_invalid_context_type(self):
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": None,
             "output_indices": [],
             "relevant_tags": [],
@@ -5453,7 +5453,7 @@ class TestValidateBriefing:
     def test_all_valid_modules(self):
         briefing = {
             "modules": list(BRIEFER_MODULES),
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5465,7 +5465,7 @@ class TestValidateBriefing:
         """M250: relevant_tags must be an array."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": "browser",  # should be array
@@ -5477,7 +5477,7 @@ class TestValidateBriefing:
         """M250: missing relevant_tags is an error."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
         }
@@ -5503,17 +5503,17 @@ class TestRunBriefer:
     async def test_success(self, config):
         response = json.dumps({
             "modules": ["web"],
-            "skills": ["browser: navigate"],
+            "tools": ["browser: navigate"],
             "context": "User wants to browse",
             "output_indices": [1],
             "relevant_tags": ["browser"],
             "relevant_entities": [],
         })
-        ctx = {"skills": "Available skills:\n- browser — Navigate, click, fill"}
+        ctx = {"tools": "Available skills:\n- browser — Navigate, click, fill"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit a website", ctx)
         assert result["modules"] == ["web"]
-        assert result["skills"] == ["browser: navigate"]
+        assert result["tools"] == ["browser: navigate"]
         assert result["context"] == "User wants to browse"
         assert result["output_indices"] == [1]
         assert result["relevant_tags"] == ["browser"]
@@ -5522,7 +5522,7 @@ class TestRunBriefer:
     async def test_empty_briefing(self, config):
         response = json.dumps({
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5531,7 +5531,7 @@ class TestRunBriefer:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "what time is it", {})
         assert result["modules"] == []
-        assert result["skills"] == []
+        assert result["tools"] == []
 
     @pytest.mark.asyncio
     async def test_llm_error_raises_briefer_error(self, config):
@@ -5552,42 +5552,42 @@ class TestRunBriefer:
         """M368: run_briefer filters skills not matching context pool."""
         response = json.dumps({
             "modules": [],
-            "skills": ["browser: navigate and screenshot", "Retrieve CPU details"],
+            "tools": ["browser: navigate and screenshot", "Retrieve CPU details"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "Available skills:\n- browser — navigate, click, fill, screenshot, text"}
+        ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit example.com", ctx)
         # "browser" matches context pool, "Retrieve CPU details" does not
-        assert any("browser" in s for s in result["skills"])
-        assert not any("Retrieve" in s for s in result["skills"])
+        assert any("browser" in s for s in result["tools"])
+        assert not any("Retrieve" in s for s in result["tools"])
 
     @pytest.mark.asyncio
     async def test_m368_preserves_valid_skills(self, config):
         """M368: run_briefer preserves skills that match context pool."""
         response = json.dumps({
             "modules": [],
-            "skills": ["search: web search for queries"],
+            "tools": ["search: web search for queries"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
-        ctx = {"skills": "Available skills:\n- search — web search for queries, max_results option"}
+        ctx = {"tools": "Available skills:\n- search — web search for queries, max_results option"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "find info", ctx)
-        assert len(result["skills"]) == 1
-        assert "search" in result["skills"][0]
+        assert len(result["tools"]) == 1
+        assert "search" in result["tools"][0]
 
     @pytest.mark.asyncio
     async def test_m387_clears_skills_when_none_installed(self, config):
         """M387: all briefer skills cleared when no skills in context pool."""
         response = json.dumps({
             "modules": [],
-            "skills": ["browser: navigate", "aider: code refactoring"],
+            "tools": ["browser: navigate", "aider: code refactoring"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5596,29 +5596,29 @@ class TestRunBriefer:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
         # No skills installed → all hallucinated skills cleared
-        assert result["skills"] == []
+        assert result["tools"] == []
 
     @pytest.mark.asyncio
     async def test_m387_clears_skills_with_empty_string_pool(self, config):
         """M387: all briefer skills cleared when skills key is empty string."""
         response = json.dumps({
             "modules": [],
-            "skills": ["browser: navigate"],
+            "tools": ["browser: navigate"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
-            result = await run_briefer(config, "planner", "task", {"skills": ""})
-        assert result["skills"] == []
+            result = await run_briefer(config, "planner", "task", {"tools": ""})
+        assert result["tools"] == []
 
     @pytest.mark.asyncio
     async def test_m387_no_skills_returned_passes_through(self, config):
         """M387: when briefer returns no skills, nothing to filter."""
         response = json.dumps({
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5626,7 +5626,7 @@ class TestRunBriefer:
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
-        assert result["skills"] == []
+        assert result["tools"] == []
 
 
 class TestBrieferSchema:
@@ -5635,7 +5635,7 @@ class TestBrieferSchema:
     def test_schema_validates_valid_briefing(self):
         valid = {
             "modules": ["web", "replan"],
-            "skills": ["browser: navigate"],
+            "tools": ["browser: navigate"],
             "context": "some context",
             "output_indices": [0, 1, 2],
             "relevant_tags": ["browser", "tech-stack"],
@@ -5646,7 +5646,7 @@ class TestBrieferSchema:
     def test_schema_rejects_missing_field(self):
         invalid = {
             "modules": ["web"],
-            "skills": [],
+            "tools": [],
             "context": "",
             # missing output_indices and relevant_tags
         }
@@ -5656,7 +5656,7 @@ class TestBrieferSchema:
     def test_schema_rejects_wrong_type(self):
         invalid = {
             "modules": "web",  # should be array
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5669,7 +5669,7 @@ class TestBrieferSchema:
         """M250: empty relevant_tags is valid."""
         valid = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5696,9 +5696,9 @@ class TestLoadModularPrompt:
         assert "Web interaction:" not in result
         assert "Scripting:" not in result
         assert "extend_replan" not in result
-        assert "Broken skill recovery" not in result
+        assert "Broken tool recovery" not in result
         assert "File-based data flow" not in result
-        assert "Skills efficiency:" not in result
+        assert "Tools efficiency:" not in result
         assert "Kiso-native first" not in result
         assert "Recent Messages" not in result
 
@@ -5729,11 +5729,11 @@ class TestLoadModularPrompt:
         assert "python -c" in result
         assert "Web interaction:" not in result
 
-    def test_planner_core_plus_skill_recovery(self):
-        """Loading core + skill_recovery includes broken skill rules."""
-        result = _load_modular_prompt("planner", ["skill_recovery"])
-        assert "Broken skill deps" in result
-        assert "kiso skill remove" in result
+    def test_planner_core_plus_tool_recovery(self):
+        """Loading core + tool_recovery includes broken tool rules."""
+        result = _load_modular_prompt("planner", ["tool_recovery"])
+        assert "Broken tool deps" in result
+        assert "kiso tool remove" in result
 
     def test_planner_core_plus_data_flow(self):
         """Loading core + data_flow includes file-based data flow rules."""
@@ -5749,7 +5749,7 @@ class TestLoadModularPrompt:
         assert "non-null" in result and "`expect`" in result
         assert "fabricate" in result
         # Other modules absent
-        assert "Skills efficiency:" not in result
+        assert "Tools efficiency:" not in result
         assert "Kiso-native first" not in result
 
     def test_planner_core_plus_kiso_native(self):
@@ -5758,13 +5758,13 @@ class TestLoadModularPrompt:
         assert "Kiso-native first" in result
         assert "kiso env set" in result.lower()
         # Other modules absent
-        assert "Skills efficiency:" not in result
+        assert "Tools efficiency:" not in result
         assert "Recent Messages" not in result
 
-    def test_planner_core_plus_skills_rules(self):
-        """Loading core + skills_rules includes skill efficiency rules."""
-        result = _load_modular_prompt("planner", ["skills_rules"])
-        assert "Skills efficiency:" in result
+    def test_planner_core_plus_tools_rules(self):
+        """Loading core + tools_rules includes tool efficiency rules."""
+        result = _load_modular_prompt("planner", ["tools_rules"])
+        assert "Tools efficiency:" in result
         assert "atomic" in result
         assert "Task ordering" in result
         # Other modules absent
@@ -5774,7 +5774,7 @@ class TestLoadModularPrompt:
     def test_planner_core_plus_kiso_commands(self):
         """Loading core + kiso_commands includes CLI commands."""
         result = _load_modular_prompt("planner", ["kiso_commands"])
-        assert "kiso skill install" in result
+        assert "kiso tool install" in result
         assert "kiso connector install" in result
         assert "kiso env set" in result
 
@@ -5799,13 +5799,13 @@ class TestLoadModularPrompt:
         assert "Web interaction:" in modular
         assert "One-liner execution" in modular or "One-liners" in modular
         assert "extend_replan" in modular
-        assert "Broken skill deps" in modular
+        assert "Broken tool deps" in modular
         assert "save to file" in modular
-        assert "Skills efficiency:" in modular
+        assert "Tools efficiency:" in modular
         assert "Kiso-native first" in modular
         assert "Recent Messages" in modular
         # Former appendixes now modules
-        assert "kiso skill install" in modular
+        assert "kiso tool install" in modular
         assert "PROTECTION" in modular or "Caller Role" in modular
         assert "Plugin installation:" in modular
 
@@ -5823,7 +5823,7 @@ class TestLoadModularPrompt:
         assert "One-liner execution" in result or "One-liners" in result
         assert "save to file" in result
         assert "extend_replan" not in result
-        assert "Broken skill deps" not in result
+        assert "Broken tool deps" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -5858,7 +5858,7 @@ class TestBrieferPlannerIntegration:
         """When briefer succeeds, planner prompt uses selected modules only."""
         briefing = {
             "modules": ["web"],
-            "skills": ["browser: navigate, screenshot"],
+            "tools": ["browser: navigate, screenshot"],
             "context": "User wants to browse a website.",
             "output_indices": [],
             "relevant_tags": [],
@@ -5947,7 +5947,7 @@ class TestBrieferPlannerIntegration:
         """With briefer, raw summary/facts/recent are replaced by synthesized context."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "Synthesized context from briefer.",
             "output_indices": [],
             "relevant_tags": [],
@@ -5978,7 +5978,7 @@ class TestBrieferPlannerIntegration:
         """Keyword-based appendices are still injected even when briefer is active."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "User wants to install a skill.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6040,7 +6040,7 @@ class TestBrieferTagRetrieval:
 
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "User asks about infrastructure.",
             "output_indices": [],
             "relevant_tags": ["infra", "cache"],
@@ -6072,7 +6072,7 @@ class TestBrieferTagRetrieval:
 
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "User asks about Python.",
             "output_indices": [],
             "relevant_tags": ["tech-stack"],
@@ -6100,7 +6100,7 @@ class TestBrieferTagRetrieval:
         """M250: empty relevant_tags produces no additional facts section."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "Simple question.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6134,7 +6134,7 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -6161,7 +6161,7 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -6214,7 +6214,7 @@ class TestM346BrieferEntityRetrieval:
         await save_fact(db, "Python version 3.12 deployed", "test", category="project")
 
         briefing = {
-            "modules": [], "skills": [], "context": "User asks about their company.",
+            "modules": [], "tools": [], "context": "User asks about their company.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["acmecorp"],
         }
@@ -6243,7 +6243,7 @@ class TestM346BrieferEntityRetrieval:
         await save_fact(db, "Flask web framework version 3.0", "curator", entity_id=eid)
 
         briefing = {
-            "modules": [], "skills": [], "context": "About Flask.",
+            "modules": [], "tools": [], "context": "About Flask.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["flask"],
         }
@@ -6275,7 +6275,7 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "context": "",
+                    "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": [],
                 })
@@ -6294,7 +6294,7 @@ class TestM346BrieferEntityRetrieval:
     async def test_empty_relevant_entities_no_section(self, db):
         """M346: empty relevant_entities produces no entity-matched section."""
         briefing = {
-            "modules": [], "skills": [], "context": "Simple.",
+            "modules": [], "tools": [], "context": "Simple.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": [],
         }
@@ -6345,7 +6345,7 @@ class TestM258SysEnvAndGapFiltering:
         """M258: briefer path does NOT unconditionally append sys_env."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6388,7 +6388,7 @@ class TestM258SysEnvAndGapFiltering:
                 captured_messages.extend(messages)
                 return json.dumps({
                     "modules": ["plugin_install"],
-                    "skills": [],
+                    "tools": [],
                     "context": "User wants to take a screenshot. Browser skill missing.",
                     "output_indices": [],
                     "relevant_tags": [],
@@ -6433,7 +6433,7 @@ class TestM258SysEnvAndGapFiltering:
                 captured_messages.extend(messages)
                 return json.dumps({
                     "modules": [],
-                    "skills": [],
+                    "tools": [],
                     "context": "Simple request.",
                     "output_indices": [],
                     "relevant_tags": [],
@@ -6485,7 +6485,7 @@ class TestM266BrowserAvailability:
         """Briefer selects web module, browser not installed → warning present."""
         briefing = {
             "modules": ["web"],
-            "skills": [],
+            "tools": [],
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6512,7 +6512,7 @@ class TestM266BrowserAvailability:
         """Briefer selects web module, browser IS installed → no warning."""
         briefing = {
             "modules": ["web"],
-            "skills": ["browser — navigate pages"],
+            "tools": ["browser — navigate pages"],
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6543,7 +6543,7 @@ class TestM266BrowserAvailability:
         """Briefer does NOT select web module → no warning regardless."""
         briefing = {
             "modules": [],
-            "skills": [],
+            "tools": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6602,15 +6602,15 @@ class TestM261PromptSizeReduction:
     def test_install_scenario_moderate(self):
         """Install scenario includes only relevant modules, not all."""
         install_prompt = _load_modular_prompt(
-            "planner", ["planning_rules", "kiso_native", "skills_rules", "plugin_install"],
+            "planner", ["planning_rules", "kiso_native", "tools_rules", "plugin_install"],
         )
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Install scenario should be roughly 50-70% of full
         assert len(install_prompt) < len(all_modules) * 0.75
 
     def test_replan_scenario_small(self):
-        """Replan scenario (core + replan + skill_recovery) is compact."""
-        replan_prompt = _load_modular_prompt("planner", ["replan", "skill_recovery"])
+        """Replan scenario (core + replan + tool_recovery) is compact."""
+        replan_prompt = _load_modular_prompt("planner", ["replan", "tool_recovery"])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         assert len(replan_prompt) < len(all_modules) * 0.40
 
@@ -6621,13 +6621,13 @@ class TestM261PromptSizeReduction:
         assert "Kiso planner" in all_modules  # core
         assert "Kiso-native first" in all_modules  # kiso_native
         assert "natural language WHAT" in all_modules  # planning_rules
-        assert "atomic" in all_modules  # skills_rules
-        assert "apt-get" in all_modules  # skill_recovery
+        assert "atomic" in all_modules  # tools_rules
+        assert "apt-get" in all_modules  # tool_recovery
         assert "save to file" in all_modules  # data_flow
         assert "Web interaction" in all_modules  # web
         assert "One-liner" in all_modules  # scripting
         assert "extend_replan" in all_modules  # replan
-        assert "kiso skill install" in all_modules  # kiso_commands
+        assert "kiso tool install" in all_modules  # kiso_commands
         assert "never generate" in all_modules  # user_mgmt
         assert "Plugin installation" in all_modules  # plugin_install
 
@@ -6659,7 +6659,7 @@ class TestM261BrieferModuleCoverage:
         """Run build_planner_messages with a briefer that returns given modules."""
         briefing = {
             "modules": modules,
-            "skills": [],
+            "tools": [],
             "context": "Briefer context.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6691,7 +6691,7 @@ class TestM261BrieferModuleCoverage:
         system = await self._run_with_briefer_modules(
             db, "list kiso envs", ["kiso_commands"],
         )
-        assert "kiso skill install" in system
+        assert "kiso tool install" in system
 
     async def test_user_mgmt_module_selected(self, db):
         """Briefer selecting user_mgmt covers old user keyword matching."""
@@ -6747,7 +6747,7 @@ class TestM261MessengerContextReduction:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "skills": [],
+                    "modules": [], "tools": [],
                     "context": "User asked about weather in Rome.",
                     "output_indices": [4, 5],
                     "relevant_tags": [],
@@ -7019,7 +7019,7 @@ class TestM309ReplanContextDedup:
 
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
-            return {"modules": ["core"], "skills": [], "context": "ctx",
+            return {"modules": ["core"], "tools": [], "context": "ctx",
                     "output_indices": [], "relevant_tags": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
@@ -7045,7 +7045,7 @@ class TestM309ReplanContextDedup:
 
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
-            return {"modules": ["core"], "skills": [], "context": "ctx",
+            return {"modules": ["core"], "tools": [], "context": "ctx",
                     "output_indices": [], "relevant_tags": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
@@ -7100,7 +7100,7 @@ class TestM272BrieferSimpleConsumers:
 
     def _pool(self):
         return {
-            "skills": "browser: navigate websites",
+            "tools": "browser: navigate websites",
             "system_env": "OS: Linux\nArch: x86_64",
             "connectors": "slack: send messages",
             "summary": "User asked about guidance.studio",
@@ -7640,7 +7640,7 @@ class TestM304BrieferModuleValidationSkip:
         """Default: unknown modules are rejected."""
         briefing = {
             "modules": ["nonexistent"],
-            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
+            "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
             "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=True)
@@ -7650,7 +7650,7 @@ class TestM304BrieferModuleValidationSkip:
         """With check_modules=False, any module names pass validation."""
         briefing = {
             "modules": ["hallucinated_module", "another_fake"],
-            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
+            "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
             "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
@@ -7660,7 +7660,7 @@ class TestM304BrieferModuleValidationSkip:
         """Even with check_modules=False, modules must be an array."""
         briefing = {
             "modules": "not_a_list",
-            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
+            "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
             "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
@@ -7670,13 +7670,13 @@ class TestM304BrieferModuleValidationSkip:
         """check_modules=False doesn't skip validation of other fields."""
         briefing = {
             "modules": ["whatever"],
-            "skills": "not_a_list",  # invalid
+            "tools": "not_a_list",  # invalid
             "context": None,  # invalid
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
-        assert any("skills" in e for e in errors)
+        assert any("tools" in e for e in errors)
         assert any("context" in e for e in errors)
 
 
@@ -7699,7 +7699,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Messenger briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["install_skill", "navigate_and_summarize"],
-            "skills": [], "context": "About to install browser", "output_indices": [],
+            "tools": [], "context": "About to install browser", "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
@@ -7713,7 +7713,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Worker briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["BrowserSkill"],
-            "skills": [], "context": "", "output_indices": [],
+            "tools": [], "context": "", "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
@@ -7725,7 +7725,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Planner briefer still rejects unknown module names."""
         response = json.dumps({
             "modules": ["nonexistent_module"],
-            "skills": [], "context": "", "output_indices": [],
+            "tools": [], "context": "", "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })
@@ -7737,7 +7737,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Messenger briefer with hallucinated modules uses exactly 1 LLM call."""
         response = json.dumps({
             "modules": ["fake_module"],
-            "skills": [], "context": "test", "output_indices": [],
+            "tools": [], "context": "test", "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
         })

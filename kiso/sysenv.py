@@ -257,7 +257,7 @@ def invalidate_cache() -> None:
 
 
 _KISO_CLI_COMMANDS = """\
-  kiso skill list | search [query] | install <name|url> | update <name|all> | remove <name>
+  kiso tool list | search [query] | install <name|url> | update <name|all> | remove <name>
   kiso connector list | search [query] | install <name|url> | update <name|all> | remove <name>
   kiso connector run <name> | stop <name> | status <name>
   kiso env set <KEY> <VALUE> | get <KEY> | list | delete <KEY> | reload"""
@@ -337,11 +337,11 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     lines.append(f"Exec env: {env['exec_env']}")
     lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
-    lines.append(f"Reference docs: {env['reference_docs_path']} (skill/connector authoring guides — cat before planning)")
-    lines.append(f"Plugin registry: {env['registry_url']} (curl to discover available skills/connectors)")
+    lines.append(f"Reference docs: {env['reference_docs_path']} (tool/connector authoring guides — cat before planning)")
+    lines.append(f"Plugin registry: {env['registry_url']} (curl to discover available tools/connectors)")
     registry_hints = env.get("registry_hints")
     if registry_hints:
-        lines.append(f"Registry skills available: {registry_hints}")
+        lines.append(f"Registry tools available: {registry_hints}")
     lines.append(f"Max output: {_format_size(env['max_output_size'])}")
     lines.append("")
 

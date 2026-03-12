@@ -303,12 +303,12 @@ class TestBuildSystemEnvSection:
     def test_contains_kiso_cli_section(self, sample_env):
         section = build_system_env_section(sample_env)
         assert "Kiso CLI (usable in exec tasks):" in section
-        assert "kiso skill list" in section
+        assert "kiso tool list" in section
         assert "kiso connector run" in section
 
     def test_contains_registry_hints(self, sample_env):
         section = build_system_env_section(sample_env)
-        assert "Registry skills available:" in section
+        assert "Registry tools available:" in section
         assert "browser" in section
 
     def test_no_registry_hints_when_empty(self, sample_env):
@@ -389,7 +389,7 @@ class TestBuildSystemEnvSection:
         """Output contains the Reference docs line."""
         section = build_system_env_section(sample_env)
         assert "Reference docs:" in section
-        assert "skill/connector authoring guides" in section
+        assert "tool/connector authoring guides" in section
 
     def test_contains_persistent_dir_line(self, sample_env):
         """Output contains the Persistent dir line."""
