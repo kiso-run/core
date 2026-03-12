@@ -237,7 +237,18 @@ class TestCallLlm:
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.ConnectError("refused")
-                with pytest.raises(LLMError, match="request failed"):
+                with pytest.raises(LLMError, match=r"ConnectError.*refused.*model="):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_request_error_empty_message_includes_class_name(self):
+        """M478: empty str(e) should still show error class and 'no detail'."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = httpx.RemoteProtocolError("")
+                with pytest.raises(LLMError, match=r"RemoteProtocolError.*no detail.*model="):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
@@ -994,7 +1005,7 @@ class TestInflightCallTracking:
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RequestError("connection failed")
-                with pytest.raises(LLMError, match="request failed"):
+                with pytest.raises(LLMError, match=r"RequestError.*connection failed"):
                     await call_llm(
                         config, "worker",
                         [{"role": "user", "content": "hi"}],

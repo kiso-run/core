@@ -378,14 +378,15 @@ async def call_llm(
             duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             raise  # already an LLMError subclass — propagate for retry
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-            raise LLMError(f"LLM call timed out ({role}, {model_name})")
+            raise LLMError(f"LLM call timed out ({type(e).__name__}, {role}, {model_name})")
         except httpx.RequestError as e:
             duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-            raise LLMError(f"LLM request failed: {e}")
+            _detail = str(e) or "no detail"
+            raise LLMError(f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]")
         finally:
             _inflight_calls.pop(session, None)
             if _temp_client is not None:
