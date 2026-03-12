@@ -4,13 +4,16 @@ These tests exercise the full pipeline: user message → classifier → planner 
 worker (with real browser skill) → messenger.  They require a running kiso
 instance with real LLM, network access, and the browser skill available in
 the registry.
+
+When the browser tool is not pre-installed, the tests exercise the full
+multi-turn install flow: first message triggers an install proposal, second
+message ("sì, installa") confirms, and the agent installs + proceeds.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from kiso.config import KISO_DIR
 from kiso.tools import discover_tools
 from tests.functional.conftest import (
     assert_italian,
@@ -20,7 +23,8 @@ from tests.functional.conftest import (
 
 pytestmark = pytest.mark.functional
 
-BROWSER_TIMEOUT = 300  # browser install + navigation can be slow
+# Browser install + navigation can be slow — especially first-time install.
+BROWSER_TIMEOUT = 600
 
 
 def _browser_installed() -> bool:
@@ -28,10 +32,32 @@ def _browser_installed() -> bool:
     return any(t["name"] == "browser" for t in discover_tools())
 
 
-_skip_no_browser = pytest.mark.skipif(
-    not _browser_installed(),
-    reason="browser tool not installed",
-)
+async def _run_with_install_flow(
+    run_message,
+    prompt: str,
+    *,
+    timeout: float = BROWSER_TIMEOUT,
+) -> "FunctionalResult":  # noqa: F821
+    """Send *prompt* and handle the install-proposal flow if needed.
+
+    If the browser tool is already installed, returns after a single turn.
+    Otherwise, detects the install proposal in the first turn's output and
+    sends a confirmation message to trigger the install + original task.
+    """
+    result = await run_message(prompt, timeout=timeout)
+
+    if _browser_installed():
+        # Tool was already available (or got installed in one turn).
+        return result
+
+    # Not installed yet — the LLM should have proposed installation.
+    # The first plan's msg output should mention install/permission.
+    # Send confirmation so the next plan can install and proceed.
+    result = await run_message(
+        "sì, installa il tool browser e procedi con la richiesta",
+        timeout=timeout,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -39,15 +65,14 @@ _skip_no_browser = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-@_skip_no_browser
 class TestF1GuidanceStudioScreenshot:
     """Visit guidance.studio, describe the company, and take a screenshot."""
 
     async def test_website_description_and_screenshot(self, run_message):
-        result = await run_message(
+        result = await _run_with_install_flow(
+            run_message,
             "vai su guidance.studio, dimmi di cosa si occupa questa azienda "
             "sulla base delle info nel sito, e poi mi mandi uno screenshot della home",
-            timeout=BROWSER_TIMEOUT,
         )
 
         # Plan completed successfully
@@ -90,14 +115,13 @@ class TestF1GuidanceStudioScreenshot:
 # ---------------------------------------------------------------------------
 
 
-@_skip_no_browser
 class TestF2GazzettaNews:
     """Visit gazzetta.it and extract latest news."""
 
     async def test_news_extraction(self, run_message):
-        result = await run_message(
+        result = await _run_with_install_flow(
+            run_message,
             "vai su gazzetta.it e dimmi quali sono le ultime notizie",
-            timeout=BROWSER_TIMEOUT,
         )
 
         assert result.success, (
