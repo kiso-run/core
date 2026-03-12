@@ -55,16 +55,25 @@ _EN_WORDS = frozenset(
 
 _WORD_RE = re.compile(r"[a-zàèéìòù]+", re.IGNORECASE)
 
+# Strip fenced code blocks so code keywords don't skew language heuristics.
+_CODE_BLOCK_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
+
+
+def _strip_code_blocks(text: str) -> str:
+    """Remove Markdown fenced code blocks from *text*."""
+    return _CODE_BLOCK_RE.sub("", text)
+
 
 def assert_italian(text: str) -> None:
     """Assert that *text* is predominantly Italian (not English).
 
     Uses a simple keyword-frequency heuristic: counts occurrences of common
-    Italian vs English function words.  Raises ``AssertionError`` with both
-    scores if Italian does not win.
+    Italian vs English function words.  Code blocks are stripped first so that
+    variable names and keywords don't skew the count.
     """
+    cleaned = _strip_code_blocks(text)
     it_score = en_score = 0
-    for w in _WORD_RE.findall(text):
+    for w in _WORD_RE.findall(cleaned):
         w = w.lower()
         it_score += w in _IT_WORDS
         en_score += w in _EN_WORDS

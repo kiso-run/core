@@ -50,6 +50,20 @@ class TestAssertItalian:
             "navigato sul sito con successo."
         )
 
+    def test_italian_with_code_block(self):
+        # Code block keywords (in, for, not, is) should not skew EN score.
+        assert_italian(
+            "Ecco uno script che calcola i numeri di Fibonacci:\n\n"
+            "```python\n"
+            "def fibonacci(n):\n"
+            "    a, b = 0, 1\n"
+            "    for _ in range(n):\n"
+            "        a, b = b, a + b\n"
+            "    return a\n"
+            "```\n\n"
+            "Il risultato per i primi 20 numeri della sequenza è il seguente."
+        )
+
 
 # ---------------------------------------------------------------------------
 # assert_no_failure_language
