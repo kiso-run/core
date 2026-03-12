@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-import kiso.worker
+import kiso.worker.utils
 
 
 @pytest.fixture()
@@ -20,7 +20,7 @@ def kiso_dir(tmp_path, monkeypatch):
     Adds execute bits to parent dirs so sandbox users can traverse
     the path to reach the workspace.
     """
-    monkeypatch.setattr(kiso.worker, "KISO_DIR", tmp_path)
+    monkeypatch.setattr(kiso.worker.utils, "KISO_DIR", tmp_path)
 
     # Add o+x so sandbox users can descend into parent dirs.
     path = tmp_path
