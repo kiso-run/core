@@ -13,6 +13,7 @@ import aiosqlite
 from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.llm import LLMError, call_llm
 from kiso.security import fence_content
+from kiso.skill_loader import discover_md_skills, build_planner_skill_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
 from kiso.store import (
     get_all_entities, get_all_tags, get_facts, get_pending_items,
@@ -767,6 +768,12 @@ async def _gather_planner_context(
     # sys_env_text always present — semi-static
     context_pool["system_env"] = sys_env_text
 
+    # M449/M450: inject MD-based skills into context pool
+    md_skills = discover_md_skills()
+    md_skills_text = build_planner_skill_list(md_skills)
+    if md_skills_text:
+        context_pool["md_skills"] = md_skills_text
+
     # M346: inject available entities for briefer selection
     all_entities = await get_all_entities(db)
     if all_entities:
@@ -1045,6 +1052,7 @@ async def run_planner(
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("tools", "Available Tools"),
+    ("md_skills", "Available Skills (planner instructions)"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
     ("summary", "Session Summary"),
