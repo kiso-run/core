@@ -26,6 +26,7 @@ from kiso.config import (
     SETTINGS_DEFAULTS,
     User,
 )
+from kiso.main import _collect_boot_facts, _init_ssh_keys
 from kiso.store import create_session, init_db, save_message
 from kiso.worker import _process_message
 
@@ -230,6 +231,16 @@ def func_config() -> Config:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="session", autouse=True)
+def func_ssh_keys():
+    """Ensure SSH key pair exists at KISO_DIR (idempotent, session-scoped).
+
+    Calls the same ``_init_ssh_keys()`` that the FastAPI lifespan uses.
+    Functional tests bypass the server lifespan, so this fills the gap.
+    """
+    _init_ssh_keys()
+
+
 @pytest_asyncio.fixture()
 async def func_db(tmp_path: Path):
     """Fresh SQLite database for each functional test."""
@@ -259,6 +270,8 @@ async def run_message(func_config, func_db, func_session):
         assert result.success
         assert_italian(result.msg_output)
     """
+    # Inject boot facts (SSH key, hostname, version) — mirrors FastAPI lifespan
+    await _collect_boot_facts(func_db)
 
     async def _run(
         content: str,
