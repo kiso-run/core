@@ -225,9 +225,9 @@ def test_render_task_header_failed():
 
 
 def test_render_task_header_skill_with_name():
-    task = {"type": "skill", "detail": "search query", "status": "running", "skill": "web_search"}
+    task = {"type": "tool", "detail": "search query", "status": "running", "skill": "web_search"}
     result = render_task_header(task, 1, 2, _COLOR)
-    assert "skill:web_search" in result
+    assert "tool:web_search" in result
 
 
 def test_render_task_header_with_spinner():
@@ -790,11 +790,11 @@ def test_render_plan_detail_empty():
 
 def test_render_plan_detail_skill_type():
     tasks = [
-        {"type": "skill", "detail": "Search the web"},
+        {"type": "tool", "detail": "Search the web"},
         {"type": "msg", "detail": "Report findings"},
     ]
     result = render_plan_detail(tasks, _PLAIN)
-    assert "[skill]" in result
+    assert "[tool]" in result
     assert "[msg]" in result
     assert "\033[" not in result
 

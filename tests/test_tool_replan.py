@@ -91,9 +91,9 @@ class TestToolArgsReplanFlow:
         """M166: validate_plan catches null args against schema."""
         plan = {
             "tasks": [
-                {"type": "skill", "detail": "take screenshot", "skill": "browser",
+                {"type": "tool", "detail": "take screenshot", "tool": "browser",
                  "args": None, "expect": "screenshot saved"},
-                {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
+                {"type": "msg", "detail": "done", "expect": None, "tool": None, "args": None},
             ],
         }
         info = {"browser": BROWSER_TOOL_INFO}
@@ -110,9 +110,9 @@ class TestToolArgsReplanFlow:
             "goal": "Take screenshot",
             "secrets": None,
             "tasks": [
-                {"type": "skill", "detail": "take screenshot of example.com",
-                 "skill": "browser", "args": None, "expect": "screenshot saved"},
-                {"type": "msg", "detail": "Report result", "skill": None,
+                {"type": "tool", "detail": "take screenshot of example.com",
+                 "tool": "browser", "args": None, "expect": "screenshot saved"},
+                {"type": "msg", "detail": "Report result", "tool": None,
                  "args": None, "expect": None},
             ],
         }
@@ -122,11 +122,11 @@ class TestToolArgsReplanFlow:
             "goal": "Take screenshot",
             "secrets": None,
             "tasks": [
-                {"type": "skill", "detail": "take screenshot of example.com",
-                 "skill": "browser",
+                {"type": "tool", "detail": "take screenshot of example.com",
+                 "tool": "browser",
                  "args": '{"action": "screenshot"}',
                  "expect": "screenshot saved"},
-                {"type": "msg", "detail": "Report result", "skill": None,
+                {"type": "msg", "detail": "Report result", "tool": None,
                  "args": None, "expect": None},
             ],
         }
@@ -176,7 +176,7 @@ class TestToolArgsReplanFlow:
             "entry": "browser.sh",
         }
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill",
+        await create_task(db, plan_id, "sess1", type="tool",
                           detail="take screenshot", skill="browser",
                           args=None, expect="screenshot")
 

@@ -182,7 +182,7 @@ def test_validate_connector_manifest_wrong_type(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
     manifest = {
         "kiso": {
-            "type": "skill",
+            "type": "tool",
             "name": "x",
             "connector": {"platform": "x"},
         }

@@ -138,7 +138,7 @@ class TestF13ChatKBClassification:
         # chat_kb fast path: no exec or skill tasks, only msg
         types = result.task_types()
         assert "exec" not in types, f"Expected no exec tasks, got: {types}"
-        assert "skill" not in types, f"Expected no skill tasks, got: {types}"
+        assert "tool" not in types, f"Expected no tool tasks, got: {types}"
         # Should have exactly 1 msg task (fast-path produces single msg)
         msg_tasks = [t for t in result.tasks if t.get("type") == "msg"]
         assert len(msg_tasks) >= 1, f"Expected at least 1 msg task, got: {types}"

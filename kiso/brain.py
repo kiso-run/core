@@ -33,7 +33,6 @@ TASK_TYPE_SEARCH = "search"
 TASK_TYPE_REPLAN = "replan"
 TASK_TYPES: frozenset[str] = frozenset({
     TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_TOOL, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
-    "skill",  # backward compat — PLAN_SCHEMA still uses "skill" until M445
 })
 # Backward compat alias — callers migrated in M440/M446
 TASK_TYPE_SKILL = TASK_TYPE_TOOL
@@ -309,14 +308,14 @@ PLAN_SCHEMA: dict = {
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["exec", "msg", "skill", "search", "replan"],
+                                "enum": ["exec", "msg", "tool", "search", "replan"],
                             },
                             "detail": {"type": "string"},
-                            "skill": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                            "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                             "args": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                             "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                         },
-                        "required": ["type", "detail", "skill", "args", "expect"],
+                        "required": ["type", "detail", "tool", "args", "expect"],
                         "additionalProperties": False,
                     },
                 },
@@ -536,9 +535,6 @@ def validate_plan(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        # Normalize "skill" → "tool" for backward compat (PLAN_SCHEMA still uses "skill")
-        if t == "skill":
-            t = TASK_TYPE_TOOL
         if t in (TASK_TYPE_EXEC, TASK_TYPE_TOOL, TASK_TYPE_SEARCH) and task.get("expect") is None:
             errors.append(f"Task {i}: {t} task must have a non-null expect")
         detail = task.get("detail") or ""
@@ -549,7 +545,7 @@ def validate_plan(
                 f"Save large data to files and reference the file path instead."
             )
         if t == TASK_TYPE_MSG:
-            for field in ("expect", "skill", "args"):
+            for field in ("expect", "tool", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
             # M386: msg detail must have substantive content beyond language prefix
@@ -568,20 +564,20 @@ def validate_plan(
                     f"Task {i}: search cannot be used for kiso plugin discovery — "
                     "use an exec task with `curl <registry_url>` instead"
                 )
-            if task.get("skill") is not None:
-                errors.append(f"Task {i}: search task must have skill = null")
+            if task.get("tool") is not None:
+                errors.append(f"Task {i}: search task must have tool = null")
         if t == TASK_TYPE_REPLAN:
             replan_count += 1
             if task.get("expect") is not None:
                 errors.append(f"Task {i}: replan task must have expect = null")
-            if task.get("skill") is not None:
-                errors.append(f"Task {i}: replan task must have skill = null")
+            if task.get("tool") is not None:
+                errors.append(f"Task {i}: replan task must have tool = null")
             if task.get("args") is not None:
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
                 errors.append(f"Task {i}: replan task can only be the last task")
         if t == TASK_TYPE_TOOL:
-            tool_name = task.get("skill")  # schema field still "skill" until M445
+            tool_name = task.get("tool")
             if not tool_name:
                 errors.append(f"Task {i}: tool task must have a non-null tool name")
             elif installed_skills is not None and tool_name not in installed_skills:

@@ -30,7 +30,7 @@ from kiso.brain import (
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
     TASK_TYPE_SEARCH,
-    TASK_TYPE_SKILL,
+    TASK_TYPE_TOOL,
     WORKER_PHASE_CLASSIFYING,
     WORKER_PHASE_EXECUTING,
     WORKER_PHASE_IDLE,
@@ -647,7 +647,7 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
             f"{lang_prefix}Briefly tell the user what the system is about to do. "
             f"Plan: {task_summary}"
         ),
-        "skill": None,
+        "tool": None,
         "args": None,
         "expect": None,
     }
@@ -666,7 +666,7 @@ async def _persist_plan_tasks(
         tid = await create_task(
             db, plan_id, session,
             type=t["type"], detail=t["detail"],
-            skill=t.get("skill"), args=t.get("args"), expect=t.get("expect"),
+            skill=t.get("tool"), args=t.get("args"), expect=t.get("expect"),
         )
         task_ids.append(tid)
     return task_ids
@@ -979,14 +979,14 @@ async def _handle_tool_task(
         log.error("Disk limit exceeded for task %d: %s", task_id, disk_err)
         await update_task(ctx.db, task_id, "failed", output=disk_err)
         audit.log_task(
-            ctx.session, task_id, TASK_TYPE_SKILL, detail, "failed", 0, 0,
+            ctx.session, task_id, TASK_TYPE_TOOL, detail, "failed", 0, 0,
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
         return _TaskHandlerResult(
             stop=True, stop_success=False,
             stop_replan=disk_err,
-            plan_output=_make_plan_output(i + 1, TASK_TYPE_SKILL, detail, disk_err, "failed", session=ctx.session),
+            plan_output=_make_plan_output(i + 1, TASK_TYPE_TOOL, detail, disk_err, "failed", session=ctx.session),
         )
 
     # Snapshot workspace before execution to detect new files (M215)
@@ -1393,8 +1393,7 @@ async def _handle_search_task(
 _TASK_HANDLERS: dict = {
     TASK_TYPE_EXEC: _handle_exec_task,
     TASK_TYPE_MSG: _handle_msg_task,
-    TASK_TYPE_SKILL: _handle_tool_task,
-    "skill": _handle_tool_task,  # backward compat — PLAN_SCHEMA still uses "skill" until M445
+    TASK_TYPE_TOOL: _handle_tool_task,
     TASK_TYPE_SEARCH: _handle_search_task,
     TASK_TYPE_REPLAN: _handle_replan_task,
 }
@@ -1511,7 +1510,7 @@ async def _execute_plan(
         result = await handler(ctx, task_row, i, is_final, usage_idx_before)
 
         # Refresh tool cache after exec/tool tasks (may have installed new tools)
-        if task_type in (TASK_TYPE_EXEC, TASK_TYPE_SKILL):
+        if task_type in (TASK_TYPE_EXEC, TASK_TYPE_TOOL):
             invalidate_tools_cache()
             ctx.installed_tools = discover_tools()
             ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}

@@ -448,7 +448,7 @@ class TestDiscoveryPlanReplanFlow:
         )
         # Should reference web-search or the skill from investigation
         plan_text = str(action_plan).lower()
-        assert "web" in plan_text or "search" in plan_text or "skill" in plan_text, (
+        assert "web" in plan_text or "search" in plan_text or "tool" in plan_text, (
             f"Action plan should reference investigation results, got: {action_plan}"
         )
 

@@ -485,13 +485,13 @@ async def test_create_task_all_fields(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     task_id = await create_task(
-        db, plan_id, "sess1", type="skill", detail="search web",
+        db, plan_id, "sess1", type="tool", detail="search web",
         skill="search", args='{"query": "test"}', expect="results found",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
     assert len(tasks) == 1
     t = tasks[0]
-    assert t["type"] == "skill"
+    assert t["type"] == "tool"
     assert t["skill"] == "search"
     assert t["args"] == '{"query": "test"}'
     assert t["expect"] == "results found"

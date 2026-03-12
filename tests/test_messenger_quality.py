@@ -163,7 +163,7 @@ class TestMsgDetailValidation:
     def test_only_language_prefix_rejected(self):
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.",
-             "expect": None, "skill": None, "args": None},
+             "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("empty after language prefix" in e for e in errors)
@@ -172,7 +172,7 @@ class TestMsgDetailValidation:
         plan = {"tasks": [
             {"type": "msg",
              "detail": "Answer in Italian. Tell the user the SSH key is at ~/.kiso/sys/ssh/",
-             "expect": None, "skill": None, "args": None},
+             "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty after language prefix" in e for e in errors)
@@ -181,7 +181,7 @@ class TestMsgDetailValidation:
         """Msg detail without language prefix passes (backward compat)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "done",
-             "expect": None, "skill": None, "args": None},
+             "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty after language prefix" in e for e in errors)

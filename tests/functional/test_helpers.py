@@ -96,21 +96,21 @@ class TestFunctionalResult:
             success=True,
             tasks=[
                 {"type": "exec", "status": "done"},
-                {"type": "skill", "status": "done"},
+                {"type": "tool", "status": "done"},
                 {"type": "msg", "status": "done"},
             ],
         )
-        assert r.task_types() == ["exec", "skill", "msg"]
+        assert r.task_types() == ["exec", "tool", "msg"]
 
     def test_tool_tasks(self):
         r = FunctionalResult(
             success=True,
             tasks=[
-                {"type": "exec", "skill": None},
-                {"type": "skill", "skill": "browser"},
-                {"type": "msg", "skill": None},
+                {"type": "exec", "tool": None},
+                {"type": "tool", "tool": "browser"},
+                {"type": "msg", "tool": None},
             ],
         )
         tools = r.tool_tasks()
         assert len(tools) == 1
-        assert tools[0]["skill"] == "browser"
+        assert tools[0]["tool"] == "browser"

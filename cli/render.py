@@ -334,8 +334,8 @@ def render_task_header(
         # running or other → type icon
         icon = _icon(ttype, caps)
 
-    # Label: skill:name for skill tasks with a skill field
-    label = f"skill:{skill_name}" if ttype == "skill" and skill_name else ttype
+    # Label: tool:name for tool tasks with a skill/tool field
+    label = f"tool:{skill_name}" if ttype == "tool" and skill_name else ttype
 
     # Build detail part — first line only, to keep the header on one line
     if detail:

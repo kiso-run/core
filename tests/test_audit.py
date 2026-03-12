@@ -251,11 +251,11 @@ class TestLogTask:
 
     def test_skill_task_type(self, tmp_path):
         with patch("kiso.audit.KISO_DIR", tmp_path):
-            log_task("sess1", 3, "skill", "search", "done", 1500, 200)
+            log_task("sess1", 3, "tool", "search", "done", 1500, 200)
 
         files = list((tmp_path / "audit").glob("*.jsonl"))
         entry = json.loads(files[0].read_text().strip())
-        assert entry["task_type"] == "skill"
+        assert entry["task_type"] == "tool"
 
 
 # --- log_review ---

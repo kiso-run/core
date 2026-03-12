@@ -79,15 +79,15 @@ def _patch_kiso_dir(tmp_path):
 VALID_PLAN = {
     "goal": "Say hello",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "Hello!", "skill": None, "args": None, "expect": None}],
+    "tasks": [{"type": "msg", "detail": "Hello!", "tool": None, "args": None, "expect": None}],
 }
 
 EXEC_THEN_MSG_PLAN = {
     "goal": "List files",
     "secrets": None,
     "tasks": [
-        {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "prints hello"},
-        {"type": "msg", "detail": "Report the output", "skill": None, "args": None, "expect": None},
+        {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "prints hello"},
+        {"type": "msg", "detail": "Report the output", "tool": None, "args": None, "expect": None},
     ],
 }
 
@@ -95,8 +95,8 @@ TOOL_PLAN = {
     "goal": "Use skill",
     "secrets": None,
     "tasks": [
-        {"type": "skill", "detail": "search", "skill": "search", "args": "{}", "expect": "results"},
-        {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+        {"type": "tool", "detail": "search", "tool": "search", "args": "{}", "expect": "results"},
+        {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
     ],
 }
 
@@ -474,7 +474,7 @@ class TestRunWorker:
         plan_with_secrets = {
             "goal": "Use token",
             "secrets": [{"key": "api_token", "value": "tok_abc"}],
-            "tasks": [{"type": "msg", "detail": "Done", "skill": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Done", "tool": None, "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -504,8 +504,8 @@ class TestRunWorker:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -531,8 +531,8 @@ class TestRunWorker:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -589,7 +589,7 @@ class TestRunWorker:
 
         # Should eventually fail (after replan attempts hit max depth)
         tasks = await get_tasks_for_session(db, "sess1")
-        skill_tasks = [t for t in tasks if t["type"] == "skill"]
+        skill_tasks = [t for t in tasks if t["type"] == "tool"]
         assert all(t["status"] == "failed" for t in skill_tasks)
         assert any("not installed" in (t["output"] or "") for t in skill_tasks)
 
@@ -694,8 +694,8 @@ class TestRunWorker:
             "goal": "First attempt",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -703,7 +703,7 @@ class TestRunWorker:
             "goal": "Second attempt",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "Explaining the failure", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Explaining the failure", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -744,8 +744,8 @@ class TestRunWorker:
             "goal": "Run something",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo test", "skill": None, "args": None, "expect": "output"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo test", "tool": None, "args": None, "expect": "output"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -783,8 +783,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -826,8 +826,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -874,8 +874,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -916,15 +916,15 @@ class TestRunWorker:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "report", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "report", "tool": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -968,15 +968,15 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Fixed",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -1028,15 +1028,15 @@ class TestRunWorker:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -1505,7 +1505,7 @@ class TestBuildReplanContext:
         completed = [
             {"type": "exec", "detail": "install", "status": "done", "output": "installed ok"},
             {"type": "msg", "detail": "intent message", "status": "done", "output": "hello user"},
-            {"type": "skill", "detail": "run tool", "status": "done", "output": "result"},
+            {"type": "tool", "detail": "run tool", "status": "done", "output": "result"},
         ]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "install" in ctx
@@ -1734,7 +1734,7 @@ class TestExecutePlan:
         """Skill not installed → replan with error message (M164)."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="search",
+        await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="search", args="{}", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -1751,7 +1751,7 @@ class TestExecutePlan:
         assert len(remaining) == 1  # msg task
         mock_reviewer.assert_not_called()  # review skipped (setup error)
         tasks = await get_tasks_for_plan(db, plan_id)
-        skill_task = [t for t in tasks if t["type"] == "skill"][0]
+        skill_task = [t for t in tasks if t["type"] == "tool"][0]
         assert skill_task["status"] == "failed"
         assert "not installed" in skill_task["output"]
         # plan_outputs should contain the error
@@ -1763,7 +1763,7 @@ class TestExecutePlan:
         config = _make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="do thing",
+        await create_task(db, plan_id, "sess1", type="tool", detail="do thing",
                           skill="browser", args="not-json{", expect="done")
         tasks = await get_tasks_for_plan(db, plan_id)
         task_row = tasks[0]
@@ -1791,7 +1791,7 @@ class TestExecutePlan:
             "entry": "browser.sh",
         }
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="take screenshot",
+        await create_task(db, plan_id, "sess1", type="tool", detail="take screenshot",
                           skill="browser", args="{}", expect="screenshot")
         tasks = await get_tasks_for_plan(db, plan_id)
         task_row = tasks[0]
@@ -1815,7 +1815,7 @@ class TestExecutePlan:
         config = _make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="take screenshot",
+        await create_task(db, plan_id, "sess1", type="tool", detail="take screenshot",
                           skill="browser", args="{}", expect="screenshot")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
         tasks = await get_tasks_for_plan(db, plan_id)
@@ -1844,7 +1844,7 @@ class TestExecutePlan:
         """Skill not installed → replan (M164); reviewer never reached."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="search",
+        await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="search", args="{}", expect="results")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("err")), \
@@ -2352,8 +2352,8 @@ class TestPersistPlanTasks:
     async def test_persists_all_tasks(self, db):
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tasks = [
-            {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
         ]
         ids = await _persist_plan_tasks(db, plan_id, "sess1", tasks)
         assert len(ids) == 2
@@ -2366,7 +2366,7 @@ class TestPersistPlanTasks:
     async def test_persists_skill_fields(self, db):
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tasks = [
-            {"type": "skill", "detail": "search", "skill": "search", "args": '{"q":"test"}', "expect": "results"},
+            {"type": "tool", "detail": "search", "tool": "search", "args": '{"q":"test"}', "expect": "results"},
         ]
         ids = await _persist_plan_tasks(db, plan_id, "sess1", tasks)
         assert len(ids) == 1
@@ -2383,9 +2383,9 @@ class TestM201IntentMsgInjection:
 
     def test_injects_msg_when_first_task_is_exec(self):
         tasks = [
-            {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "echo world", "skill": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "Answer in Italian. fatto", "skill": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "echo world", "tool": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "Answer in Italian. fatto", "tool": None, "args": None, "expect": None},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet the world")
         assert len(result) == 4
@@ -2397,8 +2397,8 @@ class TestM201IntentMsgInjection:
 
     def test_no_injection_when_first_task_is_msg(self):
         tasks = [
-            {"type": "msg", "detail": "Answer in English. hello", "skill": None, "args": None, "expect": None},
-            {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "Answer in English. hello", "tool": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert len(result) == 2
@@ -2406,7 +2406,7 @@ class TestM201IntentMsgInjection:
 
     def test_no_injection_for_single_task(self):
         tasks = [
-            {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert len(result) == 1
@@ -2414,8 +2414,8 @@ class TestM201IntentMsgInjection:
     def test_injection_without_lang_prefix(self):
         """Inject intent msg even when no Answer in prefix — messenger infers language."""
         tasks = [
-            {"type": "exec", "detail": "a", "skill": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "b", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "a", "tool": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "b", "tool": None, "args": None, "expect": "ok"},
         ]
         result = _maybe_inject_intent_msg(tasks, "goal")
         assert len(result) == 3  # injection happened
@@ -2424,9 +2424,9 @@ class TestM201IntentMsgInjection:
 
     def test_does_not_mutate_input(self):
         tasks = [
-            {"type": "exec", "detail": "a", "skill": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "b", "skill": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "Answer in English. done", "skill": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "a", "tool": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "b", "tool": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "Answer in English. done", "tool": None, "args": None, "expect": None},
         ]
         original_len = len(tasks)
         result = _maybe_inject_intent_msg(tasks, "goal")
@@ -2435,10 +2435,10 @@ class TestM201IntentMsgInjection:
 
     def test_intent_detail_includes_up_to_3_steps(self):
         tasks = [
-            {"type": "exec", "detail": f"step{i}", "skill": None, "args": None, "expect": "ok"}
+            {"type": "exec", "detail": f"step{i}", "tool": None, "args": None, "expect": "ok"}
             for i in range(5)
         ]
-        tasks.append({"type": "msg", "detail": "Answer in French. fini", "skill": None, "args": None, "expect": None})
+        tasks.append({"type": "msg", "detail": "Answer in French. fini", "tool": None, "args": None, "expect": None})
         result = _maybe_inject_intent_msg(tasks, "multi-step")
         detail = result[0]["detail"]
         assert detail.startswith("Answer in French.")
@@ -2451,8 +2451,8 @@ class TestM201IntentMsgInjection:
     def test_legacy_lang_tag_still_works(self):
         """Legacy [Lang: xx] format is still supported during transition."""
         tasks = [
-            {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "[Lang: it] fatto", "skill": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "[Lang: it] fatto", "tool": None, "args": None, "expect": None},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert len(result) == 3
@@ -2466,9 +2466,9 @@ class TestM201IntentMsgInjection:
         plan_id = await create_plan(db, "sess1", 1, "Retry with new approach")
 
         replan_tasks = [
-            {"type": "exec", "detail": "apt-get install foo", "skill": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "run test", "skill": None, "args": None, "expect": "pass"},
-            {"type": "msg", "detail": "Answer in Italian. report", "skill": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "apt-get install foo", "tool": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "run test", "tool": None, "args": None, "expect": "pass"},
+            {"type": "msg", "detail": "Answer in Italian. report", "tool": None, "args": None, "expect": None},
         ]
         # Replan path persists tasks directly without _maybe_inject_intent_msg
         await _persist_plan_tasks(db, plan_id, "sess1", replan_tasks)
@@ -2481,8 +2481,8 @@ class TestM201IntentMsgInjection:
     def test_m264_intent_msg_says_system(self):
         """M264: intent msg says 'the system is about to do', not 'you're about to do'."""
         tasks = [
-            {"type": "exec", "detail": "echo hello", "skill": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "echo world", "skill": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "ok"},
+            {"type": "exec", "detail": "echo world", "tool": None, "args": None, "expect": "ok"},
         ]
         result = _maybe_inject_intent_msg(tasks, "greet")
         assert "the system is about to do" in result[0]["detail"]
@@ -2737,7 +2737,7 @@ class TestMakePlanOutput:
         assert entry["index"] == 7
 
     def test_all_task_types(self):
-        for task_type in ("exec", "msg", "skill", "search"):
+        for task_type in ("exec", "msg", "tool", "search"):
             entry = _make_plan_output(1, task_type, "d", "o", "done")
             assert entry["type"] == task_type
 
@@ -3031,7 +3031,7 @@ class TestExecutePlanOutputChaining:
         """Skill task output should be accumulated in plan_outputs."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="search",
+        await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="search", args="{}", expect="results")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
@@ -3223,7 +3223,7 @@ class TestExecutePlanTool:
     async def test_skill_not_installed(self, db, tmp_path):
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="search",
+        await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="nonexistent", args='{"q":"test"}', expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3240,7 +3240,7 @@ class TestExecutePlanTool:
     async def test_skill_invalid_args_json(self, db, tmp_path):
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args="not json", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3263,7 +3263,7 @@ class TestExecutePlanTool:
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         # Missing required arg 'text'
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3284,7 +3284,7 @@ class TestExecutePlanTool:
     async def test_skill_executes_successfully(self, db, tmp_path):
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hello"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3309,7 +3309,7 @@ class TestExecutePlanTool:
     async def test_skill_passes_session_secrets(self, db, tmp_path):
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="sec",
+        await create_task(db, plan_id, "sess1", type="tool", detail="sec",
                           skill="sec", args='{}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3349,7 +3349,7 @@ class TestExecutePlanTool:
     async def test_skill_review_replan(self, db, tmp_path):
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3370,7 +3370,7 @@ class TestExecutePlanTool:
         """M179: skill handler propagates retry_hint to plan_output on replan."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3400,7 +3400,7 @@ class TestExecutePlanTool:
         """M204: skill retries internally when reviewer provides retry_hint."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3433,7 +3433,7 @@ class TestExecutePlanTool:
         """M204: skill escalates to replan after max_worker_retries exhausted."""
         config = _make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3467,7 +3467,7 @@ class TestExecutePlanTool:
         """M204: skill does NOT retry when reviewer returns replan without retry_hint."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="echo",
+        await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -4325,7 +4325,7 @@ class TestPermissionRevalidation:
         """Skill removed from user's allowed list → fails."""
         config = _make_config(users={"bob": User(role="user", tools=["search"])})
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="skill", detail="deploy",
+        await create_task(db, plan_id, "sess1", type="tool", detail="deploy",
                           skill="deploy", args="{}", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -4727,8 +4727,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -4786,8 +4786,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -4831,8 +4831,8 @@ class TestCancelMechanism:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -4875,8 +4875,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5066,8 +5066,8 @@ class TestCancelDuringReplanWindow:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5154,8 +5154,8 @@ class TestWorkerCrashRecovery:
             "goal": "Crash during exec",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5231,7 +5231,7 @@ class TestMalformedSecrets:
         plan_with_bad_secrets = {
             "goal": "Say hello",
             "secrets": [{"k": "v"}],  # wrong keys
-            "tasks": [{"type": "msg", "detail": "Hello!", "skill": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Hello!", "tool": None, "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -5255,7 +5255,7 @@ class TestMalformedSecrets:
         plan_with_string_secrets = {
             "goal": "Say hello",
             "secrets": ["not-a-dict"],
-            "tasks": [{"type": "msg", "detail": "Hello!", "skill": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Hello!", "tool": None, "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -5728,8 +5728,8 @@ class TestSanitizeTaskDetail:
             "secrets": [{"key": "API_KEY", "value": "sk-secret-value-1234"}],
             "tasks": [
                 {"type": "exec", "detail": "curl -H 'Authorization: Bearer sk-secret-value-1234' https://api.example.com",
-                 "skill": None, "args": None, "expect": "200 OK"},
-                {"type": "msg", "detail": "Done deploying", "skill": None, "args": None, "expect": None},
+                 "tool": None, "args": None, "expect": "200 OK"},
+                {"type": "msg", "detail": "Done deploying", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5761,10 +5761,10 @@ class TestSanitizeTaskDetail:
             "goal": "Search",
             "secrets": [{"key": "TOKEN", "value": "tok-mysecret5678"}],
             "tasks": [
-                {"type": "skill", "detail": "search the web",
-                 "skill": "search", "args": '{"query": "test", "token": "tok-mysecret5678"}',
+                {"type": "tool", "detail": "search the web",
+                 "tool": "search", "args": '{"query": "test", "token": "tok-mysecret5678"}',
                  "expect": "results"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5779,7 +5779,7 @@ class TestSanitizeTaskDetail:
 
         plan = await get_plan_for_session(db, "sess1")
         tasks = await get_tasks_for_plan(db, plan["id"])
-        skill_task = [t for t in tasks if t["type"] == "skill"][0]
+        skill_task = [t for t in tasks if t["type"] == "tool"][0]
         assert "tok-mysecret5678" not in (skill_task["args"] or "")
         assert "[REDACTED]" in (skill_task["args"] or "")
 
@@ -5857,8 +5857,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5903,8 +5903,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -5936,8 +5936,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6062,8 +6062,8 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "echo registry", "skill": None, "args": None, "expect": "JSON output"},
-                {"type": "replan", "detail": "install the right skill", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo registry", "tool": None, "args": None, "expect": "JSON output"},
+                {"type": "replan", "detail": "install the right skill", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6072,7 +6072,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "Done investigating", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Done investigating", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6123,7 +6123,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "replan", "detail": "investigate more", "skill": None, "args": None, "expect": None},
+                {"type": "replan", "detail": "investigate more", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6153,7 +6153,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "replan", "detail": "decide next step", "skill": None, "args": None, "expect": None},
+                {"type": "replan", "detail": "decide next step", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6162,7 +6162,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "All done", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "All done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6215,8 +6215,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6226,8 +6226,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6237,7 +6237,7 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "Done!", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Done!", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6300,8 +6300,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6311,8 +6311,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 10,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6322,8 +6322,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6386,8 +6386,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6397,8 +6397,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6408,8 +6408,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6419,8 +6419,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -6429,8 +6429,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -7362,7 +7362,7 @@ class TestFastPathChat:
 CHAT_PLAN = {
     "goal": "Chat",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "hi", "skill": None, "args": None, "expect": None}],
+    "tasks": [{"type": "msg", "detail": "hi", "tool": None, "args": None, "expect": None}],
 }
 
 
@@ -8248,8 +8248,8 @@ class TestTaskHandlers:
         yield pid
 
     async def test_task_handlers_dict_has_all_types(self):
-        """_TASK_HANDLERS covers all task types (tool + skill backward compat)."""
-        assert set(_TASK_HANDLERS.keys()) == {"exec", "msg", "tool", "skill", "search", "replan"}
+        """_TASK_HANDLERS covers all task types."""
+        assert set(_TASK_HANDLERS.keys()) == {"exec", "msg", "tool", "search", "replan"}
 
     # --- _handle_replan_task ---
 
@@ -8991,7 +8991,7 @@ class TestRunPlanningLoop:
             "goal": "Do something",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "run cmd", "skill": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "run cmd", "tool": None, "args": None, "expect": "ok"},
             ],
         }
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
@@ -9035,7 +9035,7 @@ class TestRunPlanningLoop:
         replan_plan = {
             "goal": "Retry", "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
         with patch("kiso.worker.loop._execute_plan", side_effect=_mock_execute_plan), \
@@ -9091,7 +9091,7 @@ class TestRunPlanningLoop:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
             ],
         }
         success_plan = {
@@ -9099,7 +9099,7 @@ class TestRunPlanningLoop:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -9199,8 +9199,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -9268,8 +9268,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "try approach A with curl", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "try approach A with curl", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
         plan_b = {
@@ -9277,8 +9277,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "search", "detail": "find a completely different thing", "skill": None, "args": None, "expect": "results"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "search", "detail": "find a completely different thing", "tool": None, "args": None, "expect": "results"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -9343,8 +9343,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -9823,7 +9823,7 @@ class TestPreReplanCancelFix:
             "goal": "Fail then cancel",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
             ],
         }
 
@@ -10059,15 +10059,15 @@ class TestProcessMessagePhaseCallback:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo fail", "skill": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo fail", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "fixed", "skill": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "fixed", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -10410,11 +10410,11 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "search", "detail": "visit example.com and describe the company",
-                 "skill": None, "args": None, "expect": "description of the company"},
+                 "tool": None, "args": None, "expect": "description of the company"},
                 {"type": "exec", "detail": "check kiso registry for browser skill",
-                 "skill": None, "args": None, "expect": "registry JSON"},
+                 "tool": None, "args": None, "expect": "registry JSON"},
                 {"type": "replan", "detail": "install browser and take screenshot",
-                 "skill": None, "args": None, "expect": None},
+                 "tool": None, "args": None, "expect": None},
             ],
         }
         # Plan 2: install browser skill + replan
@@ -10424,9 +10424,9 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "exec", "detail": "install the browser skill",
-                 "skill": None, "args": None, "expect": "skill installed"},
+                 "tool": None, "args": None, "expect": "skill installed"},
                 {"type": "replan", "detail": "use browser skill for screenshot",
-                 "skill": None, "args": None, "expect": None},
+                 "tool": None, "args": None, "expect": None},
             ],
         }
         # Plan 3: use browser skill + msg
@@ -10436,9 +10436,9 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "exec", "detail": "take screenshot of example.com and save to pub/",
-                 "skill": None, "args": None, "expect": "screenshot saved"},
+                 "tool": None, "args": None, "expect": "screenshot saved"},
                 {"type": "msg", "detail": "Answer in Italian. Tell user about the company and share screenshot",
-                 "skill": None, "args": None, "expect": None},
+                 "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -11456,7 +11456,7 @@ class TestM336StuckHandling:
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         skill = _create_echo_skill(tmp_path)
-        await create_task(db, plan_id, "sess1", type="skill", detail="submit form",
+        await create_task(db, plan_id, "sess1", type="tool", detail="submit form",
                           skill="echo", args='{"text":"hello"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -11541,8 +11541,8 @@ class TestM337BroadenedCircularDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -11632,8 +11632,8 @@ class TestM338BlockExtendWhenStuck:
                 "secrets": None,
                 "extend_replan": 3,  # always request extension
                 "tasks": [
-                    {"type": "exec", "detail": "exit 1", "skill": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
                 ],
             }
 
@@ -11765,8 +11765,8 @@ class TestM341StuckFlow:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "fill form", "skill": None, "args": None, "expect": "submitted"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "fill form", "tool": None, "args": None, "expect": "submitted"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 
@@ -11825,8 +11825,8 @@ class TestM341StuckFlow:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "curl site", "skill": None, "args": None, "expect": "page loaded"},
-                {"type": "msg", "detail": "done", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "curl site", "tool": None, "args": None, "expect": "page loaded"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
             ],
         }
 

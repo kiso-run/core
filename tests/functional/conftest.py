@@ -166,7 +166,7 @@ class FunctionalResult:
 
     def tool_tasks(self) -> list[dict]:
         """Return only tool-type tasks."""
-        return [t for t in self.tasks if t.get("type") in ("tool", "skill")]
+        return [t for t in self.tasks if t.get("type") == "tool"]
 
 
 # ---------------------------------------------------------------------------
