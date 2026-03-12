@@ -90,7 +90,7 @@ class TestSkillInstallRemove:
 
         with (
             patch("cli.tool.TOOLS_DIR", skills_dir),
-            patch("cli.plugin_ops.require_admin"),
+            patch("cli.tool._require_admin"),
             patch("cli.tool.check_deps", return_value=[]),
         ):
             from cli.tool import _tool_install as _skill_install
@@ -109,7 +109,7 @@ class TestSkillInstallRemove:
         remove_args = Namespace(name=skill_name)
         with (
             patch("cli.tool.TOOLS_DIR", skills_dir),
-            patch("cli.plugin_ops.require_admin"),
+            patch("cli.tool._require_admin"),
         ):
             from cli.tool import _tool_remove as _skill_remove
 
@@ -145,7 +145,7 @@ class TestConnectorInstallRemove:
 
         with (
             patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-            patch("cli.plugin_ops.require_admin"),
+            patch("cli.connector.require_admin"),
         ):
             from cli.connector import _connector_install
 
@@ -163,7 +163,7 @@ class TestConnectorInstallRemove:
         remove_args = Namespace(name=connector_name)
         with (
             patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-            patch("cli.plugin_ops.require_admin"),
+            patch("cli.connector.require_admin"),
         ):
             from cli.connector import _connector_remove
 
@@ -197,7 +197,7 @@ class TestSkillInstallNotFound:
 
         with (
             patch("cli.tool.TOOLS_DIR", skills_dir),
-            patch("cli.plugin_ops.require_admin"),
+            patch("cli.tool._require_admin"),
         ):
             from cli.tool import _tool_install as _skill_install
 
@@ -229,7 +229,7 @@ class TestConnectorInstallNotFound:
 
         with (
             patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-            patch("cli.plugin_ops.require_admin"),
+            patch("cli.connector.require_admin"),
         ):
             from cli.connector import _connector_install
 
