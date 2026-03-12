@@ -205,6 +205,44 @@ class TestCheckCommandDenyList:
         """M84j: named-function fork bomb variant must be blocked."""
         assert check_command_deny_list("a(){ a|a& }; a") is not None
 
+    # --- M488: actionable hints ---
+
+    def test_python_c_hint_contains_script_file(self):
+        """M488: python -c denial includes script file alternative."""
+        msg = check_command_deny_list('python3 -c "print(1)"')
+        assert "Hint:" in msg
+        assert "script.py" in msg
+
+    def test_node_e_hint_contains_script_file(self):
+        """M488: node -e denial includes script file alternative."""
+        msg = check_command_deny_list('node -e "console.log(1)"')
+        assert "Hint:" in msg
+        assert "script.js" in msg
+
+    def test_eval_hint_contains_alternative(self):
+        """M488: eval denial includes direct command alternative."""
+        msg = check_command_deny_list("eval echo hello")
+        assert "Hint:" in msg
+        assert "directly" in msg
+
+    def test_rm_rf_root_hint(self):
+        """M488: rm -rf / denial includes specific path hint."""
+        msg = check_command_deny_list("rm -rf /")
+        assert "Hint:" in msg
+        assert "exact path" in msg
+
+    def test_kiso_env_hint(self):
+        """M488: .kiso/.env write denial suggests kiso env set."""
+        msg = check_command_deny_list("echo KEY=val > ~/.kiso/.env")
+        assert "Hint:" in msg
+        assert "kiso env set" in msg
+
+    def test_no_hint_for_generic_deny(self):
+        """M488: patterns without hints don't include 'Hint:' in message."""
+        msg = check_command_deny_list("dd if=/dev/zero of=/dev/sda")
+        assert "Command blocked" in msg
+        assert "Hint:" not in msg
+
 
 # --- Secret sanitization ---
 

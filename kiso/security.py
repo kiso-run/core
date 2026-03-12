@@ -35,28 +35,39 @@ class CommandDeniedError(Exception):
 # Target patterns: /, ~, $HOME (bare or with trailing /)
 _ROOT_TARGET = r"\s+(/\s*$|~/?\s*$|\$HOME/?\s*$)"
 
-DENY_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\brm\s+.*-[^\s]*r[^\s]*f" + _ROOT_TARGET), "rm -rf targeting / or ~ or $HOME"),
-    (re.compile(r"\brm\s+.*-[^\s]*f[^\s]*r" + _ROOT_TARGET), "rm -rf targeting / or ~ or $HOME"),
+DENY_PATTERNS: list[tuple[re.Pattern, str, str]] = [
+    (re.compile(r"\brm\s+.*-[^\s]*r[^\s]*f" + _ROOT_TARGET), "rm -rf targeting / or ~ or $HOME",
+     "Specify the exact path to delete, never use / or ~"),
+    (re.compile(r"\brm\s+.*-[^\s]*f[^\s]*r" + _ROOT_TARGET), "rm -rf targeting / or ~ or $HOME",
+     "Specify the exact path to delete, never use / or ~"),
     # rm -r without -f also dangerous when targeting root/home
-    (re.compile(r"\brm\s+.*-[^\s]*r\b" + _ROOT_TARGET), "rm -r targeting / or ~ or $HOME"),
-    (re.compile(r"\bdd\s+.*\bif="), "dd if= (disk write)"),
-    (re.compile(r"\bmkfs\b"), "mkfs (format filesystem)"),
-    (re.compile(r"\bchmod\s+.*-R\s+777" + _ROOT_TARGET), "chmod -R 777 targeting / or ~ or $HOME"),
-    (re.compile(r"\bchown\s+.*-R\b"), "chown -R (recursive ownership change)"),
-    (re.compile(r"\b(shutdown|reboot)\b"), "shutdown/reboot"),
+    (re.compile(r"\brm\s+.*-[^\s]*r\b" + _ROOT_TARGET), "rm -r targeting / or ~ or $HOME",
+     "Specify the exact path to delete, never use / or ~"),
+    (re.compile(r"\bdd\s+.*\bif="), "dd if= (disk write)", ""),
+    (re.compile(r"\bmkfs\b"), "mkfs (format filesystem)", ""),
+    (re.compile(r"\bchmod\s+.*-R\s+777" + _ROOT_TARGET), "chmod -R 777 targeting / or ~ or $HOME",
+     "Specify the exact path, never use / or ~"),
+    (re.compile(r"\bchown\s+.*-R\b"), "chown -R (recursive ownership change)", ""),
+    (re.compile(r"\b(shutdown|reboot)\b"), "shutdown/reboot", ""),
     # Fork bomb: classic :(){ :|:& } and named-function variants
-    (re.compile(r":\(\)\s*\{.*\|.*&"), "fork bomb"),
-    (re.compile(r"\b\w+\(\)\s*\{[^}]*\|\s*\w+[^}]*&"), "fork bomb (named function variant)"),
-    (re.compile(r"base64.*\|\s*(sh|bash|zsh)"), "base64 decode piped to shell"),
-    (re.compile(r"\bpython[23]?\s+-c\b"), "python one-liner execution"),
-    (re.compile(r"\bperl\s+-e\b"), "perl one-liner execution"),
-    (re.compile(r"\bruby\s+-e\b"), "ruby one-liner execution"),
-    (re.compile(r"\beval\b"), "eval command (indirect execution)"),
-    (re.compile(r"\bnode\s+-e\b"), "node one-liner execution"),
+    (re.compile(r":\(\)\s*\{.*\|.*&"), "fork bomb", ""),
+    (re.compile(r"\b\w+\(\)\s*\{[^}]*\|\s*\w+[^}]*&"), "fork bomb (named function variant)", ""),
+    (re.compile(r"base64.*\|\s*(sh|bash|zsh)"), "base64 decode piped to shell", ""),
+    (re.compile(r"\bpython[23]?\s+-c\b"), "python one-liner execution",
+     "Write a script file instead: cat > script.py << 'PYEOF'\n...\nPYEOF\npython3 script.py"),
+    (re.compile(r"\bperl\s+-e\b"), "perl one-liner execution",
+     "Write a script file instead: cat > script.pl << 'PLEOF'\n...\nPLEOF\nperl script.pl"),
+    (re.compile(r"\bruby\s+-e\b"), "ruby one-liner execution",
+     "Write a script file instead: cat > script.rb << 'RBEOF'\n...\nRBEOF\nruby script.rb"),
+    (re.compile(r"\beval\b"), "eval command (indirect execution)",
+     "Run the command directly without eval"),
+    (re.compile(r"\bnode\s+-e\b"), "node one-liner execution",
+     "Write a script file instead: cat > script.js << 'JSEOF'\n...\nJSEOF\nnode script.js"),
     # Protect kiso config files from direct shell writes (use 'kiso env set' instead)
-    (re.compile(r">{1,2}\s*['\"]?[^|;&\n]*\.kiso[/\\]\.env\b"), "direct write to .kiso/.env (use 'kiso env set' instead)"),
-    (re.compile(r">{1,2}\s*['\"]?[^|;&\n]*\.kiso[/\\]config\.toml\b"), "direct write to .kiso/config.toml"),
+    (re.compile(r">{1,2}\s*['\"]?[^|;&\n]*\.kiso[/\\]\.env\b"), "direct write to .kiso/.env",
+     "Use 'kiso env set KEY VALUE' instead"),
+    (re.compile(r">{1,2}\s*['\"]?[^|;&\n]*\.kiso[/\\]config\.toml\b"), "direct write to .kiso/config.toml",
+     "Use the kiso CLI to manage configuration"),
 ]
 
 _SUBSHELL_RE = re.compile(r"\$\(([^)]+)\)|`([^`]+)`")
@@ -71,18 +82,20 @@ def check_command_deny_list(command: str) -> str | None:
     substituted dangerous commands like ``echo | rm -rf /``.
     """
     # Check the full command first (catches patterns spanning metacharacters, e.g. fork bombs)
-    for pattern, description in DENY_PATTERNS:
+    for pattern, description, hint in DENY_PATTERNS:
         if pattern.search(command):
-            return f"Command blocked: {description}"
+            msg = f"Command blocked: {description}"
+            return f"{msg}. Hint: {hint}" if hint else msg
     # Split on shell metacharacters to catch piped/chained dangerous commands
     segments = re.split(r"\s*(?:;|\|{1,2}|&&|\n)\s*", command)
     # Also extract contents of $(...) and backtick substitutions
     for m in _SUBSHELL_RE.finditer(command):
         segments.append(m.group(1) or m.group(2))
     for segment in segments:
-        for pattern, description in DENY_PATTERNS:
+        for pattern, description, hint in DENY_PATTERNS:
             if pattern.search(segment):
-                return f"Command blocked: {description}"
+                msg = f"Command blocked: {description}"
+                return f"{msg}. Hint: {hint}" if hint else msg
     return None
 
 
