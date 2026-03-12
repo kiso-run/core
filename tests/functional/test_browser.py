@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from kiso.config import KISO_DIR
+from kiso.tools import discover_tools
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
@@ -21,11 +23,23 @@ pytestmark = pytest.mark.functional
 BROWSER_TIMEOUT = 300  # browser install + navigation can be slow
 
 
+def _browser_installed() -> bool:
+    """Check if the browser tool is installed."""
+    return any(t["name"] == "browser" for t in discover_tools())
+
+
+_skip_no_browser = pytest.mark.skipif(
+    not _browser_installed(),
+    reason="browser tool not installed",
+)
+
+
 # ---------------------------------------------------------------------------
 # F1 — Website description + screenshot (guidance.studio)
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_browser
 class TestF1GuidanceStudioScreenshot:
     """Visit guidance.studio, describe the company, and take a screenshot."""
 
@@ -76,6 +90,7 @@ class TestF1GuidanceStudioScreenshot:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_browser
 class TestF2GazzettaNews:
     """Visit gazzetta.it and extract latest news."""
 

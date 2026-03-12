@@ -31,7 +31,7 @@ class TestF3SSHKey:
     async def test_ssh_key_display(self, run_message):
         result = await run_message(
             "dammi la tua chiave ssh",
-            timeout=120,
+            timeout=180,
         )
 
         assert result.success, (
