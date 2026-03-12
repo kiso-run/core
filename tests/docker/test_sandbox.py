@@ -13,7 +13,8 @@ import subprocess
 
 import pytest
 
-from kiso.worker import _ensure_sandbox_user, _exec_task, _session_workspace
+from kiso.worker import _exec_task, _session_workspace
+from kiso.worker.utils import _ensure_sandbox_user_sync
 
 pytestmark = pytest.mark.skipif(
     os.getuid() != 0, reason="requires root",
@@ -28,7 +29,7 @@ def _session_hash(session: str) -> str:
 def sandbox_session(kiso_dir):
     """Create a per-session sandbox user and locked workspace."""
     session = "integration-sandbox-test"
-    uid = _ensure_sandbox_user(session)
+    uid = _ensure_sandbox_user_sync(session)
     assert uid is not None, "useradd failed — are we running as root?"
 
     workspace = _session_workspace(session, sandbox_uid=uid)
