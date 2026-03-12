@@ -73,6 +73,7 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "--docker" ]]; then
     # Requires: Docker — tests run as root inside the container
     if docker info > /dev/null 2>&1; then
+        docker compose -f docker-compose.test.yml build test-docker
         run_suite "Docker/sandbox tests" \
             docker compose -f docker-compose.test.yml run --rm test-docker
     else
