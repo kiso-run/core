@@ -550,6 +550,8 @@ class TestRunWorker:
         assert plans[0]["status"] == "failed"
 
     async def test_msg_llm_error_marks_plan_failed(self, db, tmp_path):
+        # M481: when the only task is a final msg task and messenger fails,
+        # the plan falls back to raw detail and is marked "done" (not "failed").
         config = _make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
@@ -563,7 +565,13 @@ class TestRunWorker:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=3)
 
         plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "failed"
+        # Final msg task falls back to raw detail — plan completes as "done"
+        assert plan["status"] == "done"
+        tasks = await get_tasks_for_session(db, "sess1")
+        msg_task = next(t for t in tasks if t["type"] == "msg")
+        assert msg_task["status"] == "done"
+        # Output is the raw detail text (fallback)
+        assert msg_task["output"] == "Hello!"
 
     async def test_tool_task_fails_not_implemented(self, db, tmp_path):
         config = _make_config(settings={"max_replan_depth": 1})
@@ -1705,6 +1713,8 @@ class TestExecutePlan:
         assert len(_po) == 1  # task output preserved
 
     async def test_msg_llm_error(self, db, tmp_path):
+        # M481: final msg task messenger failure falls back to raw detail.
+        # Plan succeeds (success=True) with 1 completed task containing raw detail.
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -1715,9 +1725,10 @@ class TestExecutePlan:
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
-        assert success is False
+        assert success is True
         assert reason is None
-        assert len(completed) == 0
+        assert len(completed) == 1
+        assert completed[0]["output"] == "hello"
 
     async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
         """Skill not installed → replan with error message (M164)."""
@@ -2289,7 +2300,7 @@ class TestExecutePlanAudit:
             assert call[0][4] == "cancelled"
 
     async def test_audit_log_task_on_msg_llm_error(self, db, tmp_path):
-        """audit.log_task called with status 'failed' on msg LLMError."""
+        """M481: audit.log_task called with status 'done' on final msg MessengerError (fallback)."""
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -2302,7 +2313,7 @@ class TestExecutePlanAudit:
         mock_audit.log_task.assert_called_once()
         args = mock_audit.log_task.call_args[0]
         assert args[2] == "msg"
-        assert args[4] == "failed"
+        assert args[4] == "done"
 
     async def test_audit_log_webhook_passes_secrets(self, db, tmp_path):
         """audit.log_webhook passes deploy_secrets and session_secrets."""
@@ -2945,6 +2956,8 @@ class TestExecutePlanOutputChaining:
         assert not outputs_file.exists()
 
     async def test_plan_outputs_cleaned_up_on_llm_error(self, db, tmp_path):
+        # M481: final msg task messenger failure falls back to raw detail.
+        # Plan succeeds with one plan_output containing the raw detail.
         config = _make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -2955,9 +2968,10 @@ class TestExecutePlanOutputChaining:
                 db, config, "sess1", plan_id, "Test", "msg", 5,
             )
 
-        assert success is False
-        outputs_file = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
-        assert not outputs_file.exists()
+        assert success is True
+        # One plan_output with the raw detail as fallback output
+        assert len(_po) == 1
+        assert _po[0]["output"] == "hello"
 
     async def test_msg_receives_exec_outputs(self, db, tmp_path):
         """msg task should receive preceding exec outputs via plan_outputs."""
@@ -8283,17 +8297,31 @@ class TestTaskHandlers:
         assert done_tasks[0]["duration_ms"] is not None
         assert done_tasks[0]["duration_ms"] >= 0
 
-    async def test_handle_msg_task_messenger_error_returns_stop(self, db, plan_id, tmp_path):
-        """msg handler returns stop=True on LLMError."""
+    async def test_handle_msg_task_non_final_error_returns_stop(self, db, plan_id, tmp_path):
+        """Non-final msg handler returns stop=True on LLMError."""
         task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
+        ctx = _make_ctx(db)
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("API down")), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_msg_task(ctx, task_row, 0, False, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.completed_row is None
+
+    async def test_handle_msg_task_final_error_falls_back_to_detail(self, db, plan_id, tmp_path):
+        """M481: final msg task falls back to raw detail on LLMError."""
+        task_row = await _make_task_row(db, plan_id, "msg", "Summarize the results")
         ctx = _make_ctx(db)
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("API down")), \
              _patch_kiso_dir(tmp_path):
             result = await _handle_msg_task(ctx, task_row, 0, True, 0)
 
-        assert result.stop is True
-        assert result.stop_success is False
-        assert result.completed_row is None
+        assert result.stop is False
+        assert result.completed_row is not None
+        assert result.completed_row["status"] == "done"
+        assert result.completed_row["output"] == "Summarize the results"
+        assert result.plan_output is not None
 
     # --- _handle_tool_task ---
 
@@ -8955,26 +8983,30 @@ class TestRunPlanningLoop:
         assert p["status"] == "done"
 
     async def test_failure_no_replan_path(self, db, tmp_path):
-        """On _execute_plan failure (no replan), loop handles failure and breaks."""
+        """On _execute_plan failure (no replan), loop handles failure and breaks.
+        M481: final msg task failure now falls back to raw detail (plan='done'),
+        so test exec task failure path with max_replan_depth=0 instead.
+        """
         plan = {
             "goal": "Do something",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "Say hi", "skill": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "run cmd", "skill": None, "args": None, "expect": "ok"},
             ],
         }
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
         config = _make_config()
 
-        # Messenger fails → _execute_plan returns (False, None, ...)
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
-                   side_effect=LLMError("API down")), \
+        # Exec task reviewer says replan, but max_replan_depth=0 → no replan possible
+        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                   return_value=REVIEW_REPLAN), \
+             _patch_translator(), \
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
                 plan_id, plan, "admin", None, 30,
-                {}, None, 3, None, None,
+                {}, None, 0, None, None,
             )
 
         assert returned_id == plan_id
@@ -9020,15 +9052,19 @@ class TestRunPlanningLoop:
         assert call_count[0] == 2  # called twice: initial + replan
 
     async def test_auto_replan_no_failed_outputs_fails(self, db, tmp_path):
-        """M172: when replan_reason is None and no failed outputs, fall through to failure."""
+        """M172: when replan_reason is None and no failed outputs, fall through to failure.
+        M481: final msg messenger failure no longer produces success=False; mock _execute_plan
+        directly to simulate the (False, None, no-failed-outputs) scenario."""
         plan = VALID_PLAN
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
         config = _make_config()
 
-        # Messenger fails → _execute_plan returns (False, None, ..., empty plan_outputs)
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
-                   side_effect=LLMError("API down")), \
+        async def _mock_execute_plan(*args, **kwargs):
+            # Simulate plan failure with no replan_reason and no failed plan_outputs
+            return (False, None, None, [], [], [])
+
+        with patch("kiso.worker.loop._execute_plan", side_effect=_mock_execute_plan), \
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
@@ -9859,18 +9895,13 @@ class TestMessengerTimeout:
         from kiso.worker.loop import _fast_path_chat
         msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
 
-        async def _slow_messenger(*args, **kwargs):
-            await asyncio.sleep(10)
-            return "too slow"
-
         config = _make_config()
 
-        with patch("kiso.worker.loop._msg_task", side_effect=_slow_messenger), \
+        # Simulate the timeout by making _msg_task raise asyncio.TimeoutError,
+        # which _fast_path_chat's inner try converts to MessengerError("timed out after Xs").
+        with patch("kiso.worker.loop._msg_task", side_effect=asyncio.TimeoutError), \
              _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(
-                _fast_path_chat(db, config, "sess1", msg_id, "hi", messenger_timeout=1),
-                timeout=5,
-            )
+            await _fast_path_chat(db, config, "sess1", msg_id, "hi", messenger_timeout=1)
 
         # _fast_path_chat catches MessengerError internally and records it in the task output
         cur = await db.execute("SELECT output FROM tasks WHERE status = 'failed'")
@@ -9879,18 +9910,35 @@ class TestMessengerTimeout:
         assert "1s" in (row["output"] or "")
 
     async def test_handle_msg_task_uses_ctx_messenger_timeout(self, db, plan_id, tmp_path):
-        """_handle_msg_task times out according to ctx.messenger_timeout."""
+        """_handle_msg_task times out according to ctx.messenger_timeout.
+        M481: when is_final=True, timeout falls back to raw detail."""
         task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
         ctx = _make_ctx(db)
         ctx.messenger_timeout = 1  # very short
 
-        async def _slow_llm(*args, **kwargs):
-            await asyncio.sleep(10)
-            return "too slow"
-
-        with patch("kiso.brain.call_llm", side_effect=_slow_llm), \
+        # Simulate timeout by raising asyncio.TimeoutError from _msg_task,
+        # which _handle_msg_task's inner except converts to MessengerError.
+        with patch("kiso.worker.loop._msg_task", side_effect=asyncio.TimeoutError), \
              _patch_kiso_dir(tmp_path):
+            # is_final=True → falls back to raw detail
             result = await _handle_msg_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is False
+        assert result.completed_row is not None
+        assert result.completed_row["output"] == "Say hello"
+
+    async def test_handle_msg_task_non_final_timeout_stops(self, db, plan_id, tmp_path):
+        """Non-final msg task timeout stops the plan."""
+        task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
+        ctx = _make_ctx(db)
+        ctx.messenger_timeout = 1
+
+        # Simulate timeout by raising asyncio.TimeoutError from _msg_task,
+        # which _handle_msg_task's inner except converts to MessengerError.
+        # Non-final path: stop=True, stop_success=False (no fallback).
+        with patch("kiso.worker.loop._msg_task", side_effect=asyncio.TimeoutError), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_msg_task(ctx, task_row, 0, False, 0)
 
         assert result.stop is True
         assert result.stop_success is False

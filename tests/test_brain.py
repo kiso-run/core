@@ -2581,8 +2581,7 @@ class TestRunMessenger:
     async def test_llm_error_raises_messenger_error(self, db):
         config = _make_brain_config()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                    side_effect=LLMError("API down")), \
-             patch("kiso.brain.asyncio.sleep", new_callable=AsyncMock):
+                    side_effect=LLMError("API down")):
             with pytest.raises(MessengerError, match="API down"):
                 await run_messenger(db, config, "sess1", "say hi")
 
@@ -2598,23 +2597,26 @@ class TestRunMessenger:
                 raise LLMError("transient error")
             return "Recovered response"
 
-        with patch("kiso.brain.call_llm", side_effect=_fail_then_succeed), \
-             patch("kiso.brain.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("kiso.brain.call_llm", side_effect=_fail_then_succeed):
             result = await run_messenger(db, config, "sess1", "say hi")
         assert result == "Recovered response"
         assert call_count == 2
-        mock_sleep.assert_called_once_with(1)
 
     async def test_messenger_retry_exhausted(self, db):
         """M480: messenger raises after all retries exhausted."""
         config = _make_brain_config()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                    side_effect=LLMError("persistent error")), \
-             patch("kiso.brain.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        call_count = 0
+
+        async def _always_fail(cfg, role, messages, **kw):
+            nonlocal call_count
+            call_count += 1
+            raise LLMError("persistent error")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_fail):
             with pytest.raises(MessengerError, match="3 attempts.*persistent error"):
                 await run_messenger(db, config, "sess1", "say hi")
-        # 2 retry sleeps (initial attempt doesn't sleep)
-        assert mock_sleep.call_count == 2
+        # 3 total calls: 1 initial + 2 retries
+        assert call_count == 3
 
     async def test_loads_custom_role_file(self, db, tmp_path):
         roles_dir = tmp_path / "roles"

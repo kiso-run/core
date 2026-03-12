@@ -234,8 +234,7 @@ class TestCallLlm:
     async def test_request_error_raises(self):
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.ConnectError("refused")
                 with pytest.raises(LLMError, match=r"ConnectError.*refused.*model="):
@@ -246,8 +245,7 @@ class TestCallLlm:
         """M478: empty str(e) should still show error class and 'no detail'."""
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RemoteProtocolError("")
                 with pytest.raises(LLMError, match=r"RemoteProtocolError.*no detail.*model="):
@@ -266,10 +264,9 @@ class TestCallLlm:
                     httpx.ConnectError("connection reset"),
                     ok,
                 ]
-                with patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-                    result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-                    assert "hello" in result
-                    mock_sleep.assert_called_once_with(1)  # 1s backoff on first retry
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert "hello" in result
+                assert mock_client.stream.call_count == 2  # 1 failure + 1 success
 
     @pytest.mark.asyncio
     async def test_transport_retry_exhausted_raises(self):
@@ -280,10 +277,9 @@ class TestCallLlm:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 # All 3 calls raise (1 initial + 2 retries)
                 mock_client.stream.side_effect = httpx.ReadError("read failed")
-                with patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-                    with pytest.raises(LLMError, match=r"ReadError.*read failed"):
-                        await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
-                    assert mock_sleep.call_count == 2  # 2 backoff sleeps before giving up
+                with pytest.raises(LLMError, match=r"ReadError.*read failed"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert mock_client.stream.call_count == 3  # 1 initial + 2 retries
 
     @pytest.mark.asyncio
     async def test_non_200_raises(self):
@@ -453,8 +449,7 @@ class TestCallLlmAudit:
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-                 patch("kiso.llm.audit.log_llm_call") as mock_audit, \
-                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.ConnectError("refused")
                 with pytest.raises(LLMError):
@@ -1041,8 +1036,7 @@ class TestInflightCallTracking:
         """Inflight entry is cleaned up on HTTP errors."""
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RequestError("connection failed")
                 with pytest.raises(LLMError, match=r"RequestError.*connection failed"):
@@ -1364,8 +1358,8 @@ class TestM300StallDetection:
 
             async def aiter_lines(self):
                 yield 'data: {"choices":[{"delta":{"content":"hi"},"index":0}]}'
-                # Stall forever
-                await asyncio.sleep(999)
+                # Stall forever (use Future to avoid conftest asyncio.sleep patch)
+                await asyncio.get_event_loop().create_future()
                 yield "data: [DONE]"
 
         resp = _StallingResp()

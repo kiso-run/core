@@ -85,6 +85,27 @@ def pytest_collection_modifyitems(config, items):
             if _has_marker(item, "destructive"):
                 item.add_marker(skip)
 
+# ---------------------------------------------------------------------------
+# M479/M480: Zero-delay retry backoff in unit tests
+# ---------------------------------------------------------------------------
+# Transport retries (kiso.llm) and messenger retries (kiso.brain) use
+# asyncio.sleep for backoff. In unit tests, these sleeps cause timeouts.
+# This autouse fixture sets backoff to 0 without patching asyncio.sleep.
+
+@pytest.fixture(autouse=True)
+def _no_retry_backoff():
+    """Set retry backoff constants to 0 for fast tests."""
+    import kiso.llm
+    import kiso.brain
+    old_transport = kiso.llm._TRANSPORT_RETRY_BACKOFF
+    old_messenger = kiso.brain._MESSENGER_RETRY_BACKOFF
+    kiso.llm._TRANSPORT_RETRY_BACKOFF = 0.0
+    kiso.brain._MESSENGER_RETRY_BACKOFF = 0.0
+    yield
+    kiso.llm._TRANSPORT_RETRY_BACKOFF = old_transport
+    kiso.brain._MESSENGER_RETRY_BACKOFF = old_messenger
+
+
 VALID_CONFIG = """\
 [tokens]
 cli = "test-secret-token"

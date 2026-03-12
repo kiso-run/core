@@ -28,6 +28,9 @@ _FMT_JSON_OBJECT = "json_object"
 # Cached per model string to avoid retrying the json_schema format on every call.
 _json_object_only_models: set[str] = set()
 
+# M479: transport retry backoff multiplier (seconds). Set to 0 in tests.
+_TRANSPORT_RETRY_BACKOFF: float = 1.0
+
 # Shared long-lived HTTP client, initialized by main.py lifespan.
 # When set, call_llm reuses the connection pool instead of opening a new
 # TCP/TLS connection per call. Falls back to a per-call client when None.
@@ -393,13 +396,14 @@ async def call_llm(
             _detail = str(e) or "no detail"
             _transport_retries += 1
             if _transport_retries <= _MAX_TRANSPORT_RETRIES:
-                backoff = _transport_retries  # 1s, 2s
+                backoff = _transport_retries * _TRANSPORT_RETRY_BACKOFF
                 log.warning(
-                    "LLM transport retry %d/%d (%s): %s [model=%s] — retrying in %ds",
+                    "LLM transport retry %d/%d (%s): %s [model=%s] — retrying in %gs",
                     _transport_retries, _MAX_TRANSPORT_RETRIES,
                     type(e).__name__, _detail, model_name, backoff,
                 )
-                await asyncio.sleep(backoff)
+                if backoff > 0:
+                    await asyncio.sleep(backoff)
                 continue  # retry transport
             raise LLMError(f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]")
         finally:

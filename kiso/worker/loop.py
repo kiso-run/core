@@ -901,6 +901,35 @@ async def _handle_msg_task(
         )
     except (LLMError, MessengerError) as e:
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
+        # M481: when the final msg task fails but all prior tasks succeeded,
+        # fall back to raw detail instead of killing the plan. The msg task
+        # is just composing a summary — its failure shouldn't void completed work.
+        if is_final:
+            log.warning(
+                "Final msg task %d messenger failed, falling back to raw detail: %s",
+                task_id, e,
+            )
+            await update_task(ctx.db, task_id, "done", output=detail, duration_ms=task_duration_ms)
+            task_row = {**task_row, "output": detail, "status": "done"}
+            audit.log_task(
+                ctx.session, task_id, TASK_TYPE_MSG, detail, "done",
+                task_duration_ms, len(detail),
+                deploy_secrets=ctx.deploy_secrets,
+                session_secrets=ctx.session_secrets,
+            )
+            await _deliver_webhook_if_configured(
+                ctx.db, ctx.config, ctx.session, task_id, detail, is_final,
+                deploy_secrets=ctx.deploy_secrets,
+                session_secrets=ctx.session_secrets,
+            )
+            await _append_calls(ctx.db, task_id, idx_after_briefer[0])
+            await _store_step_usage(ctx.db, task_id, usage_idx_before)
+            return _TaskHandlerResult(
+                completed_row=task_row,
+                plan_output=_make_plan_output(
+                    i + 1, TASK_TYPE_MSG, detail, detail, "done", session=ctx.session,
+                ),
+            )
         log.error("Msg task %d messenger error: %s", task_id, e)
         await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
         audit.log_task(

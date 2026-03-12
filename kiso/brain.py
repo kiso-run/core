@@ -70,6 +70,7 @@ WORKER_PHASES: frozenset[str] = frozenset({
 # Fact constants
 _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
+_MESSENGER_RETRY_BACKOFF: float = 1.0  # M480: seconds between retries (0 in tests)
 _VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety"})
 _ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
 
@@ -1915,7 +1916,8 @@ async def run_messenger(
             _last_err = e
             if _attempt < _max_messenger_retries:
                 log.warning("Messenger retry %d/%d: %s", _attempt + 1, _max_messenger_retries, e)
-                await asyncio.sleep(1)
+                if _MESSENGER_RETRY_BACKOFF > 0:
+                    await asyncio.sleep(_MESSENGER_RETRY_BACKOFF)
                 continue
     raise MessengerError(f"LLM call failed after {_max_messenger_retries + 1} attempts: {_last_err}")
 
