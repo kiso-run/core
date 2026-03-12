@@ -80,7 +80,7 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "--live" ]]; then
     # Requires: OPENROUTER_API_KEY set
     if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-        run_suite "Live network tests" tests/live/ -v --live-network
+        run_suite "Live tests (LLM + network)" tests/live/ -v --live-network --llm-live
     else
         echo -e "${YELLOW}⚠ Skipping live tests — OPENROUTER_API_KEY not set${NC}"
         echo "  export OPENROUTER_API_KEY=sk-or-..."
