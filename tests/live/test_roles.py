@@ -95,7 +95,7 @@ class TestPlannerLive:
         replan_task = plan["tasks"][-1]
         assert replan_task["detail"], "Replan task should have a detail describing intent"
         assert replan_task["expect"] is None
-        assert replan_task["skill"] is None
+        assert replan_task["tool"] is None
 
     async def test_exec_request_produces_exec_and_msg(
         self, live_config, seeded_db, live_session, tmp_path,

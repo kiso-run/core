@@ -53,7 +53,7 @@ class TestSimpleQuestionE2E:
             await create_task(
                 seeded_db, plan_id, live_session,
                 type=t["type"], detail=t["detail"],
-                skill=t.get("skill"), args=t.get("args"),
+                skill=t.get("tool"), args=t.get("args"),
                 expect=t.get("expect"),
             )
 
@@ -104,7 +104,7 @@ class TestExecAndReviewOkE2E:
             await create_task(
                 seeded_db, plan_id, live_session,
                 type=t["type"], detail=t["detail"],
-                skill=t.get("skill"), args=t.get("args"),
+                skill=t.get("tool"), args=t.get("args"),
                 expect=t.get("expect"),
             )
 
