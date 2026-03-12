@@ -48,7 +48,7 @@ searcher    = "perplexity/sonar"
 **Requirement:** speed + low cost. Runs before every planner/messenger/worker call.
 Does context selection (classification), not generation. The cheapest, fastest model
 is ideal — 150 t/s, $0.10 input. MMLU 70 is sufficient for "which modules and
-skills are relevant to this request?".
+tools are relevant to this request?".
 
 ### Classifier — `gemini-2.5-flash-lite`
 
@@ -58,7 +58,7 @@ the briefer — any model works, so pick the fastest and cheapest.
 ### Planner — `glm-4.7`
 
 **Requirement:** strong reasoning + structured output. This is the hardest task —
-understand user intent, select skills, produce valid multi-step JSON plans. Runs
+understand user intent, select tools, produce valid multi-step JSON plans. Runs
 once per message, so cost per call matters less than quality.
 
 GLM-4.7 has MMLU 83 (strongest non-reasoning model in the cheap tier), LCB 85,
@@ -135,7 +135,7 @@ Typical request with 3 tasks (with briefer-enabled deep context filtering):
 The briefer reduces planner input by selecting only relevant prompt modules
 (core-only: ~300 tok vs all modules: ~2800 tok) and filtering context
 (sys_env, facts, summary). Simple requests ("what time is it?") get the
-smallest prompt; complex requests ("install a skill and configure it") get
+smallest prompt; complex requests ("install a tool and configure it") get
 more modules. Messenger context is also filtered — the briefer synthesizes
 only relevant facts and plan outputs.
 

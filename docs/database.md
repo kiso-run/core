@@ -84,16 +84,16 @@ CREATE TABLE tasks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_id         INTEGER NOT NULL,   -- which plan this task belongs to
     session         TEXT NOT NULL,
-    type            TEXT NOT NULL,      -- exec | msg | skill
+    type            TEXT NOT NULL,      -- exec | msg | tool
     detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg)
-    skill           TEXT,               -- skill name (if type=skill)
-    args            TEXT,               -- JSON string of skill args (parsed before execution)
-    expect          TEXT,               -- success criteria (required for exec and skill tasks)
+    tool            TEXT,               -- tool name (if type=tool)
+    args            TEXT,               -- JSON string of tool args (parsed before execution)
+    expect          TEXT,               -- success criteria (required for exec and tool tasks)
     command         TEXT,               -- translated shell command (exec only, set after LLM translation)
     status          TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
     substatus       TEXT,               -- free-text detail on current status (e.g. "reviewing")
     output          TEXT,               -- stdout / generated text
-    stderr          TEXT,               -- stderr (exec/skill only)
+    stderr          TEXT,               -- stderr (exec/tool only)
     retry_count     INTEGER NOT NULL DEFAULT 0,
     review_verdict  TEXT,               -- "pass" | "fail" | "replan" (set after reviewer runs)
     review_reason   TEXT,               -- reviewer rationale
@@ -111,7 +111,7 @@ CREATE INDEX idx_tasks_status ON tasks(session, status);
 ```
 
 - `plan_id` replaces the old `message_id` + `goal` — the plan owns the goal, tasks reference the plan.
-- `exec` and `skill` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
+- `exec` and `tool` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
 - `command`: for `exec` tasks, the planner writes a natural-language `detail`; the exec translator LLM converts it to a shell command stored here before execution.
 - `llm_calls`: appended atomically via SQLite `json_insert` — no read-modify-write race condition between concurrent coroutines.
 - Status lifecycle: `pending` → `running` → `done` | `failed` | `cancelled`.

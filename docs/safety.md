@@ -37,28 +37,28 @@ kiso rules remove <id>    # remove a safety rule by ID
 
 ## Install Confirmation (P71 / M418–M421)
 
-Kiso never installs skills, connectors, or OS packages without explicit user approval.
+Kiso never installs tools, connectors, or OS packages without explicit user approval.
 
 ### How it works
 
-1. **First plan**: if a skill/connector is needed but not installed, the planner produces a single `msg` task asking the user whether to install it, offers alternatives (e.g. `search` instead of `browser` for read-only content), and ends the plan there.
+1. **First plan**: if a tool/connector is needed but not installed, the planner produces a single `msg` task asking the user whether to install it, offers alternatives (e.g. `search` instead of `browser` for read-only content), and ends the plan there.
 2. **User replies**: the user's response triggers a new planning cycle (replan).
-3. **Replan**: only in a replan (`is_replan=True`) is the planner allowed to include `exec "kiso skill install ..."` tasks.
+3. **Replan**: only in a replan (`is_replan=True`) is the planner allowed to include `exec "kiso tool install ..."` tasks.
 
 ### Enforcement layers
 
 | Layer | What it does |
 |-------|-------------|
-| **Planner prompt** | `kiso_native`, `skills_rules`, `web`, `plugin_install` modules all instruct: ask first, end plan with msg |
-| **Capability gap injection** | When a needed skill is missing, injects text telling the planner to ask the user |
-| **validate_plan** | Rejects any `exec` task containing `kiso skill install` or `kiso connector install` when `is_replan=False` |
-| **Skill-not-installed error** | When a `skill` task references an uninstalled skill, the error message guides the LLM to plan a single msg task |
+| **Planner prompt** | `kiso_native`, `tools_rules`, `web`, `plugin_install` modules all instruct: ask first, end plan with msg |
+| **Capability gap injection** | When a needed tool is missing, injects text telling the planner to ask the user |
+| **validate_plan** | Rejects any `exec` task containing `kiso tool install` or `kiso connector install` when `is_replan=False` |
+| **Tool-not-installed error** | When a `tool` task references an uninstalled tool, the error message guides the LLM to plan a single msg task |
 
 ### Code
 
 - Validation: `kiso/brain.py` — `validate_plan()`, `_INSTALL_CMD_RE`
 - Capability gap: `kiso/brain.py` — `_detect_capability_gap()`
-- Prompt rules: `kiso/roles/planner.md` — modules `kiso_native`, `skills_rules`, `web`, `plugin_install`
+- Prompt rules: `kiso/roles/planner.md` — modules `kiso_native`, `tools_rules`, `web`, `plugin_install`
 - Tests: `tests/test_install_confirm.py`, `tests/test_brain.py` (M420 section)
 
 ## Job Cancellation

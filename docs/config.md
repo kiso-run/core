@@ -54,11 +54,11 @@ aliases.telegram = "marco_tg"
 
 [users.anna]
 role = "user"
-skills = "*"
+tools = "*"
 
 [users.luca]
 role = "user"
-skills = ["search", "aider"]
+tools = ["search", "aider"]
 
 [models]
 briefer     = "google/gemini-2.5-flash-lite"
@@ -137,7 +137,7 @@ webhook_max_payload       = 1048576
 | `providers.*.base_url` | Required. No implicit default. |
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
-| `users.*.skills` | Required for `user` role. `"*"` for all skills, or a list of skill names. Ignored for admins (always all). |
+| `users.*.tools` | Required for `user` role. `"*"` for all tools, or a list of tool names. Ignored for admins (always all). |
 | `[models]` | All 10 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
 | `[settings]` | All fields required. See table below. |
 
@@ -226,16 +226,16 @@ aliases.email = "marco@example.com"
 
 [users.anna]
 role = "user"
-skills = "*"
+tools = "*"
 aliases.discord = "anna_dev"
 
 [users.luca]
 role = "user"
-skills = ["search", "aider"]
+tools = ["search", "aider"]
 ```
 
 - **`role`**: `"admin"` (unrestricted exec, package management, all skills) or `"user"` (sandboxed exec, allowed skills only).
-- **`skills`**: which skills the planner can use for this user. `"*"` = all, or a list. Admins always have all skills regardless of this field.
+- **`tools`**: which tools the planner can use for this user. `"*"` = all, or a list. Admins always have all tools regardless of this field.
 - **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform user.
 
 User identifiers are Linux users. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.

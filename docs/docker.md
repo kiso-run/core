@@ -17,7 +17,7 @@ Each instance is a named Docker container (`kiso-{name}`) with its own port, dat
     │   ├── server.log
     │   ├── audit/
     │   ├── roles/
-    │   ├── skills/
+    │   ├── tools/
     │   ├── connectors/
     │   └── sessions/
     │       └── {session}/
@@ -116,7 +116,7 @@ All chat and management commands accept an optional `--instance NAME` (or `-i NA
 ```bash
 kiso --instance jarvis                    # chat with the jarvis bot
 kiso --instance work msg "deploy to prod"
-kiso --instance jarvis skill install search
+kiso --instance jarvis tool install search
 kiso --instance work connector install discord
 ```
 
@@ -162,19 +162,19 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 CMD ["uv", "run", "uvicorn", "kiso.main:app", "--host", "0.0.0.0", "--port", "8333"]
 ```
 
-## Pre-installing skills and connectors
+## Pre-installing tools and connectors
 
 **Build time** (baked into image): immutable, updates require rebuild.
 
 ```dockerfile
 FROM kiso:latest
-RUN kiso skill install search
+RUN kiso tool install search
 ```
 
 **Runtime** (in volume): mutable, updatable without rebuild.
 
 ```bash
-kiso skill install search
+kiso tool install search
 ```
 
 Volume contents take precedence over build-time installs (Docker mount behavior).
@@ -200,4 +200,4 @@ Tasks in `store.db` (volume) survive container crashes. In-flight tasks are mark
 
 `deps.sh` runs inside the container as root (isolated, no sudo needed, idempotent). System packages installed at runtime live in the container filesystem — lost on container recreation. Python packages (`uv sync` into `.venv`) persist in the volume.
 
-See [skills.md — deps.sh](skills.md#depssh).
+See [tools.md — deps.sh](tools.md#depssh).

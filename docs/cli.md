@@ -117,7 +117,7 @@ This is useful for debugging prompt issues, verifying what context the LLM recei
 | Element | Color | Purpose |
 |---------|-------|---------|
 | Plan goal | **bold cyan** | Distinguishes the high-level objective |
-| Task header (`exec`, `skill`, `search`) | **yellow** | Work in progress |
+| Task header (`exec`, `tool`, `search`) | **yellow** | Work in progress |
 | Task header (`msg`) | **green** | Bot response |
 | Task output | **dim** | De-emphasized, secondary information |
 | Review: ok | **green** | Success |
@@ -133,7 +133,7 @@ This is useful for debugging prompt issues, verifying what context the LLM recei
 |-------|---------|-------|---------|
 | Plan | `◆` | `*` | New plan started |
 | exec task | `▶` | `>` | Shell command running |
-| skill task | `⚡` | `!` | Skill running |
+| tool task | `⚡` | `!` | Tool running |
 | search task | `🔍` | `S` | Web search running |
 | msg task | `💬` | `"` | Bot message |
 | Review ok | `✓` | `ok` | Task passed review |
@@ -151,7 +151,7 @@ You: deploy the app to fly.io
 ◆ Plan: Deploy application to fly.io (3 tasks)
 ────────────────────────────────────────────────────────────
   1. [exec]    Run fly launch to initialize the app
-  2. [skill]   Update fly.toml to add health check endpoint
+  2. [tool]    Update fly.toml to add health check endpoint
   3. [exec]    Deploy the app to fly.io
 ────────────────────────────────────────────────────────────
 
@@ -162,7 +162,7 @@ You: deploy the app to fly.io
   ┊ Wrote config file fly.toml
   ✓ review: ok  ⟨430→85⟩
 
-⚡ [2/3] skill:aider: Update fly.toml to add health check endpoint
+⚡ [2/3] tool:aider: Update fly.toml to add health check endpoint
   ┊ Edited fly.toml: added [[services.http_checks]] section
   ✓ review: ok  ⟨310→62⟩
 
@@ -239,7 +239,7 @@ Bot: I wasn't able to complete the task. After 3 attempts, the database
 
 #### Output Truncation
 
-Long task output (exec stdout/stderr, skill output) is truncated in the terminal to keep the display readable:
+Long task output (exec stdout/stderr, tool output) is truncated in the terminal to keep the display readable:
 
 - **Default**: show first 20 lines, collapse the rest behind `... (N more lines, press Enter to expand)`
 - If the terminal has fewer than 40 rows, reduce to 10 lines
@@ -258,7 +258,7 @@ When the user presses `Ctrl+C` during execution (not at the prompt):
 (current task finishes)
 
 ⊘ Cancelled. 2 of 4 tasks completed.
-   Done: exec (fly launch), skill:aider (update fly.toml)
+   Done: exec (fly launch), tool:aider (update fly.toml)
    Skipped: exec (fly deploy), msg (final response)
 ```
 
@@ -303,7 +303,7 @@ For `search` tasks, the CLI shows the search query and results:
   reviewer     350→60   deepseek-v3
 ```
 
-Search tasks use the built-in searcher role (`google/gemini-2.5-flash-lite:online` by default) for web lookups. If the `search` skill is installed, the planner prefers it for bulk queries (>10 results) since dedicated search APIs (Brave, Serper) are cheaper per result.
+Search tasks use the built-in searcher role (`google/gemini-2.5-flash-lite:online` by default) for web lookups. If the `search` tool is installed, the planner prefers it for bulk queries (>10 results) since dedicated search APIs (Brave, Serper) are cheaper per result.
 
 #### Token Usage
 
@@ -323,7 +323,7 @@ Kiso: Deployed successfully.
 ────────────────────────────────────────────────────────────
 ```
 
-The per-step count includes all LLM calls for that task (exec translator + reviewer for exec/skill tasks, searcher + reviewer for search tasks, messenger for msg tasks).
+The per-step count includes all LLM calls for that task (exec translator + reviewer for exec/tool tasks, searcher + reviewer for search tasks, messenger for msg tasks).
 
 **Grand total**: after plan completion, the CLI shows the full summary:
 
@@ -350,8 +350,8 @@ The phase label shows what the worker is currently doing:
 | Phase | Shown for | Meaning |
 |-------|-----------|---------|
 | `translating` | exec | Exec translator LLM converting task detail to shell command |
-| `running` | exec, skill | Shell command or skill subprocess executing |
-| `reviewing` | exec, skill, search | Reviewer LLM checking task output |
+| `running` | exec, tool | Shell command or tool subprocess executing |
+| `reviewing` | exec, tool, search | Reviewer LLM checking task output |
 | `searching` | search | Searcher LLM performing web search |
 | `composing` | msg | Messenger LLM generating user-facing message |
 
@@ -370,20 +370,20 @@ The renderer detects terminal capabilities at startup:
 
 When stdout is not a TTY (piped), the CLI outputs plain text with no ANSI codes, no spinner, and no truncation. This makes `kiso --session dev | tee log.txt` work correctly.
 
-## Skill Management
+## Tool Management
 
-Only admins can install, update, and remove skills.
+Only admins can install, update, and remove tools.
 
 ```bash
-kiso skill search [query]                      # search official skills from registry
-kiso skill install <name>                      # official: resolves from kiso-run org
-kiso skill install <git-url>                   # unofficial: clone from any git URL
-kiso skill install <git-url> --name foo        # unofficial with custom name
-kiso skill install <git-url> --no-deps         # skip deps.sh execution
-kiso skill update <name>                       # git pull + deps.sh + uv sync
-kiso skill update all                          # update all installed skills
-kiso skill remove <name>
-kiso skill list                                # list installed skills
+kiso tool search [query]                       # search official tools from registry
+kiso tool install <name>                       # official: resolves from kiso-run org
+kiso tool install <git-url>                    # unofficial: clone from any git URL
+kiso tool install <git-url> --name foo         # unofficial with custom name
+kiso tool install <git-url> --no-deps          # skip deps.sh execution
+kiso tool update <name>                        # git pull + deps.sh + uv sync
+kiso tool update all                           # update all installed tools
+kiso tool remove <name>
+kiso tool list                                 # list installed tools
 ```
 
 ### Search
@@ -391,11 +391,11 @@ kiso skill list                                # list installed skills
 Searches the official registry (`registry.json` in the core repo). Matches by name first, then by description:
 
 ```bash
-$ kiso skill search
+$ kiso tool search
   search  — Web search with multiple backends (Brave, Serper)
   aider   — Code editing, refactoring, bug fixes using aider
 
-$ kiso skill search code
+$ kiso tool search code
   aider   — Code editing, refactoring, bug fixes using aider
 ```
 
@@ -404,22 +404,22 @@ If no results match but the other plugin type has matches, a cross-type hint is 
 ```
 $ kiso connector search browser
 No connectors found.
-Did you mean `kiso skill search browser`? Found in skills: browser
+Did you mean `kiso tool search browser`? Found in tools: browser
 ```
 
 ### Install Flow
 
-See [skills.md — Install Flow](skills.md#install-flow) for the full 10-step sequence (includes `.installing` marker to prevent discovery during install).
+See [tools.md — Install Flow](tools.md#install-flow) for the full 10-step sequence (includes `.installing` marker to prevent discovery during install).
 
 ### Naming
 
 | Source | Installed as |
 |---|---|
-| `kiso skill install search` | `~/.kiso/instances/{instance}/skills/search/` |
-| `kiso skill install git@github.com:foo/bar.git` | `~/.kiso/instances/{instance}/skills/github-com_foo_bar/` |
-| `kiso skill install <url> --name custom` | `~/.kiso/instances/{instance}/skills/custom/` |
+| `kiso tool install search` | `~/.kiso/instances/{instance}/tools/search/` |
+| `kiso tool install git@github.com:foo/bar.git` | `~/.kiso/instances/{instance}/tools/github-com_foo_bar/` |
+| `kiso tool install <url> --name custom` | `~/.kiso/instances/{instance}/tools/custom/` |
 
-URL to name: see [skills.md — Naming Convention](skills.md#naming-convention) for the full algorithm.
+URL to name: see [tools.md — Naming Convention](tools.md#naming-convention) for the full algorithm.
 
 ## Connector Management
 
@@ -486,9 +486,9 @@ Four levels, from lightest to heaviest:
 | Level | DB | Filesystem | Keeps |
 |-------|-----|------------|-------|
 | `session` | messages, plans, tasks, facts, learnings, pending for that session; session row | `sessions/{name}/` | everything else |
-| `knowledge` | facts, learnings, pending (all rows) | nothing | sessions, config, skills |
-| `all` | all rows in all tables | `sessions/`, `audit/`, `.chat_history` | config.toml, .env, skills, connectors |
-| `factory` | store.db deleted entirely | `sessions/`, `audit/`, `skills/`, `connectors/`, `roles/`, `reference/`, `sys/`, `.chat_history`, `server.log` | config.toml, .env, docker-compose.yml |
+| `knowledge` | facts, learnings, pending (all rows) | nothing | sessions, config, tools |
+| `all` | all rows in all tables | `sessions/`, `audit/`, `.chat_history` | config.toml, .env, tools, connectors |
+| `factory` | store.db deleted entirely | `sessions/`, `audit/`, `tools/`, `connectors/`, `roles/`, `reference/`, `sys/`, `.chat_history`, `server.log` | config.toml, .env, docker-compose.yml |
 
 ### Architecture
 
@@ -496,7 +496,7 @@ Four levels, from lightest to heaviest:
 
 - SQLite WAL mode handles concurrent access safely
 - The server may not be running when you want to reset
-- Same pattern as `kiso env` (direct file) and `kiso skill` (direct filesystem)
+- Same pattern as `kiso env` (direct file) and `kiso tool` (direct filesystem)
 
 After `kiso reset factory`, the host wrapper automatically restarts the container so the server reinitializes with a fresh database.
 
@@ -521,15 +521,15 @@ kiso reset factory --yes
 Only admins can add, remove, or manage users.
 
 ```bash
-kiso user list                                                    # list all users with role, skills, aliases
+kiso user list                                                    # list all users with role, tools, aliases
 kiso user list --json                                             # machine-readable JSON output
-kiso user add <user> --role admin|user                        # add an admin (no skills needed)
-kiso user add <user> --role user --skills "*"                 # add a user with all skills
-kiso user add <user> --role user --skills "search,aider"      # add a user with specific skills
-kiso user add <user> --role user --skills "*" \
+kiso user add <user> --role admin|user                        # add an admin (no tools needed)
+kiso user add <user> --role user --tools "*"                  # add a user with all tools
+kiso user add <user> --role user --tools "search,aider"       # add a user with specific tools
+kiso user add <user> --role user --tools "*" \
     --alias discord:bob#1234 --alias slack:U0123456           # add with connector aliases
 kiso user edit <user> --role admin                            # change role in-place
-kiso user edit <user> --skills "read,write"                   # change skills in-place
+kiso user edit <user> --tools "read,write"                    # change tools in-place
 kiso user remove <user>                                       # remove a user
 kiso user alias <user> --connector discord --id "bob#1234"    # set a connector alias
 kiso user alias <user> --connector discord --remove           # remove a connector alias
@@ -546,7 +546,7 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--role admin\|user` | yes | User role. No default — must be explicit. |
-| `--skills` | if `role=user` | `"*"` for all skills, or comma-separated names (e.g. `"search,aider"`). Ignored for admins. |
+| `--tools` | if `role=user` | `"*"` for all tools, or comma-separated names (e.g. `"search,aider"`). Ignored for admins. |
 | `--alias CONNECTOR:ID` | no | Connector alias in `connector:platform_id` format. Repeatable. |
 | `--no-reload` | no | Skip hot-reload after writing config. |
 
@@ -554,8 +554,8 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--role admin\|user` | at least one of `--role`/`--skills` | New role. |
-| `--skills` | at least one of `--role`/`--skills` | New skills: `"*"` or comma-separated names. |
+| `--role admin\|user` | at least one of `--role`/`--tools` | New role. |
+| `--tools` | at least one of `--role`/`--tools` | New tools: `"*"` or comma-separated names. |
 | `--no-reload` | no | Skip hot-reload after writing config. |
 
 **Error handling:**
@@ -566,8 +566,8 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 | User already exists (`add`) | `error: user '...' already exists` |
 | User does not exist (`edit`/`remove`/`alias`) | `error: user '...' does not exist` |
 | `--role` omitted on `add` | `error: --role must be 'admin' or 'user'` |
-| `role=user` without `--skills` | `error: --skills required for role=user` |
-| Both `--role` and `--skills` omitted on `edit` | `error: at least one of --role or --skills must be provided` |
+| `role=user` without `--tools` | `error: --tools required for role=user` |
+| Both `--role` and `--tools` omitted on `edit` | `error: at least one of --role or --tools must be provided` |
 | Alias in wrong format | `error: alias '...' must be in 'connector:platform_id' format` |
 | Removing/demoting last admin | `error: cannot remove/demote the last admin` |
 
@@ -576,10 +576,10 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 Only admins can manage deploy secrets.
 
 ```bash
-kiso env set KISO_SKILL_SEARCH_API_KEY sk-...  # set a deploy secret
-kiso env get KISO_SKILL_SEARCH_API_KEY         # show value
+kiso env set KISO_TOOL_SEARCH_API_KEY sk-...   # set a deploy secret
+kiso env get KISO_TOOL_SEARCH_API_KEY          # show value
 kiso env list                                  # list all deploy secrets (names only)
-kiso env delete KISO_SKILL_SEARCH_API_KEY      # remove a deploy secret
+kiso env delete KISO_TOOL_SEARCH_API_KEY       # remove a deploy secret
 kiso env reload                                # hot-reload .env without restart
 ```
 
@@ -657,8 +657,8 @@ The wrapper (`kiso-host.sh`) fetches the completion script from inside a running
 - All top-level commands including `stats`, `completion`, `instance`, etc.
 - `kiso stats --session` and `kiso reset session` → tab-complete session names from the active instance's DB
 - `kiso instance explore SESSION` → tab-complete session names
-- `kiso skill search` and `kiso connector search` → tab-complete from locally installed plugin names
-- `kiso skill update`, `kiso skill remove`, `kiso connector update`, `kiso connector remove|run|stop|status` → tab-complete from locally installed names
+- `kiso tool search` and `kiso connector search` → tab-complete from locally installed plugin names
+- `kiso tool update`, `kiso tool remove`, `kiso connector update`, `kiso connector remove|run|stop|status` → tab-complete from locally installed names
 - `kiso --instance NAME` → detected from command line; completion automatically queries that instance's DB
 - When multiple instances exist and no `--instance` is specified, session completion is silently skipped
 
@@ -698,11 +698,11 @@ cli/
 ├── __init__.py    ← entry point, argument parsing, REPL loop, /verbose commands
 ├── connector.py   ← kiso connector subcommands (install, update, remove, run, stop, status)
 ├── env.py         ← kiso env subcommands (set, get, list, delete, reload)
-├── plugin_ops.py  ← shared utilities for skill and connector management
+├── plugin_ops.py  ← shared utilities for tool and connector management
 ├── render.py      ← terminal renderer (task display, markdown, spinner, colors)
 ├── reset.py       ← kiso reset subcommands (session, knowledge, all, factory)
 ├── session.py     ← kiso sessions subcommand
-├── skill.py       ← kiso skill subcommands (install, update, remove, list, search)
+├── tool.py        ← kiso tool subcommands (install, update, remove, list, search)
 └── user.py        ← kiso user subcommands (list, add, remove, alias)
 ```
 

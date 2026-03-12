@@ -50,7 +50,7 @@ Logged for all roles: planner, reviewer, worker (exec translator), messenger, se
 }
 ```
 
-Logged for all task types: exec, msg, skill, search, replan. Output content is **not** stored in the audit log (it's in `store.tasks`). Only the length.
+Logged for all task types: exec, msg, tool, search, replan. Output content is **not** stored in the audit log (it's in `store.tasks`). Only the length.
 
 ### Webhook Deliveries
 

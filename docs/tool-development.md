@@ -1,10 +1,10 @@
-# Skill Development — Devplan Standard
+# Tool Development — Devplan Standard
 
-Every skill should include a `DEVPLAN.md` in its root directory. This ensures
+Every tool should include a `DEVPLAN.md` in its root directory. This ensures
 that improvement requests and feature additions are structured, traceable,
 and actionable by automated agents.
 
-## Why a devplan per skill?
+## Why a devplan per tool?
 
 - **Traceability:** Each change has a numbered milestone with rationale.
 - **Agent-friendly:** Automated agents can read the devplan and execute
@@ -15,10 +15,10 @@ and actionable by automated agents.
 ## DEVPLAN.md Structure
 
 ```markdown
-# {Skill Name} — Development Plan
+# {Tool Name} — Development Plan
 
 ## Overview
-What the skill does, current capabilities, known limitations.
+What the tool does, current capabilities, known limitations.
 
 ## Architecture
 Key files, dependencies, kiso integration points.
@@ -37,7 +37,7 @@ Key files, dependencies, kiso integration points.
 
 ## Milestones
 
-Numbered from M1 (per-skill, independent of core numbering).
+Numbered from M1 (per-tool, independent of core numbering).
 
 ### M1 — Feature name
 
@@ -66,8 +66,8 @@ Bullet list with enough context for an agent to pick up and implement:
 
 ## Conventions
 
-- **Milestone numbers are per-skill.** M1 in the browser skill is unrelated
-  to M1 in the search skill.
+- **Milestone numbers are per-tool.** M1 in the browser tool is unrelated
+  to M1 in the search tool.
 - **Keep it actionable.** Each milestone should be implementable in a single
   session by an agent.
 - **Update the capabilities table** when adding or changing actions.
@@ -75,10 +75,10 @@ Bullet list with enough context for an agent to pick up and implement:
   Write them as milestones with Problem/Change structure.
 - **Mark completed milestones** with `[x]` and ✅.
 
-## Skill file structure reminder
+## Tool file structure reminder
 
 ```
-skills/{name}/
+tools/{name}/
 ├── kiso.toml           # manifest (required)
 ├── pyproject.toml      # python dependencies (required)
 ├── run.py              # entry point (required)
@@ -88,4 +88,4 @@ skills/{name}/
 └── .venv/              # created by uv on install
 ```
 
-See [skills.md](skills.md) for the full skill specification.
+See [tools.md](tools.md) for the full tool specification.

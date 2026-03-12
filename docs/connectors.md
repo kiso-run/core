@@ -22,7 +22,7 @@ A directory is a valid connector if it contains `kiso.toml` (with `type = "conne
 
 ## kiso.toml
 
-The manifest. Same base format as skills (`kiso.toml` + `pyproject.toml` + `run.py`), different type and sections.
+The manifest. Same base format as tools (`kiso.toml` + `pyproject.toml` + `run.py`), different type and sections.
 
 ```toml
 [kiso]
@@ -44,7 +44,7 @@ python = ">=3.11"
 
 ### Env Var Naming
 
-Same convention as skills: `KISO_CONNECTOR_{NAME}_{KEY}`. See [skills.md — Env Var Naming](skills.md#env-var-naming). These are deploy secrets — always in env vars, never in config files.
+Same convention as tools: `KISO_CONNECTOR_{NAME}_{KEY}`. See [tools.md — Env Var Naming](tools.md#env-var-naming). These are deploy secrets — always in env vars, never in config files.
 
 ## config.toml
 
@@ -85,13 +85,13 @@ When a platform message includes file attachments (images, documents, audio, etc
 ~/.kiso/instances/{instance}/sessions/{session}/uploads/{filename}
 ```
 
-The directory always exists (created automatically when the session workspace is initialised). The connector can derive the path from the `session` ID it chose on registration. Skills and exec tasks can then read from `uploads/` via the `workspace` input field.
+The directory always exists (created automatically when the session workspace is initialised). The connector can derive the path from the `session` ID it chose on registration. Tools and exec tasks can then read from `uploads/` via the `workspace` input field.
 
 No upload API exists yet — write directly to the filesystem (connectors run inside the container and share the same paths).
 
 ## deps.sh
 
-Same as skills: optional, idempotent, installs system-level deps inside the container. See [skills.md — deps.sh](skills.md#depssh).
+Same as tools: optional, idempotent, installs system-level deps inside the container. See [tools.md — deps.sh](tools.md#depssh).
 
 ## Installation
 
@@ -120,11 +120,11 @@ Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` t
 
 ### Naming Convention
 
-Same as skills. See [skills.md — Naming Convention](skills.md#naming-convention).
+Same as tools. See [tools.md — Naming Convention](tools.md#naming-convention).
 
 ### Install Flow
 
-Same as [skills.md — Install Flow](skills.md#install-flow) (with `.installing` marker, validation, deps, uv sync). One additional step: if `config.example.toml` exists and `config.toml` doesn't, copy it.
+Same as [tools.md — Install Flow](tools.md#install-flow) (with `.installing` marker, validation, deps, uv sync). One additional step: if `config.example.toml` exists and `config.toml` doesn't, copy it.
 
 ### Via the Agent (manual install)
 

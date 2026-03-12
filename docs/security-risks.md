@@ -93,7 +93,7 @@ except PlanError as e:
     return  # ← user gets nothing
 ```
 
-When the planner fails after all validation retries (e.g., LLM keeps hallucinating skills), the message is marked as `processed=1` but no plan, no task, and no response is created. From the user's perspective, they sent a message and got silence.
+When the planner fails after all validation retries (e.g., LLM keeps hallucinating tools), the message is marked as `processed=1` but no plan, no task, and no response is created. From the user's perspective, they sent a message and got silence.
 
 **Planned fix (M21d):** Save a system message to DB and deliver via webhook.
 
@@ -121,7 +121,7 @@ The exec task runs and gets `returncode != 0` → status set to `"failed"`. The 
 **Worst case per message:**
 - `max_replan_depth` = 3 attempts
 - Each attempt: 1 planner call + up to `max_plan_tasks` (20) tasks
-- Each exec/skill task: 1 execution + 1 reviewer call
+- Each exec/tool task: 1 execution + 1 reviewer call
 - Each msg task: 1 worker call
 - Total: 3 × (1 planner + 20 task calls + 20 reviewer calls) = **~123 LLM calls**
 

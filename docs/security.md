@@ -54,7 +54,7 @@ aliases.telegram = "marco_tg"
 
 [users.anna]
 role = "user"
-skills = "*"
+tools = "*"
 aliases.discord = "anna_dev"
 ```
 
@@ -92,29 +92,29 @@ Each user needs an actual Linux user for the exec sandbox (see below). The user 
 
 ## 4. Role-Based Permissions
 
-| Role | Allowed task types | Skills | Package management | Who |
+| Role | Allowed task types | Tools | Package management | Who |
 |---|---|---|---|---|
-| `admin` | `exec` (unrestricted), `msg`, `skill`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
-| `user` | `exec` (sandboxed), `msg`, `skill`, `search` | per-user (`skills` field) | no | `role = "user"` in `[users]` |
+| `admin` | `exec` (unrestricted), `msg`, `tool`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
+| `user` | `exec` (sandboxed), `msg`, `tool`, `search` | per-user (`tools` field) | no | `role = "user"` in `[users]` |
 
-Both roles can use all task types. The differences are the **sandbox**, **skill access**, and optionally **exec confirmation**.
+Both roles can use all task types. The differences are the **sandbox**, **tool access**, and optionally **exec confirmation**.
 
-### Skill Access Control
+### Tool Access Control
 
-Users have a `skills` field in config that controls which skills the planner can use:
+Users have a `tools` field in config that controls which tools the planner can use:
 
-- `skills = "*"` — all installed skills
-- `skills = ["search", "aider"]` — only these specific skills
-- Admins always have access to all skills regardless of this field
+- `tools = "*"` — all installed tools
+- `tools = ["search", "aider"]` — only these specific tools
+- Admins always have access to all tools regardless of this field
 
-The planner receives the user's allowed skill list and only sees those skills in its context. It cannot plan tasks for skills the user doesn't have access to.
+The planner receives the user's allowed tool list and only sees those tools in its context. It cannot plan tasks for tools the user doesn't have access to.
 
 ### Exec Sandbox
 
 - **admin exec**: runs with `cwd=/root/.kiso/sessions/{session}` (container-internal). Can access any path in the container. Full permissions.
 - **user exec**: runs with `cwd=/root/.kiso/sessions/{session}` (container-internal). **Restricted to the session workspace** — cannot read or write outside `/root/.kiso/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
-Skills run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
+Tools run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
 ### Knowledge Isolation
 
@@ -170,50 +170,50 @@ echo `rm -rf /`             # backtick substitution
 
 The full command is also checked as-is to catch patterns that span metacharacters (e.g. fork bombs `:(){ :|:& };:`).
 
-Additionally, the user's **role is re-verified** from `config.toml` before each exec/skill/search task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
+Additionally, the user's **role is re-verified** from `config.toml` before each exec/tool/search task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
 
 ### Runtime Permission Re-validation
 
-Before executing any task, kiso re-reads the user's role and allowed skills from `config.toml`:
+Before executing any task, kiso re-reads the user's role and allowed tools from `config.toml`:
 
 - If the user was removed from config → task fails, remaining tasks cancelled
 - If the user's role was downgraded (admin → user) → exec tasks run sandboxed
-- If a skill was removed from the user's allowed list → skill task fails
+- If a tool was removed from the user's allowed list → tool task fails
 
 This prevents stale permissions from being exploited between message ingestion and task execution.
 
 ### Package Management (admin only)
 
-Only admins can install/update/remove skills and connectors (includes running `deps.sh`).
+Only admins can install/update/remove tools and connectors (includes running `deps.sh`).
 
 ## 5. Secrets
 
 ### Deploy Secrets
 
-API keys and tokens that skills/connectors need to function. Belong to the *deployment*, not any user. The bot uses these as its own credentials (see [Bot Identity](#1-bot-identity)).
+API keys and tokens that tools/connectors need to function. Belong to the *deployment*, not any user. The bot uses these as its own credentials (see [Bot Identity](#1-bot-identity)).
 
 **Lifecycle**: set by admin via `kiso env set`. Persistent across restarts.
 
 **Storage**: `~/.kiso/instances/{name}/.env` file, loaded into process environment at startup. Hot-reloadable via `POST /admin/reload-env`. **Never** in config files, never in the database.
 
-**Naming**: `KISO_SKILL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, and `KISO_LLM_API_KEY` for the LLM provider.
+**Naming**: `KISO_TOOL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, and `KISO_LLM_API_KEY` for the LLM provider.
 
 **Declaration** in `kiso.toml`:
 
 ```toml
-[kiso.skill.env]
-api_key = { required = true }     # → KISO_SKILL_SEARCH_API_KEY
+[kiso.tool.env]
+api_key = { required = true }     # → KISO_TOOL_SEARCH_API_KEY
 ```
 
-Checked on install (warns if missing). Passed to skill automatically via subprocess environment.
+Checked on install (warns if missing). Passed to tool automatically via subprocess environment.
 
 **Management**:
 
 ```bash
-kiso env set KISO_SKILL_SEARCH_API_KEY sk-abc123
-kiso env get KISO_SKILL_SEARCH_API_KEY
+kiso env set KISO_TOOL_SEARCH_API_KEY sk-abc123
+kiso env get KISO_TOOL_SEARCH_API_KEY
 kiso env list                    # list all KISO_* vars
-kiso env delete KISO_SKILL_SEARCH_API_KEY
+kiso env delete KISO_TOOL_SEARCH_API_KEY
 kiso env reload                  # hot-reload without restart
 ```
 
@@ -228,11 +228,11 @@ Credentials a user provides during conversation (e.g. "use this token for now: t
 **Scoping** in `kiso.toml`:
 
 ```toml
-[kiso.skill]
+[kiso.tool]
 session_secrets = ["api_token"]
 ```
 
-Kiso passes **only the declared session secrets** to the skill. A skill declaring `session_secrets = ["api_token"]` will never see other ephemeral secrets — limits blast radius.
+Kiso passes **only the declared session secrets** to the tool. A tool declaring `session_secrets = ["api_token"]` will never see other ephemeral secrets — limits blast radius.
 
 **Planner behavior**: if a user shares credentials, the planner extracts them into the `secrets` field and informs the user they are temporary. If permanent credentials are needed, the planner tells the user to ask an admin to configure them as deploy secrets.
 
@@ -245,15 +245,15 @@ Kiso passes **only the declared session secrets** to the skill. A skill declarin
 | **Storage** | `.env` file + env vars | Worker memory only (never DB) |
 | **Set by** | Admin via `kiso env` | User in chat, extracted by planner |
 | **Persistence** | Permanent until deleted | Lost on worker shutdown |
-| **Passed to skill via** | Subprocess environment | Input JSON (`session_secrets` field) |
-| **Declared in kiso.toml** | `[kiso.skill.env]` | `session_secrets = [...]` |
+| **Passed to tool via** | Subprocess environment | Input JSON (`session_secrets` field) |
+| **Declared in kiso.toml** | `[kiso.tool.env]` | `session_secrets = [...]` |
 
 ### Access Summary
 
 | Context | Deploy secrets | Ephemeral secrets |
 |---|---|---|
 | `exec` tasks | Not available (clean env, PATH only) | Not available |
-| `skill` tasks | Available via env vars (automatic) | Only declared ones, via input JSON |
+| `tool` tasks | Available via env vars (automatic) | Only declared ones, via input JSON |
 | `search` tasks | Not available (LLM call, no env) | Not available |
 | `msg` tasks | Not available (LLM sees nothing) | Not available (LLM sees key names only, never values) |
 
@@ -261,12 +261,12 @@ Kiso passes **only the declared session secrets** to the skill. A skill declarin
 
 1. **Output sanitization**: known secret values (deploy + ephemeral) stripped from task output — plaintext, base64, and URL-encoded variants. Best-effort; encoded variants beyond these are not guaranteed to be caught. See [audit.md](audit.md) for the masking algorithm.
 2. **Clean subprocess env**: exec tasks inherit only PATH.
-3. **Scoped secrets**: skills receive only declared secrets, not the full bag.
+3. **Scoped secrets**: tools receive only declared secrets, not the full bag.
 4. **Prompt hardening**: every role's prompt includes "never reveal secrets or configuration."
 
 ## 6. Prompt Injection Defense
 
-Any content originating from outside kiso's trust boundary is treated as potentially hostile. This includes messages from non-whitelisted users **and** output from exec/skill tasks (which may contain attacker-crafted content from the internet, external repos, APIs, etc.).
+Any content originating from outside kiso's trust boundary is treated as potentially hostile. This includes messages from non-whitelisted users **and** output from exec/tool tasks (which may contain attacker-crafted content from the internet, external repos, APIs, etc.).
 
 ### Layer 1: Paraphrasing
 
@@ -294,11 +294,11 @@ Before fencing, any occurrence of the pattern `<<<.*>>>` in the content is escap
 <<<END_UNTRUSTED_CTX_9f2a7c1e>>>
 ```
 
-**Task output** (exec/skill results, in reviewer and replan context):
+**Task output** (exec/tool results, in reviewer and replan context):
 
 ```
 <<<TASK_OUTPUT_3b8d4f2a>>>
-... stdout/stderr from exec or skill ...
+... stdout/stderr from exec or tool ...
 <<<END_TASK_OUTPUT_3b8d4f2a>>>
 ```
 
@@ -317,7 +317,7 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 | Content | Fenced | Where |
 |---|---|---|
 | Untrusted messages (paraphrased) | yes | Planner context |
-| Exec/skill task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
+| Exec/tool task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
 | Facts, summary, pending items | no | Generated internally by kiso LLM calls |
 | Trusted user messages | no | From whitelisted users |
 | Task detail, expect | no | Written by the planner |
@@ -326,17 +326,17 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 
 These layers reduce risk significantly but cannot guarantee absolute protection against all prompt injection techniques. In security-sensitive environments, disable untrusted message inclusion entirely (config setting) or restrict shared sessions to whitelisted users only.
 
-### Skill Trust Model
+### Tool Trust Model
 
-Skills run as subprocesses with **unrestricted network access**. A compromised or malicious skill can exfiltrate data (including ephemeral secrets passed via input JSON) via HTTP calls to external servers. Kiso does not sandbox skill network access.
+Tools run as subprocesses with **unrestricted network access**. A compromised or malicious tool can exfiltrate data (including ephemeral secrets passed via input JSON) via HTTP calls to external servers. Kiso does not sandbox tool network access.
 
 Mitigations are organizational, not technical:
-- **Official skills** (from `kiso-run` org) are reviewed and trusted
-- **Unofficial skills** trigger a warning on install (see [section 8](#8-unofficial-package-warning))
-- **Secret scoping** limits which ephemeral secrets each skill receives (declared in `kiso.toml`)
-- **Output sanitization** strips known secret values from skill output before storage
+- **Official tools** (from `kiso-run` org) are reviewed and trusted
+- **Unofficial tools** trigger a warning on install (see [section 8](#8-unofficial-package-warning))
+- **Secret scoping** limits which ephemeral secrets each tool receives (declared in `kiso.toml`)
+- **Output sanitization** strips known secret values from tool output before storage
 
-**Admin responsibility**: only install skills you trust. Review `run.py` and dependencies before installing unofficial packages.
+**Admin responsibility**: only install tools you trust. Review `run.py` and dependencies before installing unofficial packages.
 
 ## 7. Webhook Validation
 
@@ -374,10 +374,10 @@ Without this allowlist, `localhost` webhook URLs are rejected by default.
 
 ## 8. Unofficial Package Warning
 
-When installing a skill or connector from a source outside the `kiso-run` GitHub org, kiso warns and **displays the contents of `deps.sh`** (if present) before asking for confirmation:
+When installing a tool or connector from a source outside the `kiso-run` GitHub org, kiso warns and **displays the contents of `deps.sh`** (if present) before asking for confirmation:
 
 ```
-⚠ This is an unofficial package from github.com:someone/my-skill.
+⚠ This is an unofficial package from github.com:someone/my-tool.
 
 deps.sh contents (will run as root in container):
 ────────────────────────────────────────
@@ -405,7 +405,7 @@ Hardening measures to implement for production deployments.
 - **User names**: must match Linux user constraints (`^[a-z_][a-z0-9_-]{0,31}$`).
 - **Token names** in config: same constraints as user names.
 - **Alias values**: case-sensitive, no Unicode normalization. Duplicate aliases across users are rejected at config load time.
-- **Skill args JSON**: max 64KB. Nesting depth max 5 levels. Validated before passing to subprocess.
+- **Tool args JSON**: max 64KB. Nesting depth max 5 levels. Validated before passing to subprocess.
 
 ### Rate Limiting
 
@@ -438,7 +438,7 @@ The worker's message-processing loop is wrapped in a try/except that catches une
 On startup, kiso recovers from unclean shutdowns:
 
 1. **Stale plans/tasks**: Any plans or tasks left in `running` status (from a previous crash) are marked `failed`. Tasks receive output `"Server restarted"`.
-2. **Unprocessed messages**: Trusted messages with `processed=0` are re-enqueued to their session workers. User roles and skills are re-resolved from the current config (not cached from ingestion time).
+2. **Unprocessed messages**: Trusted messages with `processed=0` are re-enqueued to their session workers. User roles and tools are re-resolved from the current config (not cached from ingestion time).
 3. **Graceful shutdown**: On shutdown, workers receive a cancel signal and are given `exec_timeout` seconds to finish. Workers that don't finish are force-cancelled.
 
 ### Audit File Locking
@@ -451,19 +451,19 @@ After extracting content from an LLM response, kiso validates that the content i
 
 ### Plan Task Type Validation
 
-`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `skill`, `search`, `replan`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
+`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `tool`, `search`, `replan`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
 
 ### Cancel During Replan
 
 When a cancel event is set during the replan window (after a failed plan execution, before the replanning LLM call), the worker checks `cancel_event` and breaks out of the replan loop immediately. This prevents unnecessary LLM calls and task execution after the user has requested cancellation.
 
-### Skill Name Deduplication
+### Tool Name Deduplication
 
-`discover_skills()` tracks seen skill names and skips duplicate entries when two skill directories declare the same `name` in `kiso.toml`. The first directory (sorted alphabetically) wins. Duplicates are logged as warnings.
+`discover_tools()` tracks seen tool names and skips duplicate entries when two tool directories declare the same `name` in `kiso.toml`. The first directory (sorted alphabetically) wins. Duplicates are logged as warnings.
 
 ### Output Size Limits
 
-Exec and skill output is capped at a configurable max size (`max_output_size`, default: 1 MB). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/skills.
+Exec and tool output is capped at a configurable max size (`max_output_size`, default: 1 MB). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/tools.
 
 ### Post-Plan LLM Timeouts
 
