@@ -23,7 +23,7 @@ _SHIM_FILES = {
     SRC / "skills.py",
     SRC / "skill_repair.py",
     SRC / "worker" / "skill.py",
-    CLI / "skill.py",
+    # CLI / "skill.py" repurposed for MD-based skills in M451
 }
 
 

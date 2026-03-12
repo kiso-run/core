@@ -169,9 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
     tool_parser = sub.add_parser("tool", help="manage tools")
     _add_tool_subcommands(tool_parser)
 
-    # Backward compat: "skill" as hidden alias for "tool"
-    skill_parser = sub.add_parser("skill")
-    _add_tool_subcommands(skill_parser)
+    # MD-based skill management
+    skill_parser = sub.add_parser("skill", help="manage MD-based skills")
+    skill_sub = skill_parser.add_subparsers(dest="skill_command")
+    skill_sub.add_parser("list", help="list installed skills")
+    si = skill_sub.add_parser("install", help="install a skill from a .md file")
+    si.add_argument("source", help="path to .md skill file")
+    sr = skill_sub.add_parser("remove", help="remove a skill")
+    sr.add_argument("name", help="skill name")
 
     connector_parser = sub.add_parser("connector", help="manage connectors")
     connector_sub = connector_parser.add_subparsers(dest="connector_command")
@@ -342,10 +347,14 @@ def main() -> None:
         _chat(args)
     elif args.command == "msg":
         _msg_cmd(args)
-    elif args.command in ("tool", "skill"):
+    elif args.command == "tool":
         from cli.tool import run_tool_command
 
         run_tool_command(args)
+    elif args.command == "skill":
+        from cli.skill import run_skill_command
+
+        run_skill_command(args)
     elif args.command == "connector":
         from cli.connector import run_connector_command
 
