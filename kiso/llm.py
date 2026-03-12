@@ -304,8 +304,12 @@ async def call_llm(
     reasoning_api = ""
     input_tokens = 0
     output_tokens = 0
+    _transport_retries = 0
+    _MAX_TRANSPORT_RETRIES = 2  # M479: retry transient network errors
 
-    for _attempt in range(2):
+    _json_schema_retried = False  # track whether we already fell back to json_object
+
+    while True:
         payload: dict = {
             "model": model_name,
             "messages": messages,
@@ -352,7 +356,7 @@ async def call_llm(
                     _error_body = (await resp.aread()).decode(errors="replace")
                     # Detect json_schema rejection → retry once with json_object.
                     if (
-                        _attempt == 0
+                        not _json_schema_retried
                         and _resp_status == 400
                         and effective_format
                         and effective_format.get("type") == _FMT_JSON_SCHEMA
@@ -364,6 +368,7 @@ async def call_llm(
                             model_name,
                         )
                         effective_format = {"type": _FMT_JSON_OBJECT}
+                        _json_schema_retried = True
                         continue  # retry with json_object
                     break  # non-retryable error, handle after loop
 
@@ -386,6 +391,16 @@ async def call_llm(
             duration_ms = int((time.perf_counter() - t0) * 1000)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             _detail = str(e) or "no detail"
+            _transport_retries += 1
+            if _transport_retries <= _MAX_TRANSPORT_RETRIES:
+                backoff = _transport_retries  # 1s, 2s
+                log.warning(
+                    "LLM transport retry %d/%d (%s): %s [model=%s] — retrying in %ds",
+                    _transport_retries, _MAX_TRANSPORT_RETRIES,
+                    type(e).__name__, _detail, model_name, backoff,
+                )
+                await asyncio.sleep(backoff)
+                continue  # retry transport
             raise LLMError(f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]")
         finally:
             _inflight_calls.pop(session, None)

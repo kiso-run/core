@@ -234,7 +234,8 @@ class TestCallLlm:
     async def test_request_error_raises(self):
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.ConnectError("refused")
                 with pytest.raises(LLMError, match=r"ConnectError.*refused.*model="):
@@ -245,11 +246,44 @@ class TestCallLlm:
         """M478: empty str(e) should still show error class and 'no detail'."""
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RemoteProtocolError("")
                 with pytest.raises(LLMError, match=r"RemoteProtocolError.*no detail.*model="):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_transport_retry_succeeds_on_second_attempt(self):
+        """M479: transient RequestError retried, success on second attempt."""
+        config = _make_config()
+        ok = _ok_stream()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, ok)
+                # First call raises, second succeeds (returns the context manager)
+                mock_client.stream.side_effect = [
+                    httpx.ConnectError("connection reset"),
+                    ok,
+                ]
+                with patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                    result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                    assert "hello" in result
+                    mock_sleep.assert_called_once_with(1)  # 1s backoff on first retry
+
+    @pytest.mark.asyncio
+    async def test_transport_retry_exhausted_raises(self):
+        """M479: after max transport retries, raises LLMError."""
+        config = _make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                # All 3 calls raise (1 initial + 2 retries)
+                mock_client.stream.side_effect = httpx.ReadError("read failed")
+                with patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                    with pytest.raises(LLMError, match=r"ReadError.*read failed"):
+                        await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                    assert mock_sleep.call_count == 2  # 2 backoff sleeps before giving up
 
     @pytest.mark.asyncio
     async def test_non_200_raises(self):
@@ -415,18 +449,23 @@ class TestCallLlmAudit:
 
     @pytest.mark.asyncio
     async def test_audit_logged_on_request_error(self):
+        """M479: audit logged on each transport attempt (initial + retries)."""
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-                 patch("kiso.llm.audit.log_llm_call") as mock_audit:
+                 patch("kiso.llm.audit.log_llm_call") as mock_audit, \
+                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.ConnectError("refused")
                 with pytest.raises(LLMError):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}], session="s1")
-                mock_audit.assert_called_once()
-                args = mock_audit.call_args[0]
-                assert args[0] == "s1"  # session
-                assert args[7] == "error"
+                # 3 calls: 1 initial + 2 retries
+                assert mock_audit.call_count == 3
+                # All logged with session and error status
+                for call in mock_audit.call_args_list:
+                    args = call[0]
+                    assert args[0] == "s1"
+                    assert args[7] == "error"
 
     @pytest.mark.asyncio
     async def test_audit_logged_on_empty_response(self):
@@ -1002,7 +1041,8 @@ class TestInflightCallTracking:
         """Inflight entry is cleaned up on HTTP errors."""
         config = _make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
-            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
+                 patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock):
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RequestError("connection failed")
                 with pytest.raises(LLMError, match=r"RequestError.*connection failed"):
