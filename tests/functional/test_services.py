@@ -46,9 +46,9 @@ class TestF5MoltbookSignup:
         assert_no_failure_language(result.msg_output)
 
         # Browser skill was used
-        skill_names = [t.get("skill") for t in result.skill_tasks()]
-        assert "browser" in skill_names, (
-            f"Browser skill not used. Skills: {skill_names}"
+        tool_names = [t.get("skill") for t in result.tool_tasks()]
+        assert "browser" in tool_names, (
+            f"Browser skill not used. Skills: {tool_names}"
         )
 
         # Output mentions successful registration
@@ -97,9 +97,9 @@ class TestF6MoltbookPost:
         assert_no_failure_language(result.msg_output)
 
         # Browser skill was used
-        skill_names = [t.get("skill") for t in result.skill_tasks()]
-        assert "browser" in skill_names, (
-            f"Browser skill not used. Skills: {skill_names}"
+        tool_names = [t.get("skill") for t in result.tool_tasks()]
+        assert "browser" in tool_names, (
+            f"Browser skill not used. Skills: {tool_names}"
         )
 
         # Output mentions posting

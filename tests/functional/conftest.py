@@ -164,9 +164,9 @@ class FunctionalResult:
         """Return list of task types in execution order."""
         return [t.get("type", "?") for t in self.tasks]
 
-    def skill_tasks(self) -> list[dict]:
-        """Return only skill-type tasks."""
-        return [t for t in self.tasks if t.get("type") == "skill"]
+    def tool_tasks(self) -> list[dict]:
+        """Return only tool-type tasks."""
+        return [t for t in self.tasks if t.get("type") in ("tool", "skill")]
 
 
 # ---------------------------------------------------------------------------

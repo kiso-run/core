@@ -87,20 +87,20 @@ class TestF4GitAiderPush:
         )
 
         # Check that aider skill was used (preferred) or exec editing was done
-        skill_names = [
-            t.get("skill") for t in result.skill_tasks()
+        tool_names = [
+            t.get("skill") for t in result.tool_tasks()
             if t.get("skill")
         ]
         exec_outputs = "\n".join(
             t.get("output") or "" for t in result.tasks
             if t.get("type") == "exec"
         ).lower()
-        aider_used = "aider" in skill_names
+        aider_used = "aider" in tool_names
         editing_done = any(
             kw in exec_outputs
             for kw in ("sed", "echo", "tee", "testing.md", "timestamp", "date")
         )
         assert aider_used or editing_done, (
             f"Neither aider skill nor direct editing detected. "
-            f"Skills used: {skill_names}, exec output excerpt: {exec_outputs[:300]}"
+            f"Skills used: {tool_names}, exec output excerpt: {exec_outputs[:300]}"
         )

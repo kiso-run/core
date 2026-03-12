@@ -1,6 +1,6 @@
-"""M173: End-to-end smoke test for skill args correction via replan.
+"""M173: End-to-end smoke test for tool args correction via replan.
 
-Simulates the real failure trace: browser skill is installed, planner sends
+Simulates the real failure trace: browser tool is installed, planner sends
 args: null, system detects the error and replans with corrected args.
 """
 
@@ -67,7 +67,7 @@ def _make_config(**overrides) -> Config:
     return Config(**defaults)
 
 
-BROWSER_SKILL_INFO = {
+BROWSER_TOOL_INFO = {
     "name": "browser",
     "summary": "Browser automation",
     "args_schema": {"action": {"type": "string", "required": True}},
@@ -77,7 +77,7 @@ BROWSER_SKILL_INFO = {
 REVIEW_OK = {"status": "ok", "reason": None, "learn": None, "retry_hint": None, "summary": None}
 
 
-class TestSkillArgsReplanFlow:
+class TestToolArgsReplanFlow:
     """End-to-end test: planner sends null args → validation catches it → replan with fixed args."""
 
     @pytest.fixture()
@@ -96,16 +96,16 @@ class TestSkillArgsReplanFlow:
                 {"type": "msg", "detail": "done", "expect": None, "skill": None, "args": None},
             ],
         }
-        info = {"browser": BROWSER_SKILL_INFO}
+        info = {"browser": BROWSER_TOOL_INFO}
         errors = validate_plan(plan, installed_skills=["browser"],
                                installed_skills_info=info)
         assert any("missing required arg: action" in e for e in errors)
 
-    async def test_skill_null_args_triggers_replan_then_succeeds(self, db, tmp_path):
+    async def test_tool_null_args_triggers_replan_then_succeeds(self, db, tmp_path):
         """Full flow: null args → setup fail → replan → corrected args → success."""
         config = _make_config()
 
-        # Initial plan: browser skill with null args (bad)
+        # Initial plan: browser tool with null args (bad)
         bad_plan = {
             "goal": "Take screenshot",
             "secrets": None,
@@ -117,7 +117,7 @@ class TestSkillArgsReplanFlow:
             ],
         }
 
-        # Corrected plan: browser skill with proper args
+        # Corrected plan: browser tool with proper args
         good_plan = {
             "goal": "Take screenshot",
             "secrets": None,
@@ -146,7 +146,7 @@ class TestSkillArgsReplanFlow:
                    return_value=("screenshot saved to file.png", "", True, 0)), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Screenshot taken!"), \
-             patch("kiso.worker.loop.discover_tools", return_value=[BROWSER_SKILL_INFO]), \
+             patch("kiso.worker.loop.discover_tools", return_value=[BROWSER_TOOL_INFO]), \
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "take screenshot of example.com",
@@ -166,10 +166,10 @@ class TestSkillArgsReplanFlow:
         assert plans[0]["status"] == "failed"  # original with bad args
         assert plans[1]["status"] == "done"  # replan with corrected args
 
-    async def test_skill_setup_error_provides_context_for_replan(self, db, tmp_path):
-        """The replan context includes the skill setup error for the planner to fix."""
+    async def test_tool_setup_error_provides_context_for_replan(self, db, tmp_path):
+        """The replan context includes the tool setup error for the planner to fix."""
         config = _make_config()
-        skill_info_with_schema = {
+        tool_info_with_schema = {
             "name": "browser",
             "args_schema": {"action": {"type": "string", "required": True},
                             "url": {"type": "string", "required": False}},
@@ -185,7 +185,7 @@ class TestSkillArgsReplanFlow:
             goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_tools=[skill_info_with_schema],
+            messenger_timeout=5, installed_tools=[tool_info_with_schema],
             slog=None, sandbox_uid=None,
         )
         tasks = await get_tasks_for_plan(db, plan_id)

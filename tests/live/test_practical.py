@@ -53,7 +53,7 @@ class TestExecChaining:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -262,7 +262,7 @@ class TestFullPipeline:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
             patch("kiso.worker.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -295,7 +295,7 @@ class TestFullPipeline:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
             patch("kiso.worker.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -339,7 +339,7 @@ class TestMultiTurn:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -380,7 +380,7 @@ class TestReplanRecovery:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
             patch("kiso.worker.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -452,7 +452,7 @@ class TestKnowledgePipeline:
         )
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
         ):
             try:
                 plan = await asyncio.wait_for(
@@ -508,7 +508,7 @@ class TestSkillExecution:
             'requires-python = ">=3.11"\n'
         )
 
-        skill_info = {
+        tool_info = {
             "name": "echo-test",
             "summary": "Echoes the text argument back to stdout",
             "args_schema": {"text": {"type": "string", "required": True}},
@@ -528,7 +528,7 @@ class TestSkillExecution:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[skill_info]),
+            patch("kiso.brain.discover_tools", return_value=[tool_info]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -555,7 +555,7 @@ class TestSkillExecution:
 
         with (
             mock_noop_infra,
-            patch("kiso.worker.discover_skills", return_value=[skill_info]),
+            patch("kiso.worker.discover_tools", return_value=[tool_info]),
         ):
             success, replan_reason, completed, remaining = await asyncio.wait_for(
                 _execute_plan(
@@ -649,7 +649,7 @@ class TestPerStepTokenTracking:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
             patch("kiso.worker.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -704,7 +704,7 @@ class TestPerStepTokenTracking:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
             patch("kiso.worker.SessionLogger"),
         ):
             await asyncio.wait_for(

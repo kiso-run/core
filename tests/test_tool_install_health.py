@@ -1,4 +1,4 @@
-"""M188: Smoke test — skill install → broken deps → planner reinstall guidance."""
+"""M188: Smoke test — tool install → broken deps → planner reinstall guidance."""
 
 from __future__ import annotations
 
@@ -35,16 +35,16 @@ def mock_admin():
         yield
 
 
-class TestSkillInstallHealthSmoke:
-    """End-to-end test: install skill with missing deps → check_deps catches it →
-    planner skill list shows [BROKEN] → planner prompt has reinstall guidance →
+class TestToolInstallHealthSmoke:
+    """End-to-end test: install tool with missing deps → check_deps catches it →
+    planner tool list shows [BROKEN] → planner prompt has reinstall guidance →
     validation error for null args includes example format."""
 
     def test_install_detects_missing_binary(self, tmp_path, capsys, mock_admin):
         """M183/M187: _plugin_install passes deps from manifest to check_deps."""
         from cli.tool import _tool_install
 
-        tools_dir = tmp_path / "skills"
+        tools_dir = tmp_path / "tools"
         tools_dir.mkdir()
 
         def fake_clone(cmd, **kwargs):
@@ -87,45 +87,45 @@ class TestSkillInstallHealthSmoke:
         out = capsys.readouterr().out
         assert "fake_binary" in out
 
-    def test_discover_skills_marks_unhealthy(self, tmp_path):
-        """M176: discover_skills adds healthy=False for missing binary deps."""
-        from kiso.skills import discover_skills
+    def test_discover_tools_marks_unhealthy(self, tmp_path):
+        """M176: discover_tools adds healthy=False for missing binary deps."""
+        from kiso.tools import discover_tools
 
-        skill_dir = tmp_path / "browser"
-        skill_dir.mkdir()
-        (skill_dir / "kiso.toml").write_text(
+        tool_dir = tmp_path / "browser"
+        tool_dir.mkdir()
+        (tool_dir / "kiso.toml").write_text(
             '[kiso]\ntype = "skill"\nname = "browser"\n'
             "[kiso.skill]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["fake_binary"]\n'
         )
-        (skill_dir / "run.py").write_text("pass\n")
-        (skill_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
+        (tool_dir / "run.py").write_text("pass\n")
+        (tool_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
 
-        skills = discover_skills(tmp_path)
-        assert len(skills) == 1
-        assert skills[0]["healthy"] is False
-        assert "fake_binary" in skills[0]["missing_deps"]
+        tools = discover_tools(tmp_path)
+        assert len(tools) == 1
+        assert tools[0]["healthy"] is False
+        assert "fake_binary" in tools[0]["missing_deps"]
 
-    def test_planner_skill_list_shows_broken(self, tmp_path):
-        """M177: build_planner_skill_list annotates unhealthy skills."""
-        from kiso.skills import build_planner_skill_list, discover_skills
+    def test_planner_tool_list_shows_broken(self, tmp_path):
+        """M177: build_planner_tool_list annotates unhealthy tools."""
+        from kiso.tools import build_planner_tool_list, discover_tools
 
-        skill_dir = tmp_path / "browser"
-        skill_dir.mkdir()
-        (skill_dir / "kiso.toml").write_text(
+        tool_dir = tmp_path / "browser"
+        tool_dir.mkdir()
+        (tool_dir / "kiso.toml").write_text(
             '[kiso]\ntype = "skill"\nname = "browser"\n'
             "[kiso.skill]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["fake_binary"]\n'
         )
-        (skill_dir / "run.py").write_text("pass\n")
-        (skill_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
+        (tool_dir / "run.py").write_text("pass\n")
+        (tool_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
 
-        skills = discover_skills(tmp_path)
-        result = build_planner_skill_list(skills)
+        tools = discover_tools(tmp_path)
+        result = build_planner_tool_list(tools)
         assert "[BROKEN" in result
         assert "fake_binary" in result
         assert "kiso tool remove" in result

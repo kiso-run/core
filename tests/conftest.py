@@ -98,7 +98,7 @@ role = "admin"
 
 [users.testuser]
 role = "user"
-skills = "*"
+tools = "*"
 
 [users.testuser.aliases]
 discord = "TestUser#1234"

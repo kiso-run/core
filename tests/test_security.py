@@ -307,7 +307,7 @@ class TestSanitizeOutput:
 class TestCollectDeploySecrets:
     def test_env_vars(self):
         env = {
-            "KISO_SKILL_API_KEY": "sk-123",
+            "KISO_TOOL_API_KEY": "sk-123",
             "KISO_CONNECTOR_TOKEN": "ct-456",
             "PATH": "/usr/bin",
             "HOME": "/home/user",
@@ -315,9 +315,16 @@ class TestCollectDeploySecrets:
         with patch.dict(os.environ, env, clear=True):
             secrets = collect_deploy_secrets()
         assert secrets == {
-            "KISO_SKILL_API_KEY": "sk-123",
+            "KISO_TOOL_API_KEY": "sk-123",
             "KISO_CONNECTOR_TOKEN": "ct-456",
         }
+
+    def test_env_vars_backward_compat_skill_prefix(self):
+        """KISO_SKILL_* env vars still collected for backward compat."""
+        env = {"KISO_SKILL_API_KEY": "sk-old"}
+        with patch.dict(os.environ, env, clear=True):
+            secrets = collect_deploy_secrets()
+        assert secrets == {"KISO_SKILL_API_KEY": "sk-old"}
 
     def test_llm_api_key(self):
         env = {"KISO_LLM_API_KEY": "sk-test-key"}
@@ -340,18 +347,18 @@ class TestCollectDeploySecrets:
         )
 
     def test_empty_env_returns_empty_dict(self):
-        """No KISO_SKILL_*/KISO_CONNECTOR_* env vars → empty dict."""
+        """No KISO_TOOL_*/KISO_CONNECTOR_* env vars → empty dict."""
         with patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=True):
             secrets = collect_deploy_secrets()
         assert secrets == {}
 
     def test_non_kiso_prefixed_vars_excluded(self):
         """Non-kiso-prefixed vars must not appear in secrets."""
-        env = {"MY_SECRET": "oops", "KISO_SKILL_X": "ok", "PATH": "/bin"}
+        env = {"MY_SECRET": "oops", "KISO_TOOL_X": "ok", "PATH": "/bin"}
         with patch.dict(os.environ, env, clear=True):
             secrets = collect_deploy_secrets()
         assert "MY_SECRET" not in secrets
-        assert "KISO_SKILL_X" in secrets
+        assert "KISO_TOOL_X" in secrets
 
 
 # --- Random boundary fencing ---

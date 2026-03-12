@@ -102,7 +102,7 @@ class TestFunctionalResult:
         )
         assert r.task_types() == ["exec", "skill", "msg"]
 
-    def test_skill_tasks(self):
+    def test_tool_tasks(self):
         r = FunctionalResult(
             success=True,
             tasks=[
@@ -111,6 +111,6 @@ class TestFunctionalResult:
                 {"type": "msg", "skill": None},
             ],
         )
-        skills = r.skill_tasks()
-        assert len(skills) == 1
-        assert skills[0]["skill"] == "browser"
+        tools = r.tool_tasks()
+        assert len(tools) == 1
+        assert tools[0]["skill"] == "browser"

@@ -1079,7 +1079,7 @@ class TestBuildPlannerMessages:
         assert "aider" not in skills_section
 
     async def test_logs_warning_when_no_skills(self, db, config, caplog):
-        """M3: build_planner_messages logs warning when discover_skills returns empty."""
+        """M3: build_planner_messages logs warning when discover_tools returns empty."""
         import logging
         await create_session(db, "sess1")
         with (

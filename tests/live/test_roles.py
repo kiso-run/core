@@ -43,7 +43,7 @@ class TestPlannerLive:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -67,7 +67,7 @@ class TestPlannerLive:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -104,7 +104,7 @@ class TestPlannerLive:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_skills", return_value=[]),
+            patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(

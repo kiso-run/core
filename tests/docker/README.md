@@ -23,7 +23,7 @@ docker compose -f docker-compose.test.yml --profile live run --rm test-live
 ## Test files
 
 - `test_sandbox.py` — Per-session exec sandbox isolation (user creation, workspace permissions)
-- `test_skill_venv.py` — Skill `.venv/bin/` binary detection via `check_deps` and `build_skill_env`
+- `test_tool_venv.py` — Tool `.venv/bin/` binary detection via `check_deps` and `build_tool_env`
 
 ## Prerequisites
 

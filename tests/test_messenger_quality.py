@@ -192,16 +192,16 @@ class TestMsgDetailValidation:
 # ---------------------------------------------------------------------------
 
 
-class TestBrieferSkillFilterNoSkills:
-    """P55: M387 clears hallucinated skills when none installed."""
+class TestBrieferToolFilterNoTools:
+    """P55: M387 clears hallucinated tools when none installed."""
 
     @pytest.fixture()
     def config(self):
         return _config()
 
     @pytest.mark.asyncio
-    async def test_no_skills_clears_all(self, config):
-        """When context_pool has no skills, briefer skills are cleared."""
+    async def test_no_tools_clears_all(self, config):
+        """When context_pool has no tools, briefer tools are cleared."""
         response = json.dumps({
             "modules": [],
             "tools": ["browser: navigate", "aider: code assist"],
@@ -215,8 +215,8 @@ class TestBrieferSkillFilterNoSkills:
         assert result["tools"] == []
 
     @pytest.mark.asyncio
-    async def test_with_skills_filters_correctly(self, config):
-        """When context_pool has skills, only matching ones pass."""
+    async def test_with_tools_filters_correctly(self, config):
+        """When context_pool has tools, only matching ones pass."""
         response = json.dumps({
             "modules": [],
             "tools": ["browser: navigate and click", "fake_skill: does nothing"],
@@ -232,8 +232,8 @@ class TestBrieferSkillFilterNoSkills:
         assert not any("fake_skill" in s for s in result["tools"])
 
     @pytest.mark.asyncio
-    async def test_skill_filter_exact_name_no_substring(self, config):
-        """M394: 'git' installed must NOT match briefer skill 'github'."""
+    async def test_tool_filter_exact_name_no_substring(self, config):
+        """M394: 'git' installed must NOT match briefer tool 'github'."""
         response = json.dumps({
             "modules": [],
             "tools": ["github: integration", "git: version control"],

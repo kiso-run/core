@@ -120,10 +120,10 @@ def sanitize_output(
 
 
 def collect_deploy_secrets() -> dict[str, str]:
-    """Collect KISO_SKILL_*, KISO_CONNECTOR_* env vars + LLM API key."""
+    """Collect KISO_TOOL_*, KISO_CONNECTOR_* env vars + LLM API key."""
     secrets: dict[str, str] = {}
     for k, v in os.environ.items():
-        if k.startswith(("KISO_SKILL_", "KISO_CONNECTOR_")):
+        if k.startswith(("KISO_TOOL_", "KISO_SKILL_", "KISO_CONNECTOR_")):
             secrets[k] = v
     val = os.environ.get(LLM_API_KEY_ENV)
     if val:
