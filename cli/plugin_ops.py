@@ -1,4 +1,4 @@
-"""Shared utilities for skill and connector CLI operations."""
+"""Shared utilities for tool and connector CLI operations."""
 
 from __future__ import annotations
 
@@ -109,8 +109,8 @@ def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None
     """Check the other plugin type for matches and return a hint string.
 
     When a search in one type (e.g. "connectors") yields no results, this
-    function checks the other type ("skills") for matches.  Returns a hint
-    string like 'Did you mean `kiso skill search browser`?' or None.
+    function checks the other type ("tools") for matches.  Returns a hint
+    string like 'Did you mean `kiso tool search browser`?' or None.
     """
     if current_type == "connectors":
         other_type = "tools"
@@ -135,12 +135,12 @@ def _plugin_install(
     args,
     post_install=None,
 ) -> None:
-    """Shared install logic for skills and connectors.
+    """Shared install logic for tools and connectors.
 
     Args:
-        plugin_type: "skill" or "connector" — used in user-facing messages.
-        official_prefix: Git repo name prefix ("skill-" or "connector-").
-        parent_dir: Directory where the plugin is installed (SKILLS_DIR/CONNECTORS_DIR).
+        plugin_type: "tool" or "connector" — used in user-facing messages.
+        official_prefix: Git repo name prefix ("tool-" or "connector-").
+        parent_dir: Directory where the plugin is installed (TOOLS_DIR/CONNECTORS_DIR).
         validate_fn: callable(manifest, plugin_dir) -> list[str] — manifest validator.
         check_deps_fn: callable(plugin_info) -> list[str] — binary deps checker.
         args: argparse Namespace with .target, .name, .show_deps, .no_deps.
@@ -292,7 +292,7 @@ def _plugin_install(
 
 
 def _list_plugins(discover_fn, item_type: str) -> None:
-    """List installed plugins (skills or connectors) in aligned columns."""
+    """List installed plugins (tools or connectors) in aligned columns."""
     items = discover_fn()
     if not items:
         print(f"No {item_type} installed.")
