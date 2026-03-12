@@ -24,7 +24,7 @@ pytestmark = pytest.mark.live_network
 class TestSkillSearch:
     def test_search_returns_results(self, capsys):
         """kiso skill search (no query) fetches registry and lists skills."""
-        from cli.skill import _skill_search
+        from cli.tool import _tool_search as _skill_search
 
         try:
             _skill_search(Namespace(query=""))
@@ -35,7 +35,7 @@ class TestSkillSearch:
 
     def test_search_with_query(self, capsys):
         """kiso skill search 'search' filters results without error."""
-        from cli.skill import _skill_search
+        from cli.tool import _tool_search as _skill_search
 
         try:
             _skill_search(Namespace(query="search"))
@@ -89,11 +89,11 @@ class TestSkillInstallRemove:
         )
 
         with (
-            patch("cli.skill.SKILLS_DIR", skills_dir),
-            patch("cli.skill._require_admin"),
-            patch("cli.skill.check_deps", return_value=[]),
+            patch("cli.tool.TOOLS_DIR", skills_dir),
+            patch("cli.plugin_ops.require_admin"),
+            patch("cli.tool.check_deps", return_value=[]),
         ):
-            from cli.skill import _skill_install
+            from cli.tool import _tool_install as _skill_install
 
             _skill_install(args)
 
@@ -108,10 +108,10 @@ class TestSkillInstallRemove:
         # Now remove
         remove_args = Namespace(name=skill_name)
         with (
-            patch("cli.skill.SKILLS_DIR", skills_dir),
-            patch("cli.skill._require_admin"),
+            patch("cli.tool.TOOLS_DIR", skills_dir),
+            patch("cli.plugin_ops.require_admin"),
         ):
-            from cli.skill import _skill_remove
+            from cli.tool import _tool_remove as _skill_remove
 
             _skill_remove(remove_args)
 
@@ -145,7 +145,7 @@ class TestConnectorInstallRemove:
 
         with (
             patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-            patch("cli.skill._require_admin"),
+            patch("cli.plugin_ops.require_admin"),
         ):
             from cli.connector import _connector_install
 
@@ -163,7 +163,7 @@ class TestConnectorInstallRemove:
         remove_args = Namespace(name=connector_name)
         with (
             patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-            patch("cli.skill._require_admin"),
+            patch("cli.plugin_ops.require_admin"),
         ):
             from cli.connector import _connector_remove
 
@@ -196,10 +196,10 @@ class TestSkillInstallNotFound:
         )
 
         with (
-            patch("cli.skill.SKILLS_DIR", skills_dir),
-            patch("cli.skill._require_admin"),
+            patch("cli.tool.TOOLS_DIR", skills_dir),
+            patch("cli.plugin_ops.require_admin"),
         ):
-            from cli.skill import _skill_install
+            from cli.tool import _tool_install as _skill_install
 
             with pytest.raises(SystemExit):
                 _skill_install(args)
@@ -229,7 +229,7 @@ class TestConnectorInstallNotFound:
 
         with (
             patch("cli.connector.CONNECTORS_DIR", connectors_dir),
-            patch("cli.skill._require_admin"),
+            patch("cli.plugin_ops.require_admin"),
         ):
             from cli.connector import _connector_install
 

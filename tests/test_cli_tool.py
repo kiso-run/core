@@ -183,7 +183,7 @@ def test_run_tool_command_no_subcommand(capsys):
 
 
 def test_require_admin_passes():
-    from cli.skill import _require_admin
+    from cli.plugin_ops import require_admin as _require_admin
 
     cfg = MagicMock()
     cfg.users = {"alice": User(role="admin")}
@@ -195,7 +195,7 @@ def test_require_admin_passes():
 
 
 def test_require_admin_non_admin_exits(capsys):
-    from cli.skill import _require_admin
+    from cli.plugin_ops import require_admin as _require_admin
 
     cfg = MagicMock()
     cfg.users = {"bob": User(role="user", tools="*")}
@@ -210,7 +210,7 @@ def test_require_admin_non_admin_exits(capsys):
 
 
 def test_require_admin_unknown_user_exits(capsys):
-    from cli.skill import _require_admin
+    from cli.plugin_ops import require_admin as _require_admin
 
     cfg = MagicMock()
     cfg.users = {"alice": User(role="admin")}
