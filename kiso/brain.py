@@ -966,6 +966,10 @@ async def build_planner_messages(
         # In briefer path, gap is in context_pool and briefer includes it.
         context_parts.append(f"## Capability Analysis\n{_gap_text}")
 
+    # MD skills section — briefer includes via context_pool; fallback path adds directly
+    if not briefing and context_pool.get("md_skills"):
+        context_parts.append(f"## Available Skills\n{context_pool['md_skills']}")
+
     # Tools section — briefer filters or full list
     if briefing and briefing["tools"]:
         context_parts.append(f"## Tools\n" + "\n".join(briefing["tools"]))
