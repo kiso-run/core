@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -1901,11 +1902,22 @@ async def run_messenger(
         recent_messages=recent or None, user_message=user_message,
         briefing_context=briefing_context,
     )
-    try:
-        text = await call_llm(config, "messenger", messages, session=session)
-        return _sanitize_messenger_output(text)
-    except LLMError as e:
-        raise MessengerError(f"LLM call failed: {e}")
+    # M480: retry messenger LLM call up to 2 times on transient errors.
+    # Unlike structured roles (planner/reviewer) which use _retry_llm_with_validation
+    # with 3 retries + fallback model, the messenger previously had zero retries.
+    _max_messenger_retries = 2
+    _last_err: LLMError | None = None
+    for _attempt in range(_max_messenger_retries + 1):
+        try:
+            text = await call_llm(config, "messenger", messages, session=session)
+            return _sanitize_messenger_output(text)
+        except LLMError as e:
+            _last_err = e
+            if _attempt < _max_messenger_retries:
+                log.warning("Messenger retry %d/%d: %s", _attempt + 1, _max_messenger_retries, e)
+                await asyncio.sleep(1)
+                continue
+    raise MessengerError(f"LLM call failed after {_max_messenger_retries + 1} attempts: {_last_err}")
 
 
 # M369: strip hallucinated XML/tool markup from messenger output
