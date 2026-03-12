@@ -75,7 +75,7 @@ def mock_noop_infra():
     Returns a context manager; use as ``with mock_noop_infra(): ...``.
     """
     return patch.multiple(
-        "kiso.worker",
+        "kiso.worker.loop",
         reload_config=MagicMock(side_effect=ConfigError("test")),
         _ensure_sandbox_user=MagicMock(return_value=None),
         revalidate_permissions=MagicMock(

@@ -75,7 +75,7 @@ class TestExecChaining:
             )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"], content, llm_timeout=60,
@@ -129,7 +129,7 @@ class TestExecTranslator:
         )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     "List directory contents",
@@ -178,7 +178,7 @@ class TestExecTranslator:
         )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     "Create and delete a test file",
@@ -224,7 +224,7 @@ class TestExecTranslator:
         )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     "Show hostname",
@@ -263,7 +263,7 @@ class TestFullPipeline:
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_tools", return_value=[]),
-            patch("kiso.worker.SessionLogger"),
+            patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
                 _process_message(
@@ -296,7 +296,7 @@ class TestFullPipeline:
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_tools", return_value=[]),
-            patch("kiso.worker.SessionLogger"),
+            patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
                 _process_message(
@@ -381,7 +381,7 @@ class TestReplanRecovery:
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_tools", return_value=[]),
-            patch("kiso.worker.SessionLogger"),
+            patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
                 _process_message(
@@ -555,9 +555,9 @@ class TestSkillExecution:
 
         with (
             mock_noop_infra,
-            patch("kiso.worker.discover_tools", return_value=[tool_info]),
+            patch("kiso.worker.loop.discover_tools", return_value=[tool_info]),
         ):
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"], content, llm_timeout=60,
@@ -650,7 +650,7 @@ class TestPerStepTokenTracking:
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_tools", return_value=[]),
-            patch("kiso.worker.SessionLogger"),
+            patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
                 _process_message(
@@ -705,7 +705,7 @@ class TestPerStepTokenTracking:
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_tools", return_value=[]),
-            patch("kiso.worker.SessionLogger"),
+            patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
                 _process_message(

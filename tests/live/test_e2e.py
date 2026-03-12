@@ -58,7 +58,7 @@ class TestSimpleQuestionE2E:
             )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"],
@@ -110,7 +110,7 @@ class TestExecAndReviewOkE2E:
             )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"],
@@ -155,7 +155,7 @@ class TestReplanFlowE2E:
         )
 
         with mock_noop_infra:
-            success, replan_reason, completed, remaining = await asyncio.wait_for(
+            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
                     "List files in the project directory",
@@ -213,7 +213,7 @@ class TestKnowledgeFlowE2E:
             "status": "done",
         }
 
-        with patch("kiso.worker.audit"):
+        with patch("kiso.worker.loop.audit"):
             review = await asyncio.wait_for(
                 _review_task(
                     live_config, seeded_db, live_session,
