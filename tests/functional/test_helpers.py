@@ -86,6 +86,21 @@ class TestAssertNoFailureLanguage:
         with pytest.raises(AssertionError, match="errore"):
             assert_no_failure_language("Si è verificato un errore durante l'operazione")
 
+    def test_failure_language_in_code_block_ignored(self):
+        # "failed to" inside a code block should not trigger.
+        assert_no_failure_language(
+            "Ecco il risultato della ricerca:\n\n"
+            "```python\n"
+            "if response.status != 200:\n"
+            "    raise RuntimeError('failed to fetch')\n"
+            "```\n\n"
+            "Il programma funziona correttamente."
+        )
+
+    def test_failure_language_outside_code_block_detected(self):
+        with pytest.raises(AssertionError, match="(?i)failed to"):
+            assert_no_failure_language("The task failed to complete.")
+
 
 # ---------------------------------------------------------------------------
 # FunctionalResult

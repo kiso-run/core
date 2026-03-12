@@ -139,8 +139,13 @@ _PUB_URL_RE = re.compile(r"https?://\S+/pub/\S+")
 
 
 def assert_no_failure_language(text: str) -> None:
-    """Assert that *text* does not contain obvious failure indicators."""
-    match = _FAILURE_PATTERNS.search(text)
+    """Assert that *text* does not contain obvious failure indicators.
+
+    Code blocks are stripped first so that technical error-handling code
+    doesn't trigger false positives.
+    """
+    cleaned = _strip_code_blocks(text)
+    match = _FAILURE_PATTERNS.search(cleaned)
     assert match is None, (
         f"Failure language detected: {match.group()!r} in: {text[:300]}"
     )
