@@ -1,8 +1,8 @@
 """F1-F2: Browser navigation functional tests.
 
 These tests exercise the full pipeline: user message → classifier → planner →
-worker (with real browser skill) → messenger.  They require a running kiso
-instance with real LLM, network access, and the browser skill available in
+worker (with real browser tool) → messenger.  They require a running kiso
+instance with real LLM, network access, and the browser tool available in
 the registry.
 
 When the browser tool is not pre-installed, the tests exercise the full
@@ -80,20 +80,23 @@ class TestF1GuidanceStudioScreenshot:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
 
+        # Use last_plan_msg_output for content checks (excludes install-proposal
+        # English msg from prior turns in multi-turn flow)
+        output = result.last_plan_msg_output
+
         # Response is in Italian and substantial
-        assert len(result.msg_output) > 100, (
-            f"msg output too short ({len(result.msg_output)} chars): "
-            f"{result.msg_output[:200]}"
+        assert len(output) > 100, (
+            f"msg output too short ({len(output)} chars): {output[:200]}"
         )
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
+        assert_italian(output)
+        assert_no_failure_language(output)
 
         # Response mentions something relevant about the company
-        lower = result.msg_output.lower()
+        lower = output.lower()
         assert any(
             kw in lower
             for kw in ("guidance", "studio", "azienda", "company", "software", "serviz")
-        ), f"No relevant keywords in output: {result.msg_output[:300]}"
+        ), f"No relevant keywords in output: {output[:300]}"
 
         # Screenshot was published
         assert result.has_published_file("*.png"), (
@@ -128,28 +131,31 @@ class TestF2GazzettaNews:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
 
+        # Use last_plan_msg_output for content checks
+        output = result.last_plan_msg_output
+
         # Response is in Italian and substantial
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
-        assert len(result.msg_output) > 200, (
-            f"msg output too short ({len(result.msg_output)} chars) — "
-            f"expected multiple news items: {result.msg_output[:300]}"
+        assert_italian(output)
+        assert_no_failure_language(output)
+        assert len(output) > 200, (
+            f"msg output too short ({len(output)} chars) — "
+            f"expected multiple news items: {output[:300]}"
         )
 
         # Response contains multiple items (line breaks or list patterns)
-        lines = [ln for ln in result.msg_output.strip().splitlines() if ln.strip()]
+        lines = [ln for ln in output.strip().splitlines() if ln.strip()]
         assert len(lines) >= 3, (
             f"Expected at least 3 lines of news, got {len(lines)}: "
-            f"{result.msg_output[:300]}"
+            f"{output[:300]}"
         )
 
         # At least one sports/news keyword (Gazzetta dello Sport)
-        lower = result.msg_output.lower()
+        lower = output.lower()
         news_keywords = (
             "notizi", "sport", "calcio", "serie", "campionato",
             "partita", "gol", "risultat", "classifica", "squadra",
             "giocator", "allenator", "trasferim", "champions",
         )
         assert any(kw in lower for kw in news_keywords), (
-            f"No news/sports keywords found in output: {result.msg_output[:400]}"
+            f"No news/sports keywords found in output: {output[:400]}"
         )

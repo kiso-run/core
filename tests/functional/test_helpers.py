@@ -114,3 +114,31 @@ class TestFunctionalResult:
         tools = r.tool_tasks()
         assert len(tools) == 1
         assert tools[0]["tool"] == "browser"
+
+    def test_last_plan_msg_output_single_plan(self):
+        r = FunctionalResult(
+            success=True,
+            plans=[{"id": 1}],
+            tasks=[
+                {"type": "msg", "status": "done", "output": "hello", "plan_id": 1},
+            ],
+        )
+        assert r.last_plan_msg_output == "hello"
+
+    def test_last_plan_msg_output_multi_plan(self):
+        """Only includes msg output from the last plan."""
+        r = FunctionalResult(
+            success=True,
+            plans=[{"id": 1}, {"id": 2}],
+            tasks=[
+                {"type": "msg", "status": "done", "output": "install proposal", "plan_id": 1},
+                {"type": "exec", "status": "done", "output": "ok", "plan_id": 2},
+                {"type": "msg", "status": "done", "output": "risultati", "plan_id": 2},
+            ],
+        )
+        assert r.last_plan_msg_output == "risultati"
+        assert "install proposal" not in r.last_plan_msg_output
+
+    def test_last_plan_msg_output_empty(self):
+        r = FunctionalResult(success=False)
+        assert r.last_plan_msg_output == ""

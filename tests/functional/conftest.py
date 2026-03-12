@@ -153,6 +153,19 @@ class FunctionalResult:
     pub_files: list[dict] = field(default_factory=list)
     elapsed: float = 0.0
 
+    @property
+    def last_plan_msg_output(self) -> str:
+        """Msg output from the last plan only (excludes prior turns)."""
+        if not self.plans:
+            return ""
+        last_plan_id = self.plans[-1]["id"]
+        return "\n".join(
+            t.get("output", "") or ""
+            for t in self.tasks
+            if t.get("type") == "msg" and t.get("status") == "done"
+            and t.get("plan_id") == last_plan_id
+        )
+
     def has_published_file(self, glob_pattern: str) -> bool:
         """Check if any published file matches *glob_pattern*."""
         return any(
