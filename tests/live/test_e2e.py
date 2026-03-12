@@ -63,7 +63,6 @@ class TestSimpleQuestionE2E:
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"],
                     "What is the tallest mountain in the world?",
-                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -115,7 +114,6 @@ class TestExecAndReviewOkE2E:
                     seeded_db, live_config, live_session, plan_id,
                     plan["goal"],
                     "Run 'echo hello world' and tell me the output",
-                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -160,7 +158,6 @@ class TestReplanFlowE2E:
                     seeded_db, live_config, live_session, plan_id,
                     "List files in the project directory",
                     "list files in the project",
-                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -228,8 +225,10 @@ class TestKnowledgeFlowE2E:
         assert review["status"] == "ok"
         # If the LLM decided to extract a learning, verify it's sensible
         if review.get("learn"):
-            assert isinstance(review["learn"], str)
-            assert len(review["learn"]) > 0
+            assert isinstance(review["learn"], list)
+            for item in review["learn"]:
+                assert isinstance(item, str)
+                assert len(item) > 5
 
 
 class TestReviewerExitCodeE2E:

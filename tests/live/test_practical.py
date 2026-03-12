@@ -78,7 +78,7 @@ class TestExecChaining:
             success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
-                    plan["goal"], content, llm_timeout=60,
+                    plan["goal"], content,
                 ),
                 timeout=TIMEOUT,
             )
@@ -134,7 +134,6 @@ class TestExecTranslator:
                     seeded_db, live_config, live_session, plan_id,
                     "List directory contents",
                     "List the contents of the current directory",
-                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -183,7 +182,6 @@ class TestExecTranslator:
                     seeded_db, live_config, live_session, plan_id,
                     "Create and delete a test file",
                     "Create a file called test123.txt with 'hello' in it, then delete it",
-                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -229,7 +227,6 @@ class TestExecTranslator:
                     seeded_db, live_config, live_session, plan_id,
                     "Show hostname",
                     "Show me the system hostname",
-                    llm_timeout=60,
                 ),
                 timeout=TIMEOUT,
             )
@@ -256,7 +253,6 @@ class TestFullPipeline:
         """_process_message('What is 2+2?') → DB has plan with status 'done',
         msg task output contains '4'."""
         msg = await live_msg("What is 2+2?")
-        queue = asyncio.Queue()
         cancel_event = asyncio.Event()
 
         with (
@@ -268,8 +264,8 @@ class TestFullPipeline:
             await asyncio.wait_for(
                 _process_message(
                     seeded_db, live_config, live_session, msg,
-                    queue, cancel_event,
-                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
+                    cancel_event,
+                    llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -289,7 +285,6 @@ class TestFullPipeline:
     ):
         """_process_message with echo exec → DB plan done, output has 'hello'."""
         msg = await live_msg("Run 'echo hello' and tell me the output")
-        queue = asyncio.Queue()
         cancel_event = asyncio.Event()
 
         with (
@@ -301,8 +296,8 @@ class TestFullPipeline:
             await asyncio.wait_for(
                 _process_message(
                     seeded_db, live_config, live_session, msg,
-                    queue, cancel_event,
-                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
+                    cancel_event,
+                    llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -374,7 +369,6 @@ class TestReplanRecovery:
             "List the files in /absolutely_nonexistent_dir_xyz_99999 "
             "and tell me what you find"
         )
-        queue = asyncio.Queue()
         cancel_event = asyncio.Event()
 
         with (
@@ -386,8 +380,8 @@ class TestReplanRecovery:
             await asyncio.wait_for(
                 _process_message(
                     seeded_db, live_config, live_session, msg,
-                    queue, cancel_event,
-                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
+                    cancel_event,
+                    llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -491,10 +485,10 @@ class TestSkillExecution:
             '[kiso]\n'
             'name = "echo-test"\n'
             'version = "0.1.0"\n'
-            '[kiso.skill]\n'
-            'type = "skill"\n'
+            '[kiso.tool]\n'
+            'type = "tool"\n'
             'summary = "Echoes the text argument back to stdout"\n'
-            '[kiso.skill.args.text]\n'
+            '[kiso.tool.args.text]\n'
             'type = "string"\n'
             'required = true\n'
         )
@@ -520,7 +514,7 @@ class TestSkillExecution:
         }
 
         content = (
-            "Use the echo-test skill to echo the text 'hello from skill test'"
+            "Use the echo-test tool to echo the text 'hello from skill test'"
         )
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user", content,
@@ -538,9 +532,9 @@ class TestSkillExecution:
             )
         assert validate_plan(plan, installed_skills=["echo-test"]) == []
 
-        # Verify the planner actually used the skill
-        skill_tasks = [t for t in plan["tasks"] if t["type"] == "skill"]
-        assert skill_tasks, "Planner should have produced a skill task"
+        # Verify the planner actually used the tool
+        tool_tasks = [t for t in plan["tasks"] if t["type"] == "tool"]
+        assert tool_tasks, "Planner should have produced a tool task"
 
         plan_id = await create_plan(
             seeded_db, live_session, msg_id, plan["goal"],
@@ -560,15 +554,15 @@ class TestSkillExecution:
             success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
-                    plan["goal"], content, llm_timeout=60,
+                    plan["goal"], content,
                 ),
                 timeout=TIMEOUT,
             )
 
         assert success is True
-        skill_completed = [t for t in completed if t["type"] == "skill"]
-        assert skill_completed
-        assert "hello from skill test" in skill_completed[0]["output"]
+        tool_completed = [t for t in completed if t["type"] == "tool"]
+        assert tool_completed
+        assert "hello from skill test" in tool_completed[0]["output"]
 
 
 # ---------------------------------------------------------------------------
@@ -643,7 +637,6 @@ class TestPerStepTokenTracking:
     ):
         """_process_message → each completed task has input_tokens/output_tokens > 0."""
         msg = await live_msg("Run 'echo hello' and tell me the output")
-        queue = asyncio.Queue()
         cancel_event = asyncio.Event()
 
         with (
@@ -655,8 +648,8 @@ class TestPerStepTokenTracking:
             await asyncio.wait_for(
                 _process_message(
                     seeded_db, live_config, live_session, msg,
-                    queue, cancel_event,
-                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
+                    cancel_event,
+                    llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
@@ -698,7 +691,6 @@ class TestPerStepTokenTracking:
             "Then show the contents of the file you just created."
         )
         msg = await live_msg(content)
-        queue = asyncio.Queue()
         cancel_event = asyncio.Event()
 
         with (
@@ -710,8 +702,8 @@ class TestPerStepTokenTracking:
             await asyncio.wait_for(
                 _process_message(
                     seeded_db, live_config, live_session, msg,
-                    queue, cancel_event,
-                    idle_timeout=60, llm_timeout=60, max_replan_depth=3,
+                    cancel_event,
+                    llm_timeout=60, max_replan_depth=3,
                 ),
                 timeout=TIMEOUT,
             )
