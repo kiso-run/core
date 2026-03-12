@@ -16,6 +16,20 @@ docker compose -f docker-compose.test.yml run --rm test-live
 uv run pytest tests/ -q && ./run_bash_tests.sh && docker compose -f docker-compose.test.yml run --rm test-live
 ```
 
+### Full suite runner
+
+`run_full_tests.sh` runs all test suites on the host, auto-loading API keys from the kiso `.env` file and skipping suites whose prerequisites aren't met:
+
+```bash
+./run_full_tests.sh            # run everything available
+./run_full_tests.sh --unit     # only unit tests
+./run_full_tests.sh --live     # only live LLM tests
+./run_full_tests.sh --func     # only functional tests (needs running kiso server)
+./run_full_tests.sh --docker   # only docker sandbox tests
+```
+
+The script reads `~/.kiso/instances/kiso/.env` and maps `KISO_LLM_API_KEY` to `OPENROUTER_API_KEY` automatically. Override the path with `KISO_ENV_FILE=/path/to/.env` if needed. Environment variables already set in the shell take precedence over the file.
+
 ## Stack
 
 | Tool | Why |
@@ -39,6 +53,8 @@ tests/
 │   ├── helpers.bash         # shared setup (mocks, helpers)
 │   ├── test_host_*.bats     # kiso-host.sh: name validation, instance commands, port detection, stats, completion, …
 │   └── test_install_*.bats  # install.sh: name validation, port allocation, register
+├── docker/                  # Docker-only tests (sandbox isolation, venv)
+├── functional/              # functional tests (require running kiso server)
 └── live/                    # live LLM integration tests
     ├── conftest.py          # live fixtures (live_config, seeded_db, mock_noop_infra)
     ├── test_roles.py        # L1 — single brain function in isolation
@@ -53,7 +69,7 @@ tests/
 
 | Suite | Count | What it tests | Where to run | Secrets |
 |---|---|---|---|---|
-| Unit tests | ~1 670 | All code, fully mocked | Host | No |
+| Unit tests | ~3 300 | All code, fully mocked | Host | No |
 | Bash tests | 60 | kiso-host.sh + install.sh (bats-core) | Host | No |
 | L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
 | L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
