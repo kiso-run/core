@@ -21,7 +21,7 @@ OFFICIAL_ORG = "kiso-run"
 
 def _clone_and_test(tmp_path: Path, kind: str, name: str) -> None:
     """Clone an official plugin repo, sync deps, and run its tests."""
-    prefix = "skill-" if kind == "skill" else "connector-"
+    prefix = "tool-" if kind == "tool" else "connector-"
     git_url = f"https://github.com/{OFFICIAL_ORG}/{prefix}{name}.git"
     plugin_dir = tmp_path / name
 
@@ -70,23 +70,23 @@ def _load_registry() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# L6.1 — Skill plugin tests
+# L6.1 — Tool plugin tests
 # ---------------------------------------------------------------------------
 
 
-class TestSkillPlugins:
+class TestToolPlugins:
     @pytest.fixture(autouse=True)
     def _load(self):
         self.registry = _load_registry()
 
-    def test_skill_plugins(self, tmp_path: Path):
-        """Clone and test each official skill from the registry."""
-        skills = self.registry.get("skills", [])
-        if not skills:
-            pytest.skip("No skills in registry")
+    def test_tool_plugins(self, tmp_path: Path):
+        """Clone and test each official tool from the registry."""
+        tools = self.registry.get("tools", [])
+        if not tools:
+            pytest.skip("No tools in registry")
 
-        for skill in skills:
-            _clone_and_test(tmp_path, "skill", skill["name"])
+        for tool in tools:
+            _clone_and_test(tmp_path, "tool", tool["name"])
 
 
 # ---------------------------------------------------------------------------
