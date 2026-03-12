@@ -162,7 +162,7 @@ webhook_max_payload       = 1048576
 | `llm_timeout` | `300` | Seconds for post-plan LLM calls (curator, summarizer, fact consolidation) and graceful shutdown per worker. Also the HTTP timeout for non-planner/non-messenger LLM calls. |
 | `planner_timeout` | `300` | Seconds before a planner LLM call is cancelled (both HTTP timeout and asyncio wrapper). Higher default for reasoning models that need time to think. |
 | `messenger_timeout` | `120` | Seconds before a messenger LLM call is cancelled (applies to fast-path chat and `msg` plan tasks). Tune independently from `planner_timeout` when planner and messenger use different models with different latency profiles. |
-| `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or skill task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
+| `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or tool task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `2` | Max worker-level retries per exec/search task before escalating to a full replan. |
 | `max_memory_gb` | `4` | Container RAM limit (applied via docker run/update). |
 | `max_cpus` | `2` | Container CPU limit (applied via docker run/update). |
@@ -234,7 +234,7 @@ role = "user"
 tools = ["search", "aider"]
 ```
 
-- **`role`**: `"admin"` (unrestricted exec, package management, all skills) or `"user"` (sandboxed exec, allowed skills only).
+- **`role`**: `"admin"` (unrestricted exec, package management, all tools) or `"user"` (sandboxed exec, allowed tools only).
 - **`tools`**: which tools the planner can use for this user. `"*"` = all, or a list. Admins always have all tools regardless of this field.
 - **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform user.
 

@@ -19,7 +19,7 @@ A tool is a git-cloned package in `~/.kiso/instances/{instance}/tools/{name}/` o
 └── .../
 ```
 
-A directory is a valid tool if it contains `kiso.toml` (with `type = "skill"`), `pyproject.toml`, and `run.py`.
+A directory is a valid tool if it contains `kiso.toml` (with `type = "tool"`), `pyproject.toml`, and `run.py`.
 
 All three are required — install fails if any is missing.
 
@@ -29,7 +29,7 @@ The single source of truth. Declares what this tool is, what arguments it takes,
 
 ```toml
 [kiso]
-type = "skill"
+type = "tool"
 name = "search"
 version = "0.1.0"
 description = "Web search using Brave Search API"
@@ -224,7 +224,7 @@ https://gitlab.com/team/cool-tool.git         → gitlab-com_team_cool-tool
 ```
 1. touch ~/.kiso/instances/{instance}/tools/{name}/.installing (prevents discovery during install)
 2. git clone → ~/.kiso/instances/{instance}/tools/{name}/
-3. Validate kiso.toml (exists? type=skill? has name? has [kiso.tool.args]?)
+3. Validate kiso.toml (exists? type=tool? has name? has [kiso.tool.args]?)
 4. Validate run.py and pyproject.toml exist — fail if missing
 5. If unofficial repo → warn user, ask confirmation (see security.md)
 6. uv sync (pyproject.toml → .venv)  ← must run before deps.sh
