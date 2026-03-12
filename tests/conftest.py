@@ -94,16 +94,20 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(autouse=True)
 def _no_retry_backoff():
-    """Set retry backoff constants to 0 for fast tests."""
+    """Set retry/delay constants to 0 for fast tests."""
     import kiso.llm
     import kiso.brain
+    import kiso.worker.loop
     old_transport = kiso.llm._TRANSPORT_RETRY_BACKOFF
     old_messenger = kiso.brain._MESSENGER_RETRY_BACKOFF
+    old_rescan = kiso.worker.loop._POST_INSTALL_RESCAN_DELAY
     kiso.llm._TRANSPORT_RETRY_BACKOFF = 0.0
     kiso.brain._MESSENGER_RETRY_BACKOFF = 0.0
+    kiso.worker.loop._POST_INSTALL_RESCAN_DELAY = 0.0
     yield
     kiso.llm._TRANSPORT_RETRY_BACKOFF = old_transport
     kiso.brain._MESSENGER_RETRY_BACKOFF = old_messenger
+    kiso.worker.loop._POST_INSTALL_RESCAN_DELAY = old_rescan
 
 
 VALID_CONFIG = """\

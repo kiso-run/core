@@ -57,6 +57,7 @@ from kiso.brain import (
     run_summarizer,
     prepare_reviewer_output,
     clean_learn_items,
+    _INSTALL_CMD_RE,
 )
 from kiso.config import Config, setting_bool, setting_float, setting_int
 from kiso.llm import (
@@ -145,6 +146,7 @@ from kiso.worker.tool import _tool_task
 log = logging.getLogger(__name__)
 
 _MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
+_POST_INSTALL_RESCAN_DELAY: float = 3.0  # seconds to wait before rescan after tool install
 
 # Task substatus labels written to the DB during execution
 _SUBSTATUS_TRANSLATING = "translating"
@@ -1513,6 +1515,25 @@ async def _execute_plan(
         if task_type in (TASK_TYPE_EXEC, TASK_TYPE_TOOL):
             invalidate_tools_cache()
             ctx.installed_tools = discover_tools()
+            # After an install exec, unhealthy tools may need a moment for
+            # binary downloads to finish (e.g. Chromium for browser tool).
+            # Rescan once after a short delay to avoid false install-loop.
+            if (
+                task_type == TASK_TYPE_EXEC
+                and not result.stop
+                and _INSTALL_CMD_RE.search(detail or "")
+                and any(not t.get("healthy", True) for t in ctx.installed_tools)
+            ):
+                await asyncio.sleep(_POST_INSTALL_RESCAN_DELAY)
+                invalidate_tools_cache()
+                ctx.installed_tools = discover_tools()
+                still_unhealthy = [t["name"] for t in ctx.installed_tools if not t.get("healthy", True)]
+                log.info(
+                    "Post-install rescan complete: %d tools, %d still unhealthy%s",
+                    len(ctx.installed_tools),
+                    len(still_unhealthy),
+                    f" ({', '.join(still_unhealthy)})" if still_unhealthy else "",
+                )
             ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
 
         if result.plan_output is not None:

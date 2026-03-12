@@ -3491,6 +3491,96 @@ class TestExecutePlanTool:
         assert reviewer_side.call_count == 1
 
 
+# --- M486: Post-install rescan ---
+
+
+class TestPostInstallRescan:
+    """M486: after an install exec with unhealthy tools, rescan once after delay."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_rescan_triggered_after_install_exec(self, db, tmp_path):
+        """If exec detail contains 'install' and a tool is unhealthy, rescan."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "install browser")
+        await create_task(db, plan_id, "sess1", type="exec",
+                          detail="kiso tool install browser", expect="tool installed")
+
+        unhealthy_tool = {"name": "browser", "healthy": False, "missing_deps": ["playwright"]}
+        healthy_tool = {"name": "browser", "healthy": True, "missing_deps": []}
+
+        # Init + post-exec discover return unhealthy; rescan (3rd call) returns healthy
+        discover_calls = [0]
+        def _discover():
+            discover_calls[0] += 1
+            if discover_calls[0] <= 2:
+                return [unhealthy_tool]
+            return [healthy_tool]
+
+        with (
+            patch("kiso.worker.loop.discover_tools", side_effect=_discover),
+            patch("kiso.worker.loop.invalidate_tools_cache"),
+            patch("kiso.worker.loop._exec_task", new_callable=AsyncMock,
+                  return_value=("installed", "", True, 0)),
+            patch("kiso.worker.loop.run_exec_translator", return_value="echo ok"),
+            patch("kiso.worker.loop._run_review_step", new_callable=AsyncMock,
+                  return_value=({"status": "ok", "reason": None, "learn": [],
+                                 "retry_hint": None, "summary": "ok"}, None)),
+            patch("kiso.worker.loop.reload_config", return_value=config),
+            patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock),
+            patch("kiso.worker.loop.audit"),
+            _patch_kiso_dir(tmp_path),
+        ):
+            success, *_ = await _execute_plan(
+                db, config, "sess1", plan_id, "install browser", "install browser",
+            )
+
+        # discover_tools called: 1 at init + 1 post-exec + 1 rescan = 3
+        assert discover_calls[0] >= 3, (
+            f"Expected at least 3 discover_tools calls (init+post-exec+rescan), "
+            f"got {discover_calls[0]}"
+        )
+
+    async def test_no_rescan_without_install_keyword(self, db, tmp_path):
+        """Non-install exec tasks don't trigger rescan even if tools unhealthy."""
+        config = _make_config()
+        plan_id = await create_plan(db, "sess1", 1, "check something")
+        await create_task(db, plan_id, "sess1", type="exec",
+                          detail="ls -la", expect="files listed")
+
+        unhealthy_tool = {"name": "browser", "healthy": False, "missing_deps": ["playwright"]}
+        discover_calls = [0]
+        def _discover():
+            discover_calls[0] += 1
+            return [unhealthy_tool]
+
+        with (
+            patch("kiso.worker.loop.discover_tools", side_effect=_discover),
+            patch("kiso.worker.loop.invalidate_tools_cache"),
+            patch("kiso.worker.loop._exec_task", new_callable=AsyncMock,
+                  return_value=("files", "", True, 0)),
+            patch("kiso.worker.loop.run_exec_translator", return_value="ls -la"),
+            patch("kiso.worker.loop._run_review_step", new_callable=AsyncMock,
+                  return_value=({"status": "ok", "reason": None, "learn": [],
+                                 "retry_hint": None, "summary": "ok"}, None)),
+            patch("kiso.worker.loop.reload_config", return_value=config),
+            patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock),
+            patch("kiso.worker.loop.audit"),
+            _patch_kiso_dir(tmp_path),
+        ):
+            success, *_ = await _execute_plan(
+                db, config, "sess1", plan_id, "check", "check something",
+            )
+
+        # discover_tools called: 1 at init + 1 post-exec = 2 (no rescan)
+        assert discover_calls[0] == 2
+
+
 # --- M8: Webhook delivery in _execute_plan ---
 
 
