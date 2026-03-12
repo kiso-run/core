@@ -178,6 +178,13 @@ def build_parser() -> argparse.ArgumentParser:
     sr = skill_sub.add_parser("remove", help="remove a skill")
     sr.add_argument("name", help="skill name")
 
+    # Plugin umbrella command
+    plugin_parser = sub.add_parser("plugin", help="unified plugin view")
+    plugin_sub = plugin_parser.add_subparsers(dest="plugin_command")
+    plugin_sub.add_parser("list", help="list all installed plugins")
+    ps = plugin_sub.add_parser("search", help="search registry across all plugin types")
+    ps.add_argument("query", nargs="?", default="", help="search filter")
+
     connector_parser = sub.add_parser("connector", help="manage connectors")
     connector_sub = connector_parser.add_subparsers(dest="connector_command")
 
@@ -355,6 +362,10 @@ def main() -> None:
         from cli.skill import run_skill_command
 
         run_skill_command(args)
+    elif args.command == "plugin":
+        from cli.plugin import run_plugin_command
+
+        run_plugin_command(args)
     elif args.command == "connector":
         from cli.connector import run_connector_command
 
