@@ -40,7 +40,7 @@ run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local rc=0
-    uv run pytest "$@" || rc=$?
+    "$@" || rc=$?
     if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
         # 0 = passed, 5 = no tests collected (all skipped/deselected)
         echo -e "${GREEN}✓ $name: PASSED${NC}"
@@ -54,14 +54,14 @@ FAILED=0
 MODE="${1:-all}"
 
 if [[ "$MODE" == "all" || "$MODE" == "--unit" ]]; then
-    run_suite "Unit tests" tests/ -q \
+    run_suite "Unit tests" uv run pytest tests/ -q \
         --ignore=tests/live --ignore=tests/docker --ignore=tests/functional
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "--func" ]]; then
     # Requires: kiso server running on localhost:8333
     if curl -sf http://localhost:8333/health > /dev/null 2>&1; then
-        run_suite "Functional tests" tests/functional/ -v
+        run_suite "Functional tests" uv run pytest tests/functional/ -v
     else
         echo -e "${YELLOW}⚠ Skipping functional tests — kiso server not running on :8333${NC}"
         echo "  Start it with: uv run python -m kiso.main"
@@ -69,18 +69,19 @@ if [[ "$MODE" == "all" || "$MODE" == "--func" ]]; then
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "--docker" ]]; then
-    # Requires: Docker running + kiso image
+    # Requires: Docker — tests run as root inside the container
     if docker info > /dev/null 2>&1; then
-        run_suite "Docker tests" tests/docker/ -v
+        run_suite "Docker/sandbox tests" \
+            docker compose -f docker-compose.test.yml run --rm test-docker
     else
-        echo -e "${YELLOW}⚠ Skipping docker tests — Docker not available${NC}"
+        echo -e "${YELLOW}⚠ Skipping docker/sandbox tests — Docker not available${NC}"
     fi
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "--live" ]]; then
     # Requires: OPENROUTER_API_KEY set
     if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-        run_suite "Live tests (LLM + network)" tests/live/ -v --live-network --llm-live
+        run_suite "Live tests (LLM + network)" uv run pytest tests/live/ -v --live-network --llm-live
     else
         echo -e "${YELLOW}⚠ Skipping live tests — OPENROUTER_API_KEY not set${NC}"
         echo "  export OPENROUTER_API_KEY=sk-or-..."
