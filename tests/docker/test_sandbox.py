@@ -70,7 +70,7 @@ class TestSandboxIsolation:
     async def test_exec_task_runs_as_sandbox_user(self, sandbox_session):
         session, uid, workspace = sandbox_session
         stdout, stderr, success, _ = await _exec_task(
-            session, "id -u", 5, sandbox_uid=uid,
+            session, "id -u", sandbox_uid=uid,
         )
         assert success is True
         assert stdout.strip() == str(uid)
