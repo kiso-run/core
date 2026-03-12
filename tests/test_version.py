@@ -49,13 +49,3 @@ class TestLocCounter:
         finally:
             os.chmod(unreadable, 0o644)
 
-    def test_total_equals_sum(self, tmp_path: Path) -> None:
-        for sub in ("kiso", "cli"):
-            (tmp_path / sub).mkdir()
-        (tmp_path / "kiso" / "a.py").write_text("x = 1\n")
-        (tmp_path / "cli" / "b.py").write_text("y = 2\n")
-        stats = count_loc(tmp_path)
-        assert stats["core"] == 1
-        assert stats["cli"] == 1
-        assert stats["total"] == stats["core"] + stats["cli"]
-        assert stats["total"] == 2

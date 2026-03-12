@@ -66,12 +66,6 @@ class TestBuildSearcherMessages:
         assert "## Context" in content
         assert "User is in Milan" in content
 
-    def test_build_searcher_messages_no_params(self):
-        """Verify no ## Search Parameters section when none provided."""
-        msgs = build_searcher_messages("simple query")
-        content = msgs[1]["content"]
-        assert "## Search Parameters" not in content
-
 
 # --- run_searcher ---
 

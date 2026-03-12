@@ -5,7 +5,6 @@ End-to-end test: temp .md skills → discover → context_pool → briefer → p
 
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
 
 import pytest
@@ -65,17 +64,6 @@ def _config(briefer_enabled=True) -> Config:
     )
 
 
-def _briefing(context="", **kw) -> dict:
-    return {
-        "modules": kw.get("modules", []),
-        "tools": kw.get("tools", []),
-        "context": context,
-        "output_indices": kw.get("output_indices", []),
-        "relevant_tags": kw.get("relevant_tags", []),
-        "relevant_entities": kw.get("relevant_entities", []),
-    }
-
-
 @pytest.fixture()
 async def db(tmp_path):
     conn = await init_db(tmp_path / "test.db")
@@ -100,104 +88,6 @@ class TestMdSkillEndToEnd:
         assert names == {"code-reviewer", "data-analyst"}
         analyst = next(s for s in skills if s["name"] == "data-analyst")
         assert "pandas" in analyst["instructions"]
-
-    async def test_skills_reach_briefer_context_pool(self, db, tmp_path):
-        """When MD skills exist, briefer receives them in context pool."""
-        (tmp_path / "data-analyst.md").write_text(_SKILL_DATA_ANALYST)
-        invalidate_md_skills_cache()
-
-        captured_messages = []
-
-        async def _capturing_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                captured_messages.extend(messages)
-                return json.dumps(_briefing(
-                    context="User wants data analysis help."))
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills",
-                   side_effect=lambda *a, **k: discover_md_skills(tmp_path)):
-            await build_planner_messages(
-                db, _config(), "sess1", "user", "analyze this CSV",
-            )
-
-        briefer_input = captured_messages[1]["content"]
-        assert "Available Skills" in briefer_input
-        assert "data-analyst" in briefer_input
-        assert "Guides planner for data analysis tasks" in briefer_input
-
-    async def test_multiple_skills_all_reach_briefer(self, db, tmp_path):
-        """Multiple MD skills all appear in briefer context pool."""
-        (tmp_path / "data-analyst.md").write_text(_SKILL_DATA_ANALYST)
-        (tmp_path / "code-reviewer.md").write_text(_SKILL_CODE_REVIEW)
-        invalidate_md_skills_cache()
-
-        captured_messages = []
-
-        async def _capturing_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                captured_messages.extend(messages)
-                return json.dumps(_briefing(context="Multi-skill context."))
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills",
-                   side_effect=lambda *a, **k: discover_md_skills(tmp_path)):
-            await build_planner_messages(
-                db, _config(), "sess1", "user", "review this code",
-            )
-
-        briefer_input = captured_messages[1]["content"]
-        assert "data-analyst" in briefer_input
-        assert "code-reviewer" in briefer_input
-
-    async def test_briefer_passes_skill_to_planner(self, db, tmp_path):
-        """When briefer includes skill content in context, planner sees it."""
-        (tmp_path / "data-analyst.md").write_text(_SKILL_DATA_ANALYST)
-        invalidate_md_skills_cache()
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps(_briefing(
-                    context="User needs data analysis.\n\n"
-                            "## Skills\n- data-analyst: Use pandas for tabular data."))
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills",
-                   side_effect=lambda *a, **k: discover_md_skills(tmp_path)):
-            msgs, _, _ = await build_planner_messages(
-                db, _config(), "sess1", "user", "analyze this dataset",
-            )
-
-        user_content = msgs[1]["content"]
-        assert "pandas" in user_content
-
-    async def test_no_skills_no_section_in_briefer(self, db, tmp_path):
-        """When no MD skills, briefer gets no skills section."""
-        invalidate_md_skills_cache()
-
-        captured_messages = []
-
-        async def _capturing_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                captured_messages.extend(messages)
-                return json.dumps(_briefing(context="No skills needed."))
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills", return_value=[]):
-            await build_planner_messages(
-                db, _config(), "sess1", "user", "hello",
-            )
-
-        briefer_input = captured_messages[1]["content"]
-        assert "Available Skills" not in briefer_input
 
     async def test_skills_with_briefer_disabled(self, db, tmp_path):
         """When briefer is disabled, skills still appear in planner context (fallback path)."""

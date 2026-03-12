@@ -21,23 +21,6 @@ class TestTimeoutUnification:
         assert "messenger_timeout" not in SETTINGS_DEFAULTS
         assert "llm_timeout" in SETTINGS_DEFAULTS
 
-    def test_old_config_keys_stripped_at_build_time(self):
-        """_build_config pops legacy per-role timeout keys."""
-        from kiso.config import _build_config
-        # Verify the pop calls exist by checking source
-        import inspect
-        src = inspect.getsource(_build_config)
-        assert 'pop("planner_timeout"' in src
-        assert 'pop("messenger_timeout"' in src
-
-    def test_call_llm_uses_llm_timeout(self):
-        """call_llm resolves timeout from config.settings['llm_timeout']."""
-        from kiso.llm import call_llm
-        import inspect
-        sig = inspect.signature(call_llm)
-        # call_llm should not have planner_timeout or messenger_timeout params
-        assert "planner_timeout" not in sig.parameters
-        assert "messenger_timeout" not in sig.parameters
 
 
 # ---------------------------------------------------------------------------

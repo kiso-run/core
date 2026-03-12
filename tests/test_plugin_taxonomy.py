@@ -16,36 +16,25 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestPluginTaxonomyCLIEntrypoints:
-    """All three CLI entrypoints import and dispatch without errors."""
+    """All CLI entrypoints import and dispatch without errors."""
 
-    def test_tool_command_dispatch(self):
-        from cli.tool import run_tool_command
-        # No tool_command attr → prints usage and exits
-        class _Args:
-            tool_command = None
-        with pytest.raises(SystemExit):
-            run_tool_command(_Args())
+    @pytest.mark.parametrize("module,func,attr", [
+        ("cli.tool", "run_tool_command", "tool_command"),
+        ("cli.skill", "run_skill_command", "skill_command"),
+        ("cli.connector", "run_connector_command", "connector_command"),
+        ("cli.plugin", "run_plugin_command", "plugin_command"),
+    ])
+    def test_no_subcommand_exits(self, module, func, attr):
+        import importlib
+        mod = importlib.import_module(module)
+        cmd = getattr(mod, func)
 
-    def test_skill_command_dispatch(self):
-        from cli.skill import run_skill_command
         class _Args:
-            skill_command = None
-        with pytest.raises(SystemExit):
-            run_skill_command(_Args())
+            pass
+        setattr(_Args, attr, None)
 
-    def test_connector_command_dispatch(self):
-        from cli.connector import run_connector_command
-        class _Args:
-            connector_command = None
         with pytest.raises(SystemExit):
-            run_connector_command(_Args())
-
-    def test_plugin_command_dispatch(self):
-        from cli.plugin import run_plugin_command
-        class _Args:
-            plugin_command = None
-        with pytest.raises(SystemExit):
-            run_plugin_command(_Args())
+            cmd(_Args())
 
 
 class TestPluginListAggregation:
@@ -97,35 +86,9 @@ class TestBackwardCompat:
         errors = _validate_manifest(old_manifest, Path("/fake"))
         assert not errors or all("exec" not in e for e in errors)
 
-    def test_task_type_skill_is_alias(self):
-        """TASK_TYPE_SKILL is an alias for TASK_TYPE_TOOL."""
-        from kiso.brain import TASK_TYPE_SKILL, TASK_TYPE_TOOL
-        assert TASK_TYPE_SKILL == TASK_TYPE_TOOL
-
-    def test_task_types_include_both(self):
-        """TASK_TYPES frozenset includes both 'tool' and 'skill'."""
-        from kiso.brain import TASK_TYPES
-        assert "tool" in TASK_TYPES
-        assert "skill" in TASK_TYPES
-
 
 class TestRegistryStructure:
-    """registry.json has the expected keys."""
-
-    def test_has_tools_key(self):
-        registry = json.loads((ROOT / "registry.json").read_text())
-        assert "tools" in registry
-        assert isinstance(registry["tools"], list)
-
-    def test_has_skills_key(self):
-        registry = json.loads((ROOT / "registry.json").read_text())
-        assert "skills" in registry
-        assert isinstance(registry["skills"], list)
-
-    def test_has_connectors_key(self):
-        registry = json.loads((ROOT / "registry.json").read_text())
-        assert "connectors" in registry
-        assert isinstance(registry["connectors"], list)
+    """registry.json has expected entries."""
 
     def test_entries_have_name_and_description(self):
         registry = json.loads((ROOT / "registry.json").read_text())

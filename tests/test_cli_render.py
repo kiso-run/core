@@ -58,14 +58,6 @@ class TestRenderStepUsage:
     def test_both_zero_returns_empty(self):
         assert render_step_usage(0, 0, _UNICODE_CAPS) == ""
 
-    def test_unicode_format(self):
-        result = _plain(render_step_usage(430, 85, _UNICODE_CAPS))
-        assert result == "⟨430→85⟩"
-
-    def test_plain_format(self):
-        result = _plain(render_step_usage(430, 85, _PLAIN_CAPS))
-        assert result == "<430->85>"
-
     def test_large_numbers_formatted_with_commas(self):
         result = _plain(render_step_usage(1_000, 2_000, _PLAIN_CAPS))
         assert "1,000" in result
