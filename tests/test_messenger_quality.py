@@ -177,14 +177,14 @@ class TestMsgDetailValidation:
         errors = validate_plan(plan)
         assert not any("empty after language prefix" in e for e in errors)
 
-    def test_no_prefix_detail_accepted(self):
-        """Msg detail without language prefix passes (backward compat)."""
+    def test_m487_no_prefix_detail_rejected(self):
+        """M487: msg detail without language prefix is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "done",
              "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("empty after language prefix" in e for e in errors)
+        assert any("must start with" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------

@@ -548,10 +548,16 @@ def validate_plan(
             for field in ("expect", "tool", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
-            # M386: msg detail must have substantive content beyond language prefix
             msg_detail = (task.get("detail") or "").strip()
+            # M487: msg detail must always start with "Answer in {lang}."
             has_lang_prefix = bool(re.match(r'^Answer in \w+\.', msg_detail))
-            if has_lang_prefix:
+            if not has_lang_prefix:
+                errors.append(
+                    f"Task {i}: msg detail must start with 'Answer in {{language}}.' — "
+                    f"always specify the response language, even for English"
+                )
+            else:
+                # M386: msg detail must have substantive content beyond language prefix
                 cleaned = re.sub(r'^Answer in \w+\.\s*', '', msg_detail).strip()
                 if len(cleaned) < 5:
                     errors.append(

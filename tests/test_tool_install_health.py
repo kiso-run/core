@@ -142,7 +142,7 @@ class TestToolInstallHealthSmoke:
         plan = {"tasks": [
             {"type": "tool", "detail": "screenshot", "tool": "browser",
              "args": None, "expect": "done"},
-            {"type": "msg", "detail": "done", "expect": None, "tool": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         info = {"browser": {"args_schema": {
             "action": {"type": "string", "required": True},

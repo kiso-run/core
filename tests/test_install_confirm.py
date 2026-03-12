@@ -50,7 +50,7 @@ class TestValidatePlanInstallConfirmation:
     def test_install_in_first_plan_rejected(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
-            {"type": "msg", "detail": "done", "expect": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
@@ -76,7 +76,7 @@ class TestValidatePlanInstallConfirmation:
     def test_connector_install_also_caught(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso connector install slack", "expect": "ok"},
-            {"type": "msg", "detail": "done", "expect": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
@@ -139,7 +139,7 @@ class TestValidatePlanInstallApproved:
     def test_install_not_approved_blocks_first_plan(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
-            {"type": "msg", "detail": "done", "expect": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=False, install_approved=False)
         assert any("first plan" in e for e in errors)

@@ -93,7 +93,7 @@ class TestToolArgsReplanFlow:
             "tasks": [
                 {"type": "tool", "detail": "take screenshot", "tool": "browser",
                  "args": None, "expect": "screenshot saved"},
-                {"type": "msg", "detail": "done", "expect": None, "tool": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
             ],
         }
         info = {"browser": BROWSER_TOOL_INFO}
