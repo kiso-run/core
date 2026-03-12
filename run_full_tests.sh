@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Full test suite runner — includes tests that need infrastructure.
+# Full test suite runner — runs everything automatically.
 #
-# Prerequisites:
-#   1. kiso server running locally (for functional tests)
-#   2. OPENROUTER_API_KEY set (for live LLM tests)
-#   3. Docker running + kiso image built (for sandbox tests)
+# Auto-managed:
+#   - kiso server: started/stopped automatically for functional tests
+#   - API keys: loaded from ~/.kiso/instances/kiso/.env
+#   - Docker sandbox tests: run via docker compose (as root in container)
+#
+# Only skips if truly unavailable:
+#   - Docker not installed → skips sandbox tests
+#   - OPENROUTER_API_KEY missing (and no .env) → skips live tests
 #
 # Usage:
 #   ./run_full_tests.sh           # run everything
@@ -59,12 +63,30 @@ if [[ "$MODE" == "all" || "$MODE" == "--unit" ]]; then
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "--func" ]]; then
-    # Requires: kiso server running on localhost:8333
+    _STARTED_SERVER=0
+    if ! curl -sf http://localhost:8333/health > /dev/null 2>&1; then
+        echo -e "${YELLOW}Starting kiso server for functional tests…${NC}"
+        uv run python -m kiso.main &
+        _SERVER_PID=$!
+        _STARTED_SERVER=1
+        # Wait for server to be healthy (up to 15s)
+        for i in $(seq 1 30); do
+            if curl -sf http://localhost:8333/health > /dev/null 2>&1; then break; fi
+            sleep 0.5
+        done
+        if ! curl -sf http://localhost:8333/health > /dev/null 2>&1; then
+            echo -e "${RED}✗ kiso server failed to start${NC}"
+            kill "$_SERVER_PID" 2>/dev/null || true
+            FAILED=1
+            _STARTED_SERVER=0
+        fi
+    fi
     if curl -sf http://localhost:8333/health > /dev/null 2>&1; then
         run_suite "Functional tests" uv run pytest tests/functional/ -v
-    else
-        echo -e "${YELLOW}⚠ Skipping functional tests — kiso server not running on :8333${NC}"
-        echo "  Start it with: uv run python -m kiso.main"
+    fi
+    if [[ "$_STARTED_SERVER" -eq 1 ]]; then
+        kill "$_SERVER_PID" 2>/dev/null || true
+        wait "$_SERVER_PID" 2>/dev/null || true
     fi
 fi
 
