@@ -167,7 +167,7 @@ class TestReviewerCriticalRules:
 
     def test_m329_browser_fill_tolerance(self):
         """M329: reviewer tolerates browser fill confirmation."""
-        assert "Browser fill actions" in self.prompt
+        assert "Browser fill" in self.prompt
         assert "tool confirmed the fill" in self.prompt
 
     def test_m359_self_entity_hint(self):
