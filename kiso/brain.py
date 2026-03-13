@@ -921,11 +921,15 @@ async def build_planner_messages(
         if briefing.get("relevant_entities"):
             all_entities = await get_all_entities(db)
             entity_map = {_normalize_entity_name(e["name"]): e["id"] for e in all_entities}
+            # M552: filter out hallucinated entity names
+            valid_entities = []
             for ename in briefing["relevant_entities"]:
                 eid = entity_map.get(_normalize_entity_name(ename))
                 if eid is not None:
-                    entity_id = eid
-                    break  # primary entity
+                    valid_entities.append(ename)
+                    if entity_id is None:
+                        entity_id = eid  # primary entity
+            briefing["relevant_entities"] = valid_entities
         scored_facts = await search_facts_scored(
             db,
             entity_id=entity_id,
