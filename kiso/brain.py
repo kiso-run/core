@@ -662,6 +662,22 @@ def validate_plan(
 _FACT_CHAR_LIMIT = 200
 
 
+def _split_facts_by_session(
+    facts: list[dict], session: str, is_admin: bool,
+) -> tuple[list[dict], list[dict]]:
+    """Split facts into primary (current session + global) and other-session lists.
+
+    Non-admin users see all facts as primary (no session filtering).
+    """
+    if is_admin:
+        primary = [f for f in facts if not f.get("session") or f.get("session") == session]
+        other   = [f for f in facts if f.get("session") and f.get("session") != session]
+    else:
+        primary = facts
+        other   = []
+    return primary, other
+
+
 def _group_facts_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
     """Group facts by category and return formatted section parts."""
     cats: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
@@ -727,12 +743,7 @@ async def _gather_planner_context(
     # Format facts for context pool
     facts_text = ""
     if facts:
-        if is_admin:
-            primary = [f for f in facts if not f.get("session") or f.get("session") == session]
-            other   = [f for f in facts if f.get("session") and f.get("session") != session]
-        else:
-            primary = facts
-            other   = []
+        primary, other = _split_facts_by_session(facts, session, is_admin)
         parts: list[str] = []
         if primary:
             grouped = _group_facts_by_category(primary)
@@ -930,12 +941,7 @@ async def build_planner_messages(
             context_parts.append(f"## Session Summary\n{summary}")
 
         if facts:
-            if is_admin:
-                primary = [f for f in facts if not f.get("session") or f.get("session") == session]
-                other   = [f for f in facts if f.get("session") and f.get("session") != session]
-            else:
-                primary = facts
-                other   = []
+            primary, other = _split_facts_by_session(facts, session, is_admin)
 
             if primary:
                 parts = _group_facts_by_category(primary)
