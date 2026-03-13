@@ -231,7 +231,16 @@ async def _msg_task(
     selected_outputs = plan_outputs
     briefing_context: str | None = None
 
-    if setting_bool(config.settings, "briefer_enabled"):
+    # M523: skip briefer if LLM budget is nearly exhausted
+    _briefer_ok = setting_bool(config.settings, "briefer_enabled")
+    if _briefer_ok:
+        from kiso.llm import get_llm_call_count
+        max_calls = setting_int(config.settings, "max_llm_calls_per_message", lo=1)
+        if get_llm_call_count() >= max_calls - 2:
+            log.debug("Skipping briefer: LLM budget near limit (%d/%d)", get_llm_call_count(), max_calls)
+            _briefer_ok = False
+
+    if _briefer_ok:
         try:
             # Build full context pool for the briefer
             context_pool: dict = {}
@@ -1155,7 +1164,13 @@ async def _handle_exec_task(
     # Briefer: select relevant plan_outputs for this exec task
     idx_exec = get_usage_index()
     briefed_outputs = ctx.plan_outputs
-    if ctx.plan_outputs and setting_bool(ctx.config.settings, "briefer_enabled"):
+    _exec_briefer_ok = ctx.plan_outputs and setting_bool(ctx.config.settings, "briefer_enabled")
+    if _exec_briefer_ok:
+        from kiso.llm import get_llm_call_count
+        max_calls = setting_int(ctx.config.settings, "max_llm_calls_per_message", lo=1)
+        if get_llm_call_count() >= max_calls - 2:
+            _exec_briefer_ok = False
+    if _exec_briefer_ok:
         try:
             pool = {"plan_outputs": _format_plan_outputs_for_msg(ctx.plan_outputs)}
             briefing = await run_briefer(

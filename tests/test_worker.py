@@ -431,6 +431,20 @@ class TestMsgTask:
         user_content = captured_messages[1]["content"]
         assert "onboarding" in user_content.lower()
 
+    async def test_briefer_skipped_when_budget_near_limit(self, db):
+        """M523: briefer is skipped when LLM budget is nearly exhausted."""
+        config = _make_config(settings={"briefer_enabled": True, "max_llm_calls_per_message": 10})
+
+        async def _capture(cfg, role, messages, **kwargs):
+            return "Budget test response"
+
+        with patch("kiso.llm.get_llm_call_count", return_value=9), \
+             patch("kiso.worker.loop.run_briefer", new_callable=AsyncMock) as mock_briefer, \
+             patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "hello")
+
+        mock_briefer.assert_not_called()
+
 
 # --- run_worker ---
 
