@@ -4388,6 +4388,37 @@ class TestPlannerContextualRules:
         assert "Capability Analysis" in context
         assert "browser" in context
 
+    async def test_capability_gap_survives_briefer(self, db):
+        """M524: capability gap is injected even when briefer returns empty context."""
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(briefer_enabled=True, context_messages=3),
+            raw={},
+        )
+        briefing = {
+            "modules": [], "tools": [],
+            "context": "",  # empty context — briefer dropped everything
+            "output_indices": [],
+            "relevant_tags": [], "relevant_entities": [],
+        }
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]):
+            msgs, *_ = await build_planner_messages(
+                db, config, "test-session", "admin",
+                "take a screenshot of the homepage",
+            )
+        context = msgs[1]["content"]
+        assert "Capability Analysis" in context
+        assert "browser" in context
+
     async def test_capability_gap_no_trigger_on_generic_words(self, db):
         """M223: generic words like 'browse', 'form', 'click' don't trigger capability gap."""
         fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
@@ -6553,9 +6584,9 @@ class TestM258SysEnvAndGapFiltering:
         assert "Capability Analysis" in briefer_content
         assert "browser" in briefer_content
 
-        # Planner user content should NOT have raw capability gap
+        # M524: capability gap is now always injected (briefer may drop it)
         user_content = msgs[1]["content"]
-        assert "## Capability Analysis" not in user_content
+        assert "## Capability Analysis" in user_content
 
     async def test_capability_gap_in_fallback_path(self, db):
         """M258: fallback path still unconditionally includes capability_gap."""

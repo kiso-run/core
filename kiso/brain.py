@@ -988,9 +988,8 @@ async def build_planner_messages(
                 f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
             )
 
-    if not briefing and _gap_text:
-        # Fallback path: capability gap unconditionally included.
-        # In briefer path, gap is in context_pool and briefer includes it.
+    # M524: capability gap injected unconditionally (briefer may drop it)
+    if _gap_text:
         context_parts.append(f"## Capability Analysis\n{_gap_text}")
 
     # MD skills section — briefer includes via context_pool; fallback path adds directly
