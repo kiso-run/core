@@ -464,6 +464,7 @@ def invalidate_prompt_cache() -> None:
 
 
 _MODULE_MARKER_RE = re.compile(r"<!--\s*MODULE:\s*(\w+)\s*-->")
+_ANSWER_IN_LANG_RE = re.compile(r"^Answer in (\w[\w\s]*)\.")
 
 
 def _load_modular_prompt(role: str, modules: list[str]) -> str:
@@ -550,7 +551,7 @@ def validate_plan(
                     errors.append(f"Task {i}: msg task must have {field} = null")
             msg_detail = (task.get("detail") or "").strip()
             # M487: msg detail must always start with "Answer in {lang}."
-            has_lang_prefix = bool(re.match(r'^Answer in \w+\.', msg_detail))
+            has_lang_prefix = bool(_ANSWER_IN_LANG_RE.match(msg_detail))
             if not has_lang_prefix:
                 errors.append(
                     f"Task {i}: msg detail must start with 'Answer in {{language}}.' — "
@@ -1841,7 +1842,7 @@ def build_messenger_messages(
     context_parts: list[str] = []
     # M502: extract language from "Answer in {lang}." prefix and inject as
     # a dedicated top-level section so the LLM cannot miss it.
-    _lang_m = re.match(r"^Answer in (\w[\w\s]*)\.", detail)
+    _lang_m = _ANSWER_IN_LANG_RE.match(detail)
     if _lang_m:
         context_parts.append(
             f"## Language Directive\nRespond entirely in **{_lang_m.group(1)}**."
