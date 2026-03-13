@@ -246,16 +246,15 @@ def _report_pub_files(
     except ValueError as exc:
         log.warning("Cannot generate pub URLs: %s", exc)
         return []
-    _MAX_PUB_SCAN = 1000
     all_paths: list[Path] = []
     truncated = False
     for p in pub_dir.rglob("*"):
-        if len(all_paths) >= _MAX_PUB_SCAN:
+        if len(all_paths) >= OutputBudgets.PUB_SCAN_MAX:
             truncated = True
             break
         all_paths.append(p)
     if truncated:
-        log.warning("pub/ for session %r has >%d entries, listing truncated", session, _MAX_PUB_SCAN)
+        log.warning("pub/ for session %r has >%d entries, listing truncated", session, OutputBudgets.PUB_SCAN_MAX)
     prefix = base_url.rstrip("/") if base_url else ""
     results = []
     for f in sorted(all_paths):
@@ -324,11 +323,20 @@ def _auto_publish_skill_files(
     return published
 
 
-_PLAN_OUTPUTS_BUDGET = 8000  # max total chars for plan_outputs in LLM context
+# M508: centralized output budget constants
+class OutputBudgets:
+    """All output-size thresholds in one place."""
+    PLAN_OUTPUTS = 8000          # max total chars for plan_outputs in LLM context
+    REPLAN_EXEC = 1000           # chars per exec/tool task output (M309)
+    REPLAN_SEARCH = 2000         # chars per search task output
+    REPLAN_CONTEXT = 20000       # total replan context budget (~5000 tokens)
+    LARGE_THRESHOLD = 4096       # chars — above this, save to file
+    LARGE_HEAD = 500             # chars to keep inline as preview
+    PUB_SCAN_MAX = 1000          # max pub/ entries to scan
 
 
 def _format_plan_outputs_for_msg(
-    plan_outputs: list[dict], budget: int = _PLAN_OUTPUTS_BUDGET,
+    plan_outputs: list[dict], budget: int = OutputBudgets.PLAN_OUTPUTS,
 ) -> str:
     """Format plan_outputs as readable text for the worker LLM prompt.
 
@@ -373,11 +381,12 @@ def _format_plan_outputs_for_msg(
     return "\n\n".join(parts)
 
 
-_REPLAN_OUTPUT_LIMIT = 1000      # chars per exec/skill task output (M309: reduced from 2000)
-_REPLAN_SEARCH_OUTPUT_LIMIT = 2000  # chars per search task output
-_REPLAN_CONTEXT_CHAR_BUDGET = 20000  # ~5000 tokens total
-_LARGE_OUTPUT_THRESHOLD = 4096   # chars — above this, save to file
-_LARGE_OUTPUT_HEAD = 500         # chars to keep inline as preview
+# Legacy aliases — kept for backward compat with any external references
+_REPLAN_OUTPUT_LIMIT = OutputBudgets.REPLAN_EXEC
+_REPLAN_SEARCH_OUTPUT_LIMIT = OutputBudgets.REPLAN_SEARCH
+_REPLAN_CONTEXT_CHAR_BUDGET = OutputBudgets.REPLAN_CONTEXT
+_LARGE_OUTPUT_THRESHOLD = OutputBudgets.LARGE_THRESHOLD
+_LARGE_OUTPUT_HEAD = OutputBudgets.LARGE_HEAD
 
 
 def _save_large_output(session: str, task_index: int, output: str) -> str:
