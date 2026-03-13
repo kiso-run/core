@@ -964,13 +964,16 @@ async def build_planner_messages(
                 if parts:
                     context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
 
-        # M522: entity-based fact enrichment (parity with briefer path)
+        # M522/M551: entity-based fact enrichment (parity with briefer path)
+        # Use word-level matching with normalization so "config" matches entity "configuration"
         all_entities = await get_all_entities(db)
         if all_entities:
-            msg_lower = new_message.lower()
+            msg_words = set(new_message.lower().split())
             existing_ids = {f["id"] for f in facts} if facts else set()
             for ent in all_entities:
-                if ent["name"] in msg_lower:
+                ent_norm = _normalize_entity_name(ent["name"])
+                ent_words = set(ent_norm.split())
+                if ent_words & msg_words or ent_norm in new_message.lower():
                     ent_facts = await search_facts_by_entity(db, ent["id"])
                     new_facts = [f for f in ent_facts if f["id"] not in existing_ids]
                     if new_facts:
