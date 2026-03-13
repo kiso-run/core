@@ -704,6 +704,9 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
 # capability-gap heuristic to inject plugin-install guidance when the
 # message implies a capability not covered by installed tools.
 # Keep minimal — only precise keywords that unambiguously require a tool.
+_KISO_CMD_KEYWORDS = frozenset({"tool", "skill", "connector", "env", "instance", "kiso"})
+_USER_MGMT_KEYWORDS = frozenset({"user", "admin", "alias"})
+
 _CAPABILITY_MAP: dict[str, str] = {
     "screenshot": "browser",
     "refactor": "aider",
@@ -886,9 +889,9 @@ async def build_planner_messages(
             "kiso_commands", "user_mgmt", "plugin_install",
         })
         msg_words = set(msg_lower.split())
-        if {"tool", "skill", "connector", "env", "instance", "kiso"} & msg_words:
+        if _KISO_CMD_KEYWORDS & msg_words:
             fallback_modules.append("kiso_commands")
-        if {"user", "admin", "alias"} & msg_words:
+        if _USER_MGMT_KEYWORDS & msg_words:
             fallback_modules.append("user_mgmt")
         _plugin_kw_hit = (
             {"install", "plugin", "add"} & msg_words
