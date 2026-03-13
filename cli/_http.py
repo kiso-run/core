@@ -5,6 +5,27 @@ from __future__ import annotations
 import sys
 
 
+def _handle_http_error(exc, api_url: str, *, fatal: bool = True) -> None:
+    """Print an HTTP error to stderr and optionally exit.
+
+    *fatal=True* (default) calls ``sys.exit(1)`` after printing.
+    *fatal=False* prints the error and returns so the caller can
+    ``continue`` or ``return``.
+    """
+    import httpx
+
+    if isinstance(exc, httpx.ConnectError):
+        msg = f"cannot connect to {api_url}"
+    elif isinstance(exc, httpx.HTTPStatusError):
+        msg = f"{exc.response.status_code} — {exc.response.text}"
+    else:
+        msg = str(exc)
+
+    print(f"error: {msg}", file=sys.stderr)
+    if fatal:
+        sys.exit(1)
+
+
 def _cli_request(
     method: str, args, path: str,
     params: dict | None = None,

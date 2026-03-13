@@ -1391,8 +1391,8 @@ def test_slash_sessions_connect_error(capsys):
 
     _handle_slash("/sessions", client, "s", "alice", caps, "Bot")
 
-    out = capsys.readouterr().out
-    assert "cannot connect" in out
+    captured = capsys.readouterr()
+    assert "cannot connect" in captured.err
 
 
 def test_slash_clear_noop_without_tty(capsys):
@@ -3915,3 +3915,41 @@ def test_rules_remove(capsys):
     out = capsys.readouterr().out
     assert "42" in out
     assert "removed" in out.lower()
+
+
+# ── _handle_http_error ──────────────────────────────────────
+
+
+class TestHandleHttpError:
+    """M554: unified HTTP error handler."""
+
+    def test_connect_error_fatal(self, capsys):
+        from cli._http import _handle_http_error
+
+        with pytest.raises(SystemExit, match="1"):
+            _handle_http_error(httpx.ConnectError("refused"), "http://localhost:8333")
+        assert "cannot connect" in capsys.readouterr().err
+
+    def test_status_error_fatal(self, capsys):
+        from cli._http import _handle_http_error
+
+        resp = httpx.Response(403, text="forbidden")
+        exc = httpx.HTTPStatusError("err", request=httpx.Request("GET", "http://x"), response=resp)
+        with pytest.raises(SystemExit, match="1"):
+            _handle_http_error(exc, "http://localhost:8333")
+        err = capsys.readouterr().err
+        assert "403" in err
+        assert "forbidden" in err
+
+    def test_non_fatal_returns(self, capsys):
+        from cli._http import _handle_http_error
+
+        _handle_http_error(httpx.ConnectError("refused"), "http://x", fatal=False)
+        assert "cannot connect" in capsys.readouterr().err
+
+    def test_generic_error(self, capsys):
+        from cli._http import _handle_http_error
+
+        with pytest.raises(SystemExit, match="1"):
+            _handle_http_error(Exception("boom"), "http://x")
+        assert "boom" in capsys.readouterr().err

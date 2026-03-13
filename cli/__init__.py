@@ -10,6 +10,8 @@ import typing
 
 from kiso._version import __version__
 
+from cli._http import _handle_http_error
+
 
 class _VersionAction(argparse.Action):
     """Custom -V/--version action that prints version + total LOC and exits."""
@@ -437,14 +439,9 @@ def _cancel_cmd(args: argparse.Namespace) -> None:
     try:
         resp = ctx.client.post(f"/sessions/{session}/cancel")
         resp.raise_for_status()
-    except httpx.ConnectError:
-        print(f"error: cannot connect to {args.api}", file=sys.stderr)
+    except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
         ctx.client.close()
-        sys.exit(1)
-    except httpx.HTTPStatusError as exc:
-        print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
-        ctx.client.close()
-        sys.exit(1)
+        _handle_http_error(exc, args.api)
     finally:
         ctx.client.close()
 
@@ -498,12 +495,8 @@ def _msg_cmd(args: argparse.Namespace) -> None:
             json={"session": ctx.session, "user": ctx.user, "content": args.message},
         )
         resp.raise_for_status()
-    except httpx.ConnectError:
-        print(f"error: cannot connect to {args.api}", file=sys.stderr)
-        sys.exit(1)
-    except httpx.HTTPStatusError as exc:
-        print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
-        sys.exit(1)
+    except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
+        _handle_http_error(exc, args.api)
 
     data = resp.json()
     if data.get("untrusted"):
@@ -580,11 +573,8 @@ def _chat(args: argparse.Namespace) -> None:
                     json={"session": ctx.session, "user": ctx.user, "content": text},
                 )
                 resp.raise_for_status()
-            except httpx.ConnectError:
-                print(f"error: cannot connect to {args.api}", file=sys.stderr)
-                continue
-            except httpx.HTTPStatusError as exc:
-                print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
+            except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
+                _handle_http_error(exc, args.api, fatal=False)
                 continue
 
             data = resp.json()
@@ -1335,12 +1325,8 @@ def _slash_sessions(client, user: str, caps: "TermCaps") -> None:  # noqa: F821
     try:
         resp = client.get("/sessions", params={"user": user})
         resp.raise_for_status()
-    except httpx.ConnectError:
-        print("  error: cannot connect to server")
-        print(render_separator(caps))
-        return
-    except httpx.HTTPError as exc:
-        print(f"  error: {exc}")
+    except (httpx.ConnectError, httpx.HTTPError) as exc:
+        _handle_http_error(exc, "server", fatal=False)
         print(render_separator(caps))
         return
 
