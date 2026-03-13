@@ -361,6 +361,24 @@ class TestSanitizeOutput:
         result = sanitize_output("normal output", {}, {})
         assert result == "normal output"
 
+    def test_cache_reused_on_same_secrets(self):
+        """M547: compiled pattern is cached across calls with same secrets."""
+        import kiso.security as sec
+        secrets = {"KEY": "sk-abc123xyz"}
+        sanitize_output("first call", secrets, {})
+        cached_pattern = sec._sanitize_cache[1]
+        assert cached_pattern is not None
+        sanitize_output("second call", secrets, {})
+        assert sec._sanitize_cache[1] is cached_pattern  # same object
+
+    def test_cache_invalidated_on_new_secrets(self):
+        """M547: cache is rebuilt when secret values change."""
+        import kiso.security as sec
+        sanitize_output("call 1", {"A": "secret-one-val"}, {})
+        old_pattern = sec._sanitize_cache[1]
+        sanitize_output("call 2", {"A": "secret-two-val"}, {})
+        assert sec._sanitize_cache[1] is not old_pattern
+
 
 class TestCollectDeploySecrets:
     def test_env_vars(self):

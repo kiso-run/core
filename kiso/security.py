@@ -122,6 +122,9 @@ def build_secret_variants(value: str) -> list[str]:
     return list(variants)
 
 
+_sanitize_cache: tuple[frozenset[str], re.Pattern[str] | None] = (frozenset(), None)
+
+
 def sanitize_output(
     output: str,
     deploy_secrets: dict[str, str],
@@ -130,15 +133,28 @@ def sanitize_output(
     """Strip known secret values from output (plaintext, base64, URL-encoded, JSON-escaped).
 
     M506: compile a single regex from all variants for a single-pass replacement.
+    M547: cache compiled pattern — recompile only when secret values change.
     """
+    global _sanitize_cache  # noqa: PLW0603
+    all_values = frozenset(
+        list(deploy_secrets.values()) + list(ephemeral_secrets.values()),
+    )
+    if not all_values:
+        return output
+
+    cache_key, cached_pattern = _sanitize_cache
+    if cache_key == all_values and cached_pattern is not None:
+        return cached_pattern.sub("[REDACTED]", output)
+
     all_variants: list[str] = []
-    for v in list(deploy_secrets.values()) + list(ephemeral_secrets.values()):
+    for v in all_values:
         all_variants.extend(build_secret_variants(v))
     if not all_variants:
         return output
     # Sort longest-first so greedy alternation prefers longer matches
     all_variants.sort(key=len, reverse=True)
     pattern = re.compile("|".join(re.escape(v) for v in all_variants))
+    _sanitize_cache = (all_values, pattern)
     return pattern.sub("[REDACTED]", output)
 
 
