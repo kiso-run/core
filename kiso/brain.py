@@ -1852,8 +1852,9 @@ def build_messenger_messages(
     if goal:
         context_parts.append(f"## Current User Request\n{goal}")
     if briefing_context:
-        # Briefer path: synthesized context replaces raw summary/facts
-        context_parts.append(f"## Context\n{briefing_context}")
+        # Briefer path: synthesized context replaces raw summary/facts.
+        # Fence LLM-generated briefer output to prevent cross-LLM injection.
+        context_parts.append(f"## Context\n{fence_content(briefing_context, 'BRIEFER_CONTEXT')}")
     else:
         # Fallback: full raw context
         if summary:
