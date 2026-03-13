@@ -502,6 +502,12 @@ def _build_messages(system_prompt: str, user_content: str) -> list[dict]:
     ]
 
 
+def _add_section(parts: list[str], name: str, content: str) -> None:
+    """Append a ``## {name}`` section to *parts* if *content* is non-empty."""
+    if content:
+        parts.append(f"## {name}\n{content}")
+
+
 def validate_plan(
     plan: dict,
     installed_skills: list[str] | None = None,
@@ -946,14 +952,11 @@ async def build_planner_messages(
 
     if briefing:
         # Briefer path: use synthesized context + filtered skills
-        if briefing["context"]:
-            context_parts.append(f"## Context\n{briefing['context']}")
-        if scored_facts_text:
-            context_parts.append(f"## Relevant Facts\n{scored_facts_text}")
+        _add_section(context_parts, "Context", briefing["context"])
+        _add_section(context_parts, "Relevant Facts", scored_facts_text)
     else:
         # Fallback path: full context dump (original behavior)
-        if summary:
-            context_parts.append(f"## Session Summary\n{summary}")
+        _add_section(context_parts, "Session Summary", summary)
 
         if facts:
             primary, other = _split_facts_by_session(facts, session, is_admin)
@@ -1006,8 +1009,7 @@ async def build_planner_messages(
             )
 
     # M524: capability gap injected unconditionally (briefer may drop it)
-    if _gap_text:
-        context_parts.append(f"## Capability Analysis\n{_gap_text}")
+    _add_section(context_parts, "Capability Analysis", _gap_text)
 
     # MD skills section — briefer includes via context_pool; fallback path adds directly
     if not briefing and context_pool.get("md_skills"):
@@ -1731,8 +1733,7 @@ def build_curator_messages(
         for i, l in enumerate(learnings, 1)
     )
     parts = [f"## Learnings\n{items}"]
-    if available_tags:
-        parts.append(f"## Existing Tags\n{', '.join(available_tags)}")
+    _add_section(parts, "Existing Tags", ", ".join(available_tags) if available_tags else "")
     if available_entities:
         entity_lines = "\n".join(f"{e['name']} ({e['kind']})" for e in available_entities)
         parts.append(f"## Existing Entities\n{entity_lines}")
@@ -1787,8 +1788,7 @@ def build_summarizer_messages(
         for m in messages
     )
     parts: list[str] = []
-    if current_summary:
-        parts.append(f"## Current Summary\n{current_summary}")
+    _add_section(parts, "Current Summary", current_summary)
     parts.append(f"## Messages\n{msgs_text}")
     return _build_messages(system_prompt, "\n\n".join(parts))
 
@@ -1892,19 +1892,17 @@ def build_messenger_messages(
         context_parts.append(
             f"## Original User Message\n{fence_content(user_message, 'USER_MSG')}"
         )
-    if goal:
-        context_parts.append(f"## Current User Request\n{goal}")
+    _add_section(context_parts, "Current User Request", goal)
     if briefing_context:
         # Briefer path: synthesized context replaces raw summary/facts.
         # Fence LLM-generated briefer output to prevent cross-LLM injection.
         context_parts.append(f"## Context\n{fence_content(briefing_context, 'BRIEFER_CONTEXT')}")
     else:
         # Fallback: full raw context
-        if summary:
-            context_parts.append(f"## Session Summary (background only)\n{summary}")
+        _add_section(context_parts, "Session Summary (background only)", summary)
         if facts:
             facts_text = "\n".join(f"- {f['content']}" for f in facts)
-            context_parts.append(f"## Known Facts\n{facts_text}")
+            _add_section(context_parts, "Known Facts", facts_text)
     if recent_messages:
         msgs_text = "\n".join(
             f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
@@ -1913,8 +1911,7 @@ def build_messenger_messages(
         context_parts.append(
             f"## Recent Conversation\n{fence_content(msgs_text, 'MESSAGES')}"
         )
-    if plan_outputs_text:
-        context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
+    _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
     context_parts.append(f"## Task\n{detail}")
     return _build_messages(system_prompt, "\n\n".join(context_parts))
 
@@ -2019,8 +2016,7 @@ def build_searcher_messages(
         params.append(f"country: {country}")
     if params:
         parts.append("## Search Parameters\n" + "\n".join(params))
-    if context:
-        parts.append(f"## Context\n{context}")
+    _add_section(parts, "Context", context)
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
@@ -2060,12 +2056,9 @@ def build_exec_translator_messages(
 ) -> list[dict]:
     """Build the message list for the exec translator LLM call."""
     system_prompt = _load_system_prompt("worker")
-    context_parts: list[str] = []
-    context_parts.append(f"## System Environment\n{sys_env_text}")
-    if plan_outputs_text:
-        context_parts.append(f"## Preceding Task Outputs\n{plan_outputs_text}")
-    if retry_context:
-        context_parts.append(f"## Retry Context\n{retry_context}")
+    context_parts: list[str] = [f"## System Environment\n{sys_env_text}"]
+    _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
+    _add_section(context_parts, "Retry Context", retry_context)
     context_parts.append(f"## Task\n{detail}")
     return _build_messages(system_prompt, "\n\n".join(context_parts))
 
