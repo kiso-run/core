@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -103,7 +104,7 @@ def check_command_deny_list(command: str) -> str | None:
 
 
 def build_secret_variants(value: str) -> list[str]:
-    """Plaintext + base64 + URL-encoded. Skip values < 4 chars."""
+    """Plaintext + base64 + URL-encoded + JSON-escaped. Skip values < 4 chars."""
     if not value or len(value) < 4:
         return []
     variants = {value}
@@ -114,6 +115,10 @@ def build_secret_variants(value: str) -> list[str]:
     encoded = quote(value, safe="")
     if encoded != value:
         variants.add(encoded)
+    # M506: JSON string escaping (catches secrets inside JSON output)
+    json_escaped = json.dumps(value)[1:-1]  # strip surrounding quotes
+    if json_escaped != value:
+        variants.add(json_escaped)
     return list(variants)
 
 
@@ -122,14 +127,19 @@ def sanitize_output(
     deploy_secrets: dict[str, str],
     ephemeral_secrets: dict[str, str],
 ) -> str:
-    """Strip known secret values from output (plaintext, base64, URL-encoded)."""
+    """Strip known secret values from output (plaintext, base64, URL-encoded, JSON-escaped).
+
+    M506: compile a single regex from all variants for a single-pass replacement.
+    """
     all_variants: list[str] = []
     for v in list(deploy_secrets.values()) + list(ephemeral_secrets.values()):
         all_variants.extend(build_secret_variants(v))
-    all_variants.sort(key=len, reverse=True)  # longest first
-    for variant in all_variants:
-        output = output.replace(variant, "[REDACTED]")
-    return output
+    if not all_variants:
+        return output
+    # Sort longest-first so greedy alternation prefers longer matches
+    all_variants.sort(key=len, reverse=True)
+    pattern = re.compile("|".join(re.escape(v) for v in all_variants))
+    return pattern.sub("[REDACTED]", output)
 
 
 def collect_deploy_secrets() -> dict[str, str]:

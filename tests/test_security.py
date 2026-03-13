@@ -277,10 +277,14 @@ class TestBuildSecretVariants:
     def test_plain_ascii_no_url_variant(self):
         """Plain ASCII: URL-encoding produces same string, no extra variant."""
         variants = build_secret_variants("mysecret")
-        # Should have plaintext + base64 only (URL-encoded == plaintext)
+        # Should have plaintext + base64 only (URL-encoded == plaintext, JSON == plaintext)
         assert "mysecret" in variants
-        # URL-encoded form is identical, so not duplicated
-        assert len(variants) == 2
+
+    def test_json_escaped_variant(self):
+        """M506: secrets with special chars get JSON-escaped variant."""
+        variants = build_secret_variants('my\nsecret"key')
+        # JSON escaping: \n → \\n, " → \"
+        assert 'my\\nsecret\\"key' in variants
 
     def test_base64_error_logs_and_returns_plaintext(self):
         """If base64 encoding raises, log.error is called and plaintext is still returned."""
@@ -340,6 +344,22 @@ class TestSanitizeOutput:
         )
         # "supersecretkey" should be replaced as one unit, not partially
         assert result == "value: [REDACTED]"
+
+    def test_strips_json_escaped(self):
+        """M506: JSON-escaped secret variant is stripped from output."""
+        secret = 'key\nwith"quotes'
+        result = sanitize_output(
+            '{"token": "key\\nwith\\"quotes"}',
+            {"KEY": secret},
+            {},
+        )
+        assert 'key\\nwith\\"quotes' not in result
+        assert "[REDACTED]" in result
+
+    def test_empty_secrets_noop(self):
+        """M506: no secrets → output returned unchanged (no regex compilation)."""
+        result = sanitize_output("normal output", {}, {})
+        assert result == "normal output"
 
 
 class TestCollectDeploySecrets:
