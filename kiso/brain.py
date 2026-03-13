@@ -17,6 +17,7 @@ from kiso.security import fence_content
 from kiso.skill_loader import discover_md_skills, build_planner_skill_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
 from kiso.store import (
+    _normalize_entity_name,
     get_all_entities, get_all_tags, get_facts, get_pending_items,
     get_recent_messages, get_safety_facts, get_session, search_facts,
     search_facts_by_entity, search_facts_by_tags, search_facts_scored,
@@ -909,9 +910,9 @@ async def build_planner_messages(
         entity_id = None
         if briefing.get("relevant_entities"):
             all_entities = await get_all_entities(db)
-            entity_map = {e["name"]: e["id"] for e in all_entities}
+            entity_map = {_normalize_entity_name(e["name"]): e["id"] for e in all_entities}
             for ename in briefing["relevant_entities"]:
-                eid = entity_map.get(ename.lower().strip())
+                eid = entity_map.get(_normalize_entity_name(ename))
                 if eid is not None:
                     entity_id = eid
                     break  # primary entity
@@ -952,6 +953,20 @@ async def build_planner_messages(
                 parts = _group_facts_by_category(other, label_session=True)
                 if parts:
                     context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
+
+        # M522: entity-based fact enrichment (parity with briefer path)
+        all_entities = await get_all_entities(db)
+        if all_entities:
+            msg_lower = new_message.lower()
+            existing_ids = {f["id"] for f in facts} if facts else set()
+            for ent in all_entities:
+                if ent["name"] in msg_lower:
+                    ent_facts = await search_facts_by_entity(db, ent["id"])
+                    new_facts = [f for f in ent_facts if f["id"] not in existing_ids]
+                    if new_facts:
+                        extra = "\n".join(f"- {f['content']}" for f in new_facts)
+                        context_parts.append(f"## Additional Facts (entity: {ent['name']})\n{extra}")
+                        existing_ids.update(f["id"] for f in new_facts)
 
         # System env in original position (after facts, before pending)
         context_parts.append(f"## System Environment\n{sys_env_text}")

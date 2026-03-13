@@ -6038,6 +6038,29 @@ class TestBrieferPlannerIntegration:
         assert "## System Environment" in user_content
         assert "## New Message" in user_content
 
+    async def test_entity_enrichment_when_briefer_disabled(self, db):
+        """M522: entity-based facts injected via entity match even without briefer."""
+        from kiso.store import find_or_create_entity, save_fact
+
+        # Create entity "flask" with a fact whose content shares no words
+        # with the user message, so FTS5 cannot find it — only entity matching will.
+        eid = await find_or_create_entity(db, "flask", "tool")
+        await save_fact(
+            db, "Supports Jinja2 templating and WSGI interface",
+            source="curator", category="tool",
+            tags=["python"], entity_id=eid,
+        )
+        config = self._config(briefer_enabled=False)
+        # Message mentions "flask" (entity name) but NOT "Jinja2" or "WSGI"
+        with patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.search_facts", return_value=[]):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin", "tell me about flask",
+            )
+        user_content = msgs[1]["content"]
+        assert "Jinja2 templating" in user_content
+        assert "entity: flask" in user_content
+
     async def test_briefer_failure_falls_back(self, db):
         """When briefer raises, falls back to full context gracefully."""
         config = self._config(briefer_enabled=True)
