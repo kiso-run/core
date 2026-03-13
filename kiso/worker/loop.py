@@ -360,19 +360,26 @@ async def _post_plan_knowledge(
         try:
             tags = await get_all_tags(db)
             entities = await get_all_entities(db)
-            # M392: scored fact retrieval for curator dedup
-            relevant_facts: list[dict] = []
-            seen_entity_ids: set[int] = set()
-            for entity in entities:
-                if any(entity["name"] in l["content"].lower() for l in learnings):
-                    if entity["id"] not in seen_entity_ids:
-                        seen_entity_ids.add(entity["id"])
-                        efacts = await search_facts_scored(
-                            db, entity_id=entity["id"], limit=20,
-                        )
-                        for f in efacts:
-                            f["entity_name"] = entity["name"]
-                        relevant_facts.extend(efacts)
+            # M392/M505: scored fact retrieval for curator dedup
+            # Build lowercase content cache once, then dict-lookup entities
+            lower_contents = [l["content"].lower() for l in learnings]
+            matched: list[dict] = [
+                e for e in entities
+                if any(e["name"] in lc for lc in lower_contents)
+            ]
+            # Batch entity fact queries concurrently
+            if matched:
+                results = await asyncio.gather(*(
+                    search_facts_scored(db, entity_id=e["id"], limit=20)
+                    for e in matched
+                ))
+                relevant_facts: list[dict] = []
+                for entity, efacts in zip(matched, results):
+                    for f in efacts:
+                        f["entity_name"] = entity["name"]
+                    relevant_facts.extend(efacts)
+            else:
+                relevant_facts = []
             curator_result = await asyncio.wait_for(
                 run_curator(config, learnings, session=session,
                             available_tags=tags, available_entities=entities,
