@@ -1903,6 +1903,11 @@ class TestRunCurator:
             with pytest.raises(CuratorError, match="(?i)invalid JSON"):
                 await run_curator(config, learnings)
 
+    def test_curator_max_tokens_sufficient(self):
+        """M503: curator max_tokens must be >= 2000 to avoid JSON truncation."""
+        from kiso.config import MAX_TOKENS_DEFAULTS
+        assert MAX_TOKENS_DEFAULTS["curator"] >= 2000
+
 
 # --- M9: build_summarizer_messages ---
 
