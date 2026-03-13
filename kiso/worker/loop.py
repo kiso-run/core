@@ -935,6 +935,61 @@ async def _handle_msg_task(
     )
 
 
+# M507: shared review-result helpers (used by tool, exec, search handlers)
+
+
+async def _review_stop_stuck(
+    ctx: _PlanCtx, task_id: int, review: dict, plan_output: "dict | None",
+    usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle REVIEW_STATUS_STUCK — shared by tool/exec/search handlers."""
+    stuck_reason = review.get("reason", "")
+    if ctx.slog:
+        ctx.slog.info("Review → stuck: %s", stuck_reason)
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    return _TaskHandlerResult(
+        stop=True, stop_success=False, stop_stuck=stuck_reason,
+        plan_output=plan_output,
+    )
+
+
+async def _review_stop_replan(
+    ctx: _PlanCtx, task_id: int, review: dict, plan_output: "dict | None",
+    usage_idx_before: int, retries: int,
+) -> _TaskHandlerResult:
+    """Handle REVIEW_STATUS_REPLAN escalation (retries exhausted) — shared."""
+    replan_reason = review.get("reason", "")
+    retry_hint = review.get("retry_hint")
+    if ctx.slog:
+        if retries > 0:
+            ctx.slog.info("Review → replan (retried %dx before escalating): %s",
+                          retries, replan_reason)
+        else:
+            ctx.slog.info("Review → replan: %s", replan_reason)
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if plan_output is not None and retry_hint:
+        plan_output["retry_hint"] = retry_hint
+    return _TaskHandlerResult(
+        stop=True, stop_success=False, stop_replan=replan_reason,
+        plan_output=plan_output,
+    )
+
+
+async def _review_finalize_ok(
+    ctx: _PlanCtx, task_id: int, task_row: dict, review: dict,
+    plan_output: "dict | None", usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Handle review ok after loop — shared by tool/exec/search handlers."""
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if ctx.slog:
+        ctx.slog.info("Review → %s", review["status"])
+    if plan_output is not None and task_row.get("reviewer_summary"):
+        plan_output["reviewer_summary"] = task_row["reviewer_summary"]
+    if task_row["status"] == "failed":
+        return _TaskHandlerResult(stop=True, stop_success=False, plan_output=plan_output)
+    return _TaskHandlerResult(completed_row=task_row, plan_output=plan_output)
+
+
 async def _handle_tool_task(
     ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
@@ -1053,12 +1108,7 @@ async def _handle_tool_task(
                                       plan_output=plan_output_entry)
 
         if review["status"] == REVIEW_STATUS_STUCK:
-            stuck_reason = review.get("reason", "")
-            if ctx.slog:
-                ctx.slog.info("Review → stuck: %s", stuck_reason)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False, stop_stuck=stuck_reason,
-                                      plan_output=plan_output_entry)
+            return await _review_stop_stuck(ctx, task_id, review, plan_output_entry, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
@@ -1070,33 +1120,12 @@ async def _handle_tool_task(
                     ctx.slog.info("Task %d tool retry %d/%d: %s",
                                   task_id, tool_retries, ctx.max_worker_retries, retry_hint)
                 continue
-
-            replan_reason = review.get("reason", "")
-            if ctx.slog:
-                if tool_retries > 0:
-                    ctx.slog.info("Review → replan (retried %dx before escalating): %s",
-                                  tool_retries, replan_reason)
-                else:
-                    ctx.slog.info("Review → replan: %s", replan_reason)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            # Carry retry hint to replan context (M179)
-            if plan_output_entry is not None and retry_hint:
-                plan_output_entry["retry_hint"] = retry_hint
-            return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
-                                      plan_output=plan_output_entry)
+            return await _review_stop_replan(ctx, task_id, review, plan_output_entry, usage_idx_before, tool_retries)
 
         # review ok → break out of retry loop
         break
 
-    await _store_step_usage(ctx.db, task_id, usage_idx_before)
-    if ctx.slog:
-        ctx.slog.info("Review → %s", review["status"])
-    # Propagate reviewer summary to plan_output for downstream consumers (M247)
-    if plan_output_entry is not None and task_row.get("reviewer_summary"):
-        plan_output_entry["reviewer_summary"] = task_row["reviewer_summary"]
-    if task_row["status"] == "failed":
-        return _TaskHandlerResult(stop=True, stop_success=False, plan_output=plan_output_entry)
-    return _TaskHandlerResult(completed_row=task_row, plan_output=plan_output_entry)
+    return await _review_finalize_ok(ctx, task_id, task_row, review, plan_output_entry, usage_idx_before)
 
 
 async def _handle_exec_task(
@@ -1231,12 +1260,7 @@ async def _handle_exec_task(
                                       plan_output=local_plan_output)
 
         if review["status"] == REVIEW_STATUS_STUCK:
-            stuck_reason = review.get("reason", "")
-            if ctx.slog:
-                ctx.slog.info("Review → stuck: %s", stuck_reason)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False, stop_stuck=stuck_reason,
-                                      plan_output=local_plan_output)
+            return await _review_stop_stuck(ctx, task_id, review, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
@@ -1254,32 +1278,12 @@ async def _handle_exec_task(
                     ctx.slog.info("Task %d retry %d/%d: %s",
                                   task_id, exec_retries, ctx.max_worker_retries, retry_hint)
                 continue
-
-            replan_reason = review.get("reason", "")
-            log.info("Reviewer requests replan: %s", replan_reason)
-            if ctx.slog:
-                if exec_retries > 0:
-                    ctx.slog.info("Review → replan (retried %dx before escalating): %s",
-                                  exec_retries, replan_reason)
-                else:
-                    ctx.slog.info("Review → replan: %s", replan_reason)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            # Carry retry hint to replan context (M145)
-            if local_plan_output is not None and retry_hint:
-                local_plan_output["retry_hint"] = retry_hint
-            return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
-                                      plan_output=local_plan_output)
+            return await _review_stop_replan(ctx, task_id, review, local_plan_output, usage_idx_before, exec_retries)
 
         # review ok → break out of retry loop
         break
 
-    await _store_step_usage(ctx.db, task_id, usage_idx_before)
-    if ctx.slog:
-        ctx.slog.info("Review → %s", review["status"])
-    # Propagate reviewer summary to plan_output for downstream consumers (M247)
-    if local_plan_output is not None and task_row.get("reviewer_summary"):
-        local_plan_output["reviewer_summary"] = task_row["reviewer_summary"]
-    return _TaskHandlerResult(completed_row=task_row, plan_output=local_plan_output)
+    return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
 
 
 async def _handle_search_task(
@@ -1343,13 +1347,8 @@ async def _handle_search_task(
                                       plan_output=local_plan_output)
 
         if review["status"] == REVIEW_STATUS_STUCK:
-            stuck_reason = review.get("reason", "")
-            if ctx.slog:
-                ctx.slog.info("Review → stuck: %s", stuck_reason)
             await update_task(ctx.db, task_id, "done", output=search_result)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False, stop_stuck=stuck_reason,
-                                      plan_output=local_plan_output)
+            return await _review_stop_stuck(ctx, task_id, review, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
@@ -1364,21 +1363,8 @@ async def _handle_search_task(
                     ctx.slog.info("Task %d search retry %d/%d: %s",
                                   task_id, search_retries, ctx.max_worker_retries, retry_hint)
                 continue
-
-            replan_reason = review.get("reason", "")
-            if ctx.slog:
-                if search_retries > 0:
-                    ctx.slog.info("Review → replan (retried %dx before escalating): %s",
-                                  search_retries, replan_reason)
-                else:
-                    ctx.slog.info("Review → replan: %s", replan_reason)
             await update_task(ctx.db, task_id, "done", output=search_result)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            # Carry retry hint to replan context (M145)
-            if local_plan_output is not None and retry_hint:
-                local_plan_output["retry_hint"] = retry_hint
-            return _TaskHandlerResult(stop=True, stop_success=False, stop_replan=replan_reason,
-                                      plan_output=local_plan_output)
+            return await _review_stop_replan(ctx, task_id, review, local_plan_output, usage_idx_before, search_retries)
 
         # review ok → write final status and break out of retry loop
         break
@@ -1392,13 +1378,7 @@ async def _handle_search_task(
     )
     if ctx.slog:
         ctx.slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
-    await _store_step_usage(ctx.db, task_id, usage_idx_before)
-    if ctx.slog:
-        ctx.slog.info("Review → %s", review["status"])
-    # Propagate reviewer summary to plan_output for downstream consumers (M247)
-    if local_plan_output is not None and task_row.get("reviewer_summary"):
-        local_plan_output["reviewer_summary"] = task_row["reviewer_summary"]
-    return _TaskHandlerResult(completed_row=task_row, plan_output=local_plan_output)
+    return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
 
 
 _TASK_HANDLERS: dict = {
