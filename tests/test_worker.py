@@ -397,6 +397,40 @@ class TestMsgTask:
             with pytest.raises(MessengerError, match="API down"):
                 await _msg_task(config, db, "sess1", "task")
 
+    async def test_entity_name_normalization_in_briefer_lookup(self, db):
+        """M496: briefer returning mixed-case entity name still matches DB entity."""
+        from kiso.store import find_or_create_entity, save_fact
+
+        config = _make_config(settings={"briefer_enabled": True})
+        eid = await find_or_create_entity(db, "guidance.studio", "website")
+        await save_fact(
+            db, "guidance.studio is a SaaS onboarding platform",
+            source="curator", category="general",
+            tags=["website"], entity_id=eid,
+        )
+
+        captured_messages = []
+
+        async def _capture(cfg, role, messages, **kwargs):
+            captured_messages.extend(messages)
+            return "Guidance.studio è una piattaforma SaaS"
+
+        # Briefer returns mixed-case entity name
+        briefing = {
+            "modules": [],
+            "skills": [],
+            "context": "",
+            "output_indices": [],
+            "relevant_tags": ["website"],
+            "relevant_entities": ["Guidance.Studio"],  # mixed case
+        }
+        with patch("kiso.worker.loop.run_briefer", new_callable=AsyncMock, return_value=briefing), \
+             patch("kiso.brain.call_llm", side_effect=_capture):
+            result = await _msg_task(config, db, "sess1", "cosa sai di guidance.studio?")
+
+        user_content = captured_messages[1]["content"]
+        assert "onboarding" in user_content.lower()
+
 
 # --- run_worker ---
 

@@ -88,6 +88,7 @@ from kiso.store import (
     create_task,
     decay_facts,
     delete_facts,
+    _normalize_entity_name,
     find_or_create_entity,
     get_all_entities,
     get_all_tags,
@@ -276,7 +277,7 @@ async def _msg_task(
             if briefing.get("relevant_entities") and all_entities:
                 entity_map = {e["name"]: e["id"] for e in all_entities}
                 for ename in briefing["relevant_entities"]:
-                    eid = entity_map.get(ename.lower().strip())
+                    eid = entity_map.get(_normalize_entity_name(ename))
                     if eid is not None:
                         entity_id = eid
                         break
