@@ -253,7 +253,10 @@ def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
 
 def setting_int(settings: dict, key: str, *, lo: int | None = None, hi: int | None = None) -> int:
     """Read an integer setting, clamping to [lo, hi] with a warning if out of range."""
-    val = int(settings[key])
+    raw = settings.get(key, SETTINGS_DEFAULTS.get(key))
+    if raw is None:
+        raise ConfigError(f"Missing required setting: {key}")
+    val = int(raw)
     if lo is not None and val < lo:
         log.warning("Setting %s=%d is below minimum %d, clamping to %d", key, val, lo, lo)
         val = lo
@@ -265,7 +268,10 @@ def setting_int(settings: dict, key: str, *, lo: int | None = None, hi: int | No
 
 def setting_float(settings: dict, key: str, *, lo: float | None = None, hi: float | None = None) -> float:
     """Read a float setting, clamping to [lo, hi] with a warning if out of range."""
-    val = float(settings[key])
+    raw = settings.get(key, SETTINGS_DEFAULTS.get(key))
+    if raw is None:
+        raise ConfigError(f"Missing required setting: {key}")
+    val = float(raw)
     if lo is not None and val < lo:
         log.warning("Setting %s=%f is below minimum %f, clamping to %f", key, val, lo, lo)
         val = lo

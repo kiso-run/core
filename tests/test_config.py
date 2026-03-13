@@ -548,6 +548,15 @@ class TestSettingInt:
     def test_no_bounds_no_clamp(self):
         assert setting_int({"key": 0}, "key") == 0
 
+    def test_missing_key_falls_back_to_defaults(self):
+        """M516: missing key uses SETTINGS_DEFAULTS fallback."""
+        assert setting_int({}, "llm_timeout", lo=1) == SETTINGS_DEFAULTS["llm_timeout"]
+
+    def test_missing_key_no_default_raises(self):
+        """M516: missing key with no default raises ConfigError."""
+        with pytest.raises(ConfigError, match="Missing required setting"):
+            setting_int({}, "nonexistent_setting_xyz")
+
 
 class TestSettingFloat:
     def test_nominal_value_returned(self):
@@ -567,6 +576,16 @@ class TestSettingFloat:
 
     def test_no_bounds_no_clamp(self):
         assert setting_float({"key": 99.9}, "key") == pytest.approx(99.9)
+
+    def test_missing_key_falls_back_to_defaults(self):
+        """M516: missing key uses SETTINGS_DEFAULTS fallback."""
+        result = setting_float({}, "fact_decay_rate", lo=0.0, hi=1.0)
+        assert result == pytest.approx(SETTINGS_DEFAULTS["fact_decay_rate"])
+
+    def test_missing_key_no_default_raises(self):
+        """M516: missing key with no default raises ConfigError."""
+        with pytest.raises(ConfigError, match="Missing required setting"):
+            setting_float({}, "nonexistent_setting_xyz")
 
 
 def test_model_descriptions_cover_all_defaults():
