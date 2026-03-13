@@ -293,7 +293,7 @@ async def _msg_task(
                     briefing_context += f"\n\n## Relevant Facts\n{facts_text}"
                 else:
                     briefing_context = f"## Relevant Facts\n{facts_text}"
-        except Exception:
+        except (BrieferError, LLMError, asyncio.TimeoutError):
             log.debug("Briefer failed for messenger, using full context")
 
     # M273: flush briefer usage before messenger call
@@ -1166,7 +1166,7 @@ async def _handle_exec_task(
                 filtered = [o for o in ctx.plan_outputs if o["index"] in indices]
                 if filtered:
                     briefed_outputs = filtered
-        except Exception:
+        except (BrieferError, LLMError, asyncio.TimeoutError):
             log.debug("Briefer failed for worker task %d, using all plan_outputs", task_id)
     # M273: flush briefer calls so CLI renders panels before translator runs
     await _append_calls(ctx.db, task_id, idx_exec)

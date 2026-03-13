@@ -183,7 +183,12 @@ def _build_exec_env() -> dict[str, str]:
 
     ssh_dir = sys_dir / "ssh"
     if ssh_dir.is_dir() and (ssh_dir / "config").is_file() and (ssh_dir / "id_ed25519").is_file():
-        env["GIT_SSH_COMMAND"] = f"ssh -F {ssh_dir}/config -o UserKnownHostsFile={ssh_dir}/known_hosts -i {ssh_dir}/id_ed25519"
+        # M509: quote paths to prevent shell injection if path contains spaces/special chars
+        env["GIT_SSH_COMMAND"] = (
+            f"ssh -F '{ssh_dir}/config' "
+            f"-o UserKnownHostsFile='{ssh_dir}/known_hosts' "
+            f"-i '{ssh_dir}/id_ed25519'"
+        )
 
     return env
 
