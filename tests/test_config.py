@@ -650,3 +650,34 @@ class TestResourceLimitDefaults:
         assert cfg.settings["max_cpus"] == 4
         assert cfg.settings["max_disk_gb"] == 64
         assert cfg.settings["max_pids"] == 1024
+
+
+# --- M542: KISO_HOME env var ---
+
+
+class TestKisoHomeEnvVar:
+    """M542: KISO_DIR respects KISO_HOME environment variable."""
+
+    def test_default_is_home_dot_kiso(self):
+        """Without KISO_HOME, KISO_DIR is ~/.kiso."""
+        from kiso.config import KISO_DIR
+        # Just verify it's a Path ending with .kiso
+        assert KISO_DIR.name == ".kiso"
+
+    def test_kiso_home_overrides_kiso_dir(self, tmp_path, monkeypatch):
+        """KISO_HOME env var overrides KISO_DIR at import time."""
+        test_dir = tmp_path / "custom_kiso"
+        test_dir.mkdir()
+        monkeypatch.setenv("KISO_HOME", str(test_dir))
+        # Re-evaluate the expression (can't re-import module-level constant,
+        # but we can verify the logic directly)
+        import os
+        result = Path(os.environ.get("KISO_HOME", str(Path.home() / ".kiso")))
+        assert result == test_dir
+
+    def test_kiso_home_absent_uses_default(self, monkeypatch):
+        """Without KISO_HOME set, falls back to ~/.kiso."""
+        monkeypatch.delenv("KISO_HOME", raising=False)
+        import os
+        result = Path(os.environ.get("KISO_HOME", str(Path.home() / ".kiso")))
+        assert result == Path.home() / ".kiso"

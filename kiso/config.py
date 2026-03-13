@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import sys
 import tomllib
@@ -11,7 +12,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-KISO_DIR = Path.home() / ".kiso"
+KISO_DIR = Path(os.environ.get("KISO_HOME", str(Path.home() / ".kiso")))
 CONFIG_PATH = KISO_DIR / "config.toml"
 LLM_API_KEY_ENV = "KISO_LLM_API_KEY"
 
