@@ -475,7 +475,11 @@ async def get_pub(token: str, filename: str, request: Request):
         raise HTTPException(status_code=404, detail="Not found")
 
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return FileResponse(path=file_path, filename=Path(filename).name, media_type=media_type)
+    response = FileResponse(path=file_path, filename=Path(filename).name, media_type=media_type)
+    # M553: prevent XSS if HTML files are published
+    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.post("/sessions")

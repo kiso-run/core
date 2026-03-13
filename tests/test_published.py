@@ -203,3 +203,13 @@ class TestGetPubEndpoint:
 
         resp = await client.get(f"/pub/{self._token}/open.txt", headers={})
         assert resp.status_code == 200
+
+    async def test_csp_header_present(self, client, _setup_session):
+        """M553: pub responses include CSP and X-Content-Type-Options headers."""
+        test_file = self._pub_dir / "page.html"
+        test_file.write_text("<html><body>test</body></html>")
+
+        resp = await client.get(f"/pub/{self._token}/page.html")
+        assert resp.status_code == 200
+        assert "default-src 'none'" in resp.headers.get("content-security-policy", "")
+        assert resp.headers.get("x-content-type-options") == "nosniff"
