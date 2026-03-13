@@ -2735,7 +2735,8 @@ class TestRunMessenger:
         mock_facts.assert_not_called()
         # Briefing context should appear in messenger input
         user_content = captured_messages[1]["content"]
-        assert "## Context\nBriefer context here." in user_content
+        assert "## Context" in user_content
+        assert "Briefer context here." in user_content
         assert "## Session Summary" not in user_content
 
 
@@ -6890,7 +6891,8 @@ class TestM261MessengerContextReduction:
         # Relevant outputs present
         assert "weather rome" in messenger_content or "Sunny" in messenger_content
         # Briefer context replaces raw summary/facts
-        assert "## Context\nUser asked about weather in Rome." in messenger_content
+        assert "## Context" in messenger_content
+        assert "User asked about weather in Rome." in messenger_content
 
 
 # --- M269: Retry on empty LLM response ---

@@ -275,7 +275,7 @@ async def _msg_task(
             # M391: scored fact retrieval for messenger
             entity_id = None
             if briefing.get("relevant_entities") and all_entities:
-                entity_map = {e["name"]: e["id"] for e in all_entities}
+                entity_map = {_normalize_entity_name(e["name"]): e["id"] for e in all_entities}
                 for ename in briefing["relevant_entities"]:
                     eid = entity_map.get(_normalize_entity_name(ename))
                     if eid is not None:
