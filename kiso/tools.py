@@ -9,10 +9,8 @@ import shutil
 import time
 from pathlib import Path
 
-import tomllib
-
 from kiso.config import KISO_DIR
-from kiso.plugins import _validate_plugin_manifest_base
+from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base
 
 log = logging.getLogger(__name__)
 
@@ -147,32 +145,7 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
 
     tools: list[dict] = []
     seen_names: set[str] = set()
-    for entry in sorted(resolved_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-
-        # Skip installing tools
-        if (entry / ".installing").exists():
-            log.debug("Skipping %s (installing)", entry.name)
-            continue
-
-        toml_path = entry / "kiso.toml"
-        if not toml_path.exists():
-            log.debug("Skipping %s (no kiso.toml)", entry.name)
-            continue
-
-        try:
-            with open(toml_path, "rb") as f:
-                manifest = tomllib.load(f)
-        except Exception as e:
-            log.warning("Failed to parse %s: %s", toml_path, e)
-            continue
-
-        errors = _validate_manifest(manifest, entry)
-        if errors:
-            log.warning("Tool %s has manifest errors: %s", entry.name, errors)
-            continue
-
+    for entry, manifest in _scan_plugin_dirs(resolved_dir, _validate_manifest):
         kiso = manifest["kiso"]
         name = kiso["name"]
         if name in seen_names:

@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.plugins import _validate_plugin_manifest_base
+from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base
 
 log = logging.getLogger(__name__)
 
@@ -59,32 +59,8 @@ def discover_connectors(connectors_dir: Path | None = None) -> list[dict]:
     if not resolved_dir.is_dir():
         return []
 
-    import tomllib
-
     connectors: list[dict] = []
-    for entry in sorted(resolved_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-
-        if (entry / ".installing").exists():
-            continue
-
-        toml_path = entry / "kiso.toml"
-        if not toml_path.exists():
-            continue
-
-        try:
-            with open(toml_path, "rb") as f:
-                manifest = tomllib.load(f)
-        except Exception as e:
-            log.warning("Skipping connector %s: failed to read kiso.toml: %s", entry.name, e)
-            continue
-
-        errors = _validate_connector_manifest(manifest, entry)
-        if errors:
-            log.warning("Skipping connector %s: invalid manifest: %s", entry.name, "; ".join(errors))
-            continue
-
+    for entry, manifest in _scan_plugin_dirs(resolved_dir, _validate_connector_manifest):
         kiso = manifest["kiso"]
         connector_section = kiso.get("connector", {})
 

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import time
+from collections.abc import Callable
 from pathlib import Path
+
+import tomllib
+
+log = logging.getLogger(__name__)
 
 
 def _validate_plugin_manifest_base(
@@ -38,3 +45,48 @@ def _validate_plugin_manifest_base(
         errors.append("pyproject.toml is missing")
 
     return errors
+
+
+def plugin_env_var_name(plugin_type: str, plugin_name: str, key: str) -> str:
+    """Build env var name: KISO_{TYPE}_{NAME}_{KEY}."""
+    type_part = plugin_type.upper()
+    name_part = plugin_name.upper().replace("-", "_")
+    key_part = key.upper().replace("-", "_")
+    return f"KISO_{type_part}_{name_part}_{key_part}"
+
+
+def _scan_plugin_dirs(
+    parent_dir: Path,
+    validate_fn: Callable[[dict, Path], list[str]],
+) -> list[tuple[Path, dict]]:
+    """Scan a plugin directory, load and validate manifests.
+
+    Returns list of (plugin_dir, manifest) tuples for valid plugins.
+    Skips dirs with .installing marker or invalid manifests.
+    """
+    if not parent_dir.is_dir():
+        return []
+
+    results: list[tuple[Path, dict]] = []
+    for entry in sorted(parent_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if (entry / ".installing").exists():
+            log.debug("Skipping %s (installing)", entry.name)
+            continue
+        toml_path = entry / "kiso.toml"
+        if not toml_path.exists():
+            log.debug("Skipping %s (no kiso.toml)", entry.name)
+            continue
+        try:
+            with open(toml_path, "rb") as f:
+                manifest = tomllib.load(f)
+        except Exception as e:
+            log.warning("Failed to parse %s: %s", toml_path, e)
+            continue
+        errors = validate_fn(manifest, entry)
+        if errors:
+            log.warning("Plugin %s has manifest errors: %s", entry.name, errors)
+            continue
+        results.append((entry, manifest))
+    return results
