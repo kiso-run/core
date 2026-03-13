@@ -15,6 +15,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -231,14 +232,53 @@ def func_config() -> Config:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session", autouse=True)
-def func_ssh_keys():
-    """Ensure SSH key pair exists at KISO_DIR (idempotent, session-scoped).
+# Modules that import KISO_DIR at module level and need patching.
+_KISO_DIR_MODULES = [
+    "kiso.config",
+    "kiso.brain",
+    "kiso.tools",
+    "kiso.skills",
+    "kiso.main",
+    "kiso.pub",
+    "kiso.log",
+    "kiso.audit",
+    "kiso.sysenv",
+    "kiso.connectors",
+    "kiso.skill_loader",
+    "kiso.tool_repair",
+    "kiso.worker.loop",
+    "kiso.worker.utils",
+]
 
-    Calls the same ``_init_ssh_keys()`` that the FastAPI lifespan uses.
-    Functional tests bypass the server lifespan, so this fills the gap.
+
+@pytest.fixture(scope="session", autouse=True)
+def _func_kiso_dir(func_config, tmp_path_factory):
+    """Isolate functional tests from the host ~/.kiso directory.
+
+    Creates a temp KISO_DIR with clean ``tools/`` and ``sys/ssh/`` dirs,
+    patches every module that imports KISO_DIR, and stubs ``reload_config``
+    so mid-execution config reloads return func_config (not the real toml).
+    SSH keys are generated inside the temp dir.
     """
+    kiso_dir = tmp_path_factory.mktemp("kiso_home")
+    (kiso_dir / "tools").mkdir()
+    (kiso_dir / "sys" / "ssh").mkdir(parents=True)
+
+    patches = [patch(f"{mod}.KISO_DIR", kiso_dir) for mod in _KISO_DIR_MODULES]
+    patches.append(
+        patch("kiso.worker.loop.reload_config", return_value=func_config),
+    )
+
+    for p in patches:
+        p.start()
+
+    # Generate SSH keys in the isolated dir (mirrors FastAPI lifespan).
     _init_ssh_keys()
+
+    yield kiso_dir
+
+    for p in patches:
+        p.stop()
 
 
 @pytest_asyncio.fixture()
