@@ -538,7 +538,10 @@ def validate_plan(
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
         if t in (TASK_TYPE_EXEC, TASK_TYPE_TOOL, TASK_TYPE_SEARCH) and task.get("expect") is None:
-            errors.append(f"Task {i}: {t} task must have a non-null expect")
+            errors.append(
+                f"Task {i}: {t} task must have expect describing WHAT RESULT you need "
+                f"(e.g., 'list of search results', 'file created successfully')"
+            )
         detail = task.get("detail") or ""
         if t == TASK_TYPE_EXEC and len(detail) > 500:
             errors.append(

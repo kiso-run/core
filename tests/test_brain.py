@@ -282,7 +282,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("exec task must have a non-null expect" in e for e in errors)
+        assert any("exec task must have expect describing WHAT RESULT" in e for e in errors)
 
     def test_skill_without_expect(self):
         plan = {"tasks": [
@@ -290,7 +290,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("tool task must have a non-null expect" in e for e in errors)
+        assert any("tool task must have expect describing WHAT RESULT" in e for e in errors)
 
     def test_msg_with_expect(self):
         plan = {"tasks": [
@@ -614,7 +614,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("search task must have a non-null expect" in e for e in errors)
+        assert any("search task must have expect describing WHAT RESULT" in e for e in errors)
 
     def test_search_task_with_skill(self):
         """search with skill set → error."""
