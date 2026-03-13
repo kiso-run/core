@@ -5,6 +5,13 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from typing import NoReturn
+
+
+def die(msg: str) -> NoReturn:
+    """Print an error message to stderr and exit with code 1."""
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
 
 
 @dataclass(frozen=True, slots=True)
