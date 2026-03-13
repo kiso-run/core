@@ -2519,6 +2519,43 @@ class TestBuildMessengerMessages:
         assert "## Context\n" not in content
 
 
+class TestMessengerLanguageDirective:
+    """M502: language directive extracted from detail into dedicated section."""
+
+    def test_language_directive_section_present(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "", [], "Answer in Italian. Tell the user the result.",
+        )
+        content = msgs[1]["content"]
+        assert "## Language Directive" in content
+        assert "**Italian**" in content
+
+    def test_language_directive_is_first_section(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "", [], "Answer in Italian. Tell the user the result.",
+            user_message="dimmi il risultato", goal="Run script",
+        )
+        content = msgs[1]["content"]
+        assert content.startswith("## Language Directive")
+
+    def test_no_language_directive_without_prefix(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        content = msgs[1]["content"]
+        assert "## Language Directive" not in content
+
+    def test_english_language_directive(self):
+        config = _make_brain_config()
+        msgs = build_messenger_messages(
+            config, "", [], "Answer in English. Tell the user the result.",
+        )
+        content = msgs[1]["content"]
+        assert "## Language Directive" in content
+        assert "**English**" in content
+
+
 class TestRunMessenger:
     @pytest.fixture()
     async def db(self, tmp_path):

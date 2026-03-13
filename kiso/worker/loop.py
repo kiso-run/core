@@ -300,6 +300,7 @@ async def _msg_task(
     if on_briefer_done:
         await on_briefer_done()
 
+    log.debug("Messenger detail: %s", detail[:120])
     outputs_text = _format_plan_outputs_for_msg(selected_outputs) if selected_outputs else ""
     return await run_messenger(
         db, config, session, detail, outputs_text, goal=goal,

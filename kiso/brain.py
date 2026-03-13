@@ -1838,6 +1838,13 @@ def build_messenger_messages(
     system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
 
     context_parts: list[str] = []
+    # M502: extract language from "Answer in {lang}." prefix and inject as
+    # a dedicated top-level section so the LLM cannot miss it.
+    _lang_m = re.match(r"^Answer in (\w[\w\s]*)\.", detail)
+    if _lang_m:
+        context_parts.append(
+            f"## Language Directive\nRespond entirely in **{_lang_m.group(1)}**."
+        )
     if user_message:
         context_parts.append(
             f"## Original User Message\n{fence_content(user_message, 'USER_MSG')}"
