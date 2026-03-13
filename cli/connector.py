@@ -182,26 +182,13 @@ def _supervisor_main(connector_name: str) -> None:
 
 def run_connector_command(args) -> None:
     """Dispatch to the appropriate connector subcommand."""
-    cmd = getattr(args, "connector_command", None)
-    if cmd is None:
-        print("usage: kiso connector {list,search,install,update,remove,run,stop,status}")
-        sys.exit(1)
-    elif cmd == "list":
-        _connector_list(args)
-    elif cmd == "search":
-        _connector_search(args)
-    elif cmd == "install":
-        _connector_install(args)
-    elif cmd == "update":
-        _connector_update(args)
-    elif cmd == "remove":
-        _connector_remove(args)
-    elif cmd == "run":
-        _connector_run(args)
-    elif cmd == "stop":
-        _connector_stop(args)
-    elif cmd == "status":
-        _connector_status(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "connector_command", {
+        "list": _connector_list, "search": _connector_search,
+        "install": _connector_install, "update": _connector_update,
+        "remove": _connector_remove, "run": _connector_run,
+        "stop": _connector_stop, "status": _connector_status,
+    }, "usage: kiso connector {list,search,install,update,remove,run,stop,status}")
 
 
 def _connector_list(args) -> None:

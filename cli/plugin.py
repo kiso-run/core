@@ -12,14 +12,10 @@ from kiso.tools import discover_tools
 
 def run_plugin_command(args) -> None:
     """Dispatch to the appropriate plugin subcommand."""
-    cmd = getattr(args, "plugin_command", None)
-    if cmd is None:
-        print("usage: kiso plugin {list,search}")
-        sys.exit(1)
-    elif cmd == "list":
-        _plugin_list()
-    elif cmd == "search":
-        _plugin_search(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "plugin_command", {
+        "list": lambda _: _plugin_list(), "search": _plugin_search,
+    }, "usage: kiso plugin {list,search}")
 
 
 def _plugin_list() -> None:

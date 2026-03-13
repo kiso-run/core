@@ -159,16 +159,8 @@ def _reset_factory(args) -> None:
 def run_reset_command(args) -> None:
     """Dispatch to the appropriate reset subcommand."""
     require_admin()
-
-    cmd = getattr(args, "reset_command", None)
-    if cmd is None:
-        print("usage: kiso reset {session,knowledge,all,factory}")
-        sys.exit(1)
-    elif cmd == "session":
-        _reset_session(args)
-    elif cmd == "knowledge":
-        _reset_knowledge(args)
-    elif cmd == "all":
-        _reset_all(args)
-    elif cmd == "factory":
-        _reset_factory(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "reset_command", {
+        "session": _reset_session, "knowledge": _reset_knowledge,
+        "all": _reset_all, "factory": _reset_factory,
+    }, "usage: kiso reset {session,knowledge,all,factory}")

@@ -14,20 +14,11 @@ ENV_FILE = KISO_DIR / ".env"
 
 def run_env_command(args) -> None:
     """Dispatch to the appropriate env subcommand."""
-    cmd = getattr(args, "env_command", None)
-    if cmd is None:
-        print("usage: kiso env {set,get,list,delete,reload}")
-        sys.exit(1)
-    elif cmd == "set":
-        _env_set(args)
-    elif cmd == "get":
-        _env_get(args)
-    elif cmd == "list":
-        _env_list(args)
-    elif cmd == "delete":
-        _env_delete(args)
-    elif cmd == "reload":
-        _env_reload(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "env_command", {
+        "set": _env_set, "get": _env_get, "list": _env_list,
+        "delete": _env_delete, "reload": _env_reload,
+    }, "usage: kiso env {set,get,list,delete,reload}")
 
 
 def _read_lines(path: Path | None = None) -> list[str]:

@@ -305,3 +305,20 @@ def _list_plugins(discover_fn, item_type: str) -> None:
         ver = item["version"].ljust(max_ver)
         desc = item.get("summary", item.get("description", ""))
         print(f"  {name}  {ver}  — {desc}")
+
+
+def dispatch_subcommand(
+    args: object, attr: str, handlers: dict, usage: str,
+) -> None:
+    """Dispatch a CLI subcommand to its handler.
+
+    Reads ``getattr(args, attr)`` and calls the matching handler.
+    Falls back to printing *usage* and exiting with code 1.
+    """
+    from collections.abc import Callable
+
+    cmd = getattr(args, attr, None)
+    if cmd is None or cmd not in handlers:
+        print(usage)
+        sys.exit(1)
+    handlers[cmd](args)

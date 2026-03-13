@@ -20,20 +20,11 @@ CONFIG_PATH_DEFAULT: Path = CONFIG_PATH
 
 def run_user_command(args) -> None:
     """Dispatch to the appropriate user subcommand."""
-    cmd = getattr(args, "user_command", None)
-    if cmd is None:
-        print("usage: kiso user {list,add,edit,remove,alias}")
-        sys.exit(1)
-    elif cmd == "list":
-        _user_list(args)
-    elif cmd == "add":
-        _user_add(args)
-    elif cmd == "edit":
-        _user_edit(args)
-    elif cmd == "remove":
-        _user_remove(args)
-    elif cmd == "alias":
-        _user_alias(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "user_command", {
+        "list": _user_list, "add": _user_add, "edit": _user_edit,
+        "remove": _user_remove, "alias": _user_alias,
+    }, "usage: kiso user {list,add,edit,remove,alias}")
 
 
 def _read_raw(path: Path | None = None) -> dict:

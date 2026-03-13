@@ -63,20 +63,11 @@ def _tool_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
 
 def run_tool_command(args) -> None:
     """Dispatch to the appropriate tool subcommand."""
-    cmd = getattr(args, "tool_command", None)
-    if cmd is None:
-        print("usage: kiso tool {list,search,install,update,remove}")
-        sys.exit(1)
-    elif cmd == "list":
-        _tool_list(args)
-    elif cmd == "search":
-        _tool_search(args)
-    elif cmd == "install":
-        _tool_install(args)
-    elif cmd == "update":
-        _tool_update(args)
-    elif cmd == "remove":
-        _tool_remove(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "tool_command", {
+        "list": _tool_list, "search": _tool_search, "install": _tool_install,
+        "update": _tool_update, "remove": _tool_remove,
+    }, "usage: kiso tool {list,search,install,update,remove}")
 
 
 def _tool_list(args) -> None:

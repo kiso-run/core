@@ -18,16 +18,11 @@ SKILLS_DIR = KISO_DIR / "skills"
 
 def run_skill_command(args) -> None:
     """Dispatch to the appropriate skill subcommand."""
-    cmd = getattr(args, "skill_command", None)
-    if cmd is None:
-        print("usage: kiso skill {list,install,remove}")
-        sys.exit(1)
-    elif cmd == "list":
-        _skill_list()
-    elif cmd == "install":
-        _skill_install(args)
-    elif cmd == "remove":
-        _skill_remove(args)
+    from cli.plugin_ops import dispatch_subcommand
+    dispatch_subcommand(args, "skill_command", {
+        "list": lambda _: _skill_list(),
+        "install": _skill_install, "remove": _skill_remove,
+    }, "usage: kiso skill {list,install,remove}")
 
 
 def _skill_list() -> None:
