@@ -1939,10 +1939,14 @@ async def _run_planning_loop(
             out = (t.get("output") or "")[:500]
             if out:
                 key_outputs.append(f"[{t['type']}] {out}")
-        # Extract retry hints from plan_outputs (M145)
+        # Extract retry hints and reviewer summaries from plan_outputs (M145/M550)
         retry_hints = [
             po["retry_hint"] for po in plan_outputs
             if po.get("retry_hint")
+        ]
+        reviewer_summaries = [
+            po["summary"] for po in plan_outputs
+            if po.get("summary")
         ]
         # Strategy fingerprint: sorted set of "type:detail_prefix" for each task
         strategy_fp = frozenset(
@@ -1957,6 +1961,8 @@ async def _run_planning_loop(
         }
         if retry_hints:
             history_entry["retry_hints"] = retry_hints
+        if reviewer_summaries:
+            history_entry["reviewer_summaries"] = reviewer_summaries
         replan_history.append(history_entry)
 
         # Detect circular replanning (M337: scan ALL history, not just [-2] vs [-1])

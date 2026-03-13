@@ -601,9 +601,11 @@ def _build_replan_context(
         for h in replan_history:
             tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
             entry = f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}"
-            # Surface reviewer retry hints (M145)
+            # Surface reviewer retry hints (M145) and summaries (M550)
             for hint in h.get("retry_hints", []):
                 entry += f"\n  Reviewer hint: {hint}"
+            for summary in h.get("reviewer_summaries", [])[:2]:
+                entry += f"\n  Reviewer summary: {summary[:300]}"
             key_outputs = h.get("key_outputs", [])
             if key_outputs and output_chars < _HISTORY_OUTPUT_BUDGET:
                 for ko in key_outputs:
