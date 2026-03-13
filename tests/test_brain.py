@@ -7891,6 +7891,15 @@ class TestBuildInflightClassifierMessages:
         for cat in INFLIGHT_CATEGORIES:
             assert cat in text
 
+    def test_user_message_with_braces_no_crash(self):
+        """M515: user message containing {braces} must not crash or inject."""
+        msgs = build_inflight_classifier_messages(
+            "deploy app", 'please set config to {"port": 8080}',
+        )
+        assert len(msgs) == 1
+        assert '{"port": 8080}' in msgs[0]["content"]
+        assert "deploy app" in msgs[0]["content"]
+
 
 class TestClassifyInflight:
     async def test_returns_stop(self):
