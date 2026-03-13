@@ -2053,6 +2053,23 @@ async def run_exec_translator(
         raise ExecTranslatorError(
             f"Cannot translate task to shell command: {detail}"
         )
+    # M504: syntax-check long commands before execution
+    if len(command) > 120:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash", "-n",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate(input=command.encode())
+            if proc.returncode != 0:
+                hint = stderr.decode(errors="replace").strip()
+                raise ExecTranslatorError(
+                    f"Bash syntax error in generated command: {hint}"
+                )
+        except FileNotFoundError:
+            pass  # bash not available — skip check
     return command
 
 

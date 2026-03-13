@@ -2858,6 +2858,37 @@ class TestRunExecTranslator:
         assert captured["role"] == "worker"
 
 
+class TestExecTranslatorSyntaxCheck:
+    """M504: bash -n syntax validation for long translated commands."""
+
+    async def test_short_command_skips_syntax_check(self):
+        """Commands <= 120 chars skip the bash -n check entirely."""
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        # Even a syntactically invalid short command passes (bash -n not called)
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value="echo ok"):
+            result = await run_exec_translator(config, "Say ok", "OS: Linux")
+        assert result == "echo ok"
+
+    async def test_long_valid_command_passes(self):
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        long_cmd = "echo " + " && echo ".join(f"step{i}" for i in range(20))
+        assert len(long_cmd) > 120
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=long_cmd):
+            result = await run_exec_translator(config, "Run steps", "OS: Linux")
+        assert result == long_cmd
+
+    async def test_long_invalid_command_raises(self):
+        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        bad_cmd = "echo start " + "&& " * 50 + "&& echo end"
+        assert len(bad_cmd) > 120
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=bad_cmd):
+            with pytest.raises(ExecTranslatorError, match="(?i)syntax error"):
+                await run_exec_translator(config, "Run steps", "OS: Linux")
+
+
 class TestLoadSystemPromptExecTranslator:
     def test_default_prompt(self):
         prompt = _load_system_prompt("worker")
