@@ -279,18 +279,25 @@ def build_planner_tool_list(
             )
         else:
             lines.append(f"- {t['name']} — {t['summary']}")
+        # M510: show required args + top 3 optional to reduce prompt tokens
         args_schema = t.get("args_schema", {})
-        for arg_name, arg_def in args_schema.items():
+        required_args = {k: v for k, v in args_schema.items() if v.get("required")}
+        optional_args = {k: v for k, v in args_schema.items() if not v.get("required")}
+        _MAX_OPTIONAL_SHOWN = 3
+        shown_optional = dict(list(optional_args.items())[:_MAX_OPTIONAL_SHOWN])
+        omitted = len(optional_args) - len(shown_optional)
+        for arg_name, arg_def in {**required_args, **shown_optional}.items():
             arg_type = arg_def.get("type", "string")
-            required = arg_def.get("required", False)
-            req_str = "required" if required else "optional"
+            req_str = "required" if arg_def.get("required") else "optional"
             default = arg_def.get("default")
             desc = arg_def.get("description", "")
-            parts = [f"  args: {arg_name} ({arg_type}, {req_str}"]
+            line = f"  args: {arg_name} ({arg_type}, {req_str}"
             if default is not None:
-                parts[0] += f", default={default}"
-            parts[0] += f"): {desc}"
-            lines.append(parts[0])
+                line += f", default={default}"
+            line += f"): {desc}"
+            lines.append(line)
+        if omitted > 0:
+            lines.append(f"  ({omitted} more optional args)")
 
         guide = t.get("usage_guide", "")
         if guide:

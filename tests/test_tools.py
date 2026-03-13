@@ -658,6 +658,37 @@ class TestBuildPlannerToolList:
         result = build_planner_tool_list([tool], "admin")
         assert "guide:" not in result
 
+    def test_optional_args_trimmed(self):
+        """M510: only top 3 optional args shown, rest counted."""
+        schema = {
+            "url": {"type": "string", "required": True, "description": "target URL"},
+            "opt_a": {"type": "string", "required": False, "description": "optional A"},
+            "opt_b": {"type": "string", "required": False, "description": "optional B"},
+            "opt_c": {"type": "string", "required": False, "description": "optional C"},
+            "opt_d": {"type": "string", "required": False, "description": "optional D"},
+            "opt_e": {"type": "string", "required": False, "description": "optional E"},
+        }
+        tools = [self._make_tool("browser", "Browser tool", schema)]
+        result = build_planner_tool_list(tools, "admin")
+        assert "url (string, required)" in result
+        assert "opt_a" in result
+        assert "opt_b" in result
+        assert "opt_c" in result
+        assert "opt_d" not in result
+        assert "opt_e" not in result
+        assert "(2 more optional args)" in result
+
+    def test_few_optional_args_no_trim(self):
+        """M510: 3 or fewer optional args → no trim message."""
+        schema = {
+            "url": {"type": "string", "required": True, "description": "target URL"},
+            "opt_a": {"type": "string", "required": False, "description": "optional A"},
+        }
+        tools = [self._make_tool("browser", "Browser tool", schema)]
+        result = build_planner_tool_list(tools, "admin")
+        assert "opt_a" in result
+        assert "more optional" not in result
+
     def test_unhealthy_tool_shows_broken_annotation(self):
         tool = self._make_tool("browser", "Browser automation")
         tool["healthy"] = False
