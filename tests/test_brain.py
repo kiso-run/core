@@ -4362,7 +4362,7 @@ class TestPlannerContextualRules:
         context = msgs[1]["content"]
         assert "Capability Analysis" in context
         assert "browser" in context
-        assert "kiso tool install browser" in context
+        assert "not installed" in context
 
     async def test_capability_gap_no_context_when_skill_installed(self, db):
         """M198: no capability analysis when the needed skill is installed."""
@@ -6682,7 +6682,7 @@ class TestM266BrowserAvailability:
 
         user_content = msgs[1]["content"]
         assert "## Browser Availability" in user_content
-        assert "browser tool is NOT currently installed" in user_content
+        assert "browser tool is NOT installed" in user_content
 
     async def test_web_module_with_browser_installed_no_warning(self, db):
         """Briefer selects web module, browser IS installed → no warning."""

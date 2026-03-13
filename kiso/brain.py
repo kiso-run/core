@@ -1005,13 +1005,17 @@ async def build_planner_messages(
     elif full_tool_list:
         context_parts.append(f"## Tools\n{full_tool_list}")
 
-    # M266: warn planner when web module is active but browser isn't installed.
+    # M266/M544: warn planner when web module is active but browser isn't installed.
+    # Emphasise that built-in search works without any tool for research queries.
     if "web" in (modules if briefing else fallback_modules) and "browser" not in installed_names:
         context_parts.append(
             "## Browser Availability\n"
-            "Note: the browser tool is NOT currently installed. "
-            "To visit a URL, first install it with an exec task: "
-            "'kiso tool install browser', then replan."
+            "The browser tool is NOT installed. "
+            "For web research and reading page content, use the built-in `search` task type — "
+            "it requires no tool and works immediately. "
+            "The browser tool is only needed for interactive browsing (navigate to a specific URL, "
+            "click, fill forms, take screenshots). "
+            "If interactive browsing is required: single msg asking to install, end plan."
         )
 
     # M411: always-inject safety facts (not gated by briefer)
