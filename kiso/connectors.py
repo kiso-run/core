@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from kiso.config import KISO_DIR
@@ -11,6 +12,19 @@ from kiso.plugins import _validate_plugin_manifest_base
 log = logging.getLogger(__name__)
 
 CONNECTORS_DIR = KISO_DIR / "connectors"
+
+# TTL cache for discover_connectors() — mirrors tools.py pattern.
+_CONNECTORS_TTL: float = 30.0
+_connectors_cache: dict[Path, tuple[float, list[dict]]] = {}
+
+
+def invalidate_connectors_cache() -> None:
+    """Clear the discover_connectors() TTL cache.
+
+    Call after installing or removing a connector so the next
+    discover_connectors() call rescans the directory.
+    """
+    _connectors_cache.clear()
 
 
 def _validate_connector_manifest(manifest: dict, connector_dir: Path) -> list[str]:
@@ -31,15 +45,24 @@ def discover_connectors(connectors_dir: Path | None = None) -> list[dict]:
     Each dict has: name, version, description, platform, path.
 
     Skips directories with .installing marker.
+
+    Results are cached per directory for _CONNECTORS_TTL seconds.
+    Call invalidate_connectors_cache() after install/remove.
     """
-    connectors_dir = connectors_dir or CONNECTORS_DIR
-    if not connectors_dir.is_dir():
+    resolved_dir = connectors_dir or CONNECTORS_DIR
+
+    now = time.monotonic()
+    cached = _connectors_cache.get(resolved_dir)
+    if cached is not None and now - cached[0] < _CONNECTORS_TTL:
+        return cached[1]
+
+    if not resolved_dir.is_dir():
         return []
 
     import tomllib
 
     connectors: list[dict] = []
-    for entry in sorted(connectors_dir.iterdir()):
+    for entry in sorted(resolved_dir.iterdir()):
         if not entry.is_dir():
             continue
 
@@ -73,4 +96,5 @@ def discover_connectors(connectors_dir: Path | None = None) -> list[dict]:
             "path": str(entry),
         })
 
+    _connectors_cache[resolved_dir] = (now, connectors)
     return connectors

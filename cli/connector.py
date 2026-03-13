@@ -16,6 +16,7 @@ from kiso.connectors import (
     _connector_env_var_name,
     _validate_connector_manifest,
     discover_connectors,
+    invalidate_connectors_cache,
 )
 from kiso.tools import check_deps
 from cli.plugin_ops import (
@@ -238,6 +239,7 @@ def _connector_install(args) -> None:
         args=args,
         post_install=_connector_post_install,
     )
+    invalidate_connectors_cache()
 
 
 def _connector_update(args) -> None:
@@ -321,6 +323,7 @@ def _connector_remove(args) -> None:
 
     shutil.rmtree(connector_dir)
     print(f"Connector '{name}' removed.")
+    invalidate_connectors_cache()
     from kiso.sysenv import invalidate_cache
     invalidate_cache()
 

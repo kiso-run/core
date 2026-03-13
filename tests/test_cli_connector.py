@@ -1425,6 +1425,28 @@ def test_discover_connectors_skips_files(tmp_path):
     assert result == []
 
 
+def test_discover_connectors_ttl_cache(tmp_path):
+    """M518: discover_connectors caches results and invalidation clears cache."""
+    from kiso.connectors import invalidate_connectors_cache, _connectors_cache
+
+    connectors_dir = tmp_path / "connectors"
+    connectors_dir.mkdir()
+
+    # First call: empty
+    invalidate_connectors_cache()
+    result1 = discover_connectors(connectors_dir)
+    assert result1 == []
+    assert connectors_dir in _connectors_cache
+
+    # Second call returns cached (even if we add a dir, no rescan)
+    result2 = discover_connectors(connectors_dir)
+    assert result2 is result1  # same object = cached
+
+    # After invalidation, rescans
+    invalidate_connectors_cache()
+    assert connectors_dir not in _connectors_cache
+
+
 # ── Edge cases: _connector_stop ─────────────────────────
 
 
