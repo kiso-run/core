@@ -181,9 +181,9 @@ Only admins can install tools.
 
 ```bash
 # official (resolves from kiso-run org)
-kiso tool install search
-# → clones git@github.com:kiso-run/tool-search.git
-# → ~/.kiso/instances/{instance}/tools/search/
+kiso tool install websearch
+# → clones git@github.com:kiso-run/tool-websearch.git
+# → ~/.kiso/instances/{instance}/tools/websearch/
 
 # unofficial (full git URL)
 kiso tool install git@github.com:someone/my-tool.git

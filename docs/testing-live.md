@@ -129,7 +129,7 @@ Tests planned for M21 that verify security properties with real LLMs:
 See [security-risks.md](security-risks.md) for full risk analysis and `DEV_PLAN.md` § M21 for implementation plan.
 
 ### L5 install tests skipped
-- `tool-search` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
+- `tool-websearch` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
 - Requires `git` on PATH.
 - **When repos are published**: remove the `pytest.skip` fallback and verify the full install → validate → remove lifecycle passes.
 - **TODO**: add a dedicated test for installing a tool/connector that doesn't exist (e.g. `kiso tool install nonexistent-xyz`). The CLI must give a clear "not found" message instead of dumping raw git stderr. See DEV_PLAN.md § Deferred.

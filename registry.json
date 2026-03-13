@@ -1,8 +1,8 @@
 {
   "tools": [
     {
-      "name": "search",
-      "description": "Web search with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
+      "name": "websearch",
+      "description": "Web search engine with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
     },
     {
       "name": "aider",
@@ -23,8 +23,8 @@
   ],
   "skills": [
     {
-      "name": "search",
-      "description": "Web search with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
+      "name": "websearch",
+      "description": "Web search engine with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
     },
     {
       "name": "aider",

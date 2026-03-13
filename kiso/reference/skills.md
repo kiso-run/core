@@ -37,7 +37,7 @@ query = { type = "string", required = true, description = "search query" }
 max_results = { type = "int", required = false, default = 5, description = "max results" }
 
 [kiso.skill.env]
-api_key = { required = true }   # → env var KISO_SKILL_SEARCH_API_KEY
+api_key = { required = true }   # → env var KISO_TOOL_WEBSEARCH_API_KEY
 
 [kiso.deps]
 python = ">=3.11"
