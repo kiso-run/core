@@ -3840,7 +3840,7 @@ class TestReviewerWarningVsError:
 
     def test_prompt_warnings_are_informational(self):
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "informational" in prompt or "don't override exit 0" in prompt.lower()
+        assert "does not mean failure" in prompt.lower() or "don't override exit 0" in prompt.lower()
 
     def test_prompt_no_blanket_replan_on_warning(self):
         """Old rule 'mark as replan even if command succeeded' must be gone."""
