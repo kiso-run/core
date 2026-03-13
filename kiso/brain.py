@@ -736,13 +736,17 @@ async def _gather_planner_context(
     Returns (summary, facts, pending, recent, context_pool, sys_env_text).
     The context_pool dict is suitable for the briefer.
     """
-    sess = await get_session(db, session)
-    summary = sess["summary"] if sess else ""
     is_admin = user_role == "admin"
-    facts = await search_facts(db, new_message, session=session, is_admin=is_admin)
-    pending = await get_pending_items(db, session)
     context_limit = int(config.settings["context_messages"])
-    recent = await get_recent_messages(db, session, limit=context_limit)
+
+    # M545: batch independent DB queries
+    sess, facts, pending, recent = await asyncio.gather(
+        get_session(db, session),
+        search_facts(db, new_message, session=session, is_admin=is_admin),
+        get_pending_items(db, session),
+        get_recent_messages(db, session, limit=context_limit),
+    )
+    summary = sess["summary"] if sess else ""
 
     # Format facts for context pool
     facts_text = ""
