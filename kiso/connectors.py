@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base
+from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base, plugin_env_var_name
 
 log = logging.getLogger(__name__)
 
@@ -34,9 +34,7 @@ def _validate_connector_manifest(manifest: dict, connector_dir: Path) -> list[st
 
 def _connector_env_var_name(connector_name: str, key: str) -> str:
     """Build env var name: KISO_CONNECTOR_{NAME}_{KEY}."""
-    name_part = connector_name.upper().replace("-", "_")
-    key_part = key.upper().replace("-", "_")
-    return f"KISO_CONNECTOR_{name_part}_{key_part}"
+    return plugin_env_var_name("CONNECTOR", connector_name, key)
 
 
 def discover_connectors(connectors_dir: Path | None = None) -> list[dict]:

@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base
+from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base, plugin_env_var_name
 
 log = logging.getLogger(__name__)
 
@@ -109,9 +109,7 @@ def _validate_manifest(manifest: dict, tool_dir: Path) -> list[str]:
 
 def _env_var_name(tool_name: str, key: str) -> str:
     """Build env var name: KISO_TOOL_{NAME}_{KEY}."""
-    name_part = tool_name.upper().replace("-", "_")
-    key_part = key.upper().replace("-", "_")
-    return f"KISO_TOOL_{name_part}_{key_part}"
+    return plugin_env_var_name("TOOL", tool_name, key)
 
 
 def discover_tools(tools_dir: Path | None = None) -> list[dict]:
