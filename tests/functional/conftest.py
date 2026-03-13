@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import os
 import re
 import time
 import uuid
@@ -251,18 +252,60 @@ _KISO_DIR_MODULES = [
 ]
 
 
+def _write_test_config(kiso_dir: Path, cfg: Config) -> None:
+    """Write a minimal config.toml so subprocess CLI commands can load it."""
+    lines = ["[tokens]"]
+    for k, v in cfg.tokens.items():
+        lines.append(f'{k} = "{v}"')
+
+    for name, prov in cfg.providers.items():
+        lines.append(f"\n[providers.{name}]")
+        lines.append(f'base_url = "{prov.base_url}"')
+
+    for name, user in cfg.users.items():
+        lines.append(f"\n[users.{name}]")
+        lines.append(f'role = "{user.role}"')
+
+    lines.append("\n[models]")
+    for role, model in cfg.models.items():
+        lines.append(f'{role} = "{model}"')
+
+    lines.append("\n[settings]")
+    for k, v in cfg.settings.items():
+        if isinstance(v, bool):
+            lines.append(f"{k} = {'true' if v else 'false'}")
+        elif isinstance(v, str):
+            lines.append(f'{k} = "{v}"')
+        elif isinstance(v, list):
+            items = ", ".join(f'"{i}"' if isinstance(i, str) else str(i) for i in v)
+            lines.append(f"{k} = [{items}]")
+        else:
+            lines.append(f"{k} = {v}")
+
+    (kiso_dir / "config.toml").write_text("\n".join(lines) + "\n")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _func_kiso_dir(func_config, tmp_path_factory):
     """Isolate functional tests from the host ~/.kiso directory.
 
     Creates a temp KISO_DIR with clean ``tools/`` and ``sys/ssh/`` dirs,
-    patches every module that imports KISO_DIR, and stubs ``reload_config``
-    so mid-execution config reloads return func_config (not the real toml).
+    patches every module that imports KISO_DIR, stubs ``reload_config``
+    so mid-execution config reloads return func_config, writes a config.toml
+    so subprocess CLI commands can load it, and sets KISO_HOME so subprocess
+    processes resolve KISO_DIR to the isolated directory.
     SSH keys are generated inside the temp dir.
     """
     kiso_dir = tmp_path_factory.mktemp("kiso_home")
     (kiso_dir / "tools").mkdir()
     (kiso_dir / "sys" / "ssh").mkdir(parents=True)
+
+    # M543: write config.toml for subprocess CLI commands
+    _write_test_config(kiso_dir, func_config)
+
+    # M543: set KISO_HOME so subprocess processes use the isolated dir
+    old_kiso_home = os.environ.get("KISO_HOME")
+    os.environ["KISO_HOME"] = str(kiso_dir)
 
     patches = [patch(f"{mod}.KISO_DIR", kiso_dir) for mod in _KISO_DIR_MODULES]
     patches.append(
@@ -279,6 +322,12 @@ def _func_kiso_dir(func_config, tmp_path_factory):
 
     for p in patches:
         p.stop()
+
+    # Restore KISO_HOME
+    if old_kiso_home is None:
+        os.environ.pop("KISO_HOME", None)
+    else:
+        os.environ["KISO_HOME"] = old_kiso_home
 
 
 @pytest_asyncio.fixture()

@@ -6176,6 +6176,20 @@ class TestBuildExecEnv:
             env = _build_exec_env()
         assert "GIT_SSH_COMMAND" not in env
 
+    def test_kiso_home_propagated(self, tmp_path):
+        """M543: KISO_HOME is set to KISO_DIR so subprocesses use the same dir."""
+        with _patch_kiso_dir(tmp_path):
+            env = _build_exec_env()
+        assert env["KISO_HOME"] == str(tmp_path)
+
+    def test_kiso_home_matches_patched_dir(self, tmp_path):
+        """M543: KISO_HOME reflects the patched KISO_DIR, not the real one."""
+        custom = tmp_path / "custom_kiso"
+        custom.mkdir()
+        with _patch_kiso_dir(custom):
+            env = _build_exec_env()
+        assert env["KISO_HOME"] == str(custom)
+
 
 # --- M25: Planner-initiated replan (discovery plans) ---
 

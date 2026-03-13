@@ -177,6 +177,10 @@ def _build_exec_env() -> dict[str, str]:
     # Path.home() / ".kiso" would resolve to /root/.kiso/.kiso (double nesting).
     env["HOME"] = str(Path.home())
 
+    # M543: propagate KISO_HOME so child processes (kiso CLI) resolve KISO_DIR
+    # to the same directory as the parent — critical for test isolation.
+    env["KISO_HOME"] = str(KISO_DIR)
+
     gitconfig = sys_dir / "gitconfig"
     if gitconfig.is_file():
         env["GIT_CONFIG_GLOBAL"] = str(gitconfig)
