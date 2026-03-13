@@ -463,27 +463,28 @@ def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
         if not out:
             continue
 
-        # Try JSON parsing for registry-like outputs
-        try:
-            data = json.loads(out)
-            if isinstance(data, dict) and "name" in data:
-                fact = f"Skill/connector '{data['name']}' found in registry"
-                if "version" in data:
-                    fact += f" (v{data['version']})"
-                if fact not in seen:
-                    facts.append(fact)
-                    seen.add(fact)
-                continue
-            if isinstance(data, list):
-                names = [item.get("name") for item in data if isinstance(item, dict) and "name" in item]
-                if names:
-                    fact = f"Registry contains: {', '.join(names[:10])}"
+        # M546: skip JSON parse if output doesn't look like JSON
+        if out[:1] in ("{", "["):
+            try:
+                data = json.loads(out)
+                if isinstance(data, dict) and "name" in data:
+                    fact = f"Skill/connector '{data['name']}' found in registry"
+                    if "version" in data:
+                        fact += f" (v{data['version']})"
                     if fact not in seen:
                         facts.append(fact)
                         seen.add(fact)
                     continue
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
+                if isinstance(data, list):
+                    names = [item.get("name") for item in data if isinstance(item, dict) and "name" in item]
+                    if names:
+                        fact = f"Registry contains: {', '.join(names[:10])}"
+                        if fact not in seen:
+                            facts.append(fact)
+                            seen.add(fact)
+                        continue
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                pass
 
         # Check for install/status lines
         for line in out.split("\n")[:20]:
