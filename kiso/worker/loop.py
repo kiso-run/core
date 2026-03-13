@@ -133,6 +133,7 @@ from kiso.worker.utils import (
     _cleanup_plan_outputs,
     _ensure_sandbox_user,
     _format_plan_outputs_for_msg,
+    _format_pub_note,
     _report_pub_files,
     _save_large_output,
     _session_workspace,
@@ -1086,11 +1087,7 @@ async def _handle_tool_task(
         # Auto-publish new files to pub/ and append URLs (M215)
         _auto_publish_skill_files(ctx.session, pre_snapshot)
         pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
-        if pub_urls:
-            pub_note = "\n\nPublished files:\n" + "\n".join(
-                f"- {u['filename']}: {u['url']}" for u in pub_urls
-            )
-            stdout += pub_note
+        stdout += _format_pub_note(pub_urls)
 
         await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
@@ -1245,11 +1242,7 @@ async def _handle_exec_task(
             log.debug("Sysenv cache invalidated after package install: %s", command[:80])
 
         pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
-        if pub_urls:
-            pub_note = "\n\nPublished files:\n" + "\n".join(
-                f"- {u['filename']}: {u['url']}" for u in pub_urls
-            )
-            stdout += pub_note
+        stdout += _format_pub_note(pub_urls)
 
         await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
         audit.log_task(

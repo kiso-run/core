@@ -272,6 +272,15 @@ def _report_pub_files(
     return results
 
 
+def _format_pub_note(pub_urls: list[dict]) -> str:
+    """Format published file URLs as an output appendix."""
+    if not pub_urls:
+        return ""
+    return "\n\nPublished files:\n" + "\n".join(
+        f"- {u['filename']}: {u['url']}" for u in pub_urls
+    )
+
+
 def _snapshot_workspace(session: str) -> set[Path]:
     """Return the set of file paths currently in the session workspace."""
     workspace = _session_workspace(session)
