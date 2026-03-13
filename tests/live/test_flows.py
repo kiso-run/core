@@ -401,9 +401,9 @@ class TestDiscoveryPlanReplanFlow:
                     **task,
                     "status": "done",
                     "output": (
-                        '{"skills": [{"name": "web-search", "description": '
-                        '"Search the web using DuckDuckGo", "install": '
-                        '"pip install kiso-skill-web-search"}]}'
+                        '{"tools": [{"name": "websearch", "description": '
+                        '"Search the web using Brave/Serper", "install": '
+                        '"kiso tool install websearch"}]}'
                     ),
                 })
             elif task["type"] == "replan":

@@ -77,9 +77,9 @@ class TestSkillInstallRemove:
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
 
-        # Pick a skill that is likely to exist in the org.
-        # "search" is the canonical example skill.
-        skill_name = "search"
+        # Pick a tool that is likely to exist in the org.
+        # "websearch" is the canonical example tool.
+        skill_name = "websearch"
 
         args = Namespace(
             target=skill_name,
