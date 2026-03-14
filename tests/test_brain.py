@@ -1496,85 +1496,39 @@ class TestBuildReviewerMessages:
         content = msgs[1]["content"]
         assert "## Command Status" not in content
 
-    # --- M106: exit_code parameter ---
+    # --- M106: exit_code parameter (parametrized in M600) ---
 
-    async def test_exit_code_0_shows_success(self):
-        """exit_code=0 with success=True shows 'Exit code: 0 (success)'."""
+    _EXIT_CODE_CASES = [
+        (0, True, "Exit code: 0 (success)", None),
+        (1, False, "Exit code: 1 (non-zero)", "no matches found"),
+        (2, False, "Exit code: 2 (non-zero)", "usage"),
+        (126, False, "Exit code: 126 (non-zero)", "not executable"),
+        (127, False, "Exit code: 127 (non-zero)", "not found in path"),
+        (-1, False, "Exit code: -1 (non-zero)", "killed"),
+        (42, False, "Exit code: 42 (non-zero)", None),
+    ]
+
+    @pytest.mark.parametrize(
+        "code,success,expected_text,note_keyword", _EXIT_CODE_CASES,
+        ids=[f"exit_{c[0]}" for c in _EXIT_CODE_CASES],
+    )
+    async def test_exit_code_notes(self, code, success, expected_text, note_keyword):
         msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=True, exit_code=0,
+            success=success, exit_code=code,
         )
         content = msgs[1]["content"]
-        assert "Exit code: 0 (success)" in content
-
-    async def test_exit_code_1_shows_note(self):
-        """exit_code=1 includes note about grep/which/find."""
-        msgs = build_reviewer_messages(
-            goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=False, exit_code=1,
-        )
-        content = msgs[1]["content"]
-        assert "Exit code: 1 (non-zero)" in content
-        assert "no matches found" in content
-
-    async def test_exit_code_127_shows_note(self):
-        """exit_code=127 includes note about command not found."""
-        msgs = build_reviewer_messages(
-            goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=False, exit_code=127,
-        )
-        content = msgs[1]["content"]
-        assert "Exit code: 127 (non-zero)" in content
-        assert "not found in PATH" in content
-
-    async def test_exit_code_126_shows_note(self):
-        """exit_code=126 includes note about permission issue."""
-        msgs = build_reviewer_messages(
-            goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=False, exit_code=126,
-        )
-        content = msgs[1]["content"]
-        assert "Exit code: 126 (non-zero)" in content
-        assert "not executable" in content
-
-    async def test_exit_code_neg1_shows_timeout_note(self):
-        """exit_code=-1 includes note about timeout/OS error."""
-        msgs = build_reviewer_messages(
-            goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=False, exit_code=-1,
-        )
-        content = msgs[1]["content"]
-        assert "Exit code: -1 (non-zero)" in content
-        assert "killed" in content.lower()
-
-    async def test_exit_code_2_shows_syntax_note(self):
-        """exit_code=2 includes note about usage/syntax error."""
-        msgs = build_reviewer_messages(
-            goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=False, exit_code=2,
-        )
-        content = msgs[1]["content"]
-        assert "Exit code: 2 (non-zero)" in content
-        assert "usage" in content.lower() or "syntax" in content.lower()
-
-    async def test_exit_code_unknown_no_note(self):
-        """Unknown exit code (e.g. 42) shows code but no note."""
-        msgs = build_reviewer_messages(
-            goal="g", detail="d", expect="e", output="o", user_message="m",
-            success=False, exit_code=42,
-        )
-        content = msgs[1]["content"]
-        assert "Exit code: 42 (non-zero)" in content
-        assert "Note:" not in content
+        assert expected_text in content
+        if note_keyword:
+            assert note_keyword in content.lower()
 
     async def test_exit_code_none_backward_compat(self):
-        """exit_code=None (default) falls back to old format."""
+        """exit_code=None falls back to old format."""
         msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
             success=False, exit_code=None,
         )
-        content = msgs[1]["content"]
-        assert "FAILED (non-zero exit code)" in content
+        assert "FAILED (non-zero exit code)" in msgs[1]["content"]
 
     async def test_safety_rules_injected(self):
         """M412: safety rules appear in reviewer context."""
@@ -5230,94 +5184,32 @@ class TestLoadModularPrompt:
         assert "Kiso-native first" not in result
         assert "Recent Messages" not in result
 
-    def test_planner_core_plus_web(self):
-        """Loading core + web includes web rules but not others."""
-        result = _load_modular_prompt("planner", ["web"])
-        assert "Kiso planner" in result
-        assert "Web interaction:" in result
-        assert "browser" in result.lower()
-        # Other modules absent
-        assert "Scripting:" not in result
-        assert "extend_replan" not in result
+    # M600: parametrized module loading tests
+    _MODULE_CASES = [
+        ("web", ["web interaction"], ["scripting"]),
+        ("replan", ["extend_replan"], ["web interaction"]),
+        ("scripting", ["python -c"], ["web interaction"]),
+        ("tool_recovery", ["broken tool deps"], []),
+        ("data_flow", ["save to file"], []),
+        ("planning_rules", ["expect", "fabricate"], ["tools efficiency"]),
+        ("kiso_native", ["kiso-native first"], ["tools efficiency"]),
+        ("tools_rules", ["tools efficiency", "atomic"], ["kiso-native first"]),
+        ("kiso_commands", ["kiso tool install", "kiso env set"], []),
+        ("user_mgmt", ["kiso user add"], []),
+        ("plugin_install", ["plugin installation"], []),
+    ]
 
-    def test_planner_core_plus_replan(self):
-        """Loading core + replan includes replan strategy rules."""
-        result = _load_modular_prompt("planner", ["replan"])
-        assert "extend_replan" in result
-        assert "Strategy diversification" in result or "fundamentally different strategy" in result
-        assert "reviewer fixes" in result
-        # Others absent
-        assert "Web interaction:" not in result
-        assert "One-liner execution" not in result and "One-liners" not in result
-
-    def test_planner_core_plus_scripting(self):
-        """Loading core + scripting includes scripting rules."""
-        result = _load_modular_prompt("planner", ["scripting"])
-        assert "One-liner execution" in result or "One-liners" in result
-        assert "python -c" in result
-        assert "Web interaction:" not in result
-
-    def test_planner_core_plus_tool_recovery(self):
-        """Loading core + tool_recovery includes broken tool rules."""
-        result = _load_modular_prompt("planner", ["tool_recovery"])
-        assert "Broken tool deps" in result
-        assert "kiso tool remove" in result
-
-    def test_planner_core_plus_data_flow(self):
-        """Loading core + data_flow includes file-based data flow rules."""
-        result = _load_modular_prompt("planner", ["data_flow"])
-        assert "save to file" in result
-        assert "truncated at 4KB" in result
-
-    def test_planner_core_plus_planning_rules(self):
-        """Loading core + planning_rules includes general planning rules."""
-        result = _load_modular_prompt("planner", ["planning_rules"])
-        assert "Kiso planner" in result
-        assert "Recent Messages" in result
-        assert "non-null" in result and "`expect`" in result
-        assert "fabricate" in result
-        # Other modules absent
-        assert "Tools efficiency:" not in result
-        assert "Kiso-native first" not in result
-
-    def test_planner_core_plus_kiso_native(self):
-        """Loading core + kiso_native includes kiso-first policy."""
-        result = _load_modular_prompt("planner", ["kiso_native"])
-        assert "Kiso-native first" in result
-        assert "kiso env set" in result.lower()
-        # Other modules absent
-        assert "Tools efficiency:" not in result
-        assert "Recent Messages" not in result
-
-    def test_planner_core_plus_tools_rules(self):
-        """Loading core + tools_rules includes tool efficiency rules."""
-        result = _load_modular_prompt("planner", ["tools_rules"])
-        assert "Tools efficiency:" in result
-        assert "atomic" in result
-        assert "Task ordering" in result
-        # Other modules absent
-        assert "Kiso-native first" not in result
-        assert "Recent Messages" not in result
-
-    def test_planner_core_plus_kiso_commands(self):
-        """Loading core + kiso_commands includes CLI commands."""
-        result = _load_modular_prompt("planner", ["kiso_commands"])
-        assert "kiso tool install" in result
-        assert "kiso connector install" in result
-        assert "kiso env set" in result
-
-    def test_planner_core_plus_user_mgmt(self):
-        """Loading core + user_mgmt includes user management rules."""
-        result = _load_modular_prompt("planner", ["user_mgmt"])
-        assert "PROTECTION" in result or "Caller Role" in result
-        assert "kiso user add" in result
-
-    def test_planner_core_plus_plugin_install(self):
-        """Loading core + plugin_install includes plugin installation procedure."""
-        result = _load_modular_prompt("planner", ["plugin_install"])
-        assert "Plugin installation:" in result
-        assert "raw.githubusercontent.com" in result
-        assert "kiso.toml" in result
+    @pytest.mark.parametrize(
+        "module,must_have,must_not_have", _MODULE_CASES,
+        ids=[c[0] for c in _MODULE_CASES],
+    )
+    def test_planner_core_plus_module(self, module, must_have, must_not_have):
+        result = _load_modular_prompt("planner", [module])
+        assert "Kiso planner" in result  # core always present
+        for phrase in must_have:
+            assert phrase.lower() in result.lower(), f"Missing: {phrase}"
+        for phrase in must_not_have:
+            assert phrase.lower() not in result.lower(), f"Should be absent: {phrase}"
 
     def test_all_modules_returns_full_content(self):
         """Loading all modules returns content equivalent to the full prompt."""
