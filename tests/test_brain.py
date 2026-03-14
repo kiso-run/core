@@ -7385,6 +7385,55 @@ class TestNonActionableExecDetail:
         assert not any("analytical" in e for e in errors)
 
 
+class TestArtifactGoalMismatch:
+    """M627: reject msg-only plans when goal mentions file creation."""
+
+    def test_create_file_msg_only_rejected(self):
+        plan = {"goal": "Create a markdown file with comparison table", "tasks": [
+            {"type": "msg", "detail": "Answer in English. Here is the table"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("file/document" in e for e in errors)
+
+    def test_create_file_with_exec_accepted(self):
+        plan = {"goal": "Create a markdown file with comparison table", "tasks": [
+            {"type": "exec", "detail": "Write comparison table to /workspace/pub/table.md", "expect": "file created"},
+            {"type": "msg", "detail": "Answer in English. File created"},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("file/document" in e for e in errors)
+
+    def test_write_script_msg_only_rejected(self):
+        plan = {"goal": "Write a Python script that calculates fibonacci", "tasks": [
+            {"type": "msg", "detail": "Answer in English. Here is the script"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("file/document" in e for e in errors)
+
+    def test_tell_about_languages_msg_only_accepted(self):
+        plan = {"goal": "Tell the user about programming languages", "tasks": [
+            {"type": "msg", "detail": "Answer in English. Here are the top languages"},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("file/document" in e for e in errors)
+
+    def test_generate_report_with_tool_accepted(self):
+        plan = {"goal": "Generate a CSV report with sales data", "tasks": [
+            {"type": "tool", "detail": "Generate CSV", "tool": "datagen",
+             "args": '{"format": "csv"}', "expect": "csv file"},
+            {"type": "msg", "detail": "Answer in English. Report ready"},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("file/document" in e for e in errors)
+
+    def test_build_template_msg_only_rejected(self):
+        plan = {"goal": "Build an HTML template for the landing page", "tasks": [
+            {"type": "msg", "detail": "Answer in English. Here is the HTML"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("file/document" in e for e in errors)
+
+
 # --- M558: _build_strict_schema + _join_or_empty helpers ---
 
 

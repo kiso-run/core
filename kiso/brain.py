@@ -651,6 +651,14 @@ def _validate_plan_tasks(
     return errors
 
 
+# M627: goal-plan mismatch — detect artifact requests with no exec/tool task.
+_ARTIFACT_VERBS = frozenset({"create", "write", "generate", "build", "produce", "make"})
+_ARTIFACT_NOUNS = frozenset({
+    "file", "document", "script", "markdown", "csv", "report",
+    "table", "spreadsheet", "config", "template", "page",
+})
+
+
 def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
 ) -> list[str]:
@@ -716,6 +724,21 @@ def validate_plan(
         install_approved=install_approved,
     ))
     errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
+
+    # M627: goal mentions creating a file/artifact but plan has no exec/tool task
+    goal_words = set(plan.get("goal", "").lower().split())
+    has_verb = bool(goal_words & _ARTIFACT_VERBS)
+    has_noun = bool(goal_words & _ARTIFACT_NOUNS)
+    has_action_task = any(
+        t.get("type") in (TASK_TYPE_EXEC, TASK_TYPE_TOOL) for t in tasks
+    )
+    if has_verb and has_noun and not has_action_task:
+        errors.append(
+            "Goal mentions creating a file/document but plan has no exec or tool task. "
+            "Add an exec task to write the file to the workspace — "
+            "auto-publish will generate a download URL automatically."
+        )
+
     return errors
 
 
