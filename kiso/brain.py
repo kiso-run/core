@@ -560,6 +560,12 @@ def _validate_plan_tasks(
             tool_name = task.get("tool")
             if not tool_name:
                 errors.append(f"Task {i}: tool task must have a non-null tool name")
+            elif tool_name in (TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_REPLAN):
+                errors.append(
+                    f"Task {i}: '{tool_name}' is a task TYPE, not a tool. "
+                    f"Use type='{tool_name}' instead of type='tool' with "
+                    f"tool='{tool_name}'."
+                )
             elif installed_skills is not None and tool_name not in installed_skills:
                 available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
                 if install_approved:

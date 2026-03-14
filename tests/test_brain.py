@@ -385,6 +385,25 @@ class TestValidatePlan:
         assert any("SINGLE msg task" in e for e in errors)
         assert not any("exec task" in e for e in errors)
 
+    def test_tool_name_is_task_type_exec(self):
+        """M613: tool='exec' is a task type confusion, not a real tool."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "create file", "expect": "ok", "tool": "exec", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("'exec' is a task TYPE" in e for e in errors)
+        assert any("type='exec'" in e for e in errors)
+
+    def test_tool_name_is_task_type_msg(self):
+        """M613: tool='msg' is a task type confusion."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "send", "expect": "ok", "tool": "msg", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("'msg' is a task TYPE" in e for e in errors)
+
     def test_skill_installed_passes(self):
         plan = {"tasks": [
             {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
