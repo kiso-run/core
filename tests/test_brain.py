@@ -1855,6 +1855,40 @@ class TestValidateCurator:
 
 # --- M9: build_curator_messages ---
 
+class TestCuratorModularPrompt:
+    def test_select_modules_with_tags(self):
+        from kiso.brain import _select_curator_modules
+        modules = _select_curator_modules(
+            [{"id": 1, "content": "x"}], ["python", "flask"], None)
+        assert "entity_assignment" in modules
+        assert "tag_reuse" in modules
+
+    def test_select_modules_without_tags(self):
+        from kiso.brain import _select_curator_modules
+        modules = _select_curator_modules(
+            [{"id": 1, "content": "x"}], None, None)
+        assert "entity_assignment" in modules
+        assert "tag_reuse" not in modules
+
+    def test_curator_uses_modular_prompt(self):
+        msgs = build_curator_messages(
+            [{"id": 1, "content": "Uses Flask"}],
+            available_tags=["python"],
+        )
+        system = msgs[0]["content"]
+        assert "knowledge curator" in system
+        assert "Entity assignment" in system  # entity_assignment module
+        assert "Tag reuse" in system  # tag_reuse module
+
+    def test_curator_no_tag_reuse_without_tags(self):
+        msgs = build_curator_messages(
+            [{"id": 1, "content": "Uses Flask"}],
+        )
+        system = msgs[0]["content"]
+        assert "knowledge curator" in system
+        assert "Tag reuse" not in system
+
+
 class TestBuildCuratorMessages:
     def test_formats_learnings(self):
         learnings = [

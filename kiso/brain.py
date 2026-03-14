@@ -356,6 +356,11 @@ REVIEWER_MODULES: frozenset[str] = frozenset({
     "rules", "learn_quality", "compliance",
 })
 
+# Available prompt modules for curator (heuristic selection, no briefer).
+CURATOR_MODULES: frozenset[str] = frozenset({
+    "entity_assignment", "tag_reuse",
+})
+
 # Available prompt modules that the briefer can select.
 # core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
@@ -1692,6 +1697,23 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
     return errors
 
 
+def _select_curator_modules(
+    learnings: list[dict],
+    available_tags: list[str] | None,
+    available_entities: list[dict] | None,
+) -> list[str]:
+    """Heuristic module selection for curator.
+
+    Always includes ``entity_assignment`` (needed for any promote).
+    Includes ``tag_reuse`` only when existing tags are available
+    (otherwise the "check existing tags" instruction is vacuous).
+    """
+    modules: list[str] = ["entity_assignment"]
+    if available_tags:
+        modules.append("tag_reuse")
+    return modules
+
+
 def build_curator_messages(
     learnings: list[dict],
     available_tags: list[str] | None = None,
@@ -1699,7 +1721,8 @@ def build_curator_messages(
     existing_facts: list[dict] | None = None,
 ) -> list[dict]:
     """Build the message list for the curator LLM call."""
-    system_prompt = _load_system_prompt("curator")
+    modules = _select_curator_modules(learnings, available_tags, available_entities)
+    system_prompt = _load_modular_prompt("curator", modules)
     items = "\n".join(
         f"{i}. [id={l['id']}] {l['content']}"
         for i, l in enumerate(learnings, 1)
