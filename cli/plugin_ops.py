@@ -13,9 +13,13 @@ import tomllib
 from pathlib import Path
 
 from kiso.config import KISO_DIR, load_config
+from kiso.registry import (
+    cross_type_hint,
+    fetch_registry as _fetch_registry_core,
+    search_entries,
+)
 
 OFFICIAL_ORG = "kiso-run"
-REGISTRY_URL = "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"
 
 # Prevent git from opening /dev/tty to prompt for credentials.
 _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
@@ -77,53 +81,16 @@ def require_admin() -> None:
 
 
 def fetch_registry() -> dict:
-    """Fetch the official registry from GitHub (raw file, no API)."""
-    import json
+    """Fetch the official registry — exits on failure (CLI use).
 
-    import httpx
-
-    try:
-        resp = httpx.get(REGISTRY_URL, timeout=10.0, follow_redirects=True)
-        resp.raise_for_status()
-        return json.loads(resp.text)
-    except httpx.HTTPError as exc:
-        print(f"error: failed to fetch registry: {exc}")
-        sys.exit(1)
-    except (json.JSONDecodeError, KeyError):
-        print("error: invalid registry format")
-        sys.exit(1)
-
-
-def search_entries(entries: list[dict], query: str | None) -> list[dict]:
-    """Filter registry entries: match name first, then description."""
-    if not query:
-        return entries
-    q = query.lower()
-    by_name = [e for e in entries if q in e["name"].lower()]
-    if by_name:
-        return by_name
-    return [e for e in entries if q in e.get("description", "").lower()]
-
-
-def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None:
-    """Check the other plugin type for matches and return a hint string.
-
-    When a search in one type (e.g. "connectors") yields no results, this
-    function checks the other type ("tools") for matches.  Returns a hint
-    string like 'Did you mean `kiso tool search browser`?' or None.
+    For core/worker code that must not exit, use
+    ``kiso.registry.fetch_registry()`` directly.
     """
-    if current_type == "connectors":
-        other_type = "tools"
-        other_cmd = "tool"
-    else:
-        other_type = "connectors"
-        other_cmd = "connector"
-    other_entries = registry.get(other_type, registry.get("skills", []) if other_type == "tools" else [])
-    matches = search_entries(other_entries, query)
-    if matches:
-        names = ", ".join(m["name"] for m in matches)
-        return f"Did you mean `kiso {other_cmd} search {query}`? Found in {other_type}: {names}"
-    return None
+    reg = _fetch_registry_core()
+    if not reg:
+        print("error: failed to fetch registry")
+        sys.exit(1)
+    return reg
 
 
 def _plugin_install(

@@ -13,6 +13,7 @@ import aiosqlite
 
 from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.llm import LLMBudgetExceeded, LLMError, call_llm
+from kiso.registry import get_registry_tools
 from kiso.security import fence_content
 from kiso.skill_loader import discover_md_skills, build_planner_skill_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
@@ -857,6 +858,18 @@ async def build_planner_messages(
         )
         context_pool["capability_gap"] = _gap_text
 
+    # --- Registry: show available-but-not-installed tools ---
+    # Only fetch when the planner might need install context: no tools
+    # installed or capability gap detected.  Skip on replans — registry
+    # data is identical to the initial plan and tools won't change mid-replan.
+    registry_text = ""
+    if (not installed or _gap) and not is_replan:
+        registry_text = await asyncio.to_thread(
+            get_registry_tools, set(installed_names),
+        )
+        if registry_text:
+            context_pool["available_registry_tools"] = registry_text
+
     # --- Briefer path ---
     briefing = None
     if setting_bool(config.settings, "briefer_enabled"):
@@ -876,7 +889,7 @@ async def build_planner_messages(
         # Briefer path: modules selected by the briefer LLM.
         # Safety net: force plugin_install when no skills or capability gap.
         modules = list(briefing["modules"])
-        if not installed or _gap:
+        if not installed or _gap or registry_text:
             if "plugin_install" not in modules:
                 modules.append("plugin_install")
         system_prompt = _load_modular_prompt("planner", modules)
@@ -895,7 +908,7 @@ async def build_planner_messages(
             or "not installed" in msg_lower
             or "registry" in msg_lower
         )
-        if _plugin_kw_hit or not installed or _gap:
+        if _plugin_kw_hit or not installed or _gap or registry_text:
             fallback_modules.append("plugin_install")
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
