@@ -12160,3 +12160,22 @@ class TestNotifyPhase:
     def test_no_op_when_none(self):
         from kiso.worker.loop import _notify_phase
         _notify_phase(None, "planning")  # no error
+
+
+# --- M562: _handle_review_error helper ---
+
+
+class TestHandleReviewError:
+    @pytest.mark.asyncio
+    async def test_stores_usage_and_returns_stop(self):
+        from kiso.worker.loop import _handle_review_error, _PlanCtx
+        ctx = MagicMock(spec=_PlanCtx)
+        ctx.db = AsyncMock()
+        plan_output = {"index": 1, "type": "tool", "detail": "d", "output": "o", "status": "done"}
+        with patch("kiso.worker.loop._store_step_usage", new_callable=AsyncMock) as mock_usage:
+            result = await _handle_review_error(ctx, 42, "LLM error", plan_output, 10)
+        mock_usage.assert_awaited_once_with(ctx.db, 42, 10)
+        assert result.stop is True
+        assert result.stop_success is False
+        assert "LLM error" in result.stop_replan
+        assert result.plan_output is plan_output

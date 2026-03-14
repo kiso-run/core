@@ -874,6 +874,19 @@ async def _store_step_usage(
     await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
 
 
+async def _handle_review_error(
+    ctx: _PlanCtx, task_id: int, review_error: str,
+    plan_output: dict, usage_idx_before: int,
+) -> _TaskHandlerResult:
+    """Store usage and return a stop result when review fails."""
+    await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    return _TaskHandlerResult(
+        stop=True, stop_success=False,
+        stop_replan=f"Review failed: {review_error}",
+        plan_output=plan_output,
+    )
+
+
 async def _run_review_step(
     ctx: _PlanCtx, task_row: dict
 ) -> "tuple[dict | None, str | None]":
@@ -1136,10 +1149,7 @@ async def _handle_tool_task(
 
         review, review_error = await _run_review_step(ctx, task_row)
         if review_error is not None:
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False,
-                                      stop_replan=f"Review failed: {review_error}",
-                                      plan_output=plan_output_entry)
+            return await _handle_review_error(ctx, task_id, review_error, plan_output_entry, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_STUCK:
             return await _review_stop_stuck(ctx, task_id, review, plan_output_entry, usage_idx_before)
@@ -1265,11 +1275,8 @@ async def _handle_exec_task(
 
         review, review_error = await _run_review_step(ctx, task_row)
         if review_error is not None:
-            await update_task(ctx.db, task_id, "failed")
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False,
-                                      stop_replan=f"Review failed: {review_error}",
-                                      plan_output=local_plan_output)
+            # M562: removed spurious update_task("failed") — task status already set by execution
+            return await _handle_review_error(ctx, task_id, review_error, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_STUCK:
             return await _review_stop_stuck(ctx, task_id, review, local_plan_output, usage_idx_before)
@@ -1353,10 +1360,7 @@ async def _handle_search_task(
         review, review_error = await _run_review_step(ctx, task_row)
         if review_error is not None:
             await update_task(ctx.db, task_id, "done", output=search_result)
-            await _store_step_usage(ctx.db, task_id, usage_idx_before)
-            return _TaskHandlerResult(stop=True, stop_success=False,
-                                      stop_replan=f"Review failed: {review_error}",
-                                      plan_output=local_plan_output)
+            return await _handle_review_error(ctx, task_id, review_error, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_STUCK:
             await update_task(ctx.db, task_id, "done", output=search_result)
