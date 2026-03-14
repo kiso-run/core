@@ -1334,25 +1334,13 @@ def is_stop_message(text: str) -> bool:
 
 # --- In-flight message classification (M406) ---
 
-_INFLIGHT_PROMPT_TEMPLATE = (
-    'A job is currently running with this goal: "{plan_goal}"\n'
-    'The user sent a new message: "{new_message}"\n'
-    "\n"
-    "Classify the intent of the new message into exactly one category:\n"
-    "- stop: user wants to cancel or abort the current job\n"
-    '- update: user is modifying parameters of the current job (e.g. "use port 8080 instead")\n'
-    "- independent: unrelated request that can wait until the current job finishes\n"
-    '- conflict: contradicts or replaces the current job entirely (e.g. "no, do X instead")\n'
-    "\n"
-    "Respond with ONLY the category word (stop/update/independent/conflict), nothing else."
-)
-
 
 def build_inflight_classifier_messages(
     plan_goal: str, new_message: str,
 ) -> list[dict]:
     """Build the message list for in-flight message classification."""
-    user_text = _INFLIGHT_PROMPT_TEMPLATE.replace(
+    template = _load_system_prompt("inflight-classifier")
+    user_text = template.replace(
         "{plan_goal}", plan_goal,
     ).replace("{new_message}", new_message)
     return [{"role": "user", "content": user_text}]
