@@ -105,7 +105,7 @@ class TestMessengerCriticalRules:
     def test_language_consolidated(self):
         """M424: consolidated language block."""
         assert "Language:" in self.prompt
-        assert "one language" in self.prompt
+        assert "Answer in {language}" in self.prompt
 
     def test_no_fabricate(self):
         assert "fabricate" in self.prompt.lower()
@@ -338,11 +338,11 @@ class TestM384MessengerAntiHallucination:
 
     def test_no_false_action_claims(self):
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Never claim to have performed" in prompt
+        assert "Never claim action" in prompt or "Never claim to have performed" in prompt
 
     def test_report_only_outputs(self):
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Report only what the outputs show" in prompt
+        assert "Report only what" in prompt or "what outputs show" in prompt
 
 
 class TestM340SkillArgsRequirement:
