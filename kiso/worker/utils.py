@@ -449,79 +449,99 @@ def _smart_truncate(text: str, limit: int) -> str:
     return text[:cut] + "\n... (truncated)"
 
 
-def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
-    """Best-effort extraction of confirmed facts from completed task outputs.
+_FACT_LINE_LIMIT = 20       # max lines scanned for install/error keywords
+_FACT_CHAR_LIMIT = 200      # max chars per extracted fact line
+_FACT_TOTAL_CAP = 15        # max facts returned
 
-    Scans outputs for recognisable patterns:
-    - Reviewer summaries from successful tasks (highest priority)
-    - JSON with "name"/"version" keys (registry responses) → skill/connector names
-    - Lines containing "installed" or "available" → installation status
-    - For other outputs, extract the first non-empty line as a finding
-    """
+
+def _facts_from_summaries(completed: list[dict], seen: set[str]) -> list[str]:
+    """Extract reviewer summaries (highest priority)."""
     facts: list[str] = []
-    seen: set[str] = set()
-
-    # Priority 1: reviewer summaries from completed tasks (most reliable)
     for t in completed:
         summary = t.get("reviewer_summary")
         if summary and summary not in seen:
             facts.append(summary)
             seen.add(summary)
+    return facts
+
+
+def _facts_from_registry(output: str, seen: set[str]) -> list[str] | None:
+    """Parse JSON registry responses. Returns facts or None if not JSON."""
+    if output[:1] not in ("{", "["):
+        return None
+    try:
+        data = json.loads(output)
+        if isinstance(data, dict) and "name" in data:
+            fact = f"Skill/connector '{data['name']}' found in registry"
+            if "version" in data:
+                fact += f" (v{data['version']})"
+            if fact not in seen:
+                seen.add(fact)
+                return [fact]
+            return []
+        if isinstance(data, list):
+            names = [item.get("name") for item in data if isinstance(item, dict) and "name" in item]
+            if names:
+                fact = f"Registry contains: {', '.join(names[:10])}"
+                if fact not in seen:
+                    seen.add(fact)
+                    return [fact]
+                return []
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def _facts_from_output_lines(output: str, seen: set[str]) -> list[str]:
+    """Scan for install/error keywords or extract first line."""
+    facts: list[str] = []
+    for line in output.split("\n")[:_FACT_LINE_LIMIT]:
+        line_lower = line.strip().lower()
+        if not line_lower:
+            continue
+        if any(kw in line_lower for kw in ("installed", "available", "not found", "error")):
+            fact = line.strip()[:_FACT_CHAR_LIMIT]
+            if fact not in seen:
+                facts.append(fact)
+                seen.add(fact)
+            break
+    return facts
+
+
+def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
+    """Best-effort extraction of confirmed facts from completed task outputs.
+
+    Strategies (in priority order):
+    1. Reviewer summaries from successful tasks
+    2. JSON registry responses (name/version)
+    3. Lines with install/error keywords
+    4. First line of short outputs
+    """
+    seen: set[str] = set()
+    facts: list[str] = _facts_from_summaries(completed, seen)
 
     for t in completed:
         out = (t.get("output") or "").strip()
         if not out:
             continue
 
-        # M546: skip JSON parse if output doesn't look like JSON
-        if out[:1] in ("{", "["):
-            try:
-                data = json.loads(out)
-                if isinstance(data, dict) and "name" in data:
-                    fact = f"Skill/connector '{data['name']}' found in registry"
-                    if "version" in data:
-                        fact += f" (v{data['version']})"
-                    if fact not in seen:
-                        facts.append(fact)
-                        seen.add(fact)
-                    continue
-                if isinstance(data, list):
-                    names = [item.get("name") for item in data if isinstance(item, dict) and "name" in item]
-                    if names:
-                        fact = f"Registry contains: {', '.join(names[:10])}"
-                        if fact not in seen:
-                            facts.append(fact)
-                            seen.add(fact)
-                        continue
-            except (json.JSONDecodeError, TypeError, AttributeError):
-                pass
+        # M546: try JSON registry parse first
+        registry_facts = _facts_from_registry(out, seen)
+        if registry_facts is not None:
+            facts.extend(registry_facts)
+            continue
 
-        # Check for install/status lines
-        for line in out.split("\n")[:20]:
-            line_lower = line.strip().lower()
-            if not line_lower:
-                continue
-            if "installed" in line_lower or "available" in line_lower:
-                fact = line.strip()[:200]
-                if fact not in seen:
-                    facts.append(fact)
-                    seen.add(fact)
-                break
-            if "not found" in line_lower or "error" in line_lower:
-                fact = line.strip()[:200]
-                if fact not in seen:
-                    facts.append(fact)
-                    seen.add(fact)
-                break
+        # Keyword-based extraction
+        facts.extend(_facts_from_output_lines(out, seen))
 
-        # For short outputs (< 200 chars), use the whole thing as a fact
-        if not facts or (out[:200] not in seen and len(out) < 200 and t.get("status") == "done"):
-            first_line = out.split("\n")[0].strip()[:200]
+        # Short output fallback: first line as fact
+        if out[:_FACT_CHAR_LIMIT] not in seen and len(out) < _FACT_CHAR_LIMIT and t.get("status") == "done":
+            first_line = out.split("\n")[0].strip()[:_FACT_CHAR_LIMIT]
             if first_line and first_line not in seen:
                 facts.append(first_line)
                 seen.add(first_line)
 
-    return facts[:15]  # Cap at 15 facts
+    return facts[:_FACT_TOTAL_CAP]
 
 
 def _format_replan_hints(
