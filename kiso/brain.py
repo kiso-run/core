@@ -498,6 +498,7 @@ def _validate_plan_tasks(
     tasks: list[dict],
     installed_skills: list[str] | None,
     installed_skills_info: dict[str, dict] | None,
+    install_approved: bool = False,
 ) -> list[str]:
     """Check per-task rules: type, detail, expect, args, tool validation."""
     errors: list[str] = []
@@ -561,14 +562,24 @@ def _validate_plan_tasks(
                 errors.append(f"Task {i}: tool task must have a non-null tool name")
             elif installed_skills is not None and tool_name not in installed_skills:
                 available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
-                errors.append(
-                    f"Task {i}: tool '{tool_name}' is not installed. "
-                    f"Available tools: {available}. "
-                    f"You CANNOT use '{tool_name}' in this plan. Remove the tool task. "
-                    f"Plan a SINGLE msg task asking the user whether to install '{tool_name}', "
-                    f"and offer alternatives (e.g. search instead of browser). "
-                    f"End the plan with that msg — the user's reply triggers the next cycle."
-                )
+                if install_approved:
+                    errors.append(
+                        f"Task {i}: tool '{tool_name}' is not installed. "
+                        f"Available tools: {available}. "
+                        f"You CANNOT use type=tool for uninstalled tools. "
+                        f"Installation is approved — plan an exec task: "
+                        f"`kiso tool install {tool_name}`, then replan to use it."
+                    )
+                else:
+                    errors.append(
+                        f"Task {i}: tool '{tool_name}' is not installed. "
+                        f"Available tools: {available}. "
+                        f"You CANNOT use '{tool_name}' in this plan. Remove the tool task. "
+                        f"Plan a SINGLE msg task asking the user whether to install "
+                        f"'{tool_name}', and offer alternatives (e.g. search instead of "
+                        f"browser). End the plan with that msg — the user's reply triggers "
+                        f"the next cycle."
+                    )
             elif installed_skills_info and tool_name in installed_skills_info:
                 args_raw = task.get("args") or "{}"
                 try:
@@ -656,7 +667,10 @@ def validate_plan(
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
         return errors
-    errors.extend(_validate_plan_tasks(tasks, installed_skills, installed_skills_info))
+    errors.extend(_validate_plan_tasks(
+        tasks, installed_skills, installed_skills_info,
+        install_approved=install_approved,
+    ))
     errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
     return errors
 

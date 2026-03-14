@@ -364,6 +364,27 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=[])
         assert any("Available tools: none" in e for e in errors)
 
+    def test_skill_not_installed_approved_suggests_exec_install(self):
+        """M608: when install_approved=True, error guides to exec install."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. report", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=[], install_approved=True)
+        assert any("kiso tool install browser" in e for e in errors)
+        assert any("exec task" in e for e in errors)
+        assert not any("SINGLE msg task" in e for e in errors)
+
+    def test_skill_not_installed_not_approved_suggests_msg(self):
+        """M608: when install_approved=False, error guides to msg proposal."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. report", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=[], install_approved=False)
+        assert any("SINGLE msg task" in e for e in errors)
+        assert not any("exec task" in e for e in errors)
+
     def test_skill_installed_passes(self):
         plan = {"tasks": [
             {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
