@@ -101,6 +101,19 @@ def _join_or_empty(items: list, fmt: Callable = lambda x: f"- {x}") -> str:
     return "\n".join(fmt(item) for item in items) if items else ""
 
 
+def _format_message_history(messages: list[dict]) -> str:
+    """Format a list of message dicts into '[role] user: content' lines."""
+    return "\n".join(
+        f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
+        for m in messages
+    )
+
+
+def _format_pending_items(pending: list[dict]) -> str:
+    """Format pending question dicts into '- content' lines."""
+    return _join_or_empty(pending, lambda p: f"- {p['content']}")
+
+
 def _strip_fences(text: str) -> str:
     """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
     s = text.strip()
@@ -740,16 +753,8 @@ async def _gather_planner_context(
                 parts.extend(grouped)
         facts_text = "\n".join(parts)
 
-    pending_text = ""
-    if pending:
-        pending_text = "\n".join(f"- {p['content']}" for p in pending)
-
-    recent_text = ""
-    if recent:
-        recent_text = "\n".join(
-            f"[{m['role']}] {m['user'] or 'system'}: {m['content']}"
-            for m in recent
-        )
+    pending_text = _format_pending_items(pending)
+    recent_text = _format_message_history(recent)
 
     sys_env = get_system_env(config)
     sys_env_text = build_system_env_section(sys_env, session=session)
@@ -958,16 +963,12 @@ async def build_planner_messages(
         # System env in original position (after facts, before pending)
         context_parts.append(f"## System Environment\n{sys_env_text}")
 
-        if pending:
-            pending_text = "\n".join(f"- {p['content']}" for p in pending)
-            context_parts.append(f"## Pending Questions\n{pending_text}")
+        _add_section(context_parts, "Pending Questions", _format_pending_items(pending))
 
         if recent:
-            msgs_text = "\n".join(
-                f"[{m['role']}] {m['user'] or 'system'}: {m['content']}"
-                for m in recent
+            context_parts.append(
+                f"## Recent Messages\n{fence_content(_format_message_history(recent), 'MESSAGES')}"
             )
-            context_parts.append(f"## Recent Messages\n{fence_content(msgs_text, 'MESSAGES')}")
 
         if paraphrased_context:
             context_parts.append(
@@ -1731,13 +1732,9 @@ def build_summarizer_messages(
 ) -> list[dict]:
     """Build the message list for the summarizer LLM call."""
     system_prompt = _load_system_prompt("summarizer-session")
-    msgs_text = "\n".join(
-        f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
-        for m in messages
-    )
     parts: list[str] = []
     _add_section(parts, "Current Summary", current_summary)
-    parts.append(f"## Messages\n{msgs_text}")
+    parts.append(f"## Messages\n{_format_message_history(messages)}")
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
@@ -1851,12 +1848,8 @@ def build_messenger_messages(
         _add_section(context_parts, "Known Facts",
                      _join_or_empty(facts, lambda f: f"- {f['content']}"))
     if recent_messages:
-        msgs_text = "\n".join(
-            f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
-            for m in recent_messages
-        )
         context_parts.append(
-            f"## Recent Conversation\n{fence_content(msgs_text, 'MESSAGES')}"
+            f"## Recent Conversation\n{fence_content(_format_message_history(recent_messages), 'MESSAGES')}"
         )
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
     context_parts.append(f"## Task\n{detail}")

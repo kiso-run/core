@@ -8206,3 +8206,47 @@ class TestJoinOrEmpty:
     def test_single_item(self):
         from kiso.brain import _join_or_empty
         assert _join_or_empty(["only"]) == "- only"
+
+
+# --- M559: _format_message_history + _format_pending_items helpers ---
+
+
+class TestFormatMessageHistory:
+    def test_formats_messages_with_user(self):
+        from kiso.brain import _format_message_history
+        msgs = [{"role": "user", "user": "alice", "content": "hello"}]
+        assert _format_message_history(msgs) == "[user] alice: hello"
+
+    def test_formats_messages_without_user(self):
+        from kiso.brain import _format_message_history
+        msgs = [{"role": "assistant", "user": None, "content": "hi"}]
+        assert _format_message_history(msgs) == "[assistant] system: hi"
+
+    def test_formats_messages_missing_user_key(self):
+        from kiso.brain import _format_message_history
+        msgs = [{"role": "system", "content": "boot"}]
+        assert _format_message_history(msgs) == "[system] system: boot"
+
+    def test_multiple_messages(self):
+        from kiso.brain import _format_message_history
+        msgs = [
+            {"role": "user", "user": "bob", "content": "q1"},
+            {"role": "assistant", "user": None, "content": "a1"},
+        ]
+        result = _format_message_history(msgs)
+        assert result == "[user] bob: q1\n[assistant] system: a1"
+
+    def test_empty_list(self):
+        from kiso.brain import _format_message_history
+        assert _format_message_history([]) == ""
+
+
+class TestFormatPendingItems:
+    def test_formats_pending(self):
+        from kiso.brain import _format_pending_items
+        items = [{"content": "question 1"}, {"content": "question 2"}]
+        assert _format_pending_items(items) == "- question 1\n- question 2"
+
+    def test_empty_list(self):
+        from kiso.brain import _format_pending_items
+        assert _format_pending_items([]) == ""
