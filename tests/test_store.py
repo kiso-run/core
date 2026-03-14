@@ -2138,15 +2138,19 @@ async def test_search_facts_by_tags_ranking(db: aiosqlite.Connection):
 
 
 async def test_search_facts_by_tags_session_filter(db: aiosqlite.Connection):
-    """Non-admin users only see their session or global facts."""
-    await save_fact(db, "Global", "c", tags=["test"])
-    await save_fact(db, "Sess1 fact", "c", session="sess1", tags=["test"])
-    await save_fact(db, "Sess2 fact", "c", session="sess2", tags=["test"])
+    """Non-admin users only see their session's user facts + global facts.
+
+    M576: uses category-based filter (category != 'user') consistently with
+    get_facts/search_facts, replacing the old session IS NULL check.
+    """
+    await save_fact(db, "Global", "c", category="general", tags=["test"])
+    await save_fact(db, "Sess1 user fact", "c", session="sess1", category="user", tags=["test"])
+    await save_fact(db, "Sess2 user fact", "c", session="sess2", category="user", tags=["test"])
     results = await search_facts_by_tags(db, ["test"], session="sess1", is_admin=False)
     contents = {r["content"] for r in results}
     assert "Global" in contents
-    assert "Sess1 fact" in contents
-    assert "Sess2 fact" not in contents
+    assert "Sess1 user fact" in contents
+    assert "Sess2 user fact" not in contents
 
 
 async def test_search_facts_by_tags_empty_tags(db: aiosqlite.Connection):

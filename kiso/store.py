@@ -495,6 +495,23 @@ async def get_recent_messages(
     return rows
 
 
+def _fact_session_filter(
+    is_admin: bool, session: str | None, *, prefix: str = "",
+) -> tuple[str, list]:
+    """Return (sql_fragment, params) for session-scoped fact queries.
+
+    Admin users or ``session=None`` get no filter (empty string, no params).
+    Otherwise user-category facts are restricted to the given session.
+    *prefix* is prepended to column names (e.g. ``"f."``).
+    """
+    if is_admin or session is None:
+        return ("", [])
+    return (
+        f" AND ({prefix}category != 'user' OR {prefix}session = ?)",
+        [session],
+    )
+
+
 async def get_facts(
     db: aiosqlite.Connection,
     *,
@@ -510,15 +527,14 @@ async def get_facts(
     - limit caps the number of rows returned (None = no cap, uses LIMIT -1 internally).
     """
     limit_val = limit if limit is not None else -1
-    if is_admin or session is None:
-        cur = await db.execute("SELECT * FROM facts ORDER BY id LIMIT ?", (limit_val,))
-    else:
+    filt, filt_params = _fact_session_filter(is_admin, session)
+    if filt:
         cur = await db.execute(
-            "SELECT * FROM facts "
-            "WHERE category != 'user' OR session = ? "
-            "ORDER BY id LIMIT ?",
-            (session, limit_val),
+            f"SELECT * FROM facts WHERE 1=1{filt} ORDER BY id LIMIT ?",
+            filt_params + [limit_val],
         )
+    else:
+        cur = await db.execute("SELECT * FROM facts ORDER BY id LIMIT ?", (limit_val,))
     return await _rows_to_dicts(cur)
 
 
@@ -554,23 +570,14 @@ async def search_facts(
         return await get_facts(db, session=session, is_admin=is_admin)
 
     try:
-        if is_admin or session is None:
-            cur = await db.execute(
-                "SELECT f.* FROM facts f "
-                "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
-                "WHERE kiso_facts_fts MATCH ? "
-                "ORDER BY rank LIMIT ?",
-                (fts_q, limit),
-            )
-        else:
-            cur = await db.execute(
-                "SELECT f.* FROM facts f "
-                "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
-                "WHERE kiso_facts_fts MATCH ? "
-                "AND (f.category != 'user' OR f.session = ?) "
-                "ORDER BY rank LIMIT ?",
-                (fts_q, session, limit),
-            )
+        filt, filt_params = _fact_session_filter(is_admin, session, prefix="f.")
+        cur = await db.execute(
+            "SELECT f.* FROM facts f "
+            "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
+            f"WHERE kiso_facts_fts MATCH ?{filt} "
+            "ORDER BY rank LIMIT ?",
+            [fts_q] + filt_params + [limit],
+        )
         results = await _rows_to_dicts(cur)
     except Exception as exc:
         log.debug("FTS5 search failed, falling back to full scan: %s", exc, exc_info=True)
@@ -945,18 +952,15 @@ async def search_facts_by_tags(
     if not tags:
         return []
     placeholders = ", ".join("?" for _ in tags)
-    query = f"""
-        SELECT f.*, COUNT(ft.tag) AS tag_overlap
-        FROM facts f
-        JOIN fact_tags ft ON f.id = ft.fact_id
-        WHERE ft.tag IN ({placeholders})
-    """
-    params: list = list(tags)
-    if not is_admin and session:
-        query += " AND (f.session IS NULL OR f.session = ?)"
-        params.append(session)
-    query += " GROUP BY f.id ORDER BY tag_overlap DESC, f.use_count DESC"
-    cur = await db.execute(query, params)
+    filt, filt_params = _fact_session_filter(is_admin, session, prefix="f.")
+    query = (
+        f"SELECT f.*, COUNT(ft.tag) AS tag_overlap "
+        f"FROM facts f "
+        f"JOIN fact_tags ft ON f.id = ft.fact_id "
+        f"WHERE ft.tag IN ({placeholders}){filt} "
+        f"GROUP BY f.id ORDER BY tag_overlap DESC, f.use_count DESC"
+    )
+    cur = await db.execute(query, list(tags) + filt_params)
     return [dict(r) for r in await cur.fetchall()]
 
 
@@ -1067,10 +1071,8 @@ async def search_facts_scored(
         or_conditions.append("_tc.tag_count > 0")
 
     # Session scoping
-    session_filter = ""
-    if not is_admin and session:
-        session_filter = " AND (f.category != 'user' OR f.session = ?)"
-        params.append(session)
+    session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.")
+    params.extend(session_params)
 
     # If we only have keywords and no entity/tags, use FTS5 to get candidates
     if not or_conditions:
@@ -1078,16 +1080,14 @@ async def search_facts_scored(
         fts_q = _fts5_query(" ".join(keywords or []))
         if not fts_q:
             return []
+        kw_filt, kw_filt_params = _fact_session_filter(is_admin, session, prefix="f.")
         query = (
             "SELECT f.*, 0 AS entity_score, 0 AS tag_score "
             "FROM facts f "
             "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
-            "WHERE kiso_facts_fts MATCH ?"
+            f"WHERE kiso_facts_fts MATCH ?{kw_filt}"
         )
-        kw_params: list = [fts_q]
-        if not is_admin and session:
-            query += " AND (f.category != 'user' OR f.session = ?)"
-            kw_params.append(session)
+        kw_params: list = [fts_q] + kw_filt_params
         query += " ORDER BY rank LIMIT ?"
         kw_params.append(limit * 2)  # over-fetch for Python re-rank
         try:
