@@ -33,6 +33,51 @@ _json_object_only_models: set[str] = set()
 _TRANSPORT_RETRY_BACKOFF: float = 1.0
 _MAX_TRANSPORT_RETRIES = 2
 
+# M629: circuit breaker — protects against provider-wide degradation.
+# When consecutive transport failures exceed the threshold, subsequent
+# calls fail immediately instead of wasting time on doomed retries.
+_CB_FAILURE_THRESHOLD = 5
+_CB_COOLDOWN = 30.0
+_cb_consecutive_failures = 0
+_cb_open_until: float = 0.0  # monotonic timestamp
+
+
+def _cb_record_failure() -> None:
+    """Record a transport failure.  Opens circuit after threshold."""
+    global _cb_consecutive_failures, _cb_open_until
+    _cb_consecutive_failures += 1
+    if _cb_consecutive_failures >= _CB_FAILURE_THRESHOLD:
+        _cb_open_until = time.monotonic() + _CB_COOLDOWN
+        log.warning(
+            "Circuit breaker OPEN — %d consecutive transport failures, "
+            "failing fast for %.0fs",
+            _cb_consecutive_failures, _CB_COOLDOWN,
+        )
+
+
+def _cb_record_success() -> None:
+    """Reset circuit breaker on success."""
+    global _cb_consecutive_failures, _cb_open_until
+    _cb_consecutive_failures = 0
+    _cb_open_until = 0.0
+
+
+def _cb_is_open() -> bool:
+    """Check if circuit is open (should fail fast)."""
+    if _cb_open_until <= 0:
+        return False
+    if time.monotonic() >= _cb_open_until:
+        # Cooldown expired → half-open, allow one probe
+        return False
+    return True
+
+
+def _cb_reset() -> None:
+    """Reset circuit breaker state (for tests)."""
+    global _cb_consecutive_failures, _cb_open_until
+    _cb_consecutive_failures = 0
+    _cb_open_until = 0.0
+
 # Actionable hints for common HTTP error status codes from LLM providers.
 _LLM_ERROR_HINTS: dict[int, str] = {
     400: " — model may be unavailable or API key invalid",
@@ -345,6 +390,13 @@ async def call_llm(
 
     _json_schema_retried = False  # track whether we already fell back to json_object
 
+    # M629: circuit breaker — fail fast when provider is degraded
+    if _cb_is_open():
+        raise LLMError(
+            f"Circuit breaker open — provider transport degraded, failing fast "
+            f"[model={model_name}, role={role}]"
+        )
+
     while True:
         payload: dict = {
             "model": model_name,
@@ -408,6 +460,7 @@ async def call_llm(
                         resp, stall_timeout=stall_timeout, inflight_dict=_inflight,
                     )
 
+            _cb_record_success()
             break  # success
         except LLMStallError:
             duration_ms = _ms_since(t0)
@@ -421,6 +474,7 @@ async def call_llm(
             duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             _detail = str(e) or "no detail"
+            _cb_record_failure()
             _transport_retries += 1
             if _transport_retries <= _MAX_TRANSPORT_RETRIES:
                 backoff = _transport_retries * _TRANSPORT_RETRY_BACKOFF

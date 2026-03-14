@@ -1672,3 +1672,96 @@ class TestM305ReasoningFallback:
             result = await call_llm(config, "reviewer", [{"role": "user", "content": "hi"}],
                                      response_format={"type": "json_object"})
         assert result == review_json
+
+
+# --- M629: Circuit breaker tests ---
+
+
+class TestCircuitBreaker:
+    """M629: transport circuit breaker prevents cascade timeouts."""
+
+    def setup_method(self):
+        import kiso.llm
+        kiso.llm._cb_reset()
+
+    def teardown_method(self):
+        import kiso.llm
+        kiso.llm._cb_reset()
+
+    def test_opens_after_threshold_failures(self):
+        import kiso.llm
+        for _ in range(kiso.llm._CB_FAILURE_THRESHOLD):
+            kiso.llm._cb_record_failure()
+        assert kiso.llm._cb_is_open()
+
+    def test_stays_closed_below_threshold(self):
+        import kiso.llm
+        for _ in range(kiso.llm._CB_FAILURE_THRESHOLD - 1):
+            kiso.llm._cb_record_failure()
+        assert not kiso.llm._cb_is_open()
+
+    def test_success_resets_counter(self):
+        import kiso.llm
+        for _ in range(kiso.llm._CB_FAILURE_THRESHOLD - 1):
+            kiso.llm._cb_record_failure()
+        kiso.llm._cb_record_success()
+        # One more failure shouldn't open it
+        kiso.llm._cb_record_failure()
+        assert not kiso.llm._cb_is_open()
+
+    def test_half_open_after_cooldown(self):
+        import kiso.llm
+        for _ in range(kiso.llm._CB_FAILURE_THRESHOLD):
+            kiso.llm._cb_record_failure()
+        assert kiso.llm._cb_is_open()
+        # Simulate cooldown expiry
+        kiso.llm._cb_open_until = 0.0
+        assert not kiso.llm._cb_is_open()
+
+    def test_reset_clears_state(self):
+        import kiso.llm
+        for _ in range(kiso.llm._CB_FAILURE_THRESHOLD):
+            kiso.llm._cb_record_failure()
+        assert kiso.llm._cb_is_open()
+        kiso.llm._cb_reset()
+        assert not kiso.llm._cb_is_open()
+        assert kiso.llm._cb_consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_call_llm_fails_fast_when_open(self):
+        """When circuit is open, call_llm raises immediately without HTTP call."""
+        import kiso.llm
+        config = _make_config()
+
+        # Open the circuit
+        for _ in range(kiso.llm._CB_FAILURE_THRESHOLD):
+            kiso.llm._cb_record_failure()
+
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            with pytest.raises(LLMError, match="Circuit breaker open"):
+                await call_llm(config, "worker",
+                               [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_transport_errors_feed_circuit_breaker(self):
+        """Consecutive transport errors increment the circuit breaker counter."""
+        import kiso.llm
+        config = _make_config()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.stream = MagicMock(
+            side_effect=httpx.ReadError("connection reset")
+        )
+
+        with patch("kiso.llm.httpx.AsyncClient", return_value=mock_client), \
+             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch("kiso.llm.audit"):
+            with pytest.raises(LLMError, match="ReadError"):
+                await call_llm(config, "worker",
+                               [{"role": "user", "content": "hi"}])
+
+        # Should have recorded failures (1 initial + 2 retries = 3)
+        assert kiso.llm._cb_consecutive_failures == 3

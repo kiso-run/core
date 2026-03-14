@@ -104,7 +104,9 @@ def _no_retry_backoff():
     kiso.llm._TRANSPORT_RETRY_BACKOFF = 0.0
     kiso.brain._MESSENGER_RETRY_BACKOFF = 0.0
     kiso.worker.loop._POST_INSTALL_RESCAN_DELAY = 0.0
+    kiso.llm._cb_reset()
     yield
+    kiso.llm._cb_reset()
     kiso.llm._TRANSPORT_RETRY_BACKOFF = old_transport
     kiso.brain._MESSENGER_RETRY_BACKOFF = old_messenger
     kiso.worker.loop._POST_INSTALL_RESCAN_DELAY = old_rescan
