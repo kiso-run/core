@@ -524,27 +524,18 @@ def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
     return facts[:15]  # Cap at 15 facts
 
 
-def _build_replan_context(
-    completed: list[dict],
-    remaining: list[dict],
-    replan_reason: str,
+def _format_replan_hints(
+    update_hints: list[str] | None,
     replan_history: list[dict],
-    update_hints: list[str] | None = None,
-) -> str:
-    """Build extra context for replanning."""
-    # M309: strip msg-type tasks — intent messages are noise for replanning
-    completed = [t for t in completed if t.get("type") != "msg"]
+) -> list[str]:
+    """Build User Updates and Suggested Fixes sections."""
     parts: list[str] = []
-
-    # M409: inject user update hints (in-flight parameter changes)
     if update_hints:
         bullets = "\n".join(f"- {h}" for h in update_hints)
         parts.append(
             "## User Updates (received during execution — apply these changes)\n"
             + bullets
         )
-
-    # Collect all retry hints from replan history — prominent section at top (M147)
     all_hints: list[str] = []
     seen_hints: set[str] = set()
     for h in replan_history:
@@ -558,34 +549,44 @@ def _build_replan_context(
             "## Suggested Fixes (from reviewer — execute these, do NOT re-investigate)\n"
             + bullets
         )
+    return parts
 
-    # Extract confirmed facts from all completed tasks (current + history)
+
+def _format_replan_facts(
+    completed: list[dict],
+    replan_history: list[dict],
+) -> str | None:
+    """Build Confirmed Facts section from completed tasks + history."""
     all_completed = list(completed)
     for h in replan_history:
-        # Reconstruct minimal task dicts from key_outputs for fact extraction
         for ko in h.get("key_outputs", []):
-            # key_outputs are formatted as "[type] output_text"
             if ko.startswith("[") and "] " in ko:
                 out_text = ko[ko.index("] ") + 2:]
                 all_completed.append({"type": "exec", "output": out_text, "status": "done"})
     confirmed = _extract_confirmed_facts(all_completed)
-    if confirmed:
-        bullets = "\n".join(f"- {f}" for f in confirmed)
-        parts.append(
-            "## Confirmed Facts (DO NOT re-verify these — they are already established)\n"
-            + bullets
-        )
+    if not confirmed:
+        return None
+    bullets = "\n".join(f"- {f}" for f in confirmed)
+    return (
+        "## Confirmed Facts (DO NOT re-verify these — they are already established)\n"
+        + bullets
+    )
 
+
+def _format_replan_tasks(
+    completed: list[dict],
+    remaining: list[dict],
+) -> list[str]:
+    """Build Completed Tasks and Remaining Tasks sections with budget tracking."""
+    parts: list[str] = []
     if completed:
         items = []
         total_chars = 0
         for t in completed:
             limit = _REPLAN_SEARCH_OUTPUT_LIMIT if t.get("type") == "search" else _REPLAN_OUTPUT_LIMIT
             if total_chars >= _REPLAN_CONTEXT_CHAR_BUDGET:
-                # Over budget — summarize remaining as one-liners
                 items.append(f"- [{t['type']}] {t['detail']}: {t['status']}")
                 continue
-            # Prefer reviewer summary over truncated raw output (M146)
             reviewer_summary = t.get("reviewer_summary")
             if reviewer_summary:
                 out_fenced = f"Summary: {reviewer_summary}"
@@ -597,40 +598,64 @@ def _build_replan_context(
             items.append(item)
             total_chars += len(item)
         parts.append("## Completed Tasks\n" + "\n".join(items))
-
     if remaining:
         items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
         parts.append("## Remaining Tasks (not executed)\n" + "\n".join(items))
+    return parts
 
+
+_HISTORY_OUTPUT_BUDGET = 3000  # max chars for all key_outputs across history
+
+
+def _format_replan_history(replan_history: list[dict]) -> str | None:
+    """Build Previous Replan Attempts section with output budget."""
+    if not replan_history:
+        return None
+    items = []
+    output_chars = 0
+    for h in replan_history:
+        tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
+        entry = f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}"
+        for hint in h.get("retry_hints", []):
+            entry += f"\n  Reviewer hint: {hint}"
+        for summary in h.get("reviewer_summaries", [])[:2]:
+            entry += f"\n  Reviewer summary: {summary[:300]}"
+        key_outputs = h.get("key_outputs", [])
+        if key_outputs and output_chars < _HISTORY_OUTPUT_BUDGET:
+            for ko in key_outputs:
+                budget_remaining = _HISTORY_OUTPUT_BUDGET - output_chars
+                if budget_remaining <= 0:
+                    break
+                truncated = _smart_truncate(ko, min(budget_remaining, 500))
+                entry += f"\n  Output: {truncated}"
+                output_chars += len(truncated)
+        items.append(entry)
+    return (
+        "## Previous Replan Attempts (DO NOT repeat these approaches)\n"
+        + "\n".join(items)
+    )
+
+
+def _build_replan_context(
+    completed: list[dict],
+    remaining: list[dict],
+    replan_reason: str,
+    replan_history: list[dict],
+    update_hints: list[str] | None = None,
+) -> str:
+    """Build extra context for replanning."""
+    # M309: strip msg-type tasks — intent messages are noise for replanning
+    completed = [t for t in completed if t.get("type") != "msg"]
+    parts: list[str] = []
+    parts.extend(_format_replan_hints(update_hints, replan_history))
+    facts_section = _format_replan_facts(completed, replan_history)
+    if facts_section:
+        parts.append(facts_section)
+    parts.extend(_format_replan_tasks(completed, remaining))
     parts.append(f"## Failure Reason\n{replan_reason}")
-
-    if replan_history:
-        _HISTORY_OUTPUT_BUDGET = 3000  # max chars for all key_outputs across history
-        items = []
-        output_chars = 0
-        for h in replan_history:
-            tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
-            entry = f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}"
-            # Surface reviewer retry hints (M145) and summaries (M550)
-            for hint in h.get("retry_hints", []):
-                entry += f"\n  Reviewer hint: {hint}"
-            for summary in h.get("reviewer_summaries", [])[:2]:
-                entry += f"\n  Reviewer summary: {summary[:300]}"
-            key_outputs = h.get("key_outputs", [])
-            if key_outputs and output_chars < _HISTORY_OUTPUT_BUDGET:
-                for ko in key_outputs:
-                    budget_remaining = _HISTORY_OUTPUT_BUDGET - output_chars
-                    if budget_remaining <= 0:
-                        break
-                    truncated = _smart_truncate(ko, min(budget_remaining, 500))
-                    entry += f"\n  Output: {truncated}"
-                    output_chars += len(truncated)
-            items.append(entry)
-        parts.append(
-            "## Previous Replan Attempts (DO NOT repeat these approaches)\n"
-            + "\n".join(items)
-        )
-
+    history_section = _format_replan_history(replan_history)
+    if history_section:
+        parts.append(history_section)
     return "\n\n".join(parts)
 
 
