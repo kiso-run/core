@@ -428,6 +428,14 @@ def _save_large_output(session: str, task_index: int, output: str) -> str:
     )
 
 
+def _format_task_list(tasks: list[dict], label: str) -> str:
+    """Format a task list with label and count, e.g. 'Completed (3):\\n- [exec] ...'."""
+    if not tasks:
+        return ""
+    items = [f"- [{t['type']}] {t['detail']}" for t in tasks]
+    return f"{label} ({len(tasks)}):\n" + "\n".join(items)
+
+
 def _smart_truncate(text: str, limit: int) -> str:
     """Truncate *text* to *limit* chars, cutting at a newline boundary."""
     if len(text) <= limit:
@@ -630,15 +638,12 @@ def _build_cancel_summary(
     """Build a detail string for the worker LLM summarising a cancel."""
     parts: list[str] = [f"The user cancelled the plan: {goal}"]
 
-    if completed:
-        items = [f"- [{t['type']}] {t['detail']}" for t in completed]
-        parts.append(f"Completed ({len(completed)}):\n" + "\n".join(items))
-    else:
-        parts.append("No tasks were completed.")
+    completed_text = _format_task_list(completed, "Completed")
+    parts.append(completed_text or "No tasks were completed.")
 
-    if remaining:
-        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
-        parts.append(f"Skipped ({len(remaining)}):\n" + "\n".join(items))
+    skipped_text = _format_task_list(remaining, "Skipped")
+    if skipped_text:
+        parts.append(skipped_text)
 
     parts.append(
         "Generate a brief message: what was done, what wasn't, "
@@ -657,11 +662,8 @@ def _build_failure_summary(
     if reason:
         parts.append(f"Failure reason: {reason}")
 
-    if completed:
-        items = [f"- [{t['type']}] {t['detail']}" for t in completed]
-        parts.append(f"Completed successfully ({len(completed)}):\n" + "\n".join(items))
-    else:
-        parts.append("No tasks were completed.")
+    completed_text = _format_task_list(completed, "Completed successfully")
+    parts.append(completed_text or "No tasks were completed.")
 
     # M270: when all tasks succeeded but replanning failed, make it explicit
     if completed and not remaining:
@@ -670,9 +672,9 @@ def _build_failure_summary(
             "The failure occurred during re-planning for the next phase."
         )
 
-    if remaining:
-        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
-        parts.append(f"Failed/Skipped ({len(remaining)}):\n" + "\n".join(items))
+    failed_text = _format_task_list(remaining, "Failed/Skipped")
+    if failed_text:
+        parts.append(failed_text)
 
     parts.append(
         "Generate a brief message explaining what went wrong and suggest "

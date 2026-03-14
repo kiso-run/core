@@ -12179,3 +12179,30 @@ class TestHandleReviewError:
         assert result.stop_success is False
         assert "LLM error" in result.stop_replan
         assert result.plan_output is plan_output
+
+
+# --- M569: _format_task_list helper ---
+
+
+class TestFormatTaskList:
+    def test_empty_returns_empty_string(self):
+        from kiso.worker.utils import _format_task_list
+        assert _format_task_list([], "Completed") == ""
+
+    def test_formats_with_count(self):
+        from kiso.worker.utils import _format_task_list
+        tasks = [
+            {"type": "exec", "detail": "run foo"},
+            {"type": "msg", "detail": "tell user"},
+        ]
+        result = _format_task_list(tasks, "Done")
+        assert result.startswith("Done (2):\n")
+        assert "- [exec] run foo" in result
+        assert "- [msg] tell user" in result
+
+    def test_single_task(self):
+        from kiso.worker.utils import _format_task_list
+        tasks = [{"type": "search", "detail": "find X"}]
+        result = _format_task_list(tasks, "Remaining")
+        assert "Remaining (1):" in result
+        assert "- [search] find X" in result
