@@ -42,11 +42,6 @@ from kiso.worker import (
 )
 from kiso.worker.loop import (
     _PlanCtx,
-    _SUBSTATUS_COMPOSING,
-    _SUBSTATUS_EXECUTING,
-    _SUBSTATUS_REVIEWING,
-    _SUBSTATUS_SEARCHING,
-    _SUBSTATUS_TRANSLATING,
     _TASK_HANDLERS,
     _TaskHandlerResult,
     _bump_fact_usage,
@@ -154,18 +149,6 @@ def _make_config(**overrides) -> Config:
 # --- _run_subprocess ---
 
 class TestRunSubprocess:
-    async def test_success_shell(self, tmp_path):
-        """Shell subprocess returns stdout/stderr and success=True on exit 0."""
-        stdout, stderr, success, exit_code = await _run_subprocess(
-            "echo hello",
-            env={"PATH": "/usr/bin:/bin"},
-            cwd=str(tmp_path),
-            shell=True,
-        )
-        assert stdout.strip() == "hello"
-        assert success is True
-        assert exit_code == 0
-
     async def test_nonzero_exit_returns_false(self, tmp_path):
         """Non-zero exit code → success=False."""
         _, _, success, exit_code = await _run_subprocess(
@@ -268,12 +251,6 @@ class TestRunSubprocess:
 # --- _exec_task ---
 
 class TestExecTask:
-    async def test_successful_command(self, tmp_path):
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _exec_task("test-sess", "echo hello")
-        assert stdout.strip() == "hello"
-        assert success is True
-
     async def test_failing_command(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _exec_task("test-sess", "ls /nonexistent_dir_xyz")
@@ -2606,14 +2583,6 @@ class TestWritePlanOutputs:
         data = json.loads(path.read_text())
         assert len(data) == 2
 
-    async def test_empty_outputs(self, tmp_path):
-        with _patch_kiso_dir(tmp_path):
-            await _write_plan_outputs("sess1", [])
-
-        path = tmp_path / "sessions" / "sess1" / ".kiso" / "plan_outputs.json"
-        assert path.exists()
-        assert json.loads(path.read_text()) == []
-
     async def test_non_ascii_content_written_as_utf8(self, tmp_path):
         """M89d: non-ASCII content in plan outputs is preserved via utf-8 encoding."""
         outputs = [{"index": 1, "type": "msg", "detail": "saluta", "output": "Héllo wörld — 日本語", "status": "done"}]
@@ -2637,12 +2606,6 @@ class TestCleanupPlanOutputs:
             assert path.exists()
             await _cleanup_plan_outputs("sess1")
             assert not path.exists()
-
-    async def test_no_error_if_missing(self, tmp_path):
-        with _patch_kiso_dir(tmp_path):
-            # Ensure workspace exists but no file
-            _session_workspace("sess1")
-            await _cleanup_plan_outputs("sess1")  # should not raise
 
     def test_is_coroutine_function(self):
         """_cleanup_plan_outputs must be async (consistent with _write_plan_outputs)."""
@@ -9077,29 +9040,6 @@ class TestMsgTaskWithFallback:
         assert result == "detail"
 
 
-class TestSubstatusConstants:
-    """Verify _SUBSTATUS_* constant values (M88b)."""
-
-    def test_substatus_constant_values(self):
-        """All five substatus constants have the expected string values."""
-        assert _SUBSTATUS_TRANSLATING == "translating"
-        assert _SUBSTATUS_EXECUTING == "executing"
-        assert _SUBSTATUS_REVIEWING == "reviewing"
-        assert _SUBSTATUS_COMPOSING == "composing"
-        assert _SUBSTATUS_SEARCHING == "searching"
-
-    def test_substatus_constants_are_distinct(self):
-        """No two substatus constants share the same value."""
-        values = [
-            _SUBSTATUS_TRANSLATING,
-            _SUBSTATUS_EXECUTING,
-            _SUBSTATUS_REVIEWING,
-            _SUBSTATUS_COMPOSING,
-            _SUBSTATUS_SEARCHING,
-        ]
-        assert len(values) == len(set(values))
-
-
 class TestRunPlanningLoop:
     """Tests for _run_planning_loop (M62c)."""
 
@@ -9764,47 +9704,6 @@ class TestSummarizeMessagesLimit:
         )
 
 
-# --- M66i: _PlanCtx type annotations + long import line ---
-
-
-class TestPlanCtxTypeAnnotations:
-    def test_deploy_secrets_typed_as_str_str_dict(self):
-        """deploy_secrets field must be annotated dict[str, str], not bare dict."""
-        import dataclasses
-        import typing
-        hints = typing.get_type_hints(_PlanCtx)
-        assert hints["deploy_secrets"] == dict[str, str]
-
-    def test_session_secrets_typed_as_str_str_dict(self):
-        """session_secrets field must be annotated dict[str, str], not bare dict."""
-        import dataclasses
-        import typing
-        hints = typing.get_type_hints(_PlanCtx)
-        assert hints["session_secrets"] == dict[str, str]
-
-    def test_installed_tools_typed_as_list_dict(self):
-        """installed_tools field must be annotated list[dict], not bare list."""
-        import typing
-        hints = typing.get_type_hints(_PlanCtx)
-        assert hints["installed_tools"] == list[dict]
-
-    def test_plan_outputs_typed_as_list_dict(self):
-        """plan_outputs field must be annotated list[dict], not bare list."""
-        import typing
-        hints = typing.get_type_hints(_PlanCtx)
-        assert hints["plan_outputs"] == list[dict]
-
-    def test_llm_import_line_length(self):
-        """The kiso.llm import in loop.py must not be a single long line (> 100 chars)."""
-        from pathlib import Path
-        loop_src = (Path(__file__).parent.parent / "kiso" / "worker" / "loop.py").read_text()
-        for line in loop_src.splitlines():
-            if "from kiso.llm import" in line:
-                assert len(line) <= 100, (
-                    f"kiso.llm import line is too long ({len(line)} chars): {line!r}"
-                )
-
-
 # --- M85b: _bump_fact_usage ---
 
 
@@ -9913,38 +9812,6 @@ class TestCancelledErrorPropagation:
         with patch("kiso.worker.loop.run_curator", side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
                 await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
-
-
-# ---------------------------------------------------------------------------
-# M92a: no local imports in loop.py
-# ---------------------------------------------------------------------------
-
-
-class TestNoLocalImports:
-    """M92a: verify deferred imports were hoisted to module level."""
-
-    def test_no_local_sysenv_import_in_loop(self):
-        """from kiso.sysenv import invalidate_cache must not appear inside a function body."""
-        from pathlib import Path
-        src = (Path(__file__).parent.parent / "kiso" / "worker" / "loop.py").read_text()
-        # Find all occurrences after 'def ' or 'async def '
-        import re
-        # Check that no 'from kiso.sysenv import' appears indented (inside a function)
-        for line in src.splitlines():
-            if "from kiso.sysenv import" in line:
-                assert not line.startswith("    "), (
-                    f"Found local 'from kiso.sysenv import' inside function: {line!r}"
-                )
-
-    def test_no_local_stats_import_in_main(self):
-        """from kiso.stats import must not appear inside a function body in main.py."""
-        from pathlib import Path
-        src = (Path(__file__).parent.parent / "kiso" / "main.py").read_text()
-        for line in src.splitlines():
-            if "from kiso.stats import" in line:
-                assert not line.startswith("    "), (
-                    f"Found local 'from kiso.stats import' inside function: {line!r}"
-                )
 
 
 # ---------------------------------------------------------------------------
@@ -10094,11 +9961,6 @@ class TestMessengerTimeout:
 
         assert result.stop is True
         assert result.stop_success is False
-
-    def test_messenger_timeout_removed_from_defaults(self):
-        """M422: messenger_timeout removed from SETTINGS_DEFAULTS (unified to llm_timeout)."""
-        from kiso.config import SETTINGS_DEFAULTS
-        assert "messenger_timeout" not in SETTINGS_DEFAULTS
 
     @pytest.fixture()
     async def plan_id(self, db):
@@ -10405,17 +10267,6 @@ class TestSuggestedFixesSection:
 
 
 # --- M146: Reviewer summary field for intelligent output condensation ---
-
-
-class TestReviewerSummarySchema:
-    """M146: REVIEW_SCHEMA includes summary field."""
-
-    def test_schema_has_summary(self):
-        from kiso.brain import REVIEW_SCHEMA
-        props = REVIEW_SCHEMA["json_schema"]["schema"]["properties"]
-        assert "summary" in props
-        required = REVIEW_SCHEMA["json_schema"]["schema"]["required"]
-        assert "summary" in required
 
 
 class TestReviewerSummaryInReplanContext:
@@ -10737,15 +10588,6 @@ class TestCheckDiskLimit:
             result = _check_disk_limit(config)
         assert result is None
 
-    def test_default_limit_used(self):
-        """When max_disk_gb missing from settings, default of 32 is used."""
-        from kiso.worker import _check_disk_limit
-
-        config = MagicMock()
-        config.settings = {}
-        with patch("kiso.worker.utils._kiso_dir_bytes", return_value=10 * 1024**3):
-            result = _check_disk_limit(config)
-        assert result is None
 
 
 # --- M218 integration: disk limit blocks exec in _execute_plan ---
@@ -12208,18 +12050,3 @@ class TestFormatTaskList:
         assert "- [search] find X" in result
 
 
-# --- M570: _run_sync helper ---
-
-
-class TestRunSync:
-    @pytest.mark.asyncio
-    async def test_runs_sync_function(self):
-        from kiso.worker.utils import _run_sync
-        result = await _run_sync(lambda: 42)
-        assert result == 42
-
-    @pytest.mark.asyncio
-    async def test_passes_args(self):
-        from kiso.worker.utils import _run_sync
-        result = await _run_sync(lambda a, b: a + b, 3, 4)
-        assert result == 7

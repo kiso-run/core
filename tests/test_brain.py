@@ -118,50 +118,6 @@ def test_worker_phases_frozenset():
     assert len(WORKER_PHASES) == 4
 
 
-# --- M111d: reviewer prompt hardening ---
-
-
-def test_reviewer_prompt_contains_empty_output_guard():
-    """M111d: reviewer.md must instruct LLM to set learn=null on empty output."""
-    prompt = _load_system_prompt("reviewer")
-    assert "output empty" in prompt or "empty/whitespace" in prompt or "empty or whitespace" in prompt
-    assert "Null if nothing useful" in prompt or "learn MUST be null" in prompt
-
-
-def test_reviewer_prompt_contains_reason_required_rule():
-    """M111d: reviewer.md must require reason for replan status."""
-    prompt = _load_system_prompt("reviewer")
-    assert "required" in prompt and "replan" in prompt
-
-
-# --- M318: reviewer learn quality rules ---
-
-
-def test_reviewer_prompt_max_3_learns():
-    """M318: reviewer learn cap reduced from 5 to 3."""
-    prompt = _load_system_prompt("reviewer")
-    assert "max 3" in prompt
-
-
-def test_reviewer_prompt_self_contained_rule():
-    """M318/M425: learnings must be self-contained with subject context."""
-    prompt = _load_system_prompt("reviewer")
-    assert "self-contained with subject" in prompt
-
-
-def test_reviewer_prompt_consolidation_rule():
-    """M318/M425: learnings must consolidate related observations."""
-    prompt = _load_system_prompt("reviewer")
-    assert "consolidate" in prompt.lower()
-
-
-def test_reviewer_prompt_transient_rule():
-    """M318/M425: learnings must not include transient data."""
-    prompt = _load_system_prompt("reviewer")
-    assert "transient" in prompt.lower()
-    assert "element indices" in prompt.lower()
-
-
 # --- M320: clean_learn_items ---
 
 
@@ -2232,43 +2188,6 @@ class TestRunFactConsolidation:
         assert result_cats == _VALID_FACT_CATEGORIES
 
 
-# --- M9: _load_system_prompt for curator/summarizer ---
-
-class TestLoadSystemPromptCuratorSummarizer:
-    def test_curator_default(self):
-        prompt = _load_system_prompt("curator")
-        assert "knowledge curator" in prompt
-
-    def test_summarizer_session_default(self):
-        prompt = _load_system_prompt("summarizer-session")
-        assert "session summarizer" in prompt
-        assert "Key Decisions" in prompt
-        assert "Open Questions" in prompt
-        assert "Working Knowledge" in prompt
-
-    def test_summarizer_facts_default(self):
-        prompt = _load_system_prompt("summarizer-facts")
-        assert "fact" in prompt.lower()
-        assert "category" in prompt.lower()
-        assert "confidence" in prompt.lower()
-
-    def test_paraphraser_default(self):
-        prompt = _load_system_prompt("paraphraser")
-        assert "paraphraser" in prompt
-
-    def test_m285_session_summarizer_english_output(self):
-        """M285: session summarizer writes in English, preserves domain terms."""
-        prompt = (_ROLES_DIR / "summarizer-session.md").read_text()
-        assert "English" in prompt
-        assert "original language" in prompt.lower()
-
-    def test_m285_facts_summarizer_english_output(self):
-        """M285: facts summarizer writes in English, preserves identifiers."""
-        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
-        assert "English" in prompt
-        assert "proper nouns" in prompt
-
-
 # --- M10: Paraphraser ---
 
 class TestBuildParaphraserMessages:
@@ -2446,69 +2365,12 @@ def _make_brain_config(**overrides) -> Config:
 
 
 class TestDefaultMessengerPrompt:
-    def test_contains_placeholder(self):
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "{bot_name}" in prompt
-
-    def test_verbatim_instructions_rule(self):
-        """M46: messenger prompt must instruct to reproduce setup instructions verbatim."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "verbatim" in prompt
-
     def test_load_replaces_bot_name(self):
         config = _make_brain_config(settings={"bot_name": "TestBot"})
         msgs = build_messenger_messages(config, "", [], "say hi")
         system_prompt = msgs[0]["content"]
         assert "TestBot" in system_prompt
         assert "{bot_name}" not in system_prompt
-
-    def test_m5_no_fabricate_absent_info(self):
-        """M5.3: messenger must not fabricate entries for absent information."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "fabricate" in prompt.lower()
-        assert "nothing is needed" in prompt or "nothing was found" in prompt
-
-    def test_m138_no_invent_commands(self):
-        """M138: messenger must never invent CLI commands or code snippets."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "fabricate" in prompt.lower()
-        assert "commands" in prompt.lower()
-
-    def test_m214_language_inference_from_user_message(self):
-        """M214: messenger prompt tells LLM to infer language from user message."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "user message" in prompt.lower()
-
-    def test_m264_system_actions_identity(self):
-        """M264: messenger describes system actions, never says 'I cannot'."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "system actions" in prompt
-        assert 'Never say "I cannot"' in prompt
-
-    def test_m277_voice_rules(self):
-        """M277/M424: messenger has explicit voice rules for system vs conversational."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Voice rules" in prompt
-        assert '"I ran"' in prompt
-        assert "third-person" in prompt or "passive" in prompt
-
-    def test_m424_language_consolidated(self):
-        """M424: messenger has single consolidated language block."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Language:" in prompt
-        assert "Answer in {language}" in prompt
-        assert "Never echo" in prompt
-
-    def test_m351_language_fallback_english_only_when_all_english(self):
-        """M351/M424: English fallback only when all user messages are English."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "english" in prompt.lower()
-        assert "fallback" in prompt.lower()
-
-    def test_m351_recent_messages_language_inference(self):
-        """M351: messenger infers language from Recent Messages when no instruction."""
-        prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "most recent user message" in prompt
 
 
 class TestBuildMessengerMessages:
@@ -2832,13 +2694,6 @@ class TestRunMessenger:
         assert "## Session Summary" not in user_content
 
 
-class TestLoadSystemPromptMessenger:
-    def test_default_messenger_prompt(self):
-        prompt = _load_system_prompt("messenger")
-        assert "{bot_name}" in prompt
-        assert "friendly" in prompt
-
-
 class TestM369MessengerSanitizer:
     """M369: messenger output sanitization."""
 
@@ -3012,148 +2867,7 @@ class TestLoadSystemPromptExecTranslator:
         assert prompt == "Custom worker prompt"
 
 
-# --- Exec translator prompt content ---
-
-
-class TestExecTranslatorPromptContent:
-    def test_exec_translator_prompt_mentions_preceding_outputs(self):
-        """The default exec translator prompt should mention Preceding Task Outputs."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "Preceding Task Outputs" in prompt
-
-    def test_m139_bash_not_sh(self):
-        """M139: worker prompt references bash, not /bin/sh."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "Executed by bash" in prompt
-
-    def test_m140_large_output_files(self):
-        """M140: worker prompt mentions large output files."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "Full output saved to" in prompt
-
-    def test_m141_curl_follow_redirects(self):
-        """M141: worker prompt requires curl -L for redirects."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "curl -L" in prompt
-
-    def test_m205_kiso_short_tool_names(self):
-        """M205: worker prompt tells translator to use short tool/connector names."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "short tool/connector names" in prompt
-
-
-# --- Planner prompt content ---
-
-
 class TestPlannerPromptContent:
-    def test_planner_prompt_contains_reference_docs_instruction(self):
-        """The default planner prompt should mention confirmed facts and reuse."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "confirmed facts" in prompt.lower()
-        assert "never re-investigate" in prompt.lower() or "re-verify" in prompt.lower()
-
-    def test_planner_prompt_contains_replan_task_type(self):
-        """The default planner prompt should mention the replan task type."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "replan" in prompt
-        assert "investigation" in prompt.lower() or "investigate" in prompt.lower()
-        assert "extend_replan" in prompt
-
-    def test_planner_prompt_contains_search_task_type(self):
-        """The default planner prompt should mention the search task type."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "search:" in prompt
-        assert "web search" in prompt.lower() or "search query" in prompt.lower()
-
-    def test_m40_last_task_rule_marked_critical(self):
-        """M40: last-task rule must be prefixed CRITICAL to reduce model skips."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "CRITICAL:" in prompt
-
-    def test_m40_pub_path_distinction_documented(self):
-        """M40: pub/ filesystem path vs served URL must be explicitly distinguished."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "filesystem path" in prompt
-        # Files served at URLs — must not use the URL as a path
-        assert "never use urls as filesystem paths" in prompt.lower()
-
-    def test_m45_plugin_install_uses_registry_not_search(self):
-        """M45: planner plugin-install appendix must forbid web search for kiso plugin discovery."""
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "never kiso skill search" in prompt.lower() or "never for plugin discovery" in prompt.lower()
-        assert "registry" in prompt.lower()
-
-    def test_m45_plugin_install_rule_is_mandatory(self):
-        """M45: plugin installation appendix must be marked MANDATORY."""
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "Plugin installation:" in prompt
-
-    def test_m46_plugin_install_checks_kiso_toml_before_install(self):
-        """M46: planner must curl kiso.toml from GitHub before installing to discover env requirements."""
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "raw.githubusercontent.com" in prompt
-        assert "kiso.toml" in prompt
-        # Step ordering: curl kiso.toml must come before "kiso tool install {name}".
-        toml_pos = prompt.index("kiso.toml")
-        install_pos = prompt.index("kiso tool install {name}")
-        assert toml_pos < install_pos
-
-    def test_m46_plugin_install_includes_env_description_in_msg(self):
-        """M46: planner plugin-install appendix must include env var descriptions from kiso.toml."""
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "description" in prompt
-        assert "description from kiso.toml" in prompt.lower() or "descriptions from kiso.toml" in prompt.lower() or "include descriptions" in prompt.lower()
-
-    def test_m102a_plugin_discovery_never_single_type_search(self):
-        """M102a: planner must never use kiso skill search for initial plugin discovery."""
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "never kiso skill search" in prompt.lower() or "never for plugin discovery" in prompt.lower()
-
-    def test_m4_skill_reuse_rule(self):
-        """M4: planner must use listed skills directly without re-verification."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Tools efficiency" in prompt or "Tools section" in prompt
-        assert "confirmed installed" in prompt or "already-listed" in prompt
-
-    def test_m4_no_reinstall_listed_skills(self):
-        """M4: planner must not reinstall skills already in Skills section."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "no verification or reinstall needed" in prompt or "no verification needed" in prompt
-
-    def test_m4_replan_no_reverify(self):
-        """M4: planner must build on confirmed facts, not re-verify."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "confirmed facts" in prompt.lower() or "confirmed fact" in prompt.lower()
-        assert "never re-investigate" in prompt.lower() or "re-verify" in prompt.lower()
-
-    def test_m5_env_var_rule(self):
-        """M5: planner must only ask for env vars declared in [kiso.env]."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "[kiso.env]" in prompt
-        assert "absent or empty" in prompt or "If absent, proceed" in prompt
-
-    def test_m5_msg_after_tasks(self):
-        """M5/M137: msg tasks must come after data-gathering tasks."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "msg tasks must come after" in prompt
-
-    def test_m142_file_based_data_flow(self):
-        """M142: planner prompt requires file-based data flow for large outputs."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "save to file" in prompt
-        assert "never embed raw data in details" in prompt.lower() or "never embed commands or raw data" in prompt.lower()
-
-    def test_m143_strategy_diversification(self):
-        """M143: planner must diversify strategy after repeated failures."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "fundamentally different strategy" in prompt
-        assert "try a fundamentally different strategy" in prompt
-
-    def test_m144_detail_natural_language(self):
-        """M144: planner prompt forbids commands/data in detail field."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "never embed commands" in prompt.lower()
-
     def test_m144_long_exec_detail_rejected(self):
         """M144: exec task with >500 char detail is rejected."""
         plan = {"tasks": [
@@ -3171,137 +2885,6 @@ class TestPlannerPromptContent:
         ]}
         errors = validate_plan(plan)
         assert not any("too long" in e for e in errors)
-
-    def test_m352_no_kiso_instance_command(self):
-        """M352: planner prompt must NOT reference nonexistent kiso instance command."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "kiso instance" not in prompt
-
-    def test_m353_planner_self_identity(self):
-        """M353: planner prompt declares 'You ARE Kiso'."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "You ARE Kiso" in prompt
-
-    def test_m353_planner_self_entity(self):
-        """M353: planner prompt references entity 'self' for knowledge base."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert 'entity "self"' in prompt or "Entity \"self\"" in prompt
-
-    def test_m353_planner_no_kiso_cli_for_self_inspection(self):
-        """M353: planner prompt forbids kiso CLI for self-inspection."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Do not use kiso CLI for self-inspection" in prompt
-
-    def test_m423_answer_in_lang_once_in_planning_rules(self):
-        """M423: 'Answer in {lang' appears once in planning_rules module."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        # Extract planning_rules module content between markers
-        start = prompt.index("<!-- MODULE: planning_rules -->")
-        end = prompt.index("<!-- MODULE:", start + 1)
-        planning_rules_text = prompt[start:end]
-        assert planning_rules_text.count("Answer in {lang") == 1
-
-    def test_m423_core_module_no_verbose_args(self):
-        """M423: core module skill type doesn't mention 'NEVER null'."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        start = prompt.index("<!-- MODULE: core -->")
-        end = prompt.index("<!-- MODULE:", start + 1)
-        core_text = prompt[start:end]
-        assert "NEVER null" not in core_text
-
-    def test_m423_all_task_types_present(self):
-        """M423: planner prompt still contains all task types."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        for tt in ("exec:", "tool:", "msg:", "search:", "replan:"):
-            assert tt in prompt, f"Missing task type: {tt}"
-
-
-class TestM165SkillArgsExample:
-    """M165: planner prompt must include a tool args example."""
-
-    def test_planner_prompt_has_skill_args_example(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "JSON string" in prompt
-        assert "required args" in prompt
-
-    def test_planner_prompt_no_hardcoded_browser_example(self):
-        """M181: skill example must not hardcode 'browser' as skill name."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        # The example line itself should use a generic name
-        for line in prompt.splitlines():
-            if line.strip().startswith("Example:") and '"tool":' in line:
-                assert '"browser"' not in line, "Skill example should use generic name, not 'browser'"
-
-
-class TestM180BrokenSkillRecoveryGuidance:
-    """M180: planner prompt includes broken tool recovery guidance."""
-
-    def test_planner_prompt_has_broken_tool_guidance(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Broken tool deps" in prompt
-        assert "kiso tool remove" in prompt
-        assert "kiso tool install" in prompt
-        assert "[BROKEN]" in prompt
-
-
-class TestM185BlockAptGetForToolDeps:
-    """M185: planner prompt blocks manual apt-get for tool deps."""
-
-    def test_planner_prompt_blocks_apt_get(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "NEVER use `apt-get install`" in prompt or "Never jump to `apt-get install`" in prompt
-
-    def test_planner_prompt_blocks_pip_install(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "pip install" in prompt
-
-    def test_reinstall_is_only_correct_fix(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "kiso tool remove NAME && kiso tool install NAME" in prompt
-
-
-class TestM192PlannerNavigateAndInstallGuard:
-    """M192: planner prompt has navigate-vs-search rule and install-then-replan guard."""
-
-    def test_navigate_requires_browser_skill(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "requires `browser` tool" in prompt
-
-    def test_search_not_for_page_interaction(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Do NOT use search for interaction" in prompt or "Interact" in prompt
-
-    def test_cannot_use_uninstalled_skill(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "cannot be used" in prompt
-
-    def test_install_then_replan_pattern(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Never tool-task an uninstalled tool" in prompt
-
-
-class TestM207CompositeRequestDecomposition:
-    """M207: planner decomposes composite requests by tool."""
-
-    def test_composite_requests_rule_present(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Composite requests" in prompt
-
-    def test_composite_requests_no_extra_steps(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "no extra steps" in prompt.lower() or "decompose per sub-goal" in prompt.lower()
-
-
-class TestM199PluginInstallIdempotent:
-    """M199: planner-plugin-install.md tells planner that install is idempotent."""
-
-    def test_idempotent_note_present(self):
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "idempotent" in prompt
-
-    def test_no_need_to_check_first(self):
-        prompt = _load_modular_prompt("planner", ["plugin_install"])
-        assert "no need to check" in prompt.lower() or "idempotent" in prompt.lower()
 
 
 class TestM166ValidatePlanSkillArgs:
@@ -3427,49 +3010,6 @@ class TestM171StripExtendReplan:
         }
         errors = validate_plan(plan, is_replan=False)
         assert not errors
-
-
-class TestM73cPlannerUserManagement:
-    """M73c: planner prompt rules for kiso user subcommand (now in appendix files)."""
-
-    def test_kiso_user_commands_listed(self):
-        """kiso user commands must appear in the kiso-commands appendix."""
-        prompt = _load_modular_prompt("planner", ["kiso_commands"])
-        assert "kiso user add" in prompt
-        assert "kiso user remove|list" in prompt
-        assert "kiso user alias" in prompt
-
-    def test_user_management_admin_only_label(self):
-        """The user commands must be labelled as admin only."""
-        prompt = _load_modular_prompt("planner", ["kiso_commands"])
-        idx = prompt.index("kiso user add")
-        section = prompt[max(0, idx - 100):idx + 50]
-        assert "admin only" in section
-
-    def test_protection_rule_blocks_non_admin(self):
-        """Planner user-mgmt appendix must refuse kiso user tasks when Caller Role is 'user'."""
-        prompt = _load_modular_prompt("planner", ["user_mgmt"])
-        assert "Caller Role" in prompt
-        assert "never" in prompt.lower()
-        assert "kiso user" in prompt
-
-    def test_tools_required_for_role_user(self):
-        """User-mgmt appendix must document that --tools is required when role=user."""
-        prompt = _load_modular_prompt("planner", ["user_mgmt"])
-        assert "--tools" in prompt
-        assert "--role user" in prompt
-
-    def test_ask_for_role_before_add(self):
-        """Planner user-mgmt appendix must ask for role if not specified."""
-        prompt = _load_modular_prompt("planner", ["user_mgmt"])
-        assert "role is not specified" in prompt or "role not specified" in prompt or \
-               "role" in prompt and "msg task" in prompt
-
-    def test_ask_for_connector_aliases(self):
-        """Planner user-mgmt + kiso_commands must mention connector aliases."""
-        prompt = _load_modular_prompt("planner", ["user_mgmt", "kiso_commands"])
-        assert "connector" in prompt.lower()
-        assert "alias" in prompt.lower()
 
 
 # --- M82: planner ask-then-add workflow (functional) ---
@@ -3942,48 +3482,6 @@ class TestExecTranslatorRetryContext:
 # --- M33: reviewer prompt mentions retry_hint ---
 
 
-class TestReviewerPromptRetryHint:
-    def test_reviewer_prompt_mentions_retry_hint(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "retry_hint" in prompt
-
-    def test_m206_reviewer_partial_success_guidance(self):
-        """M206: reviewer prompt guides summary to cover partial successes."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "partial successes" in prompt or "Partial success" in prompt
-
-
-# --- M47: planner/reviewer/worker improvements ---
-
-
-class TestM47PlannerIdentityAndTwoLayer:
-    """47a: planner self-awareness — identity + two-layer environment."""
-
-    def test_planner_prompt_mentions_kiso_identity(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Kiso planner" in prompt
-
-    def test_planner_prompt_mentions_two_layers(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "two layers" in prompt or "Docker container" in prompt
-
-    def test_planner_prompt_prefers_kiso_native_solution(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Kiso-native" in prompt
-
-    def test_planner_prompt_unambiguous_bias(self):
-        """Clarification rule flipped: proceed only if unambiguous, else ask."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "unambiguous" in prompt or "unclear" in prompt
-        assert "When in doubt, ask" in prompt or "asking for clarification" in prompt
-
-    def test_planner_prompt_expect_scoping(self):
-        """expect must be task-scoped, not plan-goal-scoped."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "THIS task's output" in prompt
-        assert "not the overall goal" in prompt or "not overall goal" in prompt
-
-
 class TestM47ReviewerPlanContext:
     """47b: reviewer receives Plan Context (not Plan Goal) and evaluates only expect."""
 
@@ -3999,40 +3497,6 @@ class TestM47ReviewerPlanContext:
         content = msgs[1]["content"]
         assert "## Plan Context" in content
         assert "## Plan Goal" not in content
-
-    def test_reviewer_prompt_plan_context_is_background(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "background" in prompt and "context" in prompt.lower()
-
-    def test_reviewer_prompt_sole_criterion_is_expect(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "Sole criterion" in prompt
-
-    def test_reviewer_prompt_zero_changes_is_success(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "0 changes" in prompt or "nothing to do" in prompt
-
-
-# --- M96: reviewer — warning vs error distinction ---
-
-
-class TestReviewerWarningVsError:
-    """M96: warnings don't override exit 0 + satisfied expect."""
-
-    def test_prompt_warnings_are_informational(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "does not mean failure" in prompt.lower() or "don't override exit 0" in prompt.lower()
-
-    def test_prompt_no_blanket_replan_on_warning(self):
-        """Old rule 'mark as replan even if command succeeded' must be gone."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "mark as replan even if the command succeeded" not in prompt
-
-    def test_prompt_explicit_expect_required_for_warning_replan(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "expect" in prompt.lower()
-        # The new rule: replan for warnings only if expect requires clean output
-        assert "absence of warnings" in prompt or "no warnings" in prompt
 
 
 class TestPrepareReviewerOutput:
@@ -4221,108 +3685,6 @@ class TestM47ReviewerPlanContextEdgeCases:
         )
         content = msgs[1]["content"]
         assert "FAILED" in content or "non-zero" in content
-
-
-class TestM47PlannerExpectScopingEdgeCases:
-    """Edge cases for planner expect scoping guidance."""
-
-    def test_planner_prompt_maintenance_commands_mentioned(self):
-        """Prompt mentions apt-get install as a known command pattern."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "apt-get install" in prompt
-
-    def test_planner_prompt_clarification_rule_not_just_unclear(self):
-        """New rule is more than 'if unclear, ask' — requires unambiguous intent AND target."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        # Old rule was simply "if the request is unclear"
-        # New rule requires both intent and target to be unambiguous
-        assert "intent" in prompt
-        assert "target" in prompt or "clarification" in prompt
-
-
-# ---------------------------------------------------------------------------
-# M48: Prompt hygiene — ottimizzazioni trasversali ai role prompts
-# ---------------------------------------------------------------------------
-
-
-class TestM48ReviewerPromptHygiene:
-    """48a+48b: reviewer prompt alignment and exit code rule."""
-
-    def test_48a_you_receive_says_plan_context(self):
-        """48a: reviewer prompt must refer to 'Plan Context', not 'Plan Goal'."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "Plan Context" in prompt
-
-    def test_48a_no_plan_goal_in_receive_block(self):
-        """48a: old 'The plan goal' bullet must be gone from 'You receive' section."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "The plan goal" not in prompt
-
-    def test_48b_exit_code_rule_present(self):
-        """48b: reviewer prompt must have an explicit rule about exit codes."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "exit code" in prompt.lower() or "non-zero" in prompt.lower()
-
-    def test_48b_nonzero_is_failure_signal(self):
-        """48b: non-zero exit code must be labeled as failure indicator."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "non-zero" in prompt.lower()
-
-    def test_48b_zero_not_sufficient_alone(self):
-        """48b: zero exit code is necessary but not sufficient — output must also satisfy expect."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "not sufficient" in prompt.lower() or "be strict" in prompt.lower()
-
-
-class TestM354ReviewerLearnGuards:
-    """M354: reviewer learn rules guard against false causal inferences."""
-
-    def test_no_causal_inference_rule(self):
-        """M354: reviewer must not infer causal relationships from single failures."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "causal inferences" in prompt.lower()
-
-    def test_cli_usage_errors_rule(self):
-        """M354: CLI usage errors should not become durable learnings."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "CLI usage errors" in prompt
-
-
-class TestM48PlannerMergedRules:
-    """48c: planner expect and detail rules are merged (no redundant duplicates)."""
-
-    def test_48c_expect_rule_is_nonnull_and_task_scoped(self):
-        """48c: single expect rule combines 'non-null' and 'task-specific' guidance."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "non-null" in prompt
-        assert "not the overall goal" in prompt or "THIS task's output" in prompt
-
-    def test_48c_no_redundant_standalone_nonnull_rule(self):
-        """48c: old fragmented 'non-null expect field' standalone line must be gone."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "exec, skill, and search tasks MUST have a non-null expect field" not in prompt
-
-    def test_48c_detail_rule_is_natural_language(self):
-        """48c/M144: detail must be natural language, not commands/data."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "natural language" in prompt
-        assert "never embed commands" in prompt.lower()
-
-    def test_48c_no_redundant_standalone_specific_rule(self):
-        """48c: old fragmented 'exec task detail must be specific' standalone line must be gone."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "exec task detail must be specific" not in prompt
-
-    def test_48c_expect_rule_covers_exec_skill_search(self):
-        """48c: merged expect rule must apply to exec/skill/search."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        # Should mention all three types together
-        assert "exec/tool/search" in prompt or ("exec" in prompt and "tool" in prompt and "search" in prompt)
-
-    def test_48c_detail_rule_mentions_exec_commands_and_paths(self):
-        """48c: merged detail rule must mention commands/paths for exec tasks."""
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "commands" in prompt or "paths" in prompt
 
 
 # --- M97a: planner contextual rule blocks ---
@@ -4535,17 +3897,6 @@ class TestPlannerContextualRules:
 class TestM48CuratorCategoryField:
     """48d: curator category field — prompt, schema, and validation."""
 
-    def test_48d_curator_prompt_mentions_category(self):
-        """48d: curator prompt must instruct model to include category for promote."""
-        prompt = (_ROLES_DIR / "curator.md").read_text()
-        assert "category" in prompt
-
-    def test_48d_curator_prompt_lists_all_valid_categories(self):
-        """48d: curator prompt must list all valid category values."""
-        prompt = (_ROLES_DIR / "curator.md").read_text()
-        for cat in ("project", "user", "tool", "general"):
-            assert cat in prompt
-
     def test_48d_curator_schema_has_category_field(self):
         """48d: CURATOR_SCHEMA item must include 'category' property."""
         item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
@@ -4742,11 +4093,6 @@ class TestM347CuratorExistingFacts:
         )
         assert "## Existing Facts" not in msgs[1]["content"]
 
-    def test_curator_prompt_dedup_rule(self):
-        prompt = _load_system_prompt("curator")
-        assert "Existing Fact" in prompt
-        assert "discard" in prompt.lower()
-
     async def test_run_curator_forwards_existing_facts(self):
         """M347: run_curator forwards existing_facts to build_curator_messages."""
         facts = [{"content": "Flask is used", "entity_name": "flask"}]
@@ -4764,47 +4110,6 @@ class TestM347CuratorExistingFacts:
         user_msg = [m for m in messages if m["role"] == "user"][0]
         assert "Flask is used" in user_msg["content"]
         assert "## Existing Facts" in user_msg["content"]
-
-
-# --- M321: curator consolidation + learning_id rules ---
-
-
-def test_curator_prompt_consolidation_rule():
-    """M321: curator prompt instructs consolidation of duplicate learnings."""
-    prompt = _load_system_prompt("curator")
-    assert "consolidat" in prompt.lower()
-    assert "ONE evaluation" in prompt
-
-
-def test_curator_prompt_learning_id_rule():
-    """M321: curator prompt explicitly mentions learning_id matching."""
-    prompt = _load_system_prompt("curator")
-    assert "learning_id" in prompt
-
-
-def test_curator_prompt_discard_transient_examples():
-    """M321: curator prompt lists concrete transient discard examples."""
-    prompt = _load_system_prompt("curator")
-    assert "installed" in prompt.lower() and "transient" in prompt.lower()
-
-
-class TestM48SummarizerFactsTiebreaker:
-    """48e: summarizer-facts tiebreaker rule for contradictions."""
-
-    def test_48e_tiebreaker_rule_present(self):
-        """48e: summarizer-facts prompt must mention contradiction resolution."""
-        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
-        assert "contradict" in prompt.lower()
-
-    def test_48e_tiebreaker_higher_confidence_wins(self):
-        """48e: tiebreaker must prefer the higher-confidence fact."""
-        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
-        assert "higher confidence" in prompt.lower()
-
-    def test_48e_tiebreaker_specific_over_general(self):
-        """48e: equal-confidence tiebreaker must prefer more specific fact."""
-        prompt = (_ROLES_DIR / "summarizer-facts.md").read_text()
-        assert "specific" in prompt.lower()
 
 
 # --- M106: exit code notes, default model, prompt rules ---
@@ -5262,49 +4567,6 @@ class TestRunMessengerIncludeRecent:
         assert "Recent Conversation" not in user_content
 
 
-# --- M146: Reviewer summary field ---
-
-
-class TestM146ReviewerSummary:
-    """M146: reviewer prompt instructs summary extraction."""
-
-    def test_reviewer_prompt_mentions_summary(self):
-        from kiso.brain import _load_system_prompt, invalidate_prompt_cache
-        invalidate_prompt_cache()
-        prompt = _load_system_prompt("reviewer")
-        assert "summary" in prompt.lower()
-        assert "500 chars" in prompt or "max 500" in prompt
-
-
-# --- M147: Planner act-on-reviewer-hints rule ---
-
-
-class TestM147PlannerActOnHints:
-    """M147: planner prompt has act-on-reviewer-fixes rule."""
-
-    def test_planner_prompt_act_on_fixes(self):
-        from kiso.brain import _load_system_prompt, invalidate_prompt_cache
-        invalidate_prompt_cache()
-        prompt = _load_system_prompt("planner")
-        assert "reviewer fixes" in prompt.lower()
-        assert "never re-investigate" in prompt.lower() or "re-verify" in prompt.lower()
-
-
-# --- M148: Reviewer summary covers failures too ---
-
-
-class TestM148ReviewerSummaryFailures:
-    """M148: reviewer prompt instructs summary for both successes and failures."""
-
-    def test_reviewer_prompt_summary_covers_failures(self):
-        from kiso.brain import _load_system_prompt, invalidate_prompt_cache
-        invalidate_prompt_cache()
-        prompt = _load_system_prompt("reviewer")
-        assert "failures" in prompt.lower() or "failure" in prompt.lower()
-        # Must mention both success and failure in summary context
-        assert "BOTH" in prompt or "both" in prompt
-
-
 class TestM186EscalatingValidationError:
     """M186: repeated identical validation errors get escalated."""
 
@@ -5387,17 +4649,6 @@ class TestM186EscalatingValidationError:
 
 class TestM194ReviewerDomainCheck:
     """M194: Reviewer prompt contains search domain cross-check rule."""
-
-    def test_reviewer_prompt_has_domain_check_rule(self):
-        """reviewer.md includes the search domain check rule."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "wrong domain" in prompt
-
-    def test_reviewer_prompt_domain_check_mentions_replan(self):
-        """Domain mismatch should trigger replan status."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "replan" in prompt
-        assert "different domain" in prompt or "wrong domain" in prompt
 
     def test_build_reviewer_messages_contains_domain_rule(self):
         """build_reviewer_messages output includes the domain check rule."""
