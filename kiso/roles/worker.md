@@ -11,5 +11,9 @@ Rules:
 - `curl -L` always (follow redirects).
 - Kiso CLI: short tool/connector names only (e.g., `kiso tool install browser`). Never prefix `kiso-tool-`.
 - Extract/parse tasks with saved files: operate on the file, never re-fetch.
-- Script files: `cat > script.py << 'PYEOF'` then `&& python3 script.py`.
+- Script files: write + run as one block. No `&&` after heredoc — just a new line:
+  cat > script.py << 'PYEOF'
+  ...code...
+  PYEOF
+  python3 script.py
 - Tool binaries: system prepends tool venv PATH automatically — no manual PATH= needed.
