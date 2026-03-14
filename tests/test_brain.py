@@ -7335,6 +7335,56 @@ class TestValidatePlanOrdering:
         assert any("Last task must be" in e for e in errors)
 
 
+class TestNonActionableExecDetail:
+    """M626: reject exec tasks with analytical/vague details."""
+
+    def _plan(self, detail):
+        return {"goal": "test", "tasks": [
+            {"type": "exec", "detail": detail, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+
+    def test_analytical_check_rejected(self):
+        errors = validate_plan(self._plan(
+            "Check the content of the downloaded kiso.toml file to identify required environment variables"
+        ))
+        assert any("analytical" in e for e in errors)
+
+    def test_identify_rejected(self):
+        errors = validate_plan(self._plan(
+            "Identify required environment variables for the browser tool"
+        ))
+        assert any("analytical" in e for e in errors)
+
+    def test_determine_rejected(self):
+        errors = validate_plan(self._plan(
+            "Determine which dependencies are missing"
+        ))
+        assert any("analytical" in e for e in errors)
+
+    def test_concrete_command_accepted(self):
+        errors = validate_plan(self._plan("Run kiso tool install browser"))
+        assert not any("analytical" in e for e in errors)
+
+    def test_verify_with_path_accepted(self):
+        errors = validate_plan(self._plan(
+            "Verify that /tmp/output.txt exists"
+        ))
+        assert not any("analytical" in e for e in errors)
+
+    def test_inspect_without_path_rejected(self):
+        errors = validate_plan(self._plan(
+            "Inspect the contents of the configuration to find missing keys"
+        ))
+        assert any("analytical" in e for e in errors)
+
+    def test_normal_exec_accepted(self):
+        errors = validate_plan(self._plan(
+            "Create a markdown file with the top 5 programming languages"
+        ))
+        assert not any("analytical" in e for e in errors)
+
+
 # --- M558: _build_strict_schema + _join_or_empty helpers ---
 
 

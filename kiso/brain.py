@@ -505,6 +505,27 @@ def _validate_plan_structure(
     return errors, tasks
 
 
+# Exec details starting with these phrases are analytical (not shell-translatable).
+# Exception: if the detail also contains a `/` path or known binary, allow it
+# (e.g., "Verify that /tmp/output.txt exists" → `test -f /tmp/output.txt`).
+_NON_ACTIONABLE_PREFIXES = (
+    "check the content", "identify ", "determine ", "analyze ",
+    "validate the ", "verify the content", "inspect the content",
+    "review the ", "understand ", "evaluate ",
+)
+
+
+def _is_non_actionable_exec(detail: str) -> bool:
+    """Return True if exec detail is analytical rather than shell-actionable."""
+    lower = detail.lower().strip()
+    if not any(lower.startswith(p) for p in _NON_ACTIONABLE_PREFIXES):
+        return False
+    # Allow if detail contains a concrete path or known binary
+    if "/" in detail:
+        return False
+    return True
+
+
 def _validate_plan_tasks(
     tasks: list[dict],
     installed_skills: list[str] | None,
@@ -530,6 +551,12 @@ def _validate_plan_tasks(
                 f"Task {i}: exec detail is {len(detail)} chars — too long. "
                 f"Detail must be natural language intent, not embedded data or commands. "
                 f"Save large data to files and reference the file path instead."
+            )
+        if t == TASK_TYPE_EXEC and _is_non_actionable_exec(detail):
+            errors.append(
+                f"Task {i}: exec detail is analytical, not actionable — "
+                f"rewrite as a concrete shell command description "
+                f"(e.g., 'Run kiso tool install browser')"
             )
         if t == TASK_TYPE_MSG:
             for field in ("expect", "tool", "args"):
