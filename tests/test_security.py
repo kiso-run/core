@@ -24,218 +24,89 @@ from kiso.security import (
 # --- Exec deny list ---
 
 
-class TestCheckCommandDenyList:
-    def test_rm_rf_root_blocked(self):
-        assert check_command_deny_list("rm -rf /") is not None
-
-    def test_rm_rf_home_blocked(self):
-        assert check_command_deny_list("rm -rf ~") is not None
-
-    def test_rm_rf_env_home_blocked(self):
-        assert check_command_deny_list("rm -rf $HOME") is not None
-
-    def test_rm_fr_root_blocked(self):
-        """Flags reversed: rm -fr /"""
-        assert check_command_deny_list("rm -fr /") is not None
-
-    def test_rm_rf_relative_allowed(self):
-        assert check_command_deny_list("rm -rf ./build/") is None
-
-    def test_rm_rf_named_dir_allowed(self):
-        assert check_command_deny_list("rm -rf /tmp/mydir") is None
-
-    def test_dd_if_blocked(self):
-        assert check_command_deny_list("dd if=/dev/zero of=/dev/sda") is not None
-
-    def test_mkfs_blocked(self):
-        assert check_command_deny_list("mkfs.ext4 /dev/sda1") is not None
-
-    def test_chmod_777_root_blocked(self):
-        assert check_command_deny_list("chmod -R 777 /") is not None
-
-    def test_chmod_644_allowed(self):
-        assert check_command_deny_list("chmod 644 file.txt") is None
-
-    def test_chown_recursive_blocked(self):
-        assert check_command_deny_list("chown -R root:root /var") is not None
-
-    def test_shutdown_blocked(self):
-        assert check_command_deny_list("shutdown -h now") is not None
-
-    def test_reboot_blocked(self):
-        assert check_command_deny_list("reboot") is not None
-
-    def test_fork_bomb_blocked(self):
-        assert check_command_deny_list(":(){ :|:& };:") is not None
-
-    def test_blocks_pipe_to_dangerous(self):
-        assert check_command_deny_list("echo hello | rm -rf /") is not None
-
-    def test_blocks_semicolon_dangerous(self):
-        assert check_command_deny_list("echo hello; rm -rf /") is not None
-
-    def test_blocks_and_dangerous(self):
-        assert check_command_deny_list("echo hello && rm -rf /") is not None
-
-    def test_blocks_or_dangerous(self):
-        assert check_command_deny_list("echo hello || rm -rf /") is not None
-
-    def test_blocks_newline_dangerous(self):
-        assert check_command_deny_list("echo hello\nrm -rf /") is not None
-
-    def test_blocks_command_substitution(self):
-        assert check_command_deny_list("echo $(rm -rf /)") is not None
-
-    def test_blocks_backtick_substitution(self):
-        assert check_command_deny_list("echo `rm -rf /`") is not None
-
-    def test_allows_safe_pipe(self):
-        assert check_command_deny_list("ls | grep foo") is None
-
-    def test_allows_safe_semicolon(self):
-        assert check_command_deny_list("echo a; echo b") is None
-
+# (cmd, should_block, hint_contains) — hint_contains is None or a substring to check
+_DENY_LIST_CASES = [
+    # --- Core destructive commands ---
+    ("rm -rf /", True, "exact path"),
+    ("rm -rf ~", True, None),
+    ("rm -rf $HOME", True, None),
+    ("rm -fr /", True, None),  # flags reversed
+    ("rm -rf ./build/", False, None),
+    ("rm -rf /tmp/mydir", False, None),
+    ("dd if=/dev/zero of=/dev/sda", True, None),
+    ("mkfs.ext4 /dev/sda1", True, None),
+    ("chmod -R 777 /", True, None),
+    ("chmod 644 file.txt", False, None),
+    ("chown -R root:root /var", True, None),
+    ("shutdown -h now", True, None),
+    ("reboot", True, None),
+    (":(){ :|:& };:", True, None),
+    # --- Compound commands with dangerous segments ---
+    ("echo hello | rm -rf /", True, None),
+    ("echo hello; rm -rf /", True, None),
+    ("echo hello && rm -rf /", True, None),
+    ("echo hello || rm -rf /", True, None),
+    ("echo hello\nrm -rf /", True, None),
+    ("echo $(rm -rf /)", True, None),
+    ("echo `rm -rf /`", True, None),
+    ("ls | grep foo", False, None),
+    ("echo a; echo b", False, None),
     # --- 21a: deny list bypass patterns ---
-
-    def test_base64_pipe_to_sh_blocked(self):
-        assert check_command_deny_list("echo cm0gLXJmIC8= | base64 -d | sh") is not None
-
-    def test_base64_pipe_to_bash_blocked(self):
-        assert check_command_deny_list("echo foo | base64 -d | bash") is not None
-
-    def test_base64_pipe_to_zsh_blocked(self):
-        assert check_command_deny_list("echo foo | base64 -d | zsh") is not None
-
-    def test_python_c_blocked(self):
-        assert check_command_deny_list('python3 -c "import os; os.system(\'rm -rf /\')"') is not None
-
-    def test_python2_c_blocked(self):
-        assert check_command_deny_list('python2 -c "print(1)"') is not None
-
-    def test_perl_e_blocked(self):
-        assert check_command_deny_list('perl -e "system(\'rm -rf /\')"') is not None
-
-    def test_ruby_e_blocked(self):
-        assert check_command_deny_list('ruby -e "system(\'rm -rf /\')"') is not None
-
-    def test_eval_blocked(self):
-        assert check_command_deny_list("eval $(printf '\\x72\\x6d -rf /')") is not None
-
-    def test_node_e_blocked(self):
-        assert check_command_deny_list('node -e "require(\'child_process\').exec(\'rm -rf /\')"') is not None
-
+    ("echo cm0gLXJmIC8= | base64 -d | sh", True, None),
+    ("echo foo | base64 -d | bash", True, None),
+    ("echo foo | base64 -d | zsh", True, None),
+    ('python3 -c "import os; os.system(\'rm -rf /\')"', True, None),
+    ('python2 -c "print(1)"', True, None),
+    ('perl -e "system(\'rm -rf /\')"', True, None),
+    ('ruby -e "system(\'rm -rf /\')"', True, None),
+    ("eval $(printf '\\x72\\x6d -rf /')", True, None),
+    ('node -e "require(\'child_process\').exec(\'rm -rf /\')"', True, None),
     # --- 21a: safe uses NOT blocked ---
-
-    def test_python3_script_allowed(self):
-        assert check_command_deny_list("python3 script.py") is None
-
-    def test_node_app_allowed(self):
-        assert check_command_deny_list("node app.js") is None
-
-    def test_echo_base64_allowed(self):
-        assert check_command_deny_list("echo hello | base64") is None
-
-    def test_perl_script_allowed(self):
-        assert check_command_deny_list("perl script.pl") is None
-
-    def test_ruby_script_allowed(self):
-        assert check_command_deny_list("ruby script.rb") is None
-
-    def test_node_no_flag_allowed(self):
-        assert check_command_deny_list("node server.js --port 3000") is None
-
-    def test_normal_commands_allowed(self):
-        for cmd in ["ls -la", "echo hello", "git status", "python3 script.py"]:
-            assert check_command_deny_list(cmd) is None, f"Should allow: {cmd}"
-
+    ("python3 script.py", False, None),
+    ("node app.js", False, None),
+    ("echo hello | base64", False, None),
+    ("perl script.pl", False, None),
+    ("ruby script.rb", False, None),
+    ("node server.js --port 3000", False, None),
+    ("ls -la", False, None),
+    ("echo hello", False, None),
+    ("git status", False, None),
     # --- .kiso config file write protection ---
-
-    def test_env_direct_overwrite_blocked(self):
-        assert check_command_deny_list("echo KISO_LLM_API_KEY=sk-x > ~/.kiso/.env") is not None
-
-    def test_env_printf_overwrite_blocked(self):
-        assert check_command_deny_list("printf 'KEY=%s\\n' val > ~/.kiso/.env") is not None
-
-    def test_env_cat_heredoc_overwrite_blocked(self):
-        assert check_command_deny_list("cat > ~/.kiso/.env << 'EOF'") is not None
-
-    def test_env_append_blocked(self):
-        assert check_command_deny_list("echo KEY=val >> ~/.kiso/.env") is not None
-
-    def test_env_root_path_blocked(self):
-        assert check_command_deny_list("echo KEY=val > /root/.kiso/.env") is not None
-
-    def test_config_toml_overwrite_blocked(self):
-        assert check_command_deny_list("cat > ~/.kiso/config.toml << 'EOF'") is not None
-
-    def test_config_toml_root_path_blocked(self):
-        assert check_command_deny_list("echo '[settings]' > /root/.kiso/config.toml") is not None
-
-    def test_kiso_env_set_allowed(self):
-        """kiso env set is the correct way — must NOT be blocked."""
-        assert check_command_deny_list("kiso env set KISO_LLM_API_KEY sk-or-v1-abc") is None
-
-    def test_env_write_session_file_allowed(self):
-        """Writing to session workspace files is fine."""
-        assert check_command_deny_list("echo hello > ~/.kiso/sessions/abc/output.txt") is None
-
-    def test_other_env_file_allowed(self):
-        """Writing to a project .env (not .kiso/) is allowed."""
-        assert check_command_deny_list("echo KEY=val > /tmp/myproject/.env") is None
-
+    ("echo KISO_LLM_API_KEY=sk-x > ~/.kiso/.env", True, "kiso env set"),
+    ("printf 'KEY=%s\\n' val > ~/.kiso/.env", True, None),
+    ("cat > ~/.kiso/.env << 'EOF'", True, None),
+    ("echo KEY=val >> ~/.kiso/.env", True, None),
+    ("echo KEY=val > /root/.kiso/.env", True, None),
+    ("cat > ~/.kiso/config.toml << 'EOF'", True, None),
+    ("echo '[settings]' > /root/.kiso/config.toml", True, None),
+    ("kiso env set KISO_LLM_API_KEY sk-or-v1-abc", False, None),
+    ("echo hello > ~/.kiso/sessions/abc/output.txt", False, None),
+    ("echo KEY=val > /tmp/myproject/.env", False, None),
     # --- M84j: deny list bypass fixes ---
-
-    def test_rm_rf_home_slash_blocked(self):
-        """M84j: rm -rf ~/ (trailing slash) must be blocked."""
-        assert check_command_deny_list("rm -rf ~/") is not None
-
-    def test_rm_rf_home_env_slash_blocked(self):
-        """M84j: rm -rf $HOME/ (trailing slash) must be blocked."""
-        assert check_command_deny_list("rm -rf $HOME/") is not None
-
-    def test_rm_r_home_blocked(self):
-        """M84j: rm -r ~ (without -f) must also be blocked."""
-        assert check_command_deny_list("rm -r ~") is not None
-
-    def test_rm_r_root_blocked(self):
-        """M84j: rm -r / must be blocked."""
-        assert check_command_deny_list("rm -r /") is not None
-
-    def test_fork_bomb_named_function_blocked(self):
-        """M84j: named-function fork bomb variant must be blocked."""
-        assert check_command_deny_list("a(){ a|a& }; a") is not None
-
+    ("rm -rf ~/", True, None),
+    ("rm -rf $HOME/", True, None),
+    ("rm -r ~", True, None),
+    ("rm -r /", True, None),
+    ("a(){ a|a& }; a", True, None),
     # --- M488: actionable hints ---
+    ('python3 -c "print(1)"', True, "script.py"),
+    ('node -e "console.log(1)"', True, "script.js"),
+    ("eval echo hello", True, "directly"),
+    ("echo KEY=val > ~/.kiso/.env", True, "kiso env set"),
+]
 
-    def test_python_c_hint_contains_script_file(self):
-        """M488: python -c denial includes script file alternative."""
-        msg = check_command_deny_list('python3 -c "print(1)"')
-        assert "Hint:" in msg
-        assert "script.py" in msg
 
-    def test_node_e_hint_contains_script_file(self):
-        """M488: node -e denial includes script file alternative."""
-        msg = check_command_deny_list('node -e "console.log(1)"')
-        assert "Hint:" in msg
-        assert "script.js" in msg
-
-    def test_eval_hint_contains_alternative(self):
-        """M488: eval denial includes direct command alternative."""
-        msg = check_command_deny_list("eval echo hello")
-        assert "Hint:" in msg
-        assert "directly" in msg
-
-    def test_rm_rf_root_hint(self):
-        """M488: rm -rf / denial includes specific path hint."""
-        msg = check_command_deny_list("rm -rf /")
-        assert "Hint:" in msg
-        assert "exact path" in msg
-
-    def test_kiso_env_hint(self):
-        """M488: .kiso/.env write denial suggests kiso env set."""
-        msg = check_command_deny_list("echo KEY=val > ~/.kiso/.env")
-        assert "Hint:" in msg
-        assert "kiso env set" in msg
+class TestCheckCommandDenyList:
+    @pytest.mark.parametrize(
+        "cmd,should_block,hint_contains",
+        _DENY_LIST_CASES,
+        ids=[c[0][:50] for c in _DENY_LIST_CASES],
+    )
+    def test_check_command_deny_list(self, cmd, should_block, hint_contains):
+        result = check_command_deny_list(cmd)
+        assert (result is not None) == should_block, f"cmd={cmd!r}"
+        if hint_contains is not None:
+            assert hint_contains in result, f"cmd={cmd!r} missing hint {hint_contains!r}"
 
     def test_no_hint_for_generic_deny(self):
         """M488: patterns without hints don't include 'Hint:' in message."""
