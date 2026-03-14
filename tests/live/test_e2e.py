@@ -156,7 +156,8 @@ class TestReplanFlowE2E:
             seeded_db, plan_id, live_session,
             type="exec",
             detail="ls /absolutely_nonexistent_dir_xyz_12345",
-            expect="Directory listing with files",
+            expect="Output must list at least 3 filenames — "
+                   "empty output or 'No such file' means failure",
         )
         await create_task(
             seeded_db, plan_id, live_session,
