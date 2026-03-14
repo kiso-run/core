@@ -813,6 +813,37 @@ def _make_plan_output(
     return {"index": index, "type": task_type, "detail": detail, "output": output, "status": status}
 
 
+async def _fail_task_and_audit(
+    ctx: _PlanCtx, task_id: int, task_type: str, detail: str,
+    error: str, task_idx: int, *,
+    replan_reason: str | None = None,
+    output: str | None = None, stderr: str | None = None,
+) -> _TaskHandlerResult:
+    """Handle a task failure: update status, audit, build plan output, return stop result.
+
+    *output* defaults to *error*, *stderr* defaults to None.
+    *replan_reason* defaults to *error*.
+    """
+    log.error("Task %d %s failed: %s", task_id, task_type, error)
+    await update_task(
+        ctx.db, task_id, "failed",
+        output=output if output is not None else error,
+        stderr=stderr,
+    )
+    audit.log_task(
+        ctx.session, task_id, task_type, detail, "failed", 0, 0,
+        deploy_secrets=ctx.deploy_secrets, session_secrets=ctx.session_secrets,
+    )
+    plan_output = _make_plan_output(
+        task_idx, task_type, detail, error, "failed", session=ctx.session,
+    )
+    return _TaskHandlerResult(
+        stop=True, stop_success=False,
+        stop_replan=replan_reason or error,
+        plan_output=plan_output,
+    )
+
+
 async def _store_step_usage(
     db: aiosqlite.Connection, task_id: int, usage_idx_before: int
 ) -> None:
@@ -1031,20 +1062,9 @@ async def _handle_tool_task(
                 setup_error = "Tool args validation failed: " + "; ".join(validation_errors)
 
     if setup_error:
-        log.error("Tool setup failed for task %d: %s", task_id, setup_error)
-        await update_task(ctx.db, task_id, "failed", output=setup_error)
-        audit.log_task(
-            ctx.session, task_id, "tool", detail, "failed", 0, 0,
-            deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        plan_output = _make_plan_output(
-            i + 1, "tool", detail, setup_error, "failed", session=ctx.session,
-        )
-        return _TaskHandlerResult(
-            stop=True, stop_success=False,
-            stop_replan=f"Tool task failed: {setup_error}",
-            plan_output=plan_output,
+        return await _fail_task_and_audit(
+            ctx, task_id, "tool", detail, setup_error, i + 1,
+            replan_reason=f"Tool task failed: {setup_error}",
         )
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
@@ -1052,18 +1072,7 @@ async def _handle_tool_task(
     # Disk limit check (M218)
     disk_err = _check_disk_limit(ctx.config)
     if disk_err:
-        log.error("Disk limit exceeded for task %d: %s", task_id, disk_err)
-        await update_task(ctx.db, task_id, "failed", output=disk_err)
-        audit.log_task(
-            ctx.session, task_id, TASK_TYPE_TOOL, detail, "failed", 0, 0,
-            deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        return _TaskHandlerResult(
-            stop=True, stop_success=False,
-            stop_replan=disk_err,
-            plan_output=_make_plan_output(i + 1, TASK_TYPE_TOOL, detail, disk_err, "failed", session=ctx.session),
-        )
+        return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_TOOL, detail, disk_err, i + 1)
 
     # Snapshot workspace before execution to detect new files (M215)
     pre_snapshot = _snapshot_workspace(ctx.session)
@@ -1145,18 +1154,7 @@ async def _handle_exec_task(
     # Disk limit check (M218)
     disk_err = _check_disk_limit(ctx.config)
     if disk_err:
-        log.error("Disk limit exceeded for task %d: %s", task_id, disk_err)
-        await update_task(ctx.db, task_id, "failed", output=disk_err)
-        audit.log_task(
-            ctx.session, task_id, TASK_TYPE_EXEC, detail, "failed", 0, 0,
-            deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
-        return _TaskHandlerResult(
-            stop=True, stop_success=False,
-            stop_replan=disk_err,
-            plan_output=_make_plan_output(i + 1, TASK_TYPE_EXEC, detail, disk_err, "failed", session=ctx.session),
-        )
+        return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_EXEC, detail, disk_err, i + 1)
 
     # Briefer: select relevant plan_outputs for this exec task
     idx_exec = get_usage_index()
@@ -1200,21 +1198,10 @@ async def _handle_exec_task(
                 retry_context=retry_context,
             )
         except ExecTranslatorError as e:
-            log.error("Exec translation failed for task %d: %s", task_id, e)
             error_output = f"Translation failed: {e}"
-            await update_task(ctx.db, task_id, "failed", output="", stderr=error_output)
-            audit.log_task(
-                ctx.session, task_id, "exec", detail, "failed", 0, 0,
-                deploy_secrets=ctx.deploy_secrets,
-                session_secrets=ctx.session_secrets,
-            )
-            plan_output = _make_plan_output(
-                i + 1, "exec", detail, error_output, "failed", session=ctx.session,
-            )
-            return _TaskHandlerResult(
-                stop=True, stop_success=False,
-                stop_replan=error_output,
-                plan_output=plan_output,
+            return await _fail_task_and_audit(
+                ctx, task_id, "exec", detail, error_output, i + 1,
+                output="", stderr=error_output,
             )
 
         await _append_calls(ctx.db, task_id, idx_translate)

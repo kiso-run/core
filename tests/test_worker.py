@@ -12059,3 +12059,59 @@ class TestPendingMessagesDrain:
         assert planner_calls[0] == 2
         # Pending list should be empty after drain
         assert len(pending) == 0
+
+
+# --- M560: _fail_task_and_audit helper ---
+
+
+class TestFailTaskAndAudit:
+    @pytest.fixture
+    def ctx(self):
+        """Minimal _PlanCtx mock."""
+        from kiso.worker.loop import _PlanCtx
+        c = MagicMock(spec=_PlanCtx)
+        c.db = AsyncMock()
+        c.session = "test-session"
+        c.deploy_secrets = []
+        c.session_secrets = []
+        c.plan_outputs = []
+        return c
+
+    @pytest.mark.asyncio
+    async def test_returns_stop_result(self, ctx):
+        from kiso.worker.loop import _fail_task_and_audit
+        with patch("kiso.worker.loop.update_task", new_callable=AsyncMock) as mock_update, \
+             patch("kiso.worker.loop.audit") as mock_audit, \
+             patch("kiso.worker.loop._save_large_output", side_effect=lambda s, i, o: o):
+            result = await _fail_task_and_audit(ctx, 42, "tool", "do stuff", "broken", 3)
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.stop_replan == "broken"
+        assert result.plan_output["status"] == "failed"
+        assert result.plan_output["output"] == "broken"
+        mock_update.assert_awaited_once()
+        mock_audit.log_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_custom_replan_reason(self, ctx):
+        from kiso.worker.loop import _fail_task_and_audit
+        with patch("kiso.worker.loop.update_task", new_callable=AsyncMock), \
+             patch("kiso.worker.loop.audit"), \
+             patch("kiso.worker.loop._save_large_output", side_effect=lambda s, i, o: o):
+            result = await _fail_task_and_audit(
+                ctx, 42, "tool", "d", "err", 1, replan_reason="custom reason",
+            )
+        assert result.stop_replan == "custom reason"
+
+    @pytest.mark.asyncio
+    async def test_custom_output_and_stderr(self, ctx):
+        from kiso.worker.loop import _fail_task_and_audit
+        with patch("kiso.worker.loop.update_task", new_callable=AsyncMock) as mock_update, \
+             patch("kiso.worker.loop.audit"), \
+             patch("kiso.worker.loop._save_large_output", side_effect=lambda s, i, o: o):
+            await _fail_task_and_audit(
+                ctx, 42, "exec", "d", "err", 1, output="", stderr="stderr msg",
+            )
+        call_kwargs = mock_update.call_args
+        assert call_kwargs[1]["output"] == ""
+        assert call_kwargs[1]["stderr"] == "stderr msg"
