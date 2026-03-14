@@ -8069,3 +8069,71 @@ class TestIsStopMessage:
         """ALL-CAPS under 4 chars should not match."""
         assert is_stop_message("NO") is False
         assert is_stop_message("OK") is False
+
+
+# ── M557: Sub-validator focused tests ────────────────────────
+
+
+class TestValidatePlanStructure:
+    """Focused tests for _validate_plan_structure."""
+
+    def test_empty_tasks(self):
+        from kiso.brain import _validate_plan_structure
+        errors, tasks = _validate_plan_structure({"tasks": []}, max_tasks=None, is_replan=False)
+        assert "must not be empty" in errors[0]
+        assert tasks == []
+
+    def test_max_tasks_exceeded(self):
+        from kiso.brain import _validate_plan_structure
+        plan = {"tasks": [{"type": "msg"}, {"type": "msg"}, {"type": "msg"}]}
+        errors, _ = _validate_plan_structure(plan, max_tasks=2, is_replan=False)
+        assert any("max allowed is 2" in e for e in errors)
+
+    def test_strips_extend_replan_on_initial(self):
+        from kiso.brain import _validate_plan_structure
+        plan = {"tasks": [{"type": "msg"}], "extend_replan": True}
+        _validate_plan_structure(plan, max_tasks=None, is_replan=False)
+        assert "extend_replan" not in plan
+
+    def test_keeps_extend_replan_on_replan(self):
+        from kiso.brain import _validate_plan_structure
+        plan = {"tasks": [{"type": "msg"}], "extend_replan": True}
+        _validate_plan_structure(plan, max_tasks=None, is_replan=True)
+        assert plan.get("extend_replan") is True
+
+
+class TestValidatePlanOrdering:
+    """Focused tests for _validate_plan_ordering."""
+
+    def test_msg_before_exec_rejected(self):
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "msg", "detail": "Answer in English. hi"},
+            {"type": "exec", "detail": "do something", "expect": "done"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
+        assert any("msg task must come after" in e for e in errors)
+
+    def test_install_in_first_plan_rejected(self):
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. done"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
+        assert any("installs a tool" in e for e in errors)
+
+    def test_install_in_replan_allowed(self):
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. done"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=False)
+        assert not any("installs a tool" in e for e in errors)
+
+    def test_last_task_must_be_msg_or_replan(self):
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "exec", "detail": "do x", "expect": "done"}]
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
+        assert any("Last task must be" in e for e in errors)

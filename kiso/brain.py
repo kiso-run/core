@@ -508,35 +508,31 @@ def _add_section(parts: list[str], name: str, content: str) -> None:
         parts.append(f"## {name}\n{content}")
 
 
-def validate_plan(
-    plan: dict,
-    installed_skills: list[str] | None = None,
-    max_tasks: int | None = None,
-    installed_skills_info: dict[str, dict] | None = None,
-    is_replan: bool = False,
-    install_approved: bool = False,
-) -> list[str]:
-    """Validate plan semantics. Returns list of error strings (empty = valid).
+def _validate_plan_structure(
+    plan: dict, max_tasks: int | None, is_replan: bool,
+) -> tuple[list[str], list[dict]]:
+    """Check top-level plan fields and strip extend_replan from initial plans.
 
-    If installed_skills is provided, tool tasks are validated against it.
-    If max_tasks is provided, plans with more tasks are rejected.
-    If installed_skills_info is provided (name→tool dict), tool args are
-    validated against the schema at plan time (M166).
-    If is_replan is False, extend_replan is stripped (M171).
+    Returns (errors, tasks) so callers can short-circuit on structural failures.
     """
-    # Strip extend_replan from initial plans (M171)
     if not is_replan:
         plan.pop("extend_replan", None)
     errors: list[str] = []
     tasks = plan.get("tasks", [])
-
     if not tasks:
         errors.append("tasks list must not be empty")
-        return errors
-
-    if max_tasks and len(tasks) > max_tasks:
+    elif max_tasks and len(tasks) > max_tasks:
         errors.append(f"Plan has {len(tasks)} tasks, max allowed is {max_tasks}")
+    return errors, tasks
 
+
+def _validate_plan_tasks(
+    tasks: list[dict],
+    installed_skills: list[str] | None,
+    installed_skills_info: dict[str, dict] | None,
+) -> list[str]:
+    """Check per-task rules: type, detail, expect, args, tool validation."""
+    errors: list[str] = []
     replan_count = 0
     for i, task in enumerate(tasks, 1):
         t = task.get("type")
@@ -560,7 +556,6 @@ def validate_plan(
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
             msg_detail = (task.get("detail") or "").strip()
-            # M487: msg detail must always start with "Answer in {lang}."
             has_lang_prefix = bool(_ANSWER_IN_LANG_RE.match(msg_detail))
             if not has_lang_prefix:
                 errors.append(
@@ -568,7 +563,6 @@ def validate_plan(
                     f"always specify the response language, even for English"
                 )
             else:
-                # M386: msg detail must have substantive content beyond language prefix
                 cleaned = re.sub(r'^Answer in \w+\.\s*', '', msg_detail).strip()
                 if len(cleaned) < 5:
                     errors.append(
@@ -608,7 +602,6 @@ def validate_plan(
                     f"End the plan with that msg — the user's reply triggers the next cycle."
                 )
             elif installed_skills_info and tool_name in installed_skills_info:
-                # Validate args against schema (M166)
                 args_raw = task.get("args") or "{}"
                 try:
                     args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
@@ -618,7 +611,6 @@ def validate_plan(
                     schema = installed_skills_info[tool_name].get("args_schema", {})
                     arg_errors = validate_tool_args(args, schema)
                     if arg_errors:
-                        # M184: include example args format
                         example_args = {
                             aname: _TYPE_EXAMPLES.get(adef.get("type", "string"), "value")
                             for aname, adef in schema.items()
@@ -633,8 +625,16 @@ def validate_plan(
     if replan_count > 1:
         errors.append("A plan can have at most one replan task")
 
+    return errors
+
+
+def _validate_plan_ordering(
+    tasks: list[dict], is_replan: bool, install_approved: bool,
+) -> list[str]:
+    """Check cross-task ordering rules and install safety."""
+    errors: list[str] = []
+
     # msg tasks must not appear before all data-gathering tasks.
-    # Find the index of the first msg and the last exec/search/tool.
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL}
     first_msg_idx = next((i for i, t in enumerate(tasks) if t.get("type") == TASK_TYPE_MSG), None)
     last_data_idx = next((i for i, t in reversed(list(enumerate(tasks))) if t.get("type") in _DATA_TYPES), None)
@@ -666,6 +666,30 @@ def validate_plan(
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")
 
+    return errors
+
+
+def validate_plan(
+    plan: dict,
+    installed_skills: list[str] | None = None,
+    max_tasks: int | None = None,
+    installed_skills_info: dict[str, dict] | None = None,
+    is_replan: bool = False,
+    install_approved: bool = False,
+) -> list[str]:
+    """Validate plan semantics. Returns list of error strings (empty = valid).
+
+    If installed_skills is provided, tool tasks are validated against it.
+    If max_tasks is provided, plans with more tasks are rejected.
+    If installed_skills_info is provided (name→tool dict), tool args are
+    validated against the schema at plan time (M166).
+    If is_replan is False, extend_replan is stripped (M171).
+    """
+    errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
+    if errors:
+        return errors
+    errors.extend(_validate_plan_tasks(tasks, installed_skills, installed_skills_info))
+    errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
     return errors
 
 
