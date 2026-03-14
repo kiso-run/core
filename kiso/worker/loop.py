@@ -1218,6 +1218,9 @@ async def _handle_exec_task(
     # M273: flush briefer calls so CLI renders panels before translator runs
     await _append_calls(ctx.db, task_id, idx_exec)
 
+    # Snapshot workspace before execution to detect new files for auto-publish
+    pre_snapshot = _snapshot_workspace(ctx.session)
+
     retry_context = ""
     exec_retries = 0
     local_plan_output: "dict | None" = None
@@ -1264,6 +1267,8 @@ async def _handle_exec_task(
             invalidate_cache()
             log.debug("Sysenv cache invalidated after package install: %s", command[:80])
 
+        # Auto-publish new files to pub/ and append URLs
+        _auto_publish_skill_files(ctx.session, pre_snapshot)
         pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
         stdout += _format_pub_note(pub_urls)
 
