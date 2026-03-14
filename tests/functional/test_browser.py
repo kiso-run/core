@@ -69,6 +69,14 @@ class TestF1GuidanceStudioScreenshot:
     """Visit guidance.studio, describe the company, and take a screenshot."""
 
     async def test_website_description_and_screenshot(self, run_message):
+        """What: Full pipeline test for browser navigation + screenshot on guidance.studio.
+
+        Why: Validates the multi-turn install flow (propose → confirm → install) and
+        the browser tool's ability to navigate, describe page content, and capture
+        screenshots. If this breaks, Kiso cannot use external tools at all.
+        Expects: Plan succeeds, Italian response with company keywords, .png screenshot
+        published with a reachable URL (>10KB).
+        """
         result = await _run_with_install_flow(
             run_message,
             "vai su guidance.studio, dimmi di cosa si occupa questa azienda "
@@ -122,6 +130,14 @@ class TestF2GazzettaNews:
     """Visit gazzetta.it and extract latest news."""
 
     async def test_news_extraction(self, run_message):
+        """What: Full pipeline test for real-world web scraping on gazzetta.it.
+
+        Why: Validates that the browser tool can handle dynamic news pages and extract
+        structured information (multiple news items). Exercises the same install flow
+        as F1 when the browser tool is not pre-installed.
+        Expects: Plan succeeds, Italian response >200 chars with >=3 lines and
+        at least one sports/news keyword.
+        """
         result = await _run_with_install_flow(
             run_message,
             "vai su gazzetta.it e dimmi quali sono le ultime notizie",

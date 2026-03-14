@@ -27,7 +27,11 @@ class TestSimpleQuestionE2E:
     async def test_simple_question_flow(
         self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
     ):
-        """Full flow: plan a simple question → execute → get answer."""
+        """What: Plans 'What is the tallest mountain?' then executes the full pipeline.
+
+        Why: Validates the simplest happy path — question in, plan created, msg task produces correct answer.
+        Expects: Plan validates, execution succeeds, final msg output mentions 'everest'.
+        """
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user",
             "What is the tallest mountain in the world?",
@@ -78,7 +82,11 @@ class TestExecAndReviewOkE2E:
     async def test_exec_review_ok_flow(
         self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
     ):
-        """Plan with echo → exec → review ok → msg."""
+        """What: Plans 'echo hello world', executes the exec+review+msg pipeline.
+
+        Why: Validates the exec-review-msg pipeline end-to-end with a real LLM reviewer.
+        Expects: Exec tasks complete, output contains 'hello'.
+        """
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user",
             "Run 'echo hello world' and tell me the output",
@@ -130,7 +138,11 @@ class TestReplanFlowE2E:
     async def test_replan_after_failed_exec(
         self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
     ):
-        """Manually-built failing plan → _execute_plan → replan reason."""
+        """What: Builds a plan with a deliberately failing exec (ls nonexistent dir), runs _execute_plan.
+
+        Why: Validates the replan loop — a failed exec must produce a replan reason, and re-planning with that reason yields a valid new plan.
+        Expects: success=False, non-empty replan_reason, second planner call produces a valid plan.
+        """
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user",
             "List files in the project",
@@ -185,7 +197,11 @@ class TestKnowledgeFlowE2E:
     async def test_review_produces_learning(
         self, live_config, seeded_db, live_session,
     ):
-        """_review_task with real LLM → check if learning is stored in DB."""
+        """What: Calls _review_task with a real LLM on a successful exec output.
+
+        Why: Validates that the reviewer extracts sensible learnings from successful task execution.
+        Expects: Review status is 'ok', any learnings are non-trivial strings (len > 5).
+        """
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user",
             "set up the Python project",
@@ -233,10 +249,10 @@ class TestKnowledgeFlowE2E:
 
 class TestReviewerExitCodeE2E:
     async def test_failed_exec_with_error_output_replans(self, live_config):
-        """Command failed with error output + success=False → reviewer replans.
+        """What: Sends a FAILED exec (missing pyproject.toml) to the reviewer.
 
-        The reviewer receives the Command Status section (21e) saying FAILED,
-        plus error output that clearly shows the command did not succeed.
+        Why: Validates the reviewer correctly handles the Command Status FAILED section and triggers replan.
+        Expects: Review passes validation, status is 'replan'.
         """
         review = await asyncio.wait_for(
             run_reviewer(

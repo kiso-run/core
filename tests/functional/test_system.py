@@ -29,6 +29,14 @@ class TestF3SSHKey:
     """Ask kiso to show its SSH public key."""
 
     async def test_ssh_key_display(self, run_message):
+        """What: System introspection test -- ask the agent to display its SSH public key.
+
+        Why: Validates the exec pipeline for system queries. The agent must find and
+        display the SSH key generated in the test fixture, proving it can execute
+        shell commands and return structured system information.
+        Expects: Plan succeeds, Italian response, SSH key in standard format
+        (ssh-ed25519/rsa/ecdsa + base64) present in task outputs.
+        """
         result = await run_message(
             "dammi la tua chiave ssh",
             timeout=180,
@@ -63,6 +71,14 @@ class TestF4GitAiderPush:
 
     @pytest.mark.destructive
     async def test_git_clone_edit_push(self, run_message):
+        """What: Full git workflow test: clone, edit with aider tool, push to remote.
+
+        Why: Validates the most complex multi-tool scenario (git + aider). Tests that
+        Kiso can clone a repository, make intelligent edits, and push changes. This
+        is destructive -- it pushes to a real remote branch.
+        Expects: Plan succeeds, Italian response, git push indicators in output,
+        aider tool or direct editing evidence in task outputs.
+        """
         result = await run_message(
             "clona git@github.com:kiso-run/core.git e sul branch test "
             "aggiorna il timestamp in docs/testing.md e pushalo online",

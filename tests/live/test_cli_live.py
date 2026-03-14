@@ -23,7 +23,11 @@ pytestmark = pytest.mark.live_network
 
 class TestSkillSearch:
     def test_search_returns_results(self, capsys):
-        """kiso skill search (no query) fetches registry and lists skills."""
+        """What: Runs 'kiso skill search' with an empty query string.
+
+        Why: Validates the skill search fetches the remote registry and lists available skills.
+        Expects: Non-empty stdout output.
+        """
         from cli.tool import _tool_search as _skill_search
 
         try:
@@ -34,7 +38,11 @@ class TestSkillSearch:
         assert out.strip()
 
     def test_search_with_query(self, capsys):
-        """kiso skill search 'search' filters results without error."""
+        """What: Runs 'kiso skill search' with query 'search' to filter results.
+
+        Why: Validates the skill search filters by keyword without crashing.
+        Expects: Non-empty stdout output.
+        """
         from cli.tool import _tool_search as _skill_search
 
         try:
@@ -52,7 +60,11 @@ class TestSkillSearch:
 
 class TestConnectorSearch:
     def test_search_returns_results(self, capsys):
-        """kiso connector search (no query) fetches registry and lists connectors."""
+        """What: Runs 'kiso connector search' with an empty query string.
+
+        Why: Validates the connector search fetches the remote registry and lists connectors.
+        Expects: Non-empty stdout output.
+        """
         from cli.connector import _connector_search
 
         try:
@@ -70,7 +82,11 @@ class TestConnectorSearch:
 
 class TestSkillInstallRemove:
     def test_install_and_remove_official_skill(self, tmp_path: Path, capsys):
-        """Install a real skill from kiso-run org → verify → remove → verify."""
+        """What: Installs the 'websearch' tool from kiso-run org, verifies the directory, then removes it.
+
+        Why: Validates the full skill install/remove lifecycle with a real git clone.
+        Expects: After install: dir exists, kiso.toml present, no .installing marker. After remove: dir gone.
+        """
         if shutil.which("git") is None:
             pytest.skip("git not found on PATH")
 
@@ -127,7 +143,11 @@ class TestSkillInstallRemove:
 
 class TestConnectorInstallRemove:
     def test_install_and_remove_official_connector(self, tmp_path: Path, capsys):
-        """Install a real connector from kiso-run org → verify → remove → verify."""
+        """What: Installs the 'discord' connector from kiso-run org, verifies the directory, then removes it.
+
+        Why: Validates the full connector install/remove lifecycle with a real git clone.
+        Expects: After install: dir exists, kiso.toml present, no .installing marker. After remove: dir gone.
+        """
         if shutil.which("git") is None:
             pytest.skip("git not found on PATH")
 
@@ -181,7 +201,11 @@ class TestConnectorInstallRemove:
 
 class TestSkillInstallNotFound:
     def test_install_nonexistent_skill(self, tmp_path: Path, capsys):
-        """Installing a nonexistent skill prints a clean 'not found' message."""
+        """What: Attempts to install a nonexistent skill ('nonexistent-xyz-999').
+
+        Why: Validates the CLI shows a clean user-facing 'not found' error, not raw git stderr.
+        Expects: SystemExit raised, output contains 'not found' and 'kiso-run', no 'fatal:'.
+        """
         if shutil.which("git") is None:
             pytest.skip("git not found on PATH")
 
@@ -213,7 +237,11 @@ class TestSkillInstallNotFound:
 
 class TestConnectorInstallNotFound:
     def test_install_nonexistent_connector(self, tmp_path: Path, capsys):
-        """Installing a nonexistent connector prints a clean 'not found' message."""
+        """What: Attempts to install a nonexistent connector ('nonexistent-xyz-999').
+
+        Why: Validates the CLI shows a clean user-facing 'not found' error, not raw git stderr.
+        Expects: SystemExit raised, output contains 'not found' and 'kiso-run', no 'fatal:'.
+        """
         if shutil.which("git") is None:
             pytest.skip("git not found on PATH")
 

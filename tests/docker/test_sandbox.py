@@ -38,12 +38,22 @@ def sandbox_session(kiso_dir):
 
 class TestSandboxIsolation:
     def test_workspace_owned_by_sandbox_user(self, sandbox_session):
+        """What: Checks the sandbox workspace directory ownership and permissions.
+
+        Why: Validates the workspace is owned by the sandbox user with 0700 permissions (no group/other access).
+        Expects: stat.st_uid matches sandbox uid, mode is 0o700.
+        """
         _, uid, workspace = sandbox_session
         stat = workspace.stat()
         assert stat.st_uid == uid
         assert oct(stat.st_mode & 0o777) == "0o700"
 
     def test_sandbox_user_can_write_inside_workspace(self, sandbox_session):
+        """What: The sandbox user writes a file inside the workspace via 'su'.
+
+        Why: Validates the sandbox user has write access within their own workspace.
+        Expects: File created successfully (exit 0), content matches 'hello'.
+        """
         session, uid, workspace = sandbox_session
         username = f"kiso-s-{_session_hash(session)}"
         result = subprocess.run(
@@ -54,6 +64,11 @@ class TestSandboxIsolation:
         assert (workspace / "test.txt").read_text().strip() == "hello"
 
     def test_sandbox_user_cannot_read_outside_workspace(self, sandbox_session):
+        """What: Creates a root-owned file outside the workspace and tries to read it as the sandbox user.
+
+        Why: Validates sandbox isolation — the user cannot access files outside their workspace.
+        Expects: Non-zero exit code (permission denied).
+        """
         session, uid, workspace = sandbox_session
         outside = workspace.parent / "secret.txt"
         outside.write_text("top-secret")
@@ -68,6 +83,11 @@ class TestSandboxIsolation:
         assert result.returncode != 0
 
     async def test_exec_task_runs_as_sandbox_user(self, sandbox_session):
+        """What: Runs 'id -u' via _exec_task with sandbox_uid and checks the reported UID.
+
+        Why: Validates that _exec_task actually executes commands as the sandbox user, not root.
+        Expects: Command succeeds, stdout matches the sandbox UID.
+        """
         session, uid, workspace = sandbox_session
         stdout, stderr, success, _ = await _exec_task(
             session, "id -u", sandbox_uid=uid,

@@ -80,7 +80,11 @@ class TestToolPlugins:
         self.registry = _load_registry()
 
     def test_tool_plugins(self, tmp_path: Path):
-        """Clone and test each official tool from the registry."""
+        """What: Clones each official tool plugin from the registry, installs deps, runs its test suite.
+
+        Why: Validates that all official tool plugins build and pass their own tests.
+        Expects: All plugin tests pass (non-zero exit causes failure).
+        """
         tools = self.registry.get("tools", [])
         if not tools:
             pytest.skip("No tools in registry")
@@ -100,7 +104,11 @@ class TestConnectorPlugins:
         self.registry = _load_registry()
 
     def test_connector_plugins(self, tmp_path: Path):
-        """Clone and test each official connector from the registry."""
+        """What: Clones each official connector plugin from the registry, installs deps, runs its test suite.
+
+        Why: Validates that all official connector plugins build and pass their own tests.
+        Expects: All connector tests pass (non-zero exit causes failure).
+        """
         connectors = self.registry.get("connectors", [])
         if not connectors:
             pytest.skip("No connectors in registry")

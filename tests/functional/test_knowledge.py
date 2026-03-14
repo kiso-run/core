@@ -29,7 +29,13 @@ class TestChatKBSelfInspection:
     """F9: chat_kb fast path resolves entity "self" for system introspection."""
 
     async def test_chat_kb_self_hostname(self, run_message):
-        """Ask for hostname → fast path returns it from boot facts."""
+        """What: chat_kb fast-path test for system introspection (hostname query).
+
+        Why: Validates that the chat_kb classifier resolves self-inspection queries
+        from boot facts without spawning exec or tool tasks. If this breaks, simple
+        system queries would wastefully invoke the full planner pipeline.
+        Expects: Success, Italian response, no exec/tool tasks, hostname info in output.
+        """
         result = await run_message("qual è il tuo hostname?", timeout=60)
         assert result.success
         assert_italian(result.msg_output)
@@ -57,7 +63,12 @@ class TestMultiTurnLearning:
     """F10: teach a fact → query it back → verify recall."""
 
     async def test_learning_retention(self, run_message):
-        """Teach 'project uses Flask 3.0 with SQLAlchemy' → ask back → Flask mentioned."""
+        """What: Two-turn learning pipeline test: teach a fact, then query it back.
+
+        Why: Validates end-to-end learning retention. If Kiso cannot store and recall
+        taught facts, the entire knowledge system is broken.
+        Expects: Both turns succeed, second response is Italian and mentions "flask".
+        """
         # Message 1: teach a fact
         r1 = await run_message(
             "ricordati che il progetto corrente usa Flask 3.0 con SQLAlchemy",
@@ -85,7 +96,14 @@ class TestEntityTagEnrichment:
     """F11: pre-seeded entity + tagged facts surface in responses."""
 
     async def test_entity_tag_enrichment(self, func_db, run_message):
-        """Pre-seed fact with entity + tags → query → fact content in output."""
+        """What: Entity+tag enrichment test with pre-seeded facts in the DB.
+
+        Why: Validates that the briefer's entity and tag-based retrieval correctly
+        surfaces pre-seeded facts in responses. Without this, stored knowledge with
+        entity/tag metadata would never reach the LLM context.
+        Expects: Success, Italian response mentioning "onboarding" or "saas" from
+        the pre-seeded guidance.studio fact.
+        """
         from kiso.store import find_or_create_entity, save_fact
 
         # Pre-seed a fact with entity + tag
@@ -119,7 +137,14 @@ class TestF13ChatKBClassification:
     """F13: chat_kb fast path for user-defined entity with pre-seeded facts."""
 
     async def test_chat_kb_user_entity(self, func_db, run_message):
-        """Pre-seed entity 'guidance.studio' → ask about it → msg-only plan."""
+        """What: chat_kb classification test for user-defined entities.
+
+        Why: Validates that the system recognizes it can answer from stored knowledge
+        about user-defined entities without executing commands. If broken, every
+        knowledge query would trigger unnecessary exec tasks.
+        Expects: Success, Italian response with pre-seeded fact content, msg-only
+        tasks (no exec or tool), at least 1 msg task.
+        """
         from kiso.store import find_or_create_entity, save_fact
 
         eid = await find_or_create_entity(func_db, "guidance.studio", "website")
@@ -153,7 +178,14 @@ class TestF14CuratorEntityCreation:
     """F14: teach about entity → curator creates entity + tags → recall."""
 
     async def test_curator_entity_creation_and_recall(self, func_db, run_message):
-        """Turn 1: search Python 3.12 → Turn 2: recall what was learned."""
+        """What: Full curator entity creation pipeline across two turns.
+
+        Why: Validates that search triggers learning, the curator creates entities
+        with tags, and the briefer retrieves them on subsequent queries. This is the
+        core knowledge acquisition loop.
+        Expects: "python" entity in DB with >=1 linked fact and >=1 tag after turn 1;
+        turn 2 recalls Python info in Italian.
+        """
         # Turn 1: trigger learning about a specific entity
         r1 = await run_message(
             "cerca info su Python 3.12 — dimmi cosa trovi",
@@ -208,7 +240,14 @@ class TestF15EntityDedupTagReuse:
     """F15: pre-seeded entity 'flask' → teach new fact → no duplicate entity."""
 
     async def test_entity_dedup_tag_reuse(self, func_db, run_message):
-        """Pre-seed Flask entity + fact → teach new Flask fact → verify dedup."""
+        """What: Entity deduplication test when teaching new facts about existing entities.
+
+        Why: Validates that find_or_create_entity prevents duplicate entities. Without
+        dedup, the entity table would fill with duplicates, degrading retrieval quality
+        and inflating briefer context.
+        Expects: Exactly 1 Flask entity after teaching a new fact, total entity count
+        grows by at most 2.
+        """
         from kiso.store import find_or_create_entity, save_fact
 
         # Pre-seed entity + fact
@@ -258,7 +297,13 @@ class TestF16ScoredFactRetrieval:
     """F16: pre-seeded entities → query targets specific ones, not all."""
 
     async def test_scored_retrieval_filters_irrelevant(self, func_db, run_message):
-        """Pre-seed Flask+Django+guidance → ask about Python → only Python entities."""
+        """What: Scored retrieval relevance test with mixed-domain pre-seeded entities.
+
+        Why: Validates that the briefer's scored retrieval filters by relevance, so
+        irrelevant entities (guidance.studio) do not pollute responses about Python
+        frameworks. Without this, every query would surface all stored facts.
+        Expects: Response mentions Flask/Django but does NOT mention guidance.studio.
+        """
         from kiso.store import find_or_create_entity, save_fact
 
         # Pre-seed 3 entities
@@ -328,7 +373,13 @@ class TestMessengerQuality:
     """F12: messenger output quality — no emoji, no hallucinated actions."""
 
     async def test_messenger_no_emoji_no_hallucination(self, run_message):
-        """Ask a simple question → verify output quality rules."""
+        """What: Messenger output quality check for emoji and hallucination rules.
+
+        Why: Validates M384 quality rules -- the messenger must not use emoji and must
+        not claim actions it did not perform (e.g. "ho esaminato", "ho verificato").
+        Without this, users receive unprofessional or misleading responses.
+        Expects: Italian response with no emoji characters and no false action verbs.
+        """
         result = await run_message("dimmi cosa sai fare", timeout=60)
         assert result.success
         assert_italian(result.msg_output)

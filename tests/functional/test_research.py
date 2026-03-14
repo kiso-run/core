@@ -26,6 +26,13 @@ class TestF7ResearchAndPublish:
     """Search for info, create a markdown table, publish it."""
 
     async def test_search_synthesize_publish(self, run_message):
+        """What: Multi-step pipeline test: search, synthesize into markdown table, publish.
+
+        Why: Validates the search -> artifact creation -> publish pipeline. Ensures Kiso
+        can research a topic, create a structured file, and make it available via URL.
+        Expects: Plan succeeds, .md file published with reachable URL, >=3 programming
+        languages mentioned in output, msg references the published file.
+        """
         result = await run_message(
             "cerca i 5 linguaggi di programmazione più usati nel 2025, "
             "crea un file markdown con una tabella comparativa e mandamelo",
@@ -86,6 +93,13 @@ class TestF8ScriptExecution:
     """Write a Python script, run it, and report the results."""
 
     async def test_fibonacci_script(self, run_message):
+        """What: Code generation + execution pipeline for Fibonacci computation.
+
+        Why: Validates that Kiso can write correct Python code, execute it, and
+        communicate results back in Italian. Tests the exec task type end-to-end.
+        Expects: Plan succeeds, Italian response, Fibonacci numbers (4181 or 6765)
+        appear in task output, msg mentions fibonacci/results.
+        """
         result = await run_message(
             "scrivi uno script python che calcola i primi 20 numeri di "
             "fibonacci, eseguilo e dimmi il risultato",

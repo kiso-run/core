@@ -32,6 +32,14 @@ class TestF5MoltbookSignup:
     """Sign up for moltbook via browser skill."""
 
     async def test_service_signup(self, run_message):
+        """What: External service signup test via browser tool on moltbook.
+
+        Why: Validates real-world browser interaction -- form filling and account
+        creation. This is the highest-stakes browser test as it performs destructive
+        side effects on an external service.
+        Expects: Plan succeeds, Italian response, browser tool used, output contains
+        signup confirmation keywords (iscri/registr/account/etc.).
+        """
         result = await run_message(
             "iscriviti a moltbook",
             timeout=SERVICE_TIMEOUT,
@@ -71,6 +79,14 @@ class TestF6MoltbookPost:
     """Write a post on moltbook (requires prior signup in same session)."""
 
     async def test_service_post(self, run_message):
+        """What: Multi-step service interaction test: signup then post on moltbook.
+
+        Why: Validates session continuity across turns -- the signup context must
+        carry over so the agent can perform an authenticated action (posting).
+        Without session continuity, multi-step service workflows would fail.
+        Expects: Signup succeeds, then posting succeeds with Italian response,
+        browser tool used, output mentions posting keywords.
+        """
         # First ensure signup happened (sends in same session)
         signup_result = await run_message(
             "iscriviti a moltbook",
