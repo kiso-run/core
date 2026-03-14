@@ -32,6 +32,19 @@ _json_object_only_models: set[str] = set()
 _TRANSPORT_RETRY_BACKOFF: float = 1.0
 _MAX_TRANSPORT_RETRIES = 2
 
+# Actionable hints for common HTTP error status codes from LLM providers.
+_LLM_ERROR_HINTS: dict[int, str] = {
+    400: " — model may be unavailable or API key invalid",
+    401: " — check your API key in ~/.kiso/.env",
+    402: " — insufficient credits on your API account",
+    429: " — rate limited, try again shortly",
+}
+
+
+def _ms_since(t0: float) -> int:
+    """Return elapsed milliseconds since *t0* (a perf_counter timestamp)."""
+    return int((time.perf_counter() - t0) * 1000)
+
 # Shared long-lived HTTP client, initialized by main.py lifespan.
 # When set, call_llm reuses the connection pool instead of opening a new
 # TCP/TLS connection per call. Falls back to a per-call client when None.
@@ -383,15 +396,15 @@ async def call_llm(
 
             break  # success
         except LLMStallError:
-            duration_ms = int((time.perf_counter() - t0) * 1000)
+            duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             raise  # already an LLMError subclass — propagate for retry
         except httpx.TimeoutException as e:
-            duration_ms = int((time.perf_counter() - t0) * 1000)
+            duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             raise LLMError(f"LLM call timed out ({type(e).__name__}, {role}, {model_name})")
         except httpx.RequestError as e:
-            duration_ms = int((time.perf_counter() - t0) * 1000)
+            duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             _detail = str(e) or "no detail"
             _transport_retries += 1
@@ -411,7 +424,7 @@ async def call_llm(
             if _temp_client is not None:
                 await _temp_client.aclose()
 
-    duration_ms = int((time.perf_counter() - t0) * 1000)
+    duration_ms = _ms_since(t0)
 
     if _resp_status != 200:
         audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
@@ -420,15 +433,7 @@ async def call_llm(
         if not detail:
             detail = "(empty response body)"
         # Add actionable hints for common HTTP errors
-        hint = ""
-        if _resp_status == 401:
-            hint = " — check your API key in ~/.kiso/.env"
-        elif _resp_status == 402:
-            hint = " — insufficient credits on your API account"
-        elif _resp_status == 400:
-            hint = " — model may be unavailable or API key invalid"
-        elif _resp_status == 429:
-            hint = " — rate limited, try again shortly"
+        hint = _LLM_ERROR_HINTS.get(_resp_status, "")
         raise LLMError(
             f"LLM returned {_resp_status} for {role} ({model_name}): {detail}{hint}"
         )
