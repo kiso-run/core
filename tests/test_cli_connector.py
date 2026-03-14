@@ -16,26 +16,7 @@ from cli.connector import (
     discover_connectors,
     run_connector_command,
 )
-from kiso.config import User
-
-
-# ── Helpers ──────────────────────────────────────────────────
-
-
-def _admin_cfg():
-    cfg = MagicMock()
-    cfg.users = {"alice": User(role="admin")}
-    return cfg
-
-
-@pytest.fixture()
-def mock_admin():
-    """Patch load_config and getpass so require_admin passes."""
-    with (
-        patch("cli.plugin_ops.load_config", return_value=_admin_cfg()),
-        patch("cli.plugin_ops.getpass.getuser", return_value="alice"),
-    ):
-        yield
+from tests._cli_plugin_helpers import mock_admin, _ok_run, fake_clone_plugin  # noqa: F401
 
 
 # ── Subparser parsing ────────────────────────────────────────
@@ -439,24 +420,8 @@ def test_connector_search_cross_type_hint_not_shown_on_empty_query(capsys):
 
 
 def _fake_clone_with_connector_manifest(name="discord", desc="Discord bridge"):
-    """Return a fake_clone function that writes a valid connector repo."""
-    def fake_clone(cmd, **kwargs):
-        dest = Path(cmd[3])
-        dest.mkdir(parents=True, exist_ok=True)
-        (dest / "kiso.toml").write_text(
-            f'[kiso]\ntype = "connector"\nname = "{name}"\n'
-            f'description = "{desc}"\n'
-            f"[kiso.connector]\n"
-            f'platform = "{name}"\n'
-        )
-        (dest / "run.py").write_text("pass\n")
-        (dest / "pyproject.toml").write_text(f"[project]\nname = '{name}'\n")
-        return subprocess.CompletedProcess(cmd, 0)
-    return fake_clone
-
-
-def _ok_run(cmd, **kwargs):
-    return subprocess.CompletedProcess(cmd, 0)
+    """Connector-specific clone factory (delegates to shared helper)."""
+    return fake_clone_plugin("connector", name, description=desc)
 
 
 def test_connector_install_official(tmp_path, mock_admin, capsys):

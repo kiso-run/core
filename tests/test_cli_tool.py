@@ -13,25 +13,7 @@ from cli import build_parser
 from cli.tool import run_tool_command
 from cli.plugin_ops import is_url as _is_url, url_to_name
 from kiso.config import User
-
-
-# ── Helpers ──────────────────────────────────────────────────
-
-
-def _admin_cfg():
-    cfg = MagicMock()
-    cfg.users = {"alice": User(role="admin")}
-    return cfg
-
-
-@pytest.fixture()
-def mock_admin():
-    """Patch load_config and getpass so _require_admin passes."""
-    with (
-        patch("cli.plugin_ops.load_config", return_value=_admin_cfg()),
-        patch("cli.plugin_ops.getpass.getuser", return_value="alice"),
-    ):
-        yield
+from tests._cli_plugin_helpers import mock_admin, _ok_run, fake_clone_plugin  # noqa: F401
 
 
 # ── url_to_name ──────────────────────────────────────────────
@@ -378,24 +360,8 @@ def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
 
 
 def _fake_clone_with_manifest(name="search", summary="Web search", usage_guide="Use default guidance."):
-    """Return a fake_clone function that writes a valid skill repo."""
-    def fake_clone(cmd, **kwargs):
-        dest = Path(cmd[3])
-        dest.mkdir(parents=True, exist_ok=True)
-        (dest / "kiso.toml").write_text(
-            f'[kiso]\ntype = "skill"\nname = "{name}"\n'
-            f"[kiso.skill]\n"
-            f'summary = "{summary}"\n'
-            f'usage_guide = "{usage_guide}"\n'
-        )
-        (dest / "run.py").write_text("pass\n")
-        (dest / "pyproject.toml").write_text(f"[project]\nname = '{name}'\n")
-        return subprocess.CompletedProcess(cmd, 0)
-    return fake_clone
-
-
-def _ok_run(cmd, **kwargs):
-    return subprocess.CompletedProcess(cmd, 0)
+    """Tool-specific clone factory (delegates to shared helper)."""
+    return fake_clone_plugin("tool", name, summary=summary, usage_guide=usage_guide)
 
 
 def test_skill_install_official(tmp_path, mock_admin, capsys):
