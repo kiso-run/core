@@ -56,7 +56,7 @@ class TestPlannerCriticalRules:
         assert "any script" in self.prompt
 
     def test_msg_language_prefix(self):
-        assert "Answer in {language}" in self.prompt
+        assert "Answer in {lang}" in self.prompt
 
     def test_kiso_native_first(self):
         assert "Kiso-native first" in self.prompt

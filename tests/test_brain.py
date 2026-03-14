@@ -3742,7 +3742,7 @@ class TestM286PlannerLanguageUniversal:
     def test_planner_language_handling_rule(self):
         prompt = (_ROLES_DIR / "planner.md").read_text()
         assert "Msg detail:" in prompt
-        assert "messenger translates" in prompt.lower()
+        assert "communication intent" in prompt.lower()
 
 
 class TestM235PlannerScope:

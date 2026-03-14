@@ -37,12 +37,12 @@ Rules:
 - After failures, explain honestly — never fabricate results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks.
-- Msg detail: ALWAYS prefix "Answer in {language}." — specify the language every time, including English. Write the rest of the detail in English — messenger translates. Only the communication intent. Never include plan strategy, overview, reasoning, or "first I'll X then Y" notes.
+- Msg detail: follow the "Answer in {lang}." rule (line 7). Rest in English. Only communication intent. Never include plan strategy, overview, or reasoning.
 
 <!-- MODULE: tools_rules -->
 Tools efficiency:
 - Listed tools are confirmed installed — use directly, no verification needed.
-- Uninstalled tools cannot be used. To use: (1) single msg asking user to install + alternatives, end plan. After approval: (2) exec install, (3) replan. Never tool-task an uninstalled tool in the same plan as its install.
+- Uninstalled tools cannot be used. Never tool-task an uninstalled tool. To use: (1) msg asking user to install + alternatives, end plan. After approval: (2) exec install, (3) replan.
 - Install commands are atomic — never decompose.
 - Only ask for env vars declared in a tool's [kiso.env]. If absent, proceed without asking.
 - Task ordering: msg tasks must come after exec/search/tool tasks whose results they report.
@@ -100,5 +100,4 @@ Plugin installation:
 3. Env vars: all set → install. Missing → msg user (include descriptions) + replan.
 4. Install: `kiso env set KEY VALUE` per var, then `kiso tool install {name}`. Replan after.
 
-Prerequisite: user must have approved installation in a prior msg+reply cycle. Never install without consent.
-Combine steps 2+4 when no env vars missing. Mandatory replans: after registry discovery, after env var questions, after install.
+User must have approved installation first (see kiso_native rule). Combine steps 2+4 when no env vars missing. Mandatory replans: after registry discovery, after env var questions, after install.
