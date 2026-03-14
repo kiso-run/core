@@ -3734,110 +3734,6 @@ class TestPlannerContextualRules:
         # Should appear exactly once
         assert system.count("Plugin installation:") == 1
 
-    async def test_capability_gap_injects_plugin_install(self, db):
-        """M153: message needing uninstalled capability triggers plugin-install appendix."""
-        # "screenshot" maps to "browser" skill — inject appendix when browser not installed
-        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
-            msgs, *_ = await build_planner_messages(
-                db, self._config(), "test-session", "admin",
-                "take a screenshot of example.com",
-            )
-        system = msgs[0]["content"]
-        assert "Plugin installation:" in system
-
-    async def test_capability_gap_no_inject_when_skill_installed(self, db):
-        """M153: no plugin-install injection when the capability skill IS installed."""
-        fake_skills = [
-            {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
-        ]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
-            msgs, *_ = await build_planner_messages(
-                db, self._config(), "test-session", "admin",
-                "take a screenshot of example.com",
-            )
-        system = msgs[0]["content"]
-        assert "Plugin installation:" not in system
-
-    async def test_capability_gap_exposes_skill_name_in_context(self, db):
-        """M198: capability gap detection result is visible in planner context."""
-        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
-            msgs, *_ = await build_planner_messages(
-                db, self._config(), "test-session", "admin",
-                "take a screenshot of the homepage",
-            )
-        context = msgs[1]["content"]
-        assert "Capability Analysis" in context
-        assert "browser" in context
-        assert "not installed" in context
-
-    async def test_capability_gap_no_context_when_skill_installed(self, db):
-        """M198: no capability analysis when the needed skill is installed."""
-        fake_skills = [
-            {"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}},
-        ]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
-            msgs, *_ = await build_planner_messages(
-                db, self._config(), "test-session", "admin",
-                "take a screenshot of the homepage",
-            )
-        context = msgs[1]["content"]
-        assert "Capability Analysis" not in context
-
-    async def test_capability_gap_with_no_skills_installed(self, db):
-        """M198: capability analysis works even when no skills are installed."""
-        with patch("kiso.brain.discover_tools", return_value=[]):
-            msgs, *_ = await build_planner_messages(
-                db, self._config(), "test-session", "admin",
-                "take a screenshot please",
-            )
-        context = msgs[1]["content"]
-        assert "Capability Analysis" in context
-        assert "browser" in context
-
-    async def test_capability_gap_survives_briefer(self, db):
-        """M524: capability gap is injected even when briefer returns empty context."""
-        config = Config(
-            tokens={"cli": "tok"},
-            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-            users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(briefer_enabled=True, context_messages=3),
-            raw={},
-        )
-        briefing = {
-            "modules": [], "tools": [],
-            "context": "",  # empty context — briefer dropped everything
-            "output_indices": [],
-            "relevant_tags": [], "relevant_entities": [],
-        }
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps(briefing)
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
-            msgs, *_ = await build_planner_messages(
-                db, config, "test-session", "admin",
-                "take a screenshot of the homepage",
-            )
-        context = msgs[1]["content"]
-        assert "Capability Analysis" in context
-        assert "browser" in context
-
-    async def test_capability_gap_no_trigger_on_generic_words(self, db):
-        """M223: generic words like 'browse', 'form', 'click' don't trigger capability gap."""
-        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
-            msgs, *_ = await build_planner_messages(
-                db, self._config(), "test-session", "admin",
-                "browse the web and fill the form",
-            )
-        context = msgs[1]["content"]
-        assert "Capability Analysis" not in context
-
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
         msgs, *_ = await build_planner_messages(
@@ -4736,7 +4632,6 @@ class TestBrieferMessages:
             "replan_context": "Previous plan failed due to missing skill",
             "plan_outputs": "[0] exec: install browser\nStatus: done",
             "system_env": "OS: linux\nBinaries: python3, node",
-            "capability_gap": "Skill 'browser' is needed but not installed.",
         }
         # Use "planner" with is_replan=True to include all sections
         msgs = build_briefer_messages("planner", "plan task", pool, is_replan=True)
@@ -4751,7 +4646,6 @@ class TestBrieferMessages:
         assert "Replan Context" in content
         assert "Plan Outputs" in content
         assert "System Environment" in content
-        assert "Capability Analysis" in content
 
     def test_prefilter_removes_replan_context_when_not_replan(self):
         pool = {
@@ -4774,16 +4668,6 @@ class TestBrieferMessages:
         content = msgs[1]["content"]
         assert "Replan Context" in content
         assert "Plan Outputs" in content
-
-    def test_prefilter_removes_capability_gap_for_messenger(self):
-        pool = {
-            "capability_gap": "browser needed",
-            "facts": "some facts",
-        }
-        msgs = build_briefer_messages("messenger", "say hello", pool)
-        content = msgs[1]["content"]
-        assert "Capability Analysis" not in content
-        assert "Known Facts" in content
 
     def test_empty_pool_values_excluded(self):
         pool = {"summary": "", "facts": "", "tools": "browser: navigate"}
@@ -5757,12 +5641,12 @@ class TestM346BrieferEntityRetrieval:
 
 
 # ---------------------------------------------------------------------------
-# M258 — sys_env and capability_gap removed from planner in briefer path
+# M258 — sys_env filtering in briefer path
 # ---------------------------------------------------------------------------
 
 
 class TestM258SysEnvAndGapFiltering:
-    """M258: sys_env and capability_gap go through briefer, not unconditional."""
+    """M258: sys_env goes through briefer, not unconditional."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -5821,51 +5705,6 @@ class TestM258SysEnvAndGapFiltering:
 
         user_content = msgs[1]["content"]
         assert "## System Environment" in user_content
-
-    async def test_capability_gap_in_context_pool_for_briefer(self, db):
-        """M258: capability_gap is passed to briefer in context_pool."""
-        captured_messages = []
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                captured_messages.extend(messages)
-                return json.dumps({
-                    "modules": ["plugin_install"],
-                    "tools": [],
-                    "context": "User wants to take a screenshot. Browser skill missing.",
-                    "output_indices": [],
-                    "relevant_tags": [],
-                    "relevant_entities": [],
-                })
-            return "{}"
-
-        config = self._config(briefer_enabled=True)
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
-                db, config, "sess1", "user", "take a screenshot",
-            )
-
-        # Briefer should receive capability gap in its context
-        briefer_content = captured_messages[1]["content"]
-        assert "Capability Analysis" in briefer_content
-        assert "browser" in briefer_content
-
-        # M524: capability gap is now always injected (briefer may drop it)
-        user_content = msgs[1]["content"]
-        assert "## Capability Analysis" in user_content
-
-    async def test_capability_gap_in_fallback_path(self, db):
-        """M258: fallback path still unconditionally includes capability_gap."""
-        config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_tools", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
-                db, config, "sess1", "user", "take a screenshot",
-            )
-
-        user_content = msgs[1]["content"]
-        assert "## Capability Analysis" in user_content
-        assert "browser" in user_content
 
     async def test_sys_env_in_briefer_context_pool(self, db):
         """M258: sys_env is available to the briefer via context_pool."""

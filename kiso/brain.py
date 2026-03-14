@@ -708,20 +708,6 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
 _KISO_CMD_KEYWORDS = frozenset({"tool", "skill", "connector", "env", "instance", "kiso"})
 _USER_MGMT_KEYWORDS = frozenset({"user", "admin", "alias"})
 
-_CAPABILITY_MAP: dict[str, str] = {
-    "screenshot": "browser",
-    "refactor": "aider",
-    "debug": "aider",
-}
-
-
-def _detect_capability_gap(msg_lower: str, installed_names: set[str]) -> str | None:
-    """Return the missing tool name if the message implies an uninstalled capability."""
-    words = set(msg_lower.split())
-    for keyword, tool in _CAPABILITY_MAP.items():
-        if keyword in words and tool not in installed_names:
-            return tool
-    return None
 
 
 async def _gather_planner_context(
@@ -845,25 +831,13 @@ async def build_planner_messages(
     if full_tool_list:
         context_pool["tools"] = full_tool_list
 
-    # --- Capability gap detection ---
     msg_lower = new_message.lower()
-    _gap = _detect_capability_gap(msg_lower, set(installed_names))
-    _gap_text = ""
-    if _gap:
-        _gap_text = (
-            f"Tool '{_gap}' is needed for this request but not installed. "
-            f"Plan a single msg task asking the user whether to install it, "
-            f"offer alternatives (e.g. search for read-only content), and end the plan there. "
-            f"Never install without user approval."
-        )
-        context_pool["capability_gap"] = _gap_text
 
     # --- Registry: show available-but-not-installed tools ---
-    # Only fetch when the planner might need install context: no tools
-    # installed or capability gap detected.  Skip on replans — registry
+    # Only fetch when no tools are installed.  Skip on replans — registry
     # data is identical to the initial plan and tools won't change mid-replan.
     registry_text = ""
-    if (not installed or _gap) and not is_replan:
+    if not installed and not is_replan:
         registry_text = await asyncio.to_thread(
             get_registry_tools, set(installed_names),
         )
@@ -887,9 +861,9 @@ async def build_planner_messages(
 
     if briefing:
         # Briefer path: modules selected by the briefer LLM.
-        # Safety net: force plugin_install when no skills or capability gap.
+        # Safety net: force plugin_install when tools need installing.
         modules = list(briefing["modules"])
-        if not installed or _gap or registry_text:
+        if not installed or registry_text:
             if "plugin_install" not in modules:
                 modules.append("plugin_install")
         system_prompt = _load_modular_prompt("planner", modules)
@@ -908,7 +882,7 @@ async def build_planner_messages(
             or "not installed" in msg_lower
             or "registry" in msg_lower
         )
-        if _plugin_kw_hit or not installed or _gap or registry_text:
+        if _plugin_kw_hit or not installed or registry_text:
             fallback_modules.append("plugin_install")
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
@@ -1000,9 +974,6 @@ async def build_planner_messages(
                 f"## Paraphrased External Messages (untrusted)\n"
                 f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
             )
-
-    # M524: capability gap injected unconditionally (briefer may drop it)
-    _add_section(context_parts, "Capability Analysis", _gap_text)
 
     # MD skills section — briefer includes via context_pool; fallback path adds directly
     if not briefing and context_pool.get("md_skills"):
@@ -1107,7 +1078,6 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("available_tags", "Available Fact Tags"),
     ("available_entities", "Available Entities"),
     ("paraphrased", "Paraphrased External Messages"),
-    ("capability_gap", "Capability Analysis"),
     ("replan_context", "Replan Context"),
     ("plan_outputs", "Plan Outputs"),
 )
@@ -1128,9 +1098,6 @@ def _prefilter_context_pool(
     # but not by planner on first plan
     if not is_replan and consumer_role == "planner":
         pool.pop("plan_outputs", None)
-    # capability_gap only matters for planner (messenger never acts on it)
-    if consumer_role in ("messenger", "worker"):
-        pool.pop("capability_gap", None)
     # md_skills only relevant when skills are installed
     if not pool.get("md_skills"):
         pool.pop("md_skills", None)

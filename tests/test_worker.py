@@ -10475,24 +10475,6 @@ class TestE2EWebScenario:
         final_msgs = [t for t in msg_tasks if "Example.com" in (t.get("output") or "")]
         assert len(final_msgs) >= 1, f"Expected final msg, got tasks: {[(t['type'], t['status']) for t in tasks]}"
 
-    async def test_capability_gap_triggers_plugin_install_guidance(self, db):
-        """Verify the planner sees plugin-install guidance when screenshot is needed."""
-        from kiso.brain import build_planner_messages
-
-        config = _make_config()
-        # Some skills installed, but NOT browser
-        fake_skills = [{"name": "search", "version": "1.0", "summary": "Search", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
-            msgs, installed, *_ = await build_planner_messages(
-                db, config, "sess1", "admin",
-                "take a screenshot of example.com",
-            )
-        system = msgs[0]["content"]
-        # Plugin-install appendix should be injected (capability gap: screenshot → browser)
-        assert "Plugin installation:" in system
-        # Skills section should show search but not browser
-        assert "search" in installed
-        assert "browser" not in installed
 
 
 # --- M218: _check_disk_limit ---

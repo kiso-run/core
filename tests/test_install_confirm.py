@@ -7,7 +7,6 @@ installation without user approval.
 import pytest
 
 from kiso.brain import (
-    _detect_capability_gap,
     _load_modular_prompt,
     validate_plan,
 )
@@ -91,20 +90,6 @@ class TestValidatePlanInstallConfirmation:
 
 
 # --- 5. Capability gap text ---
-
-
-class TestCapabilityGapText:
-    """Capability gap injection must mention asking the user."""
-
-    def test_gap_mentions_asking_user(self):
-        text = _detect_capability_gap("navigate to example.com", [])
-        if text:
-            assert "ask" in text.lower() or "user" in text.lower()
-
-    def test_gap_mentions_never_install(self):
-        text = _detect_capability_gap("navigate to example.com", [])
-        if text:
-            assert "never install" in text.lower() or "approval" in text.lower()
 
 
 # --- 6. Auto-correct function removed ---
