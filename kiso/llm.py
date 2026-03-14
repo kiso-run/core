@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import contextvars
 import json
 import logging
@@ -44,6 +45,25 @@ _LLM_ERROR_HINTS: dict[int, str] = {
 def _ms_since(t0: float) -> int:
     """Return elapsed milliseconds since *t0* (a perf_counter timestamp)."""
     return int((time.perf_counter() - t0) * 1000)
+
+
+def _strip_messages(messages: list[dict]) -> list[dict]:
+    """Return messages with only role and content keys (strip tool_calls etc.)."""
+    return [{"role": m["role"], "content": m["content"]} for m in messages]
+
+
+@asynccontextmanager
+async def _http_client_ctx(timeout: float):
+    """Yield an httpx.AsyncClient, reusing the shared one or creating a temporary one."""
+    if _http_client is not None:
+        yield _http_client
+    else:
+        temp = httpx.AsyncClient(timeout=timeout)
+        try:
+            yield temp
+        finally:
+            await temp.aclose()
+
 
 # Shared long-lived HTTP client, initialized by main.py lifespan.
 # When set, call_llm reuses the connection pool instead of opening a new
@@ -348,7 +368,7 @@ async def call_llm(
         # Track inflight call so the CLI can show it in real-time
         if session:
             if stripped_messages is None:
-                stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+                stripped_messages = _strip_messages(messages)
             _inflight_calls[session] = {
                 "role": role,
                 "model": model_name,
@@ -356,43 +376,37 @@ async def call_llm(
                 "ts": call_ts,
             }
 
-        _temp_client: httpx.AsyncClient | None = None
         try:
-            if _http_client is not None:
-                _use_client = _http_client
-            else:
-                _temp_client = httpx.AsyncClient(timeout=llm_timeout)
-                _use_client = _temp_client
+            async with _http_client_ctx(llm_timeout) as client:
+                async with client.stream(
+                    "POST", url, headers=headers, json=payload, timeout=llm_timeout,
+                ) as resp:
+                    _resp_status = resp.status_code
+                    if _resp_status != 200:
+                        _error_body = (await resp.aread()).decode(errors="replace")
+                        # Detect json_schema rejection → retry once with json_object.
+                        if (
+                            not _json_schema_retried
+                            and _resp_status == 400
+                            and effective_format
+                            and effective_format.get("type") == _FMT_JSON_SCHEMA
+                            and "response_format" in _error_body.lower()
+                        ):
+                            _json_object_only_models.add(model_name)
+                            log.warning(
+                                "Model %s does not support json_schema, falling back to json_object",
+                                model_name,
+                            )
+                            effective_format = {"type": _FMT_JSON_OBJECT}
+                            _json_schema_retried = True
+                            continue  # retry with json_object
+                        break  # non-retryable error, handle after loop
 
-            async with _use_client.stream(
-                "POST", url, headers=headers, json=payload, timeout=llm_timeout,
-            ) as resp:
-                _resp_status = resp.status_code
-                if _resp_status != 200:
-                    _error_body = (await resp.aread()).decode(errors="replace")
-                    # Detect json_schema rejection → retry once with json_object.
-                    if (
-                        not _json_schema_retried
-                        and _resp_status == 400
-                        and effective_format
-                        and effective_format.get("type") == _FMT_JSON_SCHEMA
-                        and "response_format" in _error_body.lower()
-                    ):
-                        _json_object_only_models.add(model_name)
-                        log.warning(
-                            "Model %s does not support json_schema, falling back to json_object",
-                            model_name,
-                        )
-                        effective_format = {"type": _FMT_JSON_OBJECT}
-                        _json_schema_retried = True
-                        continue  # retry with json_object
-                    break  # non-retryable error, handle after loop
-
-                # Read SSE stream — pass inflight dict for live partial output
-                _inflight = _inflight_calls.get(session) if session else None
-                content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(
-                    resp, stall_timeout=stall_timeout, inflight_dict=_inflight,
-                )
+                    # Read SSE stream — pass inflight dict for live partial output
+                    _inflight = _inflight_calls.get(session) if session else None
+                    content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(
+                        resp, stall_timeout=stall_timeout, inflight_dict=_inflight,
+                    )
 
             break  # success
         except LLMStallError:
@@ -421,8 +435,6 @@ async def call_llm(
             raise LLMError(f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]")
         finally:
             _inflight_calls.pop(session, None)
-            if _temp_client is not None:
-                await _temp_client.aclose()
 
     duration_ms = _ms_since(t0)
 
@@ -473,7 +485,7 @@ async def call_llm(
     entries = _llm_usage_entries.get(None)
     if entries is not None:
         if stripped_messages is None:
-            stripped_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+            stripped_messages = _strip_messages(messages)
         entries.append({
             "role": role,
             "model": model_name,
