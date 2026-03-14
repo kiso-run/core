@@ -694,6 +694,21 @@ async def update_task_command(
 _KEEP_LLM_CALLS = object()  # sentinel: don't touch the llm_calls column
 
 
+def _serialize_llm_calls(
+    llm_calls: list[dict] | None | object,
+) -> tuple[bool, str | None]:
+    """Resolve the *llm_calls* sentinel.
+
+    Returns ``(should_update, json_value)``.  When *llm_calls* is the
+    ``_KEEP_LLM_CALLS`` sentinel, ``should_update`` is ``False`` and the
+    caller should omit the column from the UPDATE.  Otherwise the value
+    is serialised to a JSON string (or ``None`` for an empty/None list).
+    """
+    if llm_calls is _KEEP_LLM_CALLS:
+        return False, None
+    return True, json.dumps(llm_calls) if llm_calls else None
+
+
 async def update_task_usage(
     db: aiosqlite.Connection,
     task_id: int,
@@ -707,16 +722,16 @@ async def update_task_usage(
     preserved (only token totals are updated).  Pass an explicit list to
     overwrite the column, or ``None`` to clear it.
     """
-    if llm_calls is _KEEP_LLM_CALLS:
-        await db.execute(
-            "UPDATE tasks SET input_tokens = ?, output_tokens = ? WHERE id = ?",
-            (input_tokens, output_tokens, task_id),
-        )
-    else:
-        calls_json = json.dumps(llm_calls) if llm_calls else None
+    update, calls_json = _serialize_llm_calls(llm_calls)
+    if update:
         await db.execute(
             "UPDATE tasks SET input_tokens = ?, output_tokens = ?, llm_calls = ? WHERE id = ?",
             (input_tokens, output_tokens, calls_json, task_id),
+        )
+    else:
+        await db.execute(
+            "UPDATE tasks SET input_tokens = ?, output_tokens = ? WHERE id = ?",
+            (input_tokens, output_tokens, task_id),
         )
     await db.commit()
 
@@ -783,18 +798,18 @@ async def update_plan_usage(
     preserved (only totals and model are updated).  Pass an explicit list
     to overwrite the column, or ``None`` to clear it.
     """
-    if llm_calls is _KEEP_LLM_CALLS:
-        await db.execute(
-            "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ? "
-            "WHERE id = ?",
-            (input_tokens, output_tokens, model, plan_id),
-        )
-    else:
-        calls_json = json.dumps(llm_calls) if llm_calls else None
+    update, calls_json = _serialize_llm_calls(llm_calls)
+    if update:
         await db.execute(
             "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ?, llm_calls = ? "
             "WHERE id = ?",
             (input_tokens, output_tokens, model, calls_json, plan_id),
+        )
+    else:
+        await db.execute(
+            "UPDATE plans SET total_input_tokens = ?, total_output_tokens = ?, model = ? "
+            "WHERE id = ?",
+            (input_tokens, output_tokens, model, plan_id),
         )
     await db.commit()
 
@@ -1049,31 +1064,23 @@ async def search_facts_by_entity(
     return [dict(r) for r in await cur.fetchall()]
 
 
-async def search_facts_scored(
+async def _search_facts_by_entity_tags(
     db: aiosqlite.Connection,
     *,
-    entity_id: int | None = None,
-    tags: list[str] | None = None,
-    keywords: list[str] | None = None,
-    session: str | None = None,
-    is_admin: bool = True,
-    limit: int = 50,
+    entity_id: int | None,
+    tags: list[str] | None,
+    session_filter: str,
+    session_params: list,
+    fetch_limit: int,
 ) -> list[dict]:
-    """Score and rank facts by relevance.
+    """SQL-scored fact retrieval by entity and/or tags.
 
-    Score = (entity_match × 10) + (tag_overlap_count × 3) + (keyword_hit × 1).
-    Returns top *limit* facts ordered by score desc, then last_used desc.
-
-    At least one of *entity_id*, *tags*, or *keywords* must be provided.
+    Returns rows with ``entity_score`` and ``tag_score`` columns attached.
+    Called internally by :func:`search_facts_scored`.
     """
-    if not entity_id and not tags and not keywords:
-        return []
-
-    # --- Phase 1: entity + tag scoring via SQL ---
     params: list = []
     select_parts = ["f.*"]
     join_parts: list[str] = []
-    where_clauses: list[str] = []
 
     # Entity score
     if entity_id is not None:
@@ -1097,7 +1104,7 @@ async def search_facts_scored(
     else:
         select_parts.append("0 AS tag_score")
 
-    # Build WHERE: need at least one signal to match
+    # WHERE: at least one signal must match
     or_conditions: list[str] = []
     if entity_id is not None:
         or_conditions.append("f.entity_id = ?")
@@ -1105,47 +1112,96 @@ async def search_facts_scored(
     if tags:
         or_conditions.append("_tc.tag_count > 0")
 
-    # Session scoping
-    session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.")
     params.extend(session_params)
+    where_sql = " OR ".join(or_conditions)
+    query = (
+        f"SELECT {', '.join(select_parts)} "
+        f"FROM facts f "
+        f"{' '.join(join_parts)} "
+        f"WHERE ({where_sql}){session_filter} "
+        f"ORDER BY (entity_score + tag_score) DESC, "
+        f"COALESCE(f.last_used, f.created_at) DESC "
+        f"LIMIT ?"
+    )
+    params.append(fetch_limit)
+    cur = await db.execute(query, params)
+    return [dict(r) for r in await cur.fetchall()]
 
-    # If we only have keywords and no entity/tags, use FTS5 to get candidates
-    if not or_conditions:
-        # Keywords-only path: FTS5 filter → Python scoring
-        fts_q = _fts5_query(" ".join(keywords or []))
-        if not fts_q:
-            return []
-        kw_filt, kw_filt_params = _fact_session_filter(is_admin, session, prefix="f.")
-        query = (
-            "SELECT f.*, 0 AS entity_score, 0 AS tag_score "
-            "FROM facts f "
-            "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
-            f"WHERE kiso_facts_fts MATCH ?{kw_filt}"
-        )
-        kw_params: list = [fts_q] + kw_filt_params
-        query += " ORDER BY rank LIMIT ?"
-        kw_params.append(limit * 2)  # over-fetch for Python re-rank
-        try:
-            cur = await db.execute(query, kw_params)
-            rows = [dict(r) for r in await cur.fetchall()]
-        except Exception:
-            return []
-    else:
-        where_sql = " OR ".join(or_conditions)
-        query = (
-            f"SELECT {', '.join(select_parts)} "
-            f"FROM facts f "
-            f"{' '.join(join_parts)} "
-            f"WHERE ({where_sql}){session_filter} "
-            f"ORDER BY (entity_score + tag_score) DESC, "
-            f"COALESCE(f.last_used, f.created_at) DESC "
-            f"LIMIT ?"
-        )
-        params.append(limit * 2)  # over-fetch for keyword re-rank
+
+async def _search_facts_by_keywords(
+    db: aiosqlite.Connection,
+    keywords: list[str],
+    *,
+    session_filter: str,
+    session_params: list,
+    fetch_limit: int,
+) -> list[dict]:
+    """FTS5 keyword search for facts (no entity/tag scoring).
+
+    Returns rows with ``entity_score=0`` and ``tag_score=0`` columns.
+    Called internally by :func:`search_facts_scored`.
+    """
+    fts_q = _fts5_query(" ".join(keywords))
+    if not fts_q:
+        return []
+    query = (
+        "SELECT f.*, 0 AS entity_score, 0 AS tag_score "
+        "FROM facts f "
+        "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
+        f"WHERE kiso_facts_fts MATCH ?{session_filter} "
+        "ORDER BY rank LIMIT ?"
+    )
+    params: list = [fts_q] + session_params + [fetch_limit]
+    try:
         cur = await db.execute(query, params)
-        rows = [dict(r) for r in await cur.fetchall()]
+        return [dict(r) for r in await cur.fetchall()]
+    except Exception:
+        return []
 
-    # --- Phase 2: keyword scoring in Python ---
+
+async def search_facts_scored(
+    db: aiosqlite.Connection,
+    *,
+    entity_id: int | None = None,
+    tags: list[str] | None = None,
+    keywords: list[str] | None = None,
+    session: str | None = None,
+    is_admin: bool = True,
+    limit: int = 50,
+) -> list[dict]:
+    """Score and rank facts by relevance.
+
+    Score = (entity_match x 10) + (tag_overlap_count x 3) + (keyword_hit x 1).
+    Returns top *limit* facts ordered by score desc, then last_used desc.
+
+    At least one of *entity_id*, *tags*, or *keywords* must be provided.
+    """
+    if not entity_id and not tags and not keywords:
+        return []
+
+    session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.")
+    fetch_limit = limit * 2  # over-fetch for Python re-rank
+
+    has_entity_or_tags = entity_id is not None or bool(tags)
+    if has_entity_or_tags:
+        rows = await _search_facts_by_entity_tags(
+            db,
+            entity_id=entity_id,
+            tags=tags,
+            session_filter=session_filter,
+            session_params=list(session_params),
+            fetch_limit=fetch_limit,
+        )
+    else:
+        rows = await _search_facts_by_keywords(
+            db,
+            keywords or [],
+            session_filter=session_filter,
+            session_params=list(session_params),
+            fetch_limit=fetch_limit,
+        )
+
+    # --- Keyword scoring in Python ---
     kw_set = {w.lower() for w in (keywords or [])} if keywords else set()
     scored: list[tuple[int, dict]] = []
     for row in rows:
