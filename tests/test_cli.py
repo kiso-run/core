@@ -3894,6 +3894,7 @@ def test_rules_add(capsys):
     args = argparse.Namespace(api="http://localhost:8333", rule_content="Never run rm -rf /")
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
+        patch("cli.plugin_ops.require_admin"),
         _mock_http_for_rules({"id": 42, "content": "Never run rm -rf /"}),
     ):
         rules_add(args)
@@ -3909,6 +3910,7 @@ def test_rules_remove(capsys):
     args = argparse.Namespace(api="http://localhost:8333", rule_id=42)
     with (
         patch("kiso.config.load_config", return_value=_mock_config()),
+        patch("cli.plugin_ops.require_admin"),
         _mock_http_for_rules({"deleted": True, "id": 42}),
     ):
         rules_remove(args)

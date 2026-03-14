@@ -53,6 +53,13 @@ class TestSkillList:
         assert "Guides planner" in out
 
 
+@pytest.fixture(autouse=True)
+def _mock_admin():
+    """M592: skill install/remove now require admin."""
+    with patch("cli.plugin_ops.require_admin"):
+        yield
+
+
 class TestSkillInstall:
     def test_install_valid(self, tmp_path, capsys):
         source = tmp_path / "src" / "my-skill.md"

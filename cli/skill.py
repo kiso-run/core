@@ -39,6 +39,8 @@ def _skill_list() -> None:
 
 def _skill_install(args) -> None:
     """Install an MD skill from a local file path."""
+    from cli.plugin_ops import require_admin
+    require_admin()
     source = Path(args.source)
     if not source.exists():
         print(f"error: file not found: {source}", file=sys.stderr)
@@ -66,6 +68,8 @@ def _skill_install(args) -> None:
 
 def _skill_remove(args) -> None:
     """Remove an installed MD skill."""
+    from cli.plugin_ops import require_admin
+    require_admin()
     name = args.name
     # Try exact filename first, then match by name
     target = SKILLS_DIR / f"{name}.md"
