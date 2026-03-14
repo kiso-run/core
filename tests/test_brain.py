@@ -8137,3 +8137,72 @@ class TestValidatePlanOrdering:
         tasks = [{"type": "exec", "detail": "do x", "expect": "done"}]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
         assert any("Last task must be" in e for e in errors)
+
+
+# --- M558: _build_strict_schema + _join_or_empty helpers ---
+
+
+class TestBuildStrictSchema:
+    def test_produces_valid_json_schema_wrapper(self):
+        from kiso.brain import _build_strict_schema
+        result = _build_strict_schema("test", {"a": {"type": "string"}}, ["a"])
+        assert result["type"] == "json_schema"
+        assert result["json_schema"]["name"] == "test"
+        assert result["json_schema"]["strict"] is True
+        schema = result["json_schema"]["schema"]
+        assert schema["type"] == "object"
+        assert schema["additionalProperties"] is False
+        assert schema["required"] == ["a"]
+        assert "a" in schema["properties"]
+
+    def test_plan_schema_unchanged(self):
+        """Verify PLAN_SCHEMA produced by helper matches expected structure."""
+        from kiso.brain import PLAN_SCHEMA
+        schema = PLAN_SCHEMA["json_schema"]["schema"]
+        assert schema["type"] == "object"
+        assert "goal" in schema["properties"]
+        assert "tasks" in schema["properties"]
+        assert "secrets" in schema["properties"]
+        assert "extend_replan" in schema["properties"]
+        assert schema["additionalProperties"] is False
+
+    def test_review_schema_unchanged(self):
+        from kiso.brain import REVIEW_SCHEMA
+        schema = REVIEW_SCHEMA["json_schema"]["schema"]
+        assert set(schema["required"]) == {"status", "reason", "learn", "retry_hint", "summary"}
+
+    def test_briefer_schema_unchanged(self):
+        from kiso.brain import BRIEFER_SCHEMA
+        schema = BRIEFER_SCHEMA["json_schema"]["schema"]
+        assert set(schema["required"]) == {
+            "modules", "tools", "context", "output_indices",
+            "relevant_tags", "relevant_entities",
+        }
+
+    def test_curator_schema_unchanged(self):
+        from kiso.brain import CURATOR_SCHEMA
+        schema = CURATOR_SCHEMA["json_schema"]["schema"]
+        assert "evaluations" in schema["properties"]
+        eval_item = schema["properties"]["evaluations"]["items"]
+        assert "learning_id" in eval_item["properties"]
+        assert "entity_kind" in eval_item["properties"]
+
+
+class TestJoinOrEmpty:
+    def test_empty_list_returns_empty_string(self):
+        from kiso.brain import _join_or_empty
+        assert _join_or_empty([]) == ""
+
+    def test_default_fmt_uses_dash(self):
+        from kiso.brain import _join_or_empty
+        assert _join_or_empty(["a", "b"]) == "- a\n- b"
+
+    def test_custom_fmt(self):
+        from kiso.brain import _join_or_empty
+        items = [{"content": "hello"}, {"content": "world"}]
+        result = _join_or_empty(items, lambda f: f"- {f['content']}")
+        assert result == "- hello\n- world"
+
+    def test_single_item(self):
+        from kiso.brain import _join_or_empty
+        assert _join_or_empty(["only"]) == "- only"

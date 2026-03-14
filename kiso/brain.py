@@ -87,6 +87,20 @@ INFLIGHT_SCHEMA = {
 }
 
 
+def _build_strict_schema(name: str, properties: dict, required: list[str]) -> dict:
+    """Build a strict JSON-schema response format dict for LLM calls."""
+    return {"type": "json_schema", "json_schema": {
+        "name": name, "strict": True,
+        "schema": {"type": "object", "properties": properties,
+                   "required": required, "additionalProperties": False},
+    }}
+
+
+def _join_or_empty(items: list, fmt: Callable = lambda x: f"- {x}") -> str:
+    """Join items with newlines using fmt, or return empty string if empty."""
+    return "\n".join(fmt(item) for item in items) if items else ""
+
+
 def _strip_fences(text: str) -> str:
     """Strip markdown code fences (```json ... ```) that some models wrap around JSON."""
     s = text.strip()
@@ -276,123 +290,52 @@ async def _retry_llm_with_validation(
     raise exc
 
 
-PLAN_SCHEMA: dict = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "plan",
-        "strict": True,
-        "schema": {
+PLAN_SCHEMA: dict = _build_strict_schema("plan", {
+    "goal": {"type": "string"},
+    "secrets": {"anyOf": [
+        {"type": "array", "items": {
             "type": "object",
-            "properties": {
-                "goal": {"type": "string"},
-                "secrets": {
-                    "anyOf": [
-                        {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "key": {"type": "string"},
-                                    "value": {"type": "string"},
-                                },
-                                "required": ["key", "value"],
-                                "additionalProperties": False,
-                            },
-                        },
-                        {"type": "null"},
-                    ],
-                },
-                "tasks": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "enum": ["exec", "msg", "tool", "search", "replan"],
-                            },
-                            "detail": {"type": "string"},
-                            "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                            "args": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                            "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                        },
-                        "required": ["type", "detail", "tool", "args", "expect"],
-                        "additionalProperties": False,
-                    },
-                },
-                "extend_replan": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                },
-            },
-            "required": ["goal", "secrets", "tasks", "extend_replan"],
-            "additionalProperties": False,
+            "properties": {"key": {"type": "string"}, "value": {"type": "string"}},
+            "required": ["key", "value"], "additionalProperties": False,
+        }},
+        {"type": "null"},
+    ]},
+    "tasks": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": ["exec", "msg", "tool", "search", "replan"]},
+            "detail": {"type": "string"},
+            "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "args": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
         },
-    },
-}
+        "required": ["type", "detail", "tool", "args", "expect"],
+        "additionalProperties": False,
+    }},
+    "extend_replan": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+}, ["goal", "secrets", "tasks", "extend_replan"])
 
 
-REVIEW_SCHEMA: dict = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "review",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["ok", "replan", "stuck"],
-                },
-                "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "learn": {"anyOf": [
-                    {"type": "array", "items": {"type": "string"}, "maxItems": 3},
-                    {"type": "null"},
-                ]},
-                "retry_hint": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "summary": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            },
-            "required": ["status", "reason", "learn", "retry_hint", "summary"],
-            "additionalProperties": False,
-        },
-    },
-}
+REVIEW_SCHEMA: dict = _build_strict_schema("review", {
+    "status": {"type": "string", "enum": ["ok", "replan", "stuck"]},
+    "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "learn": {"anyOf": [
+        {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+        {"type": "null"},
+    ]},
+    "retry_hint": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "summary": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+}, ["status", "reason", "learn", "retry_hint", "summary"])
 
 
-BRIEFER_SCHEMA: dict = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "briefing",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "modules": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "tools": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "context": {"type": "string"},
-                "output_indices": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                },
-                "relevant_tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "relevant_entities": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["modules", "tools", "context", "output_indices", "relevant_tags", "relevant_entities"],
-            "additionalProperties": False,
-        },
-    },
-}
+BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
+    "modules": {"type": "array", "items": {"type": "string"}},
+    "tools": {"type": "array", "items": {"type": "string"}},
+    "context": {"type": "string"},
+    "output_indices": {"type": "array", "items": {"type": "integer"}},
+    "relevant_tags": {"type": "array", "items": {"type": "string"}},
+    "relevant_entities": {"type": "array", "items": {"type": "string"}},
+}, ["modules", "tools", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules that the briefer can select.
 # core is always included and NOT listed here — these are optional additions.
@@ -1060,9 +1003,8 @@ async def build_planner_messages(
 
     # M411: always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
-    if safety_facts:
-        safety_text = "\n".join(f"- {f['content']}" for f in safety_facts)
-        context_parts.append(f"## Safety Rules (MUST OBEY)\n{safety_text}")
+    _add_section(context_parts, "Safety Rules (MUST OBEY)",
+                 _join_or_empty(safety_facts, lambda f: f"- {f['content']}"))
 
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")
@@ -1612,8 +1554,8 @@ def build_reviewer_messages(
         context += f"\n\n## Command Status\n{status_text}"
 
     # M412: inject safety rules for compliance check
-    if safety_rules:
-        rules_text = "\n".join(f"- {r}" for r in safety_rules)
+    rules_text = _join_or_empty(safety_rules)
+    if rules_text:
         context += f"\n\n## Safety Rules (violations → stuck)\n{rules_text}"
 
     return _build_messages(system_prompt, context)
@@ -1654,48 +1596,30 @@ async def run_reviewer(
 # Curator
 # ---------------------------------------------------------------------------
 
-CURATOR_SCHEMA: dict = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "curator",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "evaluations": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "learning_id": {"type": "integer"},
-                            "verdict": {
-                                "type": "string",
-                                "enum": ["promote", "ask", "discard"],
-                            },
-                            "fact": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
-                            "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                            "reason": {"type": "string"},
-                            "tags": {"anyOf": [
-                                {"type": "array", "items": {"type": "string"}, "maxItems": 5},
-                                {"type": "null"},
-                            ]},
-                            "entity_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                            "entity_kind": {"anyOf": [
-                                {"type": "string", "enum": sorted(_ENTITY_KINDS)},
-                                {"type": "null"},
-                            ]},
-                        },
-                        "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags", "entity_name", "entity_kind"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["evaluations"],
-            "additionalProperties": False,
+CURATOR_SCHEMA: dict = _build_strict_schema("curator", {
+    "evaluations": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+            "learning_id": {"type": "integer"},
+            "verdict": {"type": "string", "enum": ["promote", "ask", "discard"]},
+            "fact": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
+            "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "reason": {"type": "string"},
+            "tags": {"anyOf": [
+                {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+                {"type": "null"},
+            ]},
+            "entity_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "entity_kind": {"anyOf": [
+                {"type": "string", "enum": sorted(_ENTITY_KINDS)},
+                {"type": "null"},
+            ]},
         },
-    },
-}
+        "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags", "entity_name", "entity_kind"],
+        "additionalProperties": False,
+    }},
+}, ["evaluations"])
 
 
 class CuratorError(Exception):
@@ -1924,9 +1848,8 @@ def build_messenger_messages(
     else:
         # Fallback: full raw context
         _add_section(context_parts, "Session Summary (background only)", summary)
-        if facts:
-            facts_text = "\n".join(f"- {f['content']}" for f in facts)
-            _add_section(context_parts, "Known Facts", facts_text)
+        _add_section(context_parts, "Known Facts",
+                     _join_or_empty(facts, lambda f: f"- {f['content']}"))
     if recent_messages:
         msgs_text = "\n".join(
             f"[{m['role']}] {m.get('user') or 'system'}: {m['content']}"
@@ -2149,7 +2072,7 @@ async def run_fact_consolidation(
     Raises SummarizerError on failure.
     """
     system_prompt = _load_system_prompt("summarizer-facts")
-    facts_text = "\n".join(f"- {f['content']}" for f in facts)
+    facts_text = _join_or_empty(facts, lambda f: f"- {f['content']}")
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"## Facts\n{facts_text}"},
