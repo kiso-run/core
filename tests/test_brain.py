@@ -5533,8 +5533,8 @@ class TestBrieferMessages:
             "system_env": "OS: linux\nBinaries: python3, node",
             "capability_gap": "Skill 'browser' is needed but not installed.",
         }
-        # Use "planner" — includes all sections (M272 skips some for messenger/worker)
-        msgs = build_briefer_messages("planner", "plan task", pool)
+        # Use "planner" with is_replan=True to include all sections
+        msgs = build_briefer_messages("planner", "plan task", pool, is_replan=True)
         content = msgs[1]["content"]
         assert "Session Summary" in content
         assert "Known Facts" in content
@@ -5547,6 +5547,38 @@ class TestBrieferMessages:
         assert "Plan Outputs" in content
         assert "System Environment" in content
         assert "Capability Analysis" in content
+
+    def test_prefilter_removes_replan_context_when_not_replan(self):
+        pool = {
+            "summary": "test",
+            "replan_context": "previous failure",
+            "plan_outputs": "[0] exec: ls",
+        }
+        msgs = build_briefer_messages("planner", "do something", pool)
+        content = msgs[1]["content"]
+        assert "Replan Context" not in content
+        assert "Plan Outputs" not in content
+        assert "Session Summary" in content
+
+    def test_prefilter_keeps_replan_context_when_replan(self):
+        pool = {
+            "replan_context": "previous failure",
+            "plan_outputs": "[0] exec: ls",
+        }
+        msgs = build_briefer_messages("planner", "do something", pool, is_replan=True)
+        content = msgs[1]["content"]
+        assert "Replan Context" in content
+        assert "Plan Outputs" in content
+
+    def test_prefilter_removes_capability_gap_for_messenger(self):
+        pool = {
+            "capability_gap": "browser needed",
+            "facts": "some facts",
+        }
+        msgs = build_briefer_messages("messenger", "say hello", pool)
+        content = msgs[1]["content"]
+        assert "Capability Analysis" not in content
+        assert "Known Facts" in content
 
     def test_empty_pool_values_excluded(self):
         pool = {"summary": "", "facts": "", "tools": "browser: navigate"}

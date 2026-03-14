@@ -866,7 +866,8 @@ async def build_planner_messages(
             context_pool["available_tags"] = ", ".join(all_tags)
         try:
             briefing = await run_briefer(
-                config, "planner", new_message, context_pool, session=session,
+                config, "planner", new_message, context_pool,
+                session=session, is_replan=is_replan,
             )
         except Exception as exc:
             log.warning("Briefer failed for planner, falling back to full context: %s", exc)
@@ -1099,10 +1100,35 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+def _prefilter_context_pool(
+    context_pool: dict, consumer_role: str, is_replan: bool = False,
+) -> dict:
+    """Remove context pool sections unlikely to be relevant.
+
+    Returns a shallow copy with irrelevant keys removed.
+    """
+    pool = dict(context_pool)
+    # replan_context only useful during replanning
+    if not is_replan:
+        pool.pop("replan_context", None)
+    # plan_outputs: needed by messenger (formats response) and replan,
+    # but not by planner on first plan
+    if not is_replan and consumer_role == "planner":
+        pool.pop("plan_outputs", None)
+    # capability_gap only matters for planner (messenger never acts on it)
+    if consumer_role in ("messenger", "worker"):
+        pool.pop("capability_gap", None)
+    # md_skills only relevant when skills are installed
+    if not pool.get("md_skills"):
+        pool.pop("md_skills", None)
+    return pool
+
+
 def build_briefer_messages(
     consumer_role: str,
     task_description: str,
     context_pool: dict,
+    is_replan: bool = False,
 ) -> list[dict]:
     """Build the message list for the briefer LLM call.
 
@@ -1111,7 +1137,9 @@ def build_briefer_messages(
         task_description: What the consumer needs to accomplish.
         context_pool: Dict of available context pieces. Keys match
             ``_CONTEXT_POOL_SECTIONS`` (all optional).
+        is_replan: Whether this is a replan iteration (keeps replan_context/plan_outputs).
     """
+    pool = _prefilter_context_pool(context_pool, consumer_role, is_replan)
     system_prompt = _load_system_prompt("briefer")
 
     # M272: messenger/worker never use modules or skills — omit those sections
@@ -1131,7 +1159,7 @@ def build_briefer_messages(
     for key, heading in _CONTEXT_POOL_SECTIONS:
         if key in _skip_keys:
             continue
-        if val := context_pool.get(key):
+        if val := pool.get(key):
             parts.append(f"## {heading}\n{val}")
 
     return _build_messages(system_prompt, "\n\n".join(parts))
@@ -1171,13 +1199,16 @@ async def run_briefer(
     task_description: str,
     context_pool: dict,
     session: str = "",
+    is_replan: bool = False,
 ) -> dict:
     """Run the briefer: select relevant context for a consumer role.
 
     Returns a dict with keys: modules, tools, context, output_indices, relevant_tags.
     Raises BrieferError on failure.
     """
-    messages = build_briefer_messages(consumer_role, task_description, context_pool)
+    messages = build_briefer_messages(
+        consumer_role, task_description, context_pool, is_replan=is_replan,
+    )
 
     # M304: simple consumers never use modules — skip module name validation
     # to avoid wasted retries when the model hallucinates names.
