@@ -440,7 +440,6 @@ def _cancel_cmd(args: argparse.Namespace) -> None:
         resp = ctx.client.post(f"/sessions/{session}/cancel")
         resp.raise_for_status()
     except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
-        ctx.client.close()
         _handle_http_error(exc, args.api)
     finally:
         ctx.client.close()
@@ -490,27 +489,25 @@ def _msg_cmd(args: argparse.Namespace) -> None:
     quiet = args.quiet or not ctx.caps.tty
 
     try:
-        resp = ctx.client.post(
-            "/msg",
-            json={"session": ctx.session, "user": ctx.user, "content": args.message},
-        )
-        resp.raise_for_status()
-    except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
-        _handle_http_error(exc, args.api)
+        try:
+            resp = ctx.client.post(
+                "/msg",
+                json={"session": ctx.session, "user": ctx.user, "content": args.message},
+            )
+            resp.raise_for_status()
+        except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
+            _handle_http_error(exc, args.api)
 
-    data = resp.json()
-    if data.get("untrusted"):
-        print("warning: message was not trusted by the server.", file=sys.stderr)
-        ctx.client.close()
-        sys.exit(1)
+        data = resp.json()
+        if data.get("untrusted"):
+            print("warning: message was not trusted by the server.", file=sys.stderr)
+            sys.exit(1)
 
-    message_id = data.get("message_id")
-    if message_id is None:
-        print("error: server response missing message_id", file=sys.stderr)
-        ctx.client.close()
-        sys.exit(1)
+        message_id = data.get("message_id")
+        if message_id is None:
+            print("error: server response missing message_id", file=sys.stderr)
+            sys.exit(1)
 
-    try:
         _poll_status(ctx.client, ctx.session, message_id, 0, quiet, False, ctx.caps, ctx.bot_name, user=ctx.user)
     except KeyboardInterrupt:
         try:
