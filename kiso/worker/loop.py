@@ -830,10 +830,7 @@ async def _fail_task_and_audit(
         output=output if output is not None else error,
         stderr=stderr,
     )
-    audit.log_task(
-        ctx.session, task_id, task_type, detail, "failed", 0, 0,
-        deploy_secrets=ctx.deploy_secrets, session_secrets=ctx.session_secrets,
-    )
+    _audit_task(ctx, task_id, task_type, detail, "failed", 0)
     plan_output = _make_plan_output(
         task_idx, task_type, detail, error, "failed", session=ctx.session,
     )
@@ -858,6 +855,22 @@ def _log_task_done(ctx: _PlanCtx, task_id: int, task_type: str, status: str, dur
     """Log task completion if session logger is available."""
     if ctx.slog:
         ctx.slog.info("Task %d done: [%s] %s (%dms)", task_id, task_type, status, duration_ms)
+
+
+def _audit_task(
+    ctx: _PlanCtx,
+    task_id: int,
+    task_type: str,
+    detail: str,
+    status: str,
+    duration_ms: int,
+    output_len: int = 0,
+) -> None:
+    """Single audit logging point for task results."""
+    audit.log_task(
+        ctx.session, task_id, task_type, detail, status, duration_ms, output_len,
+        deploy_secrets=ctx.deploy_secrets, session_secrets=ctx.session_secrets,
+    )
 
 
 def _notify_phase(set_phase: Callable[[str], None] | None, phase: str) -> None:
@@ -976,12 +989,7 @@ async def _handle_msg_task(
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             log.error("Msg task %d messenger error: %s", task_id, e)
             await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
-            audit.log_task(
-                ctx.session, task_id, TASK_TYPE_MSG, detail, "failed",
-                task_duration_ms, 0,
-                deploy_secrets=ctx.deploy_secrets,
-                session_secrets=ctx.session_secrets,
-            )
+            _audit_task(ctx, task_id, TASK_TYPE_MSG, detail, "failed", task_duration_ms)
             # M396: append LLM calls so verbose panels show attempted messenger/briefer
             await _append_calls(ctx.db, task_id, idx_after_briefer[0])
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
@@ -991,11 +999,7 @@ async def _handle_msg_task(
     task_duration_ms = int((time.perf_counter() - t0) * 1000)
     await update_task(ctx.db, task_id, "done", output=text, duration_ms=task_duration_ms)
     task_row = {**task_row, "output": text, "status": "done"}
-    audit.log_task(
-        ctx.session, task_id, TASK_TYPE_MSG, detail, "done", task_duration_ms,
-        len(text), deploy_secrets=ctx.deploy_secrets,
-        session_secrets=ctx.session_secrets,
-    )
+    _audit_task(ctx, task_id, TASK_TYPE_MSG, detail, "done", task_duration_ms, len(text))
     _log_task_done(ctx, task_id, TASK_TYPE_MSG, "done", task_duration_ms)
     await _deliver_webhook_if_configured(
         ctx.db, ctx.config, ctx.session, task_id, text, is_final,
@@ -1134,12 +1138,8 @@ async def _handle_tool_task(
         await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
-        audit.log_task(
-            ctx.session, task_id, "tool", detail, task_row["status"],
-            task_duration_ms, len(task_row.get("output") or ""),
-            deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
+        _audit_task(ctx, task_id, "tool", detail, task_row["status"],
+                   task_duration_ms, len(task_row.get("output") or ""))
         _log_task_done(ctx, task_id, "tool", task_row["status"], task_duration_ms)
 
         plan_output_entry = _make_plan_output(
@@ -1260,11 +1260,7 @@ async def _handle_exec_task(
         stdout += _format_pub_note(pub_urls)
 
         await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
-        audit.log_task(
-            ctx.session, task_id, "exec", detail, status, task_duration_ms,
-            len(stdout), deploy_secrets=ctx.deploy_secrets,
-            session_secrets=ctx.session_secrets,
-        )
+        _audit_task(ctx, task_id, "exec", detail, status, task_duration_ms, len(stdout))
         _log_task_done(ctx, task_id, "exec", status, task_duration_ms)
 
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
@@ -1337,11 +1333,7 @@ async def _handle_search_task(
             error_output = f"Search failed: {e}"
             log.error("Search failed for task %d: %s", task_id, e)
             await update_task(ctx.db, task_id, "failed", output=error_output, duration_ms=task_duration_ms)
-            audit.log_task(
-                ctx.session, task_id, "search", detail, "failed", task_duration_ms, 0,
-                deploy_secrets=ctx.deploy_secrets,
-                session_secrets=ctx.session_secrets,
-            )
+            _audit_task(ctx, task_id, "search", detail, "failed", task_duration_ms)
             plan_output = _make_plan_output(
                 i + 1, "search", detail, error_output, "failed", session=ctx.session,
             )
@@ -1387,11 +1379,7 @@ async def _handle_search_task(
 
     task_duration_ms = int((time.perf_counter() - t0_total) * 1000)
     await update_task(ctx.db, task_id, "done", output=search_result, duration_ms=task_duration_ms)
-    audit.log_task(
-        ctx.session, task_id, "search", detail, "done", task_duration_ms,
-        len(search_result), deploy_secrets=ctx.deploy_secrets,
-        session_secrets=ctx.session_secrets,
-    )
+    _audit_task(ctx, task_id, "search", detail, "done", task_duration_ms, len(search_result))
     _log_task_done(ctx, task_id, "search", "done", task_duration_ms)
     return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
 
