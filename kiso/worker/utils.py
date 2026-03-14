@@ -731,15 +731,9 @@ def _build_failure_summary(
     return "\n\n".join(parts)
 
 
-# ── Language detection for replan notifications (M332) ──
+# ── Language detection for replan notifications (M332, M585) ──
 
-_LANG_MARKERS: dict[str, set[str]] = {
-    "it": {"vai", "apri", "cerca", "installa", "fammi", "dimmi", "controlla", "scrivi", "naviga"},
-    "es": {"abre", "busca", "instala", "dime", "haz", "escribe", "navega", "muestra"},
-    "fr": {"ouvre", "cherche", "installe", "montre", "fais", "écris", "navigue"},
-    "de": {"öffne", "suche", "installiere", "zeige", "schreibe", "navigiere"},
-    "pt": {"abra", "busque", "instale", "mostre", "escreva", "navegue"},
-}
+from kiso.worker.l10n import LANG_MARKERS, REPLAN_TEMPLATES
 
 
 def detect_user_lang(text: str) -> str:
@@ -747,82 +741,12 @@ def detect_user_lang(text: str) -> str:
     words = set(text.lower().split())
     best_lang = "en"
     best_score = 0
-    for lang, markers in _LANG_MARKERS.items():
+    for lang, markers in LANG_MARKERS.items():
         score = len(words & markers)
         if score > best_score:
             best_score = score
             best_lang = lang
     return best_lang
-
-
-_REPLAN_TEMPLATES: dict[str, dict[str, str]] = {
-    "en": {
-        "investigating": "Investigating... ({depth}/{max})",
-        "replanning": "Replanning (attempt {depth}/{max}): {reason}",
-        "stuck": (
-            "I'm having trouble with this request. "
-            "I've tried replanning {depth} times but keep hitting "
-            "the same issue: {reason}\n"
-            "Previous attempts: {tried}\n"
-            "Can you help me with more details or a different approach?"
-        ),
-    },
-    "it": {
-        "investigating": "Indagine in corso... ({depth}/{max})",
-        "replanning": "Ripianificazione (tentativo {depth}/{max}): {reason}",
-        "stuck": (
-            "Sto avendo difficoltà con questa richiesta. "
-            "Ho riprovato {depth} volte ma continuo a riscontrare "
-            "lo stesso problema: {reason}\n"
-            "Tentativi precedenti: {tried}\n"
-            "Puoi aiutarmi con più dettagli o un approccio diverso?"
-        ),
-    },
-    "es": {
-        "investigating": "Investigando... ({depth}/{max})",
-        "replanning": "Replanificando (intento {depth}/{max}): {reason}",
-        "stuck": (
-            "Estoy teniendo dificultades con esta solicitud. "
-            "He replanificado {depth} veces pero sigo encontrando "
-            "el mismo problema: {reason}\n"
-            "Intentos anteriores: {tried}\n"
-            "¿Puedes ayudarme con más detalles o un enfoque diferente?"
-        ),
-    },
-    "fr": {
-        "investigating": "Investigation en cours... ({depth}/{max})",
-        "replanning": "Replanification (tentative {depth}/{max}) : {reason}",
-        "stuck": (
-            "J'ai du mal avec cette demande. "
-            "J'ai replanifié {depth} fois mais je rencontre toujours "
-            "le même problème : {reason}\n"
-            "Tentatives précédentes : {tried}\n"
-            "Pouvez-vous m'aider avec plus de détails ou une approche différente ?"
-        ),
-    },
-    "de": {
-        "investigating": "Untersuchung läuft... ({depth}/{max})",
-        "replanning": "Neuplanung (Versuch {depth}/{max}): {reason}",
-        "stuck": (
-            "Ich habe Schwierigkeiten mit dieser Anfrage. "
-            "Ich habe {depth} Mal neu geplant, stoße aber immer wieder auf "
-            "dasselbe Problem: {reason}\n"
-            "Vorherige Versuche: {tried}\n"
-            "Können Sie mir mit mehr Details oder einem anderen Ansatz helfen?"
-        ),
-    },
-    "pt": {
-        "investigating": "Investigando... ({depth}/{max})",
-        "replanning": "Replanejando (tentativa {depth}/{max}): {reason}",
-        "stuck": (
-            "Estou tendo dificuldades com esta solicitação. "
-            "Tentei replanejar {depth} vezes mas continuo encontrando "
-            "o mesmo problema: {reason}\n"
-            "Tentativas anteriores: {tried}\n"
-            "Pode me ajudar com mais detalhes ou uma abordagem diferente?"
-        ),
-    },
-}
 
 
 def get_replan_message(
@@ -834,6 +758,6 @@ def get_replan_message(
     tried: str = "",
 ) -> str:
     """Get a localized replan notification message."""
-    templates = _REPLAN_TEMPLATES.get(lang, _REPLAN_TEMPLATES["en"])
-    template = templates.get(kind, _REPLAN_TEMPLATES["en"][kind])
+    templates = REPLAN_TEMPLATES.get(lang, REPLAN_TEMPLATES["en"])
+    template = templates.get(kind, REPLAN_TEMPLATES["en"][kind])
     return template.format(depth=depth, max=max_depth, reason=reason, tried=tried)
