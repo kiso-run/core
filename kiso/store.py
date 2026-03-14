@@ -481,18 +481,53 @@ async def session_has_install_proposal(db: aiosqlite.Connection, session: str) -
     return has_install_keyword and has_approval_language
 
 
+async def _get_messages_filtered(
+    db: aiosqlite.Connection,
+    *,
+    session: str | None = None,
+    trusted: int | None = None,
+    processed: int | None = None,
+    order: str = "ASC",
+    limit: int | None = None,
+    reverse: bool = False,
+) -> list[dict]:
+    """Parametric message query helper.
+
+    Builds a WHERE clause from the non-None filters, applies ORDER BY id
+    *order* and optional LIMIT.  When *reverse* is True the returned rows
+    are reversed after fetch (used by get_recent_messages to fetch DESC
+    then return oldest-first).
+    """
+    clauses: list[str] = []
+    params: list = []
+    if session is not None:
+        clauses.append("session = ?")
+        params.append(session)
+    if trusted is not None:
+        clauses.append("trusted = ?")
+        params.append(trusted)
+    if processed is not None:
+        clauses.append("processed = ?")
+        params.append(processed)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"SELECT * FROM messages{where} ORDER BY id {order}"
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    cur = await db.execute(sql, params)
+    rows = await _rows_to_dicts(cur)
+    if reverse:
+        rows.reverse()
+    return rows
+
+
 async def get_recent_messages(
     db: aiosqlite.Connection, session: str, limit: int = 5
 ) -> list[MessageDict]:
     """Return the most recent messages for a session (trusted only), oldest first."""
-    cur = await db.execute(
-        "SELECT * FROM messages WHERE session = ? AND trusted = 1 "
-        "ORDER BY id DESC LIMIT ?",
-        (session, limit),
+    return await _get_messages_filtered(
+        db, session=session, trusted=1, order="DESC", limit=limit, reverse=True,
     )
-    rows = await _rows_to_dicts(cur)
-    rows.reverse()
-    return rows
 
 
 def _fact_session_filter(
@@ -1205,12 +1240,9 @@ async def get_oldest_messages(
     db: aiosqlite.Connection, session: str, limit: int
 ) -> list[dict]:
     """Return oldest trusted messages for a session."""
-    cur = await db.execute(
-        "SELECT * FROM messages WHERE session = ? AND trusted = 1 "
-        "ORDER BY id ASC LIMIT ?",
-        (session, limit),
+    return await _get_messages_filtered(
+        db, session=session, trusted=1, order="ASC", limit=limit,
     )
-    return await _rows_to_dicts(cur)
 
 
 async def delete_facts(db: aiosqlite.Connection, fact_ids: list[int]) -> None:
@@ -1226,12 +1258,9 @@ async def get_untrusted_messages(
     db: aiosqlite.Connection, session: str, limit: int = 20
 ) -> list[dict]:
     """Return untrusted messages for a session, oldest first."""
-    cur = await db.execute(
-        "SELECT * FROM messages WHERE session = ? AND trusted = 0 "
-        "ORDER BY id ASC LIMIT ?",
-        (session, limit),
+    return await _get_messages_filtered(
+        db, session=session, trusted=0, order="ASC", limit=limit,
     )
-    return await _rows_to_dicts(cur)
 
 
 async def recover_stale_running(db: aiosqlite.Connection) -> tuple[int, int]:
@@ -1254,10 +1283,9 @@ async def recover_stale_running(db: aiosqlite.Connection) -> tuple[int, int]:
 
 async def get_unprocessed_trusted_messages(db: aiosqlite.Connection) -> list[dict]:
     """Return unprocessed trusted messages, ordered by id."""
-    cur = await db.execute(
-        "SELECT * FROM messages WHERE processed = 0 AND trusted = 1 ORDER BY id"
+    return await _get_messages_filtered(
+        db, trusted=1, processed=0, order="ASC",
     )
-    return await _rows_to_dicts(cur)
 
 
 async def update_fact_usage(
