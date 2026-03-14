@@ -12115,3 +12115,48 @@ class TestFailTaskAndAudit:
         call_kwargs = mock_update.call_args
         assert call_kwargs[1]["output"] == ""
         assert call_kwargs[1]["stderr"] == "stderr msg"
+
+
+# --- M561: _sanitize_task_output, _log_task_done, _notify_phase helpers ---
+
+
+class TestSanitizeTaskOutput:
+    def test_sanitizes_both_stdout_and_stderr(self):
+        from kiso.worker.loop import _sanitize_task_output, _PlanCtx
+        ctx = MagicMock(spec=_PlanCtx)
+        ctx.deploy_secrets = {"SECRET_KEY": "abc123"}
+        ctx.session_secrets = {}
+        with patch("kiso.worker.loop.sanitize_output", side_effect=lambda t, d, s: t.replace("abc123", "***")):
+            out, err = _sanitize_task_output("got abc123", "err abc123", ctx)
+        assert out == "got ***"
+        assert err == "err ***"
+
+
+class TestLogTaskDone:
+    def test_logs_when_slog_available(self):
+        from kiso.worker.loop import _log_task_done, _PlanCtx
+        ctx = MagicMock(spec=_PlanCtx)
+        ctx.slog = MagicMock()
+        _log_task_done(ctx, 42, "exec", "done", 150)
+        ctx.slog.info.assert_called_once()
+        call_args = ctx.slog.info.call_args[0]
+        assert "42" in str(call_args)
+        assert "exec" in str(call_args)
+
+    def test_no_op_when_slog_is_none(self):
+        from kiso.worker.loop import _log_task_done, _PlanCtx
+        ctx = MagicMock(spec=_PlanCtx)
+        ctx.slog = None
+        _log_task_done(ctx, 42, "exec", "done", 150)  # no error
+
+
+class TestNotifyPhase:
+    def test_calls_set_phase(self):
+        from kiso.worker.loop import _notify_phase
+        callback = MagicMock()
+        _notify_phase(callback, "planning")
+        callback.assert_called_once_with("planning")
+
+    def test_no_op_when_none(self):
+        from kiso.worker.loop import _notify_phase
+        _notify_phase(None, "planning")  # no error

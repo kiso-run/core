@@ -844,6 +844,28 @@ async def _fail_task_and_audit(
     )
 
 
+def _sanitize_task_output(
+    stdout: str, stderr: str, ctx: _PlanCtx,
+) -> tuple[str, str]:
+    """Sanitize both stdout and stderr against deploy/session secrets."""
+    return (
+        sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets),
+        sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets),
+    )
+
+
+def _log_task_done(ctx: _PlanCtx, task_id: int, task_type: str, status: str, duration_ms: int) -> None:
+    """Log task completion if session logger is available."""
+    if ctx.slog:
+        ctx.slog.info("Task %d done: [%s] %s (%dms)", task_id, task_type, status, duration_ms)
+
+
+def _notify_phase(set_phase: Callable[[str], None] | None, phase: str) -> None:
+    """Notify phase change if callback is provided."""
+    if set_phase is not None:
+        set_phase(phase)
+
+
 async def _store_step_usage(
     db: aiosqlite.Connection, task_id: int, usage_idx_before: int
 ) -> None:
@@ -961,8 +983,7 @@ async def _handle_msg_task(
         len(text), deploy_secrets=ctx.deploy_secrets,
         session_secrets=ctx.session_secrets,
     )
-    if ctx.slog:
-        ctx.slog.info("Task %d done: [msg] done (%dms)", task_id, task_duration_ms)
+    _log_task_done(ctx, task_id, TASK_TYPE_MSG, "done", task_duration_ms)
     await _deliver_webhook_if_configured(
         ctx.db, ctx.config, ctx.session, task_id, text, is_final,
         deploy_secrets=ctx.deploy_secrets,
@@ -1088,8 +1109,7 @@ async def _handle_tool_task(
             sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
         )
-        stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
-        stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
+        stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -1107,8 +1127,7 @@ async def _handle_tool_task(
             deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
-        if ctx.slog:
-            ctx.slog.info("Task %d done: [tool] %s (%dms)", task_id, task_row["status"], task_duration_ms)
+        _log_task_done(ctx, task_id, "tool", task_row["status"], task_duration_ms)
 
         plan_output_entry = _make_plan_output(
             i + 1, "tool", detail, task_row.get("output") or "", task_row["status"],
@@ -1216,8 +1235,7 @@ async def _handle_exec_task(
             max_output_size=ctx.max_output_size,
         )
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
-        stdout = sanitize_output(stdout, ctx.deploy_secrets, ctx.session_secrets)
-        stderr = sanitize_output(stderr, ctx.deploy_secrets, ctx.session_secrets)
+        stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
 
         # M371: invalidate sysenv cache after package install so new binaries are visible
@@ -1237,8 +1255,7 @@ async def _handle_exec_task(
             len(stdout), deploy_secrets=ctx.deploy_secrets,
             session_secrets=ctx.session_secrets,
         )
-        if ctx.slog:
-            ctx.slog.info("Task %d done: [exec] %s (%dms)", task_id, status, task_duration_ms)
+        _log_task_done(ctx, task_id, "exec", status, task_duration_ms)
 
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
@@ -1371,8 +1388,7 @@ async def _handle_search_task(
         len(search_result), deploy_secrets=ctx.deploy_secrets,
         session_secrets=ctx.session_secrets,
     )
-    if ctx.slog:
-        ctx.slog.info("Task %d done: [search] done (%dms)", task_id, task_duration_ms)
+    _log_task_done(ctx, task_id, "search", "done", task_duration_ms)
     return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
 
 
@@ -1594,13 +1610,9 @@ async def run_worker(
 
     _pending_knowledge_task: asyncio.Task | None = None
 
-    def _phase(p: str) -> None:
-        if set_phase is not None:
-            set_phase(p)
-
     try:
         while True:
-            _phase(WORKER_PHASE_IDLE)
+            _notify_phase(set_phase, WORKER_PHASE_IDLE)
 
             # M408: drain pending_messages (independent in-flight messages)
             # into the queue before waiting for new messages
@@ -1647,7 +1659,7 @@ async def run_worker(
                 await _pending_knowledge_task
             except Exception:
                 log.exception("Background knowledge task failed during shutdown for session=%s", session)
-        _phase(WORKER_PHASE_IDLE)
+        _notify_phase(set_phase, WORKER_PHASE_IDLE)
         slog.close()
 
 
@@ -1821,9 +1833,6 @@ async def _run_planning_loop(
     update_hints: "list | None" = None,
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
-    def _phase(p: str) -> None:
-        if set_phase is not None:
-            set_phase(p)
 
     replan_history: list[dict] = []
     current_plan_id = plan_id
@@ -2049,7 +2058,7 @@ async def _run_planning_loop(
             break
 
         # Call planner with enriched context
-        _phase(WORKER_PHASE_PLANNING)
+        _notify_phase(set_phase, WORKER_PHASE_PLANNING)
         # M409: drain update hints into replan context, then clear them
         consumed_hints = list(update_hints) if update_hints else None
         if update_hints:
@@ -2133,7 +2142,7 @@ async def _run_planning_loop(
 
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
-        _phase(WORKER_PHASE_EXECUTING)
+        _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
 
     return current_plan_id
 
@@ -2184,10 +2193,6 @@ async def _process_message(
     username: str | None = msg.get("username")
     base_url: str = msg.get("base_url", "")
 
-    def _phase(p: str) -> None:
-        if set_phase is not None:
-            set_phase(p)
-
     if slog:
         slog.info("Message received: user=%s, %d chars", username or "?", len(content))
 
@@ -2215,7 +2220,7 @@ async def _process_message(
 
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     if fast_path_enabled:
-        _phase(WORKER_PHASE_CLASSIFYING)
+        _notify_phase(set_phase, WORKER_PHASE_CLASSIFYING)
         try:
             msg_class = await asyncio.wait_for(
                 classify_message(
@@ -2232,7 +2237,7 @@ async def _process_message(
             log.info("Fast path: %s message, skipping planner", msg_class)
             if slog:
                 slog.info("Fast path: classified as %s, skipping planner", msg_class)
-            _phase(WORKER_PHASE_EXECUTING)
+            _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
             fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content,
                 messenger_timeout=messenger_timeout, slog=slog,
@@ -2242,7 +2247,7 @@ async def _process_message(
             await _bump_fact_usage(db, content, session, user_role)
             # Spawn post-plan knowledge processing in background
             clear_llm_budget()
-            _phase(WORKER_PHASE_IDLE)
+            _notify_phase(set_phase, WORKER_PHASE_IDLE)
             return _spawn_knowledge_task(db, config, session, fast_plan_id, llm_timeout)
 
     # Store classifier usage immediately so verbose panels can render
@@ -2266,7 +2271,7 @@ async def _process_message(
             paraphrased_context = None
 
     # Plan
-    _phase(WORKER_PHASE_PLANNING)
+    _notify_phase(set_phase, WORKER_PHASE_PLANNING)
     planner_usage_idx = get_usage_index()
 
     async def _flush_pre_planner_usage():
@@ -2340,7 +2345,7 @@ async def _process_message(
         )
 
     # Execute with replan loop
-    _phase(WORKER_PHASE_EXECUTING)
+    _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
         plan_id, plan, user_role, user_tools, messenger_timeout,
@@ -2363,5 +2368,5 @@ async def _process_message(
 
     # --- Spawn post-plan knowledge processing in background ---
     clear_llm_budget()
-    _phase(WORKER_PHASE_IDLE)
+    _notify_phase(set_phase, WORKER_PHASE_IDLE)
     return _spawn_knowledge_task(db, config, session, current_plan_id, llm_timeout)
