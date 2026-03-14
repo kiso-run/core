@@ -8,7 +8,69 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from cli import build_parser
 from kiso.config import User
+
+
+# ── Shared parse tests (M601) ──
+
+# Each tuple: (plugin_type, subcommand, extra_args, checks)
+# checks: list of (attr_suffix, expected) — attr = f"{plugin_type}_command" for subcommand
+_PARSE_CASES = [
+    ("tool", "list", [], []),
+    ("tool", "search", [], [("query", "")]),
+    ("tool", "search", ["web"], [("query", "web")]),
+    ("tool", "install", ["search"], [("target", "search"), ("no_deps", False), ("show_deps", False)]),
+    ("tool", "install", ["search", "--no-deps"], [("no_deps", True)]),
+    ("tool", "install", ["search", "--show-deps"], [("show_deps", True)]),
+    ("tool", "update", ["search"], [("target", "search")]),
+    ("tool", "update", ["all"], [("target", "all")]),
+    ("tool", "remove", ["search"], [("name", "search")]),
+    ("connector", "list", [], []),
+    ("connector", "search", [], [("query", "")]),
+    ("connector", "search", ["discord"], [("query", "discord")]),
+    ("connector", "install", ["discord"], [("target", "discord"), ("no_deps", False)]),
+    ("connector", "install", ["discord", "--no-deps"], [("no_deps", True)]),
+    ("connector", "install", ["discord", "--show-deps"], [("show_deps", True)]),
+    ("connector", "update", ["discord"], [("target", "discord")]),
+    ("connector", "update", ["all"], [("target", "all")]),
+    ("connector", "remove", ["discord"], [("name", "discord")]),
+    ("connector", "run", ["discord"], [("name", "discord")]),
+    ("connector", "stop", ["discord"], [("name", "discord")]),
+    ("connector", "status", ["discord"], [("name", "discord")]),
+]
+
+
+@pytest.mark.parametrize(
+    "plugin_type,subcommand,extra_args,checks", _PARSE_CASES,
+    ids=[f"{c[0]}_{c[1]}{'_' + '_'.join(c[2]) if c[2] else ''}" for c in _PARSE_CASES],
+)
+def test_parse_plugin_subcommand(plugin_type, subcommand, extra_args, checks):
+    """Shared argparse test for all plugin subcommands."""
+    parser = build_parser()
+    args = parser.parse_args([plugin_type, subcommand] + extra_args)
+    assert args.command == plugin_type
+    cmd_attr = f"{plugin_type}_command"
+    assert getattr(args, cmd_attr) == subcommand
+    for attr, expected in checks:
+        assert getattr(args, attr) == expected, f"{attr}={getattr(args, attr)!r}, expected {expected!r}"
+
+
+@pytest.mark.parametrize("plugin_type", ["tool", "connector"])
+def test_parse_plugin_no_subcommand(plugin_type):
+    """No subcommand → command attr is None."""
+    parser = build_parser()
+    args = parser.parse_args([plugin_type])
+    assert getattr(args, f"{plugin_type}_command") is None
+
+
+@pytest.mark.parametrize("plugin_type", ["tool", "connector"])
+def test_parse_plugin_install_url_with_name(plugin_type):
+    """--name flag works with URL target."""
+    parser = build_parser()
+    args = parser.parse_args([plugin_type, "install", "git@github.com:user/repo.git", "--name", "foo"])
+    assert args.target == "git@github.com:user/repo.git"
+    assert args.name == "foo"
 
 
 def _admin_cfg():
