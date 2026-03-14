@@ -1296,7 +1296,7 @@ async def classify_message(
 
     result = raw.strip().lower()
 
-    # New format: "category:lang" (e.g. "chat:it", "plan:en")
+    # Expected format: "cat:lang" (e.g. "chat:it", "plan:en")
     if ":" in result:
         cat, lang = result.split(":", 1)
         cat = cat.strip()
@@ -1304,6 +1304,15 @@ async def classify_message(
         if cat in CLASSIFIER_CATEGORIES and len(lang) == 2:
             log.info("Classifier: %s (lang=%s)", cat, lang)
             return cat, lang
+        # Defensive: LLM returned literal "category:xx" or "category:xx:cat"
+        if cat == "category" and len(lang) == 2:
+            log.info("Classifier: plan (literal 'category', lang=%s)", lang)
+            return "plan", lang
+        if cat == "category" and ":" in lang:
+            lang_part, cat_part = lang.split(":", 1)
+            if cat_part.strip() in CLASSIFIER_CATEGORIES and len(lang_part.strip()) == 2:
+                log.info("Classifier: %s (literal 'category', lang=%s)", cat_part.strip(), lang_part.strip())
+                return cat_part.strip(), lang_part.strip()
 
     # Backward compat: plain category without lang
     if result in CLASSIFIER_CATEGORIES:

@@ -3221,6 +3221,30 @@ class TestClassifyMessage:
         assert cat == "plan"  # "chat:italian" is not in CLASSIFIER_CATEGORIES
         assert lang == "en"
 
+    async def test_literal_category_with_lang(self):
+        """M612: LLM returns literal 'category:it' → parsed as ('plan', 'it')."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="category:it"):
+            cat, lang = await classify_message(config, "dimmi qualcosa")
+        assert cat == "plan"
+        assert lang == "it"
+
+    async def test_literal_category_lang_cat(self):
+        """M612: LLM returns 'category:it:plan' → parsed as ('plan', 'it')."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="category:it:plan"):
+            cat, lang = await classify_message(config, "vai su google")
+        assert cat == "plan"
+        assert lang == "it"
+
+    async def test_literal_category_lang_chat(self):
+        """M612: LLM returns 'category:fr:chat' → parsed as ('chat', 'fr')."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="category:fr:chat"):
+            cat, lang = await classify_message(config, "merci")
+        assert cat == "chat"
+        assert lang == "fr"
+
 
 class TestClassifierPromptContent:
     def test_classifier_prompt_exists(self):
