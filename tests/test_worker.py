@@ -148,39 +148,27 @@ def _make_config(**overrides) -> Config:
 
 # --- _run_subprocess ---
 
+_EXIT_CODE_CASES = [
+    # (shell_cmd, expected_exit_code)
+    ("exit 1", 1),
+    ("nonexistent_command_xyz_99", 127),
+    ("exit 42", 42),
+]
+
+
 class TestRunSubprocess:
-    async def test_nonzero_exit_returns_false(self, tmp_path):
-        """Non-zero exit code → success=False."""
+    @pytest.mark.parametrize("shell_cmd,expected_code", _EXIT_CODE_CASES,
+                             ids=[f"exit_{c[1]}" for c in _EXIT_CODE_CASES])
+    async def test_nonzero_exit_code(self, tmp_path, shell_cmd, expected_code):
+        """Non-zero exit code → success=False, exit code preserved."""
         _, _, success, exit_code = await _run_subprocess(
-            "exit 1",
+            shell_cmd,
             env={"PATH": "/usr/bin:/bin"},
             cwd=str(tmp_path),
             shell=True,
         )
         assert success is False
-        assert exit_code == 1
-
-    async def test_exit_code_127_command_not_found(self, tmp_path):
-        """Exit code 127 when command is not found."""
-        _, _, success, exit_code = await _run_subprocess(
-            "nonexistent_command_xyz_99",
-            env={"PATH": "/usr/bin:/bin"},
-            cwd=str(tmp_path),
-            shell=True,
-        )
-        assert success is False
-        assert exit_code == 127
-
-    async def test_exit_code_specific_value(self, tmp_path):
-        """Arbitrary non-zero exit codes are preserved."""
-        _, _, success, exit_code = await _run_subprocess(
-            "exit 42",
-            env={"PATH": "/usr/bin:/bin"},
-            cwd=str(tmp_path),
-            shell=True,
-        )
-        assert success is False
-        assert exit_code == 42
+        assert exit_code == expected_code
 
     async def test_oserror_returns_error(self, tmp_path):
         """OSError (e.g. executable not found) → success=False, error in stderr."""
@@ -11363,74 +11351,52 @@ class TestM310Phase13Integration:
         assert planner_kwargs_captured[0].get("is_replan") is True
 
 
+_DETECT_LANG_CASES = [
+    ("vai su guidance.studio", "it"),
+    ("go to guidance.studio", "en"),
+    ("busca información sobre el tema", "es"),
+    ("cherche des informations", "fr"),
+    ("suche nach Informationen", "de"),
+    ("busque informações sobre isso", "pt"),
+    ("ここに行ってください", "en"),  # unknown → English
+    ("", "en"),  # empty → English
+]
+
+
 class TestM332DetectUserLang:
     """M332: detect user language for replan notifications."""
 
-    def test_italian(self):
+    @pytest.mark.parametrize("text,expected_lang", _DETECT_LANG_CASES,
+                             ids=[c[1] + "_" + c[0][:20] for c in _DETECT_LANG_CASES])
+    def test_detect_user_lang(self, text, expected_lang):
         from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("vai su guidance.studio") == "it"
+        assert detect_user_lang(text) == expected_lang
 
-    def test_english_default(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("go to guidance.studio") == "en"
 
-    def test_spanish(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("busca información sobre el tema") == "es"
-
-    def test_french(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("cherche des informations") == "fr"
-
-    def test_german(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("suche nach Informationen") == "de"
-
-    def test_portuguese(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("busque informações sobre isso") == "pt"
-
-    def test_unknown_defaults_to_english(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("ここに行ってください") == "en"
-
-    def test_empty_string(self):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang("") == "en"
+# (lang, phase, attempt, max_attempts, kwargs, expected_substrings)
+_REPLAN_MSG_CASES = [
+    ("en", "replanning", 1, 3, {"reason": "timeout"}, ["Replanning (attempt 1/3): timeout"]),
+    ("it", "replanning", 2, 3, {"reason": "errore"}, ["Ripianificazione", "2/3", "errore"]),
+    ("it", "investigating", 1, 3, {}, ["Indagine in corso", "1/3"]),
+    ("en", "stuck", 3, 3, {"reason": "timeout", "tried": "attempt1; attempt2"},
+     ["I'm having trouble", "timeout", "attempt1; attempt2"]),
+    ("ja", "replanning", 1, 3, {"reason": "error"}, ["Replanning"]),  # fallback to English
+]
 
 
 class TestM332GetReplanMessage:
     """M332: localized replan messages."""
 
-    def test_english_replanning(self):
+    @pytest.mark.parametrize(
+        "lang,phase,attempt,max_attempts,kwargs,expected_subs",
+        _REPLAN_MSG_CASES,
+        ids=[f"{c[0]}_{c[1]}" for c in _REPLAN_MSG_CASES],
+    )
+    def test_get_replan_message(self, lang, phase, attempt, max_attempts, kwargs, expected_subs):
         from kiso.worker.utils import get_replan_message
-        msg = get_replan_message("en", "replanning", 1, 3, reason="timeout")
-        assert "Replanning (attempt 1/3): timeout" == msg
-
-    def test_italian_replanning(self):
-        from kiso.worker.utils import get_replan_message
-        msg = get_replan_message("it", "replanning", 2, 3, reason="errore")
-        assert "Ripianificazione" in msg
-        assert "2/3" in msg
-        assert "errore" in msg
-
-    def test_investigating(self):
-        from kiso.worker.utils import get_replan_message
-        msg = get_replan_message("it", "investigating", 1, 3)
-        assert "Indagine in corso" in msg
-        assert "1/3" in msg
-
-    def test_stuck_with_tried(self):
-        from kiso.worker.utils import get_replan_message
-        msg = get_replan_message("en", "stuck", 3, 3, reason="timeout", tried="attempt1; attempt2")
-        assert "I'm having trouble" in msg
-        assert "timeout" in msg
-        assert "attempt1; attempt2" in msg
-
-    def test_fallback_to_english(self):
-        from kiso.worker.utils import get_replan_message
-        msg = get_replan_message("ja", "replanning", 1, 3, reason="error")
-        assert "Replanning" in msg  # falls back to English
+        msg = get_replan_message(lang, phase, attempt, max_attempts, **kwargs)
+        for sub in expected_subs:
+            assert sub in msg, f"Missing {sub!r} in {msg!r}"
 
 
 # --- M336: Handle "stuck" in execution loop ---
@@ -12026,27 +11992,35 @@ class TestHandleReviewError:
 # --- M569: _format_task_list helper ---
 
 
+_FORMAT_TASK_LIST_CASES = [
+    # (tasks, label, expected_substrings)
+    ([], "Completed", [""]),  # empty list → empty string
+    (
+        [{"type": "exec", "detail": "run foo"}, {"type": "msg", "detail": "tell user"}],
+        "Done",
+        ["Done (2):\n", "- [exec] run foo", "- [msg] tell user"],
+    ),
+    (
+        [{"type": "search", "detail": "find X"}],
+        "Remaining",
+        ["Remaining (1):", "- [search] find X"],
+    ),
+]
+
+
 class TestFormatTaskList:
-    def test_empty_returns_empty_string(self):
+    @pytest.mark.parametrize(
+        "tasks,label,expected_subs",
+        _FORMAT_TASK_LIST_CASES,
+        ids=["empty", "two_tasks", "single_task"],
+    )
+    def test_format_task_list(self, tasks, label, expected_subs):
         from kiso.worker.utils import _format_task_list
-        assert _format_task_list([], "Completed") == ""
-
-    def test_formats_with_count(self):
-        from kiso.worker.utils import _format_task_list
-        tasks = [
-            {"type": "exec", "detail": "run foo"},
-            {"type": "msg", "detail": "tell user"},
-        ]
-        result = _format_task_list(tasks, "Done")
-        assert result.startswith("Done (2):\n")
-        assert "- [exec] run foo" in result
-        assert "- [msg] tell user" in result
-
-    def test_single_task(self):
-        from kiso.worker.utils import _format_task_list
-        tasks = [{"type": "search", "detail": "find X"}]
-        result = _format_task_list(tasks, "Remaining")
-        assert "Remaining (1):" in result
-        assert "- [search] find X" in result
+        result = _format_task_list(tasks, label)
+        if not tasks:
+            assert result == ""
+        else:
+            for sub in expected_subs:
+                assert sub in result, f"Missing {sub!r} in {result!r}"
 
 
