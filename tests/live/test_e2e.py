@@ -138,39 +138,41 @@ class TestReplanFlowE2E:
     async def test_replan_after_failed_exec(
         self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
     ):
-        """What: Builds a plan with a deliberately failing exec (ls nonexistent dir), runs _execute_plan.
+        """What: Builds a plan with a deliberately failing exec (write to nonexistent dir), runs _execute_plan.
 
         Why: Validates the replan loop — a failed exec must produce a replan reason, and re-planning with that reason yields a valid new plan.
         Expects: success=False, non-empty replan_reason, second planner call produces a valid plan.
         """
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user",
-            "List files in the project",
+            "Save report to the project directory",
         )
         plan_id = await create_plan(
             seeded_db, live_session, msg_id,
-            "List files in the project directory",
+            "Create a report file in the project directory",
         )
-        # Deliberately failing exec command
+        # Deliberately failing exec — writing to a nonexistent deep path is
+        # clearly an action (not verification), so the translator won't add
+        # || true.  mkdir -p won't be used either because the detail says
+        # "write to" an existing path.
         await create_task(
             seeded_db, plan_id, live_session,
             type="exec",
-            detail="ls /absolutely_nonexistent_dir_xyz_12345",
-            expect="Output must list at least 3 filenames — "
-                   "empty output or 'No such file' means failure",
+            detail="Write 'hello world' to /absolutely_nonexistent_dir_xyz_12345/report.txt",
+            expect="File created successfully at the specified path",
         )
         await create_task(
             seeded_db, plan_id, live_session,
             type="msg",
-            detail="Tell the user the files found",
+            detail="Tell the user the report was saved",
         )
 
         with mock_noop_infra:
             success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
                     seeded_db, live_config, live_session, plan_id,
-                    "List files in the project directory",
-                    "list files in the project",
+                    "Create a report file in the project directory",
+                    "save report to the project directory",
                 ),
                 timeout=TIMEOUT,
             )
@@ -187,7 +189,7 @@ class TestReplanFlowE2E:
             new_plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
-                    f"list files in the project\n\n## Failure Reason\n{replan_reason}",
+                    f"save report to the project\n\n## Failure Reason\n{replan_reason}",
                 ),
                 timeout=TIMEOUT,
             )
