@@ -291,20 +291,47 @@ def _plugin_install(
         sys.exit(1)
 
 
+def render_aligned_list(
+    items: list[dict],
+    name_key: str,
+    desc_key: str | None = None,
+    desc_fallback: str | None = None,
+    extra_cols: list[str] | None = None,
+) -> None:
+    """Print items as aligned columns: name [extra_cols...] [— description].
+
+    Args:
+        items: List of dicts to render (must be non-empty).
+        name_key: Dict key for primary column.
+        desc_key: Optional dict key for description (after "—").
+        desc_fallback: Fallback key if desc_key is empty/missing.
+        extra_cols: Optional list of dict keys for columns between name and desc.
+    """
+    if not items:
+        return
+    max_name = max(len(str(i[name_key])) for i in items)
+    max_extras: dict[str, int] = {}
+    for col in extra_cols or []:
+        max_extras[col] = max(len(str(i.get(col, ""))) for i in items)
+    for item in items:
+        parts = [f"  {str(item[name_key]).ljust(max_name)}"]
+        for col in extra_cols or []:
+            parts.append(str(item.get(col, "")).ljust(max_extras[col]))
+        if desc_key:
+            desc = item.get(desc_key, "")
+            if not desc and desc_fallback:
+                desc = item.get(desc_fallback, "")
+            parts.append(f"— {desc}")
+        print("  ".join(parts))
+
+
 def _list_plugins(discover_fn, item_type: str) -> None:
     """List installed plugins (tools or connectors) in aligned columns."""
     items = discover_fn()
     if not items:
         print(f"No {item_type} installed.")
         return
-
-    max_name = max(len(item["name"]) for item in items)
-    max_ver = max(len(item["version"]) for item in items)
-    for item in items:
-        name = item["name"].ljust(max_name)
-        ver = item["version"].ljust(max_ver)
-        desc = item.get("summary", item.get("description", ""))
-        print(f"  {name}  {ver}  — {desc}")
+    render_aligned_list(items, "name", "summary", "description", extra_cols=["version"])
 
 
 def _check_plugin_installed(plugin_dir: Path, plugin_type: str, name: str) -> None:
@@ -325,9 +352,7 @@ def _render_search_results(
             if hint:
                 print(hint)
         return
-    max_name = max(len(r["name"]) for r in results)
-    for r in results:
-        print(f"  {r['name'].ljust(max_name)}  — {r.get('description', '')}")
+    render_aligned_list(results, "name", "description")
 
 
 def _remove_plugin(

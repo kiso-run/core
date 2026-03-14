@@ -27,14 +27,13 @@ def run_skill_command(args) -> None:
 
 def _skill_list() -> None:
     """List installed MD skills."""
+    from cli.plugin_ops import render_aligned_list
     invalidate_md_skills_cache()
     skills = discover_md_skills(SKILLS_DIR)
     if not skills:
         print("No skills installed.")
         return
-    max_name = max(len(s["name"]) for s in skills)
-    for s in skills:
-        print(f"  {s['name'].ljust(max_name)}  — {s['summary']}")
+    render_aligned_list(skills, "name", "summary")
 
 
 def _skill_install(args) -> None:
