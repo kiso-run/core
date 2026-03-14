@@ -13,7 +13,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import NamedTuple
+from typing import NamedTuple, NoReturn
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import HTTPException
@@ -94,6 +94,20 @@ _rate_limiter = _RateLimiter()
 def _is_admin(resolved: ResolvedUser) -> bool:
     """Check if the resolved user has admin privileges."""
     return bool(resolved.trusted and resolved.user and resolved.user.role == "admin")
+
+
+def _raise_admin_required() -> NoReturn:
+    raise HTTPException(status_code=403, detail="Admin access required")
+
+
+async def _check_rate_limit(key: str, limit: int = 60) -> None:
+    if not await _rate_limiter.check(key, limit=limit):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+
+def _validate_session_id(session: str) -> None:
+    if not SESSION_RE.match(session):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
 
 
 @dataclass
@@ -462,8 +476,7 @@ async def health():
 async def get_pub(token: str, filename: str, request: Request):
     """Serve a file from a session's pub/ directory. No authentication required."""
     client_ip = request.client.host if request.client else "unknown"
-    if not await _rate_limiter.check(f"pub:{client_ip}", limit=60):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    await _check_rate_limit(f"pub:{client_ip}")
 
     config = request.app.state.config
     session = resolve_pub_token(token, config)
@@ -493,8 +506,7 @@ async def post_sessions(
     request: Request,
     auth: AuthInfo = Depends(require_auth),
 ):
-    if not SESSION_RE.match(body.session):
-        raise HTTPException(status_code=400, detail="Invalid session ID")
+    _validate_session_id(body.session)
 
     config = request.app.state.config
 
@@ -527,11 +539,8 @@ async def post_msg(
     request: Request,
     auth: AuthInfo = Depends(require_auth),
 ):
-    if not SESSION_RE.match(body.session):
-        raise HTTPException(status_code=400, detail="Invalid session ID")
-
-    if not await _rate_limiter.check(f"msg:{body.user}", limit=20):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    _validate_session_id(body.session)
+    await _check_rate_limit(f"msg:{body.user}", limit=20)
 
     db = request.app.state.db
     config = request.app.state.config
@@ -716,11 +725,8 @@ async def post_cancel(
     request: Request,
     auth: AuthInfo = Depends(require_auth),
 ):
-    if not SESSION_RE.match(session):
-        raise HTTPException(status_code=400, detail="Invalid session ID")
-
-    if not await _rate_limiter.check(f"cancel:{session}", limit=20):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    _validate_session_id(session)
+    await _check_rate_limit(f"cancel:{session}", limit=20)
 
     db = request.app.state.db
 
@@ -821,9 +827,8 @@ async def get_stats(
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
     if not _is_admin(resolved):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    if not await _rate_limiter.check(f"admin:{user}", limit=5):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        _raise_admin_required()
+    await _check_rate_limit(f"admin:{user}", limit=5)
     if by not in ("model", "session", "role"):
         raise HTTPException(status_code=400, detail="by must be model, session, or role")
 
@@ -857,9 +862,8 @@ async def post_reload_config(
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
     if not _is_admin(resolved):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    if not await _rate_limiter.check(f"admin:{user}", limit=5):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        _raise_admin_required()
+    await _check_rate_limit(f"admin:{user}", limit=5)
     try:
         new_config = reload_config()
         request.app.state.config = new_config
@@ -879,9 +883,8 @@ async def post_reload_env(
     resolved = resolve_user(config, user, auth.token_name)
 
     if not _is_admin(resolved):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    if not await _rate_limiter.check(f"admin:{user}", limit=5):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        _raise_admin_required()
+    await _check_rate_limit(f"admin:{user}", limit=5)
 
     env_vars = _load_env_file(KISO_DIR / ".env")
     applied = 0
