@@ -14,6 +14,7 @@ from cli.plugin_ops import (
     _GIT_ENV,
     _list_plugins,
     _plugin_install,
+    _update_plugin,
     cross_type_hint,
     fetch_registry,
     is_repo_not_found,
@@ -113,61 +114,11 @@ def _tool_install(args) -> None:
 def _tool_update(args) -> None:
     """Update an installed tool or all tools."""
     _require_admin()
-
-    target = args.target
-    if target == "all":
-        if not TOOLS_DIR.is_dir():
-            print("No tools installed.")
-            return
-        names = [d.name for d in sorted(TOOLS_DIR.iterdir()) if d.is_dir()]
-        if not names:
-            print("No tools installed.")
-            return
-    else:
-        names = [target]
-
-    for name in names:
-        tool_dir = TOOLS_DIR / name
-        if not tool_dir.exists():
-            print(f"error: tool '{name}' is not installed")
-            sys.exit(1)
-
-        # git pull
-        result = subprocess.run(
-            ["git", "pull"],
-            cwd=str(tool_dir),
-            capture_output=True, text=True, env=_GIT_ENV,
-        )
-        if result.returncode != 0:
-            print(f"error: git pull failed for '{name}': {result.stderr.strip()}")
-            sys.exit(1)
-
-        # uv sync first (deps.sh may need packages installed by uv)
-        subprocess.run(
-            ["uv", "sync"],
-            cwd=str(tool_dir),
-            capture_output=True, text=True,
-        )
-
-        # deps.sh
-        deps_path = tool_dir / "deps.sh"
-        if deps_path.exists():
-            result = subprocess.run(
-                ["bash", str(deps_path)],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                print(f"warning: deps.sh failed for '{name}': {result.stderr.strip()}")
-
-        # check deps
-        tool_info = {"path": str(tool_dir)}
-        missing = check_deps(tool_info)
-        if missing:
-            print(f"warning: '{name}' missing binaries: {', '.join(missing)}")
-
-        print(f"Tool '{name}' updated.")
-        from kiso.sysenv import invalidate_cache
-        invalidate_cache()
+    from kiso.sysenv import invalidate_cache
+    _update_plugin(
+        args.target, TOOLS_DIR, "tool", check_deps,
+        [invalidate_cache], uv_before_deps=True,
+    )
 
 
 def _tool_remove(args) -> None:

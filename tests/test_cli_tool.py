@@ -1292,3 +1292,27 @@ def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
 
     override_path = tools_dir / "search" / "usage_guide.local.md"
     assert override_path.read_text() == custom_content
+
+
+# --- M563: _update_plugin shared helper ---
+
+
+class TestUpdatePlugin:
+    def test_all_target_no_dir(self, tmp_path, capsys):
+        from cli.plugin_ops import _update_plugin
+        _update_plugin("all", tmp_path / "missing", "tool", lambda x: [], [])
+        assert "No tools installed" in capsys.readouterr().out
+
+    def test_all_target_empty_dir(self, tmp_path, capsys):
+        from cli.plugin_ops import _update_plugin
+        plugin_dir = tmp_path / "plugins"
+        plugin_dir.mkdir()
+        _update_plugin("all", plugin_dir, "tool", lambda x: [], [])
+        assert "No tools installed" in capsys.readouterr().out
+
+    def test_single_target_not_found(self, tmp_path):
+        from cli.plugin_ops import _update_plugin
+        plugin_dir = tmp_path / "plugins"
+        plugin_dir.mkdir()
+        with pytest.raises(SystemExit):
+            _update_plugin("nonexistent", plugin_dir, "tool", lambda x: [], [])

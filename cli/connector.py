@@ -24,6 +24,7 @@ from cli.plugin_ops import (
     _GIT_ENV,
     _list_plugins,
     _plugin_install,
+    _update_plugin,
     cross_type_hint,
     fetch_registry,
     is_repo_not_found,
@@ -232,61 +233,11 @@ def _connector_install(args) -> None:
 def _connector_update(args) -> None:
     """Update an installed connector or all connectors."""
     require_admin()
-
-    target = args.target
-    if target == "all":
-        if not CONNECTORS_DIR.is_dir():
-            print("No connectors installed.")
-            return
-        names = [d.name for d in sorted(CONNECTORS_DIR.iterdir()) if d.is_dir()]
-        if not names:
-            print("No connectors installed.")
-            return
-    else:
-        names = [target]
-
-    for name in names:
-        connector_dir = CONNECTORS_DIR / name
-        if not connector_dir.exists():
-            print(f"error: connector '{name}' is not installed")
-            sys.exit(1)
-
-        result = subprocess.run(
-            ["git", "pull"],
-            cwd=str(connector_dir),
-            capture_output=True, text=True, env=_GIT_ENV,
-        )
-        if result.returncode != 0:
-            print(f"error: git pull failed for '{name}': {result.stderr.strip()}")
-            sys.exit(1)
-
-        # deps.sh
-        deps_path = connector_dir / "deps.sh"
-        if deps_path.exists():
-            result = subprocess.run(
-                ["bash", str(deps_path)],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                print(f"warning: deps.sh failed for '{name}': {result.stderr.strip()}")
-
-        # uv sync
-        subprocess.run(
-            ["uv", "sync"],
-            cwd=str(connector_dir),
-            capture_output=True, text=True,
-        )
-
-        # check deps
-        from kiso.tools import check_deps
-        connector_info = {"path": str(connector_dir)}
-        missing = check_deps(connector_info)
-        if missing:
-            print(f"warning: '{name}' missing binaries: {', '.join(missing)}")
-
-        print(f"Connector '{name}' updated.")
-        from kiso.sysenv import invalidate_cache
-        invalidate_cache()
+    from kiso.sysenv import invalidate_cache
+    _update_plugin(
+        args.target, CONNECTORS_DIR, "connector", check_deps,
+        [invalidate_cache], uv_before_deps=False,
+    )
 
 
 def _connector_remove(args) -> None:

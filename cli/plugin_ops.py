@@ -307,6 +307,67 @@ def _list_plugins(discover_fn, item_type: str) -> None:
         print(f"  {name}  {ver}  — {desc}")
 
 
+def _update_plugin(
+    target: str, plugin_dir: Path, plugin_type: str,
+    check_deps_fn, cache_invalidators: list,
+    *, uv_before_deps: bool = True,
+) -> None:
+    """Update one or all plugins of a given type.
+
+    *uv_before_deps*: if True, run ``uv sync`` before ``deps.sh`` (tools);
+    if False, run ``deps.sh`` first (connectors).
+    """
+    if target == "all":
+        if not plugin_dir.is_dir():
+            print(f"No {plugin_type}s installed.")
+            return
+        names = [d.name for d in sorted(plugin_dir.iterdir()) if d.is_dir()]
+        if not names:
+            print(f"No {plugin_type}s installed.")
+            return
+    else:
+        names = [target]
+
+    for name in names:
+        item_dir = plugin_dir / name
+        if not item_dir.exists():
+            print(f"error: {plugin_type} '{name}' is not installed")
+            sys.exit(1)
+
+        # git pull
+        result = subprocess.run(
+            ["git", "pull"], cwd=str(item_dir),
+            capture_output=True, text=True, env=_GIT_ENV,
+        )
+        if result.returncode != 0:
+            print(f"error: git pull failed for '{name}': {result.stderr.strip()}")
+            sys.exit(1)
+
+        deps_path = item_dir / "deps.sh"
+
+        if uv_before_deps:
+            subprocess.run(["uv", "sync"], cwd=str(item_dir), capture_output=True, text=True)
+            if deps_path.exists():
+                r = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True)
+                if r.returncode != 0:
+                    print(f"warning: deps.sh failed for '{name}': {r.stderr.strip()}")
+        else:
+            if deps_path.exists():
+                r = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True)
+                if r.returncode != 0:
+                    print(f"warning: deps.sh failed for '{name}': {r.stderr.strip()}")
+            subprocess.run(["uv", "sync"], cwd=str(item_dir), capture_output=True, text=True)
+
+        info = {"path": str(item_dir)}
+        missing = check_deps_fn(info)
+        if missing:
+            print(f"warning: '{name}' missing binaries: {', '.join(missing)}")
+
+        print(f"{plugin_type.capitalize()} '{name}' updated.")
+        for fn in cache_invalidators:
+            fn()
+
+
 def dispatch_subcommand(
     args: object, attr: str, handlers: dict, usage: str,
 ) -> None:
