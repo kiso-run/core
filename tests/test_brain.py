@@ -3756,9 +3756,9 @@ class TestPlannerContextualRules:
                 db, self._config(), "test-session", "admin", "what time is it",
             )
         system = msgs[0]["content"]
-        # "Plugin installation:" is the appendix marker — should NOT be injected for generic messages
+        # "Plugin installation flow:" is the appendix marker — should NOT be injected for generic messages
         assert "PROTECTION" not in system
-        assert "Plugin installation:" not in system
+        assert "Plugin installation flow:" not in system
 
     async def test_skill_keyword_injects_kiso_commands(self, db):
         """Message mentioning 'skill' should inject kiso-commands appendix."""
@@ -3782,7 +3782,7 @@ class TestPlannerContextualRules:
             db, self._config(), "test-session", "admin", "install the browser connector",
         )
         system = msgs[0]["content"]
-        assert "Plugin installation:" in system
+        assert "Plugin installation flow:" in system
 
     async def test_not_installed_in_replan_injects_plugin_install(self, db):
         """M123: replan context with 'not installed' should inject plugin-install appendix."""
@@ -3794,7 +3794,7 @@ class TestPlannerContextualRules:
             db, self._config(), "test-session", "admin", replan_msg,
         )
         system = msgs[0]["content"]
-        assert "Plugin installation:" in system
+        assert "Plugin installation flow:" in system
 
     async def test_registry_keyword_injects_plugin_install(self, db):
         """M123: message with 'registry' should inject plugin-install appendix."""
@@ -3803,7 +3803,7 @@ class TestPlannerContextualRules:
             "check the registry for browser skill",
         )
         system = msgs[0]["content"]
-        assert "Plugin installation:" in system
+        assert "Plugin installation flow:" in system
 
     async def test_no_skills_injects_plugin_install(self, db):
         """M129: when no skills are installed, always inject plugin-install appendix."""
@@ -3812,7 +3812,7 @@ class TestPlannerContextualRules:
                 db, self._config(), "test-session", "admin", "what time is it",
             )
         system = msgs[0]["content"]
-        assert "Plugin installation:" in system
+        assert "Plugin installation flow:" in system
 
     async def test_no_skills_no_duplicate_appendix(self, db):
         """M129: if keyword already triggered plugin-install, no duplicate on empty skills."""
@@ -3822,7 +3822,7 @@ class TestPlannerContextualRules:
             )
         system = msgs[0]["content"]
         # Should appear exactly once
-        assert system.count("Plugin installation:") == 1
+        assert system.count("Plugin installation flow:") == 1
 
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
@@ -5201,7 +5201,7 @@ class TestLoadModularPrompt:
         # Former appendixes now modules
         assert "kiso tool install" in modular
         assert "PROTECTION" in modular or "Caller Role" in modular
-        assert "Plugin installation:" in modular
+        assert "Plugin installation flow:" in modular
 
     def test_no_markers_returns_full_prompt(self):
         """Prompt without markers returns the full text (backward compat)."""
@@ -6549,7 +6549,7 @@ class TestM274NoItalianKeywords:
                 "installa il browser",
             )
         system = msgs[0]["content"]
-        assert "Plugin installation:" not in system
+        assert "Plugin installation flow:" not in system
 
     async def test_english_install_still_works(self, db):
         """English 'install' still triggers plugin_install module."""
@@ -6558,7 +6558,7 @@ class TestM274NoItalianKeywords:
             "install the browser connector",
         )
         system = msgs[0]["content"]
-        assert "Plugin installation:" in system
+        assert "Plugin installation flow:" in system
 
     async def test_english_user_still_works(self, db):
         """English 'user' still triggers user_mgmt module."""

@@ -93,12 +93,12 @@ Kiso management commands (exec tasks):
 - Collect all info before `kiso user add`. If missing, ask first.
 
 <!-- MODULE: plugin_install -->
-`kiso tool install NAME` is idempotent.
+`kiso tool install NAME` and `kiso connector install NAME` are idempotent and **self-contained** — they handle clone, deps.sh, venv creation, and config.example.toml copy internally.  Never decompose them into sub-steps.  Never pre-fetch kiso.toml, manually inspect env vars, or verify installation in separate tasks.
 
-Plugin installation:
-1. Named request → step 3. Ambiguous → exec curl registry_url. Replan to evaluate.
-2. Fetch kiso.toml: exec `curl https://raw.githubusercontent.com/kiso-run/tool-{name}/main/kiso.toml` for env var requirements.
-3. Env vars: all set → install. Missing → msg user (include descriptions) + replan.
-4. Install: `kiso env set KEY VALUE` per var, then `kiso tool install {name}`. Replan after.
+Plugin installation flow:
+1. User must have approved installation first (see kiso_native rule).
+2. Set any known env vars: `kiso env set KEY VALUE` (one exec task per var).
+3. Install: `kiso tool install {name}` (single exec task).  Replan after.
+4. If install fails with missing env vars, the error output lists them.  Plan msg asking user for values, then replan.
 
-User must have approved installation first (see kiso_native rule). Combine steps 2+4 when no env vars missing. Mandatory replans: after registry discovery, after env var questions, after install.
+If tool name is ambiguous, exec `curl <registry_url>` to discover.  Replan to evaluate.
