@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS plans (
     total_output_tokens INTEGER NOT NULL DEFAULT 0,
     model               TEXT,
     llm_calls           TEXT,
+    install_proposal    BOOLEAN DEFAULT 0,
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session, id);
@@ -290,6 +291,15 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     existing_cols = {row[1] for row in await cur.fetchall()}
     if "duration_ms" not in existing_cols:
         await db.execute("ALTER TABLE tasks ADD COLUMN duration_ms INTEGER DEFAULT NULL")
+        await db.commit()
+
+    # M615: add install_proposal to plans table
+    cur = await db.execute("PRAGMA table_info(plans)")
+    plan_cols = {row[1] for row in await cur.fetchall()}
+    if "install_proposal" not in plan_cols:
+        await db.execute(
+            "ALTER TABLE plans ADD COLUMN install_proposal BOOLEAN DEFAULT 0"
+        )
         await db.commit()
 
     # M342: add entity_id to facts table
@@ -460,25 +470,21 @@ async def get_plan_for_session(db: aiosqlite.Connection, session: str) -> PlanDi
 
 
 async def session_has_install_proposal(db: aiosqlite.Connection, session: str) -> bool:
-    """Check if the most recent completed plan proposed an installation to the user.
+    """Check if the most recent completed plan proposed a tool installation.
 
-    Returns True if the last task of the most recent done/failed plan is a msg
-    whose detail mentions tool/connector install keywords and approval language.
+    Returns True when the last done/failed plan has ``install_proposal`` set.
+    The flag is set server-side by ``run_planner`` when validation detected
+    uninstalled-tool errors and the planner responded with a msg-only plan.
+    No keyword heuristics — purely structural detection (M615).
     """
     cur = await db.execute(
-        "SELECT t.detail FROM plans p "
-        "JOIN tasks t ON t.plan_id = p.id "
-        "WHERE p.session = ? AND p.status IN ('done', 'failed') "
-        "ORDER BY p.id DESC, t.id DESC LIMIT 1",
+        "SELECT install_proposal FROM plans "
+        "WHERE session = ? AND status IN ('done', 'failed') "
+        "ORDER BY id DESC LIMIT 1",
         (session,),
     )
     row = await cur.fetchone()
-    if not row:
-        return False
-    detail = (row["detail"] or "").lower()
-    has_install_keyword = any(kw in detail for kw in ("install", "tool", "skill", "connector"))
-    has_approval_language = any(kw in detail for kw in ("permission", "approve", "want me to", "would you like", "shall i"))
-    return has_install_keyword and has_approval_language
+    return bool(row and row["install_proposal"])
 
 
 async def _get_messages_filtered(
@@ -782,6 +788,13 @@ async def update_plan_goal(
 ) -> None:
     """Update plan goal."""
     await _update_field(db, "plans", "goal", goal, plan_id)
+
+
+async def update_plan_install_proposal(
+    db: aiosqlite.Connection, plan_id: int, value: bool = True,
+) -> None:
+    """Mark a plan as an install proposal (M615)."""
+    await _update_field(db, "plans", "install_proposal", int(value), plan_id)
 
 
 async def update_plan_usage(

@@ -140,6 +140,10 @@ def _repair_json(text: str) -> str:
 _INSTALL_CMD_RE = re.compile(
     r"kiso\s+(tool|skill|connector)\s+install", re.IGNORECASE,
 )
+# M615: marker substring in validation errors for uninstalled-tool detection.
+# Used both when generating the error (validate_plan) and detecting it
+# (_retry_llm_with_validation).  Keep in sync.
+_TOOL_NOT_INSTALLED_MARKER = "is not installed"
 
 _PLUGIN_DISCOVERY_RE = re.compile(
     r"(?:tool|skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
@@ -199,6 +203,7 @@ async def _retry_llm_with_validation(
     validation_errors = 0
     attempt = 0
     active_model: str | None = None  # M308: None means use default from config
+    saw_uninstalled_tool = False  # M615: track uninstalled-tool validation errors
 
     while attempt < max_total:
         attempt += 1
@@ -272,6 +277,8 @@ async def _retry_llm_with_validation(
         errors = validate_fn(result)
         if not errors:
             log.info("%s accepted (attempt %d)", error_noun, attempt)
+            # M615: propagate uninstalled-tool signal on the result dict
+            result["_saw_uninstalled_tool"] = saw_uninstalled_tool
             return result
 
         validation_errors += 1
@@ -283,6 +290,10 @@ async def _retry_llm_with_validation(
             )
             exc.last_errors = errors
             raise exc
+
+        # M615: detect uninstalled-tool errors for install-proposal detection
+        if not saw_uninstalled_tool and any(_TOOL_NOT_INSTALLED_MARKER in e for e in errors):
+            saw_uninstalled_tool = True
 
         # M186: track consecutive identical errors for escalation
         error_set = frozenset(errors)
@@ -1077,7 +1088,16 @@ async def run_planner(
         on_retry=on_retry,
         fallback_model=fallback,
     )
-    log.info("Plan: goal=%r, %d tasks", plan["goal"], len(plan["tasks"]))
+    # M615: detect install proposal — validation saw uninstalled-tool errors
+    # and the planner responded with a msg-only plan (proposing install to user).
+    saw_uninstalled = plan.pop("_saw_uninstalled_tool", False)
+    plan["install_proposal"] = (
+        saw_uninstalled
+        and all(t.get("type") == TASK_TYPE_MSG for t in plan["tasks"])
+    )
+
+    log.info("Plan: goal=%r, %d tasks, install_proposal=%s",
+             plan["goal"], len(plan["tasks"]), plan["install_proposal"])
     return plan
 
 

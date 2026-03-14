@@ -113,6 +113,7 @@ from kiso.store import (
     update_fact_usage,
     update_learning,
     update_plan_goal,
+    update_plan_install_proposal,
     update_plan_status,
     update_plan_usage,
     update_summary,
@@ -2332,6 +2333,10 @@ async def _process_message(
 
     # Update plan with real goal and persist tasks
     await update_plan_goal(db, plan_id, plan["goal"])
+
+    # M615: persist install_proposal flag detected by run_planner
+    if plan.get("install_proposal"):
+        await update_plan_install_proposal(db, plan_id)
 
     plan_tasks = _maybe_inject_intent_msg(plan["tasks"], plan["goal"])
 
