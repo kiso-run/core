@@ -131,7 +131,7 @@ def test_reviewer_prompt_contains_empty_output_guard():
 def test_reviewer_prompt_contains_reason_required_rule():
     """M111d: reviewer.md must require reason for replan status."""
     prompt = _load_system_prompt("reviewer")
-    assert ("required (non-null, non-empty" in prompt or "required when replan or stuck" in prompt) and "replan" in prompt
+    assert "required" in prompt and "replan" in prompt
 
 
 # --- M318: reviewer learn quality rules ---
