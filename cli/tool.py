@@ -14,6 +14,8 @@ from cli.plugin_ops import (
     _GIT_ENV,
     _list_plugins,
     _plugin_install,
+    _remove_plugin,
+    _render_search_results,
     _update_plugin,
     cross_type_hint,
     fetch_registry,
@@ -83,18 +85,7 @@ def _tool_search(args) -> None:
     results = _search_entries(
         registry.get("tools", registry.get("skills", [])), args.query,
     )
-
-    if not results:
-        print("No tools found.")
-        if args.query:
-            hint = cross_type_hint(registry, "tools", args.query)
-            if hint:
-                print(hint)
-        return
-
-    max_name = max(len(r["name"]) for r in results)
-    for r in results:
-        print(f"  {r['name'].ljust(max_name)}  — {r.get('description', '')}")
+    _render_search_results(results, args.query, "tool", registry)
 
 
 def _tool_install(args) -> None:
@@ -124,16 +115,6 @@ def _tool_update(args) -> None:
 def _tool_remove(args) -> None:
     """Remove an installed tool."""
     _require_admin()
-
-    name = args.name
-    tool_dir = TOOLS_DIR / name
-    if not tool_dir.exists():
-        print(f"error: tool '{name}' is not installed")
-        sys.exit(1)
-
-    shutil.rmtree(tool_dir)
-    print(f"Tool '{name}' removed.")
     from kiso.sysenv import invalidate_cache
-    invalidate_cache()
     from kiso.tools import invalidate_tools_cache
-    invalidate_tools_cache()
+    _remove_plugin(args.name, TOOLS_DIR / args.name, "tool", [invalidate_cache, invalidate_tools_cache])

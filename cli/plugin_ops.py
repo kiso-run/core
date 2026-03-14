@@ -307,6 +307,41 @@ def _list_plugins(discover_fn, item_type: str) -> None:
         print(f"  {name}  {ver}  — {desc}")
 
 
+def _check_plugin_installed(plugin_dir: Path, plugin_type: str, name: str) -> None:
+    """Exit with error if the plugin directory does not exist."""
+    if not plugin_dir.exists():
+        print(f"error: {plugin_type} '{name}' is not installed", file=sys.stderr)
+        sys.exit(1)
+
+
+def _render_search_results(
+    results: list[dict], query: str, plugin_type: str, registry: dict,
+) -> None:
+    """Render search results or a 'not found' message with cross-type hint."""
+    if not results:
+        print(f"No {plugin_type}s found.")
+        if query:
+            hint = cross_type_hint(registry, plugin_type + "s", query)
+            if hint:
+                print(hint)
+        return
+    max_name = max(len(r["name"]) for r in results)
+    for r in results:
+        print(f"  {r['name'].ljust(max_name)}  — {r.get('description', '')}")
+
+
+def _remove_plugin(
+    name: str, plugin_dir: Path, plugin_type: str,
+    cache_invalidators: list,
+) -> None:
+    """Remove an installed plugin directory and invalidate caches."""
+    _check_plugin_installed(plugin_dir, plugin_type, name)
+    shutil.rmtree(plugin_dir)
+    print(f"{plugin_type.capitalize()} '{name}' removed.")
+    for fn in cache_invalidators:
+        fn()
+
+
 def _update_plugin(
     target: str, plugin_dir: Path, plugin_type: str,
     check_deps_fn, cache_invalidators: list,

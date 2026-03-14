@@ -22,8 +22,11 @@ from kiso.tools import check_deps
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,
+    _check_plugin_installed,
     _list_plugins,
     _plugin_install,
+    _remove_plugin,
+    _render_search_results,
     _update_plugin,
     cross_type_hint,
     fetch_registry,
@@ -201,18 +204,7 @@ def _connector_search(args) -> None:
     """Search official connectors from the registry."""
     registry = fetch_registry()
     results = search_entries(registry.get("connectors", []), args.query)
-
-    if not results:
-        print("No connectors found.")
-        if args.query:
-            hint = cross_type_hint(registry, "connectors", args.query)
-            if hint:
-                print(hint)
-        return
-
-    max_name = max(len(r["name"]) for r in results)
-    for r in results:
-        print(f"  {r['name'].ljust(max_name)}  — {r.get('description', '')}")
+    _render_search_results(results, args.query, "connector", registry)
 
 
 def _connector_install(args) -> None:
@@ -243,14 +235,9 @@ def _connector_update(args) -> None:
 def _connector_remove(args) -> None:
     """Remove an installed connector."""
     require_admin()
-
     name = args.name
     connector_dir = CONNECTORS_DIR / name
-    if not connector_dir.exists():
-        print(f"error: connector '{name}' is not installed")
-        sys.exit(1)
-
-    # Stop the connector if running
+    # Stop the connector if running (before _remove_plugin deletes the dir)
     pid_file = connector_dir / ".pid"
     if pid_file.exists():
         try:
@@ -259,11 +246,8 @@ def _connector_remove(args) -> None:
         except (ValueError, ProcessLookupError, OSError):
             pass
 
-    shutil.rmtree(connector_dir)
-    print(f"Connector '{name}' removed.")
-    invalidate_connectors_cache()
     from kiso.sysenv import invalidate_cache
-    invalidate_cache()
+    _remove_plugin(name, connector_dir, "connector", [invalidate_connectors_cache, invalidate_cache])
 
 
 def _connector_run(args) -> None:
@@ -272,9 +256,7 @@ def _connector_run(args) -> None:
 
     name = args.name
     connector_dir = CONNECTORS_DIR / name
-    if not connector_dir.exists():
-        print(f"error: connector '{name}' is not installed")
-        sys.exit(1)
+    _check_plugin_installed(connector_dir, "connector", name)
 
     pid_file = connector_dir / ".pid"
     if pid_file.exists():
@@ -316,9 +298,7 @@ def _connector_stop(args) -> None:
 
     name = args.name
     connector_dir = CONNECTORS_DIR / name
-    if not connector_dir.exists():
-        print(f"error: connector '{name}' is not installed")
-        sys.exit(1)
+    _check_plugin_installed(connector_dir, "connector", name)
 
     pid_file = connector_dir / ".pid"
     if not pid_file.exists():
@@ -363,9 +343,7 @@ def _connector_status(args) -> None:
     """Check connector daemon status."""
     name = args.name
     connector_dir = CONNECTORS_DIR / name
-    if not connector_dir.exists():
-        print(f"error: connector '{name}' is not installed")
-        sys.exit(1)
+    _check_plugin_installed(connector_dir, "connector", name)
 
     pid_file = connector_dir / ".pid"
     if not pid_file.exists():

@@ -738,8 +738,8 @@ def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
     ):
         _tool_remove(argparse.Namespace(name="nonexistent"))
 
-    out = capsys.readouterr().out
-    assert "not installed" in out
+    captured = capsys.readouterr()
+    assert "not installed" in (captured.out + captured.err)
 
 
 # ── Edge cases: _skill_install ──────────────────────────

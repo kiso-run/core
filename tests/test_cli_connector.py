@@ -715,8 +715,8 @@ def test_connector_update_nonexistent(tmp_path, mock_admin, capsys):
     ):
         _connector_update(argparse.Namespace(target="nonexistent"))
 
-    out = capsys.readouterr().out
-    assert "not installed" in out
+    captured = capsys.readouterr()
+    assert "not installed" in (captured.out + captured.err)
 
 
 # ── _connector_remove ────────────────────────────────────────
@@ -749,8 +749,8 @@ def test_connector_remove_nonexistent(tmp_path, mock_admin, capsys):
     ):
         _connector_remove(argparse.Namespace(name="nonexistent"))
 
-    out = capsys.readouterr().out
-    assert "not installed" in out
+    captured = capsys.readouterr()
+    assert "not installed" in (captured.out + captured.err)
 
 
 # ── _connector_run ───────────────────────────────────────────
@@ -835,8 +835,8 @@ def test_connector_run_nonexistent(tmp_path, mock_admin, capsys):
     ):
         _connector_run(argparse.Namespace(name="nonexistent"))
 
-    out = capsys.readouterr().out
-    assert "not installed" in out
+    captured = capsys.readouterr()
+    assert "not installed" in (captured.out + captured.err)
 
 
 # ── _connector_stop ──────────────────────────────────────────
@@ -905,8 +905,8 @@ def test_connector_stop_nonexistent(tmp_path, mock_admin, capsys):
     ):
         _connector_stop(argparse.Namespace(name="nonexistent"))
 
-    out = capsys.readouterr().out
-    assert "not installed" in out
+    captured = capsys.readouterr()
+    assert "not installed" in (captured.out + captured.err)
 
 
 # ── _write_status ────────────────────────────────────────────
@@ -1536,8 +1536,8 @@ def test_connector_status_nonexistent(tmp_path, capsys):
     ):
         _connector_status(argparse.Namespace(name="nonexistent"))
 
-    out = capsys.readouterr().out
-    assert "not installed" in out
+    captured = capsys.readouterr()
+    assert "not installed" in (captured.out + captured.err)
 
 
 def test_connector_status_corrupt_pid_file(tmp_path, capsys):
