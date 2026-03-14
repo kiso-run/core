@@ -231,6 +231,16 @@ async def _retry_llm_with_validation(
             )
         except LLMError as e:
             llm_errors += 1
+            # M630: circuit breaker open → switch to fallback immediately
+            _is_cb = "Circuit breaker open" in str(e)
+            if _is_cb and fallback_model and active_model != fallback_model:
+                log.warning("Circuit breaker open; switching to fallback %s", fallback_model)
+                active_model = fallback_model
+                llm_errors = 0
+                max_total += max_llm_retries
+                if on_retry is not None:
+                    on_retry(attempt + 1, max_total, f"Switching to fallback model: {fallback_model}")
+                continue
             log.warning("LLM error (%d/%d LLM retries): %s", llm_errors, max_llm_retries, e)
             if llm_errors >= max_llm_retries:
                 # M308: switch to fallback model instead of raising

@@ -6367,6 +6367,65 @@ class TestM308FallbackModel:
         assert any("fallback" in r.lower() for r in retry_reasons)
 
 
+class TestM630CircuitBreakerFallback:
+    """M630: circuit breaker open triggers immediate fallback switch."""
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_validation_retries=3, max_llm_retries=2),
+            raw={},
+        )
+
+    async def test_circuit_breaker_triggers_immediate_fallback(self, config):
+        """When circuit breaker opens, switches to fallback on first attempt."""
+        call_count = [0]
+        models_seen: list[str | None] = []
+        valid_plan = json.dumps({
+            "goal": "test", "secrets": None,
+            "tasks": [{"type": "msg", "detail": "Answer in English. Report the results to the user",
+                        "tool": None, "args": None, "expect": None}],
+        })
+
+        async def _mock_llm(cfg, role, messages, model_override=None, **kw):
+            call_count[0] += 1
+            models_seen.append(model_override)
+            if model_override is None:
+                raise LLMError("Circuit breaker open — provider degraded")
+            return valid_plan
+
+        with patch("kiso.brain.call_llm", side_effect=_mock_llm):
+            result = await _retry_llm_with_validation(
+                config, "planner",
+                [{"role": "user", "content": "test"}],
+                PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                fallback_model="fallback-v1",
+            )
+
+        assert result["goal"] == "test"
+        # Should switch to fallback on first error (not after max_llm_retries)
+        assert models_seen[0] is None  # first attempt: primary
+        assert models_seen[1] == "fallback-v1"  # immediate fallback
+        assert call_count[0] == 2  # no wasted retries
+
+    async def test_circuit_breaker_no_fallback_raises(self, config):
+        """Without fallback, circuit breaker error propagates normally."""
+        async def _always_cb(cfg, role, messages, **kw):
+            raise LLMError("Circuit breaker open — provider degraded")
+
+        with patch("kiso.brain.call_llm", side_effect=_always_cb):
+            with pytest.raises(PlanError, match="LLM call failed"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
+                )
+
+
 class TestM309ReplanContextDedup:
     """M309: build_planner_messages excludes system_env from context_pool on replan,
     and run_planner passes is_replan to validate_plan preserving extend_replan."""
