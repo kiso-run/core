@@ -249,6 +249,32 @@ async def _rows_to_dicts(cur: aiosqlite.Cursor) -> list[dict]:
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def _update_field(
+    db: aiosqlite.Connection,
+    table: str,
+    field: str,
+    value: object,
+    row_id: object,
+    *,
+    id_column: str = "id",
+    update_timestamp: bool = False,
+) -> None:
+    """Generic single-field UPDATE helper.
+
+    Sets *field* = *value* on the row identified by *id_column* = *row_id*.
+    When *update_timestamp* is True, also sets ``updated_at = CURRENT_TIMESTAMP``.
+    """
+    if update_timestamp:
+        sql = (
+            f"UPDATE {table} SET {field} = ?, updated_at = CURRENT_TIMESTAMP "
+            f"WHERE {id_column} = ?"
+        )
+    else:
+        sql = f"UPDATE {table} SET {field} = ? WHERE {id_column} = ?"
+    await db.execute(sql, (value, row_id))
+    await db.commit()
+
+
 async def init_db(db_path: Path) -> aiosqlite.Connection:
     """Create tables, enable WAL, set busy_timeout, set row_factory, return connection."""
     db = await aiosqlite.connect(db_path)
@@ -370,8 +396,7 @@ async def save_message(
 
 async def mark_message_processed(db: aiosqlite.Connection, msg_id: int) -> None:
     """Set processed=1 for a message."""
-    await db.execute("UPDATE messages SET processed = 1 WHERE id = ?", (msg_id,))
-    await db.commit()
+    await _update_field(db, "messages", "processed", 1, msg_id)
 
 
 async def mark_messages_processed(db: aiosqlite.Connection, msg_ids: list[int]) -> None:
@@ -621,10 +646,7 @@ async def update_task_command(
     db: aiosqlite.Connection, task_id: int, command: str
 ) -> None:
     """Set the translated shell command on a task."""
-    await db.execute(
-        "UPDATE tasks SET command = ? WHERE id = ?", (command, task_id)
-    )
-    await db.commit()
+    await _update_field(db, "tasks", "command", command, task_id, update_timestamp=True)
 
 
 _KEEP_LLM_CALLS = object()  # sentinel: don't touch the llm_calls column
@@ -661,22 +683,14 @@ async def update_task_substatus(
     db: aiosqlite.Connection, task_id: int, substatus: str
 ) -> None:
     """Update only the substatus text (lightweight, no output/status change)."""
-    await db.execute(
-        "UPDATE tasks SET substatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (substatus, task_id),
-    )
-    await db.commit()
+    await _update_field(db, "tasks", "substatus", substatus, task_id, update_timestamp=True)
 
 
 async def update_task_retry_count(
     db: aiosqlite.Connection, task_id: int, retry_count: int
 ) -> None:
     """Update the retry_count on a task."""
-    await db.execute(
-        "UPDATE tasks SET retry_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (retry_count, task_id),
-    )
-    await db.commit()
+    await _update_field(db, "tasks", "retry_count", retry_count, task_id, update_timestamp=True)
 
 
 async def append_task_llm_call(
@@ -703,20 +717,14 @@ async def update_plan_status(
     db: aiosqlite.Connection, plan_id: int, status: str
 ) -> None:
     """Update plan status."""
-    await db.execute(
-        "UPDATE plans SET status = ? WHERE id = ?", (status, plan_id)
-    )
-    await db.commit()
+    await _update_field(db, "plans", "status", status, plan_id)
 
 
 async def update_plan_goal(
     db: aiosqlite.Connection, plan_id: int, goal: str
 ) -> None:
     """Update plan goal."""
-    await db.execute(
-        "UPDATE plans SET goal = ? WHERE id = ?", (goal, plan_id)
-    )
-    await db.commit()
+    await _update_field(db, "plans", "goal", goal, plan_id)
 
 
 async def update_plan_usage(
@@ -846,10 +854,7 @@ async def update_learning(
     db: aiosqlite.Connection, learning_id: int, status: str
 ) -> None:
     """Set learning status (promoted or discarded)."""
-    await db.execute(
-        "UPDATE learnings SET status = ? WHERE id = ?", (status, learning_id)
-    )
-    await db.commit()
+    await _update_field(db, "learnings", "status", status, learning_id)
 
 
 async def save_fact(
@@ -1180,11 +1185,10 @@ async def update_summary(
     db: aiosqlite.Connection, session: str, summary: str
 ) -> None:
     """Update session summary."""
-    await db.execute(
-        "UPDATE sessions SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE session = ?",
-        (summary, session),
+    await _update_field(
+        db, "sessions", "summary", summary, session,
+        id_column="session", update_timestamp=True,
     )
-    await db.commit()
 
 
 async def count_messages(db: aiosqlite.Connection, session: str) -> int:
