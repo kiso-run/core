@@ -1265,27 +1265,40 @@ CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({"plan", "chat", "chat_kb"})
 async def classify_message(
     config: Config, content: str, session: str = "",
     recent_context: str = "",
-) -> str:
-    """Classify a user message as 'plan', 'chat_kb', or 'chat'.
+) -> tuple[str, str]:
+    """Classify a user message and detect its language.
 
-    Returns one of :data:`CLASSIFIER_CATEGORIES`.  On any error or ambiguous
-    output, returns ``"plan"`` (safe fallback — the planner handles everything).
+    Returns ``(category, lang)`` where *category* is one of
+    :data:`CLASSIFIER_CATEGORIES` and *lang* is an ISO 639-1 code
+    (e.g. ``"en"``, ``"it"``).  On any error or ambiguous output,
+    returns ``("plan", "en")`` as safe fallback.
     """
     messages = build_classifier_messages(content, recent_context=recent_context)
     try:
         raw = await call_llm(config, "classifier", messages, session=session)
     except LLMError as e:
         log.warning("Classifier LLM failed, falling back to plan: %s", e)
-        return "plan"
+        return "plan", "en"
 
     result = raw.strip().lower()
+
+    # New format: "category:lang" (e.g. "chat:it", "plan:en")
+    if ":" in result:
+        cat, lang = result.split(":", 1)
+        cat = cat.strip()
+        lang = lang.strip()
+        if cat in CLASSIFIER_CATEGORIES and len(lang) == 2:
+            log.info("Classifier: %s (lang=%s)", cat, lang)
+            return cat, lang
+
+    # Backward compat: plain category without lang
     if result in CLASSIFIER_CATEGORIES:
-        log.info("Classifier: %s", result)
-        return result
+        log.info("Classifier: %s (no lang)", result)
+        return result, "en"
 
     # Ambiguous output — safe fallback
     log.warning("Classifier returned unexpected value %r, falling back to plan", raw.strip())
-    return "plan"
+    return "plan", "en"
 
 
 # --- Stop pattern fast-path (M407) ---

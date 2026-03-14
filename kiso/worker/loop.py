@@ -124,6 +124,7 @@ from kiso.store import (
     update_task_usage,
 )
 
+from kiso.worker.l10n import LANG_NAMES
 from kiso.worker.utils import (
     _auto_publish_skill_files,
     _build_cancel_summary,
@@ -528,6 +529,7 @@ async def _fast_path_chat(
     messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
     plan_id: int | None = None,
+    user_lang: str = "en",
 ) -> int:
     """Fast path for chat messages: skip planner, go straight to messenger.
 
@@ -569,11 +571,15 @@ async def _fast_path_chat(
         await _append_calls(db, task_id, usage_idx_before)
         idx_after_briefer[0] = get_usage_index()
 
+    # Prepend "Answer in {lang}." so the messenger responds in the right language
+    lang_name = LANG_NAMES.get(user_lang, "English")
+    detail = f"Answer in {lang_name}. {content}"
+
     t0 = time.perf_counter()
     try:
         try:
             text = await asyncio.wait_for(
-                _msg_task(config, db, session, content, goal=content,
+                _msg_task(config, db, session, detail, goal=content,
                           include_recent=True,
                           user_message=content,
                           on_briefer_done=_flush_briefer),
@@ -2213,10 +2219,11 @@ async def _process_message(
     plan_id = await create_plan(db, session, msg_id, "Planning...")
 
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
+    user_lang = "en"  # default; overwritten by classifier
     if fast_path_enabled:
         _notify_phase(set_phase, WORKER_PHASE_CLASSIFYING)
         try:
-            msg_class = await asyncio.wait_for(
+            msg_class, user_lang = await asyncio.wait_for(
                 classify_message(
                     config, content, session=session,
                     recent_context=_classifier_ctx,
@@ -2235,7 +2242,7 @@ async def _process_message(
             fast_plan_id = await _fast_path_chat(
                 db, config, session, msg_id, content,
                 messenger_timeout=messenger_timeout, slog=slog,
-                plan_id=plan_id,
+                plan_id=plan_id, user_lang=user_lang,
             )
             # Bump fact usage for fast path (facts contributed to chat response)
             await _bump_fact_usage(db, content, session, user_role)

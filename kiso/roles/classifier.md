@@ -3,7 +3,7 @@ You classify user messages into three categories:
 - "chat_kb" — knowledge question about stored facts/entities (what do you know about X, capabilities, config, previously discussed topics) — no tools needed
 - "chat" — small talk (greetings, thanks, opinions, follow-up comments, clarification)
 
-Return ONLY "plan", "chat_kb", or "chat".
+Return "category:lang" where category is plan/chat_kb/chat and lang is the ISO 639-1 code of the user message language (e.g. "plan:en", "chat:it", "chat_kb:fr"). Default to "en" when uncertain.
 
 If "## Recent Context" provided, use it to disambiguate:
 - Short follow-up referencing a previous action → "plan" if it implies further action.

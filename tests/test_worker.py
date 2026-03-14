@@ -7487,7 +7487,7 @@ class TestFastPathIntegration:
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
-        mock_classifier = AsyncMock(return_value="chat")
+        mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi there!")
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
@@ -7509,7 +7509,7 @@ class TestFastPathIntegration:
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
-        mock_classifier = AsyncMock(return_value="plan")
+        mock_classifier = AsyncMock(return_value=("plan", "en"))
         mock_messenger = AsyncMock(return_value="Done")
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
@@ -7530,7 +7530,7 @@ class TestFastPathIntegration:
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": False})
         msg = self._make_msg(msg_id)
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
-        mock_classifier = AsyncMock(return_value="chat")
+        mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
@@ -7550,7 +7550,7 @@ class TestFastPathIntegration:
         conn, msg_id = db
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
-        mock_classifier = AsyncMock(return_value="chat")
+        mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
         mock_post = AsyncMock()
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
@@ -7572,7 +7572,7 @@ class TestFastPathIntegration:
         conn, msg_id = db
         config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
-        mock_classifier = AsyncMock(return_value="chat")
+        mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
         mock_paraphraser = AsyncMock(return_value="paraphrased")
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
@@ -10026,7 +10026,7 @@ class TestProcessMessagePhaseCallback:
         msg = self._make_msg(msg_id)
         phases = []
 
-        mock_classifier = AsyncMock(return_value="chat")
+        mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi!")
         mock_post = AsyncMock()
         with patch("kiso.worker.loop.classify_message", mock_classifier), \
@@ -10079,7 +10079,7 @@ class TestProcessMessagePhaseCallback:
             call_count.append(1)
             return fail_plan if len(call_count) == 1 else success_plan
 
-        mock_classifier = AsyncMock(return_value="plan")
+        mock_classifier = AsyncMock(return_value=("plan", "en"))
         mock_post = AsyncMock()
 
         with patch("kiso.worker.loop.classify_message", mock_classifier), \

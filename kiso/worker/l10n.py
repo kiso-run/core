@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+# ISO 639-1 → English name (for "Answer in {lang}." prefix)
+LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "it": "Italian",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt": "Portuguese",
+}
+
 LANG_MARKERS: dict[str, set[str]] = {
     "it": {"vai", "apri", "cerca", "installa", "fammi", "dimmi", "controlla", "scrivi", "naviga"},
     "es": {"abre", "busca", "instala", "dime", "haz", "escribe", "navega", "muestra"},

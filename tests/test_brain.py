@@ -3100,79 +3100,105 @@ class TestBuildClassifierMessages:
 
 
 class TestClassifyMessage:
-    async def test_returns_chat(self):
-        """classify_message returns 'chat' when LLM says 'chat'."""
+    async def test_returns_chat_with_lang(self):
+        """classify_message parses 'chat:en' format."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat:en"):
+            cat, lang = await classify_message(config, "hello")
+        assert cat == "chat"
+        assert lang == "en"
+
+    async def test_returns_chat_kb_with_lang(self):
+        """classify_message parses 'chat_kb:it' format."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat_kb:it"):
+            cat, lang = await classify_message(config, "cosa sai su te stesso?")
+        assert cat == "chat_kb"
+        assert lang == "it"
+
+    async def test_returns_plan_with_lang(self):
+        """classify_message parses 'plan:en' format."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="plan:en"):
+            cat, lang = await classify_message(config, "list files")
+        assert cat == "plan"
+        assert lang == "en"
+
+    async def test_backward_compat_plain_category(self):
+        """classify_message handles plain category without lang (backward compat)."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat"):
-            result = await classify_message(config, "hello")
-        assert result == "chat"
-
-    async def test_returns_chat_kb(self):
-        """M364: classify_message returns 'chat_kb' for knowledge-enriched chat."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat_kb"):
-            result = await classify_message(config, "cosa sai su te stesso?")
-        assert result == "chat_kb"
-
-    async def test_returns_plan(self):
-        """classify_message returns 'plan' when LLM says 'plan'."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="plan"):
-            result = await classify_message(config, "list files")
-        assert result == "plan"
+            cat, lang = await classify_message(config, "hello")
+        assert cat == "chat"
+        assert lang == "en"
 
     async def test_strips_whitespace(self):
         """classify_message handles LLM output with whitespace."""
         config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  chat\n"):
-            result = await classify_message(config, "thanks")
-        assert result == "chat"
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  chat:fr\n"):
+            cat, lang = await classify_message(config, "merci")
+        assert cat == "chat"
+        assert lang == "fr"
 
     async def test_case_insensitive(self):
         """classify_message handles uppercase responses."""
         config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CHAT"):
-            result = await classify_message(config, "thanks")
-        assert result == "chat"
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CHAT:EN"):
+            cat, lang = await classify_message(config, "thanks")
+        assert cat == "chat"
+        assert lang == "en"
 
     async def test_unexpected_output_falls_back_to_plan(self):
-        """classify_message returns 'plan' for unexpected LLM output."""
+        """classify_message returns ('plan', 'en') for unexpected LLM output."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="I think this is a chat"):
-            result = await classify_message(config, "hello")
-        assert result == "plan"
+            cat, lang = await classify_message(config, "hello")
+        assert cat == "plan"
+        assert lang == "en"
 
     async def test_llm_error_falls_back_to_plan(self):
-        """classify_message returns 'plan' when LLM call fails."""
+        """classify_message returns ('plan', 'en') when LLM call fails."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("timeout")):
-            result = await classify_message(config, "hello")
-        assert result == "plan"
+            cat, lang = await classify_message(config, "hello")
+        assert cat == "plan"
+        assert lang == "en"
 
     async def test_budget_exceeded_falls_back_to_plan(self):
-        """classify_message returns 'plan' when LLM budget is exhausted."""
+        """classify_message returns ('plan', 'en') when LLM budget is exhausted."""
         from kiso.llm import LLMBudgetExceeded
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("over")):
-            result = await classify_message(config, "hello")
-        assert result == "plan"
+            cat, lang = await classify_message(config, "hello")
+        assert cat == "plan"
+        assert lang == "en"
 
     async def test_empty_response_falls_back_to_plan(self):
-        """classify_message returns 'plan' when LLM returns empty string."""
+        """classify_message returns ('plan', 'en') when LLM returns empty string."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=""):
-            result = await classify_message(config, "hello")
-        assert result == "plan"
+            cat, lang = await classify_message(config, "hello")
+        assert cat == "plan"
+        assert lang == "en"
 
     async def test_uses_classifier_model(self):
         """classify_message should call LLM with 'classifier' role."""
         config = _make_config_for_classifier()
-        mock_llm = AsyncMock(return_value="chat")
+        mock_llm = AsyncMock(return_value="chat:en")
         with patch("kiso.brain.call_llm", mock_llm):
             await classify_message(config, "hello", session="s1")
         mock_llm.assert_called_once()
         assert mock_llm.call_args[0][1] == "classifier"  # role argument
         assert mock_llm.call_args[1].get("session") == "s1"
+
+    async def test_invalid_lang_code_ignored(self):
+        """classify_message rejects lang codes that aren't 2 chars."""
+        config = _make_config_for_classifier()
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat:italian"):
+            cat, lang = await classify_message(config, "ciao")
+        # "italian" is not a valid 2-char ISO code, falls back to plain parse
+        assert cat == "plan"  # "chat:italian" is not in CLASSIFIER_CATEGORIES
+        assert lang == "en"
 
 
 class TestClassifierPromptContent:
