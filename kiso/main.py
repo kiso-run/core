@@ -110,6 +110,15 @@ def _validate_session_id(session: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid session ID")
 
 
+async def _require_admin_with_ratelimit(request: Request, auth: AuthInfo, user: str) -> None:
+    """Resolve user, enforce admin role, and apply admin rate limit."""
+    config = request.app.state.config
+    resolved = resolve_user(config, user, auth.token_name)
+    if not _is_admin(resolved):
+        _raise_admin_required()
+    await _check_rate_limit(f"admin:{user}", limit=5)
+
+
 @dataclass
 class WorkerEntry:
     """Per-session worker state: queue, asyncio task, cancel event, and pending messages."""
@@ -824,11 +833,7 @@ async def get_stats(
 
     *by* must be one of ``model``, ``session``, or ``role``.
     """
-    config = request.app.state.config
-    resolved = resolve_user(config, user, auth.token_name)
-    if not _is_admin(resolved):
-        _raise_admin_required()
-    await _check_rate_limit(f"admin:{user}", limit=5)
+    await _require_admin_with_ratelimit(request, auth, user)
     if by not in ("model", "session", "role"):
         raise HTTPException(status_code=400, detail="by must be model, session, or role")
 
@@ -859,11 +864,7 @@ async def post_reload_config(
     auth: AuthInfo = Depends(require_auth),
     user: str = Query(...),
 ):
-    config = request.app.state.config
-    resolved = resolve_user(config, user, auth.token_name)
-    if not _is_admin(resolved):
-        _raise_admin_required()
-    await _check_rate_limit(f"admin:{user}", limit=5)
+    await _require_admin_with_ratelimit(request, auth, user)
     try:
         new_config = reload_config()
         request.app.state.config = new_config
@@ -879,12 +880,7 @@ async def post_reload_env(
     auth: AuthInfo = Depends(require_auth),
     user: str = Query(...),
 ):
-    config = request.app.state.config
-    resolved = resolve_user(config, user, auth.token_name)
-
-    if not _is_admin(resolved):
-        _raise_admin_required()
-    await _check_rate_limit(f"admin:{user}", limit=5)
+    await _require_admin_with_ratelimit(request, auth, user)
 
     env_vars = _load_env_file(KISO_DIR / ".env")
     applied = 0
