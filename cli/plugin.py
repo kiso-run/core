@@ -29,27 +29,14 @@ def _plugin_list() -> None:
         print("No plugins installed.")
         return
 
-    if tools:
-        print("Tools:")
-        max_name = max(len(t["name"]) for t in tools)
-        for t in tools:
-            desc = t.get("description") or t.get("summary", "")
-            print(f"  {t['name'].ljust(max_name)}  {desc}")
-        print()
-
-    if skills:
-        print("Skills:")
-        max_name = max(len(s["name"]) for s in skills)
-        for s in skills:
-            print(f"  {s['name'].ljust(max_name)}  {s['summary']}")
-        print()
-
-    if connectors:
-        print("Connectors:")
-        max_name = max(len(c["name"]) for c in connectors)
-        for c in connectors:
-            desc = c.get("description") or c.get("summary", "")
-            print(f"  {c['name'].ljust(max_name)}  {desc}")
+    for label, items in [("Tools", tools), ("Skills", skills), ("Connectors", connectors)]:
+        if not items:
+            continue
+        print(f"{label}:")
+        max_name = max(len(i["name"]) for i in items)
+        for i in items:
+            desc = i.get("description") or i.get("summary", "")
+            print(f"  {i['name'].ljust(max_name)}  {desc}")
         print()
 
 
