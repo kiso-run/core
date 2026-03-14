@@ -11,6 +11,35 @@ import typing
 from kiso._version import __version__
 
 from cli._http import _handle_http_error
+from cli.render import (
+    CLEAR_LINE,
+    _format_resources,
+    _parse_llm_calls,
+    detect_caps,
+    get_last_thinking,
+    render_banner,
+    render_cancel_start,
+    render_command,
+    render_inflight_indicator,
+    render_llm_call_input_panel,
+    render_llm_call_output_panel,
+    render_llm_calls,
+    render_msg_output,
+    render_partial_content,
+    render_phase_done,
+    render_plan,
+    render_plan_detail,
+    render_planner_spinner,
+    render_review,
+    render_separator,
+    render_task_header,
+    render_task_output,
+    render_usage,
+    render_user_prompt,
+    spinner_frames,
+)
+
+_STREAMING_VISIBLE_ROLES = frozenset({"messenger", "summarizer"})
 
 
 class _VersionAction(argparse.Action):
@@ -60,7 +89,6 @@ def _setup_client_context(args: argparse.Namespace) -> _ClientContext:
     import httpx
 
     from kiso.config import load_config
-    from cli.render import detect_caps
 
     cfg = load_config()
     caps = detect_caps()
@@ -522,7 +550,6 @@ def _msg_cmd(args: argparse.Namespace) -> None:
 def _chat(args: argparse.Namespace) -> None:
     import httpx
 
-    from cli.render import render_banner, render_cancel_start, render_user_prompt
 
     ctx = _setup_client_context(args)
     prompt = render_user_prompt(ctx.user, ctx.caps)
@@ -632,7 +659,6 @@ class _PollRenderState:
 
 def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> None:
     """Print input+output panels for *calls* as paired IN→OUT."""
-    from cli.render import render_llm_call_input_panel, render_llm_call_output_panel
     for c in calls:
         # Skip IN panel if already rendered from inflight data
         ts = c.get("ts")
@@ -653,7 +679,6 @@ def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> N
 
 def _emit_verbose_calls(task: dict, caps, state: _PollRenderState, llm_call_count: int) -> None:
     """Render only the verbose LLM panels not yet shown for *task*."""
-    from cli.render import _parse_llm_calls
     tid = task["id"]
     already = state.verbose_shown.get(tid, 0)
 
@@ -714,14 +739,6 @@ def _render_msg_task(
     total: int,
 ) -> None:
     """Render a msg task: header + spinner when running, header + output when done."""
-    from cli.render import (
-        _parse_llm_calls,
-        get_last_thinking,
-        render_llm_calls,
-        render_msg_output,
-        render_separator,
-        render_task_header,
-    )
 
     status = task["status"]
     output = task.get("output", "") or ""
@@ -767,12 +784,6 @@ def _render_other_task(
     total: int,
 ) -> None:
     """Render an exec/skill/search/replan task: header, output, review."""
-    from cli.render import (
-        render_command,
-        render_review,
-        render_task_header,
-        render_task_output,
-    )
 
     if quiet:
         return
@@ -807,7 +818,6 @@ def _render_other_task(
         print(review_line)
 
     if verbose and status in ("done", "failed"):
-        from cli.render import _parse_llm_calls
         _emit_verbose_calls(task, caps, state, len(_parse_llm_calls(task.get("llm_calls"))))
 
     if status == "running":
@@ -816,6 +826,26 @@ def _render_other_task(
         state.active_spinner_task = task
         state.active_spinner_index = idx
         state.active_spinner_total = total
+
+
+def _write_spinner_line(line: str, state: _PollRenderState) -> None:
+    """Write a spinner line with CLEAR_LINE, handling newline prefix."""
+    if not state.spinner_active and not state.at_col0:
+        sys.stdout.write('\n')
+    sys.stdout.write(f"\r{CLEAR_LINE}{line}")
+    sys.stdout.flush()
+    state.spinner_active = True
+    state.at_col0 = False
+
+
+def _render_plan_header(goal: str, task_count: int, caps, tasks: list, replan: bool = False) -> None:
+    """Render plan goal + detail + separators (used 3x in plan status)."""
+    print(f"\n{render_plan(goal, task_count, caps, replan=replan)}")
+    plan_detail = render_plan_detail(tasks, caps)
+    if plan_detail:
+        print(render_separator(caps))
+        print(plan_detail)
+    print(render_separator(caps))
 
 
 def _render_plan_status(
@@ -832,18 +862,6 @@ def _render_plan_status(
     Returns the filtered task list for the current plan (used by the caller
     to drive stop-condition checks via ``_should_stop_polling``).
     """
-    from cli.render import (
-        CLEAR_LINE,
-        _parse_llm_calls,
-        render_inflight_indicator,
-        render_llm_call_input_panel,
-        render_llm_calls,
-        render_phase_done,
-        render_plan,
-        render_plan_detail,
-        render_review,
-        render_separator,
-    )
 
     plan = data.get("plan")
     all_tasks = data.get("tasks", [])
@@ -873,32 +891,17 @@ def _render_plan_status(
         task_count = len(tasks)
         if state.shown_plan_id is None:
             _clear_spinner()
-            print(f"\n{render_plan(goal, task_count, caps)}")
-            plan_detail = render_plan_detail(tasks, caps)
-            if plan_detail:
-                print(render_separator(caps))
-                print(plan_detail)
-            print(render_separator(caps))
+            _render_plan_header(goal, task_count, caps, tasks)
             state.shown_plan_id = pid
             state.shown_plan_goal = goal
         elif pid == state.shown_plan_id and goal != state.shown_plan_goal and task_count > 0:
             # Plan goal updated (e.g. "Planning..." → real goal) — re-render header (M229)
             _clear_spinner()
-            print(f"\n{render_plan(goal, task_count, caps)}")
-            plan_detail = render_plan_detail(tasks, caps)
-            if plan_detail:
-                print(render_separator(caps))
-                print(plan_detail)
-            print(render_separator(caps))
+            _render_plan_header(goal, task_count, caps, tasks)
             state.shown_plan_goal = goal
         elif pid != state.shown_plan_id:
             _clear_spinner()
-            print(f"\n{render_plan(goal, task_count, caps, replan=True)}")
-            plan_detail = render_plan_detail(tasks, caps)
-            if plan_detail:
-                print(render_separator(caps))
-                print(plan_detail)
-            print(render_separator(caps))
+            _render_plan_header(goal, task_count, caps, tasks, replan=True)
             state.shown_plan_id = pid
             state.shown_plan_goal = goal
             state.seen.clear()
@@ -1035,14 +1038,11 @@ def _render_plan_status(
                         state.inflight_roles_shown.add(inflight_role)
 
         # M303/M306: show live partial content from streaming chunks.
-        # Only for roles with human-readable output (not JSON).
-        _STREAMING_VISIBLE_ROLES = {"messenger", "summarizer"}
         inflight_role = inflight.get("role") if inflight else None
         partial = ""
         if inflight_role in _STREAMING_VISIBLE_ROLES:
             partial = inflight.get("partial_content", "")
         if partial and len(partial) > state.partial_content_len:
-            from cli.render import render_partial_content
             _clear_spinner()
             # M306: overwrite previous partial lines on TTY
             if caps.tty and state.partial_lines_rendered > 0:
@@ -1101,14 +1101,6 @@ def _poll_status(
             Always pass an explicit value; the empty-string default is only
             provided to avoid breaking legacy test call sites.
     """
-    from cli.render import (
-        CLEAR_LINE,
-        render_phase_done,
-        render_planner_spinner,
-        render_task_header,
-        render_usage,
-        spinner_frames,
-    )
 
     state = _PollRenderState(seen={}, max_task_id=base_task_id, at_col0=_at_col0, verbose_shown={})
     counter = 0
@@ -1181,23 +1173,11 @@ def _poll_status(
                     state.active_spinner_total, caps, spinner_frame=frame,
                     elapsed=elapsed,
                 )
-                if not state.spinner_active and not state.at_col0:
-                    sys.stdout.write('\n')
-                sys.stdout.write(f"\r{CLEAR_LINE}{line}")
-                sys.stdout.flush()
-                state.spinner_active = True
-                state.at_col0 = False
+                _write_spinner_line(line, state)
             elif state.planning_phase:
-                # Use worker_phase if available; fall back to "planning" when the
-                # server doesn't report a phase (backward compat / pre-plan window).
                 phase = state.worker_phase if state.worker_phase != "idle" else "planning"
                 line = render_planner_spinner(caps, frame, elapsed=elapsed, phase=phase)
-                if not state.spinner_active and not state.at_col0:
-                    sys.stdout.write('\n')
-                sys.stdout.write(f"\r{CLEAR_LINE}{line}")
-                sys.stdout.flush()
-                state.spinner_active = True
-                state.at_col0 = False
+                _write_spinner_line(line, state)
             else:
                 state.spinner_active = False
 
@@ -1250,7 +1230,6 @@ def _handle_slash(
 
 def _slash_help(caps: "TermCaps") -> None:  # noqa: F821
     """Print available REPL slash commands."""
-    from cli.render import render_separator
 
     print(render_separator(caps))
     print("  /help        — show this help")
@@ -1268,7 +1247,6 @@ def _slash_status(client, session: str, user: str, caps: "TermCaps") -> None:  #
     """Show server health, session message count, and worker state."""
     import httpx
 
-    from cli.render import _format_resources, render_separator
 
     print(render_separator(caps))
 
@@ -1315,7 +1293,6 @@ def _slash_sessions(client, user: str, caps: "TermCaps") -> None:  # noqa: F821
     import httpx
 
     from cli.session import _relative_time
-    from cli.render import render_separator
 
     print(render_separator(caps))
 
@@ -1349,7 +1326,6 @@ def _slash_stats(client, user: str, session: str, caps: "TermCaps") -> None:  # 
     """Show token usage for the current session (last 7 days)."""
     import httpx
 
-    from cli.render import render_separator
     from cli.stats import print_stats
 
     print(render_separator(caps))
