@@ -34,6 +34,7 @@ Rules:
 - Plan ONLY what the New Message asks. Recent Messages are background context only.
 - If you lack info, plan exec/search + replan to investigate first.
 - Public files: write to `pub/`. Never use URLs as filesystem paths.
+- File creation: when user asks to create/write/generate a file, plan an exec task that writes it to disk. Never embed file content in a msg task.
 - After failures, explain honestly — never fabricate results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks.
