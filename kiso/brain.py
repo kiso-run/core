@@ -350,6 +350,12 @@ BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
 }, ["modules", "tools", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
+# Available prompt modules for reviewer (heuristic selection, no briefer).
+# core is always included; these are optional additions.
+REVIEWER_MODULES: frozenset[str] = frozenset({
+    "rules", "learn_quality", "compliance",
+})
+
 # Available prompt modules that the briefer can select.
 # core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
@@ -1520,6 +1526,22 @@ def prepare_reviewer_output(
     return result
 
 
+def _select_reviewer_modules(
+    output: str, safety_rules: list[str] | None,
+) -> list[str]:
+    """Heuristic module selection for reviewer (no briefer call needed).
+
+    Always includes ``rules``.  Adds ``learn_quality`` when output is
+    non-trivial, and ``compliance`` when safety rules are present.
+    """
+    modules: list[str] = ["rules"]
+    if output and len(output.strip()) > 20:
+        modules.append("learn_quality")
+    if safety_rules:
+        modules.append("compliance")
+    return modules
+
+
 def build_reviewer_messages(
     goal: str,
     detail: str,
@@ -1531,7 +1553,8 @@ def build_reviewer_messages(
     safety_rules: list[str] | None = None,
 ) -> list[dict]:
     """Build the message list for the reviewer LLM call."""
-    system_prompt = _load_system_prompt("reviewer")
+    modules = _select_reviewer_modules(output, safety_rules)
+    system_prompt = _load_modular_prompt("reviewer", modules)
 
     context = (
         f"## Plan Context\n{goal}\n\n"

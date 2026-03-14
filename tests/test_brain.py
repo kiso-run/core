@@ -1208,6 +1208,64 @@ class TestLoadSystemPromptReviewer:
         assert prompt == "Custom reviewer prompt"
 
 
+# --- M571: reviewer modular prompt ---
+
+class TestReviewerModularPrompt:
+    def test_select_modules_with_output_and_safety(self):
+        from kiso.brain import _select_reviewer_modules
+        modules = _select_reviewer_modules("some long output text here", ["no harm"])
+        assert "rules" in modules
+        assert "learn_quality" in modules
+        assert "compliance" in modules
+
+    def test_select_modules_empty_output_no_safety(self):
+        from kiso.brain import _select_reviewer_modules
+        modules = _select_reviewer_modules("", None)
+        assert modules == ["rules"]
+        assert "learn_quality" not in modules
+        assert "compliance" not in modules
+
+    def test_select_modules_short_output(self):
+        from kiso.brain import _select_reviewer_modules
+        modules = _select_reviewer_modules("ok", None)
+        assert "learn_quality" not in modules
+
+    def test_select_modules_nontrivial_output(self):
+        from kiso.brain import _select_reviewer_modules
+        modules = _select_reviewer_modules("a" * 30, None)
+        assert "learn_quality" in modules
+
+    def test_reviewer_uses_modular_prompt(self):
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e",
+            output="hello world output text here",
+            user_message="m",
+        )
+        system = msgs[0]["content"]
+        assert "task reviewer" in system
+        assert "Sole criterion" in system  # rules module
+        assert "durable facts" in system  # learn_quality module
+
+    def test_reviewer_no_compliance_without_safety_rules(self):
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e",
+            output="hello world output text here",
+            user_message="m",
+        )
+        system = msgs[0]["content"]
+        assert "Safety compliance" not in system
+
+    def test_reviewer_compliance_with_safety_rules(self):
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e",
+            output="hello world output text here",
+            user_message="m",
+            safety_rules=["no harm allowed"],
+        )
+        system = msgs[0]["content"]
+        assert "Safety compliance" in system
+
+
 # --- validate_review ---
 
 class TestValidateReview:
