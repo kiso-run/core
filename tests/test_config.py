@@ -79,40 +79,32 @@ def test_load_valid_config(tmp_path: Path):
     assert cfg.users["marco"].role == "admin"
 
 
-def test_missing_tokens(tmp_path: Path, capsys):
-    text = """\
-[providers.x]
-base_url = "http://x"
-[users.a]
-role = "admin"
-"""
+_MISSING_SECTION_CASES = [
+    # (toml_text, expected_err_substring)
+    (
+        "[providers.x]\nbase_url = \"http://x\"\n[users.a]\nrole = \"admin\"\n",
+        "[tokens]",
+    ),
+    (
+        "[tokens]\ncli = \"tok\"\n[users.a]\nrole = \"admin\"\n",
+        "[providers]",
+    ),
+    (
+        "[tokens]\ncli = \"tok\"\n[providers.x]\nbase_url = \"http://x\"\n",
+        "[users]",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "text,expected_err",
+    _MISSING_SECTION_CASES,
+    ids=["missing_tokens", "missing_providers", "missing_users"],
+)
+def test_missing_required_section(tmp_path: Path, capsys, text, expected_err):
     with pytest.raises(SystemExit):
         load_config(_write(tmp_path, text))
-    assert "[tokens]" in _die_msg(capsys)
-
-
-def test_missing_providers(tmp_path: Path, capsys):
-    text = """\
-[tokens]
-cli = "tok"
-[users.a]
-role = "admin"
-"""
-    with pytest.raises(SystemExit):
-        load_config(_write(tmp_path, text))
-    assert "[providers]" in _die_msg(capsys)
-
-
-def test_missing_users(tmp_path: Path, capsys):
-    text = """\
-[tokens]
-cli = "tok"
-[providers.x]
-base_url = "http://x"
-"""
-    with pytest.raises(SystemExit):
-        load_config(_write(tmp_path, text))
-    assert "[users]" in _die_msg(capsys)
+    assert expected_err in _die_msg(capsys)
 
 
 def test_invalid_username(tmp_path: Path, capsys):
@@ -407,54 +399,51 @@ def test_config_permission_error(tmp_path: Path, capsys):
 # --- setting_bool ---
 
 
+# (settings_dict, key, kwargs, expected)
+_SETTING_BOOL_CASES = [
+    # Native booleans
+    ({"key": True}, "key", {}, True),
+    ({"key": False}, "key", {}, False),
+    # Missing key falls back to default
+    ({}, "key", {"default": True}, True),
+    ({}, "key", {"default": False}, False),
+    # String true/false
+    ({"key": "true"}, "key", {}, True),
+    ({"key": "false"}, "key", {}, False),
+    # String yes/no
+    ({"key": "yes"}, "key", {}, True),
+    ({"key": "no"}, "key", {}, False),
+    # String 1/0
+    ({"key": "1"}, "key", {}, True),
+    ({"key": "0"}, "key", {}, False),
+    # Integers are NOT coerced — fall through to default
+    ({"key": 1}, "key", {"default": True}, True),
+    ({"key": 1}, "key", {"default": False}, False),
+    ({"key": 0}, "key", {"default": True}, True),
+    # Case insensitive
+    ({"key": "TRUE"}, "key", {}, True),
+    ({"key": "FALSE"}, "key", {}, False),
+    ({"key": "False"}, "key", {}, False),
+    # Whitespace stripped
+    ({"key": " true "}, "key", {}, True),
+    ({"key": " false "}, "key", {}, False),
+    # Unexpected types use default
+    ({"key": [1, 2]}, "key", {"default": True}, True),
+    ({"key": {"a": 1}}, "key", {"default": False}, False),
+    # Unrecognized strings use default
+    ({"key": "maybe"}, "key", {"default": True}, True),
+    ({"key": "maybe"}, "key", {"default": False}, False),
+]
+
+
 class TestSettingBool:
-    def test_true_bool(self):
-        assert setting_bool({"key": True}, "key") is True
-
-    def test_false_bool(self):
-        assert setting_bool({"key": False}, "key") is False
-
-    def test_default_when_missing(self):
-        assert setting_bool({}, "key", default=True) is True
-        assert setting_bool({}, "key", default=False) is False
-
-    def test_string_true(self):
-        assert setting_bool({"key": "true"}, "key") is True
-
-    def test_string_false(self):
-        """String 'false' must NOT be truthy — this is the bug this helper fixes."""
-        assert setting_bool({"key": "false"}, "key") is False
-
-    def test_string_yes_no(self):
-        assert setting_bool({"key": "yes"}, "key") is True
-        assert setting_bool({"key": "no"}, "key") is False
-
-    def test_string_1_0(self):
-        assert setting_bool({"key": "1"}, "key") is True
-        assert setting_bool({"key": "0"}, "key") is False
-
-    def test_int_uses_default(self):
-        """Integers are not coerced to bool — TOML has native booleans."""
-        assert setting_bool({"key": 1}, "key", default=True) is True    # default, not coercion
-        assert setting_bool({"key": 1}, "key", default=False) is False   # 1 doesn't override default
-        assert setting_bool({"key": 0}, "key", default=True) is True     # 0 falls through to default
-
-    def test_string_case_insensitive(self):
-        assert setting_bool({"key": "TRUE"}, "key") is True
-        assert setting_bool({"key": "FALSE"}, "key") is False
-        assert setting_bool({"key": "False"}, "key") is False
-
-    def test_string_whitespace(self):
-        assert setting_bool({"key": " true "}, "key") is True
-        assert setting_bool({"key": " false "}, "key") is False
-
-    def test_unexpected_type_uses_default(self):
-        assert setting_bool({"key": [1, 2]}, "key", default=True) is True
-        assert setting_bool({"key": {"a": 1}}, "key", default=False) is False
-
-    def test_unrecognized_string_uses_default(self):
-        assert setting_bool({"key": "maybe"}, "key", default=True) is True
-        assert setting_bool({"key": "maybe"}, "key", default=False) is False
+    @pytest.mark.parametrize(
+        "settings,key,kwargs,expected",
+        _SETTING_BOOL_CASES,
+        ids=[f"{s.get(k, 'MISSING')!r}->{e}" for s, k, kw, e in _SETTING_BOOL_CASES],
+    )
+    def test_setting_bool(self, settings, key, kwargs, expected):
+        assert setting_bool(settings, key, **kwargs) is expected
 
 
 # --- M34: settings defaults ---
@@ -473,13 +462,6 @@ def test_m34_settings_defaults():
 def test_m37_fact_consolidation_min_ratio_default():
     """M37: fact_consolidation_min_ratio has correct default."""
     assert SETTINGS_DEFAULTS["fact_consolidation_min_ratio"] == 0.3
-
-
-def test_m37_setting_bool_rejects_int():
-    """M37: setting_bool no longer coerces int to bool."""
-    # Integer 1 must not override the default
-    assert setting_bool({"key": 1}, "key", default=False) is False
-    assert setting_bool({"key": 0}, "key", default=True) is True
 
 
 def test_m37_missing_consolidation_ratio_uses_default(tmp_path: Path):
@@ -529,24 +511,25 @@ def test_m84e_valid_settings_no_error(tmp_path: Path):
 # --- M87c: setting_int / setting_float helpers ---
 
 
+_SETTING_INT_CASES = [
+    # (settings, key, kwargs, expected)
+    ({"key": 42}, "key", {}, 42),
+    ({"key": -5}, "key", {"lo": 0}, 0),          # below min clamped
+    ({"key": 9999}, "key", {"hi": 100}, 100),     # above max clamped
+    ({"key": 1}, "key", {"lo": 1, "hi": 10}, 1),  # exact min not clamped
+    ({"key": 10}, "key", {"lo": 1, "hi": 10}, 10),  # exact max not clamped
+    ({"key": 0}, "key", {}, 0),                   # no bounds, no clamp
+]
+
+
 class TestSettingInt:
-    def test_nominal_value_returned(self):
-        assert setting_int({"key": 42}, "key") == 42
-
-    def test_below_min_clamped(self):
-        assert setting_int({"key": -5}, "key", lo=0) == 0
-
-    def test_above_max_clamped(self):
-        assert setting_int({"key": 9999}, "key", hi=100) == 100
-
-    def test_exact_min_not_clamped(self):
-        assert setting_int({"key": 1}, "key", lo=1, hi=10) == 1
-
-    def test_exact_max_not_clamped(self):
-        assert setting_int({"key": 10}, "key", lo=1, hi=10) == 10
-
-    def test_no_bounds_no_clamp(self):
-        assert setting_int({"key": 0}, "key") == 0
+    @pytest.mark.parametrize(
+        "settings,key,kwargs,expected",
+        _SETTING_INT_CASES,
+        ids=[f"{s[k]}->{e}" for s, k, kw, e in _SETTING_INT_CASES],
+    )
+    def test_setting_int(self, settings, key, kwargs, expected):
+        assert setting_int(settings, key, **kwargs) == expected
 
     def test_missing_key_falls_back_to_defaults(self):
         """M516: missing key uses SETTINGS_DEFAULTS fallback."""
@@ -558,24 +541,25 @@ class TestSettingInt:
             setting_int({}, "nonexistent_setting_xyz")
 
 
+_SETTING_FLOAT_CASES = [
+    # (settings, key, kwargs, expected)
+    ({"key": 0.5}, "key", {}, 0.5),
+    ({"key": -1.0}, "key", {"lo": 0.0}, 0.0),       # below min clamped
+    ({"key": 2.0}, "key", {"hi": 1.0}, 1.0),         # above max clamped
+    ({"key": 0.0}, "key", {"lo": 0.0, "hi": 1.0}, 0.0),  # exact min
+    ({"key": 1.0}, "key", {"lo": 0.0, "hi": 1.0}, 1.0),  # exact max
+    ({"key": 99.9}, "key", {}, 99.9),                 # no bounds
+]
+
+
 class TestSettingFloat:
-    def test_nominal_value_returned(self):
-        assert setting_float({"key": 0.5}, "key") == pytest.approx(0.5)
-
-    def test_below_min_clamped(self):
-        assert setting_float({"key": -1.0}, "key", lo=0.0) == pytest.approx(0.0)
-
-    def test_above_max_clamped(self):
-        assert setting_float({"key": 2.0}, "key", hi=1.0) == pytest.approx(1.0)
-
-    def test_exact_min_not_clamped(self):
-        assert setting_float({"key": 0.0}, "key", lo=0.0, hi=1.0) == pytest.approx(0.0)
-
-    def test_exact_max_not_clamped(self):
-        assert setting_float({"key": 1.0}, "key", lo=0.0, hi=1.0) == pytest.approx(1.0)
-
-    def test_no_bounds_no_clamp(self):
-        assert setting_float({"key": 99.9}, "key") == pytest.approx(99.9)
+    @pytest.mark.parametrize(
+        "settings,key,kwargs,expected",
+        _SETTING_FLOAT_CASES,
+        ids=[f"{s[k]}->{e}" for s, k, kw, e in _SETTING_FLOAT_CASES],
+    )
+    def test_setting_float(self, settings, key, kwargs, expected):
+        assert setting_float(settings, key, **kwargs) == pytest.approx(expected)
 
     def test_missing_key_falls_back_to_defaults(self):
         """M516: missing key uses SETTINGS_DEFAULTS fallback."""
