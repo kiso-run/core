@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
-from kiso.auth import AuthInfo, require_auth, resolve_user
+from kiso.auth import AuthInfo, ResolvedUser, require_auth, resolve_user
 from kiso.stats import aggregate, read_audit_entries
 from kiso.brain import (
     WORKER_PHASE_IDLE, invalidate_prompt_cache,
@@ -89,6 +89,11 @@ class _RateLimiter:
 
 
 _rate_limiter = _RateLimiter()
+
+
+def _is_admin(resolved: ResolvedUser) -> bool:
+    """Check if the resolved user has admin privileges."""
+    return bool(resolved.trusted and resolved.user and resolved.user.role == "admin")
 
 
 @dataclass
@@ -624,7 +629,7 @@ async def get_status(
     db = request.app.state.db
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
-    is_admin = resolved.trusted and resolved.user and resolved.user.role == "admin"
+    is_admin = _is_admin(resolved)
     if not is_admin and not await session_owned_by(db, session, resolved.username):
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -698,7 +703,7 @@ async def get_sessions(
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
 
-    if all and resolved.trusted and resolved.user and resolved.user.role == "admin":
+    if all and _is_admin(resolved):
         sessions = await get_all_sessions(db)
     else:
         sessions = await get_sessions_for_user(db, resolved.username)
@@ -815,7 +820,7 @@ async def get_stats(
     """
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
-    if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
+    if not _is_admin(resolved):
         raise HTTPException(status_code=403, detail="Admin access required")
     if not await _rate_limiter.check(f"admin:{user}", limit=5):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
@@ -851,7 +856,7 @@ async def post_reload_config(
 ):
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
-    if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
+    if not _is_admin(resolved):
         raise HTTPException(status_code=403, detail="Admin access required")
     if not await _rate_limiter.check(f"admin:{user}", limit=5):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
@@ -873,7 +878,7 @@ async def post_reload_env(
     config = request.app.state.config
     resolved = resolve_user(config, user, auth.token_name)
 
-    if not resolved.trusted or not resolved.user or resolved.user.role != "admin":
+    if not _is_admin(resolved):
         raise HTTPException(status_code=403, detail="Admin access required")
     if not await _rate_limiter.check(f"admin:{user}", limit=5):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")

@@ -18,6 +18,11 @@ from kiso.security import fence_content
 log = logging.getLogger(__name__)
 
 
+async def _run_sync(fn, *args):
+    """Run a sync function in the default executor."""
+    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+
 async def _run_subprocess(
     cmd,
     *,
@@ -98,16 +103,14 @@ async def _write_plan_outputs(session: str, plan_outputs: list[dict]) -> None:
     kiso_dir.mkdir(exist_ok=True)
     path = kiso_dir / "plan_outputs.json"
     content = json.dumps(plan_outputs, indent=2, ensure_ascii=False)
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, path.write_text, content, "utf-8")
+    await _run_sync(path.write_text, content, "utf-8")
 
 
 async def _cleanup_plan_outputs(session: str) -> None:
     """Remove plan_outputs.json after plan completion."""
     workspace = _session_workspace(session)
     outputs_file = workspace / ".kiso" / "plan_outputs.json"
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: outputs_file.unlink(missing_ok=True))
+    await _run_sync(lambda: outputs_file.unlink(missing_ok=True))
 
 
 def _ensure_sandbox_user_sync(session: str) -> int | None:
@@ -135,8 +138,7 @@ def _ensure_sandbox_user_sync(session: str) -> int | None:
 
 async def _ensure_sandbox_user(session: str) -> int | None:
     """Create or reuse a per-session Linux user. Returns UID or None on failure."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _ensure_sandbox_user_sync, session)
+    return await _run_sync(_ensure_sandbox_user_sync, session)
 
 
 def _truncate_output(text: str, limit: int) -> str:

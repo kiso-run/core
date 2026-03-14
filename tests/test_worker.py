@@ -12206,3 +12206,20 @@ class TestFormatTaskList:
         result = _format_task_list(tasks, "Remaining")
         assert "Remaining (1):" in result
         assert "- [search] find X" in result
+
+
+# --- M570: _run_sync helper ---
+
+
+class TestRunSync:
+    @pytest.mark.asyncio
+    async def test_runs_sync_function(self):
+        from kiso.worker.utils import _run_sync
+        result = await _run_sync(lambda: 42)
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_passes_args(self):
+        from kiso.worker.utils import _run_sync
+        result = await _run_sync(lambda a, b: a + b, 3, 4)
+        assert result == 7
