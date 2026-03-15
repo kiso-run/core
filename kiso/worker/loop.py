@@ -1260,6 +1260,13 @@ async def _handle_exec_task(
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
 
+        # M637: log exec output on failure so errors are visible in test/production logs
+        if not success:
+            log.warning(
+                "Exec task %d failed (exit %d): stdout=%.500s stderr=%.500s",
+                task_id, exit_code, stdout or "", stderr or "",
+            )
+
         # M371: invalidate sysenv cache after package install so new binaries are visible
         if success and any(pkg_cmd in command for pkg_cmd in (
             "apt-get install", "apt install", "apk add",
