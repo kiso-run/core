@@ -232,6 +232,7 @@ async def _msg_task(
     include_recent: bool = False,
     user_message: str = "",
     on_briefer_done: "Callable | None" = None,
+    response_lang: str = "",
 ) -> str:
     """Generate a user-facing message via the messenger brain role.
 
@@ -243,7 +244,15 @@ async def _msg_task(
             completes but before the messenger LLM call.  The caller can use
             this to flush intermediate usage so the CLI can render briefer
             panels while the messenger is still running (M273).
+        response_lang: ISO 639-1 code for the desired response language.
+            If set and the detail doesn't already start with "Answer in",
+            prepends "Answer in {language}." to ensure correct language.
     """
+    # M650: inject response language prefix if not already present
+    if response_lang and not detail.startswith("Answer in "):
+        lang_name = LANG_NAMES.get(response_lang, "English")
+        detail = f"Answer in {lang_name}. {detail}"
+
     selected_outputs = plan_outputs
     briefing_context: str | None = None
 
@@ -572,18 +581,15 @@ async def _fast_path_chat(
         await _append_calls(db, task_id, usage_idx_before)
         idx_after_briefer[0] = get_usage_index()
 
-    # Prepend "Answer in {lang}." so the messenger responds in the right language
-    lang_name = LANG_NAMES.get(user_lang, "English")
-    detail = f"Answer in {lang_name}. {content}"
-
     t0 = time.perf_counter()
     try:
         try:
             text = await asyncio.wait_for(
-                _msg_task(config, db, session, detail, goal=content,
+                _msg_task(config, db, session, content, goal=content,
                           include_recent=True,
                           user_message=content,
-                          on_briefer_done=_flush_briefer),
+                          on_briefer_done=_flush_briefer,
+                          response_lang=user_lang),
                 timeout=messenger_timeout,
             )
         except asyncio.TimeoutError:
@@ -793,6 +799,7 @@ class _PlanCtx:
     slog: "SessionLogger | None"
     sandbox_uid: "int | None"
     base_url: str = ""
+    response_lang: str = "en"
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
     installed_tools_by_name: dict[str, dict] = field(init=False)
@@ -988,6 +995,7 @@ async def _handle_msg_task(
                     goal=ctx.goal,
                     user_message=ctx.user_message,
                     on_briefer_done=_flush_briefer,
+                    response_lang=ctx.response_lang,
                 ),
                 timeout=ctx.messenger_timeout,
             )
@@ -1427,6 +1435,7 @@ async def _execute_plan(
     cancel_event: asyncio.Event | None = None,
     slog: SessionLogger | None = None,
     base_url: str = "",
+    response_lang: str = "en",
 ) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
@@ -1458,6 +1467,7 @@ async def _execute_plan(
         installed_tools=installed_tools,
         slog=slog,
         base_url=base_url,
+        response_lang=response_lang,
         sandbox_uid=None,
     )
 
@@ -1844,6 +1854,7 @@ async def _run_planning_loop(
     set_phase: "Callable[[str], None] | None" = None,
     base_url: str = "",
     update_hints: "list | None" = None,
+    response_lang: str = "en",
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
 
@@ -1859,6 +1870,7 @@ async def _run_planning_loop(
             content, messenger_timeout=messenger_timeout,
             session_secrets=session_secrets, username=username,
             cancel_event=cancel_event, slog=slog, base_url=base_url,
+            response_lang=response_lang,
         )
 
         if success:
@@ -2369,7 +2381,7 @@ async def _process_message(
         plan_id, plan, user_role, user_tools, messenger_timeout,
         session_secrets, cancel_event, max_replan_depth,
         username, slog, set_phase=set_phase, base_url=base_url,
-        update_hints=update_hints,
+        update_hints=update_hints, response_lang=user_lang,
     )
 
     # --- Store token usage on the final plan ---
