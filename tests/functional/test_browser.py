@@ -75,60 +75,97 @@ async def _run_with_install_flow(
 # ---------------------------------------------------------------------------
 
 
-class TestF1GuidanceStudioScreenshot:
-    """Visit guidance.studio, describe the company, and take a screenshot."""
+class TestF1BrowserInstall:
+    """F1a: Browser tool install flow."""
 
-    async def test_website_description_and_screenshot(self, run_message, func_app_client):
-        """What: Full pipeline test for browser navigation + screenshot on guidance.studio.
+    async def test_browser_install_flow(self, run_message):
+        """What: Trigger browser install via multi-turn approval flow.
 
-        Why: Validates the multi-turn install flow (propose → confirm → install) and
-        the browser tool's ability to navigate, describe page content, and capture
-        screenshots. If this breaks, Kiso cannot use external tools at all.
-        Expects: Plan succeeds, Italian response with company keywords, .png screenshot
-        published with a reachable URL (>10KB).
+        Why: Validates the install proposal → user approval → exec install cycle
+        for the browser tool specifically. Isolates install issues from navigation.
+        Expects: After the flow, the browser tool is installed and discoverable.
         """
-        result = await _run_with_install_flow(
-            run_message,
-            "vai su guidance.studio, dimmi di cosa si occupa questa azienda "
-            "sulla base delle info nel sito, e poi mi mandi uno screenshot della home",
+        if _browser_installed():
+            pytest.skip("Browser already installed — nothing to test")
+
+        # Turn 1: request that needs browser
+        await run_message(
+            "vai su guidance.studio e dimmi cosa vedi",
+            timeout=BROWSER_TIMEOUT,
         )
 
-        # Plan completed successfully
-        assert result.success, (
-            f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
+        if _browser_installed():
+            return  # installed on first turn (fast path)
+
+        # Turn 2: confirm installation
+        await run_message(
+            "sì, installa il tool browser",
+            timeout=BROWSER_TIMEOUT,
         )
 
-        # Use last_plan_msg_output for content checks (excludes install-proposal
-        # English msg from prior turns in multi-turn flow)
+        assert _browser_installed(), "Browser tool not installed after approval flow"
+
+
+class TestF1BrowserNavigate:
+    """F1b: Browser navigation + description (requires browser installed)."""
+
+    async def test_navigate_and_describe(self, run_message):
+        """What: Navigate to guidance.studio and describe the company.
+
+        Why: Validates that the browser tool can navigate a real page and
+        the messenger produces an Italian description of the content.
+        Expects: Italian response >100 chars with company-related keywords.
+        """
+        if not _browser_installed():
+            pytest.skip("Browser tool not installed — run F1a first or install manually")
+
+        result = await run_message(
+            "vai su guidance.studio e dimmi di cosa si occupa questa azienda",
+            timeout=BROWSER_TIMEOUT,
+        )
+        assert result.success
+
         output = result.last_plan_msg_output
-
-        # Response is in Italian and substantial
-        assert len(output) > 100, (
-            f"msg output too short ({len(output)} chars): {output[:200]}"
-        )
+        assert len(output) > 100, f"Too short: {output[:200]}"
         assert_italian(output)
         assert_no_failure_language(output)
 
-        # Response mentions something relevant about the company
         lower = output.lower()
         assert any(
             kw in lower
             for kw in ("guidance", "studio", "azienda", "company", "software", "serviz")
-        ), f"No relevant keywords in output: {output[:300]}"
+        ), f"No relevant keywords: {output[:300]}"
 
-        # Screenshot was published
+
+class TestF1BrowserScreenshot:
+    """F1c: Browser screenshot + publish (requires browser installed)."""
+
+    async def test_screenshot_and_publish(self, run_message, func_app_client):
+        """What: Take a screenshot of guidance.studio and publish it.
+
+        Why: Validates screenshot capture and the pub file delivery pipeline.
+        Expects: .png file published with a reachable URL (>10KB).
+        """
+        if not _browser_installed():
+            pytest.skip("Browser tool not installed — run F1a first or install manually")
+
+        result = await run_message(
+            "vai su guidance.studio e mandami uno screenshot della home page",
+            timeout=BROWSER_TIMEOUT,
+        )
+        assert result.success
+
         assert result.has_published_file("*.png"), (
             f"No .png file published. Pub files: {result.pub_files}"
         )
 
-        # Published screenshot URLs are reachable
         for pf in result.pub_files:
             if pf["filename"].endswith(".png"):
                 await assert_url_reachable(
                     pf["url"],
                     client=func_app_client,
                     expected_type="image",
-                    min_size=10_000,  # real screenshot > 10KB
+                    min_size=10_000,
                 )
 
 
