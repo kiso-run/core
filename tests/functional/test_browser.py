@@ -40,23 +40,26 @@ async def _run_with_install_flow(
 ) -> "FunctionalResult":  # noqa: F821
     """Send *prompt* and handle the install-proposal flow if needed.
 
+    Three-turn flow when browser is not pre-installed:
+      1. Original prompt → planner proposes install (msg-only plan)
+      2. "sì, installa" → planner installs the tool
+      3. Repeat original prompt → planner uses the now-installed tool
+
     If the browser tool is already installed, returns after a single turn.
-    Otherwise, detects the install proposal in the first turn's output and
-    sends a confirmation message to trigger the install + original task.
     """
     result = await run_message(prompt, timeout=timeout)
 
     if _browser_installed():
-        # Tool was already available (or got installed in one turn).
         return result
 
-    # Not installed yet — the LLM should have proposed installation.
-    # The first plan's msg output should mention install/permission.
-    # Send confirmation so the next plan can install and proceed.
-    result = await run_message(
-        "sì, installa il tool browser e procedi con la richiesta",
-        timeout=timeout,
-    )
+    # Turn 2: confirm installation only
+    await run_message("sì, installa il tool browser", timeout=timeout)
+
+    if not _browser_installed():
+        return result  # install failed — return original result for assertion
+
+    # Turn 3: repeat original request with tool now available
+    result = await run_message(prompt, timeout=timeout)
     return result
 
 
