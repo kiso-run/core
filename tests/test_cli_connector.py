@@ -1667,3 +1667,48 @@ def test_connector_run_stale_pid_cleaned(tmp_path, mock_admin, capsys):
 
     assert "started" in capsys.readouterr().out
     assert (connector_dir / ".pid").read_text() == "54321"
+
+
+# ---------------------------------------------------------------------------
+# M620: kiso connector test
+# ---------------------------------------------------------------------------
+
+class TestConnectorTest:
+    def test_connector_not_installed(self, tmp_path, capsys):
+        from cli.connector import _connector_test, CONNECTORS_DIR
+        with patch("cli.connector.CONNECTORS_DIR", tmp_path):
+            with pytest.raises(SystemExit):
+                _connector_test(argparse.Namespace(name="nonexistent"))
+        assert "not installed" in capsys.readouterr().err
+
+    def test_connector_no_tests_dir(self, tmp_path, capsys):
+        (tmp_path / "myconn").mkdir()
+        with patch("cli.connector.CONNECTORS_DIR", tmp_path):
+            with pytest.raises(SystemExit):
+                from cli.connector import _connector_test
+                _connector_test(argparse.Namespace(name="myconn"))
+        assert "no tests/ directory" in capsys.readouterr().err
+
+    def test_connector_test_runs_pytest(self, tmp_path):
+        connector_dir = tmp_path / "myconn"
+        connector_dir.mkdir()
+        (connector_dir / "tests").mkdir()
+        (connector_dir / ".venv" / "bin").mkdir(parents=True)
+        (connector_dir / ".venv" / "bin" / "python").write_text("")
+
+        calls = []
+        def mock_run(cmd, **kw):
+            calls.append((cmd, kw))
+            return argparse.Namespace(returncode=0)
+
+        with (
+            patch("cli.connector.CONNECTORS_DIR", tmp_path),
+            patch("cli.connector.subprocess.run", mock_run),
+        ):
+            from cli.connector import _connector_test
+            with pytest.raises(SystemExit) as exc_info:
+                _connector_test(argparse.Namespace(name="myconn"))
+            assert exc_info.value.code == 0
+        assert len(calls) == 1
+        assert "pytest" in calls[0][0][2]
+        assert calls[0][1]["cwd"] == str(connector_dir)

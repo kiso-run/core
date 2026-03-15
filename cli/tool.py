@@ -69,8 +69,8 @@ def run_tool_command(args) -> None:
     from cli.plugin_ops import dispatch_subcommand
     dispatch_subcommand(args, "tool_command", {
         "list": _tool_list, "search": _tool_search, "install": _tool_install,
-        "update": _tool_update, "remove": _tool_remove,
-    }, "usage: kiso tool {list,search,install,update,remove}")
+        "update": _tool_update, "remove": _tool_remove, "test": _tool_test,
+    }, "usage: kiso tool {list,search,install,update,remove,test}")
 
 
 def _tool_list(args) -> None:
@@ -118,3 +118,19 @@ def _tool_remove(args) -> None:
     from kiso.sysenv import invalidate_cache
     from kiso.tools import invalidate_tools_cache
     _remove_plugin(args.name, TOOLS_DIR / args.name, "tool", [invalidate_cache, invalidate_tools_cache])
+
+
+def _tool_test(args) -> None:
+    """Run a tool's test suite."""
+    from cli.plugin_ops import _check_plugin_installed
+    name = args.name
+    tool_dir = TOOLS_DIR / name
+    _check_plugin_installed(tool_dir, "tool", name)
+    test_dir = tool_dir / "tests"
+    if not test_dir.exists():
+        print(f"error: tool '{name}' has no tests/ directory", file=sys.stderr)
+        sys.exit(1)
+    venv_python = tool_dir / ".venv" / "bin" / "python"
+    cmd = [str(venv_python), "-m", "pytest", "tests/", "-v"]
+    result = subprocess.run(cmd, cwd=str(tool_dir), check=False)
+    sys.exit(result.returncode)

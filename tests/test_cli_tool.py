@@ -1206,3 +1206,49 @@ class TestUpdatePlugin:
         plugin_dir.mkdir()
         with pytest.raises(SystemExit):
             _update_plugin("nonexistent", plugin_dir, "tool", lambda x: [], [])
+
+
+# ---------------------------------------------------------------------------
+# M620: kiso tool test
+# ---------------------------------------------------------------------------
+
+class TestToolTest:
+    def test_tool_not_installed(self, tmp_path, capsys, monkeypatch):
+        import cli.tool as mod
+        monkeypatch.setattr(mod, "TOOLS_DIR", tmp_path)
+        args = argparse.Namespace(name="nonexistent")
+        with pytest.raises(SystemExit):
+            mod._tool_test(args)
+        assert "not installed" in capsys.readouterr().err
+
+    def test_tool_no_tests_dir(self, tmp_path, capsys, monkeypatch):
+        import cli.tool as mod
+        monkeypatch.setattr(mod, "TOOLS_DIR", tmp_path)
+        (tmp_path / "mytool").mkdir()
+        args = argparse.Namespace(name="mytool")
+        with pytest.raises(SystemExit):
+            mod._tool_test(args)
+        assert "no tests/ directory" in capsys.readouterr().err
+
+    def test_tool_test_runs_pytest(self, tmp_path, monkeypatch):
+        import cli.tool as mod
+        monkeypatch.setattr(mod, "TOOLS_DIR", tmp_path)
+        tool_dir = tmp_path / "mytool"
+        tool_dir.mkdir()
+        (tool_dir / "tests").mkdir()
+        (tool_dir / ".venv" / "bin").mkdir(parents=True)
+        (tool_dir / ".venv" / "bin" / "python").write_text("")
+
+        calls = []
+        def mock_run(cmd, **kw):
+            calls.append((cmd, kw))
+            return argparse.Namespace(returncode=0)
+
+        monkeypatch.setattr(mod.subprocess, "run", mock_run)
+        with pytest.raises(SystemExit) as exc_info:
+            args = argparse.Namespace(name="mytool")
+            mod._tool_test(args)
+        assert exc_info.value.code == 0
+        assert len(calls) == 1
+        assert "pytest" in calls[0][0][2]
+        assert calls[0][1]["cwd"] == str(tool_dir)

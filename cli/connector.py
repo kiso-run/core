@@ -192,7 +192,8 @@ def run_connector_command(args) -> None:
         "install": _connector_install, "update": _connector_update,
         "remove": _connector_remove, "run": _connector_run,
         "stop": _connector_stop, "status": _connector_status,
-    }, "usage: kiso connector {list,search,install,update,remove,run,stop,status}")
+        "test": _connector_test,
+    }, "usage: kiso connector {list,search,install,update,remove,run,stop,status,test}")
 
 
 def _connector_list(args) -> None:
@@ -389,3 +390,18 @@ def _connector_status(args) -> None:
             except (json.JSONDecodeError, OSError):
                 pass
         print(f"Connector '{name}' is not running (stale PID file removed).{gave_up_msg}")
+
+
+def _connector_test(args) -> None:
+    """Run a connector's test suite."""
+    name = args.name
+    connector_dir = CONNECTORS_DIR / name
+    _check_plugin_installed(connector_dir, "connector", name)
+    test_dir = connector_dir / "tests"
+    if not test_dir.exists():
+        print(f"error: connector '{name}' has no tests/ directory", file=sys.stderr)
+        sys.exit(1)
+    venv_python = connector_dir / ".venv" / "bin" / "python"
+    cmd = [str(venv_python), "-m", "pytest", "tests/", "-v"]
+    result = subprocess.run(cmd, cwd=str(connector_dir), check=False)
+    sys.exit(result.returncode)

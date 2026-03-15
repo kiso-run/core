@@ -195,6 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
         up.add_argument("target", help="tool name or 'all'")
         rp = tool_sub.add_parser("remove", help="remove a tool")
         rp.add_argument("name", help="tool name")
+        tp = tool_sub.add_parser("test", help="run a tool's test suite")
+        tp.add_argument("name", help="tool name")
 
     tool_parser = sub.add_parser("tool", help="manage tools")
     _add_tool_subcommands(tool_parser)
@@ -245,6 +247,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     cstatus_p = connector_sub.add_parser("status", help="check connector status")
     cstatus_p.add_argument("name", help="connector name")
+
+    ctest_p = connector_sub.add_parser("test", help="run a connector's test suite")
+    ctest_p.add_argument("name", help="connector name")
 
     sessions_parser = sub.add_parser("sessions", help="list sessions")
     sessions_parser.add_argument(
