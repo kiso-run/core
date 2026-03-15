@@ -78,7 +78,7 @@ class TestF5MoltbookSignup:
 class TestF6MoltbookPost:
     """Write a post on moltbook (requires prior signup in same session)."""
 
-    async def test_service_post(self, run_message):
+    async def test_service_post(self, run_message, func_app_client):
         """What: Multi-step service interaction test: signup then post on moltbook.
 
         Why: Validates session continuity across turns -- the signup context must
@@ -130,4 +130,4 @@ class TestF6MoltbookPost:
 
         # If a post URL is in the output, verify it's reachable
         for pf in result.pub_files:
-            await assert_url_reachable(pf["url"])
+            await assert_url_reachable(pf["url"], client=func_app_client)

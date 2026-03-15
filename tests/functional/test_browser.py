@@ -71,7 +71,7 @@ async def _run_with_install_flow(
 class TestF1GuidanceStudioScreenshot:
     """Visit guidance.studio, describe the company, and take a screenshot."""
 
-    async def test_website_description_and_screenshot(self, run_message):
+    async def test_website_description_and_screenshot(self, run_message, func_app_client):
         """What: Full pipeline test for browser navigation + screenshot on guidance.studio.
 
         Why: Validates the multi-turn install flow (propose → confirm → install) and
@@ -119,6 +119,7 @@ class TestF1GuidanceStudioScreenshot:
             if pf["filename"].endswith(".png"):
                 await assert_url_reachable(
                     pf["url"],
+                    client=func_app_client,
                     expected_type="image",
                     min_size=10_000,  # real screenshot > 10KB
                 )

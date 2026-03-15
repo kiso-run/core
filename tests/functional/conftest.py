@@ -97,6 +97,7 @@ def assert_italian(text: str) -> None:
 async def assert_url_reachable(
     url: str,
     *,
+    client: "httpx.AsyncClient | None" = None,
     expected_type: str | None = None,
     min_size: int = 1,
     timeout: float = 30,
@@ -107,6 +108,10 @@ async def assert_url_reachable(
     ----------
     url:
         Full URL to GET.
+    client:
+        Optional httpx.AsyncClient to use (e.g. ASGI-backed for functional tests).
+        When provided, the URL is fetched through this client instead of making
+        a real HTTP request.
     expected_type:
         If provided, assert ``Content-Type`` starts with this string
         (e.g. ``"image"``).
@@ -117,8 +122,11 @@ async def assert_url_reachable(
     """
     import httpx
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+    if client is not None:
         resp = await client.get(url)
+    else:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as c:
+            resp = await c.get(url)
     assert resp.status_code == 200, (
         f"URL {url} returned status {resp.status_code}"
     )
@@ -347,6 +355,25 @@ def func_session() -> str:
     return f"func-{uuid.uuid4().hex[:12]}"
 
 
+@pytest_asyncio.fixture()
+async def func_app_client(func_config, func_db):
+    """ASGI-backed httpx client wired to the FastAPI app.
+
+    Uses the functional test's config and DB so that pub file serving
+    works correctly (same sessions, same pub tokens).
+    """
+    import httpx
+    from httpx import ASGITransport
+    from kiso.main import app, _init_app_state
+
+    _init_app_state(app, func_config, func_db)
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        yield client
+
+
 # ---------------------------------------------------------------------------
 # run_message — the core functional test helper
 # ---------------------------------------------------------------------------
@@ -369,7 +396,7 @@ async def run_message(func_config, func_db, func_session):
         content: str,
         *,
         timeout: float = 300,
-        base_url: str = "http://kiso-func-test",
+        base_url: str = "http://test",
     ) -> FunctionalResult:
         # Ensure session exists (may already exist in multi-message tests)
         try:

@@ -25,7 +25,7 @@ pytestmark = pytest.mark.functional
 class TestF7ResearchAndPublish:
     """Search for info, create a markdown table, publish it."""
 
-    async def test_search_synthesize_publish(self, run_message):
+    async def test_search_synthesize_publish(self, run_message, func_app_client):
         """What: Multi-step pipeline test: search, synthesize into markdown table, publish.
 
         Why: Validates the search -> artifact creation -> publish pipeline. Ensures Kiso
@@ -57,7 +57,7 @@ class TestF7ResearchAndPublish:
         # Published markdown URL is reachable
         for pf in result.pub_files:
             if pf["filename"].endswith(".md"):
-                await assert_url_reachable(pf["url"])
+                await assert_url_reachable(pf["url"], client=func_app_client)
 
         # Check published file content for table markers and language names
         # (We check task outputs since they may contain the file content)
