@@ -51,8 +51,12 @@ Each level answers a different question:
 ./run_tests.sh --auto --unit       # only unit
 ./run_tests.sh --auto --bash       # only bash/BATS
 ./run_tests.sh --auto --unit --live  # unit + live (combinable)
-./run_tests.sh --auto --all        # everything including interactive
+./run_tests.sh --auto --all        # everything including interactive + plugins
 ./run_tests.sh --auto --interactive  # only interactive
+./run_tests.sh --auto --plugins              # all plugins from registry
+./run_tests.sh --auto --plugins=tools        # all tools
+./run_tests.sh --auto --plugins=connectors   # all connectors
+./run_tests.sh --auto --plugins=browser      # specific plugin
 
 # Quick unit-only during development
 uv run pytest tests/ -q

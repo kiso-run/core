@@ -137,6 +137,12 @@ run_functional() {
         test-functional
 }
 
+run_plugins() {
+    local filter="${1:-}"
+    run_suite "Plugin tests${filter:+ ($filter)}" \
+        uv run python -m cli.plugin_test_runner "$filter"
+}
+
 run_interactive() {
     if [[ "$HAS_DOCKER" != true ]]; then
         echo -e "${YELLOW}⚠ Skipping interactive tests — Docker not available${NC}"
@@ -180,6 +186,8 @@ run_auto() {
             --docker)       run_docker ;;
             --func)         run_functional ;;
             --interactive)  run_interactive ;;
+            --plugins)      run_plugins "" ;;
+            --plugins=*)    run_plugins "${flag#*=}" ;;
             --all)
                 run_unit
                 run_bash
@@ -187,11 +195,12 @@ run_auto() {
                 run_live
                 run_docker
                 run_functional
+                run_plugins ""
                 run_interactive
                 ;;
             *)
                 echo -e "${RED}Unknown flag: $flag${NC}"
-                echo "Available: --unit --bash --integration --live --docker --func --interactive --all"
+                echo "Available: --unit --bash --integration --live --docker --func --interactive --plugins[=filter] --all"
                 exit 1
                 ;;
         esac
@@ -226,11 +235,12 @@ run_interactive_menu() {
     echo -e "  ${CYAN}5${NC}  Docker tests          ${DIM}<1s, Docker${NC}${docker_tag}"
     echo -e "  ${CYAN}6${NC}  Functional tests      ${DIM}~10min, Docker + API key${NC}${docker_tag}${api_tag}"
     echo -e "  ${CYAN}7${NC}  Interactive tests      ${DIM}Docker + human${NC}${docker_tag}${api_tag}"
-    echo -e "  ${CYAN}8${NC}  All automatic          ${DIM}1-6, skip interactive${NC}"
+    echo -e "  ${CYAN}8${NC}  Plugin tests           ${DIM}clone + install + test from registry${NC}"
+    echo -e "  ${CYAN}9${NC}  All automatic          ${DIM}1-6, skip interactive/plugins${NC}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-8, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-9, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -251,6 +261,28 @@ run_interactive_menu() {
             6) run_functional ;;
             7) run_interactive ;;
             8)
+                echo ""
+                echo -e "  ${BOLD}What to test?${NC}"
+                echo -e "  a) All tools"
+                echo -e "  b) All connectors"
+                echo -e "  c) All plugins (tools + connectors)"
+                echo -e "  d) Specific (enter names)"
+                echo ""
+                local pchoice
+                read -rp "  Choice [a/b/c/d]: " pchoice
+                case "$pchoice" in
+                    a) run_plugins "tools" ;;
+                    b) run_plugins "connectors" ;;
+                    c) run_plugins "" ;;
+                    d)
+                        local pnames
+                        read -rp "  Names (comma-separated): " pnames
+                        run_plugins "$pnames"
+                        ;;
+                    *) echo -e "${RED}Invalid choice${NC}" ;;
+                esac
+                ;;
+            9)
                 run_unit
                 run_bash
                 run_integration
