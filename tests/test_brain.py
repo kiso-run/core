@@ -1334,7 +1334,7 @@ class TestM83PlanSchema:
             _jsonschema.validate(instance=instance, schema=_PLAN_SCHEMA_INNER)
 
     def _plan(self, **overrides):
-        base = {"goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}], "extend_replan": None}
+        base = {"goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}], "extend_replan": None, "needs_install": None}
         base.update(overrides)
         return base
 
@@ -1364,6 +1364,17 @@ class TestM83PlanSchema:
         d = self._plan()
         del d["extend_replan"]
         self._invalid(d)
+
+    def test_missing_needs_install(self):
+        d = self._plan()
+        del d["needs_install"]
+        self._invalid(d)
+
+    def test_valid_needs_install_list(self):
+        self._valid(self._plan(needs_install=["browser", "aider"]))
+
+    def test_valid_needs_install_null(self):
+        self._valid(self._plan(needs_install=None))
 
     def test_extra_top_level_field(self):
         self._invalid(self._plan(unexpected="boom"))
@@ -7484,6 +7495,50 @@ class TestNonActionableExecDetail:
         assert not any("analytical" in e for e in errors)
 
 
+class TestPipToUvValidation:
+    """M640: exec tasks must use uv pip install, not pip install."""
+
+    def _plan(self, detail):
+        return {"goal": "test", "needs_install": None, "tasks": [
+            {"type": "exec", "detail": detail, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+
+    def test_pip_install_rejected(self):
+        errors = validate_plan(self._plan("pip install pandas"))
+        assert any("uv pip install" in e for e in errors)
+
+    def test_uv_pip_install_accepted(self):
+        errors = validate_plan(self._plan("uv pip install pandas"))
+        assert not any("uv pip install" in e for e in errors)
+
+    def test_pip_in_other_context_accepted(self):
+        errors = validate_plan(self._plan("Check pip version"))
+        assert not any("uv pip install" in e for e in errors)
+
+
+class TestNeedsInstallCoherence:
+    """M640: needs_install + tool task for same tool → error."""
+
+    def test_tool_in_needs_install_used_as_task_rejected(self):
+        plan = {"goal": "test", "needs_install": ["browser"], "tasks": [
+            {"type": "tool", "detail": "navigate", "tool": "browser",
+             "args": '{"url": "http://x"}', "expect": "page loaded"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("needs_install" in e for e in errors)
+
+    def test_tool_not_in_needs_install_accepted(self):
+        plan = {"goal": "test", "needs_install": ["aider"], "tasks": [
+            {"type": "tool", "detail": "navigate", "tool": "browser",
+             "args": '{"url": "http://x"}', "expect": "page loaded"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ], "extend_replan": None}
+        errors = validate_plan(plan, installed_skills=["browser"])
+        assert not any("needs_install" in e for e in errors)
+
+
 class TestArtifactGoalMismatch:
     """M627: reject msg-only plans when goal mentions file creation."""
 
@@ -7558,6 +7613,7 @@ class TestBuildStrictSchema:
         assert "tasks" in schema["properties"]
         assert "secrets" in schema["properties"]
         assert "extend_replan" in schema["properties"]
+        assert "needs_install" in schema["properties"]
         assert schema["additionalProperties"] is False
 
     def test_review_schema_unchanged(self):

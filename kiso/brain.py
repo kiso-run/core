@@ -348,7 +348,11 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
         "additionalProperties": False,
     }},
     "extend_replan": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-}, ["goal", "secrets", "tasks", "extend_replan"])
+    "needs_install": {"anyOf": [
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "null"},
+    ]},
+}, ["goal", "secrets", "tasks", "extend_replan", "needs_install"])
 
 
 REVIEW_SCHEMA: dict = _build_strict_schema("review", {
@@ -568,6 +572,11 @@ def _validate_plan_tasks(
                 f"rewrite as a concrete shell command description "
                 f"(e.g., 'Run kiso tool install browser')"
             )
+        if t == TASK_TYPE_EXEC and "pip install" in detail.lower() and "uv pip install" not in detail.lower():
+            errors.append(
+                f"Task {i}: use 'uv pip install' instead of 'pip install' — "
+                f"uv is the project's package manager"
+            )
         if t == TASK_TYPE_MSG:
             for field in ("expect", "tool", "args"):
                 if task.get(field) is not None:
@@ -763,6 +772,16 @@ def validate_plan(
             "Add an exec task to write the file to the workspace — "
             "auto-publish will generate a download URL automatically."
         )
+
+    # M640: coherence — tools listed in needs_install must not appear in tool tasks
+    needs = plan.get("needs_install") or []
+    if needs:
+        for i, t in enumerate(tasks, 1):
+            if t.get("type") == TASK_TYPE_TOOL and t.get("tool") in needs:
+                errors.append(
+                    f"Task {i}: tool '{t['tool']}' is in needs_install (not available) "
+                    f"but used as a tool task. Remove the tool task or remove it from needs_install."
+                )
 
     return errors
 
@@ -1163,12 +1182,13 @@ async def run_planner(
         on_retry=on_retry,
         fallback_model=fallback,
     )
-    # M615: detect install proposal — validation saw uninstalled-tool errors
-    # and the planner responded with a msg-only plan (proposing install to user).
+    # M640: detect install proposal from two sources:
+    # 1. Planner explicitly declared needs_install (preferred, direct)
+    # 2. Validation saw uninstalled-tool errors (backup, indirect)
     saw_uninstalled = plan.pop("_saw_uninstalled_tool", False)
     plan["install_proposal"] = (
-        saw_uninstalled
-        and all(t.get("type") == TASK_TYPE_MSG for t in plan["tasks"])
+        bool(plan.get("needs_install"))
+        or saw_uninstalled
     )
 
     log.info("Plan: goal=%r, %d tasks, install_proposal=%s",
