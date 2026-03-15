@@ -101,6 +101,37 @@ class TestAssertNoFailureLanguage:
         with pytest.raises(AssertionError, match="(?i)failed to"):
             assert_no_failure_language("The task failed to complete.")
 
+    def test_failure_in_bullet_point_ignored(self):
+        # "errore" inside a markdown list item (scraped content) should not trigger.
+        assert_no_failure_language(
+            "Ecco le ultime notizie:\n\n"
+            "*   **INTER:** Frenata, errore arbitrale nel mirino\n"
+            "*   **MILAN:** Mercato inatteso\n\n"
+            "Queste sono le notizie principali di oggi."
+        )
+
+    def test_failure_in_numbered_list_ignored(self):
+        assert_no_failure_language(
+            "I risultati della ricerca:\n\n"
+            "1. Errore di Verstappen al GP di Monaco\n"
+            "2. Hamilton vince la gara\n\n"
+            "Ecco il riepilogo."
+        )
+
+    def test_failure_in_blockquote_ignored(self):
+        assert_no_failure_language(
+            "Dal comunicato stampa:\n\n"
+            "> Si è verificato un errore nel sistema di voto\n\n"
+            "La situazione è stata risolta."
+        )
+
+    def test_failure_in_prose_still_caught(self):
+        # "errore" in regular prose (not a list/quote) must still be caught.
+        with pytest.raises(AssertionError, match="errore"):
+            assert_no_failure_language(
+                "Si è verificato un errore durante la navigazione."
+            )
+
 
 # ---------------------------------------------------------------------------
 # FunctionalResult

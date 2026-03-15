@@ -66,9 +66,29 @@ _WORD_RE = re.compile(r"[a-zàèéìòù]+", re.IGNORECASE)
 _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
 
 
+_LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+.*$", re.MULTILINE)
+_NUMBERED_ITEM_RE = re.compile(r"^\s*\d+\.\s+.*$", re.MULTILINE)
+_BLOCKQUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
+
+
 def _strip_code_blocks(text: str) -> str:
     """Remove Markdown fenced code blocks from *text*."""
     return _CODE_BLOCK_RE.sub("", text)
+
+
+def _strip_quoted_content(text: str) -> str:
+    """Remove code blocks, list items, and blockquotes from *text*.
+
+    Messenger failure language appears in prose paragraphs. Scraped/cited
+    content appears as markdown list items, numbered lists, or blockquotes.
+    Stripping these prevents false positives from external content that
+    happens to contain words like "errore" (e.g. sports headlines).
+    """
+    text = _CODE_BLOCK_RE.sub("", text)
+    text = _LIST_ITEM_RE.sub("", text)
+    text = _NUMBERED_ITEM_RE.sub("", text)
+    text = _BLOCKQUOTE_RE.sub("", text)
+    return text
 
 
 def assert_italian(text: str) -> None:
@@ -156,10 +176,11 @@ _PUB_URL_RE = re.compile(r"https?://\S+/pub/\S+")
 def assert_no_failure_language(text: str) -> None:
     """Assert that *text* does not contain obvious failure indicators.
 
-    Code blocks are stripped first so that technical error-handling code
-    doesn't trigger false positives.
+    Code blocks, markdown list items, numbered lists, and blockquotes are
+    stripped first so that technical code and scraped/cited content don't
+    trigger false positives.
     """
-    cleaned = _strip_code_blocks(text)
+    cleaned = _strip_quoted_content(text)
     match = _FAILURE_PATTERNS.search(cleaned)
     assert match is None, (
         f"Failure language detected: {match.group()!r} in: {text[:300]}"
