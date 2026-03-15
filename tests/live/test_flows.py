@@ -440,9 +440,18 @@ class TestDiscoveryPlanReplanFlow:
             )
 
         assert validate_plan(discovery_plan) == []
-        assert discovery_plan["tasks"][-1]["type"] == "replan", (
-            f"Expected discovery plan to end with replan, "
+        # M655: accept replan or msg as final task — the planner may choose to
+        # investigate and report directly (exec + msg) instead of replanning.
+        # Both are valid strategies for a discovery query.
+        last_type = discovery_plan["tasks"][-1]["type"]
+        assert last_type in ("replan", "msg"), (
+            f"Expected plan to end with replan or msg, "
             f"got: {[t['type'] for t in discovery_plan['tasks']]}"
+        )
+        # Must have at least one investigation task
+        task_types = [t["type"] for t in discovery_plan["tasks"]]
+        assert any(t in ("exec", "search") for t in task_types), (
+            f"Expected at least one exec/search task, got: {task_types}"
         )
 
         # Step 2: Simulate exec outputs (pretend we ran the investigation)
