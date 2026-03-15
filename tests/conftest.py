@@ -40,6 +40,10 @@ def pytest_addoption(parser):
         "--integration", action="store_true", default=False,
         help="Run connector protocol integration tests",
     )
+    parser.addoption(
+        "--interactive", action="store_true", default=False,
+        help="Run interactive tests requiring a human at the terminal",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -94,6 +98,13 @@ def pytest_collection_modifyitems(config, items):
         skip = pytest.mark.skip(reason="Need --integration flag to run integration tests")
         for item in items:
             if _has_marker(item, "integration"):
+                item.add_marker(skip)
+
+    # --- interactive gating ---
+    if not config.getoption("--interactive"):
+        skip = pytest.mark.skip(reason="Need --interactive flag to run interactive tests")
+        for item in items:
+            if _has_marker(item, "interactive"):
                 item.add_marker(skip)
 
 # ---------------------------------------------------------------------------

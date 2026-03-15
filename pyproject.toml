@@ -27,6 +27,7 @@ markers = [
     "functional: full pipeline functional tests (requires --functional and KISO_LLM_API_KEY)",
     "destructive: functional tests with irreversible side effects (requires --destructive)",
     "integration: connector protocol integration tests (requires --integration)",
+    "interactive: tests requiring real human interaction (requires --interactive)",
 ]
 filterwarnings = [
     # pytest-asyncio: subprocess transport.__del__ fires after event loop closes.
