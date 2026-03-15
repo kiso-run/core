@@ -703,6 +703,21 @@ def _validate_plan_ordering(
                 f"next cycle after the user approves."
             )
 
+    # M631: after installing a tool that was proposed in a prior turn, the
+    # original request is still pending — must replan to continue with it.
+    if install_approved:
+        has_install_exec = any(
+            t.get("type") == TASK_TYPE_EXEC
+            and _INSTALL_CMD_RE.search(t.get("detail", ""))
+            for t in tasks
+        )
+        if has_install_exec and tasks[-1].get("type") == TASK_TYPE_MSG:
+            errors.append(
+                "Plan installs a tool after user approval but ends with msg. "
+                "The original request is still pending — use replan as the last "
+                "task so the next cycle can fulfill the original request."
+            )
+
     last = tasks[-1]
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")

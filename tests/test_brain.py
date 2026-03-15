@@ -7393,6 +7393,46 @@ class TestValidatePlanOrdering:
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
         assert any("Last task must be" in e for e in errors)
 
+    def test_install_with_approval_msg_last_rejected(self):
+        """M631: install + install_approved + msg last → must replan."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. done"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=True)
+        assert any("replan" in e for e in errors)
+
+    def test_install_with_approval_replan_last_accepted(self):
+        """M631: install + install_approved + replan last → accepted."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "replan", "detail": "continue with original request"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=True)
+        assert not any("replan" in e.lower() and "original request" in e for e in errors)
+
+    def test_install_without_approval_msg_last_accepted(self):
+        """M631: install + no prior approval + msg last → ok (user just asked to install)."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. installed"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=False)
+        assert not any("original request" in e for e in errors)
+
+    def test_install_in_replan_with_approval_msg_last_rejected(self):
+        """M631: replan install + install_approved + msg last → still must replan."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso connector install discord", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. done"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=True)
+        assert any("replan" in e for e in errors)
+
 
 class TestNonActionableExecDetail:
     """M626: reject exec tasks with analytical/vague details."""
