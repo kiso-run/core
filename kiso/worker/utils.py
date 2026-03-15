@@ -53,11 +53,10 @@ async def _run_subprocess(
     kwargs: dict = dict(
         cwd=cwd,
         env=env,
+        stdin=asyncio.subprocess.PIPE if stdin_data is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    if stdin_data is not None:
-        kwargs["stdin"] = asyncio.subprocess.PIPE
     if uid is not None:
         kwargs["user"] = uid
 

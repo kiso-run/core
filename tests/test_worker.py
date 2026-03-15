@@ -235,6 +235,29 @@ class TestRunSubprocess:
         assert success is True
         assert "no_timeout" in stdout
 
+    async def test_stdin_devnull(self, tmp_path):
+        """M644: stdin=DEVNULL — subprocess trying to read stdin gets EOF."""
+        stdout, _, success, _ = await _run_subprocess(
+            "read -t 1 line; echo \"exit=$?\"",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+        )
+        # read returns non-zero when it gets EOF from /dev/null
+        assert "exit=1" in stdout
+
+    async def test_stdin_data_still_works(self, tmp_path):
+        """M644: stdin_data parameter still pipes data correctly."""
+        stdout, _, success, _ = await _run_subprocess(
+            "cat",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+            stdin_data=b"hello from stdin",
+        )
+        assert success is True
+        assert "hello from stdin" in stdout
+
 
 # --- _exec_task ---
 
