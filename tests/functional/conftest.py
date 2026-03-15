@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import getpass
 import logging
 import os
 import re
@@ -232,7 +233,10 @@ def func_config() -> Config:
                 base_url="https://openrouter.ai/api/v1",
             ),
         },
-        users={"testadmin": User(role="admin")},
+        users={
+            "testadmin": User(role="admin"),
+            getpass.getuser(): User(role="admin"),
+        },
         models={**MODEL_DEFAULTS},
         settings=settings,
         raw={},
