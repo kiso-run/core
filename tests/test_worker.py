@@ -6141,6 +6141,25 @@ class TestBuildExecEnv:
             env = _build_exec_env()
         assert env["KISO_HOME"] == str(custom)
 
+    def test_venv_bin_in_path(self, tmp_path):
+        """M636: kiso process's own venv bin is in PATH so `kiso` CLI is findable."""
+        import sys
+        venv_bin = str(Path(sys.executable).parent)
+        with _patch_kiso_dir(tmp_path):
+            env = _build_exec_env()
+        assert venv_bin in env["PATH"]
+
+    def test_venv_bin_before_system_path(self, tmp_path):
+        """M636: venv bin comes before system PATH (but after sys/bin)."""
+        import sys
+        venv_bin = str(Path(sys.executable).parent)
+        with _patch_kiso_dir(tmp_path):
+            env = _build_exec_env()
+        parts = env["PATH"].split(":")
+        venv_idx = parts.index(venv_bin)
+        # System PATH is at the end (last element or later)
+        assert venv_idx < len(parts) - 1
+
 
 # --- M25: Planner-initiated replan (discovery plans) ---
 

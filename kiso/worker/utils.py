@@ -9,6 +9,7 @@ import os
 import pwd
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from kiso.config import KISO_DIR, Config
@@ -157,7 +158,7 @@ def _build_exec_env() -> dict[str, str]:
     are never inherited from the parent process. Only the vars explicitly
     listed below are passed to the child:
 
-    - PATH: prepend sys/bin if it exists
+    - PATH: sys/bin + kiso venv bin + system PATH
     - HOME: real home directory (so ``Path.home() / ".kiso"`` resolves correctly
       in child processes like ``kiso skill install``)
     - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists
@@ -167,12 +168,18 @@ def _build_exec_env() -> dict[str, str]:
     sys_bin = sys_dir / "bin"
     base_path = os.environ.get("PATH", "/usr/bin:/bin")
 
+    # M636: include the kiso process's own venv bin so that entry-point
+    # scripts (kiso CLI, uv, etc.) are available to exec tasks.
+    venv_bin = str(Path(sys.executable).parent)
+
     env: dict[str, str] = {}
 
+    path_parts: list[str] = []
     if sys_bin.is_dir():
-        env["PATH"] = f"{sys_bin}:{base_path}"
-    else:
-        env["PATH"] = base_path
+        path_parts.append(str(sys_bin))
+    path_parts.append(venv_bin)
+    path_parts.append(base_path)
+    env["PATH"] = ":".join(path_parts)
 
     # Use the real home directory, NOT KISO_DIR. If HOME were set to KISO_DIR
     # (/root/.kiso inside Docker), any child process computing
