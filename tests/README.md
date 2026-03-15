@@ -47,8 +47,9 @@ Each level answers a different question:
 ./run_tests.sh
 
 # CI / scripting (non-interactive, combinable flags)
-./run_tests.sh --auto              # all automatic suites (no interactive)
+./run_tests.sh --auto              # all automatic suites (1-6, no interactive)
 ./run_tests.sh --auto --unit       # only unit
+./run_tests.sh --auto --bash       # only bash/BATS
 ./run_tests.sh --auto --unit --live  # unit + live (combinable)
 ./run_tests.sh --auto --all        # everything including interactive
 ./run_tests.sh --auto --interactive  # only interactive

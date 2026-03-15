@@ -10,6 +10,7 @@
 # Auto (CI):
 #   ./run_tests.sh --auto           # all automatic suites (no interactive)
 #   ./run_tests.sh --auto --unit    # only unit
+#   ./run_tests.sh --auto --bash    # only bash/BATS
 #   ./run_tests.sh --auto --unit --live   # unit + live (combinable)
 #   ./run_tests.sh --auto --all     # everything including interactive
 #   ./run_tests.sh --auto --interactive   # only interactive
@@ -57,6 +58,11 @@ if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
     HAS_API_KEY=true
 fi
 
+HAS_BATS=false
+if command -v bats > /dev/null 2>&1; then
+    HAS_BATS=true
+fi
+
 # ---------------------------------------------------------------------------
 # Suite runner
 # ---------------------------------------------------------------------------
@@ -83,6 +89,14 @@ run_unit() {
         --ignore=tests/live --ignore=tests/docker \
         --ignore=tests/functional --ignore=tests/integration \
         --ignore=tests/interactive
+}
+
+run_bash() {
+    if [[ "$HAS_BATS" == true ]]; then
+        run_suite "Bash tests" bats tests/bash/
+    else
+        echo -e "${YELLOW}⚠ Skipping bash tests — bats not installed (npm install -g bats)${NC}"
+    fi
 }
 
 run_integration() {
@@ -149,6 +163,7 @@ run_auto() {
     if [[ $# -eq 0 ]]; then
         # No suite flags → run all automatic (no interactive)
         run_unit
+        run_bash
         run_integration
         run_live
         run_docker
@@ -159,6 +174,7 @@ run_auto() {
     for flag in "$@"; do
         case "$flag" in
             --unit)         run_unit ;;
+            --bash)         run_bash ;;
             --integration)  run_integration ;;
             --live)         run_live ;;
             --docker)       run_docker ;;
@@ -166,6 +182,7 @@ run_auto() {
             --interactive)  run_interactive ;;
             --all)
                 run_unit
+                run_bash
                 run_integration
                 run_live
                 run_docker
@@ -174,7 +191,7 @@ run_auto() {
                 ;;
             *)
                 echo -e "${RED}Unknown flag: $flag${NC}"
-                echo "Available: --unit --integration --live --docker --func --interactive --all"
+                echo "Available: --unit --bash --integration --live --docker --func --interactive --all"
                 exit 1
                 ;;
         esac
@@ -188,27 +205,32 @@ run_interactive_menu() {
     # Availability tags
     local docker_tag=""
     local api_tag=""
+    local bats_tag=""
     if [[ "$HAS_DOCKER" != true ]]; then
         docker_tag="${DIM} (Docker not available)${NC}"
     fi
     if [[ "$HAS_API_KEY" != true ]]; then
         api_tag="${DIM} (API key not set)${NC}"
     fi
+    if [[ "$HAS_BATS" != true ]]; then
+        bats_tag="${DIM} (bats not installed)${NC}"
+    fi
 
     echo ""
     echo -e "  ${BOLD}Kiso Test Runner${NC}"
     echo ""
     echo -e "  ${CYAN}1${NC}  Unit tests           ${DIM}~90s, host${NC}"
-    echo -e "  ${CYAN}2${NC}  Integration tests     ${DIM}~7s, host, mock LLM${NC}"
-    echo -e "  ${CYAN}3${NC}  Live tests            ${DIM}~8min, API key${NC}${api_tag}"
-    echo -e "  ${CYAN}4${NC}  Docker tests          ${DIM}<1s, Docker${NC}${docker_tag}"
-    echo -e "  ${CYAN}5${NC}  Functional tests      ${DIM}~10min, Docker + API key${NC}${docker_tag}${api_tag}"
-    echo -e "  ${CYAN}6${NC}  Interactive tests      ${DIM}Docker + human${NC}${docker_tag}${api_tag}"
-    echo -e "  ${CYAN}7${NC}  All automatic          ${DIM}1-5, skip interactive${NC}"
+    echo -e "  ${CYAN}2${NC}  Bash tests            ${DIM}<5s, host, bats${NC}${bats_tag}"
+    echo -e "  ${CYAN}3${NC}  Integration tests     ${DIM}~7s, host, mock LLM${NC}"
+    echo -e "  ${CYAN}4${NC}  Live tests            ${DIM}~8min, API key${NC}${api_tag}"
+    echo -e "  ${CYAN}5${NC}  Docker tests          ${DIM}<1s, Docker${NC}${docker_tag}"
+    echo -e "  ${CYAN}6${NC}  Functional tests      ${DIM}~10min, Docker + API key${NC}${docker_tag}${api_tag}"
+    echo -e "  ${CYAN}7${NC}  Interactive tests      ${DIM}Docker + human${NC}${docker_tag}${api_tag}"
+    echo -e "  ${CYAN}8${NC}  All automatic          ${DIM}1-6, skip interactive${NC}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-7, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-8, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -222,13 +244,15 @@ run_interactive_menu() {
         sel="${sel// /}"  # trim spaces
         case "$sel" in
             1) run_unit ;;
-            2) run_integration ;;
-            3) run_live ;;
-            4) run_docker ;;
-            5) run_functional ;;
-            6) run_interactive ;;
-            7)
+            2) run_bash ;;
+            3) run_integration ;;
+            4) run_live ;;
+            5) run_docker ;;
+            6) run_functional ;;
+            7) run_interactive ;;
+            8)
                 run_unit
+                run_bash
                 run_integration
                 run_live
                 run_docker

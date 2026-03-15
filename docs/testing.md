@@ -3,17 +3,18 @@
 ## Quick Reference
 
 ```bash
-# Unit tests (fast, no network, no secrets)
-uv run pytest tests/ -q
+# Interactive menu — pick which suites to run
+./run_tests.sh
 
-# Bash tests (kiso-host.sh + install.sh — requires bats-core)
-./run_bash_tests.sh
+# CI / scripting (non-interactive)
+./run_tests.sh --auto              # all automatic suites
+./run_tests.sh --auto --unit       # only unit
+./run_tests.sh --auto --bash       # only bash/BATS
+./run_tests.sh --auto --all        # everything including interactive
 
-# Live tests in Docker (safe — LLM-generated commands isolated in container)
-docker compose -f docker-compose.test.yml run --rm test-live
-
-# Everything
-uv run pytest tests/ -q && ./run_bash_tests.sh && docker compose -f docker-compose.test.yml run --rm test-live
+# Direct invocation
+uv run pytest tests/ -q            # unit tests only
+bats tests/bash/                   # bash tests only
 ```
 
 ### Full suite runner
@@ -114,8 +115,8 @@ No network, no secrets, no side effects.
 ### Bash tests — kiso-host.sh and install.sh
 
 ```bash
-./run_bash_tests.sh          # all 50 bats tests
-bats tests/bash/             # same, direct invocation
+./run_tests.sh --auto --bash   # via test runner
+bats tests/bash/               # direct invocation
 bats tests/bash/test_host_instance_commands.bats  # single file
 ```
 
