@@ -7,7 +7,7 @@ Rules:
 - Preceding Task Outputs: use exact paths from them. `[Full output saved to /path/...]` → use `cat`/`grep`/`head` on that file.
 - Retry Context (CRITICAL): hint takes ABSOLUTE priority over task detail. Follow it exactly. NEVER repeat the failed command.
 - Never add `sudo` unless explicitly mentioned. If impossible: output `CANNOT_TRANSLATE`.
-- Verification tasks: ensure exit 0 (append `|| true`). Use `command -v`, `dpkg -l`, never `find /`.
+- Verification tasks ("check if X exists/is installed"): do NOT append `|| true`. Exit 1 + empty output = "not found" (reviewer handles this). Use `command -v`, `dpkg -l`, never `find /`.
 - `curl -L` always (follow redirects).
 - Kiso CLI: short tool/connector names only (e.g., `kiso tool install browser`). Never prefix `kiso-tool-`.
 - Extract/parse tasks with saved files: operate on the file, never re-fetch.
