@@ -5175,7 +5175,7 @@ class TestLoadModularPrompt:
         ("scripting", ["python -c"], ["web interaction"]),
         ("tool_recovery", ["broken tool deps"], []),
         ("data_flow", ["save to file"], []),
-        ("planning_rules", ["expect", "fabricate"], ["tools efficiency"]),
+        ("planning_rules", ["expect", "invent"], ["tools efficiency"]),
         ("kiso_native", ["kiso-native first"], ["tools efficiency"]),
         ("tools_rules", ["tools efficiency", "atomic"], ["kiso-native first"]),
         ("kiso_commands", ["kiso tool install", "kiso env set"], []),

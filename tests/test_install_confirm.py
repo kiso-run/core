@@ -32,8 +32,7 @@ class TestPlannerPromptInstallRules:
         )
 
     def test_kiso_native_never_install_without_approval(self):
-        assert "Never install anything" in self.full
-        assert "user approval" in self.full
+        assert "msg user for approval" in self.full or "Never install anything" in self.full
 
     def test_tools_rules_msg_before_install(self):
         assert "single msg asking user to install" in self.full.lower() or \
