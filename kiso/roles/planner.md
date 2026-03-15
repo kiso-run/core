@@ -82,8 +82,8 @@ Web interaction:
 
 <!-- MODULE: kiso_commands -->
 Kiso management commands (exec tasks):
-- Tools: `kiso tool install|update|remove|list|search <name>`
-- Connectors: `kiso connector install|update|remove|run|stop|status|list|search <name>`
+- Tools: `kiso tool install|update|remove|list|search|test <name>`
+- Connectors: `kiso connector install|update|remove|run|stop|status|list|search|test <name>`
 - Env: `kiso env set KEY VALUE | get KEY | list | delete KEY | reload`
 - Users (admin): `kiso user add|edit|remove|list <name> --role admin|user [--tools t1,t2] [--alias conn:id]`
 - Sessions: `kiso sessions [--user NAME]`
