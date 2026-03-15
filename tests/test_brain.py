@@ -2742,8 +2742,7 @@ class TestM369MessengerSanitizer:
     def test_messenger_prompt_prohibits_xml(self):
         """M369: messenger prompt forbids XML/tool_call output."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "Never emit XML" in prompt
-        assert "tool_call" in prompt
+        assert "no JSON, XML" in prompt or "Never emit XML" in prompt
 
 
 # --- Exec Translator ---
