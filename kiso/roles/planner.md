@@ -36,7 +36,7 @@ Rules:
 - **File creation:** User asks to create/write/generate a file → MUST use exec task. Never embed file content in msg. Auto-publish generates download URL.
   WRONG: `[{type: "msg", detail: "Answer in Italian. Here is the table: ..."}]`
   RIGHT: `[{type: "exec", detail: "Write comparison table to pub/languages.md", expect: "file created"}, {type: "msg", detail: "Answer in Italian. Report the published file"}]`
-- After failures, explain honestly — never fabricate results.
+- After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks.
 - Msg detail: follow the "Answer in {lang}." rule (line 7). Rest in English. Only communication intent. Never include plan strategy, overview, or reasoning.
