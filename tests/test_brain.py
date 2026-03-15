@@ -6925,20 +6925,19 @@ class TestM297RetryNotification:
 class TestM302StallRetryIntegration:
     """M302: end-to-end stall detection + separate retry budgets."""
 
-    async def test_stall_detected_and_retry_succeeds(self):
-        """Mock server sends 2 chunks then stalls → stall detected → retry succeeds."""
-        import asyncio
+    async def test_stall_switches_to_fallback(self):
+        """M652: stall on primary → immediate switch to fallback model."""
         from kiso.llm import LLMStallError
 
-        call_count = [0]
+        calls = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
             "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _stall_then_ok(cfg, role, messages, **kw):
-            call_count[0] += 1
-            if call_count[0] == 1:
+            calls.append(kw.get("model_override"))
+            if len(calls) == 1:
                 raise LLMStallError("LLM stream stalled (no data for 60s)")
             return valid_plan
 
@@ -6955,9 +6954,37 @@ class TestM302StallRetryIntegration:
                 config, "planner",
                 [{"role": "user", "content": "test"}],
                 PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                fallback_model="gemini-fallback",
             )
         assert result["goal"] == "ok"
-        assert call_count[0] == 2
+        assert len(calls) == 2
+        # First call: no override (primary). Second: fallback model.
+        assert calls[0] is None
+        assert calls[1] == "gemini-fallback"
+
+    async def test_stall_no_fallback_raises_immediately(self):
+        """M652: stall without fallback_model → raise immediately, no retry."""
+        from kiso.llm import LLMStallError
+
+        async def _always_stall(cfg, role, messages, **kw):
+            raise LLMStallError("stream stalled")
+
+        config = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            raw={},
+        )
+        with patch("kiso.brain.call_llm", side_effect=_always_stall):
+            with pytest.raises(PlanError, match="stall"):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
+                    # no fallback_model
+                )
 
     async def test_llm_budget_exhausted_separately(self):
         """LLM retry budget exhausted independently from validation budget."""

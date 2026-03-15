@@ -12,7 +12,7 @@ from pathlib import Path
 import aiosqlite
 
 from kiso.config import Config, KISO_DIR, setting_bool
-from kiso.llm import LLMBudgetExceeded, LLMError, call_llm
+from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_tools
 from kiso.security import fence_content
 from kiso.skill_loader import discover_md_skills, build_planner_skill_list
@@ -229,6 +229,21 @@ async def _retry_llm_with_validation(
                 config, role, messages, response_format=schema,
                 session=session, model_override=active_model,
             )
+        except LLMStallError as e:
+            # M652: stall = provider-level issue — retry on same model is futile.
+            # Switch to fallback immediately without consuming retry budget.
+            if fallback_model and active_model != fallback_model:
+                log.warning("SSE stall on %s, switching to fallback %s", role, fallback_model)
+                active_model = fallback_model
+                llm_errors = 0
+                max_total += max_llm_retries
+                if on_retry is not None:
+                    on_retry(attempt + 1, max_total, f"SSE stall — switching to fallback: {fallback_model}")
+                continue
+            # No fallback available — raise immediately (don't retry)
+            exc = error_class(f"LLM stall with no fallback: {e}")
+            exc.last_errors = last_errors
+            raise exc
         except LLMError as e:
             llm_errors += 1
             # M630: circuit breaker open → switch to fallback immediately
