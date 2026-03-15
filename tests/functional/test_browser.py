@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from kiso.tools import discover_tools
+from kiso.tools import discover_tools, invalidate_tools_cache
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
@@ -28,7 +28,8 @@ BROWSER_TIMEOUT = 600
 
 
 def _browser_installed() -> bool:
-    """Check if the browser tool is installed."""
+    """Check if the browser tool is installed (cache-busting)."""
+    invalidate_tools_cache()
     return any(t["name"] == "browser" for t in discover_tools())
 
 
@@ -42,21 +43,27 @@ async def _run_with_install_flow(
 
     Three-turn flow when browser is not pre-installed:
       1. Original prompt → planner proposes install (msg-only plan)
-      2. "sì, installa" → planner installs the tool
+      2. "sì, installa il tool browser" → planner installs the tool
       3. Repeat original prompt → planner uses the now-installed tool
 
     If the browser tool is already installed, returns after a single turn.
+    Retries the install confirmation if the first attempt doesn't result in
+    a tool appearing on disk (LLM may generate a different plan).
     """
     result = await run_message(prompt, timeout=timeout)
 
     if _browser_installed():
         return result
 
-    # Turn 2: confirm installation only
-    await run_message("sì, installa il tool browser", timeout=timeout)
+    # Turn 2: confirm installation
+    install_result = await run_message(
+        "sì, installa il tool browser", timeout=timeout,
+    )
 
     if not _browser_installed():
-        return result  # install failed — return original result for assertion
+        # Install may have failed or the LLM didn't execute the install.
+        # Return the install result so the assertion shows what went wrong.
+        return install_result
 
     # Turn 3: repeat original request with tool now available
     result = await run_message(prompt, timeout=timeout)
