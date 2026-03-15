@@ -276,6 +276,26 @@ async def _update_field(
     await db.commit()
 
 
+async def _update_fields(
+    db: aiosqlite.Connection,
+    table: str,
+    fields: dict[str, object],
+    row_id: object,
+    *,
+    id_column: str = "id",
+) -> None:
+    """Generic multi-field UPDATE helper.
+
+    Sets each key=value from *fields*, plus ``updated_at = CURRENT_TIMESTAMP``,
+    on the row identified by *id_column* = *row_id*.
+    """
+    set_clauses = [f"{k} = ?" for k in fields]
+    set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+    sql = f"UPDATE {table} SET {', '.join(set_clauses)} WHERE {id_column} = ?"
+    await db.execute(sql, (*fields.values(), row_id))
+    await db.commit()
+
+
 async def init_db(db_path: Path) -> aiosqlite.Connection:
     """Create tables, enable WAL, set busy_timeout, set row_factory, return connection."""
     db = await aiosqlite.connect(db_path)
@@ -666,12 +686,10 @@ async def update_task(
     duration_ms: int | None = None,
 ) -> None:
     """Update task status, output, stderr, duration_ms, and updated_at."""
-    await db.execute(
-        "UPDATE tasks SET status = ?, output = ?, stderr = ?, duration_ms = ?, "
-        "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (status, output, stderr, duration_ms, task_id),
-    )
-    await db.commit()
+    await _update_fields(db, "tasks", {
+        "status": status, "output": output, "stderr": stderr,
+        "duration_ms": duration_ms,
+    }, task_id)
 
 
 async def update_task_review(
@@ -682,12 +700,10 @@ async def update_task_review(
     learning: str | None = None,
 ) -> None:
     """Persist review verdict on a task row."""
-    await db.execute(
-        "UPDATE tasks SET review_verdict=?, review_reason=?, review_learning=?, "
-        "updated_at = CURRENT_TIMESTAMP WHERE id=?",
-        (verdict, reason, learning, task_id),
-    )
-    await db.commit()
+    await _update_fields(db, "tasks", {
+        "review_verdict": verdict, "review_reason": reason,
+        "review_learning": learning,
+    }, task_id)
 
 
 async def update_task_command(
