@@ -54,6 +54,11 @@ _MAGENTA = "\033[35m"
 CLEAR_LINE = "\033[2K"
 
 
+def _sym(u: str, a: str, caps: TermCaps) -> str:
+    """Return unicode or ascii symbol based on terminal capabilities."""
+    return u if caps.unicode else a
+
+
 def _style(text: str, *codes: str, caps: TermCaps) -> str:
     if not caps.color:
         return text
@@ -404,7 +409,7 @@ def render_task_output(
     """Render indented task output with optional truncation."""
     if not output:
         return ""
-    indent_char = "┊" if caps.unicode else "|"
+    indent_char = _sym("┊", "|", caps)
     indent = f"  {indent_char} "
     lines = output.splitlines()
 
@@ -430,7 +435,7 @@ def render_task_output(
 
 def render_separator(caps: TermCaps) -> str:
     """Render a horizontal separator line."""
-    char = "─" if caps.unicode else "-"
+    char = _sym("─", "-", caps)
     width = min(caps.width, 60)
     line = char * width
     return _style(line, _DIM, caps=caps)
@@ -444,7 +449,7 @@ def render_thinking(thinking: str, caps: TermCaps) -> str:
     """Render thinking block with header and indented body."""
     icon = "🤔" if caps.unicode else "?"
     header = _style(f"{icon} Thinking...", _YELLOW, caps=caps)
-    indent_char = "┊" if caps.unicode else "|"
+    indent_char = _sym("┊", "|", caps)
     lines = thinking.splitlines()
     max_lines = 10
     shown = lines[:max_lines]
@@ -513,7 +518,7 @@ def _format_resources(resources: dict, caps: TermCaps) -> str:
         parts.append(f"Disk: {disk_used}/{disk_limit} GB")
     if not parts:
         return ""
-    dot = " · " if caps.unicode else " | "
+    dot = _sym(" · ", " | ", caps)
     return "  " + dot.join(parts)
 
 
@@ -527,7 +532,7 @@ def render_banner(
     if version:
         kiso_label = f"{kiso_label}  v{version}"
     name_line = _style(kiso_label, _BOLD, _MAGENTA, caps=caps)
-    dot = " · " if caps.unicode else " | "
+    dot = _sym(" · ", " | ", caps)
     caps_text = f"  run commands{dot}search the web{dot}write code{dot}use skills"
     caps_line = _style(caps_text, _DIM, caps=caps)
     hint = _style(f"  /help for commands{dot}Ctrl+C to cancel a task", _DIM, caps=caps)
@@ -606,7 +611,7 @@ def render_step_usage(input_tokens: int, output_tokens: int, caps: TermCaps) -> 
     """Render compact per-step token usage (e.g. '⟨430→85⟩')."""
     if not input_tokens and not output_tokens:
         return ""
-    arrow = "→" if caps.unicode else "->"
+    arrow = _sym("→", "->", caps)
     lp = "⟨" if caps.unicode else "<"
     rp = "⟩" if caps.unicode else ">"
     text = f"{lp}{input_tokens:,}{arrow}{output_tokens:,}{rp}"
@@ -645,7 +650,7 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
     if not calls:
         return ""
     lines: list[str] = []
-    arrow = "→" if caps.unicode else "->"
+    arrow = _sym("→", "->", caps)
     for c in calls:
         role = c.get("role", "?")
         model = c.get("model", "")
@@ -660,9 +665,9 @@ def render_llm_calls(llm_calls_json: str | None, caps: TermCaps) -> str:
 
 def _verbose_call_chars(caps: TermCaps) -> tuple[str, str, str]:
     """Return ``(arrow, sep_char, think_sep)`` used by verbose panels."""
-    arrow = "\u2192" if caps.unicode else "->"
-    sep_char = "\u2500" if caps.unicode else "-"
-    think_icon = "\U0001f914" if caps.unicode else "?"
+    arrow = _sym("\u2192", "->", caps)
+    sep_char = _sym("\u2500", "-", caps)
+    think_icon = _sym("\U0001f914", "?", caps)
     think_sep = _labeled_sep(f" {think_icon} reasoning ", sep_char)
     return arrow, sep_char, think_sep
 
@@ -875,8 +880,8 @@ def render_inflight_indicator(call: dict, caps: TermCaps) -> str:
     """
     role = call.get("role", "?")
     model = call.get("model", "")
-    arrow = "\u2192" if caps.unicode else "->"
-    wait_icon = "\u23f3" if caps.unicode else "..."
+    arrow = _sym("\u2192", "->", caps)
+    wait_icon = _sym("\u23f3", "...", caps)
     text = f"  {wait_icon} {role} {arrow} {_short_model(model)} (waiting...)"
     return _style(text, _DIM, caps=caps)
 
@@ -891,7 +896,7 @@ def render_partial_content(text: str, caps: TermCaps, max_lines: int = 6) -> str
     lines = text.splitlines()
     if len(lines) > max_lines:
         lines = lines[-max_lines:]
-    icon = "\u25b8" if caps.unicode else ">"
+    icon = _sym("\u25b8", ">", caps)
     styled = [_style(f"  {icon} {line}", _DIM, caps=caps) for line in lines]
     return "\n".join(styled)
 
