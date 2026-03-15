@@ -248,10 +248,17 @@ async def _msg_task(
             If set and the detail doesn't already start with "Answer in",
             prepends "Answer in {language}." to ensure correct language.
     """
-    # M650: inject response language prefix if not already present
-    if response_lang and not detail.startswith("Answer in "):
+    # M650/M653: ensure correct response language prefix
+    if response_lang:
         lang_name = LANG_NAMES.get(response_lang, "English")
-        detail = f"Answer in {lang_name}. {detail}"
+        expected_prefix = f"Answer in {lang_name}."
+        if not detail.startswith(expected_prefix):
+            # Strip wrong-language prefix if present (e.g. planner put "Answer in English.")
+            if detail.startswith("Answer in "):
+                dot_pos = detail.find(".")
+                if dot_pos >= 0:
+                    detail = detail[dot_pos + 1:].lstrip()
+            detail = f"{expected_prefix} {detail}"
 
     selected_outputs = plan_outputs
     briefing_context: str | None = None

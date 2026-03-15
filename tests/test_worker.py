@@ -314,6 +314,56 @@ class TestMsgTask:
             result = await _msg_task(config, db, "sess1", "Say hello to the user")
         assert result == "Bot says hi"
 
+    async def test_response_lang_prepends_prefix(self, db):
+        """M650: response_lang injects 'Answer in {lang}.' prefix."""
+        config = _make_config()
+        captured = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.append(messages[-1]["content"])
+            return "Ciao"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1", "Tell the user hello",
+                            response_lang="it")
+        assert "Answer in Italian." in captured[0]
+
+    async def test_response_lang_replaces_wrong_prefix(self, db):
+        """M653: wrong language prefix is replaced with correct one."""
+        config = _make_config()
+        captured = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.append(messages[-1]["content"])
+            return "Ecco i risultati"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1",
+                            "Answer in English. Tell the user the Fibonacci results",
+                            response_lang="it")
+        # The messenger formats the detail into a message — check the detail
+        # was corrected (Italian prefix, English prefix removed, content preserved)
+        msg = captured[0]
+        assert "Answer in Italian." in msg
+        assert "Answer in English." not in msg
+        assert "Fibonacci" in msg
+
+    async def test_response_lang_correct_prefix_unchanged(self, db):
+        """M653: correct language prefix is left as-is."""
+        config = _make_config()
+        captured = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.append(messages[-1]["content"])
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await _msg_task(config, db, "sess1",
+                            "Answer in Italian. Dimmi i risultati",
+                            response_lang="it")
+        # Should NOT double-prefix
+        assert captured[0].count("Answer in Italian.") == 1
+
     async def test_includes_summary_in_context(self, db):
         config = _make_config()
         await db.execute("UPDATE sessions SET summary = 'Project uses Flask' WHERE session = 'sess1'")
