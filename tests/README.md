@@ -43,23 +43,21 @@ Each level answers a different question:
 ## Running tests
 
 ```bash
-# Full suite (recommended before merging)
-./run_full_tests.sh
+# Interactive menu — pick which suites to run
+./run_tests.sh
 
-# Individual levels
-./run_full_tests.sh --unit      # ~90s, host, no deps
-./run_full_tests.sh --live      # ~8min, needs OPENROUTER_API_KEY
-./run_full_tests.sh --func      # ~10min, Docker + OPENROUTER_API_KEY
-./run_full_tests.sh --docker    # <1s, Docker only
+# CI / scripting (non-interactive, combinable flags)
+./run_tests.sh --auto              # all automatic suites (no interactive)
+./run_tests.sh --auto --unit       # only unit
+./run_tests.sh --auto --unit --live  # unit + live (combinable)
+./run_tests.sh --auto --all        # everything including interactive
+./run_tests.sh --auto --interactive  # only interactive
 
 # Quick unit-only during development
 uv run pytest tests/ -q
 
 # Single file
 uv run pytest tests/test_brain.py -v
-
-# Interactive (never automated, human required)
-uv run pytest tests/interactive/ -v --interactive --functional
 ```
 
 

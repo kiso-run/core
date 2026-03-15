@@ -18,14 +18,19 @@ uv run pytest tests/ -q && ./run_bash_tests.sh && docker compose -f docker-compo
 
 ### Full suite runner
 
-`run_full_tests.sh` runs all test suites automatically, auto-loading API keys from the kiso `.env` file. Docker sandbox tests run inside a container (as root). Only skips if Docker is unavailable or API key is missing:
+`run_tests.sh` is the test entry point. Interactive by default (shows a menu), or use `--auto` for CI:
 
 ```bash
-./run_full_tests.sh            # run everything
-./run_full_tests.sh --unit     # only unit tests
-./run_full_tests.sh --live     # only live LLM + network tests
-./run_full_tests.sh --func     # only functional tests (real LLM + real exec)
-./run_full_tests.sh --docker   # only docker sandbox tests (via docker compose)
+./run_tests.sh                        # interactive menu
+./run_tests.sh --auto                 # all automatic suites (no interactive)
+./run_tests.sh --auto --unit          # only unit tests
+./run_tests.sh --auto --live          # only live LLM + network tests
+./run_tests.sh --auto --func          # only functional tests (real LLM + real exec)
+./run_tests.sh --auto --docker        # only docker sandbox tests
+./run_tests.sh --auto --integration   # connector protocol tests
+./run_tests.sh --auto --interactive   # human-in-the-loop tests
+./run_tests.sh --auto --all           # everything including interactive
+./run_tests.sh --auto --unit --live   # flags are combinable
 ```
 
 The script reads `~/.kiso/instances/kiso/.env` and maps `KISO_LLM_API_KEY` to `OPENROUTER_API_KEY` automatically. Override the path with `KISO_ENV_FILE=/path/to/.env` if needed. Environment variables already set in the shell take precedence over the file.
