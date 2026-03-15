@@ -92,7 +92,7 @@ MAX_TOKENS_DEFAULTS: dict[str, int] = {
     "classifier": 10,
     "briefer": 500,
     "reviewer": 1000,
-    "curator": 2000,
+    "curator": 4000,
     "paraphraser": 500,
     "summarizer": 2000,
     "worker": 500,
