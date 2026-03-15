@@ -26,6 +26,7 @@ markers = [
     "live_network: tests that call external services (requires --live-network)",
     "functional: full pipeline functional tests (requires --functional and KISO_LLM_API_KEY)",
     "destructive: functional tests with irreversible side effects (requires --destructive)",
+    "integration: connector protocol integration tests (requires --integration)",
 ]
 filterwarnings = [
     # pytest-asyncio: subprocess transport.__del__ fires after event loop closes.

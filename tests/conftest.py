@@ -36,6 +36,10 @@ def pytest_addoption(parser):
         "--destructive", action="store_true", default=False,
         help="Run destructive functional tests with real side effects",
     )
+    parser.addoption(
+        "--integration", action="store_true", default=False,
+        help="Run connector protocol integration tests",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -83,6 +87,13 @@ def pytest_collection_modifyitems(config, items):
         skip = pytest.mark.skip(reason="Need --destructive flag to run destructive tests")
         for item in items:
             if _has_marker(item, "destructive"):
+                item.add_marker(skip)
+
+    # --- integration gating ---
+    if not config.getoption("--integration"):
+        skip = pytest.mark.skip(reason="Need --integration flag to run integration tests")
+        for item in items:
+            if _has_marker(item, "integration"):
                 item.add_marker(skip)
 
 # ---------------------------------------------------------------------------
