@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 # Full test suite runner — runs everything automatically.
 #
+# Test levels:
+#   --unit    Unit tests (host, no LLM, no network, mocked deps)
+#   --func    Functional tests (Docker, real LLMs, real exec, full pipeline)
+#   --docker  Docker/sandbox tests (Docker, no LLM, tests isolation/permissions)
+#   --live    Live LLM tests (host, real LLMs, tests role quality, no exec)
+#   --integration  Integration tests (host, mock LLM, connector protocol)
+#   --plugins      Plugin tests (host, all installed tools/connectors)
+#
 # Auto-managed:
 #   - API keys: loaded from ~/.kiso/instances/kiso/.env
-#   - Docker sandbox tests: run via docker compose (as root in container)
+#   - Docker: functional + docker tests run via docker compose (root in container)
 #
 # Only skips if truly unavailable:
-#   - Docker not installed → skips sandbox tests
+#   - Docker not installed → skips functional + docker tests
 #   - OPENROUTER_API_KEY missing (and no .env) → skips live + functional tests
 #
 # Usage:
 #   ./run_full_tests.sh           # run everything
-#   ./run_full_tests.sh --live    # only live network tests
-#   ./run_full_tests.sh --func    # only functional tests
-#   ./run_full_tests.sh --docker  # only docker tests
+#   ./run_full_tests.sh --unit    # only unit tests
+#   ./run_full_tests.sh --func    # only functional tests (Docker)
+#   ./run_full_tests.sh --docker  # only docker/sandbox tests
+#   ./run_full_tests.sh --live    # only live LLM tests
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -62,11 +71,18 @@ if [[ "$MODE" == "all" || "$MODE" == "--unit" ]]; then
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "--func" ]]; then
-    # Requires: OPENROUTER_API_KEY (functional tests call real LLMs + run real exec)
-    if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-        run_suite "Functional tests" uv run pytest tests/functional/ -v --functional
-    else
+    # Requires: Docker + OPENROUTER_API_KEY
+    # Functional tests run inside Docker (root, sandbox, deps.sh, tool install)
+    if ! docker info > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Skipping functional tests — Docker not available${NC}"
+    elif [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
         echo -e "${YELLOW}⚠ Skipping functional tests — OPENROUTER_API_KEY not set${NC}"
+    else
+        docker compose -f docker-compose.test.yml build test-functional
+        run_suite "Functional tests" \
+            docker compose -f docker-compose.test.yml run --rm \
+            -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+            test-functional
     fi
 fi
 
@@ -89,6 +105,15 @@ if [[ "$MODE" == "all" || "$MODE" == "--live" ]]; then
         echo -e "${YELLOW}⚠ Skipping live tests — OPENROUTER_API_KEY not set${NC}"
         echo "  export OPENROUTER_API_KEY=sk-or-..."
     fi
+fi
+
+if [[ "$MODE" == "all" || "$MODE" == "--integration" ]]; then
+    run_suite "Integration tests" uv run pytest tests/integration/ -v --integration
+fi
+
+if [[ "$MODE" == "--plugins" ]]; then
+    run_suite "Plugin unit tests" uv run pytest tests/integration/ -v --integration
+    echo -e "${YELLOW}Note: per-plugin tests require 'kiso tool test <name>'${NC}"
 fi
 
 echo ""
