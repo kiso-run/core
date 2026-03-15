@@ -1955,18 +1955,23 @@ def build_summarizer_messages(
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
+async def _call_role(
+    config: Config, role: str, messages: list[dict],
+    error_class: type[Exception], session: str = "",
+) -> str:
+    """Call an LLM role and wrap errors in the role-specific exception."""
+    try:
+        return await call_llm(config, role, messages, session=session)
+    except LLMError as e:
+        raise error_class(f"LLM call failed: {e}")
+
+
 async def run_summarizer(
     config: Config, current_summary: str, messages: list[dict], session: str = "",
 ) -> str:
-    """Run the summarizer. Returns the new summary string.
-
-    Raises SummarizerError on failure.
-    """
+    """Run the summarizer. Returns the new summary string."""
     msgs = build_summarizer_messages(current_summary, messages)
-    try:
-        return await call_llm(config, "summarizer", msgs, session=session)
-    except LLMError as e:
-        raise SummarizerError(f"LLM call failed: {e}")
+    return await _call_role(config, "summarizer", msgs, SummarizerError, session)
 
 
 # ---------------------------------------------------------------------------
@@ -1990,15 +1995,9 @@ def build_paraphraser_messages(messages: list[dict]) -> list[dict]:
 
 
 async def run_paraphraser(config: Config, messages: list[dict], session: str = "") -> str:
-    """Run the paraphraser on untrusted messages. Returns paraphrased text.
-
-    Raises ParaphraserError on failure.
-    """
+    """Run the paraphraser on untrusted messages. Returns paraphrased text."""
     msgs = build_paraphraser_messages(messages)
-    try:
-        return await call_llm(config, "paraphraser", msgs, session=session)
-    except LLMError as e:
-        raise ParaphraserError(f"LLM call failed: {e}")
+    return await _call_role(config, "paraphraser", msgs, ParaphraserError, session)
 
 
 # ---------------------------------------------------------------------------
@@ -2194,10 +2193,7 @@ async def run_searcher(
     messages = build_searcher_messages(
         query, context, max_results=max_results, lang=lang, country=country,
     )
-    try:
-        return await call_llm(config, "searcher", messages, session=session)
-    except LLMError as e:
-        raise SearcherError(f"LLM call failed: {e}")
+    return await _call_role(config, "searcher", messages, SearcherError, session)
 
 
 # ---------------------------------------------------------------------------
@@ -2237,10 +2233,7 @@ async def run_exec_translator(
         config, detail, sys_env_text, plan_outputs_text,
         retry_context=retry_context,
     )
-    try:
-        raw = await call_llm(config, "worker", messages, session=session)
-    except LLMError as e:
-        raise ExecTranslatorError(f"LLM call failed: {e}")
+    raw = await _call_role(config, "worker", messages, ExecTranslatorError, session)
 
     command = raw.strip()
     if not command or command == "CANNOT_TRANSLATE":
