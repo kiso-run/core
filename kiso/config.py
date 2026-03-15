@@ -252,34 +252,29 @@ def setting_bool(settings: dict, key: str, default: bool = False) -> bool:
     return default
 
 
-def setting_int(settings: dict, key: str, *, lo: int | None = None, hi: int | None = None) -> int:
-    """Read an integer setting, clamping to [lo, hi] with a warning if out of range."""
+def _clamp_setting(settings: dict, key: str, type_fn, lo=None, hi=None):
+    """Read a setting, convert with *type_fn*, clamp to [lo, hi]."""
     raw = settings.get(key, SETTINGS_DEFAULTS.get(key))
     if raw is None:
         raise ConfigError(f"Missing required setting: {key}")
-    val = int(raw)
+    val = type_fn(raw)
     if lo is not None and val < lo:
-        log.warning("Setting %s=%d is below minimum %d, clamping to %d", key, val, lo, lo)
+        log.warning("Setting %s=%s below minimum %s, clamping", key, val, lo)
         val = lo
     if hi is not None and val > hi:
-        log.warning("Setting %s=%d is above maximum %d, clamping to %d", key, val, hi, hi)
+        log.warning("Setting %s=%s above maximum %s, clamping", key, val, hi)
         val = hi
     return val
+
+
+def setting_int(settings: dict, key: str, *, lo: int | None = None, hi: int | None = None) -> int:
+    """Read an integer setting, clamping to [lo, hi] with a warning."""
+    return _clamp_setting(settings, key, int, lo, hi)
 
 
 def setting_float(settings: dict, key: str, *, lo: float | None = None, hi: float | None = None) -> float:
-    """Read a float setting, clamping to [lo, hi] with a warning if out of range."""
-    raw = settings.get(key, SETTINGS_DEFAULTS.get(key))
-    if raw is None:
-        raise ConfigError(f"Missing required setting: {key}")
-    val = float(raw)
-    if lo is not None and val < lo:
-        log.warning("Setting %s=%f is below minimum %f, clamping to %f", key, val, lo, lo)
-        val = lo
-    if hi is not None and val > hi:
-        log.warning("Setting %s=%f is above maximum %f, clamping to %f", key, val, hi, hi)
-        val = hi
-    return val
+    """Read a float setting, clamping to [lo, hi] with a warning."""
+    return _clamp_setting(settings, key, float, lo, hi)
 
 
 def _die(msg: str) -> None:
