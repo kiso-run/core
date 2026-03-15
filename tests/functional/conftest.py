@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import logging
 import os
 import re
 import time
@@ -17,6 +18,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
+
+log = logging.getLogger(__name__)
 
 import pytest
 import pytest_asyncio
@@ -401,12 +404,16 @@ async def run_message(func_config, func_db, func_session):
             ),
             timeout=timeout,
         )
-        # Wait for background knowledge task if any
+        # Wait for background knowledge task (curator + summarizer).
+        # M634: increased from 30s to 90s — curator with transport retries
+        # can easily exceed 30s.  Log instead of silently swallowing.
         if bg_task is not None and not bg_task.done():
             try:
-                await asyncio.wait_for(bg_task, timeout=30)
-            except (asyncio.TimeoutError, Exception):
-                pass
+                await asyncio.wait_for(bg_task, timeout=90)
+            except asyncio.TimeoutError:
+                log.warning("Background knowledge task timed out after 90s")
+            except Exception as e:
+                log.warning("Background knowledge task failed: %s", e)
 
         elapsed = time.monotonic() - t0
 
