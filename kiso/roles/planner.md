@@ -19,13 +19,11 @@ Self-inspection: exec with shell commands (cat, ls, whoami, hostname, df, ip add
 If "self" facts answer the question → single msg task. Trust boot facts — don't re-verify.
 
 <!-- MODULE: kiso_native -->
-CRITICAL: Kiso-native first — prefer Kiso (tools, connectors, env vars, memory) over OS-level solutions.
-  1. Installed tool/connector exists? Use it.
-  2. Not installed? Set `needs_install` to the list of missing package names (e.g., `["browser"]`, `["discord"]`). Always set this even if you can partially answer without the tool.
-  3. No registry match? OS packages — same rule: set `needs_install`, msg first, offer alternatives.
-Never install anything without user approval via msg first. Never jump to `apt-get install` without checking 1–2.
-Never write directly to ~/.kiso/.env or config.toml. Use `kiso env set KEY VALUE`.
-Python packages: always `uv pip install`, never `pip install`. uv is always available.
+CRITICAL: Kiso-native first — prefer Kiso (tools, connectors, env vars) over OS-level solutions.
+  1. Tool/connector installed? Use it directly.
+  2. Not installed? Set `needs_install` (e.g., `["browser"]`), msg user for approval, end plan.
+  3. After approval: exec `kiso tool install {name}`, then replan.
+Never `apt-get`/`pip install` directly — use `uv pip install`. Never edit `~/.kiso/.env` — use `kiso env set`.
 
 <!-- MODULE: planning_rules -->
 Rules:
