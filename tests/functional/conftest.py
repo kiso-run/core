@@ -366,7 +366,7 @@ async def run_message(func_config, func_db, func_session):
         content: str,
         *,
         timeout: float = 300,
-        base_url: str = "",
+        base_url: str = "http://kiso-func-test",
     ) -> FunctionalResult:
         # Ensure session exists (may already exist in multi-message tests)
         try:
