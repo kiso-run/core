@@ -90,7 +90,7 @@ REASONING_DEFAULTS: dict[str, dict | None] = {}
 # Override per-role via config [max_tokens] section.
 MAX_TOKENS_DEFAULTS: dict[str, int] = {
     "classifier": 10,
-    "briefer": 500,
+    "briefer": 2048,
     "reviewer": 1000,
     "curator": 4000,
     "paraphraser": 500,
