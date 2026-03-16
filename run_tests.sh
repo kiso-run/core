@@ -113,9 +113,8 @@ run_live() {
 
 run_docker() {
     if [[ "$HAS_DOCKER" == true ]]; then
-        docker compose -f docker-compose.test.yml build test-docker
         run_suite "Docker tests" \
-            docker compose -f docker-compose.test.yml run --rm test-docker
+            docker compose -f docker-compose.test.yml run --build --rm test-docker
     else
         echo -e "${YELLOW}⚠ Skipping docker tests — Docker not available${NC}"
     fi
@@ -130,9 +129,8 @@ run_functional() {
         echo -e "${YELLOW}⚠ Skipping functional tests — OPENROUTER_API_KEY not set${NC}"
         return
     fi
-    docker compose -f docker-compose.test.yml build test-functional
     run_suite "Functional tests" \
-        docker compose -f docker-compose.test.yml run --rm \
+        docker compose -f docker-compose.test.yml run --build --rm \
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
         test-functional
 }
@@ -152,9 +150,8 @@ run_interactive() {
         echo -e "${YELLOW}⚠ Skipping interactive tests — OPENROUTER_API_KEY not set${NC}"
         return
     fi
-    docker compose -f docker-compose.test.yml build test-functional
     run_suite "Interactive tests" \
-        docker compose -f docker-compose.test.yml run --rm \
+        docker compose -f docker-compose.test.yml run --build --rm \
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
         test-functional \
         uv run pytest tests/interactive/ -v --interactive --functional
