@@ -1430,6 +1430,35 @@ _TASK_HANDLERS: dict = {
 }
 
 
+def _build_execution_batches(
+    tasks: list[dict],
+) -> list[list[tuple[int, dict]]]:
+    """M696: Group consecutive tasks by parallel_group into execution batches.
+
+    Returns a list of batches.  Each batch is a list of ``(index, task_row)``
+    tuples.  A batch with one item runs sequentially; a batch with 2+ items
+    runs in parallel via ``asyncio.gather``.
+    """
+    batches: list[list[tuple[int, dict]]] = []
+    current_batch: list[tuple[int, dict]] = []
+    current_group: int | None = None
+
+    for i, t in enumerate(tasks):
+        g = t.get("parallel_group")
+        if g is not None and g == current_group:
+            current_batch.append((i, t))
+        else:
+            if current_batch:
+                batches.append(current_batch)
+            current_batch = [(i, t)]
+            current_group = g
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+
+
 async def _execute_plan(
     db: aiosqlite.Connection,
     config: Config,
@@ -1479,10 +1508,18 @@ async def _execute_plan(
         sandbox_uid=None,
     )
 
-    for i, task_row in enumerate(tasks):
-        # --- Cancel check ---
+    # --- M696: Build execution batches from parallel groups ---
+    batches = _build_execution_batches(tasks)
+
+    # Flat index tracking for remaining-task calculation on early exit.
+    all_task_count = len(tasks)
+
+    for batch in batches:
+        first_idx = batch[0][0]  # global index of first task in batch
+
+        # --- Cancel check (once per batch) ---
         if cancel_event is not None and cancel_event.is_set():
-            for t in tasks[i:]:
+            for t in tasks[first_idx:]:
                 await update_task(db, t["id"], "cancelled")
                 audit.log_task(
                     session, t["id"], t["type"], t["detail"],
@@ -1491,91 +1528,139 @@ async def _execute_plan(
                     session_secrets=session_secrets or {},
                 )
             await _cleanup_plan_outputs(session)
-            return False, "cancelled", None, completed, [dict(t) for t in tasks[i:]], ctx.plan_outputs
+            return False, "cancelled", None, completed, [dict(t) for t in tasks[first_idx:]], ctx.plan_outputs
 
-        task_id = task_row["id"]
-        task_type = task_row["type"]
-        detail = task_row["detail"]
-
-        # --- Permission re-validation ---
+        # --- Permission re-validation (once per batch) ---
         try:
             fresh_config = reload_config()
         except ConfigError as e:
             log.warning("Config reload failed: %s — using cached config", e)
             fresh_config = config
 
-        perm = revalidate_permissions(
-            fresh_config, username, task_type,
-            tool_name=task_row.get("skill"),
-        )
-        if not perm.allowed:
-            await update_task(db, task_id, "failed", output=perm.reason)
-            audit.log_task(
-                session, task_id, task_type, detail, "failed", 0, 0,
-                deploy_secrets=deploy_secrets,
-                session_secrets=session_secrets or {},
+        for idx, task_row in batch:
+            perm = revalidate_permissions(
+                fresh_config, username, task_row["type"],
+                tool_name=task_row.get("skill"),
             )
-            remaining = [dict(t) for t in tasks[i + 1:]]
-            await _cleanup_plan_outputs(session)
-            return False, None, None, completed, remaining, ctx.plan_outputs
+            if not perm.allowed:
+                await update_task(db, task_row["id"], "failed", output=perm.reason)
+                audit.log_task(
+                    session, task_row["id"], task_row["type"], task_row["detail"],
+                    "failed", 0, 0,
+                    deploy_secrets=deploy_secrets,
+                    session_secrets=session_secrets or {},
+                )
+                remaining = [dict(t) for t in tasks[idx + 1:]]
+                await _cleanup_plan_outputs(session)
+                return False, None, None, completed, remaining, ctx.plan_outputs
 
         sandbox_uid = await _ensure_sandbox_user(session) if perm.role == "user" else None
         if sandbox_uid is not None:
             _session_workspace(session, sandbox_uid=sandbox_uid)
         ctx.sandbox_uid = sandbox_uid
 
-        await update_task(db, task_id, "running")
-        if slog:
-            slog.info("Task %d started: [%s] %s", task_id, task_type, detail[:120])
+        is_parallel = len(batch) > 1
 
-        usage_idx_before = get_usage_index()
+        if is_parallel:
+            # --- M696: Parallel execution ---
+            log.info("Executing parallel group: %d tasks (indices %d-%d)",
+                     len(batch), batch[0][0] + 1, batch[-1][0] + 1)
+            for idx, task_row in batch:
+                await update_task(db, task_row["id"], "running")
+                if slog:
+                    slog.info("Task %d started (parallel): [%s] %s",
+                              task_row["id"], task_row["type"], task_row["detail"][:120])
 
-        # --- Dispatch to handler ---
-        handler = _TASK_HANDLERS.get(task_type)
-        if handler is None:
-            log.error("Unknown task type %r for task %d", task_type, task_id)
-            await update_task(db, task_id, "failed", output=f"Unknown task type: {task_type}")
-            remaining = [dict(t) for t in tasks[i + 1:]]
-            await _cleanup_plan_outputs(session)
-            return False, None, None, completed, remaining, ctx.plan_outputs
+            async def _run_one(idx: int, task_row: dict) -> _TaskHandlerResult:
+                usage_idx = get_usage_index()
+                handler = _TASK_HANDLERS.get(task_row["type"])
+                if handler is None:
+                    log.error("Unknown task type %r for task %d", task_row["type"], task_row["id"])
+                    await update_task(db, task_row["id"], "failed",
+                                      output=f"Unknown task type: {task_row['type']}")
+                    return _TaskHandlerResult(stop=True)
+                is_final = idx == all_task_count - 1
+                return await handler(ctx, task_row, idx, is_final, usage_idx)
 
-        is_final = i == len(tasks) - 1
-        result = await handler(ctx, task_row, i, is_final, usage_idx_before)
+            results = await asyncio.gather(*[_run_one(idx, tr) for idx, tr in batch])
 
-        # Refresh tool cache after exec/tool tasks (may have installed new tools)
-        if task_type in (TASK_TYPE_EXEC, TASK_TYPE_TOOL):
-            invalidate_tools_cache()
-            ctx.installed_tools = discover_tools()
-            # After an install exec, unhealthy tools may need a moment for
-            # binary downloads to finish (e.g. Chromium for browser tool).
-            # Rescan once after a short delay to avoid false install-loop.
-            if (
-                task_type == TASK_TYPE_EXEC
-                and not result.stop
-                and _INSTALL_CMD_RE.search(detail or "")
-                and any(not t.get("healthy", True) for t in ctx.installed_tools)
-            ):
-                await asyncio.sleep(_POST_INSTALL_RESCAN_DELAY)
+            # Collect outputs and completed rows from all parallel results.
+            for result in results:
+                if result.plan_output is not None:
+                    ctx.plan_outputs.append(result.plan_output)
+                if result.completed_row is not None:
+                    completed.append(result.completed_row)
+
+            # Refresh tool cache if any task was exec/tool.
+            if any(tr["type"] in (TASK_TYPE_EXEC, TASK_TYPE_TOOL) for _, tr in batch):
                 invalidate_tools_cache()
                 ctx.installed_tools = discover_tools()
-                still_unhealthy = [t["name"] for t in ctx.installed_tools if not t.get("healthy", True)]
-                log.info(
-                    "Post-install rescan complete: %d tools, %d still unhealthy%s",
-                    len(ctx.installed_tools),
-                    len(still_unhealthy),
-                    f" ({', '.join(still_unhealthy)})" if still_unhealthy else "",
-                )
-            ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
+                ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
 
-        if result.plan_output is not None:
-            ctx.plan_outputs.append(result.plan_output)
-        if result.completed_row is not None:
-            completed.append(result.completed_row)
+            # Check for stop signals (use first stop encountered).
+            stop_result = next((r for r in results if r.stop), None)
+            if stop_result:
+                last_batch_idx = batch[-1][0]
+                remaining = [dict(t) for t in tasks[last_batch_idx + 1:]]
+                await _cleanup_plan_outputs(session)
+                return (stop_result.stop_success, stop_result.stop_replan,
+                        stop_result.stop_stuck, completed, remaining, ctx.plan_outputs)
 
-        if result.stop:
-            remaining = [dict(t) for t in tasks[i + 1:]]
-            await _cleanup_plan_outputs(session)
-            return result.stop_success, result.stop_replan, result.stop_stuck, completed, remaining, ctx.plan_outputs
+        else:
+            # --- Sequential execution (single task, original logic) ---
+            idx, task_row = batch[0]
+            task_id = task_row["id"]
+            task_type = task_row["type"]
+            detail = task_row["detail"]
+
+            await update_task(db, task_id, "running")
+            if slog:
+                slog.info("Task %d started: [%s] %s", task_id, task_type, detail[:120])
+
+            usage_idx_before = get_usage_index()
+
+            handler = _TASK_HANDLERS.get(task_type)
+            if handler is None:
+                log.error("Unknown task type %r for task %d", task_type, task_id)
+                await update_task(db, task_id, "failed", output=f"Unknown task type: {task_type}")
+                remaining = [dict(t) for t in tasks[idx + 1:]]
+                await _cleanup_plan_outputs(session)
+                return False, None, None, completed, remaining, ctx.plan_outputs
+
+            is_final = idx == all_task_count - 1
+            result = await handler(ctx, task_row, idx, is_final, usage_idx_before)
+
+            # Refresh tool cache after exec/tool tasks
+            if task_type in (TASK_TYPE_EXEC, TASK_TYPE_TOOL):
+                invalidate_tools_cache()
+                ctx.installed_tools = discover_tools()
+                if (
+                    task_type == TASK_TYPE_EXEC
+                    and not result.stop
+                    and _INSTALL_CMD_RE.search(detail or "")
+                    and any(not t.get("healthy", True) for t in ctx.installed_tools)
+                ):
+                    await asyncio.sleep(_POST_INSTALL_RESCAN_DELAY)
+                    invalidate_tools_cache()
+                    ctx.installed_tools = discover_tools()
+                    still_unhealthy = [t["name"] for t in ctx.installed_tools if not t.get("healthy", True)]
+                    log.info(
+                        "Post-install rescan complete: %d tools, %d still unhealthy%s",
+                        len(ctx.installed_tools),
+                        len(still_unhealthy),
+                        f" ({', '.join(still_unhealthy)})" if still_unhealthy else "",
+                    )
+                ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
+
+            if result.plan_output is not None:
+                ctx.plan_outputs.append(result.plan_output)
+            if result.completed_row is not None:
+                completed.append(result.completed_row)
+
+            if result.stop:
+                remaining = [dict(t) for t in tasks[idx + 1:]]
+                await _cleanup_plan_outputs(session)
+                return result.stop_success, result.stop_replan, result.stop_stuck, completed, remaining, ctx.plan_outputs
 
     await _cleanup_plan_outputs(session)
     return True, None, None, completed, [], ctx.plan_outputs

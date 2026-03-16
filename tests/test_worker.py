@@ -12098,3 +12098,73 @@ class TestFormatTaskList:
                 assert sub in result, f"Missing {sub!r} in {result!r}"
 
 
+class TestBuildExecutionBatches:
+    """M696: _build_execution_batches groups tasks by parallel_group."""
+
+    def test_no_groups_all_sequential(self):
+        from kiso.worker.loop import _build_execution_batches
+        tasks = [
+            {"type": "search", "detail": "A"},
+            {"type": "exec", "detail": "B"},
+            {"type": "msg", "detail": "C"},
+        ]
+        batches = _build_execution_batches(tasks)
+        assert len(batches) == 3
+        assert all(len(b) == 1 for b in batches)
+
+    def test_single_parallel_group(self):
+        from kiso.worker.loop import _build_execution_batches
+        tasks = [
+            {"type": "search", "detail": "A", "parallel_group": 1},
+            {"type": "search", "detail": "B", "parallel_group": 1},
+            {"type": "msg", "detail": "C"},
+        ]
+        batches = _build_execution_batches(tasks)
+        assert len(batches) == 2
+        assert len(batches[0]) == 2  # parallel group
+        assert len(batches[1]) == 1  # msg
+
+    def test_two_groups_with_sequential_between(self):
+        from kiso.worker.loop import _build_execution_batches
+        tasks = [
+            {"type": "search", "detail": "A", "parallel_group": 1},
+            {"type": "search", "detail": "B", "parallel_group": 1},
+            {"type": "exec", "detail": "merge"},
+            {"type": "exec", "detail": "X", "parallel_group": 2},
+            {"type": "exec", "detail": "Y", "parallel_group": 2},
+            {"type": "msg", "detail": "report"},
+        ]
+        batches = _build_execution_batches(tasks)
+        assert len(batches) == 4
+        assert len(batches[0]) == 2  # group 1
+        assert len(batches[1]) == 1  # sequential
+        assert len(batches[2]) == 2  # group 2
+        assert len(batches[3]) == 1  # msg
+
+    def test_preserves_task_indices(self):
+        from kiso.worker.loop import _build_execution_batches
+        tasks = [
+            {"type": "search", "detail": "A", "parallel_group": 1},
+            {"type": "search", "detail": "B", "parallel_group": 1},
+            {"type": "search", "detail": "C", "parallel_group": 1},
+            {"type": "msg", "detail": "D"},
+        ]
+        batches = _build_execution_batches(tasks)
+        indices = [idx for idx, _ in batches[0]]
+        assert indices == [0, 1, 2]
+
+    def test_empty_tasks(self):
+        from kiso.worker.loop import _build_execution_batches
+        assert _build_execution_batches([]) == []
+
+    def test_null_group_treated_as_sequential(self):
+        from kiso.worker.loop import _build_execution_batches
+        tasks = [
+            {"type": "search", "detail": "A", "parallel_group": None},
+            {"type": "search", "detail": "B", "parallel_group": None},
+        ]
+        batches = _build_execution_batches(tasks)
+        # None != None for grouping purposes → each is its own batch
+        assert len(batches) == 2
+
+
