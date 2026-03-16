@@ -1958,10 +1958,25 @@ def build_summarizer_messages(
 async def _call_role(
     config: Config, role: str, messages: list[dict],
     error_class: type[Exception], session: str = "",
+    fallback_model: str | None = None,
 ) -> str:
-    """Call an LLM role and wrap errors in the role-specific exception."""
+    """Call an LLM role and wrap errors in the role-specific exception.
+
+    On ``LLMStallError``, retries once with *fallback_model* if provided.
+    """
     try:
         return await call_llm(config, role, messages, session=session)
+    except LLMStallError:
+        if fallback_model:
+            log.warning("SSE stall on %s, trying fallback %s", role, fallback_model)
+            try:
+                return await call_llm(
+                    config, role, messages, session=session,
+                    model_override=fallback_model,
+                )
+            except LLMError as e2:
+                raise error_class(f"Fallback LLM call failed: {e2}")
+        raise error_class("LLM stall with no fallback model")
     except LLMError as e:
         raise error_class(f"LLM call failed: {e}")
 
@@ -2111,15 +2126,27 @@ async def run_messenger(
         briefing_context=briefing_context,
     )
     # M480: retry messenger LLM call up to 2 times on transient errors.
-    # Unlike structured roles (planner/reviewer) which use _retry_llm_with_validation
-    # with 3 retries + fallback model, the messenger previously had zero retries.
+    # M666: on SSE stall, switch to fallback model immediately (don't waste retries).
+    _fallback = config.settings.get("planner_fallback_model", "google/gemini-2.5-flash-lite")
+    _using_fallback = False
     _last_err: LLMError | None = None
     for _attempt in range(_MAX_MESSENGER_RETRIES + 1):
         try:
-            text = await call_llm(config, "messenger", messages, session=session)
+            model_override = _fallback if _using_fallback else None
+            text = await call_llm(
+                config, "messenger", messages, session=session,
+                model_override=model_override,
+            )
             return _sanitize_messenger_output(text)
         except LLMBudgetExceeded:
             raise  # non-retryable — budget is exhausted
+        except LLMStallError as e:
+            if not _using_fallback and _fallback:
+                log.warning("Messenger SSE stall, switching to fallback %s", _fallback)
+                _using_fallback = True
+                continue  # retry immediately with fallback
+            _last_err = e
+            break  # already on fallback or no fallback — give up
         except LLMError as e:
             _last_err = e
             if _attempt < _MAX_MESSENGER_RETRIES:
@@ -2233,7 +2260,9 @@ async def run_exec_translator(
         config, detail, sys_env_text, plan_outputs_text,
         retry_context=retry_context,
     )
-    raw = await _call_role(config, "worker", messages, ExecTranslatorError, session)
+    _fallback = config.settings.get("planner_fallback_model", "google/gemini-2.5-flash-lite")
+    raw = await _call_role(config, "worker", messages, ExecTranslatorError, session,
+                           fallback_model=_fallback)
 
     command = raw.strip()
     if not command or command == "CANNOT_TRANSLATE":
