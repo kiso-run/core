@@ -1,8 +1,9 @@
-"""M421/M435/M615 — Integration tests for install confirmation flow.
+"""M421/M435/M615/M670 — Integration tests for install confirmation flow.
 
 End-to-end checks that the system prevents silent skill/connector
 installation without user approval.  M615 adds server-side detection
-of install proposals (replaces keyword heuristic).
+of install proposals (replaces keyword heuristic).  M670 broadens
+detection for msg-only plans on fresh instances.
 """
 
 import json
@@ -13,6 +14,7 @@ import pytest
 from kiso.brain import (
     _load_modular_prompt,
     _retry_llm_with_validation,
+    run_planner,
     validate_plan,
 )
 from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
@@ -273,13 +275,13 @@ class TestInstallProposalEdgeCases:
 # --- M615: server-side install-proposal detection ---
 
 
-def _make_config():
+def _make_config(**settings_overrides):
     return Config(
         tokens={"cli": "test"},
         providers={"openrouter": Provider(base_url="https://test.local/v1")},
         users={},
         models=dict(MODEL_DEFAULTS),
-        settings=dict(SETTINGS_DEFAULTS),
+        settings={**SETTINGS_DEFAULTS, "briefer_enabled": False, **settings_overrides},
         raw={},
     )
 
@@ -373,3 +375,118 @@ class TestRetryLoopUninstalledToolFlag:
                 {"type": "json_object"}, validate, Exception, "Plan",
             )
         assert result["_saw_uninstalled_tool"] is True
+
+
+# --- M670: msg-only plan on fresh instance → install_proposal ---
+
+
+def _msg_only_plan(*, needs_install=None):
+    """Return a JSON string for a msg-only plan with configurable needs_install."""
+    return json.dumps({
+        "goal": "Ask user to install browser",
+        "secrets": None,
+        "extend_replan": None,
+        "needs_install": needs_install,
+        "tasks": [{
+            "type": "msg",
+            "detail": "Answer in Italian. Vuoi installare il browser?",
+            "tool": None,
+            "args": None,
+            "expect": None,
+        }],
+    })
+
+
+def _exec_msg_plan():
+    """Return a JSON string for an exec+msg plan (not msg-only)."""
+    return json.dumps({
+        "goal": "Run a script",
+        "secrets": None,
+        "extend_replan": None,
+        "needs_install": None,
+        "tasks": [
+            {
+                "type": "exec",
+                "detail": "Run hello script",
+                "tool": None,
+                "args": None,
+                "expect": "prints hello",
+            },
+            {
+                "type": "msg",
+                "detail": "Answer in English. Report the script output and results to the user",
+                "tool": None,
+                "args": None,
+                "expect": None,
+            },
+        ],
+    })
+
+
+def _make_config():
+    return Config(
+        tokens={"cli": "test"},
+        providers={"openrouter": Provider(base_url="https://test.local/v1")},
+        users={},
+        models=dict(MODEL_DEFAULTS),
+        settings={**SETTINGS_DEFAULTS, "briefer_enabled": False},
+        raw={},
+    )
+
+
+@pytest.mark.asyncio
+class TestM670MsgOnlyFreshInstanceProposal:
+    """M670: msg-only plan + no tools installed → install_proposal=True."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import init_db, create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_msg_only_no_tools_sets_install_proposal(self, db):
+        """msg-only plan + no installed tools + needs_install=null → True."""
+        config = _make_config()
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_msg_only_plan(needs_install=None)),
+            patch("kiso.brain.discover_tools", return_value=[]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
+        assert plan["install_proposal"] is True
+
+    async def test_msg_only_with_tools_installed_no_forced_proposal(self, db):
+        """msg-only plan + tools installed → follows needs_install (False)."""
+        config = _make_config()
+        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_msg_only_plan(needs_install=None)),
+            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "ciao")
+        assert plan["install_proposal"] is False
+
+    async def test_msg_only_needs_install_explicit(self, db):
+        """msg-only + needs_install=["browser"] → True regardless of tools."""
+        config = _make_config()
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_msg_only_plan(needs_install=["browser"])),
+            patch("kiso.brain.discover_tools", return_value=[]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
+        assert plan["install_proposal"] is True
+
+    async def test_exec_msg_plan_no_tools_no_forced_proposal(self, db):
+        """exec+msg plan + no tools → NOT msg-only, M670 doesn't fire."""
+        config = _make_config()
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_exec_msg_plan()),
+            patch("kiso.brain.discover_tools", return_value=[]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "scrivi hello world")
+        assert plan["install_proposal"] is False
