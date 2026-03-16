@@ -7471,6 +7471,107 @@ class TestValidatePlanOrdering:
         assert any("replan" in e for e in errors)
 
 
+class TestValidatePlanGroups:
+    """M695: validate parallel group constraints."""
+
+    def test_valid_parallel_group(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "search", "detail": "search B", "group": 1},
+            {"type": "exec", "detail": "merge results", "group": None},
+            {"type": "msg", "detail": "Answer in English. report"},
+        ]
+        assert _validate_plan_groups(tasks) == []
+
+    def test_no_groups_is_valid(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "search", "detail": "search A"},
+            {"type": "exec", "detail": "process"},
+            {"type": "msg", "detail": "Answer in English. report"},
+        ]
+        assert _validate_plan_groups(tasks) == []
+
+    def test_msg_in_group_rejected(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "msg", "detail": "Answer in English. hi", "group": 1},
+        ]
+        errors = _validate_plan_groups(tasks)
+        assert any("not 'msg'" in e for e in errors)
+
+    def test_replan_in_group_rejected(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "exec", "detail": "do X", "group": 1},
+            {"type": "replan", "detail": "retry", "group": 1},
+        ]
+        errors = _validate_plan_groups(tasks)
+        assert any("not 'replan'" in e for e in errors)
+
+    def test_single_task_group_rejected(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "msg", "detail": "Answer in English. report"},
+        ]
+        errors = _validate_plan_groups(tasks)
+        assert any("only 1 task" in e for e in errors)
+
+    def test_non_adjacent_group_rejected(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "exec", "detail": "process"},
+            {"type": "search", "detail": "search B", "group": 1},
+            {"type": "msg", "detail": "Answer in English. report"},
+        ]
+        errors = _validate_plan_groups(tasks)
+        assert any("not adjacent" in e for e in errors)
+
+    def test_multiple_valid_groups(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "search", "detail": "search B", "group": 1},
+            {"type": "exec", "detail": "process A", "group": 2},
+            {"type": "exec", "detail": "process B", "group": 2},
+            {"type": "msg", "detail": "Answer in English. report"},
+        ]
+        assert _validate_plan_groups(tasks) == []
+
+    def test_tool_tasks_in_group_valid(self):
+        from kiso.brain import _validate_plan_groups
+        tasks = [
+            {"type": "tool", "detail": "fetch page A", "group": 1},
+            {"type": "tool", "detail": "fetch page B", "group": 1},
+            {"type": "msg", "detail": "Answer in English. report"},
+        ]
+        assert _validate_plan_groups(tasks) == []
+
+    def test_group_integrated_with_validate_plan(self):
+        """Group validation runs as part of validate_plan."""
+        plan = {
+            "goal": "Compare competitors",
+            "tasks": [
+                {"type": "search", "detail": "search comp A", "tool": None,
+                 "args": None, "expect": "info", "group": 1},
+                {"type": "search", "detail": "search comp B", "tool": None,
+                 "args": None, "expect": "info", "group": 1},
+                {"type": "exec", "detail": "Create comparison table",
+                 "tool": None, "args": None, "expect": "file created"},
+                {"type": "msg", "detail": "Answer in English. Here is the comparison",
+                 "tool": None, "args": None, "expect": None},
+            ],
+            "needs_install": None,
+            "extend_replan": None,
+        }
+        errors = validate_plan(plan)
+        assert not errors
+
+
 class TestNonActionableExecDetail:
     """M626: reject exec tasks with analytical/vague details."""
 

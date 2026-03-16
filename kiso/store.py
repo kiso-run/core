@@ -312,6 +312,9 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     if "duration_ms" not in existing_cols:
         await db.execute("ALTER TABLE tasks ADD COLUMN duration_ms INTEGER DEFAULT NULL")
         await db.commit()
+    if "parallel_group" not in existing_cols:
+        await db.execute("ALTER TABLE tasks ADD COLUMN parallel_group INTEGER")
+        await db.commit()
 
     # M615: add install_proposal to plans table
     cur = await db.execute("PRAGMA table_info(plans)")
@@ -1450,12 +1453,13 @@ async def create_task(
     skill: str | None = None,
     args: str | None = None,
     expect: str | None = None,
+    parallel_group: int | None = None,
 ) -> int:
     """Insert a task row. Returns task id."""
     cur = await db.execute(
-        "INSERT INTO tasks (plan_id, session, type, detail, skill, args, expect) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (plan_id, session, type, detail, skill, args, expect),
+        "INSERT INTO tasks (plan_id, session, type, detail, skill, args, expect, parallel_group) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (plan_id, session, type, detail, skill, args, expect, parallel_group),
     )
     await db.commit()
     return cur.lastrowid  # type: ignore[return-value]

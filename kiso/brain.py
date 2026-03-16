@@ -358,6 +358,7 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
             "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "args": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "group": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
         },
         "required": ["type", "detail", "tool", "args", "expect"],
         "additionalProperties": False,
@@ -749,6 +750,49 @@ def _validate_plan_ordering(
     return errors
 
 
+# M695: Types that can participate in parallel groups.
+_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL})
+
+
+def _validate_plan_groups(tasks: list[dict]) -> list[str]:
+    """M695: Validate parallel group constraints.
+
+    Rules:
+    - group only on exec/search/tool (msg/replan → error)
+    - Same-group tasks must be adjacent
+    - Each group value must have ≥2 tasks
+    """
+    errors: list[str] = []
+    group_indices: dict[int, list[int]] = {}  # group → [task indices]
+
+    for i, t in enumerate(tasks):
+        g = t.get("group")
+        if g is None:
+            continue
+        if t.get("type") not in _GROUPABLE_TYPES:
+            errors.append(
+                f"Task {i + 1}: group is only allowed on exec/search/tool tasks, "
+                f"not '{t.get('type')}'. Remove the group field."
+            )
+            continue
+        group_indices.setdefault(g, []).append(i)
+
+    for g, indices in sorted(group_indices.items()):
+        if len(indices) < 2:
+            errors.append(
+                f"Group {g} has only 1 task (task {indices[0] + 1}). "
+                f"Remove the group or add more tasks to the group."
+            )
+        # Check adjacency: indices must be consecutive integers
+        elif indices != list(range(indices[0], indices[0] + len(indices))):
+            errors.append(
+                f"Group {g} tasks are not adjacent (tasks {', '.join(str(x+1) for x in indices)}). "
+                f"Grouped tasks must be consecutive in the plan."
+            )
+
+    return errors
+
+
 def validate_plan(
     plan: dict,
     installed_skills: list[str] | None = None,
@@ -773,6 +817,7 @@ def validate_plan(
         install_approved=install_approved,
     ))
     errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
+    errors.extend(_validate_plan_groups(tasks))
 
     # M627: goal mentions creating a file/artifact but plan has no exec/tool task
     goal_words = set(plan.get("goal", "").lower().split())

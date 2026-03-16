@@ -715,6 +715,7 @@ async def _persist_plan_tasks(
             db, plan_id, session,
             type=t["type"], detail=t["detail"],
             skill=t.get("tool"), args=t.get("args"), expect=t.get("expect"),
+            parallel_group=t.get("group"),
         )
         task_ids.append(tid)
     return task_ids
