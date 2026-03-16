@@ -91,7 +91,7 @@ REASONING_DEFAULTS: dict[str, dict | None] = {}
 MAX_TOKENS_DEFAULTS: dict[str, int] = {
     "classifier": 10,
     "briefer": 2048,
-    "reviewer": 1000,
+    "reviewer": 2048,
     "curator": 4000,
     "paraphraser": 500,
     "summarizer": 2000,
