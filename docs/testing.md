@@ -273,4 +273,6 @@ The test flow is **identical** to a fresh install — `kiso tool install <name>`
 docker volume rm core_dep-cache
 ```
 
-Defined in `docker-compose.test.yml` and shared across `test-functional` and `test-live` services.
+Defined in `docker-compose.test.yml` and shared across `test-functional`, `test-live`, and `test-plugins` services.
+
+The plugin test runner also uses the same cache. When Docker is available, `run_tests.sh` runs plugin tests inside the `test-plugins` container automatically — same environment as production, cached deps.

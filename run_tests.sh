@@ -137,8 +137,16 @@ run_functional() {
 
 run_plugins() {
     local filter="${1:-}"
-    run_suite "Plugin tests${filter:+ ($filter)}" \
-        uv run python -m cli.plugin_test_runner "$filter"
+    if [[ "$HAS_DOCKER" == true ]]; then
+        # Docker: same environment as production, with dep-cache volume
+        local cmd="uv run python -m cli.plugin_test_runner ${filter}"
+        run_suite "Plugin tests${filter:+ ($filter)}" \
+            docker compose -f docker-compose.test.yml run --build --rm \
+            test-plugins $cmd
+    else
+        run_suite "Plugin tests${filter:+ ($filter)}" \
+            uv run python -m cli.plugin_test_runner "$filter"
+    fi
 }
 
 run_interactive() {
