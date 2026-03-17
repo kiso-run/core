@@ -389,6 +389,54 @@ async def _startup_recovery(db, config) -> None:
         log.info("Startup recovery: re-enqueued %d unprocessed messages", recovered_count)
 
 
+_CRON_CHECK_INTERVAL = 60  # seconds between cron checks
+
+
+async def _cron_scheduler(db, config, app):
+    """M679: Background loop that fires due cron jobs every 60 seconds."""
+    from datetime import datetime
+
+    from croniter import croniter
+
+    from kiso.store import get_due_cron_jobs, update_cron_last_run
+
+    while True:
+        await asyncio.sleep(_CRON_CHECK_INTERVAL)
+        try:
+            now = datetime.now()
+            now_iso = now.isoformat()
+            due_jobs = await get_due_cron_jobs(db, now_iso)
+            for job in due_jobs:
+                session = job["session"]
+                prompt = job["prompt"]
+                log.info("Cron job %d fired: session=%s prompt=%r", job["id"], session, prompt[:80])
+
+                # Save message and enqueue (same as POST /msg but internal)
+                msg_id = await save_message(
+                    db, session, "cron", "system", prompt,
+                    trusted=True, processed=False,
+                )
+                msg_payload = {
+                    "id": msg_id,
+                    "content": prompt,
+                    "user_role": "admin",
+                    "user_tools": "*",
+                    "username": "cron",
+                    "base_url": "",
+                }
+                queue = _ensure_worker(db, config, session)
+                await queue.put(msg_payload)
+
+                # Update next_run
+                cron = croniter(job["schedule"], now)
+                next_dt = cron.get_next(datetime)
+                await update_cron_last_run(db, job["id"], now_iso, next_dt.isoformat())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Cron scheduler error (will retry next cycle)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -428,7 +476,17 @@ async def lifespan(app: FastAPI):
             len(webhook_secret),
         )
 
+    # M679: Start cron scheduler background task
+    cron_task = asyncio.create_task(_cron_scheduler(db, config, app))
+
     yield
+
+    # Cancel cron scheduler
+    cron_task.cancel()
+    try:
+        await cron_task
+    except asyncio.CancelledError:
+        pass
 
     # Graceful shutdown with timeout
     shutdown_timeout = setting_int(config.settings, "llm_timeout", lo=1)
