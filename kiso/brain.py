@@ -1260,11 +1260,14 @@ async def run_planner(
         on_retry=on_retry,
         fallback_model=fallback,
     )
-    # M640/M670: detect install proposal from three sources:
+    # M640/M670/M711: detect install proposal from three sources:
     # 1. Planner explicitly declared needs_install (preferred, direct)
     # 2. Validation saw uninstalled-tool errors (backup, indirect)
-    # 3. M670: msg-only plan on a fresh instance (no tools installed) — the
-    #    planner likely proposed an install but forgot to set needs_install.
+    # 3. No tools installed AND plan has no tool tasks — on a fresh instance,
+    #    any valid plan (msg-only, search+msg, exec+msg) is implicitly an
+    #    install-proposal context. Tool tasks can't exist in valid plans on
+    #    fresh instances (validation rejects them), so this condition is True
+    #    for all valid plans when no tools are installed.
     #    False positives are harmless: install_approved only *enables* install
     #    execs in the next turn, it doesn't force them.
     saw_uninstalled = plan.pop("_saw_uninstalled_tool", False)
@@ -1273,7 +1276,7 @@ async def run_planner(
         bool(plan.get("needs_install"))
         or saw_uninstalled
         or (not installed_names
-            and all(t.get("type") == TASK_TYPE_MSG for t in tasks))
+            and not any(t.get("type") == TASK_TYPE_TOOL for t in tasks))
     )
 
     log.info("Plan: goal=%r, %d tasks, install_proposal=%s",

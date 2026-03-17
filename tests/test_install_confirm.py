@@ -469,8 +469,8 @@ class TestM670MsgOnlyFreshInstanceProposal:
             plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
         assert plan["install_proposal"] is True
 
-    async def test_exec_msg_plan_no_tools_no_forced_proposal(self, db):
-        """exec+msg plan + no tools → NOT msg-only, M670 doesn't fire."""
+    async def test_exec_msg_plan_no_tools_sets_proposal(self, db):
+        """M711: exec+msg plan + no tools → install_proposal=True (no tool tasks)."""
         config = _make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -478,4 +478,4 @@ class TestM670MsgOnlyFreshInstanceProposal:
             patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "scrivi hello world")
-        assert plan["install_proposal"] is False
+        assert plan["install_proposal"] is True
