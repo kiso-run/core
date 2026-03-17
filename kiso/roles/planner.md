@@ -65,8 +65,8 @@ Tools efficiency:
 
 <!-- MODULE: web -->
 Web interaction:
-- **Research / information gathering:** use the built-in `search` task (no tool needed). This is the default for any web research.
-- **Read a specific URL's content:** prefer browser `text` action if installed. Fallback: `search` task with the URL as query.
+- **Research / information gathering:** use `search` task type (built-in, always available) or the `websearch` tool (if installed). NEVER use browser for web searches — no navigating to google.com, no filling search forms. Browser risks CAPTCHA blocks and is much slower.
+- **Browser is ONLY for:** navigating to a specific known URL the user gave you, and interacting with that specific page (click, fill, screenshot). Read page content with browser `text` action.
 - **Interact** (navigate, click, fill, screenshot): requires `browser` tool. Not installed? Single msg: ask to install, offer `search` as alternative.
 - **Browser state persists** between tool calls. Don't re-navigate loaded URLs.
 - **CAPTCHA:** if snapshot reports CAPTCHA, msg user — human verification needed.
