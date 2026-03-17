@@ -422,6 +422,31 @@ def build_parser() -> argparse.ArgumentParser:
     cron_sub.add_parser("disable", help="disable a cron job").add_argument(
         "job_id", type=int, help="cron job ID")
 
+    # --- M687/M688: project subcommand ---
+    proj_parser = sub.add_parser("project", help="manage projects")
+    proj_sub = proj_parser.add_subparsers(dest="project_cmd")
+    proj_sub.add_parser("list", help="list projects")
+    proj_create_p = proj_sub.add_parser("create", help="create a project")
+    proj_create_p.add_argument("name", help="project name")
+    proj_create_p.add_argument("--description", "-d", help="project description")
+    proj_show_p = proj_sub.add_parser("show", help="show project details")
+    proj_show_p.add_argument("name", help="project name")
+    proj_bind_p = proj_sub.add_parser("bind", help="bind session to project")
+    proj_bind_p.add_argument("session", help="session ID")
+    proj_bind_p.add_argument("project", help="project name")
+    proj_unbind_p = proj_sub.add_parser("unbind", help="unbind session from project")
+    proj_unbind_p.add_argument("session", help="session ID")
+    proj_unbind_p.add_argument("project", help="project name")
+    proj_addm_p = proj_sub.add_parser("add-member", help="add member to project")
+    proj_addm_p.add_argument("username", help="username")
+    proj_addm_p.add_argument("--project", "-p", required=True, help="project name")
+    proj_addm_p.add_argument("--role", "-r", choices=["member", "viewer"], default="member", help="role")
+    proj_rmm_p = proj_sub.add_parser("remove-member", help="remove member from project")
+    proj_rmm_p.add_argument("username", help="username")
+    proj_rmm_p.add_argument("--project", "-p", required=True, help="project name")
+    proj_mem_p = proj_sub.add_parser("members", help="list project members")
+    proj_mem_p.add_argument("--project", "-p", required=True, help="project name")
+
     # --- M674: behavior subcommand ---
     beh_parser = sub.add_parser("behavior", help="manage behavioral guidelines")
     beh_sub = beh_parser.add_subparsers(dest="behavior_cmd")
@@ -524,6 +549,28 @@ def main() -> None:
             cron_enable(args)
         elif args.cron_cmd == "disable":
             cron_disable(args)
+    elif args.command == "project":
+        from cli.project import (
+            project_add_member, project_bind, project_create, project_list,
+            project_members, project_remove_member, project_show, project_unbind,
+        )
+
+        if args.project_cmd == "list" or args.project_cmd is None:
+            project_list(args)
+        elif args.project_cmd == "create":
+            project_create(args)
+        elif args.project_cmd == "show":
+            project_show(args)
+        elif args.project_cmd == "bind":
+            project_bind(args)
+        elif args.project_cmd == "unbind":
+            project_unbind(args)
+        elif args.project_cmd == "add-member":
+            project_add_member(args)
+        elif args.project_cmd == "remove-member":
+            project_remove_member(args)
+        elif args.project_cmd == "members":
+            project_members(args)
     elif args.command == "behavior":
         from cli.behavior import behavior_add, behavior_list, behavior_remove
 

@@ -16,6 +16,16 @@ services:
         required: true
     profiles: [live]
 
+  test-functional:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: uv run pytest tests/functional/ -v --functional
+    environment:
+      - OPENROUTER_API_KEY
+      - KISO_LLM_API_KEY
+    profiles: [functional]
+
   test-docker:
     build:
       context: .

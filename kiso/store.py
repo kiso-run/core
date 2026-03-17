@@ -610,17 +610,36 @@ async def get_recent_messages(
 
 def _fact_session_filter(
     is_admin: bool, session: str | None, *, prefix: str = "",
+    username: str | None = None,
 ) -> tuple[str, list]:
     """Return (sql_fragment, params) for session-scoped fact queries.
 
     Admin users or ``session=None`` get no filter (empty string, no params).
-    Otherwise user-category facts are restricted to the given session.
+
+    3-level scoping (M685):
+    - Global: project_id IS NULL AND category NOT IN ('user')
+    - Project-scoped: project_id in user's projects (via project_members)
+    - Session-scoped: category='user' AND session = current session
+
     *prefix* is prepended to column names (e.g. ``"f."``).
+    *username* enables project-scoped filtering when provided.
     """
     if is_admin or session is None:
         return ("", [])
+    p = prefix
+    if username:
+        return (
+            f" AND ("
+            f"({p}project_id IS NULL AND {p}category != 'user')"
+            f" OR ({p}project_id IS NOT NULL AND {p}project_id IN"
+            f" (SELECT project_id FROM project_members WHERE username = ?))"
+            f" OR ({p}category = 'user' AND {p}session = ?)"
+            f")",
+            [username, session],
+        )
+    # Fallback: no username provided — use legacy 2-level filter
     return (
-        f" AND ({prefix}category != 'user' OR {prefix}session = ?)",
+        f" AND ({p}category != 'user' OR {p}session = ?)",
         [session],
     )
 
@@ -631,6 +650,7 @@ async def get_facts(
     session: str | None = None,
     is_admin: bool = False,
     limit: int | None = None,
+    username: str | None = None,
 ) -> list[FactDict]:
     """Return facts filtered by session scope.
 
@@ -638,9 +658,10 @@ async def get_facts(
     - user-category facts are visible only in the session where they were created.
     - Admin users bypass all filtering and receive every fact.
     - limit caps the number of rows returned (None = no cap, uses LIMIT -1 internally).
+    - username enables 3-level project scoping (M685).
     """
     limit_val = limit if limit is not None else -1
-    filt, filt_params = _fact_session_filter(is_admin, session)
+    filt, filt_params = _fact_session_filter(is_admin, session, username=username)
     if filt:
         cur = await db.execute(
             f"SELECT * FROM facts WHERE 1=1{filt} ORDER BY id LIMIT ?",
@@ -667,11 +688,12 @@ async def search_facts(
     session: str | None = None,
     is_admin: bool = False,
     limit: int = 15,
+    username: str | None = None,
 ) -> list[dict]:
     """Return up to *limit* facts most relevant to *query* (FTS5 BM25 ranking).
 
     Session scoping: user-category facts are filtered to the current session
-    unless *is_admin* is ``True``.
+    unless *is_admin* is ``True``.  *username* enables project scoping (M685).
 
     Falls back to :func:`get_facts` when:
     - FTS5 is not compiled into the SQLite build
@@ -680,10 +702,10 @@ async def search_facts(
     """
     fts_q = _fts5_query(query)
     if not fts_q:
-        return await get_facts(db, session=session, is_admin=is_admin)
+        return await get_facts(db, session=session, is_admin=is_admin, username=username)
 
     try:
-        filt, filt_params = _fact_session_filter(is_admin, session, prefix="f.")
+        filt, filt_params = _fact_session_filter(is_admin, session, prefix="f.", username=username)
         cur = await db.execute(
             "SELECT f.* FROM facts f "
             "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
@@ -694,12 +716,12 @@ async def search_facts(
         results = await _rows_to_dicts(cur)
     except Exception as exc:
         log.debug("FTS5 search failed, falling back to full scan: %s", exc, exc_info=True)
-        return await get_facts(db, session=session, is_admin=is_admin)
+        return await get_facts(db, session=session, is_admin=is_admin, username=username)
 
     # If FTS found no matches, fall back to the full filtered set so the planner
     # always has some knowledge context (avoids silent empty-facts scenario).
     if not results:
-        return await get_facts(db, session=session, is_admin=is_admin)
+        return await get_facts(db, session=session, is_admin=is_admin, username=username)
     return results
 
 
@@ -1004,12 +1026,16 @@ async def save_fact(
     confidence: float = 1.0,
     tags: list[str] | None = None,
     entity_id: int | None = None,
+    project_id: int | None = None,
 ) -> int:
-    """Insert a fact row and optional tags. Returns fact id."""
+    """Insert a fact row and optional tags. Returns fact id.
+
+    *project_id* scopes the fact to a project (M685/M689).
+    """
     cur = await db.execute(
-        "INSERT INTO facts (content, source, session, category, confidence, entity_id) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (content, source, session, category, confidence, entity_id),
+        "INSERT INTO facts (content, source, session, category, confidence, entity_id, project_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (content, source, session, category, confidence, entity_id, project_id),
     )
     fact_id: int = cur.lastrowid  # type: ignore[assignment]
     if tags:
@@ -1075,15 +1101,17 @@ async def search_facts_by_tags(
     tags: list[str],
     session: str | None = None,
     is_admin: bool = False,
+    username: str | None = None,
 ) -> list[dict]:
     """Return facts that have ANY of the given tags, ranked by tag overlap count.
 
     Non-admin users only see facts from their session or global facts.
+    *username* enables project scoping (M685).
     """
     if not tags:
         return []
     placeholders = ", ".join("?" for _ in tags)
-    filt, filt_params = _fact_session_filter(is_admin, session, prefix="f.")
+    filt, filt_params = _fact_session_filter(is_admin, session, prefix="f.", username=username)
     query = (
         f"SELECT f.*, COUNT(ft.tag) AS tag_overlap "
         f"FROM facts f "
@@ -1249,6 +1277,7 @@ async def search_facts_scored(
     session: str | None = None,
     is_admin: bool = True,
     limit: int = 50,
+    username: str | None = None,
 ) -> list[dict]:
     """Score and rank facts by relevance.
 
@@ -1256,11 +1285,12 @@ async def search_facts_scored(
     Returns top *limit* facts ordered by score desc, then last_used desc.
 
     At least one of *entity_id*, *tags*, or *keywords* must be provided.
+    *username* enables project scoping (M685).
     """
     if not entity_id and not tags and not keywords:
         return []
 
-    session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.")
+    session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.", username=username)
     fetch_limit = limit * 2  # over-fetch for Python re-rank
 
     has_entity_or_tags = entity_id is not None or bool(tags)

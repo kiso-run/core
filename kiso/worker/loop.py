@@ -92,6 +92,7 @@ from kiso.store import (
     find_or_create_entity,
     get_all_entities,
     get_all_tags,
+    get_session_project_id,
     search_facts_by_entity,
     search_facts_scored,
     get_facts,
@@ -1666,10 +1667,21 @@ async def _execute_plan(
     return True, None, None, completed, [], ctx.plan_outputs
 
 
+_PROJECT_SCOPED_CATEGORIES = frozenset({"project", "behavior"})
+
+
 async def _apply_curator_result(
     db: aiosqlite.Connection, session: str, result: dict
 ) -> None:
-    """Apply curator evaluations: promote facts, create pending questions, discard."""
+    """Apply curator evaluations: promote facts, create pending questions, discard.
+
+    M689: If session has project_id, facts with category in {"project", "behavior"}
+    are scoped to that project. Facts with category in {"general", "tool", "system"}
+    remain global (project_id=NULL).
+    """
+    # M689: resolve project_id once for the session
+    session_project_id = await get_session_project_id(db, session)
+
     for ev in result.get("evaluations", []):
         lid = ev.get("learning_id")
         verdict = ev.get("verdict")
@@ -1688,10 +1700,16 @@ async def _apply_curator_result(
             entity_id = None
             if ev.get("entity_name") and ev.get("entity_kind"):
                 entity_id = await find_or_create_entity(db, ev["entity_name"], ev["entity_kind"])
+            # M689: scope project/behavior facts to session's project
+            fact_project_id = (
+                session_project_id
+                if session_project_id and category in _PROJECT_SCOPED_CATEGORIES
+                else None
+            )
             await save_fact(
                 db, fact_content, source="curator",
                 session=fact_session, category=category, tags=tags,
-                entity_id=entity_id,
+                entity_id=entity_id, project_id=fact_project_id,
             )
             await update_learning(db, lid, "promoted")
         elif verdict == CURATOR_VERDICT_ASK:

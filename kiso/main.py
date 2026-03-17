@@ -32,22 +32,33 @@ import kiso.llm as _llm_mod
 from kiso.log import setup_logging
 from kiso.pub import pub_token, resolve_pub_token
 from kiso.store import (
+    add_project_member,
+    bind_session_to_project,
     count_messages,
+    create_project,
     create_session,
+    delete_project,
     get_all_sessions,
     get_plan_for_session,
+    get_project,
     get_safety_facts,
+    get_session_project_id,
+    get_user_project_role,
     list_knowledge,
+    list_project_members,
+    list_projects,
     get_session,
     get_sessions_for_user,
     get_tasks_for_session,
     mark_messages_processed as mark_messages_processed_batch,
+    remove_project_member,
     save_fact,
     session_owned_by,
     get_unprocessed_trusted_messages,
     init_db,
     recover_stale_running,
     save_message,
+    unbind_session_from_project,
     upsert_session,
 )
 from kiso.webhook import validate_webhook_url
@@ -109,6 +120,24 @@ async def _check_rate_limit(key: str, limit: int = 60) -> None:
 def _validate_session_id(session: str) -> None:
     if not SESSION_RE.match(session):
         raise HTTPException(status_code=400, detail="Invalid session ID")
+
+
+async def _require_project_role(
+    db, session: str, username: str, *, min_role: str = "viewer",
+) -> None:
+    """M686: Raise 403 if session has a project and user lacks *min_role*.
+
+    min_role="viewer" allows both viewer and member.
+    min_role="member" requires member role.
+    """
+    project_id = await get_session_project_id(db, session)
+    if project_id is None:
+        return  # No project attached — no restriction
+    role = await get_user_project_role(db, project_id, username)
+    if role is None:
+        raise HTTPException(status_code=403, detail="Not a member of this project")
+    if min_role == "member" and role != "member":
+        raise HTTPException(status_code=403, detail="Project member role required")
 
 
 async def _require_admin_with_ratelimit(request: Request, auth: AuthInfo, user: str) -> None:
@@ -620,6 +649,10 @@ async def post_msg(
 
     await create_session(db, body.session, connector=auth.token_name)
 
+    # M686: project role enforcement — member required for posting messages
+    if not _is_admin(resolved):
+        await _require_project_role(db, body.session, resolved.username, min_role="member")
+
     if resolved.trusted:
         msg_id = await save_message(
             db, body.session, resolved.username, "user", body.content,
@@ -709,6 +742,10 @@ async def get_status(
     is_admin = _is_admin(resolved)
     if not is_admin and not await session_owned_by(db, session, resolved.username):
         raise HTTPException(status_code=403, detail="Access denied")
+
+    # M686: project role enforcement — viewer or member can view status
+    if not is_admin:
+        await _require_project_role(db, session, resolved.username, min_role="viewer")
 
     tasks = await get_tasks_for_session(db, session, after=after)
     plan = await get_plan_for_session(db, session)
@@ -888,6 +925,7 @@ class KnowledgeRequest(BaseModel):
     entity_name: str | None = None
     entity_kind: str | None = None
     tags: list[str] | None = None
+    project_id: int | None = None
 
 
 @app.get("/knowledge")
@@ -932,7 +970,7 @@ async def add_knowledge(
 
     fact_id = await save_fact(
         db, content, "admin", category=body.category,
-        tags=body.tags, entity_id=entity_id,
+        tags=body.tags, entity_id=entity_id, project_id=body.project_id,
     )
     return {"id": fact_id, "content": content, "category": body.category}
 
@@ -1045,6 +1083,170 @@ async def update_cron(
     if not updated:
         raise HTTPException(status_code=404, detail="Cron job not found")
     return {"id": job_id, "enabled": enabled}
+
+
+# --- M687/M688: Project management endpoints ---
+
+
+class ProjectRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+class ProjectMemberRequest(BaseModel):
+    username: str
+    role: str = "member"
+
+
+@app.get("/projects")
+async def list_projects_endpoint(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    user: str = Query(...),
+):
+    db = request.app.state.db
+    config = request.app.state.config
+    resolved = resolve_user(config, user, auth.token_name)
+    if _is_admin(resolved):
+        projects = await list_projects(db)
+    else:
+        projects = await list_projects(db, username=resolved.username)
+    return {"projects": projects}
+
+
+@app.post("/projects", status_code=201)
+async def create_project_endpoint(
+    body: ProjectRequest,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+    existing = await get_project(db, name)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Project '{name}' already exists")
+    pid = await create_project(db, name, "admin", description=body.description)
+    return {"id": pid, "name": name}
+
+
+@app.get("/projects/{name}")
+async def get_project_endpoint(
+    name: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    db = request.app.state.db
+    proj = await get_project(db, name)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    members = await list_project_members(db, proj["id"])
+    return {"project": proj, "members": members}
+
+
+@app.delete("/projects/{name}")
+async def delete_project_endpoint(
+    name: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    proj = await get_project(db, name)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    await delete_project(db, proj["id"])
+    return {"deleted": True, "name": name}
+
+
+@app.post("/projects/{name}/bind/{session}")
+async def bind_project_session(
+    name: str,
+    session: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    proj = await get_project(db, name)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    sess = await get_session(db, session)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await bind_session_to_project(db, session, proj["id"])
+    return {"bound": True, "session": session, "project": name}
+
+
+@app.post("/projects/{name}/unbind/{session}")
+async def unbind_project_session(
+    name: str,
+    session: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    await unbind_session_from_project(db, session)
+    return {"unbound": True, "session": session}
+
+
+@app.post("/projects/{name}/members")
+async def add_project_member_endpoint(
+    name: str,
+    body: ProjectMemberRequest,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    proj = await get_project(db, name)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if body.role not in ("member", "viewer"):
+        raise HTTPException(status_code=400, detail="Role must be 'member' or 'viewer'")
+    await add_project_member(db, proj["id"], body.username, role=body.role)
+    return {"added": True, "username": body.username, "role": body.role}
+
+
+@app.delete("/projects/{name}/members/{username}")
+async def remove_project_member_endpoint(
+    name: str,
+    username: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    proj = await get_project(db, name)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    removed = await remove_project_member(db, proj["id"], username)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"removed": True, "username": username}
+
+
+@app.get("/projects/{name}/members")
+async def list_project_members_endpoint(
+    name: str,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    db = request.app.state.db
+    proj = await get_project(db, name)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    members = await list_project_members(db, proj["id"])
+    return {"members": members}
 
 
 @app.get("/admin/stats")
