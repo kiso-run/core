@@ -4794,7 +4794,7 @@ class TestBrieferMessages:
         # Each module line has "- name: description" format
         assert "- planning_rules: task ordering" in content
         assert "- web: URLs, websites" in content
-        assert "- replan: replan strategy" in content
+        assert "- replan: re-planning after failure" in content
         assert "- plugin_install: plugin discovery" in content
 
     def test_m426_module_descriptions_concise(self):

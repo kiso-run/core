@@ -417,7 +417,7 @@ _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "web": "URLs, websites, browser tool rules",
     "data_flow": "file-based data flow for large outputs",
     "code_execution": "script execution via exec tasks",
-    "replan": "replan strategy, extend_replan",
+    "replan": "re-planning after failure, extend flag",
     "tool_recovery": "broken tool reinstall procedure",
     "kiso_commands": "kiso CLI (tool/connector/env/user mgmt)",
     "user_mgmt": "user/alias management, role permissions",

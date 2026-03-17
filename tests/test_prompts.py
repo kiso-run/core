@@ -196,3 +196,11 @@ class TestBrieferModuleDescriptions:
     def test_descriptions_are_nonempty(self):
         for name, desc in _BRIEFER_MODULE_DESCRIPTIONS.items():
             assert desc.strip(), f"Module '{name}' has empty description"
+
+    def test_replan_description_no_self_reference(self):
+        """M717: 'replan' description must not contain the word 'replan' to avoid
+        LLM hallucination (e.g. 'replen') caused by token-level repetition."""
+        desc = _BRIEFER_MODULE_DESCRIPTIONS["replan"]
+        assert "replan" not in desc.lower(), (
+            f"Module 'replan' description should not repeat its own name: {desc!r}"
+        )
