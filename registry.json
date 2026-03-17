@@ -48,5 +48,19 @@
       "name": "discord",
       "description": "Discord bridge — maps channels to kiso sessions, forwards messages, delivers responses with message splitting"
     }
+  ],
+  "presets": [
+    {
+      "name": "performance-marketer",
+      "description": "Digital performance marketing specialist — campaign analysis, ROI optimization, ad copy"
+    },
+    {
+      "name": "seo-specialist",
+      "description": "SEO analysis and optimization — keyword research, site audits, content strategy"
+    },
+    {
+      "name": "backend-developer",
+      "description": "Backend development with Python/Go — API design, database optimization, testing"
+    }
   ]
 }

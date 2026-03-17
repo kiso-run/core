@@ -456,6 +456,21 @@ def build_parser() -> argparse.ArgumentParser:
     beh_rm_p = beh_sub.add_parser("remove", help="remove a behavioral guideline by ID")
     beh_rm_p.add_argument("behavior_id", type=int, help="behavior ID to remove")
 
+    # --- M693/M694: preset subcommand ---
+    preset_parser = sub.add_parser("preset", help="manage persona presets")
+    preset_sub = preset_parser.add_subparsers(dest="preset_cmd")
+    preset_sub.add_parser("list", help="list available presets from registry")
+    preset_search_p = preset_sub.add_parser("search", help="search presets")
+    preset_search_p.add_argument("query", help="search query")
+    preset_install_p = preset_sub.add_parser("install", help="install a preset")
+    preset_install_p.add_argument("target", help="preset name or local path")
+    preset_install_p.add_argument("--dry-run", action="store_true", help="show what would be installed")
+    preset_show_p = preset_sub.add_parser("show", help="show preset details")
+    preset_show_p.add_argument("name", help="preset name or local path")
+    preset_sub.add_parser("installed", help="list installed presets")
+    preset_rm_p = preset_sub.add_parser("remove", help="remove an installed preset")
+    preset_rm_p.add_argument("name", help="preset name")
+
     return parser
 
 
@@ -580,6 +595,24 @@ def main() -> None:
             behavior_add(args)
         elif args.behavior_cmd == "remove":
             behavior_remove(args)
+    elif args.command == "preset":
+        from cli.preset import (
+            preset_install, preset_installed, preset_list, preset_remove,
+            preset_search, preset_show,
+        )
+
+        if args.preset_cmd == "list" or args.preset_cmd is None:
+            preset_list(args)
+        elif args.preset_cmd == "search":
+            preset_search(args)
+        elif args.preset_cmd == "install":
+            preset_install(args)
+        elif args.preset_cmd == "show":
+            preset_show(args)
+        elif args.preset_cmd == "installed":
+            preset_installed(args)
+        elif args.preset_cmd == "remove":
+            preset_remove(args)
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()
