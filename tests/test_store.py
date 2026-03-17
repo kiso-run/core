@@ -71,7 +71,7 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
         if not r[0].startswith("sqlite_") and not r[0].startswith("kiso_facts_fts_")
     )
     expected = [
-        "entities", "fact_tags", "facts", "facts_archive", "kiso_facts_fts",
+        "cron_jobs", "entities", "fact_tags", "facts", "facts_archive", "kiso_facts_fts",
         "learnings", "messages", "pending", "plans", "sessions", "tasks",
     ]
     assert tables == expected

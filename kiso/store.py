@@ -242,6 +242,19 @@ CREATE TABLE IF NOT EXISTS pending (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_scope ON pending(scope, status);
 
+CREATE TABLE IF NOT EXISTS cron_jobs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session     TEXT NOT NULL,
+    schedule    TEXT NOT NULL,
+    prompt      TEXT NOT NULL,
+    enabled     BOOLEAN DEFAULT 1,
+    last_run    TEXT,
+    next_run    TEXT NOT NULL,
+    created_by  TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled, next_run);
+
 """
 
 
@@ -1549,5 +1562,75 @@ async def create_task(
     )
     await db.commit()
     return cur.lastrowid  # type: ignore[return-value]
+
+
+# --- M678: Cron job store functions ---
+
+
+async def create_cron_job(
+    db: aiosqlite.Connection,
+    session: str,
+    schedule: str,
+    prompt: str,
+    created_by: str,
+    next_run: str,
+) -> int:
+    """Insert a cron job. Returns job id."""
+    cur = await db.execute(
+        "INSERT INTO cron_jobs (session, schedule, prompt, created_by, next_run) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (session, schedule, prompt, created_by, next_run),
+    )
+    await db.commit()
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+async def list_cron_jobs(
+    db: aiosqlite.Connection, session: str | None = None,
+) -> list[dict]:
+    """List cron jobs, optionally filtered by session."""
+    if session:
+        cur = await db.execute(
+            "SELECT * FROM cron_jobs WHERE session = ? ORDER BY id", (session,),
+        )
+    else:
+        cur = await db.execute("SELECT * FROM cron_jobs ORDER BY id")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def delete_cron_job(db: aiosqlite.Connection, job_id: int) -> bool:
+    """Delete a cron job. Returns True if deleted."""
+    cur = await db.execute("DELETE FROM cron_jobs WHERE id = ?", (job_id,))
+    await db.commit()
+    return cur.rowcount > 0
+
+
+async def update_cron_enabled(db: aiosqlite.Connection, job_id: int, enabled: bool) -> bool:
+    """Enable or disable a cron job. Returns True if updated."""
+    cur = await db.execute(
+        "UPDATE cron_jobs SET enabled = ? WHERE id = ?", (int(enabled), job_id),
+    )
+    await db.commit()
+    return cur.rowcount > 0
+
+
+async def get_due_cron_jobs(db: aiosqlite.Connection, now_iso: str) -> list[dict]:
+    """Return enabled cron jobs whose next_run <= now."""
+    cur = await db.execute(
+        "SELECT * FROM cron_jobs WHERE enabled = 1 AND next_run <= ? ORDER BY next_run",
+        (now_iso,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def update_cron_last_run(
+    db: aiosqlite.Connection, job_id: int, last_run: str, next_run: str,
+) -> None:
+    """Update last_run and next_run after a cron job fires."""
+    await db.execute(
+        "UPDATE cron_jobs SET last_run = ?, next_run = ? WHERE id = ?",
+        (last_run, next_run, job_id),
+    )
+    await db.commit()
 
 
