@@ -1246,6 +1246,8 @@ async def run_planner(
         if msg["role"] == "user":
             msg["content"] += budget_line
             break
+    else:
+        log.warning("No user message found for budget injection")
 
     fallback = config.settings.get("planner_fallback_model") or None
     plan = await _retry_llm_with_validation(

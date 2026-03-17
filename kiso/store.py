@@ -1681,9 +1681,14 @@ async def update_cron_enabled(db: aiosqlite.Connection, job_id: int, enabled: bo
 
 
 async def get_due_cron_jobs(db: aiosqlite.Connection, now_iso: str) -> list[dict]:
-    """Return enabled cron jobs whose next_run <= now."""
+    """Return enabled cron jobs whose next_run <= now.
+
+    Uses SQLite datetime() to normalize both sides, making the comparison
+    robust against timezone offset inconsistencies.
+    """
     cur = await db.execute(
-        "SELECT * FROM cron_jobs WHERE enabled = 1 AND next_run <= ? ORDER BY next_run",
+        "SELECT * FROM cron_jobs WHERE enabled = 1 AND datetime(next_run) <= datetime(?) "
+        "ORDER BY next_run",
         (now_iso,),
     )
     return [dict(r) for r in await cur.fetchall()]
