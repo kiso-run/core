@@ -12168,3 +12168,28 @@ class TestBuildExecutionBatches:
         assert len(batches) == 2
 
 
+@pytest.mark.asyncio
+class TestPersistPlanTasksGroup:
+    """M695: _persist_plan_tasks maps group → parallel_group in DB."""
+
+    async def test_group_persisted_as_parallel_group(self, tmp_path):
+        from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
+        from kiso.worker.loop import _persist_plan_tasks
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        pid = await create_plan(db, "sess1", message_id=1, goal="Test")
+        plan_tasks = [
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": "info", "group": 1},
+            {"type": "search", "detail": "B", "tool": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "merge", "tool": None, "args": None, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. report", "tool": None, "args": None, "expect": None},
+        ]
+        await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
+        tasks = await get_tasks_for_plan(db, pid)
+        assert tasks[0]["parallel_group"] == 1
+        assert tasks[1]["parallel_group"] == 1
+        assert tasks[2]["parallel_group"] is None
+        assert tasks[3]["parallel_group"] is None
+        await db.close()
+
+

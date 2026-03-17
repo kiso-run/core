@@ -498,6 +498,30 @@ async def test_create_task_all_fields(db: aiosqlite.Connection):
     assert t["status"] == "pending"
 
 
+async def test_create_task_parallel_group_persists(db: aiosqlite.Connection):
+    """M695: parallel_group round-trips through create_task → get_tasks_for_plan."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="search", detail="A",
+                      parallel_group=1)
+    await create_task(db, plan_id, "sess1", type="search", detail="B",
+                      parallel_group=1)
+    await create_task(db, plan_id, "sess1", type="msg", detail="report")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["parallel_group"] == 1
+    assert tasks[1]["parallel_group"] == 1
+    assert tasks[2]["parallel_group"] is None
+
+
+async def test_create_task_parallel_group_default_null(db: aiosqlite.Connection):
+    """M695: parallel_group defaults to None when not specified."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(db, plan_id, "sess1", type="exec", detail="ls")
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert tasks[0]["parallel_group"] is None
+
+
 async def test_update_task_status_and_output(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")

@@ -1392,6 +1392,39 @@ class TestM83PlanSchema:
     def test_extend_replan_wrong_type(self):
         self._invalid(self._plan(extend_replan="three"))
 
+    # M695: group field on tasks
+    def test_task_group_integer_valid(self):
+        self._valid(self._plan(tasks=[
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": None, "group": 1},
+        ]))
+
+    def test_task_group_null_valid(self):
+        self._valid(self._plan(tasks=[
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": None, "group": None},
+        ]))
+
+    def test_task_group_zero_invalid(self):
+        """group minimum is 1."""
+        self._invalid(self._plan(tasks=[
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": None, "group": 0},
+        ]))
+
+    def test_task_group_negative_invalid(self):
+        self._invalid(self._plan(tasks=[
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": None, "group": -1},
+        ]))
+
+    def test_task_group_string_invalid(self):
+        self._invalid(self._plan(tasks=[
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": None, "group": "one"},
+        ]))
+
+    def test_task_without_group_valid(self):
+        """Tasks without group field (omitted entirely) are valid."""
+        self._valid(self._plan(tasks=[
+            {"type": "msg", "detail": "Hello", "tool": None, "args": None, "expect": None},
+        ]))
+
 
 class TestM83ReviewSchema:
     """M83: REVIEW_SCHEMA inner schema accepts valid reviews and rejects invalid ones."""
