@@ -5,7 +5,19 @@ from __future__ import annotations
 import getpass
 from datetime import datetime, timezone
 
-from cli._http import cli_get
+from cli._http import cli_get, cli_post
+
+
+def session_create(args) -> None:
+    """M699: Create a named session."""
+    from cli.plugin_ops import require_admin
+    require_admin()
+    body: dict = {"session": args.name}
+    if getattr(args, "description", None):
+        body["description"] = args.description
+    resp = cli_post(args, "/sessions", json_body=body)
+    data = resp.json()
+    print(f"Session '{args.name}' created.")
 
 
 def run_sessions_command(args) -> None:

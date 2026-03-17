@@ -257,6 +257,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="show all sessions (admin only)",
     )
 
+    # M699: session create
+    session_parser = sub.add_parser("session", help="manage sessions")
+    session_sub = session_parser.add_subparsers(dest="session_cmd")
+    sess_create_p = session_sub.add_parser("create", help="create a named session")
+    sess_create_p.add_argument("name", help="session name")
+    sess_create_p.add_argument("--description", "-d", help="session description")
+
     env_parser = sub.add_parser("env", help="manage deploy secrets")
     env_sub = env_parser.add_subparsers(dest="env_command")
 
@@ -502,6 +509,11 @@ def main() -> None:
         from cli.session import run_sessions_command
 
         run_sessions_command(args)
+    elif args.command == "session":
+        from cli.session import session_create
+
+        if args.session_cmd == "create":
+            session_create(args)
     elif args.command == "env":
         from cli.env import run_env_command
 
