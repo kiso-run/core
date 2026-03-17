@@ -122,58 +122,31 @@ def test_worker_phases_frozenset():
 
 
 class TestCleanLearnItems:
-    def test_filters_short_items(self):
+    @pytest.mark.parametrize("items,expected", [
+        # Filtered cases
+        (["too short", "This is a valid learning about guidance.studio"],
+         ["This is a valid learning about guidance.studio"]),
+        (["browser skill installed successfully"], []),
+        (["guidance.studio homepage loaded successfully"], []),
+        (["The contact form includes Name [8], Email [9], and details [10]."], []),
+        (["the test suite ran successfully on the project"], []),
+        ([], []),
+        # Preserved cases
+        (["guidance.studio has a contact form at /venture-launchpad",
+          "Python project uses pytest for testing"],
+         ["guidance.studio has a contact form at /venture-launchpad",
+          "Python project uses pytest for testing"]),
+        (["exactly15chars!!"], ["exactly15chars!!"]),  # boundary: 16 chars ≥ 15
+        (["guidance.studio uses port [443] for HTTPS"],
+         ["guidance.studio uses port [443] for HTTPS"]),  # single [N] ok
+    ], ids=[
+        "filters-short", "filters-installed", "filters-loaded",
+        "filters-indices", "filters-ran-successfully", "empty-list",
+        "preserves-valid", "boundary-15", "single-index-ok",
+    ])
+    def test_clean_learn_items(self, items, expected):
         from kiso.brain import clean_learn_items
-        result = clean_learn_items(["too short", "This is a valid learning about guidance.studio"])
-        assert result == ["This is a valid learning about guidance.studio"]
-
-    def test_filters_transient_installed(self):
-        from kiso.brain import clean_learn_items
-        result = clean_learn_items(["browser skill installed successfully"])
-        assert result == []
-
-    def test_filters_transient_loaded(self):
-        from kiso.brain import clean_learn_items
-        result = clean_learn_items(["guidance.studio homepage loaded successfully"])
-        assert result == []
-
-    def test_filters_ephemeral_indices(self):
-        from kiso.brain import clean_learn_items
-        result = clean_learn_items([
-            "The contact form includes Name [8], Email [9], and details [10]."
-        ])
-        assert result == []
-
-    def test_preserves_valid_learnings(self):
-        from kiso.brain import clean_learn_items
-        items = [
-            "guidance.studio has a contact form at /venture-launchpad",
-            "Python project uses pytest for testing",
-        ]
-        result = clean_learn_items(items)
-        assert result == items
-
-    def test_boundary_exactly_15_chars(self):
-        from kiso.brain import clean_learn_items
-        item = "exactly15chars!!"  # 16 chars
-        assert len(item) >= 15
-        result = clean_learn_items([item])
-        assert result == [item]
-
-    def test_single_index_preserved(self):
-        """A single [N] is fine — only 2+ triggers the filter."""
-        from kiso.brain import clean_learn_items
-        result = clean_learn_items(["guidance.studio uses port [443] for HTTPS"])
-        assert len(result) == 1
-
-    def test_empty_list(self):
-        from kiso.brain import clean_learn_items
-        assert clean_learn_items([]) == []
-
-    def test_ran_successfully_filtered(self):
-        from kiso.brain import clean_learn_items
-        result = clean_learn_items(["the test suite ran successfully on the project"])
-        assert result == []
+        assert clean_learn_items(items) == expected
 
 
 # --- M373: output-backed learning validation ---
@@ -708,17 +681,28 @@ class TestValidatePlan:
 # --- _load_system_prompt ---
 
 class TestLoadSystemPrompt:
-    def test_package_default_when_no_user_file(self):
-        prompt = _load_system_prompt("planner")
-        assert "planner" in prompt
+    @pytest.mark.parametrize("role,expected_substring", [
+        ("planner", "planner"),
+        ("reviewer", "task reviewer"),
+        ("worker", "shell command translator"),
+    ], ids=["planner", "reviewer", "worker"])
+    def test_package_default_when_no_user_file(self, role, expected_substring):
+        prompt = _load_system_prompt(role)
+        assert expected_substring in prompt
 
-    def test_user_override_takes_priority(self, tmp_path):
+    def test_worker_default_has_cannot_translate(self):
+        prompt = _load_system_prompt("worker")
+        assert "CANNOT_TRANSLATE" in prompt
+
+    @pytest.mark.parametrize("role", ["planner", "reviewer", "worker"],
+                             ids=["planner", "reviewer", "worker"])
+    def test_user_override_takes_priority(self, tmp_path, role):
         roles_dir = tmp_path / "roles"
         roles_dir.mkdir()
-        (roles_dir / "planner.md").write_text("Custom prompt")
+        (roles_dir / f"{role}.md").write_text(f"Custom {role} prompt")
         with patch("kiso.brain.KISO_DIR", tmp_path):
-            prompt = _load_system_prompt("planner")
-        assert prompt == "Custom prompt"
+            prompt = _load_system_prompt(role)
+        assert prompt == f"Custom {role} prompt"
 
     def test_unknown_role_raises(self, tmp_path):
         # Use a tmp_path with no roles dir as KISO_DIR to avoid class-wide mock
@@ -1189,20 +1173,6 @@ class TestRunPlanner:
 
 
 # --- _load_system_prompt (reviewer) ---
-
-class TestLoadSystemPromptReviewer:
-    def test_reviewer_default_when_no_file(self):
-        prompt = _load_system_prompt("reviewer")
-        assert "task reviewer" in prompt
-
-    def test_reviewer_reads_file_when_exists(self, tmp_path):
-        roles_dir = tmp_path / "roles"
-        roles_dir.mkdir()
-        (roles_dir / "reviewer.md").write_text("Custom reviewer prompt")
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            prompt = _load_system_prompt("reviewer")
-        assert prompt == "Custom reviewer prompt"
-
 
 # --- M571: reviewer modular prompt ---
 
@@ -2358,27 +2328,21 @@ class TestReviewerMessagesFencing:
 
 
 class TestStripFences:
-    def test_no_fences(self):
-        assert _strip_fences('{"key": "value"}') == '{"key": "value"}'
-
-    def test_json_fence(self):
-        assert _strip_fences('```json\n{"key": "value"}\n```') == '{"key": "value"}'
-
-    def test_plain_fence(self):
-        assert _strip_fences('```\n{"key": "value"}\n```') == '{"key": "value"}'
-
-    def test_leading_whitespace(self):
-        assert _strip_fences(' ```json\n{"key": "value"}\n```') == '{"key": "value"}'
-
-    def test_trailing_whitespace(self):
-        assert _strip_fences('```json\n{"key": "value"}\n``` ') == '{"key": "value"}'
-
-    def test_bare_json(self):
-        raw = '{"goal": "test", "secrets": null, "tasks": []}'
-        assert _strip_fences(raw) == raw
-
-    def test_empty_string(self):
-        assert _strip_fences('') == ''
+    @pytest.mark.parametrize("raw,expected", [
+        ('{"key": "value"}', '{"key": "value"}'),
+        ('```json\n{"key": "value"}\n```', '{"key": "value"}'),
+        ('```\n{"key": "value"}\n```', '{"key": "value"}'),
+        (' ```json\n{"key": "value"}\n```', '{"key": "value"}'),
+        ('```json\n{"key": "value"}\n``` ', '{"key": "value"}'),
+        ('{"goal": "test", "secrets": null, "tasks": []}',
+         '{"goal": "test", "secrets": null, "tasks": []}'),
+        ('', ''),
+    ], ids=[
+        "no-fences", "json-fence", "plain-fence", "leading-ws",
+        "trailing-ws", "bare-json", "empty",
+    ])
+    def test_strip_fences(self, raw, expected):
+        assert _strip_fences(raw) == expected
 
 
 # --- Messenger ---
@@ -2735,30 +2699,26 @@ class TestRunMessenger:
 class TestM369MessengerSanitizer:
     """M369: messenger output sanitization."""
 
-    def test_strips_tool_call_blocks(self):
-        text = 'Hello <tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call> world'
-        assert _sanitize_messenger_output(text) == "Hello  world"
-
-    def test_strips_function_call_blocks(self):
-        text = 'Hi <function_call>something</function_call> there'
-        assert _sanitize_messenger_output(text) == "Hi  there"
-
-    def test_strips_orphaned_tags(self):
-        text = 'Text </tool_call> more'
-        assert _sanitize_messenger_output(text) == "Text  more"
-
-    def test_preserves_normal_text(self):
-        text = "La tua chiave SSH pubblica è: ssh-ed25519 AAAA..."
-        assert _sanitize_messenger_output(text) == text
+    @pytest.mark.parametrize("text,expected", [
+        ('Hello <tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call> world',
+         "Hello  world"),
+        ('Hi <function_call>something</function_call> there', "Hi  there"),
+        ('Text </tool_call> more', "Text  more"),
+        ("La tua chiave SSH pubblica è: ssh-ed25519 AAAA...",
+         "La tua chiave SSH pubblica è: ssh-ed25519 AAAA..."),
+        ("", ""),
+    ], ids=[
+        "tool-call-blocks", "function-call-blocks", "orphaned-tags",
+        "normal-text-preserved", "empty-string",
+    ])
+    def test_sanitize_messenger_output(self, text, expected):
+        assert _sanitize_messenger_output(text) == expected
 
     def test_strips_multiline_tool_call(self):
         text = 'Before\n<tool_call>\n{"name": "x"}\n</tool_call>\nAfter'
         result = _sanitize_messenger_output(text)
         assert "<tool_call>" not in result
         assert "After" in result
-
-    def test_empty_string(self):
-        assert _sanitize_messenger_output("") == ""
 
     async def test_run_messenger_applies_sanitizer(self, tmp_path):
         """run_messenger applies sanitization to LLM output."""
@@ -2887,21 +2847,6 @@ class TestExecTranslatorSyntaxCheck:
                     return_value=bad_cmd):
             with pytest.raises(ExecTranslatorError, match="(?i)syntax error"):
                 await run_exec_translator(config, "Run steps", "OS: Linux")
-
-
-class TestLoadSystemPromptExecTranslator:
-    def test_default_prompt(self):
-        prompt = _load_system_prompt("worker")
-        assert "shell command translator" in prompt
-        assert "CANNOT_TRANSLATE" in prompt
-
-    def test_custom_prompt_overrides(self, tmp_path):
-        roles_dir = tmp_path / "roles"
-        roles_dir.mkdir()
-        (roles_dir / "worker.md").write_text("Custom worker prompt")
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            prompt = _load_system_prompt("worker")
-        assert prompt == "Custom worker prompt"
 
 
 class TestPlannerPromptContent:
@@ -3261,61 +3206,31 @@ class TestBuildClassifierMessages:
 
 
 class TestClassifyMessage:
-    async def test_returns_chat_with_lang(self):
-        """classify_message parses 'chat:en' format."""
+    @pytest.mark.parametrize("llm_return,message,expected_cat,expected_lang", [
+        ("chat:en", "hello", "chat", "en"),
+        ("chat_kb:it", "cosa sai su te stesso?", "chat_kb", "it"),
+        ("plan:en", "list files", "plan", "en"),
+        ("chat", "hello", "chat", "en"),  # backward compat plain category
+        ("  chat:fr\n", "merci", "chat", "fr"),  # strips whitespace
+        ("CHAT:EN", "thanks", "chat", "en"),  # case insensitive
+        ("I think this is a chat", "hello", "plan", "en"),  # unexpected → plan
+        ("", "hello", "plan", "en"),  # empty → plan
+        ("chat:italian", "ciao", "plan", "en"),  # invalid lang code
+        ("category:it", "dimmi qualcosa", "plan", "it"),  # M612 literal category
+        ("category:it:plan", "vai su google", "plan", "it"),  # M612 category:lang:cat
+        ("category:fr:chat", "merci", "chat", "fr"),  # M612 category:lang:chat
+    ], ids=[
+        "chat-en", "chat_kb-it", "plan-en", "backward-compat",
+        "whitespace", "case-insensitive", "unexpected-fallback",
+        "empty-fallback", "invalid-lang", "M612-category-it",
+        "M612-category-it-plan", "M612-category-fr-chat",
+    ])
+    async def test_classify_message_parsing(self, llm_return, message, expected_cat, expected_lang):
         config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat:en"):
-            cat, lang = await classify_message(config, "hello")
-        assert cat == "chat"
-        assert lang == "en"
-
-    async def test_returns_chat_kb_with_lang(self):
-        """classify_message parses 'chat_kb:it' format."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat_kb:it"):
-            cat, lang = await classify_message(config, "cosa sai su te stesso?")
-        assert cat == "chat_kb"
-        assert lang == "it"
-
-    async def test_returns_plan_with_lang(self):
-        """classify_message parses 'plan:en' format."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="plan:en"):
-            cat, lang = await classify_message(config, "list files")
-        assert cat == "plan"
-        assert lang == "en"
-
-    async def test_backward_compat_plain_category(self):
-        """classify_message handles plain category without lang (backward compat)."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat"):
-            cat, lang = await classify_message(config, "hello")
-        assert cat == "chat"
-        assert lang == "en"
-
-    async def test_strips_whitespace(self):
-        """classify_message handles LLM output with whitespace."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  chat:fr\n"):
-            cat, lang = await classify_message(config, "merci")
-        assert cat == "chat"
-        assert lang == "fr"
-
-    async def test_case_insensitive(self):
-        """classify_message handles uppercase responses."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CHAT:EN"):
-            cat, lang = await classify_message(config, "thanks")
-        assert cat == "chat"
-        assert lang == "en"
-
-    async def test_unexpected_output_falls_back_to_plan(self):
-        """classify_message returns ('plan', 'en') for unexpected LLM output."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="I think this is a chat"):
-            cat, lang = await classify_message(config, "hello")
-        assert cat == "plan"
-        assert lang == "en"
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=llm_return):
+            cat, lang = await classify_message(config, message)
+        assert cat == expected_cat
+        assert lang == expected_lang
 
     async def test_llm_error_falls_back_to_plan(self):
         """classify_message returns ('plan', 'en') when LLM call fails."""
@@ -3334,14 +3249,6 @@ class TestClassifyMessage:
         assert cat == "plan"
         assert lang == "en"
 
-    async def test_empty_response_falls_back_to_plan(self):
-        """classify_message returns ('plan', 'en') when LLM returns empty string."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=""):
-            cat, lang = await classify_message(config, "hello")
-        assert cat == "plan"
-        assert lang == "en"
-
     async def test_uses_classifier_model(self):
         """classify_message should call LLM with 'classifier' role."""
         config = _make_config_for_classifier()
@@ -3351,39 +3258,6 @@ class TestClassifyMessage:
         mock_llm.assert_called_once()
         assert mock_llm.call_args[0][1] == "classifier"  # role argument
         assert mock_llm.call_args[1].get("session") == "s1"
-
-    async def test_invalid_lang_code_ignored(self):
-        """classify_message rejects lang codes that aren't 2 chars."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="chat:italian"):
-            cat, lang = await classify_message(config, "ciao")
-        # "italian" is not a valid 2-char ISO code, falls back to plain parse
-        assert cat == "plan"  # "chat:italian" is not in CLASSIFIER_CATEGORIES
-        assert lang == "en"
-
-    async def test_literal_category_with_lang(self):
-        """M612: LLM returns literal 'category:it' → parsed as ('plan', 'it')."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="category:it"):
-            cat, lang = await classify_message(config, "dimmi qualcosa")
-        assert cat == "plan"
-        assert lang == "it"
-
-    async def test_literal_category_lang_cat(self):
-        """M612: LLM returns 'category:it:plan' → parsed as ('plan', 'it')."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="category:it:plan"):
-            cat, lang = await classify_message(config, "vai su google")
-        assert cat == "plan"
-        assert lang == "it"
-
-    async def test_literal_category_lang_chat(self):
-        """M612: LLM returns 'category:fr:chat' → parsed as ('chat', 'fr')."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="category:fr:chat"):
-            cat, lang = await classify_message(config, "merci")
-        assert cat == "chat"
-        assert lang == "fr"
 
 
 class TestClassifierPromptContent:
@@ -3491,67 +3365,141 @@ class TestM276ClassifierContext:
 # --- M234: Planner — don't decompose atomic CLI operations ---
 
 
-class TestM234PlannerAtomicOperations:
-    """M234: planner prompt tells LLM not to decompose atomic CLI commands."""
+class TestRolePromptContent:
+    """Parametrized prompt content assertions (M234, M275, M286, M235, M106, M6, M48, M47)."""
 
-    def test_planner_prompt_atomic_operations_rule(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "atomic" in prompt.lower()
-        assert "kiso tool install" in prompt or "Install commands are atomic" in prompt
-        assert "never decompose" in prompt.lower()
-
-    def test_planner_prompt_atomic_covers_package_managers(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        # Compressed prompt uses generic "Install commands are atomic" instead of listing each manager
-        assert "atomic" in prompt.lower()
-        assert "never decompose" in prompt.lower() or "single command" in prompt.lower()
-
-
-# --- M275: Planner — enforce skill usage_guide compliance ---
-
-
-class TestM275PlannerUsageGuideCompliance:
-    """M275: planner prompt tells the model to follow skill usage guides."""
-
-    def test_planner_prompt_usage_guide_rule(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "usage guide" in prompt.lower() or "guide:" in prompt
-        assert "follow" in prompt.lower()
-        # Must be in the tools_rules module
-        assert "guide:" in prompt
-
-    def test_planner_prompt_usage_guide_is_mandatory(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "strictly" in prompt.lower() or "broken plans" in prompt.lower()
-
-
-# --- M235: Planner — scope limited to current user request ---
-
-
-class TestM286PlannerLanguageUniversal:
-    """M286: planner handles any input language without bias."""
-
-    def test_planner_any_language_any_script(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "any language" in prompt
-        assert "any script" in prompt
-
-    def test_planner_language_handling_rule(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Msg detail:" in prompt
-        assert "communication intent" in prompt.lower()
-
-
-class TestM235PlannerScope:
-    """M235: planner prompt explicitly limits scope to current message."""
-
-    def test_planner_prompt_no_carry_forward(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "Do NOT carry forward objectives" in prompt or "Plan ONLY what the New Message asks" in prompt
-
-    def test_planner_prompt_replan_not_for_history(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "background context only" in prompt.lower()
+    @pytest.mark.parametrize("role,assertions", [
+        # M234: planner atomic operations
+        ("planner", [
+            (["atomic"], None),
+            (["kiso tool install", "Install commands are atomic"], "any"),
+            (["never decompose"], None),
+        ]),
+        # M234: planner atomic covers package managers
+        ("planner", [
+            (["atomic"], None),
+            (["never decompose", "single command"], "any"),
+        ]),
+        # M275: planner usage guide rule
+        ("planner", [
+            (["usage guide", "guide:"], "any"),
+            (["follow"], None),
+            (["guide:"], None),
+        ]),
+        # M275: planner usage guide is mandatory
+        ("planner", [
+            (["strictly", "broken plans"], "any"),
+        ]),
+        # M286: planner any language any script
+        ("planner", [
+            (["any language"], None),
+            (["any script"], None),
+        ]),
+        # M286: planner language handling rule
+        ("planner", [
+            (["Msg detail:"], "exact"),
+            (["communication intent"], None),
+        ]),
+        # M235: planner no carry forward
+        ("planner", [
+            (["Do NOT carry forward objectives", "Plan ONLY what the New Message asks"], "any_exact"),
+        ]),
+        # M235: planner replan not for history
+        ("planner", [
+            (["background context only"], None),
+        ]),
+        # M106a: planner kiso-native-first
+        ("planner", [
+            (["kiso-native", "kiso layer"], "any"),
+        ]),
+        # M106a: planner check skills before os
+        ("planner", [
+            (["apt-get", "os-level"], "any_mixed"),
+        ]),
+        # M106b: reviewer exit code — verification task exit1
+        ("reviewer", [
+            (["nothing found", "no matches"], "any"),
+        ]),
+        # M106b: reviewer anti-loop rule
+        ("reviewer", [
+            (["same output", "retry"], "any"),
+        ]),
+        # M6: reviewer substance over format
+        ("reviewer", [
+            (["substance"], None),
+            (["format"], None),
+        ]),
+        # M6: reviewer verification ok regardless of wording
+        ("reviewer", [
+            (["regardless"], None),
+        ]),
+        # M106d: worker no find root rule
+        ("worker", [
+            (["find /"], "exact"),
+        ]),
+        # M106d: worker command -v recommended
+        ("worker", [
+            (["command -v"], "exact"),
+        ]),
+        # M48: worker no sudo rule present
+        ("worker", [
+            (["sudo"], None),
+        ]),
+        # M48: worker sudo requires explicit mention
+        ("worker", [
+            (["explicit", "explicitly"], "any"),
+        ]),
+        # M48: worker sudo rule says do not add
+        ("worker", [
+            (["not add", "do not add", "never add"], "any"),
+        ]),
+        # M47: worker hint takes priority
+        ("worker", [
+            (["hint"], None),
+            (["ABSOLUTE priority"], "exact"),
+        ]),
+        # M284: worker tool path awareness
+        ("worker", [
+            (["Tool binaries", "tool venv PATH"], "any_exact"),
+        ]),
+    ], ids=[
+        "M234-atomic-ops", "M234-atomic-pkg-mgrs",
+        "M275-usage-guide", "M275-usage-mandatory",
+        "M286-any-lang-script", "M286-lang-handling",
+        "M235-no-carry-forward", "M235-replan-not-history",
+        "M106a-kiso-native", "M106a-skills-before-os",
+        "M106b-exit1-rule", "M106b-anti-loop",
+        "M6-substance-format", "M6-regardless",
+        "M106d-no-find-root", "M106d-command-v",
+        "M48-sudo-present", "M48-sudo-explicit", "M48-sudo-no-add",
+        "M47-hint-priority", "M284-tool-path",
+    ])
+    def test_prompt_contains_required_text(self, role, assertions):
+        prompt = (_ROLES_DIR / f"{role}.md").read_text()
+        lower = prompt.lower()
+        for subs, mode in assertions:
+            if mode is None:
+                # all substrings must appear (case-insensitive)
+                for s in subs:
+                    assert s.lower() in lower, f"{role}: missing {s!r}"
+            elif mode == "any":
+                # at least one substring (case-insensitive)
+                assert any(s.lower() in lower for s in subs), \
+                    f"{role}: none of {subs!r} found"
+            elif mode == "exact":
+                # all substrings must appear (case-sensitive)
+                for s in subs:
+                    assert s in prompt, f"{role}: missing exact {s!r}"
+            elif mode == "any_exact":
+                # at least one substring (case-sensitive)
+                assert any(s in prompt for s in subs), \
+                    f"{role}: none of {subs!r} found (exact)"
+            elif mode == "any_mixed":
+                # at least one: first exact, rest case-insensitive
+                assert any(
+                    (s in prompt) if i == 0 else (s.lower() in lower)
+                    for i, s in enumerate(subs)
+                ), f"{role}: none of {subs!r} found (mixed)"
 
 
 # --- M33: retry_hint in REVIEW_SCHEMA ---
@@ -3750,16 +3698,6 @@ class TestPrepareReviewerOutput:
 
 class TestM47WorkerHintPriority:
     """47d: worker gives priority to retry hint over literal task detail re-translation."""
-
-    def test_worker_prompt_hint_takes_priority(self):
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "hint" in prompt.lower()
-        assert "ABSOLUTE priority" in prompt
-
-    def test_m284_tool_path_awareness(self):
-        """M284: worker prompt mentions tool venv PATH."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "Tool binaries" in prompt or "tool venv PATH" in prompt
 
     def test_retry_context_with_hint_is_visible_to_translator(self):
         """Hint in retry context is present in the messages sent to the exec translator."""
@@ -4204,75 +4142,6 @@ class TestM106DefaultPlannerModel:
         assert MODEL_DEFAULTS["planner"] == "deepseek/deepseek-v3.2"
 
 
-class TestM106PlannerKisoNativeFirst:
-    """M106a: planner prompt must include Kiso-native-first rule."""
-
-    def test_kiso_native_first_rule_present(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "kiso-native" in prompt.lower() or "kiso layer" in prompt.lower()
-
-    def test_check_skills_before_os(self):
-        prompt = (_ROLES_DIR / "planner.md").read_text()
-        assert "apt-get" in prompt or "os-level" in prompt.lower()
-
-
-class TestM106ReviewerExitCodeRules:
-    """M106b: reviewer prompt covers verification task exit code semantics."""
-
-    def test_verification_task_exit1_rule(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "nothing found" in prompt.lower() or "no matches" in prompt.lower()
-
-    def test_anti_loop_rule(self):
-        """Reviewer prompt must have anti-loop guidance."""
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "same output" in prompt.lower() or "retry" in prompt.lower()
-
-
-class TestM6ReviewerSubstanceOverFormat:
-    """M6: reviewer must accept correct check results regardless of output format."""
-
-    def test_substance_over_format_rule(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "substance" in prompt.lower()
-        assert "format" in prompt.lower()
-
-    def test_verification_ok_regardless_of_wording(self):
-        prompt = (_ROLES_DIR / "reviewer.md").read_text()
-        assert "regardless" in prompt.lower()
-
-
-class TestM106WorkerRobustCommands:
-    """M106d: worker prompt includes robust command rules."""
-
-    def test_no_find_root_rule(self):
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "find /" in prompt
-
-    def test_command_v_recommended(self):
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "command -v" in prompt
-
-
-class TestM48WorkerNoSudo:
-    """48f: worker must not add sudo unless explicitly mentioned."""
-
-    def test_48f_no_sudo_rule_present(self):
-        """48f: worker prompt must have a rule about sudo usage."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "sudo" in prompt.lower()
-
-    def test_48f_sudo_requires_explicit_mention(self):
-        """48f: sudo must require explicit mention in task detail or system environment."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "explicit" in prompt.lower() or "explicitly" in prompt.lower()
-
-    def test_48f_no_sudo_rule_says_do_not_add(self):
-        """48f: rule must say not to add sudo unprompted."""
-        prompt = (_ROLES_DIR / "worker.md").read_text()
-        assert "not add" in prompt.lower() or "do not add" in prompt.lower() or "never add" in prompt.lower()
-
-
 # --- M89c: _MAX_MESSENGER_FACTS constant ---
 
 
@@ -4478,29 +4347,21 @@ class TestExecTranslatorMaxTokens:
 class TestRepairJson:
     """M105c: JSON repair — trailing commas + fences."""
 
-    def test_trailing_comma_object(self):
-        assert _repair_json('{"a": 1,}') == '{"a": 1}'
+    @pytest.mark.parametrize("raw,expected", [
+        ('{"a": 1,}', '{"a": 1}'),
+        ('[1, 2,]', '[1, 2]'),
+        ('```json\n{"a": 1,}\n```', '{"a": 1}'),
+        ('{"a": 1, "b": [2, 3]}', '{"a": 1, "b": [2, 3]}'),
+    ], ids=["trailing-comma-obj", "trailing-comma-arr", "fences-and-comma", "clean-passthrough"])
+    def test_repair_json_exact(self, raw, expected):
+        assert _repair_json(raw) == expected
 
-    def test_trailing_comma_array(self):
-        assert _repair_json('[1, 2,]') == '[1, 2]'
-
-    def test_nested_trailing_commas(self):
-        repaired = _repair_json('{"a": [1,], "b": 2,}')
-        parsed = json.loads(repaired)
-        assert parsed == {"a": [1], "b": 2}
-
-    def test_fences_and_comma(self):
-        raw = '```json\n{"a": 1,}\n```'
-        assert _repair_json(raw) == '{"a": 1}'
-
-    def test_clean_passthrough(self):
-        clean = '{"a": 1, "b": [2, 3]}'
-        assert _repair_json(clean) == clean
-
-    def test_whitespace_before_bracket(self):
-        repaired = _repair_json('{"a": 1 ,  }')
-        parsed = json.loads(repaired)
-        assert parsed == {"a": 1}
+    @pytest.mark.parametrize("raw,expected_parsed", [
+        ('{"a": [1,], "b": 2,}', {"a": [1], "b": 2}),
+        ('{"a": 1 ,  }', {"a": 1}),
+    ], ids=["nested-trailing-commas", "whitespace-before-bracket"])
+    def test_repair_json_parsed(self, raw, expected_parsed):
+        assert json.loads(_repair_json(raw)) == expected_parsed
 
 
 # --- M105c: retry JSON error includes position ---
@@ -7359,55 +7220,23 @@ class TestBuildInflightClassifierMessages:
 
 
 class TestClassifyInflight:
-    async def test_returns_stop(self):
-        """classify_inflight returns 'stop' when LLM says 'stop'."""
+    @pytest.mark.parametrize("llm_return,goal,msg,expected", [
+        ("stop", "deploy app", "fermati", "stop"),
+        ("update", "deploy app", "usa porta 8080", "update"),
+        ("independent", "deploy app", "che ore sono?", "independent"),
+        ("conflict", "deploy app", "no fai X invece", "conflict"),
+        ("  stop\n", "goal", "msg", "stop"),  # strips whitespace
+        ("STOP", "goal", "msg", "stop"),  # case insensitive
+        ("I think this is a stop", "goal", "msg", "independent"),  # unexpected → independent
+    ], ids=[
+        "stop", "update", "independent", "conflict",
+        "whitespace", "case-insensitive", "unexpected-fallback",
+    ])
+    async def test_classify_inflight_parsing(self, llm_return, goal, msg, expected):
         config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="stop"):
-            result = await classify_inflight(config, "deploy app", "fermati")
-        assert result == "stop"
-
-    async def test_returns_update(self):
-        """classify_inflight returns 'update' for parameter changes."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="update"):
-            result = await classify_inflight(config, "deploy app", "usa porta 8080")
-        assert result == "update"
-
-    async def test_returns_independent(self):
-        """classify_inflight returns 'independent' for unrelated messages."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="independent"):
-            result = await classify_inflight(config, "deploy app", "che ore sono?")
-        assert result == "independent"
-
-    async def test_returns_conflict(self):
-        """classify_inflight returns 'conflict' for contradicting messages."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="conflict"):
-            result = await classify_inflight(config, "deploy app", "no fai X invece")
-        assert result == "conflict"
-
-    async def test_strips_whitespace(self):
-        """classify_inflight handles LLM output with whitespace."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  stop\n"):
-            result = await classify_inflight(config, "goal", "msg")
-        assert result == "stop"
-
-    async def test_case_insensitive(self):
-        """classify_inflight handles uppercase responses."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="STOP"):
-            result = await classify_inflight(config, "goal", "msg")
-        assert result == "stop"
-
-    async def test_unexpected_output_falls_back_to_independent(self):
-        """classify_inflight returns 'independent' for unexpected LLM output."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                    return_value="I think this is a stop"):
-            result = await classify_inflight(config, "goal", "msg")
-        assert result == "independent"
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=llm_return):
+            result = await classify_inflight(config, goal, msg)
+        assert result == expected
 
     async def test_llm_error_falls_back_to_independent(self):
         """classify_inflight returns 'independent' when LLM call fails."""

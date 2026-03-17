@@ -38,19 +38,17 @@ async def test_create_cron_job(db):
     assert job_id > 0
 
 
-async def test_list_cron_jobs_all(db):
+@pytest.mark.parametrize("session_filter,expected_count,expected_prompt", [
+    (None, 2, None),
+    ("sess1", 1, "job A"),
+])
+async def test_list_cron_jobs(db, session_filter, expected_count, expected_prompt):
     await create_cron_job(db, "sess1", "0 9 * * *", "job A", "admin", "2026-03-18T09:00:00")
     await create_cron_job(db, "sess2", "*/5 * * * *", "job B", "admin", "2026-03-17T12:05:00")
-    jobs = await list_cron_jobs(db)
-    assert len(jobs) == 2
-
-
-async def test_list_cron_jobs_by_session(db):
-    await create_cron_job(db, "sess1", "0 9 * * *", "job A", "admin", "2026-03-18T09:00:00")
-    await create_cron_job(db, "sess2", "*/5 * * * *", "job B", "admin", "2026-03-17T12:05:00")
-    jobs = await list_cron_jobs(db, session="sess1")
-    assert len(jobs) == 1
-    assert jobs[0]["prompt"] == "job A"
+    jobs = await list_cron_jobs(db, session=session_filter) if session_filter else await list_cron_jobs(db)
+    assert len(jobs) == expected_count
+    if expected_prompt is not None:
+        assert jobs[0]["prompt"] == expected_prompt
 
 
 async def test_delete_cron_job(db):
@@ -129,6 +127,21 @@ def test_croniter_invalid_expression():
 # --- M679: _cron_scheduler loop ---
 
 
+def _fake_sleep(max_calls=1):
+    """Return an async sleep replacement that cancels after *max_calls* iterations."""
+    import asyncio
+
+    call_count = 0
+
+    async def _sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > max_calls:
+            raise asyncio.CancelledError
+
+    return _sleep
+
+
 async def test_cron_scheduler_processes_due_jobs(db):
     """M679: _cron_scheduler fetches due jobs, saves message with source='cron',
     enqueues to worker, and updates next_run via croniter."""
@@ -140,17 +153,9 @@ async def test_cron_scheduler_processes_due_jobs(db):
     # Create a due job
     await create_cron_job(db, "sess1", "0 9 * * *", "check prices", "admin", "2026-03-17T09:00:00")
 
-    call_count = 0
-
-    async def _fake_sleep(seconds):
-        nonlocal call_count
-        call_count += 1
-        if call_count > 1:
-            raise asyncio.CancelledError  # stop loop after first iteration
-
     fake_queue = AsyncMock()
 
-    with patch("kiso.main.asyncio.sleep", side_effect=_fake_sleep), \
+    with patch("kiso.main.asyncio.sleep", side_effect=_fake_sleep(max_calls=1)), \
          patch("kiso.main._ensure_worker", return_value=fake_queue) as mock_ensure, \
          patch("kiso.main.save_message", new_callable=AsyncMock, return_value=42) as mock_save_msg:
         from kiso.main import _cron_scheduler
@@ -193,17 +198,9 @@ async def test_cron_scheduler_updates_next_run(db):
         db, "sess1", "0 9 * * *", "daily job", "admin", "2026-03-17T09:00:00",
     )
 
-    call_count = 0
-
-    async def _fake_sleep(seconds):
-        nonlocal call_count
-        call_count += 1
-        if call_count > 1:
-            raise asyncio.CancelledError
-
     fake_queue = AsyncMock()
 
-    with patch("kiso.main.asyncio.sleep", side_effect=_fake_sleep), \
+    with patch("kiso.main.asyncio.sleep", side_effect=_fake_sleep(max_calls=1)), \
          patch("kiso.main._ensure_worker", return_value=fake_queue), \
          patch("kiso.main.save_message", new_callable=AsyncMock, return_value=1):
         from kiso.main import _cron_scheduler
@@ -226,16 +223,8 @@ async def test_cron_scheduler_per_job_error_continues(db):
 
     await create_cron_job(db, "sess1", "0 9 * * *", "job A", "admin", "2026-03-17T09:00:00")
 
-    call_count = 0
-
-    async def _fake_sleep(seconds):
-        nonlocal call_count
-        call_count += 1
-        if call_count > 2:
-            raise asyncio.CancelledError
-
     # save_message raises on first call but scheduler should log and continue
-    with patch("kiso.main.asyncio.sleep", side_effect=_fake_sleep), \
+    with patch("kiso.main.asyncio.sleep", side_effect=_fake_sleep(max_calls=2)), \
          patch("kiso.main._ensure_worker", side_effect=RuntimeError("boom")), \
          patch("kiso.main.save_message", new_callable=AsyncMock, return_value=1):
         from kiso.main import _cron_scheduler

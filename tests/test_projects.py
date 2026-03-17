@@ -334,198 +334,79 @@ async def test_require_project_role_viewer_allowed_for_viewer(db):
 # --- M687/M688: CLI project commands ---
 
 
-def test_cli_project_parser():
-    """Verify project subcommand parser is registered."""
+@pytest.mark.parametrize("args_list,expected", [
+    (["project", "list"], {"command": "project", "project_cmd": "list"}),
+    (["project", "create", "my-app", "--description", "A test project"],
+     {"name": "my-app", "description": "A test project"}),
+    (["project", "bind", "sess1", "my-app"],
+     {"session": "sess1", "project": "my-app"}),
+    (["project", "add-member", "bob", "--project", "my-app", "--role", "viewer"],
+     {"username": "bob", "project": "my-app", "role": "viewer"}),
+    (["project", "members", "--project", "my-app"],
+     {"project": "my-app"}),
+])
+def test_cli_project_parser(args_list, expected):
+    """Verify project CLI subcommand parsers accept the right arguments."""
     from cli import build_parser
     parser = build_parser()
-    # Should parse without error
-    args = parser.parse_args(["project", "list"])
-    assert args.command == "project"
-    assert args.project_cmd == "list"
-
-
-def test_cli_project_create_parser():
-    """Verify project create parser accepts name and description."""
-    from cli import build_parser
-    parser = build_parser()
-    args = parser.parse_args(["project", "create", "my-app", "--description", "A test project"])
-    assert args.name == "my-app"
-    assert args.description == "A test project"
-
-
-def test_cli_project_bind_parser():
-    """Verify project bind parser accepts session and project."""
-    from cli import build_parser
-    parser = build_parser()
-    args = parser.parse_args(["project", "bind", "sess1", "my-app"])
-    assert args.session == "sess1"
-    assert args.project == "my-app"
-
-
-def test_cli_project_add_member_parser():
-    """Verify project add-member parser accepts username and project."""
-    from cli import build_parser
-    parser = build_parser()
-    args = parser.parse_args(["project", "add-member", "bob", "--project", "my-app", "--role", "viewer"])
-    assert args.username == "bob"
-    assert args.project == "my-app"
-    assert args.role == "viewer"
-
-
-def test_cli_project_members_parser():
-    """Verify project members parser accepts project."""
-    from cli import build_parser
-    parser = build_parser()
-    args = parser.parse_args(["project", "members", "--project", "my-app"])
-    assert args.project == "my-app"
+    args = parser.parse_args(args_list)
+    for attr, value in expected.items():
+        assert getattr(args, attr) == value
 
 
 # --- M689: Curator project-awareness ---
 
 
-async def test_curator_project_scoped_fact(db):
-    """Facts with category project/behavior get project_id from session."""
-    from unittest.mock import AsyncMock, patch
+@pytest.mark.parametrize("category,has_project,expected_project_id_set,extra_checks", [
+    # project category + project session → project_id set
+    ("project", True, True, {}),
+    # general category + project session → global (no project_id)
+    ("general", True, False, {}),
+    # behavior category + project session → project_id set
+    ("behavior", True, True, {}),
+    # project category + no project session → global
+    ("project", False, False, {}),
+    # user category + project session → no project_id, but session set
+    ("user", True, False, {"check_session": True}),
+])
+async def test_curator_project_scoping(db, category, has_project, expected_project_id_set, extra_checks):
+    """M689: Curator assigns project_id based on category and session binding."""
     from kiso.worker.loop import _apply_curator_result
-
-    pid = await create_project(db, "curator-proj", "alice")
-    await create_session(db, "cur-sess")
-    await bind_session_to_project(db, "cur-sess", pid)
-
-    # Save a learning so we can reference it
     from kiso.store import save_learning
-    lid = await save_learning(db, "Project X uses React framework for testing", "cur-sess", "alice")
 
-    result = {
-        "evaluations": [
-            {
-                "learning_id": lid,
-                "verdict": "promote",
-                "fact": "Project X uses React framework for frontend",
-                "category": "project",
-                "tags": ["react"],
-            },
-        ]
+    suffix = f"{category}-{has_project}"
+    sess = f"cur-sess-{suffix}"
+    await create_session(db, sess)
+
+    if has_project:
+        pid = await create_project(db, f"curator-proj-{suffix}", "alice")
+        await bind_session_to_project(db, sess, pid)
+    else:
+        pid = None
+
+    learning_text = f"Learning about {suffix} for curator scoping test"
+    lid = await save_learning(db, learning_text, sess, "alice")
+
+    fact_text = f"Promoted fact for {suffix} curator scoping test"
+    evaluation = {
+        "learning_id": lid,
+        "verdict": "promote",
+        "fact": fact_text,
+        "category": category,
     }
-    await _apply_curator_result(db, "cur-sess", result)
-    # The promoted fact should have project_id set
+    if category in ("project", "user"):
+        evaluation["tags"] = ["test-tag"]
+
+    await _apply_curator_result(db, sess, {"evaluations": [evaluation]})
+
     facts = await get_facts(db, is_admin=True)
-    proj_facts = [f for f in facts if "React framework" in f["content"]]
-    assert len(proj_facts) == 1
-    assert proj_facts[0]["project_id"] == pid
+    matched = [f for f in facts if fact_text in f["content"]]
+    assert len(matched) == 1
 
+    if expected_project_id_set:
+        assert matched[0]["project_id"] == pid
+    else:
+        assert matched[0]["project_id"] is None
 
-async def test_curator_global_fact_stays_global(db):
-    """Facts with category general/tool/system remain global (no project_id)."""
-    from kiso.worker.loop import _apply_curator_result
-
-    pid = await create_project(db, "curator-proj2", "alice")
-    await create_session(db, "cur-sess2")
-    await bind_session_to_project(db, "cur-sess2", pid)
-
-    from kiso.store import save_learning
-    lid = await save_learning(db, "Python asyncio is used for concurrent operations", "cur-sess2", "alice")
-
-    result = {
-        "evaluations": [
-            {
-                "learning_id": lid,
-                "verdict": "promote",
-                "fact": "Python asyncio enables concurrent operations in this codebase",
-                "category": "general",
-                "tags": ["python"],
-            },
-        ]
-    }
-    await _apply_curator_result(db, "cur-sess2", result)
-    facts = await get_facts(db, is_admin=True)
-    gen_facts = [f for f in facts if "asyncio enables" in f["content"]]
-    assert len(gen_facts) == 1
-    assert gen_facts[0]["project_id"] is None
-
-
-async def test_curator_behavior_gets_project_id(db):
-    """Behavior category facts get project_id when session has project."""
-    from kiso.worker.loop import _apply_curator_result
-
-    pid = await create_project(db, "curator-proj3", "alice")
-    await create_session(db, "cur-sess3")
-    await bind_session_to_project(db, "cur-sess3", pid)
-
-    from kiso.store import save_learning
-    lid = await save_learning(db, "Always use descriptive variable names in code", "cur-sess3", "alice")
-
-    result = {
-        "evaluations": [
-            {
-                "learning_id": lid,
-                "verdict": "promote",
-                "fact": "Code style: always use descriptive variable names here",
-                "category": "behavior",
-            },
-        ]
-    }
-    await _apply_curator_result(db, "cur-sess3", result)
-    facts = await get_facts(db, is_admin=True)
-    beh_facts = [f for f in facts if "descriptive variable" in f["content"]]
-    assert len(beh_facts) == 1
-    assert beh_facts[0]["project_id"] == pid
-
-
-async def test_curator_no_project_session_stays_global(db):
-    """When session has no project, all facts stay global."""
-    from kiso.worker.loop import _apply_curator_result
-
-    await create_session(db, "no-proj-sess")
-
-    from kiso.store import save_learning
-    lid = await save_learning(db, "This project uses Docker for deployment infra", "no-proj-sess", "alice")
-
-    result = {
-        "evaluations": [
-            {
-                "learning_id": lid,
-                "verdict": "promote",
-                "fact": "Docker is used for deployment infrastructure here",
-                "category": "project",
-            },
-        ]
-    }
-    await _apply_curator_result(db, "no-proj-sess", result)
-    facts = await get_facts(db, is_admin=True)
-    docker_facts = [f for f in facts if "Docker is used" in f["content"]]
-    assert len(docker_facts) == 1
-    assert docker_facts[0]["project_id"] is None
-
-
-async def test_curator_user_category_no_project_id(db):
-    """M689: Curator promoting a 'user' category fact in a project session
-    does NOT set project_id — user facts stay session-scoped, not project-scoped."""
-    from kiso.worker.loop import _apply_curator_result
-
-    pid = await create_project(db, "user-cat-proj", "alice")
-    await create_session(db, "user-cat-sess")
-    await bind_session_to_project(db, "user-cat-sess", pid)
-
-    from kiso.store import save_learning
-    lid = await save_learning(db, "User prefers dark mode for interface display", "user-cat-sess", "alice")
-
-    result = {
-        "evaluations": [
-            {
-                "learning_id": lid,
-                "verdict": "promote",
-                "fact": "User prefers dark mode interface for all displays",
-                "category": "user",
-                "tags": ["preference"],
-            },
-        ]
-    }
-    await _apply_curator_result(db, "user-cat-sess", result)
-    facts = await get_facts(db, is_admin=True)
-    user_facts = [f for f in facts if "dark mode interface" in f["content"]]
-    assert len(user_facts) == 1
-    # user category is NOT in _PROJECT_SCOPED_CATEGORIES → project_id must be None
-    assert user_facts[0]["project_id"] is None
-    # But session should be set (user facts are session-scoped)
-    assert user_facts[0]["session"] == "user-cat-sess"
+    if extra_checks.get("check_session"):
+        assert matched[0]["session"] == sess

@@ -63,59 +63,43 @@ class TestValidatePresetManifest:
         errors = validate_preset_manifest({"kiso": {"type": "tool", "name": "x", "version": "1", "description": "d", "preset": {}}})
         assert any("type must be 'preset'" in e for e in errors)
 
-    def test_missing_name(self):
-        errors = validate_preset_manifest({"kiso": {"type": "preset", "version": "1", "description": "d", "preset": {}}})
-        assert any("name" in e for e in errors)
-
-    def test_missing_version(self):
-        errors = validate_preset_manifest({"kiso": {"type": "preset", "name": "x", "description": "d", "preset": {}}})
-        assert any("version" in e for e in errors)
-
-    def test_missing_description(self):
-        errors = validate_preset_manifest({"kiso": {"type": "preset", "name": "x", "version": "1", "preset": {}}})
-        assert any("description" in e for e in errors)
+    @pytest.mark.parametrize("omitted,expected_substr", [
+        ("name", "name"),
+        ("version", "version"),
+        ("description", "description"),
+    ])
+    def test_missing_required_field(self, omitted, expected_substr):
+        base = {"type": "preset", "name": "x", "version": "1", "description": "d", "preset": {}}
+        del base[omitted]
+        errors = validate_preset_manifest({"kiso": base})
+        assert any(expected_substr in e for e in errors)
 
     def test_missing_preset_section(self):
         errors = validate_preset_manifest({"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d"}})
         assert any("Missing [kiso.preset]" in e for e in errors)
 
-    def test_tools_must_be_list(self):
-        errors = validate_preset_manifest({"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d", "preset": {"tools": "bad"}}})
-        assert any("tools must be a list" in e for e in errors)
-
-    def test_tools_must_contain_strings(self):
-        errors = validate_preset_manifest({"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d", "preset": {"tools": [1, 2]}}})
-        assert any("strings" in e for e in errors)
-
-    def test_fact_missing_content(self):
-        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d",
-                    "preset": {"knowledge": {"facts": [{"category": "general"}]}}}}
+    @pytest.mark.parametrize("preset_extra,expected_substr", [
+        ({"tools": "bad"}, "tools must be a list"),
+        ({"tools": [1, 2]}, "strings"),
+    ])
+    def test_tools_wrong_type(self, preset_extra, expected_substr):
+        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1",
+                    "description": "d", "preset": preset_extra}}
         errors = validate_preset_manifest(manifest)
-        assert any("content is required" in e for e in errors)
+        assert any(expected_substr in e for e in errors)
 
-    def test_fact_invalid_category(self):
-        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d",
-                    "preset": {"knowledge": {"facts": [{"content": "hello", "category": "bogus"}]}}}}
+    @pytest.mark.parametrize("knowledge,expected_substr", [
+        ({"facts": [{"category": "general"}]}, "content is required"),
+        ({"facts": [{"content": "hello", "category": "bogus"}]}, "invalid category"),
+        ({"facts": [{"content": "hello", "tags": "bad"}]}, "tags must be a list"),
+        ({"behaviors": [123]}, "non-empty strings"),
+        ({"behaviors": [""]}, "non-empty strings"),
+    ])
+    def test_invalid_nested_knowledge(self, knowledge, expected_substr):
+        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1",
+                    "description": "d", "preset": {"knowledge": knowledge}}}
         errors = validate_preset_manifest(manifest)
-        assert any("invalid category" in e for e in errors)
-
-    def test_fact_tags_must_be_list(self):
-        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d",
-                    "preset": {"knowledge": {"facts": [{"content": "hello", "tags": "bad"}]}}}}
-        errors = validate_preset_manifest(manifest)
-        assert any("tags must be a list" in e for e in errors)
-
-    def test_behaviors_must_be_strings(self):
-        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d",
-                    "preset": {"knowledge": {"behaviors": [123]}}}}
-        errors = validate_preset_manifest(manifest)
-        assert any("non-empty strings" in e for e in errors)
-
-    def test_empty_behavior_rejected(self):
-        manifest = {"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d",
-                    "preset": {"knowledge": {"behaviors": [""]}}}}
-        errors = validate_preset_manifest(manifest)
-        assert any("non-empty strings" in e for e in errors)
+        assert any(expected_substr in e for e in errors)
 
     def test_env_value_must_be_table(self):
         manifest = {"kiso": {"type": "preset", "name": "x", "version": "1", "description": "d",
@@ -509,41 +493,18 @@ class TestPresetRemoveCLI:
 # ---------------------------------------------------------------------------
 
 class TestPresetSubcommandRegistration:
-    def test_parser_has_preset_command(self):
+    @pytest.mark.parametrize("args_list,expected", [
+        (["preset", "list"], {"command": "preset", "preset_cmd": "list"}),
+        (["preset", "install", "my-preset", "--dry-run"],
+         {"target": "my-preset", "dry_run": True}),
+        (["preset", "search", "marketing"], {"query": "marketing"}),
+        (["preset", "show", "seo-specialist"], {"name": "seo-specialist"}),
+        (["preset", "remove", "old-preset"], {"name": "old-preset"}),
+        (["preset", "installed"], {"preset_cmd": "installed"}),
+    ])
+    def test_parser_preset_subcommand(self, args_list, expected):
         from cli import build_parser
         parser = build_parser()
-        # Just verify it parses without error
-        args = parser.parse_args(["preset", "list"])
-        assert args.command == "preset"
-        assert args.preset_cmd == "list"
-
-    def test_parser_preset_install(self):
-        from cli import build_parser
-        parser = build_parser()
-        args = parser.parse_args(["preset", "install", "my-preset", "--dry-run"])
-        assert args.target == "my-preset"
-        assert args.dry_run is True
-
-    def test_parser_preset_search(self):
-        from cli import build_parser
-        parser = build_parser()
-        args = parser.parse_args(["preset", "search", "marketing"])
-        assert args.query == "marketing"
-
-    def test_parser_preset_show(self):
-        from cli import build_parser
-        parser = build_parser()
-        args = parser.parse_args(["preset", "show", "seo-specialist"])
-        assert args.name == "seo-specialist"
-
-    def test_parser_preset_remove(self):
-        from cli import build_parser
-        parser = build_parser()
-        args = parser.parse_args(["preset", "remove", "old-preset"])
-        assert args.name == "old-preset"
-
-    def test_parser_preset_installed(self):
-        from cli import build_parser
-        parser = build_parser()
-        args = parser.parse_args(["preset", "installed"])
-        assert args.preset_cmd == "installed"
+        args = parser.parse_args(args_list)
+        for attr, value in expected.items():
+            assert getattr(args, attr) == value
