@@ -397,6 +397,15 @@ def build_parser() -> argparse.ArgumentParser:
     know_rm_p = know_sub.add_parser("remove", help="remove a knowledge fact by ID")
     know_rm_p.add_argument("fact_id", type=int, help="fact ID to remove")
 
+    # --- M674: behavior subcommand ---
+    beh_parser = sub.add_parser("behavior", help="manage behavioral guidelines")
+    beh_sub = beh_parser.add_subparsers(dest="behavior_cmd")
+    beh_sub.add_parser("list", help="list all behavioral guidelines")
+    beh_add_p = beh_sub.add_parser("add", help="add a behavioral guideline")
+    beh_add_p.add_argument("content", help="guideline text")
+    beh_rm_p = beh_sub.add_parser("remove", help="remove a behavioral guideline by ID")
+    beh_rm_p.add_argument("behavior_id", type=int, help="behavior ID to remove")
+
     return parser
 
 
@@ -470,6 +479,15 @@ def main() -> None:
             knowledge_search(args)
         elif args.knowledge_cmd == "remove":
             knowledge_remove(args)
+    elif args.command == "behavior":
+        from cli.behavior import behavior_add, behavior_list, behavior_remove
+
+        if args.behavior_cmd == "list" or args.behavior_cmd is None:
+            behavior_list(args)
+        elif args.behavior_cmd == "add":
+            behavior_add(args)
+        elif args.behavior_cmd == "remove":
+            behavior_remove(args)
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()
