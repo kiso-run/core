@@ -496,3 +496,36 @@ async def test_curator_no_project_session_stays_global(db):
     docker_facts = [f for f in facts if "Docker is used" in f["content"]]
     assert len(docker_facts) == 1
     assert docker_facts[0]["project_id"] is None
+
+
+async def test_curator_user_category_no_project_id(db):
+    """M689: Curator promoting a 'user' category fact in a project session
+    does NOT set project_id — user facts stay session-scoped, not project-scoped."""
+    from kiso.worker.loop import _apply_curator_result
+
+    pid = await create_project(db, "user-cat-proj", "alice")
+    await create_session(db, "user-cat-sess")
+    await bind_session_to_project(db, "user-cat-sess", pid)
+
+    from kiso.store import save_learning
+    lid = await save_learning(db, "User prefers dark mode for interface display", "user-cat-sess", "alice")
+
+    result = {
+        "evaluations": [
+            {
+                "learning_id": lid,
+                "verdict": "promote",
+                "fact": "User prefers dark mode interface for all displays",
+                "category": "user",
+                "tags": ["preference"],
+            },
+        ]
+    }
+    await _apply_curator_result(db, "user-cat-sess", result)
+    facts = await get_facts(db, is_admin=True)
+    user_facts = [f for f in facts if "dark mode interface" in f["content"]]
+    assert len(user_facts) == 1
+    # user category is NOT in _PROJECT_SCOPED_CATEGORIES → project_id must be None
+    assert user_facts[0]["project_id"] is None
+    # But session should be set (user facts are session-scoped)
+    assert user_facts[0]["session"] == "user-cat-sess"

@@ -12193,3 +12193,64 @@ class TestPersistPlanTasksGroup:
         await db.close()
 
 
+@pytest.mark.asyncio
+class TestParallelGroupFromDB:
+    """M696: _build_execution_batches correctly groups tasks fetched from DB."""
+
+    async def test_db_tasks_with_parallel_group(self, tmp_path):
+        """Persist tasks with parallel_group, fetch, and verify _build_execution_batches
+        groups them correctly. The actual asyncio.gather path is deferred to functional tests."""
+        from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
+        from kiso.worker.loop import _persist_plan_tasks, _build_execution_batches
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        pid = await create_plan(db, "sess1", message_id=1, goal="Parallel test")
+        plan_tasks = [
+            {"type": "search", "detail": "search alpha", "tool": None, "args": None, "expect": "info", "group": 1},
+            {"type": "search", "detail": "search beta", "tool": None, "args": None, "expect": "info", "group": 1},
+            {"type": "msg", "detail": "Answer in English. summarize results", "tool": None, "args": None, "expect": None},
+        ]
+        await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
+        tasks = await get_tasks_for_plan(db, pid)
+
+        # Convert DB rows to dicts for _build_execution_batches
+        task_dicts = [dict(t) for t in tasks]
+        batches = _build_execution_batches(task_dicts)
+
+        # Should produce 2 batches: [grouped search pair] + [sequential msg]
+        assert len(batches) == 2
+        assert len(batches[0]) == 2  # parallel group
+        assert len(batches[1]) == 1  # sequential msg
+        # Verify content of grouped batch
+        details = {task_dicts[idx]["detail"] for idx, _ in batches[0]}
+        assert "search alpha" in details
+        assert "search beta" in details
+        await db.close()
+
+    async def test_db_tasks_three_groups_interleaved(self, tmp_path):
+        """Multiple parallel groups separated by sequential tasks."""
+        from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
+        from kiso.worker.loop import _persist_plan_tasks, _build_execution_batches
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        pid = await create_plan(db, "sess1", message_id=1, goal="Multi-group test")
+        plan_tasks = [
+            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": "info", "group": 1},
+            {"type": "search", "detail": "B", "tool": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "merge", "tool": None, "args": None, "expect": "done"},
+            {"type": "search", "detail": "C", "tool": None, "args": None, "expect": "info", "group": 2},
+            {"type": "search", "detail": "D", "tool": None, "args": None, "expect": "info", "group": 2},
+            {"type": "msg", "detail": "Answer in English. report", "tool": None, "args": None, "expect": None},
+        ]
+        await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
+        tasks = await get_tasks_for_plan(db, pid)
+        batches = _build_execution_batches([dict(t) for t in tasks])
+
+        assert len(batches) == 4
+        assert len(batches[0]) == 2  # group 1
+        assert len(batches[1]) == 1  # sequential merge
+        assert len(batches[2]) == 2  # group 2
+        assert len(batches[3]) == 1  # sequential msg
+        await db.close()
+
+

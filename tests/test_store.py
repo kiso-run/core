@@ -2672,6 +2672,90 @@ async def test_decay_skips_safety_facts(db: aiosqlite.Connection):
     assert row["confidence"] < 1.0
 
 
+async def test_get_behavior_facts_multiple_ordered(db: aiosqlite.Connection):
+    """M671: save 3 behavior facts, get_behavior_facts returns all 3 in creation order."""
+    await create_session(db, "s1")
+    id1 = await save_fact(db, "Always respond formally and concisely", "admin", category="behavior")
+    id2 = await save_fact(db, "Use metric units in all measurements", "admin", category="behavior")
+    id3 = await save_fact(db, "Format code blocks with language hints", "admin", category="behavior")
+    facts = await get_behavior_facts(db)
+    assert len(facts) >= 3
+    ids = [f["id"] for f in facts]
+    assert ids.index(id1) < ids.index(id2) < ids.index(id3)
+    contents = [f["content"] for f in facts]
+    assert "formally" in contents[ids.index(id1) - ids.index(ids[0])]
+
+
+async def test_list_knowledge_combined_category_and_tag(db: aiosqlite.Connection):
+    """M672: list_knowledge with both category and tag filters applied together."""
+    from kiso.store import list_knowledge
+    await create_session(db, "s1")
+    # Create facts with different categories and tags
+    await save_fact(db, "Flask is a Python web framework tool", "admin",
+                    category="tool", tags=["python", "web"])
+    await save_fact(db, "React is a JavaScript UI library tool", "admin",
+                    category="tool", tags=["javascript", "web"])
+    await save_fact(db, "Python async programming is a general topic", "admin",
+                    category="general", tags=["python"])
+
+    # Combined filter: category=tool AND tag=python → only Flask fact
+    results = await list_knowledge(db, category="tool", tag="python")
+    assert len(results) == 1
+    assert "Flask" in results[0]["content"]
+
+    # Combined filter: category=tool AND tag=web → both tool facts
+    results = await list_knowledge(db, category="tool", tag="web")
+    assert len(results) == 2
+
+    # Combined filter: category=general AND tag=python → only async fact
+    results = await list_knowledge(db, category="general", tag="python")
+    assert len(results) == 1
+    assert "async" in results[0]["content"]
+
+
+async def test_list_knowledge_no_filters(db: aiosqlite.Connection):
+    """M672: list_knowledge with no filters returns all facts."""
+    from kiso.store import list_knowledge
+    await save_fact(db, "Fact alpha about the system", "admin", category="general")
+    await save_fact(db, "Fact beta about behavior rules", "admin", category="behavior")
+    results = await list_knowledge(db)
+    assert len(results) >= 2
+
+
+async def test_list_knowledge_entity_filter(db: aiosqlite.Connection):
+    """M672: list_knowledge filtered by entity name."""
+    from kiso.store import list_knowledge
+    eid = await find_or_create_entity(db, "backend-api", "service")
+    await save_fact(db, "Backend uses FastAPI framework here", "admin",
+                    category="general", entity_id=eid)
+    await save_fact(db, "Unrelated general system fact content", "admin",
+                    category="general")
+    results = await list_knowledge(db, entity="backend-api")
+    assert len(results) == 1
+    assert "FastAPI" in results[0]["content"]
+
+
+async def test_save_message_source_cron_persists(db: aiosqlite.Connection):
+    """M682: save_message with source='cron' persists and is readable."""
+    await create_session(db, "cron-sess")
+    msg_id = await save_message(db, "cron-sess", "cron", "system", "daily check",
+                                 trusted=True, processed=False, source="cron")
+    assert msg_id > 0
+    # Read back via raw query (SELECT * includes source column)
+    cur = await db.execute("SELECT source FROM messages WHERE id = ?", (msg_id,))
+    row = await cur.fetchone()
+    assert row["source"] == "cron"
+
+
+async def test_save_message_source_default_is_user(db: aiosqlite.Connection):
+    """M682: save_message default source is 'user'."""
+    await create_session(db, "user-sess")
+    msg_id = await save_message(db, "user-sess", "alice", "user", "hello")
+    cur = await db.execute("SELECT source FROM messages WHERE id = ?", (msg_id,))
+    row = await cur.fetchone()
+    assert row["source"] == "user"
+
+
 async def test_archive_skips_safety_facts(db: aiosqlite.Connection):
     """archive_low_confidence_facts does not archive safety-category facts."""
     await create_session(db, "s1")
