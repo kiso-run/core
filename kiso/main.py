@@ -37,6 +37,7 @@ from kiso.store import (
     get_all_sessions,
     get_plan_for_session,
     get_safety_facts,
+    list_knowledge,
     get_session,
     get_sessions_for_user,
     get_tasks_for_session,
@@ -818,6 +819,87 @@ async def delete_safety_rule(
         raise HTTPException(status_code=404, detail="Safety rule not found")
 
     return {"deleted": True, "id": rule_id}
+
+
+# --- M672: Knowledge management endpoints ---
+
+
+class KnowledgeRequest(BaseModel):
+    content: str
+    category: str = "general"
+    entity_name: str | None = None
+    entity_kind: str | None = None
+    tags: list[str] | None = None
+
+
+@app.get("/knowledge")
+async def list_knowledge_endpoint(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    category: str | None = None,
+    entity: str | None = None,
+    tag: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+):
+    db = request.app.state.db
+    facts = await list_knowledge(
+        db, category=category, entity=entity, tag=tag, search=search, limit=limit,
+    )
+    return {"facts": facts}
+
+
+@app.post("/knowledge", status_code=201)
+async def add_knowledge(
+    body: KnowledgeRequest,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+
+    from kiso.brain import _VALID_FACT_CATEGORIES
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    if body.category not in _VALID_FACT_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {body.category}")
+
+    entity_id = None
+    if body.entity_name:
+        from kiso.store import find_or_create_entity
+        kind = body.entity_kind or "concept"
+        entity_id = await find_or_create_entity(db, body.entity_name, kind)
+
+    fact_id = await save_fact(
+        db, content, "admin", category=body.category,
+        tags=body.tags, entity_id=entity_id,
+    )
+    return {"id": fact_id, "content": content, "category": body.category}
+
+
+@app.delete("/knowledge/{fact_id}")
+async def delete_knowledge(
+    fact_id: int,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+
+    # Don't delete safety rules via this endpoint — use /safety-rules
+    cur = await db.execute("SELECT category FROM facts WHERE id = ?", (fact_id,))
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Fact not found")
+    if row["category"] == "safety":
+        raise HTTPException(status_code=400, detail="Use /safety-rules to manage safety rules")
+
+    await db.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+    await db.commit()
+    return {"deleted": True, "id": fact_id}
 
 
 @app.get("/admin/stats")

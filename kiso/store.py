@@ -1409,6 +1409,83 @@ async def get_behavior_facts(db: aiosqlite.Connection) -> list[dict]:
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def list_knowledge(
+    db: aiosqlite.Connection,
+    *,
+    category: str | None = None,
+    entity: str | None = None,
+    tag: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """M672: List facts with optional filters. Returns dicts with id, content,
+    category, entity_name, entity_kind, tags, confidence, created_at.
+    """
+    if search:
+        # FTS5 search path
+        fts_q = _fts5_query(search)
+        if fts_q:
+            try:
+                cur = await db.execute(
+                    "SELECT f.id, f.content, f.category, f.confidence, f.created_at, "
+                    "e.name AS entity_name, e.kind AS entity_kind "
+                    "FROM facts f "
+                    "LEFT JOIN entities e ON f.entity_id = e.id "
+                    "JOIN kiso_facts_fts fts ON fts.rowid = f.id "
+                    "WHERE kiso_facts_fts MATCH ? "
+                    "ORDER BY rank LIMIT ?",
+                    (fts_q, limit),
+                )
+                rows = [dict(r) for r in await cur.fetchall()]
+            except Exception:
+                rows = []
+            if rows:
+                return await _attach_tags(db, rows)
+
+    # Filtered query
+    clauses: list[str] = []
+    params: list = []
+    if category:
+        clauses.append("f.category = ?")
+        params.append(category)
+    if entity:
+        clauses.append("LOWER(e.name) = LOWER(?)")
+        params.append(entity)
+    if tag:
+        clauses.append("f.id IN (SELECT fact_id FROM fact_tags WHERE tag = ?)")
+        params.append(tag.lower())
+
+    where = (" AND " + " AND ".join(clauses)) if clauses else ""
+    cur = await db.execute(
+        "SELECT f.id, f.content, f.category, f.confidence, f.created_at, "
+        "e.name AS entity_name, e.kind AS entity_kind "
+        f"FROM facts f LEFT JOIN entities e ON f.entity_id = e.id "
+        f"WHERE 1=1{where} ORDER BY f.id DESC LIMIT ?",
+        params + [limit],
+    )
+    rows = [dict(r) for r in await cur.fetchall()]
+    return await _attach_tags(db, rows)
+
+
+async def _attach_tags(db: aiosqlite.Connection, rows: list[dict]) -> list[dict]:
+    """Attach tags list to each fact row."""
+    if not rows:
+        return rows
+    ids = [r["id"] for r in rows]
+    placeholders = ",".join("?" * len(ids))
+    cur = await db.execute(
+        f"SELECT fact_id, tag FROM fact_tags WHERE fact_id IN ({placeholders})",
+        ids,
+    )
+    tag_rows = await cur.fetchall()
+    tag_map: dict[int, list[str]] = {}
+    for tr in tag_rows:
+        tag_map.setdefault(tr["fact_id"], []).append(tr["tag"])
+    for r in rows:
+        r["tags"] = tag_map.get(r["id"], [])
+    return rows
+
+
 async def decay_facts(
     db: aiosqlite.Connection,
     decay_days: int = 7,
