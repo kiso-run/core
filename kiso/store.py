@@ -255,6 +255,21 @@ CREATE TABLE IF NOT EXISTS cron_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled, next_run);
 
+CREATE TABLE IF NOT EXISTS projects (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT UNIQUE NOT NULL,
+    description TEXT,
+    created_by  TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    username    TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member', 'viewer')),
+    PRIMARY KEY (project_id, username)
+);
+
 """
 
 
@@ -315,6 +330,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     await db.execute("PRAGMA journal_mode=WAL")
     # Prevent SQLITE_BUSY errors when concurrent coroutines commit close together.
     await db.execute("PRAGMA busy_timeout = 5000")
+    await db.execute("PRAGMA foreign_keys = ON")
     db.row_factory = aiosqlite.Row
     await db.executescript(SCHEMA)
     await db.commit()
@@ -1640,5 +1656,101 @@ async def update_cron_last_run(
         (last_run, next_run, job_id),
     )
     await db.commit()
+
+
+# --- M683: Project store functions ---
+
+
+async def create_project(
+    db: aiosqlite.Connection, name: str, created_by: str, description: str = "",
+) -> int:
+    """Create a project. Returns project id."""
+    cur = await db.execute(
+        "INSERT INTO projects (name, description, created_by) VALUES (?, ?, ?)",
+        (name, description, created_by),
+    )
+    project_id: int = cur.lastrowid  # type: ignore[assignment]
+    # Creator is automatically a member
+    await db.execute(
+        "INSERT INTO project_members (project_id, username, role) VALUES (?, ?, 'member')",
+        (project_id, created_by),
+    )
+    await db.commit()
+    return project_id
+
+
+async def get_project(db: aiosqlite.Connection, name: str) -> dict | None:
+    """Get a project by name."""
+    cur = await db.execute("SELECT * FROM projects WHERE name = ?", (name,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def list_projects(
+    db: aiosqlite.Connection, username: str | None = None,
+) -> list[dict]:
+    """List projects. If username provided, only projects where user is member/viewer."""
+    if username:
+        cur = await db.execute(
+            "SELECT p.* FROM projects p "
+            "JOIN project_members pm ON p.id = pm.project_id "
+            "WHERE pm.username = ? ORDER BY p.id",
+            (username,),
+        )
+    else:
+        cur = await db.execute("SELECT * FROM projects ORDER BY id")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def delete_project(db: aiosqlite.Connection, project_id: int) -> bool:
+    """Delete a project (cascades to members)."""
+    cur = await db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    await db.commit()
+    return cur.rowcount > 0
+
+
+async def add_project_member(
+    db: aiosqlite.Connection, project_id: int, username: str, role: str = "member",
+) -> None:
+    """Add a member to a project (or update role if already member)."""
+    await db.execute(
+        "INSERT OR REPLACE INTO project_members (project_id, username, role) "
+        "VALUES (?, ?, ?)",
+        (project_id, username, role),
+    )
+    await db.commit()
+
+
+async def remove_project_member(
+    db: aiosqlite.Connection, project_id: int, username: str,
+) -> bool:
+    """Remove a member from a project. Returns True if removed."""
+    cur = await db.execute(
+        "DELETE FROM project_members WHERE project_id = ? AND username = ?",
+        (project_id, username),
+    )
+    await db.commit()
+    return cur.rowcount > 0
+
+
+async def list_project_members(db: aiosqlite.Connection, project_id: int) -> list[dict]:
+    """List members of a project."""
+    cur = await db.execute(
+        "SELECT username, role FROM project_members WHERE project_id = ? ORDER BY username",
+        (project_id,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_user_project_role(
+    db: aiosqlite.Connection, project_id: int, username: str,
+) -> str | None:
+    """Get a user's role in a project (member/viewer/None)."""
+    cur = await db.execute(
+        "SELECT role FROM project_members WHERE project_id = ? AND username = ?",
+        (project_id, username),
+    )
+    row = await cur.fetchone()
+    return row["role"] if row else None
 
 

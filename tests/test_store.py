@@ -72,7 +72,8 @@ async def test_init_creates_tables(db: aiosqlite.Connection):
     )
     expected = [
         "cron_jobs", "entities", "fact_tags", "facts", "facts_archive", "kiso_facts_fts",
-        "learnings", "messages", "pending", "plans", "sessions", "tasks",
+        "learnings", "messages", "pending", "plans", "project_members", "projects",
+        "sessions", "tasks",
     ]
     assert tables == expected
 
