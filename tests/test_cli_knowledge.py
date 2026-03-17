@@ -107,6 +107,56 @@ class TestKnowledgeSearch:
         assert "Flask" in out
 
 
+class TestKnowledgeExport:
+    def test_export_json(self, capsys):
+        from cli.knowledge import knowledge_export
+        args = _make_args(category=None, entity=None, format="json", output=None)
+        facts = [
+            {"id": 1, "content": "Uses Flask", "category": "project",
+             "entity_name": "app", "entity_kind": "project", "tags": ["python"]},
+        ]
+        with patch("kiso.config.load_config", return_value=_mock_config()), \
+             _mock_http({"facts": facts}):
+            knowledge_export(args)
+        import json
+        out = capsys.readouterr().out
+        parsed = json.loads(out)
+        assert len(parsed) == 1
+        assert parsed[0]["content"] == "Uses Flask"
+
+    def test_export_markdown(self, capsys):
+        from cli.knowledge import knowledge_export
+        args = _make_args(category=None, entity=None, format="md", output=None)
+        facts = [
+            {"id": 1, "content": "Uses Flask", "category": "project",
+             "entity_name": "app", "entity_kind": "project", "tags": ["python"]},
+            {"id": 2, "content": "Always be formal", "category": "behavior",
+             "entity_name": None, "tags": []},
+        ]
+        with patch("kiso.config.load_config", return_value=_mock_config()), \
+             _mock_http({"facts": facts}):
+            knowledge_export(args)
+        out = capsys.readouterr().out
+        assert "## Entity: app (project)" in out
+        assert "Uses Flask" in out
+        assert "## Behaviors" in out
+        assert "Always be formal" in out
+
+    def test_export_to_file(self, tmp_path):
+        from cli.knowledge import knowledge_export
+        outfile = tmp_path / "export.json"
+        args = _make_args(category=None, entity=None, format="json", output=str(outfile))
+        facts = [{"id": 1, "content": "Test fact", "category": "general",
+                  "entity_name": None, "tags": []}]
+        with patch("kiso.config.load_config", return_value=_mock_config()), \
+             _mock_http({"facts": facts}):
+            knowledge_export(args)
+        assert outfile.exists()
+        import json
+        data = json.loads(outfile.read_text())
+        assert len(data) == 1
+
+
 class TestKnowledgeRemove:
     def test_remove_success(self, capsys):
         from cli.knowledge import knowledge_remove

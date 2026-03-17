@@ -93,6 +93,72 @@ def knowledge_remove(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def knowledge_export(args: argparse.Namespace) -> None:
+    """Export knowledge facts to stdout (JSON or markdown)."""
+    params: dict = {}
+    if getattr(args, "category", None):
+        params["category"] = args.category
+    if getattr(args, "entity", None):
+        params["entity"] = args.entity
+    params["limit"] = "1000"
+    resp = cli_get(args, "/knowledge", params=params)
+    facts = resp.json().get("facts", [])
+
+    fmt = getattr(args, "format", "json") or "json"
+    output_file = getattr(args, "output", None)
+
+    if fmt == "json":
+        import json
+        text = json.dumps(facts, indent=2, ensure_ascii=False)
+    else:
+        # Markdown format grouped by entity
+        lines: list[str] = []
+        by_entity: dict[str, list[dict]] = {}
+        no_entity: list[dict] = []
+        for f in facts:
+            ename = f.get("entity_name")
+            if ename:
+                by_entity.setdefault(ename, []).append(f)
+            else:
+                no_entity.append(f)
+
+        for ename, efacts in sorted(by_entity.items()):
+            kind = efacts[0].get("entity_kind") or "concept"
+            lines.append(f"## Entity: {ename} ({kind})\n")
+            for f in efacts:
+                tags = " ".join(f"#{t}" for t in f.get("tags", []))
+                cat_note = f" [{f['category']}]" if f.get("category") not in ("general", None) else ""
+                lines.append(f"- {f['content']}{cat_note} {tags}".rstrip())
+            lines.append("")
+
+        if no_entity:
+            # Group by category
+            behavior_facts = [f for f in no_entity if f.get("category") == "behavior"]
+            other_facts = [f for f in no_entity if f.get("category") != "behavior"]
+            if behavior_facts:
+                lines.append("## Behaviors\n")
+                for f in behavior_facts:
+                    tags = " ".join(f"#{t}" for t in f.get("tags", []))
+                    lines.append(f"- {f['content']} {tags}".rstrip())
+                lines.append("")
+            if other_facts:
+                lines.append("## General\n")
+                for f in other_facts:
+                    tags = " ".join(f"#{t}" for t in f.get("tags", []))
+                    cat_note = f" [{f['category']}]" if f.get("category") not in ("general", None) else ""
+                    lines.append(f"- {f['content']}{cat_note} {tags}".rstrip())
+                lines.append("")
+
+        text = "\n".join(lines)
+
+    if output_file:
+        from pathlib import Path
+        Path(output_file).write_text(text, encoding="utf-8")
+        print(f"Exported {len(facts)} facts to {output_file}")
+    else:
+        print(text)
+
+
 def knowledge_import(args: argparse.Namespace) -> None:
     """Import knowledge from a markdown file."""
     from pathlib import Path

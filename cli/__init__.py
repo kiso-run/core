@@ -396,6 +396,11 @@ def build_parser() -> argparse.ArgumentParser:
     know_search_p.add_argument("query", help="search query")
     know_rm_p = know_sub.add_parser("remove", help="remove a knowledge fact by ID")
     know_rm_p.add_argument("fact_id", type=int, help="fact ID to remove")
+    know_exp_p = know_sub.add_parser("export", help="export knowledge facts")
+    know_exp_p.add_argument("--format", "-f", choices=["json", "md"], default="json", help="output format")
+    know_exp_p.add_argument("--category", "-c", help="filter by category")
+    know_exp_p.add_argument("--entity", "-e", help="filter by entity name")
+    know_exp_p.add_argument("--output", "-o", help="output file (default: stdout)")
     know_imp_p = know_sub.add_parser("import", help="import knowledge from markdown file")
     know_imp_p.add_argument("file", help="markdown file path")
     know_imp_p.add_argument("--category", "-c", help="default category (default: general)")
@@ -474,7 +479,7 @@ def main() -> None:
             rules_remove(args)
     elif args.command == "knowledge":
         from cli.knowledge import (
-            knowledge_add, knowledge_import, knowledge_list,
+            knowledge_add, knowledge_export, knowledge_import, knowledge_list,
             knowledge_remove, knowledge_search,
         )
 
@@ -486,6 +491,8 @@ def main() -> None:
             knowledge_search(args)
         elif args.knowledge_cmd == "remove":
             knowledge_remove(args)
+        elif args.knowledge_cmd == "export":
+            knowledge_export(args)
         elif args.knowledge_cmd == "import":
             knowledge_import(args)
     elif args.command == "behavior":
