@@ -24,6 +24,13 @@ services:
     environment:
       - OPENROUTER_API_KEY
       - KISO_LLM_API_KEY
+    volumes:
+      # Cache Playwright browser binaries and uv packages across runs.
+      # First run downloads; subsequent runs use cache. The test flow
+      # is identical — kiso tool install still runs fully (git clone,
+      # uv sync, deps.sh) but cached downloads resolve instantly.
+      - playwright-cache:/root/.cache/ms-playwright
+      - uv-tool-cache:/root/.cache/uv
     profiles: [functional]
 
   test-docker:
@@ -32,3 +39,7 @@ services:
       dockerfile: Dockerfile.test
     command: uv run pytest tests/docker/ -v
     profiles: [docker]
+
+volumes:
+  playwright-cache:
+  uv-tool-cache:
