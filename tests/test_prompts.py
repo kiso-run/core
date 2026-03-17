@@ -75,7 +75,7 @@ class TestPlannerModules:
 
     _ALL_MODULES = [
         "core", "kiso_native", "planning_rules", "tools_rules",
-        "tool_recovery", "data_flow", "web", "scripting", "replan",
+        "tool_recovery", "data_flow", "web", "code_execution", "replan",
         "kiso_commands", "user_mgmt", "plugin_install",
     ]
 

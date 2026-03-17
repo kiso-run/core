@@ -207,7 +207,7 @@ class TestBrieferScenarios:
     async def test_multiple_modules_combined(self, db):
         """Complex request → briefer selects multiple modules."""
         briefing = _briefing(
-            modules=["web", "data_flow", "scripting"],
+            modules=["web", "data_flow", "code_execution"],
             tools=["browser: navigate", "python: run scripts"],
             context="User wants to scrape a site and process data with Python.",
         )

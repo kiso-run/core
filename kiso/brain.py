@@ -407,7 +407,7 @@ CURATOR_MODULES: frozenset[str] = frozenset({
 # core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
     "planning_rules", "kiso_native", "tools_rules",
-    "web", "replan", "scripting", "tool_recovery", "data_flow",
+    "web", "replan", "code_execution", "tool_recovery", "data_flow",
     "kiso_commands", "user_mgmt", "plugin_install",
 })
 _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
@@ -416,7 +416,7 @@ _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "tools_rules": "tool usage rules, atomic operations",
     "web": "URLs, websites, browser tool rules",
     "data_flow": "file-based data flow for large outputs",
-    "scripting": "script execution rules",
+    "code_execution": "script execution via exec tasks",
     "replan": "replan strategy, extend_replan",
     "tool_recovery": "broken tool reinstall procedure",
     "kiso_commands": "kiso CLI (tool/connector/env/user mgmt)",

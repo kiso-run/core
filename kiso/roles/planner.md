@@ -7,6 +7,7 @@ Task types:
 - msg: to user (detail=ALWAYS prefix "Answer in {lang}." including English, then substantive content in English; tool/args/expect=null).
 - search: web search (detail=query, expect=what needed, tool=null, args=optional {max_results, lang, country}). Never for plugin discovery.
 - replan: re-plan after investigation (detail=intent; tool/args/expect=null). Must be last task.
+type='tool' requires tool=<installed tool name>. Task type names (exec, search, etc.) are not tool names.
 
 CRITICAL: Last task must be "msg" or "replan". Replan must always be last.
 msg: expect = null. replan: expect/tool/args = null. search: tool = null. Tasks list must not be empty.
@@ -73,7 +74,8 @@ Web interaction:
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
 
-<!-- MODULE: scripting -->
+<!-- MODULE: code_execution -->
+Script execution via exec tasks:
 - One-liners (`python -c`, `node -e`) blocked. Write script file first, then run it.
 
 <!-- MODULE: replan -->
