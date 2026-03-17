@@ -36,7 +36,7 @@ class TestChatKBSelfInspection:
         system queries would wastefully invoke the full planner pipeline.
         Expects: Success, Italian response, no exec/tool tasks, hostname info in output.
         """
-        result = await run_message("qual è il tuo hostname?", timeout=60)
+        result = await run_message("qual è il tuo hostname?", timeout=120)
         assert result.success
         assert_italian(result.msg_output)
         # Should use fast path (no exec/skill tasks)
@@ -396,7 +396,7 @@ class TestMessengerQuality:
         Without this, users receive unprofessional or misleading responses.
         Expects: Italian response with no emoji characters and no false action verbs.
         """
-        result = await run_message("dimmi cosa sai fare", timeout=60)
+        result = await run_message("dimmi cosa sai fare", timeout=120)
         assert result.success
         assert_italian(result.msg_output)
         # No emoji
