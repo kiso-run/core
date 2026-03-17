@@ -982,6 +982,7 @@ async def build_planner_messages(
     user_tools: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     is_replan: bool = False,
+    install_approved: bool = False,
 ) -> tuple[list[dict], list[str], list[dict]]:
     """Build the message list for the planner LLM call.
 
@@ -1193,6 +1194,16 @@ async def build_planner_messages(
     _add_section(context_parts, "Behavior Guidelines (follow these preferences)",
                  _join_or_empty(behavior_facts, lambda f: f"- {f['content']}"))
 
+    # M712: tell the planner it may proceed with install execs when approved.
+    if install_approved:
+        context_parts.append(
+            "## Install Status\n"
+            "A prior plan in this session proposed tool installation. The user has "
+            "since replied. You may proceed with `kiso tool install <name>` exec "
+            "tasks directly if the user's message requests or approves installation. "
+            "Do not ask for permission again."
+        )
+
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")
 
@@ -1233,6 +1244,7 @@ async def run_planner(
     messages, installed_names, installed_info = await build_planner_messages(
         db, config, session, user_role, new_message, user_tools=user_tools,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
+        install_approved=install_approved,
     )
     if on_context_ready:
         await on_context_ready()

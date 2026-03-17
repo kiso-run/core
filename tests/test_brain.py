@@ -3155,6 +3155,40 @@ class TestM82PlannerAskThenAdd:
         assert user_msg is not None
         assert "Maximum tasks: 11" in user_msg["content"]
 
+    async def test_m712_install_status_injected_when_approved(self, db, config):
+        """M712: Install Status section appears when install_approved=True."""
+        captured: list[dict] = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.extend(messages)
+            return _MSG_PLAN_FOR_USER
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_planner(db, config, "sess1", "admin", "install browser",
+                              install_approved=True)
+
+        user_msg = next((m for m in captured if m["role"] == "user"), None)
+        assert user_msg is not None
+        assert "Install Status" in user_msg["content"]
+        assert "may proceed" in user_msg["content"]
+        assert "Do not ask" in user_msg["content"]
+
+    async def test_m712_install_status_absent_when_not_approved(self, db, config):
+        """M712: Install Status section absent when install_approved=False."""
+        captured: list[dict] = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.extend(messages)
+            return _MSG_PLAN_FOR_USER
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_planner(db, config, "sess1", "admin", "hello",
+                              install_approved=False)
+
+        user_msg = next((m for m in captured if m["role"] == "user"), None)
+        assert user_msg is not None
+        assert "Install Status" not in user_msg["content"]
+
 
 # --- Classifier (fast path) ---
 
