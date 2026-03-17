@@ -1400,6 +1400,15 @@ async def get_safety_facts(db: aiosqlite.Connection) -> list[dict]:
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def get_behavior_facts(db: aiosqlite.Connection) -> list[dict]:
+    """M671: Return all behavior-category facts, ordered by creation time."""
+    cur = await db.execute(
+        "SELECT id, content FROM facts WHERE category = 'behavior' "
+        "ORDER BY created_at",
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
 async def decay_facts(
     db: aiosqlite.Connection,
     decay_days: int = 7,

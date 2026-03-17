@@ -73,7 +73,7 @@ _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _MESSENGER_RETRY_BACKOFF: float = 1.0  # M480: seconds between retries (0 in tests)
 _MAX_MESSENGER_RETRIES = 2  # M480: max retries on transient LLM errors
-_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety"})
+_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety", "behavior"})
 _ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
 
 # In-flight message classification
@@ -1866,7 +1866,7 @@ CURATOR_SCHEMA: dict = _build_strict_schema("curator", {
             "learning_id": {"type": "integer"},
             "verdict": {"type": "string", "enum": ["promote", "ask", "discard"]},
             "fact": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
+            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general", "behavior"]}, {"type": "null"}]},
             "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "reason": {"type": "string"},
             "tags": {"anyOf": [

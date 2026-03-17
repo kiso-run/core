@@ -10,6 +10,7 @@ from kiso.store import (
     session_owned_by,
     upsert_session,
     archive_low_confidence_facts,
+    get_behavior_facts,
     get_safety_facts,
     search_facts,
     count_messages,
@@ -2612,6 +2613,34 @@ async def test_get_safety_facts_empty(db: aiosqlite.Connection):
     """get_safety_facts returns empty list when no safety facts exist."""
     facts = await get_safety_facts(db)
     assert facts == []
+
+
+async def test_get_behavior_facts(db: aiosqlite.Connection):
+    """M671: save_fact with category='behavior' → get_behavior_facts returns it."""
+    await create_session(db, "s1")
+    fid = await save_fact(db, "Always respond formally and concisely", "admin",
+                          category="behavior")
+    facts = await get_behavior_facts(db)
+    assert len(facts) >= 1
+    assert any(f["id"] == fid for f in facts)
+    assert any("formally" in f["content"] for f in facts)
+
+
+async def test_get_behavior_facts_empty(db: aiosqlite.Connection):
+    """M671: get_behavior_facts returns empty list when none exist."""
+    facts = await get_behavior_facts(db)
+    assert facts == []
+
+
+async def test_behavior_facts_not_in_safety(db: aiosqlite.Connection):
+    """M671: behavior facts don't show up in get_safety_facts and vice versa."""
+    await create_session(db, "s1")
+    await save_fact(db, "Never delete important data", "admin", category="safety")
+    await save_fact(db, "Always use metrics in answers", "admin", category="behavior")
+    safety = await get_safety_facts(db)
+    behavior = await get_behavior_facts(db)
+    assert all("metrics" not in f["content"] for f in safety)
+    assert all("delete" not in f["content"] for f in behavior)
 
 
 async def test_decay_skips_safety_facts(db: aiosqlite.Connection):
