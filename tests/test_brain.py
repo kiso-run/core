@@ -2924,6 +2924,22 @@ class TestPlannerPromptContent:
         assert not any("too long" in e for e in errors)
 
 
+    def test_m701_planner_prompt_knows_all_commands(self):
+        """M701: planner prompt kiso_commands module lists all command families."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["kiso_commands"])
+        for cmd in ("kiso knowledge", "kiso behavior", "kiso cron",
+                     "kiso project", "kiso preset", "kiso session create"):
+            assert cmd in prompt, f"Missing {cmd!r} in planner kiso_commands module"
+
+    def test_m701_planner_self_awareness(self):
+        """M701: planner prompt includes capabilities summary."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", [])
+        for capability in ("knowledge management", "behavioral guidelines",
+                           "cron scheduling", "cross-session projects", "persona presets"):
+            assert capability in prompt, f"Missing {capability!r} in planner core prompt"
+
     def test_m697_planner_prompt_has_parallel_group_instructions(self):
         """M697: planner prompt planning_rules module mentions parallel groups."""
         from kiso.brain import _load_modular_prompt

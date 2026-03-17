@@ -36,7 +36,7 @@ class TestPromptSizes:
     def test_planner_prompt_word_count(self):
         text = ROLES_DIR.joinpath("planner.md").read_text()
         words = len(text.split())
-        assert words <= 1200, f"planner.md has {words} words (max 1200)"
+        assert words <= 1500, f"planner.md has {words} words (max 1500)"
 
     def test_messenger_prompt_word_count(self):
         text = ROLES_DIR.joinpath("messenger.md").read_text()
