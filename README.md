@@ -24,6 +24,20 @@ Kiso installs and configures in one command. It's built to be trusted with real 
 
 **Knowledge that doesn't rot.** Curated facts (user/project/tool/general) with confidence scores, decay, consolidation, and session scoping. A curator evaluates learnings before promoting them. Memory stays signal, not noise.
 
+**Knowledge you control.** Add facts directly (`kiso knowledge add "..." --entity my-app --tags python,backend`), import from markdown (`kiso knowledge import context.md`), export for backup or migration. Structured entities, tags, FTS5 search, confidence scoring, and automatic decay keep the knowledge base sharp.
+
+**Parallel execution.** Independent tasks run simultaneously — multiple searches, data fetches, or tool calls execute via asyncio.gather while dependent tasks wait their turn. A 5-source research job takes the time of one source, not five.
+
+**Cross-session projects.** Facts, learnings, and behaviors belong to projects — not to the whole instance. Team A's architecture decisions don't pollute Team B's context. Member and viewer roles control who can act vs. who can observe.
+
+**Behavioral guidelines.** Admin-defined preferences (`kiso behavior add "always use concrete metrics"`) that shape how the bot responds — injected into both planner and messenger. Softer than safety rules, but always present. The bot adapts to your working style.
+
+**Presets.** Install a persona in one command: `kiso preset install performance-marketer`. Bundles tools, skills, knowledge facts, and behavioral rules. Transform a generic instance into a specialized assistant — SEO analyst, backend developer, project manager.
+
+**Cron scheduling.** Recurring tasks via standard cron expressions: `kiso cron add "0 9 * * *" "check competitor prices" --session marketing`. The bot wakes up, executes the full pipeline (plan → exec → review → report), and goes back to sleep.
+
+**Smart replanning.** When a plan fails, the replanner gets a shrinking task budget — forcing focused recovery instead of sprawling retry-everything approaches. Circular replan detection catches infinite loops. The extend_replan mechanism lets the planner request extra attempts when it's close to solving.
+
 **Fail loud.** Missing config → explicit error with the exact field name. No silent defaults, no undocumented fallbacks.
 
 One config file, one database, git-installable skills and connectors each in their own isolated venv, runs in Docker.
@@ -166,24 +180,44 @@ Or use the `--reset` flag to factory-reset during install (keeps config and API 
 ## Usage
 
 ```bash
+# Core
 kiso                      # interactive chat
 kiso msg "hello"          # send a message, get a response, exit
-kiso help                 # show all commands
+kiso cancel               # cancel the active job
+kiso sessions             # list sessions
+kiso session create dev   # create a named session
+
+# Plugins
+kiso tool install search  # install a tool
+kiso skill install seo    # install a markdown skill
+kiso plugin list          # list all installed plugins
+kiso preset install performance-marketer  # install a persona bundle
+
+# Knowledge
+kiso knowledge add "Uses Flask" --entity my-app --tags python
+kiso knowledge list --category project
+kiso knowledge search "database"
+kiso knowledge import context.md
+kiso knowledge export --format md
+
+# Behaviors & Rules
+kiso behavior add "always use metrics"
+kiso rules add "never delete /data"
+
+# Scheduling
+kiso cron add "0 9 * * *" "check competitor prices" --session marketing
+kiso cron list
+kiso cron disable <id>
+
+# Projects
+kiso project create my-app --description "Main SaaS product"
+kiso project bind dev my-app
+kiso project add-member bob --project my-app --role viewer
+
+# System
+kiso env set KEY VALUE    # set a deploy secret
 kiso logs                 # follow container logs
 kiso status               # check if running + healthy
-kiso health               # hit /health endpoint
-kiso restart              # restart the container
-kiso down                 # stop
-kiso up                   # start
-kiso shell                # bash inside the container
-kiso skill install search # install a skill
-kiso env set KEY VALUE    # set a deploy secret
-kiso env reload           # hot-reload secrets
-kiso cancel               # cancel the active job in current session
-kiso cancel <session>     # cancel a specific session's job
-kiso rules list           # show safety rules
-kiso rules add "..."      # add a safety rule
-kiso rules remove <id>    # remove a safety rule
 ```
 
 Users can share credentials during conversation — the planner extracts them as **ephemeral secrets** (in-memory only, lost on worker shutdown). See [security.md — Secrets](docs/security.md#5-secrets).
