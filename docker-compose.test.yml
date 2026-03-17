@@ -15,8 +15,7 @@ services:
       - path: .env
         required: true
     volumes:
-      - playwright-cache:/root/.cache/ms-playwright
-      - uv-tool-cache:/root/.cache/uv
+      - dep-cache:/root/.cache
     profiles: [live]
 
   test-functional:
@@ -28,12 +27,10 @@ services:
       - OPENROUTER_API_KEY
       - KISO_LLM_API_KEY
     volumes:
-      # Cache Playwright browser binaries and uv packages across runs.
-      # First run downloads; subsequent runs use cache. The test flow
-      # is identical — kiso tool install still runs fully (git clone,
-      # uv sync, deps.sh) but cached downloads resolve instantly.
-      - playwright-cache:/root/.cache/ms-playwright
-      - uv-tool-cache:/root/.cache/uv
+      # Cache plugin dependency downloads across runs. First run fetches
+      # from network; subsequent runs use cache. The test flow is identical —
+      # kiso tool install still runs fully (git clone, uv sync, deps.sh).
+      - dep-cache:/root/.cache
     profiles: [functional]
 
   test-docker:
@@ -44,5 +41,4 @@ services:
     profiles: [docker]
 
 volumes:
-  playwright-cache:
-  uv-tool-cache:
+  dep-cache:

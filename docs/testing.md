@@ -258,18 +258,19 @@ The output JSON has three sections: `meta` (compression stats), `defs` (unique c
 
 ## Docker Test Caching
 
-Functional and live tests that install tools (e.g., the browser tool) download binaries and Python packages on first run. Docker named volumes cache these across runs:
+Functional and live tests that install tools/connectors download binaries and Python packages on first run. A single Docker named volume (`dep-cache`) caches `~/.cache/` across runs, covering all dependency managers:
 
-| Volume | Caches | Impact |
-|--------|--------|--------|
-| `playwright-cache` | `~/.cache/ms-playwright/` (WebKit binary, ~80MB) | Browser install: ~300s → ~1s |
-| `uv-tool-cache` | `~/.cache/uv/` (Python package downloads) | `uv sync` in tool venvs: ~30s → ~2s |
+| Cache dir | What | Impact |
+|-----------|------|--------|
+| `~/.cache/uv/` | Python package downloads (all tools) | `uv sync`: ~30s → ~2s |
+| `~/.cache/ms-playwright/` | WebKit binary (browser tool) | `playwright install`: ~300s → ~1s |
+| `~/.cache/pip/` | pip packages (if used by deps.sh) | Varies |
 
-The test flow is **identical** to a fresh install — `kiso tool install browser` still runs fully (git clone → uv sync → deps.sh → playwright install webkit). Cached downloads just resolve instantly instead of hitting the network.
+The test flow is **identical** to a fresh install — `kiso tool install <name>` still runs fully (git clone → uv sync → deps.sh). Cached downloads just resolve instantly instead of hitting the network. This works for **all** tools and connectors, not just the browser.
 
 ```bash
-# Reset caches if you need a truly clean first-run experience
-docker volume rm core_playwright-cache core_uv-tool-cache
+# Reset cache if you need a truly clean first-run experience
+docker volume rm core_dep-cache
 ```
 
 Defined in `docker-compose.test.yml` and shared across `test-functional` and `test-live` services.
