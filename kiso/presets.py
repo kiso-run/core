@@ -71,7 +71,7 @@ def validate_preset_manifest(manifest: dict) -> list[str]:
                 if not isinstance(fact, dict):
                     errors.append(f"knowledge.facts[{i}]: must be a table")
                     continue
-                if "content" not in fact or not fact["content"].strip():
+                if "content" not in fact or not isinstance(fact["content"], str) or not fact["content"].strip():
                     errors.append(f"knowledge.facts[{i}]: content is required")
                 cat = fact.get("category", "general")
                 if cat not in _VALID_FACT_CATEGORIES:

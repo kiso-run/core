@@ -453,7 +453,7 @@ async def _cron_scheduler(db, config, app):
                     "username": "cron",
                     "base_url": "",
                 }
-                queue = _ensure_worker(db, config, session)
+                queue = _ensure_worker(session, db, config)
                 await queue.put(msg_payload)
 
                 # Update next_run

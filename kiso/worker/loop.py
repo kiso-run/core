@@ -1538,6 +1538,7 @@ async def _execute_plan(
             log.warning("Config reload failed: %s — using cached config", e)
             fresh_config = config
 
+        needs_sandbox = False
         for idx, task_row in batch:
             perm = revalidate_permissions(
                 fresh_config, username, task_row["type"],
@@ -1554,8 +1555,10 @@ async def _execute_plan(
                 remaining = [dict(t) for t in tasks[idx + 1:]]
                 await _cleanup_plan_outputs(session)
                 return False, None, None, completed, remaining, ctx.plan_outputs
+            if perm.role == "user":
+                needs_sandbox = True
 
-        sandbox_uid = await _ensure_sandbox_user(session) if perm.role == "user" else None
+        sandbox_uid = await _ensure_sandbox_user(session) if needs_sandbox else None
         if sandbox_uid is not None:
             _session_workspace(session, sandbox_uid=sandbox_uid)
         ctx.sandbox_uid = sandbox_uid

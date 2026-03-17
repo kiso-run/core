@@ -530,7 +530,7 @@ def _validate_plan_structure(
     tasks = plan.get("tasks", [])
     if not tasks:
         errors.append("tasks list must not be empty")
-    elif max_tasks and len(tasks) > max_tasks:
+    elif max_tasks is not None and len(tasks) > max_tasks:
         errors.append(f"Plan has {len(tasks)} tasks, max allowed is {max_tasks}")
     return errors, tasks
 
@@ -1238,7 +1238,7 @@ async def run_planner(
         await on_context_ready()
     tools_by_name = {s["name"]: s for s in installed_info}
 
-    max_tasks = max_tasks_override or int(config.settings["max_plan_tasks"])
+    max_tasks = max_tasks_override if max_tasks_override is not None else int(config.settings["max_plan_tasks"])
 
     # M698: inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
