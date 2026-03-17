@@ -3156,25 +3156,6 @@ class TestM82PlannerAskThenAdd:
         assert "Maximum tasks: 11" in user_msg["content"]
 
 
-class TestM698ReplanShrinkingFormula:
-    """M698: dynamic replan task limit formula."""
-
-    @pytest.mark.parametrize("depth,expected", [
-        (0, 20),  # first replan
-        (1, 17),
-        (2, 14),
-        (3, 11),
-        (4, 8),
-        (5, 5),
-        (6, 4),   # floor
-        (10, 4),  # deep replan, floor
-    ])
-    def test_shrinking_formula(self, depth, expected):
-        max_plan_tasks = 20
-        effective = max(4, max_plan_tasks - depth * 3)
-        assert effective == expected
-
-
 # --- Classifier (fast path) ---
 
 

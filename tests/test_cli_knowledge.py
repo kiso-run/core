@@ -41,9 +41,10 @@ class TestKnowledgeList:
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
              mock_http_response({"facts": []}) as mock_req:
             knowledge_list(args)
-        call_kwargs = mock_req.return_value  # MagicMock
-        # Verify request was made (at least called once)
-        assert mock_req.called
+        # Verify category param was passed to httpx.request
+        mock_req.assert_called_once()
+        call_kwargs = mock_req.call_args[1]  # keyword args to httpx.request
+        assert call_kwargs["params"]["category"] == "behavior"
 
 
 class TestKnowledgeAdd:

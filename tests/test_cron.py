@@ -98,32 +98,6 @@ async def test_update_cron_last_run(db):
     assert jobs[0]["next_run"] == "2026-03-18T09:00:00"
 
 
-# --- Croniter integration ---
-
-
-def test_croniter_next_run():
-    """Verify croniter computes correct next_run from a cron expression."""
-    from croniter import croniter
-    base = datetime(2026, 3, 17, 12, 0, 0)
-    cron = croniter("0 9 * * *", base)
-    next_dt = cron.get_next(datetime)
-    assert next_dt == datetime(2026, 3, 18, 9, 0, 0)
-
-
-def test_croniter_every_5_minutes():
-    from croniter import croniter
-    base = datetime(2026, 3, 17, 12, 3, 0)
-    cron = croniter("*/5 * * * *", base)
-    next_dt = cron.get_next(datetime)
-    assert next_dt == datetime(2026, 3, 17, 12, 5, 0)
-
-
-def test_croniter_invalid_expression():
-    from croniter import croniter
-    assert not croniter.is_valid("invalid cron")
-    assert croniter.is_valid("0 9 * * *")
-
-
 # --- M679: _cron_scheduler loop ---
 
 
