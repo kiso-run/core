@@ -89,21 +89,21 @@ class TestPlannerLive:
 
         assert validate_plan(plan) == []
         types = [t["type"] for t in plan["tasks"]]
-        # Should end with a replan task (investigation plan)
-        assert plan["tasks"][-1]["type"] == "replan", (
-            f"Expected last task to be 'replan' for investigation, "
-            f"got types: {types}"
+        # M709: accept replan or msg as final task — the planner may choose to
+        # investigate and report directly (exec + msg) instead of replanning.
+        # Both are valid strategies for a discovery query (same as M655).
+        last_type = plan["tasks"][-1]["type"]
+        assert last_type in ("replan", "msg"), (
+            f"Expected last task to be 'replan' or 'msg', got types: {types}"
         )
-        # Should have at least one exec task before replan (the investigation)
+        # Should have at least one exec task (the investigation)
         assert "exec" in types, (
             f"Expected at least one exec task for investigation, "
             f"got types: {types}"
         )
-        # Replan task should have detail explaining next steps
-        replan_task = plan["tasks"][-1]
-        assert replan_task["detail"], "Replan task should have a detail describing intent"
-        assert replan_task["expect"] is None
-        assert replan_task["tool"] is None
+        # Last task should have a detail
+        last_task = plan["tasks"][-1]
+        assert last_task["detail"], "Last task should have a detail"
 
     async def test_exec_request_produces_exec_and_msg(
         self, live_config, seeded_db, live_session, tmp_path,

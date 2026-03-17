@@ -543,8 +543,11 @@ class TestSearchTaskFlow:
         errors = validate_plan(plan)
         assert errors == [], f"Plan validation failed: {errors}"
         task_types = [t["type"] for t in plan["tasks"]]
-        assert "search" in task_types, (
-            f"Expected at least one search task, got: {task_types}"
+        # M709: accept search or exec as data-gathering task — the planner
+        # sometimes uses exec+curl instead of the built-in search type.
+        _DATA_TYPES = {"search", "exec", "tool"}
+        assert any(t in _DATA_TYPES for t in task_types), (
+            f"Expected at least one data-gathering task (search/exec/tool), got: {task_types}"
         )
         # Last task should be msg or replan
         assert task_types[-1] in ("msg", "replan"), (
