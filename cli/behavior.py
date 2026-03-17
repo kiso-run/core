@@ -39,7 +39,8 @@ def behavior_remove(args: argparse.Namespace) -> None:
     """Remove a behavioral guideline by ID."""
     from cli.plugin_ops import require_admin
     require_admin()
-    resp = cli_delete(args, f"/knowledge/{args.behavior_id}")
+    resp = cli_delete(args, f"/knowledge/{args.behavior_id}",
+                      params={"expected_category": "behavior"})
     data = resp.json()
     if data.get("deleted"):
         print(f"Behavior {args.behavior_id} removed.")

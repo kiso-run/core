@@ -973,10 +973,15 @@ async def add_knowledge(
         kind = body.entity_kind or "concept"
         entity_id = await find_or_create_entity(db, body.entity_name, kind)
 
-    fact_id = await save_fact(
-        db, content, "admin", category=body.category,
-        tags=body.tags, entity_id=entity_id, project_id=body.project_id,
-    )
+    try:
+        fact_id = await save_fact(
+            db, content, "admin", category=body.category,
+            tags=body.tags, entity_id=entity_id, project_id=body.project_id,
+        )
+    except Exception as e:
+        if "FOREIGN KEY constraint" in str(e):
+            raise HTTPException(status_code=400, detail="Invalid project_id — project not found")
+        raise
     return {"id": fact_id, "content": content, "category": body.category}
 
 
@@ -985,18 +990,23 @@ async def delete_knowledge(
     fact_id: int,
     request: Request,
     auth: AuthInfo = Depends(require_auth),
+    expected_category: str | None = None,
 ):
     if auth.token_name != "cli":
         raise HTTPException(status_code=403, detail="Admin access required")
     db = request.app.state.db
 
-    # Don't delete safety rules via this endpoint — use /safety-rules
     cur = await db.execute("SELECT category FROM facts WHERE id = ?", (fact_id,))
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Fact not found")
     if row["category"] == "safety":
         raise HTTPException(status_code=400, detail="Use /safety-rules to manage safety rules")
+    if expected_category and row["category"] != expected_category:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fact {fact_id} is category '{row['category']}', expected '{expected_category}'",
+        )
 
     await db.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
     await db.commit()
