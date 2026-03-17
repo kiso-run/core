@@ -960,6 +960,93 @@ async def delete_knowledge(
     return {"deleted": True, "id": fact_id}
 
 
+# --- M680: Cron management endpoints ---
+
+
+class CronRequest(BaseModel):
+    session: str
+    schedule: str
+    prompt: str
+
+
+@app.get("/cron")
+async def list_cron(
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    session: str | None = None,
+):
+    db = request.app.state.db
+    from kiso.store import list_cron_jobs
+    jobs = await list_cron_jobs(db, session=session)
+    return {"jobs": jobs}
+
+
+@app.post("/cron", status_code=201)
+async def create_cron(
+    body: CronRequest,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+
+    from croniter import croniter
+    if not croniter.is_valid(body.schedule):
+        raise HTTPException(status_code=400, detail=f"Invalid cron expression: {body.schedule}")
+
+    # Verify session exists
+    sess = await get_session(db, body.session)
+    if not sess:
+        await create_session(db, body.session)
+
+    from datetime import datetime
+    now = datetime.now()
+    cron = croniter(body.schedule, now)
+    next_run = cron.get_next(datetime).isoformat()
+
+    from kiso.store import create_cron_job
+    job_id = await create_cron_job(
+        db, body.session, body.schedule, body.prompt, "admin", next_run,
+    )
+    return {"id": job_id, "session": body.session, "schedule": body.schedule, "next_run": next_run}
+
+
+@app.delete("/cron/{job_id}")
+async def delete_cron(
+    job_id: int,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    db = request.app.state.db
+    from kiso.store import delete_cron_job
+    deleted = await delete_cron_job(db, job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Cron job not found")
+    return {"deleted": True, "id": job_id}
+
+
+@app.patch("/cron/{job_id}")
+async def update_cron(
+    job_id: int,
+    request: Request,
+    auth: AuthInfo = Depends(require_auth),
+    enabled: bool | None = None,
+):
+    if auth.token_name != "cli":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if enabled is None:
+        raise HTTPException(status_code=400, detail="Must provide 'enabled' parameter")
+    db = request.app.state.db
+    from kiso.store import update_cron_enabled
+    updated = await update_cron_enabled(db, job_id, enabled)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Cron job not found")
+    return {"id": job_id, "enabled": enabled}
+
+
 @app.get("/admin/stats")
 async def get_stats(
     request: Request,
