@@ -83,3 +83,8 @@ def cli_post(args, path: str, params: dict | None = None, json_body: dict | None
 def cli_delete(args, path: str, params: dict | None = None):
     """Authenticated DELETE request to the kiso server. Exits on error."""
     return _cli_request("DELETE", args, path, params)
+
+
+def cli_patch(args, path: str, params: dict | None = None, json_body: dict | None = None):
+    """Authenticated PATCH request to the kiso server. Exits on error."""
+    return _cli_request("PATCH", args, path, params, json_body=json_body)

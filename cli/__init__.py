@@ -406,6 +406,22 @@ def build_parser() -> argparse.ArgumentParser:
     know_imp_p.add_argument("--category", "-c", help="default category (default: general)")
     know_imp_p.add_argument("--dry-run", action="store_true", help="show what would be imported")
 
+    # --- M681: cron subcommand ---
+    cron_parser = sub.add_parser("cron", help="manage cron jobs")
+    cron_sub = cron_parser.add_subparsers(dest="cron_cmd")
+    cron_sub.add_parser("list", help="list cron jobs").add_argument(
+        "--session", "-s", help="filter by session")
+    cron_add_p = cron_sub.add_parser("add", help="add a cron job")
+    cron_add_p.add_argument("schedule", help="cron expression (e.g. '0 9 * * *')")
+    cron_add_p.add_argument("prompt", help="message to send on each trigger")
+    cron_add_p.add_argument("--session", "-s", required=True, help="target session")
+    cron_sub.add_parser("remove", help="remove a cron job").add_argument(
+        "job_id", type=int, help="cron job ID")
+    cron_sub.add_parser("enable", help="enable a cron job").add_argument(
+        "job_id", type=int, help="cron job ID")
+    cron_sub.add_parser("disable", help="disable a cron job").add_argument(
+        "job_id", type=int, help="cron job ID")
+
     # --- M674: behavior subcommand ---
     beh_parser = sub.add_parser("behavior", help="manage behavioral guidelines")
     beh_sub = beh_parser.add_subparsers(dest="behavior_cmd")
@@ -495,6 +511,19 @@ def main() -> None:
             knowledge_export(args)
         elif args.knowledge_cmd == "import":
             knowledge_import(args)
+    elif args.command == "cron":
+        from cli.cron import cron_add, cron_disable, cron_enable, cron_list, cron_remove
+
+        if args.cron_cmd == "list" or args.cron_cmd is None:
+            cron_list(args)
+        elif args.cron_cmd == "add":
+            cron_add(args)
+        elif args.cron_cmd == "remove":
+            cron_remove(args)
+        elif args.cron_cmd == "enable":
+            cron_enable(args)
+        elif args.cron_cmd == "disable":
+            cron_disable(args)
     elif args.command == "behavior":
         from cli.behavior import behavior_add, behavior_list, behavior_remove
 
