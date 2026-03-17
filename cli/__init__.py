@@ -378,6 +378,25 @@ def build_parser() -> argparse.ArgumentParser:
     rules_rm_p = rules_sub.add_parser("remove", help="remove a safety rule by ID")
     rules_rm_p.add_argument("rule_id", type=int, help="rule ID to remove")
 
+    # --- M673: knowledge subcommand ---
+    know_parser = sub.add_parser("knowledge", help="manage knowledge facts")
+    know_sub = know_parser.add_subparsers(dest="knowledge_cmd")
+    know_list_p = know_sub.add_parser("list", help="list knowledge facts")
+    know_list_p.add_argument("--category", "-c", help="filter by category")
+    know_list_p.add_argument("--entity", "-e", help="filter by entity name")
+    know_list_p.add_argument("--tag", "-t", help="filter by tag")
+    know_list_p.add_argument("--limit", "-n", type=int, default=50, help="max results")
+    know_add_p = know_sub.add_parser("add", help="add a knowledge fact")
+    know_add_p.add_argument("content", help="fact text")
+    know_add_p.add_argument("--category", "-c", default="general", help="fact category")
+    know_add_p.add_argument("--entity", "-e", help="entity name")
+    know_add_p.add_argument("--entity-kind", help="entity kind (default: concept)")
+    know_add_p.add_argument("--tags", "-t", help="comma-separated tags")
+    know_search_p = know_sub.add_parser("search", help="search knowledge")
+    know_search_p.add_argument("query", help="search query")
+    know_rm_p = know_sub.add_parser("remove", help="remove a knowledge fact by ID")
+    know_rm_p.add_argument("fact_id", type=int, help="fact ID to remove")
+
     return parser
 
 
@@ -440,6 +459,17 @@ def main() -> None:
             rules_add(args)
         elif args.rules_cmd == "remove":
             rules_remove(args)
+    elif args.command == "knowledge":
+        from cli.knowledge import knowledge_add, knowledge_list, knowledge_remove, knowledge_search
+
+        if args.knowledge_cmd == "list" or args.knowledge_cmd is None:
+            knowledge_list(args)
+        elif args.knowledge_cmd == "add":
+            knowledge_add(args)
+        elif args.knowledge_cmd == "search":
+            knowledge_search(args)
+        elif args.knowledge_cmd == "remove":
+            knowledge_remove(args)
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()
