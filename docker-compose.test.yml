@@ -14,6 +14,8 @@ services:
     env_file:
       - path: .env
         required: true
+    environment:
+      - UV_LINK_MODE=copy
     volumes:
       - dep-cache:/root/.cache
     profiles: [live]
@@ -26,10 +28,8 @@ services:
     environment:
       - OPENROUTER_API_KEY
       - KISO_LLM_API_KEY
+      - UV_LINK_MODE=copy
     volumes:
-      # Cache plugin dependency downloads across runs. First run fetches
-      # from network; subsequent runs use cache. The test flow is identical —
-      # kiso tool install still runs fully (git clone, uv sync, deps.sh).
       - dep-cache:/root/.cache
     profiles: [functional]
 
@@ -48,6 +48,8 @@ services:
     #   docker compose -f docker-compose.test.yml run --rm test-plugins \
     #     uv run python -m cli.plugin_test_runner browser
     command: uv run python -m cli.plugin_test_runner
+    environment:
+      - UV_LINK_MODE=copy
     volumes:
       - dep-cache:/root/.cache
     profiles: [plugins]
