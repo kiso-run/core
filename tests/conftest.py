@@ -228,6 +228,31 @@ async def db(tmp_path: Path):
 
 
 @pytest_asyncio.fixture()
+async def db_with_session(tmp_path: Path):
+    """Create a temporary database with a pre-created 'sess1' session."""
+    from kiso.store import create_session
+    conn = await init_db(tmp_path / "test.db")
+    await create_session(conn, "sess1")
+    yield conn
+    await conn.close()
+
+
+# --- M706: Shared test helper functions (importable, not fixtures) ---
+
+
+def full_settings(**overrides) -> dict:
+    """Return a complete settings dict with briefer disabled by default."""
+    from kiso.config import SETTINGS_DEFAULTS
+    return {**SETTINGS_DEFAULTS, "briefer_enabled": False, **overrides}
+
+
+def full_models(**overrides) -> dict:
+    """Return a complete models dict with optional overrides."""
+    from kiso.config import MODEL_DEFAULTS
+    return {**MODEL_DEFAULTS, **overrides}
+
+
+@pytest_asyncio.fixture()
 async def client(tmp_path: Path, test_config_path: Path):
     """Async httpx client wired to the FastAPI app via ASGI transport.
 

@@ -423,17 +423,6 @@ def _exec_msg_plan():
     })
 
 
-def _make_config():
-    return Config(
-        tokens={"cli": "test"},
-        providers={"openrouter": Provider(base_url="https://test.local/v1")},
-        users={},
-        models=dict(MODEL_DEFAULTS),
-        settings={**SETTINGS_DEFAULTS, "briefer_enabled": False},
-        raw={},
-    )
-
-
 @pytest.mark.asyncio
 class TestM670MsgOnlyFreshInstanceProposal:
     """M670: msg-only plan + no tools installed → install_proposal=True."""

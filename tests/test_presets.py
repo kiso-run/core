@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import textwrap
 from pathlib import Path
@@ -11,29 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kiso.presets import PresetManifest, load_preset, validate_preset_manifest
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _mock_config():
-    cfg = MagicMock()
-    cfg.tokens = {"cli": "tok-abc"}
-    return cfg
-
-
-def _make_args(**kwargs):
-    defaults = {"api": "http://localhost:8333"}
-    defaults.update(kwargs)
-    return argparse.Namespace(**defaults)
-
-
-def _mock_http(return_value):
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = return_value
-    mock_resp.raise_for_status = MagicMock()
-    return patch("httpx.request", return_value=mock_resp)
+from tests._cli_test_helpers import mock_cli_config, make_cli_args, mock_http_response
 
 
 _VALID_TOML = """\
@@ -242,8 +219,8 @@ class TestInstallPreset:
             resp.raise_for_status = MagicMock()
             return resp
 
-        args = _make_args()
-        with patch("kiso.config.load_config", return_value=_mock_config()), \
+        args = make_cli_args()
+        with patch("kiso.config.load_config", return_value=mock_cli_config()), \
              patch("httpx.request", side_effect=mock_request), \
              patch("cli.preset_ops.PRESETS_DIR", tmp_path / "presets"):
             # Patch the _installed_path to use tmp
@@ -261,7 +238,7 @@ class TestInstallPreset:
             name="dry-test", version="1.0.0", description="Dry",
             tools=["browser"], behaviors=["Be concise always"],
         )
-        args = _make_args()
+        args = make_cli_args()
         from cli.preset_ops import install_preset
         install_preset(args, manifest, dry_run=True)
         out = capsys.readouterr().out
@@ -280,7 +257,7 @@ class TestInstallPreset:
         tracking_file = tracking_dir / "dup.installed.json"
         tracking_file.write_text('{"name": "dup"}', encoding="utf-8")
 
-        args = _make_args()
+        args = make_cli_args()
         with patch("cli.preset_ops._installed_path", return_value=tracking_file), \
              patch("cli.preset_ops._load_installed", return_value={"name": "dup"}):
             install_preset(args, manifest)
@@ -308,8 +285,8 @@ class TestRemovePreset:
             resp.raise_for_status = MagicMock()
             return resp
 
-        args = _make_args()
-        with patch("kiso.config.load_config", return_value=_mock_config()), \
+        args = make_cli_args()
+        with patch("kiso.config.load_config", return_value=mock_cli_config()), \
              patch("httpx.request", side_effect=mock_request), \
              patch("cli.preset_ops._installed_path", return_value=tracking_file), \
              patch("cli.preset_ops._load_installed", return_value=tracking_data):
@@ -323,7 +300,7 @@ class TestRemovePreset:
 
     def test_remove_not_installed(self, capsys):
         from cli.preset_ops import remove_preset
-        args = _make_args()
+        args = make_cli_args()
         with patch("cli.preset_ops._load_installed", return_value=None), \
              pytest.raises(SystemExit):
             remove_preset(args, "nope")
@@ -362,7 +339,7 @@ class TestPresetListCLI:
             {"name": "performance-marketer", "description": "Marketing"},
             {"name": "seo-specialist", "description": "SEO"},
         ]}
-        args = _make_args()
+        args = make_cli_args()
         with patch("cli.preset.fetch_registry", return_value=reg):
             preset_list(args)
         out = capsys.readouterr().out
@@ -371,7 +348,7 @@ class TestPresetListCLI:
 
     def test_list_empty_registry(self, capsys):
         from cli.preset import preset_list
-        args = _make_args()
+        args = make_cli_args()
         with patch("cli.preset.fetch_registry", return_value={"presets": []}):
             preset_list(args)
         assert "No presets" in capsys.readouterr().out
@@ -384,7 +361,7 @@ class TestPresetSearchCLI:
             {"name": "performance-marketer", "description": "Marketing"},
             {"name": "seo-specialist", "description": "SEO"},
         ]}
-        args = _make_args(query="seo")
+        args = make_cli_args(query="seo")
         with patch("cli.preset.fetch_registry", return_value=reg):
             preset_search(args)
         out = capsys.readouterr().out
@@ -394,7 +371,7 @@ class TestPresetSearchCLI:
     def test_search_no_results(self, capsys):
         from cli.preset import preset_search
         reg = {"presets": [{"name": "a", "description": "b"}]}
-        args = _make_args(query="nonexistent")
+        args = make_cli_args(query="nonexistent")
         with patch("cli.preset.fetch_registry", return_value=reg):
             preset_search(args)
         assert "No presets matching" in capsys.readouterr().out
@@ -405,7 +382,7 @@ class TestPresetInstallCLI:
         from cli.preset import preset_install
 
         path = _write_preset_toml(tmp_path)
-        args = _make_args(target=str(path), dry_run=True)
+        args = make_cli_args(target=str(path), dry_run=True)
 
         with patch("cli.plugin_ops.require_admin"):
             preset_install(args)
@@ -417,7 +394,7 @@ class TestPresetInstallCLI:
         from cli.preset import preset_install
 
         _write_preset_toml(tmp_path)
-        args = _make_args(target=str(tmp_path), dry_run=True)
+        args = make_cli_args(target=str(tmp_path), dry_run=True)
 
         with patch("cli.plugin_ops.require_admin"):
             preset_install(args)
@@ -427,7 +404,7 @@ class TestPresetInstallCLI:
     def test_install_registry_name_shows_instructions(self, capsys):
         from cli.preset import preset_install
         reg = {"presets": [{"name": "seo-specialist", "description": "SEO"}]}
-        args = _make_args(target="seo-specialist", dry_run=False)
+        args = make_cli_args(target="seo-specialist", dry_run=False)
         with patch("cli.plugin_ops.require_admin"), \
              patch("cli.preset.fetch_registry", return_value=reg), \
              pytest.raises(SystemExit):
@@ -438,7 +415,7 @@ class TestPresetInstallCLI:
     def test_install_unknown_name_errors(self, capsys):
         from cli.preset import preset_install
         reg = {"presets": []}
-        args = _make_args(target="nonexistent", dry_run=False)
+        args = make_cli_args(target="nonexistent", dry_run=False)
         with patch("cli.plugin_ops.require_admin"), \
              patch("cli.preset.fetch_registry", return_value=reg), \
              pytest.raises(SystemExit):
@@ -450,7 +427,7 @@ class TestPresetShowCLI:
     def test_show_local_file(self, tmp_path, capsys):
         from cli.preset import preset_show
         path = _write_preset_toml(tmp_path)
-        args = _make_args(name=str(path))
+        args = make_cli_args(name=str(path))
         preset_show(args)
         out = capsys.readouterr().out
         assert "test-preset" in out
@@ -463,7 +440,7 @@ class TestPresetShowCLI:
             "tools": ["browser"], "skills": [], "connectors": [],
             "fact_ids": [1, 2], "behavior_ids": [3],
         }
-        args = _make_args(name="my-preset")
+        args = make_cli_args(name="my-preset")
         with patch("cli.preset_ops._load_installed", return_value=tracking):
             preset_show(args)
         out = capsys.readouterr().out
@@ -474,7 +451,7 @@ class TestPresetShowCLI:
     def test_show_registry(self, capsys):
         from cli.preset import preset_show
         reg = {"presets": [{"name": "seo-specialist", "description": "SEO stuff"}]}
-        args = _make_args(name="seo-specialist")
+        args = make_cli_args(name="seo-specialist")
         with patch("cli.preset_ops._load_installed", return_value=None), \
              patch("cli.preset.fetch_registry", return_value=reg):
             preset_show(args)
@@ -485,7 +462,7 @@ class TestPresetShowCLI:
     def test_show_not_found(self, capsys):
         from cli.preset import preset_show
         reg = {"presets": []}
-        args = _make_args(name="nope")
+        args = make_cli_args(name="nope")
         with patch("cli.preset_ops._load_installed", return_value=None), \
              patch("cli.preset.fetch_registry", return_value=reg), \
              pytest.raises(SystemExit):
@@ -496,7 +473,7 @@ class TestPresetShowCLI:
 class TestPresetInstalledCLI:
     def test_no_presets(self, capsys):
         from cli.preset import preset_installed
-        args = _make_args()
+        args = make_cli_args()
         with patch("cli.preset_ops.list_installed_presets", return_value=[]):
             preset_installed(args)
         assert "No presets installed" in capsys.readouterr().out
@@ -507,7 +484,7 @@ class TestPresetInstalledCLI:
             {"name": "a", "version": "1.0.0", "description": "Alpha",
              "fact_ids": [1, 2], "behavior_ids": [3], "tools": ["browser"], "skills": []},
         ]
-        args = _make_args()
+        args = make_cli_args()
         with patch("cli.preset_ops.list_installed_presets", return_value=presets):
             preset_installed(args)
         out = capsys.readouterr().out
@@ -520,7 +497,7 @@ class TestPresetInstalledCLI:
 class TestPresetRemoveCLI:
     def test_remove_calls_ops(self, capsys):
         from cli.preset import preset_remove
-        args = _make_args(name="test-rm")
+        args = make_cli_args(name="test-rm")
         with patch("cli.plugin_ops.require_admin"), \
              patch("cli.preset_ops.remove_preset") as mock_rm:
             preset_remove(args)

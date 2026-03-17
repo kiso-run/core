@@ -8,6 +8,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from kiso.knowledge_import import parse_knowledge_markdown, ImportedFact
+from tests._cli_test_helpers import mock_cli_config
 
 
 class TestParseKnowledgeMarkdown:
@@ -117,11 +118,6 @@ class TestParseKnowledgeMarkdown:
 
 
 class TestKnowledgeImportCLI:
-    def _mock_config(self):
-        cfg = MagicMock()
-        cfg.tokens = {"cli": "tok-abc"}
-        return cfg
-
     def test_dry_run(self, capsys, tmp_path):
         from cli.knowledge import knowledge_import
         md_file = tmp_path / "context.md"
@@ -149,7 +145,7 @@ class TestKnowledgeImportCLI:
         mock_resp.json.return_value = {"id": 1, "content": "x", "category": "general"}
         mock_resp.raise_for_status = MagicMock()
         with patch("cli.plugin_ops.require_admin"), \
-             patch("kiso.config.load_config", return_value=self._mock_config()), \
+             patch("kiso.config.load_config", return_value=mock_cli_config()), \
              patch("httpx.request", return_value=mock_resp) as mock_req:
             knowledge_import(args)
         # Two facts → two POST calls
