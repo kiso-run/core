@@ -20,7 +20,7 @@ from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_ar
 from kiso.store import (
     _normalize_entity_name,
     get_all_entities, get_all_tags, get_facts, get_pending_items,
-    get_recent_messages, get_safety_facts, get_session, search_facts,
+    get_behavior_facts, get_recent_messages, get_safety_facts, get_session, search_facts,
     search_facts_by_entity, search_facts_by_tags, search_facts_scored,
 )
 from kiso.sysenv import get_system_env, build_system_env_section
@@ -1188,6 +1188,11 @@ async def build_planner_messages(
     _add_section(context_parts, "Safety Rules (MUST OBEY)",
                  _join_or_empty(safety_facts, lambda f: f"- {f['content']}"))
 
+    # M675: always-inject behavior facts (soft guidelines, not hard constraints)
+    behavior_facts = await get_behavior_facts(db)
+    _add_section(context_parts, "Behavior Guidelines (follow these preferences)",
+                 _join_or_empty(behavior_facts, lambda f: f"- {f['content']}"))
+
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")
 
@@ -2101,6 +2106,7 @@ def build_messenger_messages(
     recent_messages: list[dict] | None = None,
     user_message: str = "",
     briefing_context: str | None = None,
+    behavior_rules: list[str] | None = None,
 ) -> list[dict]:
     """Build the message list for the messenger LLM call.
 
@@ -2145,6 +2151,10 @@ def build_messenger_messages(
         context_parts.append(
             f"## Recent Conversation\n{fence_content(_format_message_history(recent_messages), 'MESSAGES')}"
         )
+    # M675: inject behavioral guidelines
+    if behavior_rules:
+        _add_section(context_parts, "Behavior Guidelines (follow these preferences)",
+                     "\n".join(f"- {r}" for r in behavior_rules))
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
     context_parts.append(f"## Task\n{detail}")
     return _build_messages(system_prompt, "\n\n".join(context_parts))
@@ -2183,10 +2193,13 @@ async def run_messenger(
     if include_recent:
         context_limit = int(config.settings["context_messages"])
         recent = await get_recent_messages(db, session, limit=context_limit)
+    # M675: fetch behavior guidelines for messenger
+    behavior_facts = await get_behavior_facts(db)
+    behavior_rules = [f["content"] for f in behavior_facts] if behavior_facts else None
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
         recent_messages=recent or None, user_message=user_message,
-        briefing_context=briefing_context,
+        briefing_context=briefing_context, behavior_rules=behavior_rules,
     )
     # M480: retry messenger LLM call up to 2 times on transient errors.
     # M666: on SSE stall, switch to fallback model immediately (don't waste retries).

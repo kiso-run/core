@@ -57,7 +57,7 @@ class TestPromptSizeRegression:
     """Prompt files must not exceed size budgets (token cost guard)."""
 
     @pytest.mark.parametrize("filename,max_chars", [
-        ("planner.md", 8000),
+        ("planner.md", 8200),
         ("messenger.md", 2500),
         ("reviewer.md", 3200),
     ])

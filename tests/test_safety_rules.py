@@ -71,6 +71,65 @@ async def test_safety_facts_always_injected_into_planner(db, test_config):
 
 
 # ---------------------------------------------------------------------------
+# M675: Behavior facts injected into planner and messenger
+# ---------------------------------------------------------------------------
+
+
+async def test_behavior_facts_injected_into_planner(db, test_config):
+    """M675: Behavior facts appear in planner context."""
+    from kiso.store import save_fact, save_message, create_session
+    from kiso.brain import build_planner_messages
+
+    await create_session(db, "behavior-test")
+    await save_fact(db, "Always respond formally", "admin", category="behavior")
+    await save_message(db, "behavior-test", "testuser", "user", "do something", trusted=True)
+
+    messages, _, _ = await build_planner_messages(
+        db, test_config, "behavior-test", "user", "do something",
+    )
+    all_text = " ".join(m.get("content", "") for m in messages)
+    assert "Always respond formally" in all_text
+    assert "Behavior Guidelines" in all_text
+
+
+def test_behavior_rules_in_messenger_messages():
+    """M675: Behavior rules appear in messenger context when provided."""
+    from kiso.brain import build_messenger_messages
+    from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
+
+    config = Config(
+        tokens={"cli": "tok"}, raw={}, users={},
+        providers={"openrouter": Provider(base_url="https://test.local/v1")},
+        models=dict(MODEL_DEFAULTS),
+        settings={**SETTINGS_DEFAULTS},
+    )
+    messages = build_messenger_messages(
+        config, "", [], "Answer in English. hello",
+        behavior_rules=["Always respond formally", "Use metrics in answers"],
+    )
+    all_text = " ".join(m.get("content", "") for m in messages)
+    assert "Always respond formally" in all_text
+    assert "Use metrics in answers" in all_text
+    assert "Behavior Guidelines" in all_text
+
+
+def test_no_behavior_rules_no_section():
+    """M675: When no behavior rules, the section is omitted."""
+    from kiso.brain import build_messenger_messages
+    from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
+
+    config = Config(
+        tokens={"cli": "tok"}, raw={}, users={},
+        providers={"openrouter": Provider(base_url="https://test.local/v1")},
+        models=dict(MODEL_DEFAULTS),
+        settings={**SETTINGS_DEFAULTS},
+    )
+    messages = build_messenger_messages(config, "", [], "Answer in English. hello")
+    all_text = " ".join(m.get("content", "") for m in messages)
+    assert "Behavior Guidelines" not in all_text
+
+
+# ---------------------------------------------------------------------------
 # M416-3: Safety facts survive decay/cleanup
 # ---------------------------------------------------------------------------
 
