@@ -2192,12 +2192,16 @@ async def _run_planning_loop(
                      attempt, max_attempts, session, reason)
 
         replan_usage_idx = get_usage_index()
+        # M698: shrink task limit at deeper replan depths — forces focused plans.
+        _max_plan_tasks = int(config.settings["max_plan_tasks"])
+        _effective_max = max(4, _max_plan_tasks - replan_depth * 3)
         try:
             new_plan = await run_planner(
                 db, config, session, user_role, enriched_message,
                 user_tools=user_tools,
                 on_retry=_on_replan_retry,
                 is_replan=True,
+                max_tasks_override=_effective_max,
             )
         except PlanError as e:
             log.error("Replan failed: %s", e)

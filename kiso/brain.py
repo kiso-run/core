@@ -1208,6 +1208,7 @@ async def run_planner(
     on_retry: Callable[[int, int, str], None] | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
+    max_tasks_override: int | None = None,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -1218,6 +1219,8 @@ async def run_planner(
             panels while the planner is still running.
         on_retry: Optional callback(attempt, max_attempts, reason) called
             before each retry attempt (M297).
+        max_tasks_override: M698 — override max_plan_tasks (used by replan
+            shrinking to reduce the limit at deeper replan depths).
 
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
@@ -1230,7 +1233,15 @@ async def run_planner(
         await on_context_ready()
     tools_by_name = {s["name"]: s for s in installed_info}
 
-    max_tasks = int(config.settings["max_plan_tasks"])
+    max_tasks = max_tasks_override or int(config.settings["max_plan_tasks"])
+
+    # M698: inject task budget into planner context so LLM knows the limit.
+    budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
+    for msg in reversed(messages):
+        if msg["role"] == "user":
+            msg["content"] += budget_line
+            break
+
     fallback = config.settings.get("planner_fallback_model") or None
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,

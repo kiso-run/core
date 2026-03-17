@@ -3127,6 +3127,59 @@ class TestM82PlannerAskThenAdd:
             plan = await run_planner(db, config, "sess1", "user", "hello")
         assert plan["goal"]
 
+    async def test_m698_max_tasks_override(self, db, config):
+        """M698: max_tasks_override limits plan size."""
+        big_plan = json.dumps({
+            "goal": "test", "secrets": None, "extend_replan": None,
+            "needs_install": None,
+            "tasks": [
+                {"type": "exec", "detail": f"step {i}", "tool": None,
+                 "args": None, "expect": "ok"}
+                for i in range(6)
+            ] + [{"type": "msg", "detail": "Answer in English. report results",
+                  "tool": None, "args": None, "expect": None}],
+        })
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=big_plan):
+            # 7 tasks with max_tasks_override=5 → should fail validation
+            with pytest.raises(PlanError, match="max allowed is 5"):
+                await run_planner(db, config, "sess1", "admin", "hello",
+                                  max_tasks_override=5)
+
+    async def test_m698_budget_injected_in_context(self, db, config):
+        """M698: task budget line appears in the planner's user message."""
+        captured: list[dict] = []
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.extend(messages)
+            return _MSG_PLAN_FOR_USER
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_planner(db, config, "sess1", "admin", "hello",
+                              max_tasks_override=11)
+
+        user_msg = next((m for m in captured if m["role"] == "user"), None)
+        assert user_msg is not None
+        assert "Maximum tasks: 11" in user_msg["content"]
+
+
+class TestM698ReplanShrinkingFormula:
+    """M698: dynamic replan task limit formula."""
+
+    @pytest.mark.parametrize("depth,expected", [
+        (0, 20),  # first replan
+        (1, 17),
+        (2, 14),
+        (3, 11),
+        (4, 8),
+        (5, 5),
+        (6, 4),   # floor
+        (10, 4),  # deep replan, floor
+    ])
+    def test_shrinking_formula(self, depth, expected):
+        max_plan_tasks = 20
+        effective = max(4, max_plan_tasks - depth * 3)
+        assert effective == expected
+
 
 # --- Classifier (fast path) ---
 
