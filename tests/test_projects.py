@@ -6,15 +6,18 @@ import pytest
 
 from kiso.store import (
     add_project_member,
+    bind_session_to_project,
     create_project,
     create_session,
     delete_project,
     get_project,
+    get_session_project_id,
     get_user_project_role,
     init_db,
     list_project_members,
     list_projects,
     remove_project_member,
+    unbind_session_from_project,
 )
 
 
@@ -135,3 +138,26 @@ async def test_user_in_multiple_projects(db):
     assert len(projects) == 2
     names = {p["name"] for p in projects}
     assert names == {"proj-a", "proj-b"}
+
+
+# --- M684: Session-project binding ---
+
+
+async def test_bind_session_to_project(db):
+    pid = await create_project(db, "bind-test", "alice")
+    await create_session(db, "sess1")
+    await bind_session_to_project(db, "sess1", pid)
+    assert await get_session_project_id(db, "sess1") == pid
+
+
+async def test_unbind_session_from_project(db):
+    pid = await create_project(db, "unbind-test", "alice")
+    await create_session(db, "sess1")
+    await bind_session_to_project(db, "sess1", pid)
+    await unbind_session_from_project(db, "sess1")
+    assert await get_session_project_id(db, "sess1") is None
+
+
+async def test_session_project_id_default_none(db):
+    await create_session(db, "sess1")
+    assert await get_session_project_id(db, "sess1") is None

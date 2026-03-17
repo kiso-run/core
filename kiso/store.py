@@ -345,6 +345,18 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         await db.execute("ALTER TABLE tasks ADD COLUMN parallel_group INTEGER")
         await db.commit()
 
+    # M684: add project_id to sessions and facts tables
+    cur = await db.execute("PRAGMA table_info(sessions)")
+    sess_cols = {row[1] for row in await cur.fetchall()}
+    if "project_id" not in sess_cols:
+        await db.execute("ALTER TABLE sessions ADD COLUMN project_id INTEGER REFERENCES projects(id)")
+        await db.commit()
+    cur = await db.execute("PRAGMA table_info(facts)")
+    fact_cols_684 = {row[1] for row in await cur.fetchall()}
+    if "project_id" not in fact_cols_684:
+        await db.execute("ALTER TABLE facts ADD COLUMN project_id INTEGER REFERENCES projects(id)")
+        await db.commit()
+
     # M682: add source column to messages table
     cur = await db.execute("PRAGMA table_info(messages)")
     msg_cols = {row[1] for row in await cur.fetchall()}
@@ -1740,6 +1752,34 @@ async def list_project_members(db: aiosqlite.Connection, project_id: int) -> lis
         (project_id,),
     )
     return [dict(r) for r in await cur.fetchall()]
+
+
+async def bind_session_to_project(
+    db: aiosqlite.Connection, session: str, project_id: int,
+) -> None:
+    """M684: Associate a session with a project."""
+    await db.execute(
+        "UPDATE sessions SET project_id = ? WHERE session = ?",
+        (project_id, session),
+    )
+    await db.commit()
+
+
+async def unbind_session_from_project(db: aiosqlite.Connection, session: str) -> None:
+    """M684: Remove project association from a session."""
+    await db.execute(
+        "UPDATE sessions SET project_id = NULL WHERE session = ?", (session,),
+    )
+    await db.commit()
+
+
+async def get_session_project_id(db: aiosqlite.Connection, session: str) -> int | None:
+    """M684: Return the project_id for a session, or None."""
+    cur = await db.execute(
+        "SELECT project_id FROM sessions WHERE session = ?", (session,),
+    )
+    row = await cur.fetchone()
+    return row["project_id"] if row else None
 
 
 async def get_user_project_role(
