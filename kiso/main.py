@@ -435,12 +435,18 @@ async def _cron_scheduler(db, config, app):
             now = datetime.now()
             now_iso = now.isoformat()
             due_jobs = await get_due_cron_jobs(db, now_iso)
-            for job in due_jobs:
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Cron scheduler: failed to fetch due jobs")
+            continue
+
+        for job in due_jobs:
+            try:
                 session = job["session"]
                 prompt = job["prompt"]
                 log.info("Cron job %d fired: session=%s prompt=%r", job["id"], session, prompt[:80])
 
-                # Save message and enqueue (same as POST /msg but internal)
                 msg_id = await save_message(
                     db, session, "cron", "system", prompt,
                     trusted=True, processed=False, source="cron",
@@ -456,14 +462,13 @@ async def _cron_scheduler(db, config, app):
                 queue = _ensure_worker(session, db, config)
                 await queue.put(msg_payload)
 
-                # Update next_run
                 cron = croniter(job["schedule"], now)
                 next_dt = cron.get_next(datetime)
                 await update_cron_last_run(db, job["id"], now_iso, next_dt.isoformat())
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("Cron scheduler error (will retry next cycle)")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Cron job %d failed (will retry next cycle)", job["id"])
 
 
 @asynccontextmanager
