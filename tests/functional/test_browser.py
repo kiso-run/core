@@ -23,9 +23,7 @@ from tests.functional.conftest import (
 
 pytestmark = pytest.mark.functional
 
-# Browser install + navigation can be slow — first-time install downloads
-# WebKit binary via `playwright install webkit` which can take minutes.
-BROWSER_TIMEOUT = 900
+from tests.conftest import LLM_INSTALL_TIMEOUT as BROWSER_TIMEOUT
 
 
 def _browser_installed() -> bool:

@@ -196,6 +196,11 @@ webhook_max_payload       = 1048576
 AUTH_HEADER = {"Authorization": "Bearer test-secret-token"}
 DISCORD_AUTH_HEADER = {"Authorization": "Bearer discord-bot-token"}
 
+# Centralized test timeouts (seconds). Override per-test if needed.
+LLM_TEST_TIMEOUT = 120       # single plan cycle (~6 LLM calls)
+LLM_REPLAN_TIMEOUT = 300     # replan cycle (~12+ LLM calls)
+LLM_INSTALL_TIMEOUT = 900    # tool install (network download + LLM)
+
 
 @pytest.fixture(autouse=True)
 def reset_rate_limiter():

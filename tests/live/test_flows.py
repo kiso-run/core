@@ -29,7 +29,7 @@ from kiso.worker import _build_replan_context, _msg_task
 
 pytestmark = pytest.mark.llm_live
 
-TIMEOUT = 90
+from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
 
 
 class TestPlanAndExecuteMsg:

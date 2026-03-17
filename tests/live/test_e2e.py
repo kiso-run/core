@@ -20,7 +20,7 @@ from kiso.worker import _execute_plan, _review_task
 
 pytestmark = pytest.mark.llm_live
 
-TIMEOUT = 120
+from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
 
 
 class TestSimpleQuestionE2E:

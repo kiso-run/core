@@ -29,7 +29,7 @@ from kiso.worker import _apply_curator_result, _execute_plan, _process_message
 
 pytestmark = pytest.mark.llm_live
 
-TIMEOUT = 120
+from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT, LLM_REPLAN_TIMEOUT
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +285,7 @@ class TestFullPipeline:
                     cancel_event,
                     llm_timeout=60, max_replan_depth=3,
                 ),
-                timeout=TIMEOUT,
+                timeout=LLM_REPLAN_TIMEOUT,
             )
 
         plan = await get_plan_for_session(seeded_db, live_session)
@@ -321,7 +321,7 @@ class TestFullPipeline:
                     cancel_event,
                     llm_timeout=60, max_replan_depth=3,
                 ),
-                timeout=TIMEOUT,
+                timeout=LLM_REPLAN_TIMEOUT,
             )
 
         plan = await get_plan_for_session(seeded_db, live_session)
@@ -411,7 +411,7 @@ class TestReplanRecovery:
                     cancel_event,
                     llm_timeout=60, max_replan_depth=3,
                 ),
-                timeout=TIMEOUT,
+                timeout=LLM_REPLAN_TIMEOUT,
             )
 
         # Query all plans for this session
@@ -699,7 +699,7 @@ class TestPerStepTokenTracking:
                     cancel_event,
                     llm_timeout=60, max_replan_depth=3,
                 ),
-                timeout=TIMEOUT,
+                timeout=LLM_REPLAN_TIMEOUT,
             )
 
         plan = await get_plan_for_session(seeded_db, live_session)
@@ -756,7 +756,7 @@ class TestPerStepTokenTracking:
                     cancel_event,
                     llm_timeout=60, max_replan_depth=3,
                 ),
-                timeout=TIMEOUT,
+                timeout=LLM_REPLAN_TIMEOUT,
             )
 
         plan = await get_plan_for_session(seeded_db, live_session)
