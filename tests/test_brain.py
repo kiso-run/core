@@ -2891,6 +2891,15 @@ class TestPlannerPromptContent:
         assert not any("too long" in e for e in errors)
 
 
+    def test_m697_planner_prompt_has_parallel_group_instructions(self):
+        """M697: planner prompt planning_rules module mentions parallel groups."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["planning_rules"])
+        assert "group" in prompt.lower()
+        assert "parallel" in prompt.lower()
+        assert "simultaneous" in prompt.lower() or "parallel execution" in prompt.lower()
+
+
 class TestM166ValidatePlanSkillArgs:
     """M166: validate_plan checks tool args against schema."""
 

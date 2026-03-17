@@ -40,6 +40,8 @@ Rules:
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks.
 - Msg detail: follow the "Answer in {lang}." rule (line 7). Rest in English. Only communication intent. Never include plan strategy, overview, or reasoning.
+- **Parallel groups** (optional): set `group` (positive integer) on consecutive exec/search/tool tasks to run them simultaneously. Same group number = parallel execution. Rules: msg/replan cannot be grouped. Grouped tasks must be independent (no task uses another's output). At least 2 tasks per group. After a parallel group the next task sees ALL their outputs.
+  Multi-source research: group independent searches. WRONG: 3 sequential searches. RIGHT: 3 searches with `group: 1` → 3× faster.
 
 <!-- MODULE: tools_rules -->
 Tools efficiency:
