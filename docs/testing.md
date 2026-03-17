@@ -255,3 +255,21 @@ The output JSON has three sections: `meta` (compression stats), `defs` (unique c
 - **Token counts**: `in_tok`/`out_tok` on events show per-call cost; large `out_tok` on a worker call (should be ~5-20 tokens) indicates the model generated explanations instead of just a command
 - **Event sequence**: the `events` array shows the exact order of role calls — useful for tracing planner → worker → reviewer → replan chains
 - **Compression ratio**: `meta.stats` shows before/after — typical sessions compress 85-95%
+
+## Docker Test Caching
+
+Functional and live tests that install tools (e.g., the browser tool) download binaries and Python packages on first run. Docker named volumes cache these across runs:
+
+| Volume | Caches | Impact |
+|--------|--------|--------|
+| `playwright-cache` | `~/.cache/ms-playwright/` (WebKit binary, ~80MB) | Browser install: ~300s → ~1s |
+| `uv-tool-cache` | `~/.cache/uv/` (Python package downloads) | `uv sync` in tool venvs: ~30s → ~2s |
+
+The test flow is **identical** to a fresh install — `kiso tool install browser` still runs fully (git clone → uv sync → deps.sh → playwright install webkit). Cached downloads just resolve instantly instead of hitting the network.
+
+```bash
+# Reset caches if you need a truly clean first-run experience
+docker volume rm core_playwright-cache core_uv-tool-cache
+```
+
+Defined in `docker-compose.test.yml` and shared across `test-functional` and `test-live` services.
