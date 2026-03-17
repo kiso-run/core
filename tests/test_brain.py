@@ -2737,6 +2737,12 @@ class TestM369MessengerSanitizer:
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "no JSON, XML" in prompt or "Never emit XML" in prompt
 
+    def test_m714_messenger_prompt_no_plan_description(self):
+        """M714: messenger must not describe future actions or explain the plan."""
+        prompt = (_ROLES_DIR / "messenger.md").read_text()
+        assert "WILL do" in prompt or "will do" in prompt.lower()
+        assert "only report" in prompt.lower()
+
 
 # --- Exec Translator ---
 
