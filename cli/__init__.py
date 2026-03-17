@@ -396,6 +396,10 @@ def build_parser() -> argparse.ArgumentParser:
     know_search_p.add_argument("query", help="search query")
     know_rm_p = know_sub.add_parser("remove", help="remove a knowledge fact by ID")
     know_rm_p.add_argument("fact_id", type=int, help="fact ID to remove")
+    know_imp_p = know_sub.add_parser("import", help="import knowledge from markdown file")
+    know_imp_p.add_argument("file", help="markdown file path")
+    know_imp_p.add_argument("--category", "-c", help="default category (default: general)")
+    know_imp_p.add_argument("--dry-run", action="store_true", help="show what would be imported")
 
     # --- M674: behavior subcommand ---
     beh_parser = sub.add_parser("behavior", help="manage behavioral guidelines")
@@ -469,7 +473,10 @@ def main() -> None:
         elif args.rules_cmd == "remove":
             rules_remove(args)
     elif args.command == "knowledge":
-        from cli.knowledge import knowledge_add, knowledge_list, knowledge_remove, knowledge_search
+        from cli.knowledge import (
+            knowledge_add, knowledge_import, knowledge_list,
+            knowledge_remove, knowledge_search,
+        )
 
         if args.knowledge_cmd == "list" or args.knowledge_cmd is None:
             knowledge_list(args)
@@ -479,6 +486,8 @@ def main() -> None:
             knowledge_search(args)
         elif args.knowledge_cmd == "remove":
             knowledge_remove(args)
+        elif args.knowledge_cmd == "import":
+            knowledge_import(args)
     elif args.command == "behavior":
         from cli.behavior import behavior_add, behavior_list, behavior_remove
 
