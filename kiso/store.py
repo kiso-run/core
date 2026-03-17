@@ -329,6 +329,13 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         await db.execute("ALTER TABLE tasks ADD COLUMN parallel_group INTEGER")
         await db.commit()
 
+    # M682: add source column to messages table
+    cur = await db.execute("PRAGMA table_info(messages)")
+    msg_cols = {row[1] for row in await cur.fetchall()}
+    if "source" not in msg_cols:
+        await db.execute("ALTER TABLE messages ADD COLUMN source TEXT DEFAULT 'user'")
+        await db.commit()
+
     # M615: add install_proposal to plans table
     cur = await db.execute("PRAGMA table_info(plans)")
     plan_cols = {row[1] for row in await cur.fetchall()}
@@ -424,12 +431,13 @@ async def save_message(
     content: str,
     trusted: bool = True,
     processed: bool = False,
+    source: str = "user",
 ) -> int:
     """Insert a message row. Bumps session updated_at. Returns message id."""
     cur = await db.execute(
-        "INSERT INTO messages (session, user, role, content, trusted, processed) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (session, user, role, content, trusted, processed),
+        "INSERT INTO messages (session, user, role, content, trusted, processed, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (session, user, role, content, trusted, processed, source),
     )
     msg_id = cur.lastrowid
     await db.execute(

@@ -414,7 +414,7 @@ async def _cron_scheduler(db, config, app):
                 # Save message and enqueue (same as POST /msg but internal)
                 msg_id = await save_message(
                     db, session, "cron", "system", prompt,
-                    trusted=True, processed=False,
+                    trusted=True, processed=False, source="cron",
                 )
                 msg_payload = {
                     "id": msg_id,
