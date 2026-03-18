@@ -1011,6 +1011,13 @@ echo "  Server:          $SERVER_PORT"
 echo "  Connector range: $((CONN_BASE+1))-$((CONN_BASE+10))"
 echo
 
+# M769: fix external_url if port changed from the default used during config
+# ask_network_and_external_url runs before port assignment and uses 8333 default;
+# if the actual port differs, update the external_url to match.
+if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
+    EXTERNAL_URL="${EXTERNAL_URL%:8333}:${SERVER_PORT}"
+fi
+
 # ── 6. Build and start ──────────────────────────────────────────────────────
 
 if [[ "$NEED_BUILD" == true ]]; then

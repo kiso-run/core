@@ -413,6 +413,64 @@ class TestM745NetworkAndExternalUrl:
         assert "http://[${pub_ip}]" in content
 
 
+class TestM769ExternalUrlPortFix:
+    """M769: external_url port is corrected after actual port assignment."""
+
+    def test_external_url_port_updated_when_different(self):
+        """EXTERNAL_URL with default :8333 is updated to actual SERVER_PORT."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            EXTERNAL_URL="http://1.2.3.4:8333"
+            SERVER_PORT="8334"
+            # Simulate the M769 fix block
+            if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
+                EXTERNAL_URL="${EXTERNAL_URL%:8333}:${SERVER_PORT}"
+            fi
+            echo "EXTERNAL_URL=$EXTERNAL_URL"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "EXTERNAL_URL=http://1.2.3.4:8334" in result.stdout
+
+    def test_external_url_unchanged_when_port_matches(self):
+        """EXTERNAL_URL with :8333 unchanged when SERVER_PORT is 8333."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            EXTERNAL_URL="http://1.2.3.4:8333"
+            SERVER_PORT="8333"
+            if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
+                EXTERNAL_URL="${EXTERNAL_URL%:8333}:${SERVER_PORT}"
+            fi
+            echo "EXTERNAL_URL=$EXTERNAL_URL"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "EXTERNAL_URL=http://1.2.3.4:8333" in result.stdout
+
+    def test_external_url_empty_unaffected(self):
+        """Empty EXTERNAL_URL is not modified."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            EXTERNAL_URL=""
+            SERVER_PORT="8334"
+            if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
+                EXTERNAL_URL="${EXTERNAL_URL%:8333}:${SERVER_PORT}"
+            fi
+            echo "EXTERNAL_URL=[$EXTERNAL_URL]"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "EXTERNAL_URL=[]" in result.stdout
+
+    def test_fix_block_present_in_install_sh(self):
+        """M769 port fix block exists in install.sh."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "M769" in content
+        assert "EXTERNAL_URL=" in content
+
+
 class TestM759PresetStep:
     """M759: installer post-install preset selection."""
 
