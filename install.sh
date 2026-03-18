@@ -460,11 +460,18 @@ EXTERNAL_URL=""
 ask_network_and_external_url() {
     # Non-interactive: use defaults
     if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]] || [[ ! -t 0 ]]; then
-        # Autodetect public IP for external_url
-        local pub_ip
-        pub_ip=$(curl -sf --max-time 5 https://ifconfig.me || curl -sf --max-time 5 https://api.ipify.org || true)
+        # Autodetect public IP for external_url (prefer IPv4)
+        local pub_ip _port="${SERVER_PORT:-8333}"
+        pub_ip=$(curl -4 -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+              || curl -4 -sf --max-time 5 https://api.ipify.org 2>/dev/null \
+              || curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+              || true)
         if [[ -n "$pub_ip" ]]; then
-            EXTERNAL_URL="http://${pub_ip}:${SERVER_PORT:-8333}"
+            if [[ "$pub_ip" == *:* ]]; then
+                EXTERNAL_URL="http://[${pub_ip}]:${_port}"
+            else
+                EXTERNAL_URL="http://${pub_ip}:${_port}"
+            fi
         fi
         return
     fi
@@ -488,12 +495,20 @@ ask_network_and_external_url() {
     fi
     echo >&2
 
-    # Autodetect public IP
+    # Autodetect public IP (prefer IPv4, fallback to IPv6)
     bold "External URL (for file download links):" >&2
-    local pub_ip default_url
-    pub_ip=$(curl -sf --max-time 5 https://ifconfig.me || curl -sf --max-time 5 https://api.ipify.org || true)
+    local pub_ip default_url _port="${SERVER_PORT:-8333}"
+    pub_ip=$(curl -4 -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+          || curl -4 -sf --max-time 5 https://api.ipify.org 2>/dev/null \
+          || curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+          || true)
     if [[ -n "$pub_ip" ]]; then
-        default_url="http://${pub_ip}:${SERVER_PORT:-8333}"
+        # IPv6 addresses need brackets in URLs
+        if [[ "$pub_ip" == *:* ]]; then
+            default_url="http://[${pub_ip}]:${_port}"
+        else
+            default_url="http://${pub_ip}:${_port}"
+        fi
         yellow "  Detected public IP: $pub_ip" >&2
     else
         default_url=""
