@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from kiso.security import check_command_deny_list
 
 from kiso.worker.utils import _build_exec_env, _run_subprocess, _session_workspace
@@ -10,6 +12,7 @@ from kiso.worker.utils import _build_exec_env, _run_subprocess, _session_workspa
 async def _exec_task(
     session: str, detail: str, sandbox_uid: int | None = None,
     max_output_size: int = 0,
+    cancel_event: "asyncio.Event | None" = None,
 ) -> tuple[str, str, bool, int]:
     """Run a shell command. Returns (stdout, stderr, success, exit_code).
 
@@ -31,4 +34,5 @@ async def _exec_task(
         shell=True,
         uid=sandbox_uid,
         max_output_size=max_output_size,
+        cancel_event=cancel_event,
     )

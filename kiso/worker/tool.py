@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -18,6 +19,7 @@ async def _tool_task(
     session_secrets: dict[str, str] | None,
     sandbox_uid: int | None = None,
     max_output_size: int = 0,
+    cancel_event: "asyncio.Event | None" = None,
 ) -> tuple[str, str, bool, int]:
     """Run a tool subprocess. Returns (stdout, stderr, success, exit_code).
 
@@ -48,4 +50,5 @@ async def _tool_task(
         stdin_data=input_bytes,
         uid=sandbox_uid,
         max_output_size=max_output_size,
+        cancel_event=cancel_event,
     )

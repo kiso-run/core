@@ -811,6 +811,7 @@ class _PlanCtx:
     sandbox_uid: "int | None"
     base_url: str = ""
     response_lang: str = "en"
+    cancel_event: "asyncio.Event | None" = None  # M767: threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
     installed_tools_by_name: dict[str, dict] = field(init=False)
@@ -1159,7 +1160,16 @@ async def _handle_tool_task(
             ctx.session_secrets,
             sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
+            cancel_event=ctx.cancel_event,
         )
+
+        # M767: subprocess cancelled — mark task cancelled, skip review
+        if exit_code == -15 and stderr == "cancelled":
+            task_duration_ms = int((time.perf_counter() - t0) * 1000)
+            await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
+            _audit_task(ctx, task_id, "tool", detail, "cancelled", task_duration_ms)
+            return _TaskHandlerResult(stop_replan=True, replan_reason="cancelled")
+
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
@@ -1282,8 +1292,16 @@ async def _handle_exec_task(
         stdout, stderr, success, exit_code = await _exec_task(
             ctx.session, command, sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
+            cancel_event=ctx.cancel_event,
         )
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
+
+        # M767: subprocess cancelled — mark task cancelled, skip review
+        if exit_code == -15 and stderr == "cancelled":
+            await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
+            _audit_task(ctx, task_id, TASK_TYPE_EXEC, detail, "cancelled", task_duration_ms)
+            return _TaskHandlerResult(stop_replan=True, replan_reason="cancelled")
+
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
 
@@ -1516,6 +1534,7 @@ async def _execute_plan(
         slog=slog,
         base_url=base_url,
         response_lang=response_lang,
+        cancel_event=cancel_event,
         sandbox_uid=None,
     )
 

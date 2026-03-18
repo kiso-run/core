@@ -202,3 +202,42 @@ def test_cancel_cli_no_active_job(capsys):
     assert exc_info.value.code == 1
     err = capsys.readouterr().err
     assert "no active job" in err.lower()
+
+
+# ---------------------------------------------------------------------------
+# M767: cancel_event kills running subprocess via _exec_task / _tool_task
+# ---------------------------------------------------------------------------
+
+
+async def test_exec_task_cancel_kills_subprocess(tmp_path):
+    """M767: _exec_task with cancel_event kills the subprocess."""
+    from kiso.worker import _exec_task
+    from unittest.mock import patch as _patch
+
+    cancel = asyncio.Event()
+    asyncio.get_event_loop().call_later(0.1, cancel.set)
+
+    with _patch("kiso.worker.utils.KISO_DIR", tmp_path):
+        stdout, stderr, success, exit_code = await _exec_task(
+            "cancel-test-sess", "sleep 30",
+            cancel_event=cancel,
+        )
+    assert success is False
+    assert exit_code == -15
+    assert stderr == "cancelled"
+
+
+async def test_exec_task_normal_with_cancel_event(tmp_path):
+    """M767: _exec_task with cancel_event not set → normal completion."""
+    from kiso.worker import _exec_task
+    from unittest.mock import patch as _patch
+
+    cancel = asyncio.Event()  # never set
+
+    with _patch("kiso.worker.utils.KISO_DIR", tmp_path):
+        stdout, stderr, success, exit_code = await _exec_task(
+            "cancel-test-sess2", "echo works",
+            cancel_event=cancel,
+        )
+    assert success is True
+    assert "works" in stdout
