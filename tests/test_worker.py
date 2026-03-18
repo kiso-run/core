@@ -37,7 +37,7 @@ from kiso.worker import (
     _report_pub_files, _run_subprocess, _tool_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output, _save_large_output,
     _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks, _maybe_inject_intent_msg,
-    _write_plan_outputs, _cleanup_plan_outputs, _format_plan_outputs_for_msg,
+    _write_plan_outputs, _cleanup_plan_outputs, _extract_published_urls, _format_plan_outputs_for_msg,
     run_worker,
 )
 from kiso.worker.loop import (
@@ -2793,6 +2793,89 @@ class TestFormatPlanOutputsForMsg:
         # Entry 2: reviewer summary
         assert "Summary: Found: X, Y, Z" in result
         assert "long raw search output" not in result
+
+
+# --- _extract_published_urls (M763) ---
+
+
+class TestExtractPublishedUrls:
+    def test_no_published_files(self):
+        outputs = [{"index": 1, "type": "exec", "output": "hello world", "status": "done"}]
+        assert _extract_published_urls(outputs) == []
+
+    def test_extracts_single_url(self):
+        outputs = [{"index": 1, "type": "tool", "output": (
+            "Screenshot saved: /tmp/shot.png\n\n"
+            "Published files:\n"
+            "- screenshot.png: http://host:8334/pub/abc123/screenshot.png"
+        ), "status": "done"}]
+        result = _extract_published_urls(outputs)
+        assert result == ["- screenshot.png: http://host:8334/pub/abc123/screenshot.png"]
+
+    def test_extracts_multiple_urls(self):
+        outputs = [{"index": 1, "type": "exec", "output": (
+            "Done.\n\nPublished files:\n"
+            "- report.pdf: http://host/pub/tok/report.pdf\n"
+            "- chart.png: http://host/pub/tok/chart.png"
+        ), "status": "done"}]
+        result = _extract_published_urls(outputs)
+        assert len(result) == 2
+        assert "report.pdf" in result[0]
+        assert "chart.png" in result[1]
+
+    def test_extracts_from_multiple_tasks(self):
+        outputs = [
+            {"index": 1, "type": "tool", "output": "Published files:\n- a.txt: http://h/pub/t/a.txt", "status": "done"},
+            {"index": 2, "type": "exec", "output": "Published files:\n- b.txt: http://h/pub/t/b.txt", "status": "done"},
+        ]
+        result = _extract_published_urls(outputs)
+        assert len(result) == 2
+
+    def test_none_output_ignored(self):
+        outputs = [{"index": 1, "type": "exec", "output": None, "status": "failed"}]
+        assert _extract_published_urls(outputs) == []
+
+    def test_empty_list(self):
+        assert _extract_published_urls([]) == []
+
+
+class TestFormatPlanOutputsPublishedUrls:
+    """M763: Published file URLs appear prominently at the top of formatted output."""
+
+    def test_published_urls_section_present(self):
+        outputs = [{"index": 1, "type": "tool", "detail": "take screenshot",
+                     "output": "ok\n\nPublished files:\n- shot.png: http://h/pub/t/shot.png",
+                     "status": "done"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "## Published Files" in result
+        assert "http://h/pub/t/shot.png" in result
+
+    def test_published_urls_before_task_entries(self):
+        outputs = [{"index": 1, "type": "tool", "detail": "screenshot",
+                     "output": "ok\n\nPublished files:\n- s.png: http://h/pub/t/s.png",
+                     "status": "done"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        pub_pos = result.index("## Published Files")
+        task_pos = result.index("[1] tool:")
+        assert pub_pos < task_pos
+
+    def test_no_published_urls_no_section(self):
+        outputs = [{"index": 1, "type": "exec", "detail": "echo", "output": "hi", "status": "done"}]
+        result = _format_plan_outputs_for_msg(outputs)
+        assert "## Published Files" not in result
+
+    def test_published_urls_survive_truncation(self):
+        """Even when task outputs are summarized due to budget, URLs are preserved."""
+        outputs = [
+            {"index": 1, "type": "tool", "detail": "screenshot",
+             "output": "x" * 5000 + "\n\nPublished files:\n- s.png: http://h/pub/t/s.png",
+             "status": "done"},
+            {"index": 2, "type": "exec", "detail": "heavy",
+             "output": "y" * 5000, "status": "done"},
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=3000)
+        assert "## Published Files" in result
+        assert "http://h/pub/t/s.png" in result
 
 
 # --- _make_plan_output (M91c) ---

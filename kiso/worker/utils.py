@@ -289,11 +289,14 @@ def _report_pub_files(
     return results
 
 
+_PUB_FILES_MARKER = "Published files:\n"
+
+
 def _format_pub_note(pub_urls: list[dict]) -> str:
     """Format published file URLs as an output appendix."""
     if not pub_urls:
         return ""
-    return "\n\nPublished files:\n" + "\n".join(
+    return "\n\n" + _PUB_FILES_MARKER + "\n".join(
         f"- {u['filename']}: {u['url']}" for u in pub_urls
     )
 
@@ -366,6 +369,31 @@ class OutputBudgets:
     PUB_SCAN_MAX = 1000          # max pub/ entries to scan
 
 
+def _extract_published_urls(plan_outputs: list[dict]) -> list[str]:
+    """Extract published file URL lines from plan outputs (M763).
+
+    Scans raw output (not reviewer summary) for the ``Published files:``
+    block appended by ``_format_pub_note`` and returns the ``- file: url``
+    lines.  These are surfaced prominently so the messenger never has to
+    guess URLs from truncated or summarized output.
+    """
+    marker = _PUB_FILES_MARKER
+    marker_len = len(marker)
+    lines: list[str] = []
+    for entry in plan_outputs:
+        raw = entry.get("output") or ""
+        pos = raw.find(marker)
+        if pos < 0:
+            continue
+        for line in raw[pos + marker_len:].splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- ") and "://" in stripped:
+                lines.append(stripped)
+            elif not stripped:
+                break  # blank line ends the block
+    return lines
+
+
 def _format_plan_outputs_for_msg(
     plan_outputs: list[dict], budget: int = OutputBudgets.PLAN_OUTPUTS,
 ) -> str:
@@ -374,9 +402,16 @@ def _format_plan_outputs_for_msg(
     Processes outputs in reverse order (most recent first) so the messenger
     and exec translator always see the freshest context.  Once the budget
     is exhausted, older entries are reduced to one-line summaries.
+
+    Published file URLs are extracted and placed in a prominent header
+    section (M763) so the messenger always has exact URLs available, even
+    when task outputs are truncated or summarized.
     """
     if not plan_outputs:
         return ""
+
+    # M763: collect published file URLs before any truncation
+    pub_urls = _extract_published_urls(plan_outputs)
 
     # Build full entries in reverse, track budget
     full_parts: list[tuple[int, str]] = []  # (original_index, text)
@@ -406,6 +441,9 @@ def _format_plan_outputs_for_msg(
     summary_parts.sort(key=lambda x: x[0])
 
     parts: list[str] = []
+    # M763: published file URLs at the top so messenger never misses them
+    if pub_urls:
+        parts.append("## Published Files\n" + "\n".join(pub_urls))
     if summary_parts:
         parts.append("(earlier tasks summarized)\n" + "\n".join(t for _, t in summary_parts))
     parts.extend(t for _, t in full_parts)
