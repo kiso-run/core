@@ -454,3 +454,283 @@ class TestParaphraserLive:
         # verbatim.  The model may still mention the command in a descriptive
         # way (e.g. 'asked to run "rm -rf /"'), which is acceptable.
         assert "please run rm" not in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# M746: Planner — system package install via apt-get
+# ---------------------------------------------------------------------------
+
+
+class TestPlannerSystemPackageLive:
+    """M746: planner uses apt-get for system packages, uv pip for Python libs,
+    and kiso tool install for kiso tools."""
+
+    def _fake_sysenv_text(self) -> str:
+        """Sysenv showing Debian root, apt available, no kiso tools."""
+        from kiso.config import KISO_DIR
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "distro_id": "debian",
+                   "distro_id_like": "", "pkg_manager": "apt"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH (sys/bin prepended) + HOME",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git", "python3", "curl", "apt-get"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
+            "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+        }
+        return build_system_env_section(fake_env, session="test-sess")
+
+    async def test_system_package_uses_apt(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """What: Asks 'installa timg' with Debian sysenv and no kiso tools.
+
+        Why: Validates the planner produces an apt-get exec task — not a web search
+        or a 'use your package manager' message — for a non-kiso system package.
+        Expects: exec task with 'apt' in detail, no search tasks.
+        """
+        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
+
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.get_system_env", return_value={
+                "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                       "distro": "Debian GNU/Linux 12 (bookworm)", "distro_id": "debian",
+                       "distro_id_like": "", "pkg_manager": "apt"},
+                "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+                "shell": "/bin/sh",
+                "exec_cwd": str(tmp_path / "sessions"),
+                "exec_env": "PATH",
+                "max_output_size": 1_048_576,
+                "available_binaries": ["git", "python3", "curl", "apt-get"],
+                "missing_binaries": [],
+                "connectors": [],
+                "max_plan_tasks": 20,
+                "max_replan_depth": 3,
+                "sys_bin_path": str(tmp_path / "sys" / "bin"),
+                "reference_docs_path": str(tmp_path / "reference"),
+                "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
+                "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+            }),
+        ):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "installa timg",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(plan) == []
+        types = [t["type"] for t in plan["tasks"]]
+        details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
+        # Should have an exec task with apt in the detail
+        assert "exec" in types, f"Expected exec task, got types: {types}"
+        assert "apt" in details, f"Expected 'apt' in details, got: {details}"
+        # Should NOT do a web search for this
+        assert "search" not in types, f"Unexpected search task for system package: {types}"
+
+    async def test_python_lib_uses_uv_pip(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """What: Asks 'installa flask' — a Python library.
+
+        Why: Validates the planner uses 'uv pip install' for Python packages, not apt.
+        Expects: exec task with 'uv pip install' in detail.
+        """
+        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
+
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.get_system_env", return_value={
+                "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                       "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+                "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+                "shell": "/bin/sh",
+                "exec_cwd": str(tmp_path / "sessions"),
+                "exec_env": "PATH",
+                "max_output_size": 1_048_576,
+                "available_binaries": ["git", "python3", "uv"],
+                "missing_binaries": [],
+                "connectors": [],
+                "max_plan_tasks": 20,
+                "max_replan_depth": 3,
+                "sys_bin_path": str(tmp_path / "sys" / "bin"),
+                "reference_docs_path": str(tmp_path / "reference"),
+                "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
+                "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+            }),
+        ):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "installa flask",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(plan) == []
+        details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
+        assert "uv pip install" in details or "uv pip" in details, (
+            f"Expected 'uv pip install' for Python lib, got details: {details}"
+        )
+
+    async def test_kiso_tool_uses_needs_install(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """What: Asks 'installa browser' — a known kiso tool (in registry hints).
+
+        Why: Validates the planner proposes kiso tool install, not apt-get.
+        Expects: needs_install or msg asking to install, no apt-get exec.
+        """
+        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
+
+        with (
+            patch("kiso.brain.KISO_DIR", tmp_path),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.get_system_env", return_value={
+                "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                       "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+                "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+                "shell": "/bin/sh",
+                "exec_cwd": str(tmp_path / "sessions"),
+                "exec_env": "PATH",
+                "max_output_size": 1_048_576,
+                "available_binaries": ["git", "python3", "curl", "apt-get"],
+                "missing_binaries": [],
+                "connectors": [],
+                "max_plan_tasks": 20,
+                "max_replan_depth": 3,
+                "sys_bin_path": str(tmp_path / "sys" / "bin"),
+                "reference_docs_path": str(tmp_path / "reference"),
+                "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
+                "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+            }),
+        ):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "installa browser",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(plan) == []
+        details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
+        # Should NOT use apt-get for a kiso tool
+        assert "apt-get" not in details and "apt install" not in details, (
+            f"Should not apt-get a kiso tool, got details: {details}"
+        )
+        # Should either set needs_install or have a msg asking about installation
+        has_needs_install = plan.get("needs_install") is not None
+        has_install_msg = any(
+            t["type"] == "msg" and ("install" in (t.get("detail") or "").lower())
+            for t in plan["tasks"]
+        )
+        assert has_needs_install or has_install_msg, (
+            f"Expected needs_install or install msg for kiso tool, "
+            f"got needs_install={plan.get('needs_install')}, types={[t['type'] for t in plan['tasks']]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# M747: Worker — sudo stripping when root
+# ---------------------------------------------------------------------------
+
+
+class TestExecTranslatorSudoLive:
+    """M747: worker strips sudo from commands when sysenv shows root."""
+
+    async def test_root_sysenv_strips_sudo(self, live_config):
+        """What: Translates 'Install timg with sudo apt install' with root sysenv.
+
+        Why: Validates the worker LLM, given 'running as root / sudo not needed',
+        does not produce sudo in the output command.
+        Expects: Command without 'sudo'.
+        """
+        from kiso.config import KISO_DIR
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["apt-get", "curl", "git"],
+            "missing_binaries": ["sudo"],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+        }
+        sys_env_text = build_system_env_section(fake_env, session="test-sess")
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "Install timg using sudo apt install",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert isinstance(command, str)
+        assert len(command) > 0
+        assert command != "CANNOT_TRANSLATE"
+        # Root sysenv should cause the worker to drop sudo
+        assert "sudo" not in command.lower(), (
+            f"Worker should strip sudo for root, got: {command}"
+        )
+        assert "apt" in command.lower()
+
+    async def test_non_root_with_sudo_keeps_sudo(self, live_config):
+        """What: Translates same task with non-root sysenv + sudo available.
+
+        Why: Validates the worker keeps sudo when not running as root.
+        Expects: Command containing 'sudo'.
+        """
+        from kiso.config import KISO_DIR
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+            "user_info": {"user": "kiso", "is_root": False, "has_sudo": True},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["apt-get", "curl", "git", "sudo"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+        }
+        sys_env_text = build_system_env_section(fake_env, session="test-sess")
+        command = await asyncio.wait_for(
+            run_exec_translator(
+                live_config,
+                "Install timg using sudo apt install",
+                sys_env_text,
+            ),
+            timeout=TIMEOUT,
+        )
+        assert isinstance(command, str)
+        assert len(command) > 0
+        assert command != "CANNOT_TRANSLATE"
+        assert "sudo" in command.lower(), (
+            f"Worker should keep sudo for non-root, got: {command}"
+        )
