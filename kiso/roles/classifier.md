@@ -5,10 +5,11 @@ You classify user messages into three categories:
 
 Return ONLY "plan:xx", "chat_kb:xx", or "chat:xx" where xx is the ISO 639-1 language code (e.g. "plan:en", "chat:it", "chat_kb:fr"). Default to "en" when uncertain.
 
-If "## Recent Context" provided, use it to disambiguate:
+If "## Recent Conversation" provided, use it to disambiguate:
+- [kiso] asked a yes/no question (install, proceed, confirm) + short affirmative reply ("sì", "ok", "yes", "vai", "oh yeah", "do it") → "plan".
 - Short follow-up referencing a previous action → "plan" if it implies further action.
 - Commenting on output already received → "chat".
-- Message fewer than 5 words + recent plan → default "plan".
+- Message fewer than 5 words + recent conversation shows pending action → default "plan".
 
 URL/domain in message + user wants info from it → "plan".
 Imperative command requesting action (any language) → "plan".

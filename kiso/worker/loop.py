@@ -37,6 +37,7 @@ from kiso.brain import (
     WORKER_PHASE_PLANNING,
     _MAX_MESSENGER_FACTS,
     BrieferError,
+    build_recent_context,
     ClassifierError,
     CuratorError,
     ExecTranslatorError,
@@ -2357,12 +2358,9 @@ async def _process_message(
     # Paraphraser is intentionally skipped here — the messenger only sees
     # session summary + facts + the current user message (all trusted).
     # Untrusted messages feed into planner context, not messenger context.
-    # Fetch last plan goal for classifier context (M276) before creating new plan
-    _prev_plan = await get_plan_for_session(db, session)
-    _classifier_ctx = ""
-    if _prev_plan and _prev_plan.get("goal") and _prev_plan["goal"] != "Planning...":
-        goal = _prev_plan["goal"]
-        _classifier_ctx = f"Last plan goal: {goal[:150]}"
+    # M751: fetch recent conversation (user + kiso) for classifier context
+    _recent_for_classifier = await get_recent_messages(db, session, limit=3)
+    _classifier_ctx = build_recent_context(_recent_for_classifier, max_chars=500)
 
     # Create plan record before classifier so the CLI can render it immediately.
     # This ensures the plan header appears before inflight indicators.

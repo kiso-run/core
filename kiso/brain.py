@@ -1539,7 +1539,7 @@ def build_classifier_messages(
     """Build the message list for the classifier LLM call."""
     user_text = content
     if recent_context:
-        user_text = f"{content}\n\n## Recent Context\n{recent_context}"
+        user_text = f"{content}\n\n## Recent Conversation\n{recent_context}"
     return _build_messages(_load_system_prompt("classifier"), user_text)
 
 

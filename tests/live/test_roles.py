@@ -734,3 +734,48 @@ class TestExecTranslatorSudoLive:
         assert "sudo" in command.lower(), (
             f"Worker should keep sudo for non-root, got: {command}"
         )
+
+
+# ---------------------------------------------------------------------------
+# M751: Classifier — conversation context for confirmations
+# ---------------------------------------------------------------------------
+
+
+class TestClassifierConversationLive:
+    """M751: classifier uses conversation context to identify confirmations."""
+
+    async def test_affirmative_after_install_proposal_is_plan(self, live_config):
+        """What: 'oh yeah' after kiso asks 'Vuoi installare il browser?'
+
+        Why: Validates the classifier recognizes a short affirmative as a plan action
+        when the conversation shows kiso asked a yes/no question.
+        Expects: Classified as 'plan', not 'chat'.
+        """
+        from kiso.brain import build_recent_context, classify_message
+        context = build_recent_context([
+            {"role": "user", "user": "root", "content": "vai su guidance.studio e fai screenshot"},
+            {"role": "assistant", "content": "Per navigare serve il browser tool. Vuoi che lo installi?"},
+        ])
+        category, lang = await asyncio.wait_for(
+            classify_message(live_config, "oh yeah", recent_context=context),
+            timeout=TIMEOUT,
+        )
+        assert category == "plan", (
+            f"Expected 'plan' for confirmation after install proposal, got '{category}'"
+        )
+
+    async def test_greeting_without_context_is_chat(self, live_config):
+        """What: 'oh yeah' without any context.
+
+        Why: Validates that without conversation context, a short message is
+        classified as chat (no action implied).
+        Expects: Classified as 'chat'.
+        """
+        from kiso.brain import classify_message
+        category, lang = await asyncio.wait_for(
+            classify_message(live_config, "oh yeah", recent_context=""),
+            timeout=TIMEOUT,
+        )
+        assert category == "chat", (
+            f"Expected 'chat' for 'oh yeah' without context, got '{category}'"
+        )

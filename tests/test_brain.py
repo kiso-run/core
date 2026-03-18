@@ -3395,9 +3395,9 @@ class TestClassifierPromptContent:
         assert "imperative" in prompt
 
     def test_classifier_prompt_has_recent_context_rule(self):
-        """M276: classifier prompt accepts Recent Context for follow-up detection."""
+        """M276/M751: classifier prompt accepts Recent Conversation for follow-up detection."""
         prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "Recent Context" in prompt
+        assert "Recent Conversation" in prompt
         assert "follow-up" in prompt.lower() or "follow up" in prompt.lower()
 
     def test_classifier_prompt_covers_system_introspection(self):
@@ -3434,18 +3434,18 @@ class TestM276ClassifierContext:
 
     def test_build_messages_without_context(self):
         msgs = build_classifier_messages("hello")
-        assert "Recent Context" not in msgs[1]["content"]
+        assert "Recent Conversation" not in msgs[1]["content"]
 
     def test_build_messages_with_context(self):
         msgs = build_classifier_messages("e la pagina?", recent_context="Last plan goal: Navigate to example.com")
-        assert "Recent Context" in msgs[1]["content"]
+        assert "Recent Conversation" in msgs[1]["content"]
         assert "Navigate to example.com" in msgs[1]["content"]
 
     def test_build_messages_context_appended_after_content(self):
         msgs = build_classifier_messages("test msg", recent_context="Last plan goal: X")
         user_content = msgs[1]["content"]
         # Content comes first, context after
-        assert user_content.index("test msg") < user_content.index("Recent Context")
+        assert user_content.index("test msg") < user_content.index("Recent Conversation")
 
     async def test_classify_passes_context_to_llm(self):
         config = _make_config_for_classifier()
@@ -3454,7 +3454,7 @@ class TestM276ClassifierContext:
             await classify_message(config, "e la pagina?", recent_context="Last plan goal: Nav")
         # Check the user message includes context
         messages = mock_llm.call_args[0][2]
-        assert "Recent Context" in messages[1]["content"]
+        assert "Recent Conversation" in messages[1]["content"]
 
     async def test_classify_empty_context_no_section(self):
         config = _make_config_for_classifier()
@@ -3462,7 +3462,26 @@ class TestM276ClassifierContext:
         with patch("kiso.brain.call_llm", mock_llm):
             await classify_message(config, "hello", recent_context="")
         messages = mock_llm.call_args[0][2]
-        assert "Recent Context" not in messages[1]["content"]
+        assert "Recent Conversation" not in messages[1]["content"]
+
+    def test_m751_classifier_sees_kiso_response(self):
+        """M751: classifier receives kiso's response in conversation context."""
+        from kiso.brain import build_recent_context
+        context = build_recent_context([
+            {"role": "user", "user": "root", "content": "fai screenshot di guidance.studio"},
+            {"role": "assistant", "content": "Serve il browser tool. Vuoi che lo installi?"},
+        ])
+        msgs = build_classifier_messages("oh yeah", recent_context=context)
+        user_content = msgs[1]["content"]
+        assert "[kiso]" in user_content
+        assert "Vuoi che lo installi?" in user_content
+        assert "oh yeah" in user_content
+
+    def test_m751_classifier_prompt_has_affirmative_rule(self):
+        """M751: classifier prompt mentions yes/no confirmation pattern."""
+        from pathlib import Path
+        prompt = (Path(__file__).parent.parent / "kiso" / "roles" / "classifier.md").read_text()
+        assert "affirmative" in prompt.lower() or "yes/no" in prompt.lower()
 
 
 # --- M234: Planner — don't decompose atomic CLI operations ---
