@@ -1132,7 +1132,7 @@ if [[ "$MODE" == "new" && "$NEED_BUILD" == true ]]; then
     # Non-interactive: install preset if --preset flag was given
     if [[ -n "$ARG_PRESET" ]]; then
         bold "Installing preset '$ARG_PRESET'..."
-        docker exec "$CONTAINER" uv run kiso preset install "$ARG_PRESET" --no-tools \
+        docker exec "$CONTAINER" uv run kiso preset install "$ARG_PRESET" \
             && green "  preset installed" \
             || yellow "  warning: preset install failed"
     elif [[ -t 0 ]]; then
@@ -1160,7 +1160,7 @@ except Exception:
             _preset_name=$(echo "$_PRESETS" | sed -n "${_preset_choice}p" | sed 's/^[0-9]*) //' | cut -d' ' -f1)
             if [[ -n "$_preset_name" ]]; then
                 bold "Installing preset '$_preset_name'..."
-                docker exec "$CONTAINER" uv run kiso preset install "$_preset_name" --no-tools \
+                docker exec "$CONTAINER" uv run kiso preset install "$_preset_name" \
                     && green "  preset installed" \
                     || yellow "  warning: preset install failed — you can do it later with: kiso preset install $_preset_name"
             fi
