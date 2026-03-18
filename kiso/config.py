@@ -55,6 +55,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     # server
     "host": "0.0.0.0",
     "port": 8333,
+    "external_url": "",
     "worker_idle_timeout": 300,
     # fast path
     "fast_path_enabled": True,

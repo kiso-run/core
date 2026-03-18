@@ -455,6 +455,55 @@ ask_resource_limits() {
     echo >&2
 }
 
+NETWORK_MODE="public"
+EXTERNAL_URL=""
+ask_network_and_external_url() {
+    # Non-interactive: use defaults
+    if [[ -n "$ARG_USER" && -n "$ARG_API_KEY" ]] || [[ ! -t 0 ]]; then
+        # Autodetect public IP for external_url
+        local pub_ip
+        pub_ip=$(curl -sf --max-time 5 https://ifconfig.me || curl -sf --max-time 5 https://api.ipify.org || true)
+        if [[ -n "$pub_ip" ]]; then
+            EXTERNAL_URL="http://${pub_ip}:${SERVER_PORT:-8333}"
+        fi
+        return
+    fi
+
+    echo >&2
+    bold "Network access:" >&2
+    echo "    1) Local only — API accessible only from this machine" >&2
+    echo "    2) Public — API exposed to the network (token-protected)" >&2
+    safe_read -rp "  Choice [2]: " _net_choice
+    _net_choice="${_net_choice:-2}"
+    if [[ "$_net_choice" == "1" ]]; then
+        NETWORK_MODE="local"
+        yellow "  ℹ  Pub file links won't be reachable from outside." >&2
+        yellow "  Set up a reverse proxy for external access. See: docs/https.md" >&2
+    else
+        NETWORK_MODE="public"
+        yellow "  ⚠  API exposed over HTTP (no encryption)." >&2
+        yellow "  CLI token and API calls are visible to anyone on the network." >&2
+        yellow "  For production use, set up HTTPS with a reverse proxy." >&2
+        yellow "  See: docs/https.md — we recommend Caddy + Let's Encrypt." >&2
+    fi
+    echo >&2
+
+    # Autodetect public IP
+    bold "External URL (for file download links):" >&2
+    local pub_ip default_url
+    pub_ip=$(curl -sf --max-time 5 https://ifconfig.me || curl -sf --max-time 5 https://api.ipify.org || true)
+    if [[ -n "$pub_ip" ]]; then
+        default_url="http://${pub_ip}:${SERVER_PORT:-8333}"
+        yellow "  Detected public IP: $pub_ip" >&2
+    else
+        default_url=""
+        yellow "  Could not detect public IP. Leave empty for local use." >&2
+    fi
+    safe_read -rp "  External URL [$default_url]: " EXTERNAL_URL
+    EXTERNAL_URL="${EXTERNAL_URL:-$default_url}"
+    echo >&2
+}
+
 # Read resource limits from an existing config.toml.
 # Falls back to global defaults if parsing fails.
 _read_limits_from_config() {
@@ -812,6 +861,7 @@ if [[ "$NEED_CONFIG" == true ]]; then
 
     ask_models
     ask_resource_limits
+    ask_network_and_external_url
 
     config_body=$(cat <<PREVIEW
 [tokens]
@@ -861,6 +911,7 @@ max_queue_size               = 50
 # Server
 host                         = "0.0.0.0"
 port                         = 8333
+external_url                 = "$EXTERNAL_URL"
 
 # Worker
 worker_idle_timeout          = 300    # seconds
@@ -968,8 +1019,18 @@ if [[ "$NEED_BUILD" == true ]]; then
     # Read limits from config (handles both new installs and updates with kept config)
     _read_limits_from_config "$CONFIG"
 
+    # M737: bind to localhost only when network mode is local
+    if [[ "$NETWORK_MODE" == "local" ]]; then
+        _PORT_BIND="127.0.0.1:${SERVER_PORT}:8333"
+        _CONN_BIND="127.0.0.1:$((CONN_BASE+1))-$((CONN_BASE+10)):$((CONN_BASE+1))-$((CONN_BASE+10))"
+    else
+        _PORT_BIND="${SERVER_PORT}:8333"
+        _CONN_BIND="$((CONN_BASE+1))-$((CONN_BASE+10)):$((CONN_BASE+1))-$((CONN_BASE+10))"
+    fi
+
     bold "Starting container $CONTAINER..."
     echo "  Limits: RAM=${MAX_MEMORY_GB}GB, CPU=${MAX_CPUS}, Disk=${MAX_DISK_GB}GB, PIDs=${MAX_PIDS}"
+    echo "  Network: ${NETWORK_MODE}"
     docker run -d \
         --name "$CONTAINER" \
         --restart unless-stopped \
@@ -977,8 +1038,8 @@ if [[ "$NEED_BUILD" == true ]]; then
         --memory-swap="${MAX_MEMORY_GB}g" \
         --cpus="$MAX_CPUS" \
         --pids-limit="$MAX_PIDS" \
-        -p "${SERVER_PORT}:8333" \
-        -p "$((CONN_BASE+1))-$((CONN_BASE+10)):$((CONN_BASE+1))-$((CONN_BASE+10))" \
+        -p "$_PORT_BIND" \
+        -p "$_CONN_BIND" \
         --env-file "$ENV_FILE" \
         -v "$INST_DIR:/root/.kiso" \
         "$IMAGE"

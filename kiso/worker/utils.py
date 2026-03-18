@@ -272,7 +272,12 @@ def _report_pub_files(
         all_paths.append(p)
     if truncated:
         log.warning("pub/ for session %r has >%d entries, listing truncated", session, OutputBudgets.PUB_SCAN_MAX)
-    prefix = base_url.rstrip("/") if base_url else ""
+    # M736: prefer external_url setting over request-derived base_url
+    external_url = config.settings.get("external_url", "")
+    if external_url:
+        prefix = external_url.rstrip("/")
+    else:
+        prefix = base_url.rstrip("/") if base_url else ""
     results = []
     for f in sorted(all_paths):
         if f.is_file():

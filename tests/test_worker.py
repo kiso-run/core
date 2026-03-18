@@ -6819,6 +6819,40 @@ class TestReportPubFiles:
         assert result[0]["url"].startswith("/pub/")
 
 
+    def test_m736_external_url_overrides_base_url(self, tmp_path):
+        """M736: external_url setting takes precedence over base_url."""
+        cfg = Config(
+            tokens={"cli": "test-secret-token"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"planner": "gpt-4"},
+            settings={"external_url": "https://miobot.example.com"},
+            raw={},
+        )
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "screenshot.png").write_bytes(b"fake")
+
+        with _patch_kiso_dir(tmp_path):
+            result = _report_pub_files("test-session", cfg, base_url="http://localhost:8333")
+
+        assert len(result) == 1
+        assert result[0]["url"].startswith("https://miobot.example.com/pub/")
+
+    def test_m736_empty_external_url_uses_base_url(self, tmp_path, config):
+        """M736: empty external_url falls back to base_url."""
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "file.txt").write_bytes(b"x")
+
+        with _patch_kiso_dir(tmp_path):
+            result = _report_pub_files("test-session", config, base_url="http://host:8333")
+
+        assert result[0]["url"].startswith("http://host:8333/pub/")
+
+
 class TestAutoPublishToolFiles:
     """M215: _auto_publish_skill_files and _snapshot_workspace tests."""
 
