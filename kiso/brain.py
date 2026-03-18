@@ -1622,26 +1622,32 @@ def is_stop_message(text: str) -> bool:
 
 
 def build_inflight_classifier_messages(
-    plan_goal: str, new_message: str,
+    plan_goal: str, new_message: str, recent_context: str = "",
 ) -> list[dict]:
     """Build the message list for in-flight message classification."""
     template = _load_system_prompt("inflight-classifier")
+    # Inject recent conversation if available
+    conv_block = f"Recent conversation:\n{recent_context}\n\n" if recent_context else ""
     user_text = template.replace(
         "{plan_goal}", plan_goal,
-    ).replace("{new_message}", new_message)
+    ).replace(
+        "{new_message}", new_message,
+    ).replace(
+        "{recent_conversation}", conv_block,
+    )
     return [{"role": "user", "content": user_text}]
 
 
 async def classify_inflight(
     config: Config, plan_goal: str, new_message: str,
-    session: str = "",
+    session: str = "", recent_context: str = "",
 ) -> str:
     """Classify an in-flight message as stop/update/independent/conflict.
 
     Returns one of :data:`INFLIGHT_CATEGORIES`. On any error, returns
     ``"independent"`` (safe fallback — message will be queued for later).
     """
-    messages = build_inflight_classifier_messages(plan_goal, new_message)
+    messages = build_inflight_classifier_messages(plan_goal, new_message, recent_context)
     try:
         raw = await call_llm(config, "classifier", messages, session=session)
     except LLMError as e:

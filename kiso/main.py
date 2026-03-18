@@ -41,6 +41,7 @@ from kiso.store import (
     get_all_sessions,
     get_plan_for_session,
     get_project,
+    get_recent_messages,
     get_safety_facts,
     get_session_project_id,
     get_user_project_role,
@@ -691,11 +692,15 @@ async def post_msg(
                 return {"queued": False, "session": body.session, "message_id": msg_id,
                         "inflight": "stop"}
 
-            # M408: classify in-flight message
+            # M408/M752: classify in-flight message with conversation context
             plan = await get_plan_for_session(db, body.session)
             plan_goal = (plan.get("goal", "") if plan else "") or ""
+            from kiso.brain import build_recent_context
+            _inflight_recent = await get_recent_messages(db, body.session, limit=3)
+            _inflight_ctx = build_recent_context(_inflight_recent, max_chars=400)
             category = await classify_inflight(
                 config, plan_goal, body.content, session=body.session,
+                recent_context=_inflight_ctx,
             )
             if category == "stop":
                 entry.cancel_event.set()

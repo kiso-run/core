@@ -7365,6 +7365,24 @@ class TestBuildInflightClassifierMessages:
         assert '{"port": 8080}' in msgs[0]["content"]
         assert "deploy app" in msgs[0]["content"]
 
+    def test_m752_with_conversation_context(self):
+        """M752: inflight classifier includes conversation context when provided."""
+        from kiso.brain import build_recent_context
+        context = build_recent_context([
+            {"role": "user", "user": "root", "content": "installa browser"},
+            {"role": "assistant", "content": "Vuoi che lo installi?"},
+        ])
+        msgs = build_inflight_classifier_messages("Install browser", "sì vai", recent_context=context)
+        text = msgs[0]["content"]
+        assert "[kiso]" in text
+        assert "Vuoi che lo installi?" in text
+
+    def test_m752_no_context_no_conversation_block(self):
+        """M752: without context, no 'Recent conversation' block in output."""
+        msgs = build_inflight_classifier_messages("goal", "msg", recent_context="")
+        text = msgs[0]["content"]
+        assert "Recent conversation" not in text
+
 
 class TestClassifyInflight:
     @pytest.mark.parametrize("llm_return,goal,msg,expected", [

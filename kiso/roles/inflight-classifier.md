@@ -1,5 +1,5 @@
 A job is currently running with this goal: "{plan_goal}"
-The user sent a new message: "{new_message}"
+{recent_conversation}The user sent a new message: "{new_message}"
 
 Classify the intent of the new message into exactly one category:
 - stop: user wants to cancel or abort the current job
