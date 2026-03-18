@@ -196,6 +196,15 @@ class TestPlannerLanguageRuleDedup:
         )
 
 
+class TestPlannerVerbatimUrlRule:
+    """M764: planner prompt must instruct msg detail to reference published files."""
+
+    def test_planner_has_verbatim_url_rule(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        assert "published file" in raw.lower() or "Published file" in raw
+        assert "Never paraphrase" in raw or "never paraphrase" in raw
+
+
 class TestBrieferModuleDescriptions:
     """M426: briefer module descriptions must be <=60 chars each."""
 
