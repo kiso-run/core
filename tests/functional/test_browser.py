@@ -70,7 +70,7 @@ async def _run_with_install_flow(
 
 
 # ---------------------------------------------------------------------------
-# F1 — Website description + screenshot (guidance.studio)
+# F1 — Website description + screenshot (example.com)
 # ---------------------------------------------------------------------------
 
 
@@ -89,7 +89,7 @@ class TestF1BrowserInstall:
 
         # Turn 1: request that needs browser
         await run_message(
-            "vai su guidance.studio e dimmi cosa vedi",
+            "vai su example.com e dimmi cosa vedi",
             timeout=BROWSER_TIMEOUT,
         )
 
@@ -109,30 +109,31 @@ class TestF1BrowserNavigate:
     """F1b: Browser navigation + description (requires browser installed)."""
 
     async def test_navigate_and_describe(self, run_message):
-        """What: Navigate to guidance.studio and describe the company.
+        """What: Navigate to example.com and describe the page content.
 
         Why: Validates that the browser tool can navigate a real page and
         the messenger produces an Italian description of the content.
-        Expects: Italian response >100 chars with company-related keywords.
+        example.com is IANA-maintained, no CAPTCHA, always available.
+        Expects: Italian response >50 chars mentioning example/dominio/IANA.
         """
         if not _browser_installed():
             pytest.skip("Browser tool not installed — run F1a first or install manually")
 
         result = await run_message(
-            "vai su guidance.studio e dimmi di cosa si occupa questa azienda",
+            "vai su example.com e dimmi cosa c'è scritto nella pagina",
             timeout=BROWSER_TIMEOUT,
         )
         assert result.success
 
         output = result.last_plan_msg_output
-        assert len(output) > 100, f"Too short: {output[:200]}"
+        assert len(output) > 50, f"Too short: {output[:200]}"
         assert_italian(output)
         assert_no_failure_language(output)
 
         lower = output.lower()
         assert any(
             kw in lower
-            for kw in ("guidance", "studio", "azienda", "company", "software", "serviz")
+            for kw in ("example", "dominio", "iana", "illustrativ", "documentazione", "esempio")
         ), f"No relevant keywords: {output[:300]}"
 
 
@@ -140,7 +141,7 @@ class TestF1BrowserScreenshot:
     """F1c: Browser screenshot + publish (requires browser installed)."""
 
     async def test_screenshot_and_publish(self, run_message, func_app_client):
-        """What: Take a screenshot of guidance.studio and publish it.
+        """What: Take a screenshot of example.com and publish it.
 
         Why: Validates screenshot capture and the pub file delivery pipeline.
         Expects: .png file published with a reachable URL (>10KB).
@@ -149,7 +150,7 @@ class TestF1BrowserScreenshot:
             pytest.skip("Browser tool not installed — run F1a first or install manually")
 
         result = await run_message(
-            "vai su guidance.studio e mandami uno screenshot della home page",
+            "vai su example.com e mandami uno screenshot della pagina",
             timeout=BROWSER_TIMEOUT,
         )
         assert result.success
