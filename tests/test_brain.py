@@ -7886,6 +7886,71 @@ class TestFormatMessageHistory:
         assert _format_message_history([]) == ""
 
 
+class TestBuildRecentContext:
+    """M750: unified conversation context helper."""
+
+    def test_mixed_user_and_assistant(self):
+        from kiso.brain import build_recent_context
+        msgs = [
+            {"role": "user", "user": "root", "content": "installa timg"},
+            {"role": "assistant", "user": None, "content": "Serve il browser. Vuoi che lo installi?"},
+            {"role": "user", "user": "root", "content": "oh yeah"},
+        ]
+        result = build_recent_context(msgs)
+        assert "[user] root: installa timg" in result
+        assert "[kiso] Serve il browser." in result
+        assert "[user] root: oh yeah" in result
+
+    def test_kiso_label_for_assistant(self):
+        from kiso.brain import build_recent_context
+        msgs = [{"role": "assistant", "user": None, "content": "risposta"}]
+        assert result.startswith("[kiso]") if (result := build_recent_context(msgs)) else False
+
+    def test_kiso_label_for_system(self):
+        from kiso.brain import build_recent_context
+        msgs = [{"role": "system", "user": None, "content": "notifica"}]
+        result = build_recent_context(msgs)
+        assert "[kiso]" in result
+
+    def test_truncates_long_kiso_response(self):
+        from kiso.brain import build_recent_context
+        long_content = "x" * 500
+        msgs = [{"role": "assistant", "content": long_content}]
+        result = build_recent_context(msgs, kiso_truncate=100)
+        assert len(result) < 200
+        assert result.endswith("...")
+
+    def test_no_truncation_for_user_messages(self):
+        from kiso.brain import build_recent_context
+        long_content = "y" * 500
+        msgs = [{"role": "user", "user": "root", "content": long_content}]
+        result = build_recent_context(msgs)
+        assert long_content in result
+
+    def test_max_chars_keeps_recent(self):
+        from kiso.brain import build_recent_context
+        msgs = [
+            {"role": "user", "user": "root", "content": "first message that is old"},
+            {"role": "assistant", "content": "old response"},
+            {"role": "user", "user": "root", "content": "recent"},
+        ]
+        result = build_recent_context(msgs, max_chars=50)
+        assert "recent" in result
+        # Old messages may be dropped
+        lines = result.strip().splitlines()
+        assert len(lines) <= 3
+
+    def test_empty_list(self):
+        from kiso.brain import build_recent_context
+        assert build_recent_context([]) == ""
+
+    def test_missing_user_key(self):
+        from kiso.brain import build_recent_context
+        msgs = [{"role": "user", "content": "hello"}]
+        result = build_recent_context(msgs)
+        assert "[user] user: hello" in result
+
+
 class TestFormatPendingItems:
     def test_formats_pending(self):
         from kiso.brain import _format_pending_items

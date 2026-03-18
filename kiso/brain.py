@@ -110,6 +110,55 @@ def _format_message_history(messages: list[dict]) -> str:
     )
 
 
+def build_recent_context(
+    messages: list[dict], *, max_chars: int = 0, kiso_truncate: int = 200,
+) -> str:
+    """Unified conversation context builder for all LLM roles.
+
+    Formats messages as::
+
+        [user] root: vai su guidance.studio
+        [kiso] Per navigare serve il browser tool. Vuoi che lo installi?
+        [user] root: oh yeah
+
+    User messages use ``[user] {username}``. Assistant/system messages use
+    ``[kiso]`` with content truncated to *kiso_truncate* chars (kiso responses
+    can be very long; the gist is enough for context).
+
+    When *max_chars* > 0, older messages are dropped to stay within budget
+    (most recent messages preserved).
+    """
+    if not messages:
+        return ""
+
+    lines: list[str] = []
+    for m in messages:
+        role = m.get("role", "user")
+        if role in ("assistant", "system"):
+            content = m.get("content", "")
+            if kiso_truncate and len(content) > kiso_truncate:
+                content = content[:kiso_truncate] + "..."
+            lines.append(f"[kiso] {content}")
+        else:
+            user = m.get("user") or "user"
+            lines.append(f"[user] {user}: {m.get('content', '')}")
+
+    if max_chars > 0:
+        # Keep most recent messages within budget
+        result_lines: list[str] = []
+        total = 0
+        for line in reversed(lines):
+            line_len = len(line) + 1  # +1 for newline
+            if total + line_len > max_chars and result_lines:
+                break
+            result_lines.append(line)
+            total += line_len
+        result_lines.reverse()
+        return "\n".join(result_lines)
+
+    return "\n".join(lines)
+
+
 def _format_pending_items(pending: list[dict]) -> str:
     """Format pending question dicts into '- content' lines."""
     return _join_or_empty(pending, lambda p: f"- {p['content']}")
