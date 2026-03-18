@@ -183,6 +183,15 @@ class TestPromptSizes:
         assert words <= 450, f"reviewer.md has {words} words (max 450)"
 
 
+class TestMessengerPublishedFilesRule:
+    """M765: messenger prompt references Published Files section."""
+
+    def test_messenger_references_published_files_section(self):
+        text = _ROLES_DIR.joinpath("messenger.md").read_text()
+        assert "Published Files" in text
+        assert "Never construct" in text or "never construct" in text
+
+
 class TestPlannerLanguageRuleDedup:
     """'Answer in {lang' must not be duplicated across planner modules."""
 
