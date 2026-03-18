@@ -1003,6 +1003,7 @@ async def _handle_msg_task(
                     ctx.config, ctx.db, ctx.session, detail,
                     plan_outputs=ctx.plan_outputs,
                     goal=ctx.goal,
+                    include_recent=True,  # M753: messenger sees conversation
                     user_message=ctx.user_message,
                     on_briefer_done=_flush_briefer,
                     response_lang=ctx.response_lang,
