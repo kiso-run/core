@@ -986,7 +986,7 @@ async def _gather_planner_context(
         facts_text = "\n".join(parts)
 
     pending_text = _format_pending_items(pending)
-    recent_text = _format_message_history(recent)
+    recent_text = build_recent_context(recent, kiso_truncate=0)
 
     sys_env = get_system_env(config)
     sys_env_text = build_system_env_section(sys_env, session=session)
@@ -1201,7 +1201,7 @@ async def build_planner_messages(
 
         if recent:
             context_parts.append(
-                f"## Recent Messages\n{fence_content(_format_message_history(recent), 'MESSAGES')}"
+                f"## Recent Messages\n{fence_content(build_recent_context(recent, kiso_truncate=0), 'MESSAGES')}"
             )
 
         if paraphrased_context:
@@ -2091,7 +2091,7 @@ def build_summarizer_messages(
     system_prompt = _load_system_prompt("summarizer-session")
     parts: list[str] = []
     _add_section(parts, "Current Summary", current_summary)
-    parts.append(f"## Messages\n{_format_message_history(messages)}")
+    parts.append(f"## Messages\n{build_recent_context(messages, kiso_truncate=0)}")
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
@@ -2221,7 +2221,7 @@ def build_messenger_messages(
                      _join_or_empty(facts, lambda f: f"- {f['content']}"))
     if recent_messages:
         context_parts.append(
-            f"## Recent Conversation\n{fence_content(_format_message_history(recent_messages), 'MESSAGES')}"
+            f"## Recent Conversation\n{fence_content(build_recent_context(recent_messages, kiso_truncate=0), 'MESSAGES')}"
         )
     # M675: inject behavioral guidelines
     if behavior_rules:

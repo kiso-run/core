@@ -98,6 +98,7 @@ from kiso.store import (
     search_facts_scored,
     get_facts,
     get_oldest_messages,
+    get_recent_messages,
     get_safety_facts,
     get_pending_learnings,
     get_plan_for_session,
