@@ -397,3 +397,17 @@ class TestM745NetworkAndExternalUrl:
             content = f.read()
         assert "API exposed over HTTP" in content
         assert "docs/https.md" in content
+
+    def test_ipv4_preferred_over_ipv6(self):
+        """install.sh uses curl -4 to prefer IPv4."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "curl -4" in content
+
+    def test_ipv6_brackets_in_url(self):
+        """install.sh wraps IPv6 addresses in brackets for valid URLs."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "http://[${pub_ip}]" in content

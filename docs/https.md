@@ -2,6 +2,19 @@
 
 Kiso's API runs on HTTP by default. For production deployments — especially on public VPS — you should terminate TLS at a reverse proxy in front of kiso.
 
+## The `external_url` setting
+
+During installation, kiso detects your public IP and suggests an `external_url`. This URL is used for file download links (pub files) returned to users.
+
+```toml
+[settings]
+external_url = "http://77.42.46.159:8333"     # IPv4
+external_url = "http://[2a01:4f9::1]:8333"    # IPv6 (brackets required)
+external_url = "https://bot.example.com"       # with reverse proxy
+```
+
+The installer prefers IPv4. If only IPv6 is available, brackets are added automatically.
+
 ## Prerequisites
 
 - A domain name pointing to your VPS (e.g., `bot.example.com`)
