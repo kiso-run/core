@@ -2472,12 +2472,12 @@ class TestBuildMessengerMessages:
         assert "Current User Request" not in msgs[1]["content"]
 
     def test_m744_system_prompt_has_published_files_rule(self):
-        """M744: messenger system prompt contains Published files link rule."""
+        """M744/M765: messenger system prompt contains Published files link rule."""
         config = _make_brain_config()
         msgs = build_messenger_messages(config, "", [], "report file")
         system = msgs[0]["content"]
-        assert "Published files" in system
-        assert "sandbox:" in system.lower() or "sandbox" in system.lower()
+        assert "Published Files" in system
+        assert "never construct" in system.lower()
 
     def test_m744_published_files_in_outputs_context(self):
         """M744: when task output has Published files, messenger sees them."""
