@@ -568,8 +568,6 @@ class TestM758AutoInstallTools:
             tools=["websearch", "browser"], behaviors=["Always search before answering — never guess."],
         )
         args = MagicMock()
-        args.no_tools = False
-
         installed = []
 
         def fake_tool_install(fake_args):
@@ -585,26 +583,6 @@ class TestM758AutoInstallTools:
 
         mock_auto.assert_called_once_with(["websearch", "browser"])
 
-    def test_no_tools_flag_skips_install(self, tmp_path):
-        """--no-tools skips auto-install."""
-        from cli.preset_ops import install_preset
-
-        manifest = PresetManifest(
-            name="test-skip", version="1.0.0", description="test",
-            tools=["websearch"], behaviors=["Always search before answering — never guess."],
-        )
-        args = MagicMock()
-        args.no_tools = True
-
-        with patch("cli.preset_ops._auto_install_tools") as mock_auto, \
-             patch("cli._http.cli_post") as mock_post, \
-             patch("cli.preset_ops._load_installed", return_value=None), \
-             patch("cli.preset_ops._save_installed"):
-            mock_post.return_value = MagicMock(json=lambda: {"id": 1})
-            install_preset(args, manifest)
-
-        mock_auto.assert_not_called()
-
     def test_tracking_includes_installed_tools(self):
         """Tracking JSON includes installed_tools list."""
         from cli.preset_ops import install_preset
@@ -615,7 +593,6 @@ class TestM758AutoInstallTools:
             behaviors=["Always search before answering — never guess."],
         )
         args = MagicMock()
-        args.no_tools = False
         saved_data = {}
 
         def capture_save(name, data):
@@ -629,13 +606,6 @@ class TestM758AutoInstallTools:
             install_preset(args, manifest)
 
         assert saved_data["installed_tools"] == ["websearch"]
-
-    def test_cli_parser_has_no_tools_flag(self):
-        """CLI parser accepts --no-tools for preset install."""
-        from cli import build_parser
-        parser = build_parser()
-        args = parser.parse_args(["preset", "install", "basic", "--no-tools"])
-        assert args.no_tools is True
 
 
 # --- M760: Preset validation in CI ---

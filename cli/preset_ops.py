@@ -151,14 +151,13 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
             print(f"warning: failed to seed behavior: {behavior[:60]}", file=sys.stderr)
 
     # M758: auto-install tools and connectors
-    no_tools = getattr(args, "no_tools", False)
     installed_tools: list[str] = []
     installed_connectors: list[str] = []
 
-    if manifest.tools and not no_tools:
+    if manifest.tools:
         installed_tools = _auto_install_tools(manifest.tools)
 
-    if manifest.connectors and not no_tools:
+    if manifest.connectors:
         installed_connectors = _auto_install_connectors(manifest.connectors)
 
     # Save tracking file
