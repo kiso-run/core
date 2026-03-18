@@ -635,3 +635,60 @@ class TestM758AutoInstallTools:
         parser = build_parser()
         args = parser.parse_args(["preset", "install", "basic", "--no-tools"])
         assert args.no_tools is True
+
+
+# --- M760: Preset validation in CI ---
+
+
+class TestM760PresetValidationCI:
+    """M760: all presets/*/preset.toml files validate correctly."""
+
+    _PRESETS_DIR = Path(__file__).parent.parent / "presets"
+    _REGISTRY_PATH = Path(__file__).parent.parent / "registry.json"
+
+    def _all_preset_paths(self) -> list[Path]:
+        if not self._PRESETS_DIR.is_dir():
+            return []
+        return sorted(self._PRESETS_DIR.glob("*/preset.toml"))
+
+    def test_at_least_one_preset_exists(self):
+        paths = self._all_preset_paths()
+        assert len(paths) >= 1, "No preset.toml files found in presets/"
+
+    @pytest.mark.parametrize("preset_path", [
+        pytest.param(p, id=p.parent.name)
+        for p in sorted((Path(__file__).parent.parent / "presets").glob("*/preset.toml"))
+    ] if (Path(__file__).parent.parent / "presets").is_dir() else [])
+    def test_preset_validates(self, preset_path):
+        """Each preset.toml must pass load_preset() without errors."""
+        manifest = load_preset(preset_path)
+        assert manifest.name
+        assert manifest.version
+        assert manifest.description
+
+    @pytest.mark.parametrize("preset_path", [
+        pytest.param(p, id=p.parent.name)
+        for p in sorted((Path(__file__).parent.parent / "presets").glob("*/preset.toml"))
+    ] if (Path(__file__).parent.parent / "presets").is_dir() else [])
+    def test_preset_tools_in_registry(self, preset_path):
+        """All tools referenced by a preset must exist in registry.json."""
+        manifest = load_preset(preset_path)
+        registry = json.loads(self._REGISTRY_PATH.read_text())
+        registry_tools = {t["name"] for t in registry.get("tools", [])}
+        for tool in manifest.tools:
+            assert tool in registry_tools, (
+                f"Preset '{manifest.name}' references tool '{tool}' "
+                f"not in registry. Available: {registry_tools}"
+            )
+
+    @pytest.mark.parametrize("preset_path", [
+        pytest.param(p, id=p.parent.name)
+        for p in sorted((Path(__file__).parent.parent / "presets").glob("*/preset.toml"))
+    ] if (Path(__file__).parent.parent / "presets").is_dir() else [])
+    def test_preset_behaviors_not_placeholder(self, preset_path):
+        """Behaviors must be non-empty strings >= 20 chars."""
+        manifest = load_preset(preset_path)
+        for b in manifest.behaviors:
+            assert isinstance(b, str) and len(b) >= 20, (
+                f"Behavior too short or invalid in '{manifest.name}': {b!r}"
+            )
