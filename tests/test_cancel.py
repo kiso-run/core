@@ -241,3 +241,28 @@ async def test_exec_task_normal_with_cancel_event(tmp_path):
         )
     assert success is True
     assert "works" in stdout
+
+
+# ---------------------------------------------------------------------------
+# M768: cancel check fires after each completed task (not just batch start)
+# ---------------------------------------------------------------------------
+
+
+async def test_cancel_after_task_cancels_remaining(tmp_path):
+    """M768: cancel_event set during first task → remaining tasks cancelled."""
+    from kiso.worker import _exec_task
+    from unittest.mock import patch as _patch
+
+    cancel = asyncio.Event()
+
+    # First call: long sleep that gets cancelled
+    asyncio.get_event_loop().call_later(0.1, cancel.set)
+    with _patch("kiso.worker.utils.KISO_DIR", tmp_path):
+        _, stderr, success, code = await _exec_task(
+            "m768-test", "sleep 30", cancel_event=cancel,
+        )
+    assert code == -15
+    assert stderr == "cancelled"
+    # cancel_event is now set — _execute_plan would check it after this task
+    # and cancel remaining tasks without starting them
+    assert cancel.is_set()

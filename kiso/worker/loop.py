@@ -1639,6 +1639,20 @@ async def _execute_plan(
                 return (stop_result.stop_success, stop_result.stop_replan,
                         stop_result.stop_stuck, completed, remaining, ctx.plan_outputs)
 
+            # M768: cancel check after parallel batch completes
+            if cancel_event is not None and cancel_event.is_set():
+                last_batch_idx = batch[-1][0]
+                for t in tasks[last_batch_idx + 1:]:
+                    await update_task(db, t["id"], "cancelled")
+                    audit.log_task(
+                        session, t["id"], t["type"], t["detail"],
+                        "cancelled", 0, 0,
+                        deploy_secrets=deploy_secrets,
+                        session_secrets=session_secrets or {},
+                    )
+                await _cleanup_plan_outputs(session)
+                return False, "cancelled", None, completed, [dict(t) for t in tasks[last_batch_idx + 1:]], ctx.plan_outputs
+
         else:
             # --- Sequential execution (single task, original logic) ---
             idx, task_row = batch[0]
@@ -1694,6 +1708,19 @@ async def _execute_plan(
                 remaining = [dict(t) for t in tasks[idx + 1:]]
                 await _cleanup_plan_outputs(session)
                 return result.stop_success, result.stop_replan, result.stop_stuck, completed, remaining, ctx.plan_outputs
+
+            # M768: cancel check after each task (not just at batch start)
+            if cancel_event is not None and cancel_event.is_set():
+                for t in tasks[idx + 1:]:
+                    await update_task(db, t["id"], "cancelled")
+                    audit.log_task(
+                        session, t["id"], t["type"], t["detail"],
+                        "cancelled", 0, 0,
+                        deploy_secrets=deploy_secrets,
+                        session_secrets=session_secrets or {},
+                    )
+                await _cleanup_plan_outputs(session)
+                return False, "cancelled", None, completed, [dict(t) for t in tasks[idx + 1:]], ctx.plan_outputs
 
     await _cleanup_plan_outputs(session)
     return True, None, None, completed, [], ctx.plan_outputs
