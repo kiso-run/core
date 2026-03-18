@@ -508,3 +508,45 @@ class TestPresetSubcommandRegistration:
         args = parser.parse_args(args_list)
         for attr, value in expected.items():
             assert getattr(args, attr) == value
+
+
+# --- M757: basic preset validation ---
+
+
+class TestM757BasicPreset:
+    """M757: the basic preset.toml exists and validates correctly."""
+
+    _PRESET_PATH = Path(__file__).parent.parent / "presets" / "basic" / "preset.toml"
+
+    def test_basic_preset_file_exists(self):
+        assert self._PRESET_PATH.is_file(), "presets/basic/preset.toml not found"
+
+    def test_basic_preset_validates(self):
+        manifest = load_preset(self._PRESET_PATH)
+        assert manifest.name == "basic"
+        assert manifest.version == "1.0.0"
+
+    def test_basic_preset_has_3_tools(self):
+        manifest = load_preset(self._PRESET_PATH)
+        assert len(manifest.tools) == 3
+        assert "websearch" in manifest.tools
+        assert "aider" in manifest.tools
+        assert "browser" in manifest.tools
+
+    def test_basic_preset_has_3_behaviors(self):
+        manifest = load_preset(self._PRESET_PATH)
+        assert len(manifest.behaviors) == 3
+        for b in manifest.behaviors:
+            assert len(b) >= 20, f"Behavior too short: {b}"
+
+    def test_basic_preset_has_required_env_var(self):
+        manifest = load_preset(self._PRESET_PATH)
+        assert "KISO_TOOL_WEBSEARCH_API_KEY" in manifest.env_vars
+        assert manifest.env_vars["KISO_TOOL_WEBSEARCH_API_KEY"]["required"] is True
+
+    def test_basic_in_registry(self):
+        registry = json.loads(
+            (Path(__file__).parent.parent / "registry.json").read_text()
+        )
+        names = [p["name"] for p in registry["presets"]]
+        assert "basic" in names

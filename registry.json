@@ -51,6 +51,10 @@
   ],
   "presets": [
     {
+      "name": "basic",
+      "description": "Starter kit — web search, browser, and code editing"
+    },
+    {
       "name": "performance-marketer",
       "description": "Digital performance marketing specialist — campaign analysis, ROI optimization, ad copy"
     },
