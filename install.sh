@@ -87,6 +87,7 @@ ARG_USER=""
 ARG_API_KEY=""
 ARG_BASE_URL=""
 ARG_PROVIDER=""
+ARG_PRESET=""
 RESET_REQUESTED=false
 
 if [[ "${KISO_INSTALL_LIB:-}" != "1" ]]; then
@@ -107,6 +108,9 @@ if [[ "${KISO_INSTALL_LIB:-}" != "1" ]]; then
             --provider)
                 if [[ $# -lt 2 ]]; then red "Error: --provider requires a value"; exit 1; fi
                 ARG_PROVIDER="$2"; shift 2 ;;
+            --preset)
+                if [[ $# -lt 2 ]]; then red "Error: --preset requires a value"; exit 1; fi
+                ARG_PRESET="$2"; shift 2 ;;
             --reset)
                 RESET_REQUESTED=true; shift ;;
             *)
@@ -1121,6 +1125,51 @@ _INST_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' "$REPO_DIR/kiso/_version.p
 _INST_HASH=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
 register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE" "$_INST_VERSION" "$_INST_HASH"
 green "  registered in $INSTANCES_JSON"
+
+# ── 6d. Preset selection (M759) ────────────────────────────────────────────
+
+if [[ "$MODE" == "new" && "$NEED_BUILD" == true ]]; then
+    # Non-interactive: install preset if --preset flag was given
+    if [[ -n "$ARG_PRESET" ]]; then
+        bold "Installing preset '$ARG_PRESET'..."
+        docker exec "$CONTAINER" uv run kiso preset install "$ARG_PRESET" --no-tools \
+            && green "  preset installed" \
+            || yellow "  warning: preset install failed"
+    elif [[ -t 0 ]]; then
+    echo
+    # Fetch presets from registry
+    _PRESETS=$(docker exec "$CONTAINER" python3 -c "
+import json, urllib.request
+try:
+    r = urllib.request.urlopen('https://raw.githubusercontent.com/kiso-run/core/main/registry.json', timeout=5)
+    d = json.loads(r.read())
+    for i, p in enumerate(d.get('presets', []), 1):
+        print(f\"{i}) {p['name']} — {p['description']}\")
+except Exception:
+    pass
+" 2>/dev/null || true)
+
+    if [[ -n "$_PRESETS" ]]; then
+        bold "Presets — install a starter configuration?"
+        echo "    0) Skip — I'll set things up myself"
+        echo "$_PRESETS" | while IFS= read -r line; do echo "    $line"; done
+        echo
+        safe_read -rp "  Choice [0]: " _preset_choice
+        _preset_choice="${_preset_choice:-0}"
+        if [[ "$_preset_choice" != "0" ]]; then
+            _preset_name=$(echo "$_PRESETS" | sed -n "${_preset_choice}p" | sed 's/^[0-9]*) //' | cut -d' ' -f1)
+            if [[ -n "$_preset_name" ]]; then
+                bold "Installing preset '$_preset_name'..."
+                docker exec "$CONTAINER" uv run kiso preset install "$_preset_name" --no-tools \
+                    && green "  preset installed" \
+                    || yellow "  warning: preset install failed — you can do it later with: kiso preset install $_preset_name"
+            fi
+        else
+            green "  skipped"
+        fi
+    fi
+    fi  # end elif [[ -t 0 ]]
+fi
 
 # ── 7. Install wrapper ─────────────────────────────────────────────────────
 

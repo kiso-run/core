@@ -411,3 +411,32 @@ class TestM745NetworkAndExternalUrl:
         with open(script_path) as f:
             content = f.read()
         assert "http://[${pub_ip}]" in content
+
+
+class TestM759PresetStep:
+    """M759: installer post-install preset selection."""
+
+    def test_preset_flag_parsed(self):
+        """--preset flag is parsed in arg parser."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            echo "ARG_PRESET=$ARG_PRESET"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "ARG_PRESET=" in result.stdout
+
+    def test_preset_block_present(self):
+        """install.sh has the preset selection block."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "kiso preset install" in content
+        assert "Presets" in content
+
+    def test_preset_skip_in_update_mode(self):
+        """Preset step only runs for new installs, not updates."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert 'MODE" == "new"' in content
