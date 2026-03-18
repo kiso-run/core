@@ -19,6 +19,10 @@
     {
       "name": "gworkspace",
       "description": "Google Workspace integration — Gmail, Calendar, Drive, Docs, Sheets via service account or OAuth"
+    },
+    {
+      "name": "docreader",
+      "description": "Document reader — extract text from PDF, DOCX, CSV, XLSX files for analysis and search"
     }
   ],
   "skills": [

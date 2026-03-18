@@ -206,7 +206,8 @@ class TestInstallPreset:
         args = make_cli_args()
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
              patch("httpx.request", side_effect=mock_request), \
-             patch("cli.preset_ops.PRESETS_DIR", tmp_path / "presets"):
+             patch("cli.preset_ops.PRESETS_DIR", tmp_path / "presets"), \
+             patch("cli.preset_ops._auto_install_tools", return_value=["websearch"]):
             # Patch the _installed_path to use tmp
             with patch("cli.preset_ops._installed_path", return_value=tmp_path / "presets" / "test-p.installed.json"):
                 install_preset(args, manifest)
@@ -215,7 +216,7 @@ class TestInstallPreset:
         assert "installed" in out.lower()
         assert "1 knowledge facts" in out
         assert "1 behaviors" in out
-        assert "kiso tool install websearch" in out
+        assert "websearch" in out
 
     def test_install_dry_run(self, capsys):
         manifest = PresetManifest(
