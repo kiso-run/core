@@ -259,6 +259,68 @@ class TestRunSubprocess:
         assert "hello from stdin" in stdout
 
 
+# --- _run_subprocess cancel_event (M766) ---
+
+
+class TestRunSubprocessCancel:
+    async def test_cancel_kills_subprocess(self, tmp_path):
+        """M766: cancel_event terminates running subprocess."""
+        cancel = asyncio.Event()
+        # Start a long-running sleep, cancel almost immediately
+        asyncio.get_event_loop().call_later(0.1, cancel.set)
+        stdout, stderr, success, exit_code = await _run_subprocess(
+            "sleep 30",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+            cancel_event=cancel,
+        )
+        assert success is False
+        assert exit_code == -15
+        assert stderr == "cancelled"
+
+    async def test_normal_completion_unaffected(self, tmp_path):
+        """M766: cancel_event present but not fired → normal completion."""
+        cancel = asyncio.Event()  # never set
+        stdout, stderr, success, exit_code = await _run_subprocess(
+            "echo hello",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+            cancel_event=cancel,
+        )
+        assert success is True
+        assert "hello" in stdout
+        assert exit_code == 0
+
+    async def test_no_cancel_event_works_as_before(self, tmp_path):
+        """M766: cancel_event=None → normal behavior unchanged."""
+        stdout, _, success, _ = await _run_subprocess(
+            "echo ok",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+            cancel_event=None,
+        )
+        assert success is True
+        assert "ok" in stdout
+
+    async def test_already_set_cancel_event(self, tmp_path):
+        """M766: cancel_event already set before call → subprocess still killed."""
+        cancel = asyncio.Event()
+        cancel.set()
+        stdout, stderr, success, exit_code = await _run_subprocess(
+            "sleep 30",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+            cancel_event=cancel,
+        )
+        # When already set, the subprocess starts but cancel fires immediately
+        assert success is False
+        assert exit_code == -15
+
+
 # --- _exec_task ---
 
 class TestExecTask:

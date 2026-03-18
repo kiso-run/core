@@ -24,6 +24,25 @@ async def _run_sync(fn, *args):
     return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
 
+_CANCEL_GRACE_PERIOD = 2  # seconds to wait after SIGTERM before SIGKILL
+
+
+async def _kill_proc(proc: asyncio.subprocess.Process) -> None:
+    """Send SIGTERM, wait briefly, then SIGKILL if still alive (M766)."""
+    try:
+        proc.terminate()
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=_CANCEL_GRACE_PERIOD)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+
+
 async def _run_subprocess(
     cmd,
     *,
@@ -33,6 +52,7 @@ async def _run_subprocess(
     stdin_data: bytes | None = None,
     uid: int | None = None,
     max_output_size: int = 0,
+    cancel_event: "asyncio.Event | None" = None,
 ) -> tuple[str, str, bool, int]:
     """Run a subprocess and return its output.
 
@@ -44,6 +64,9 @@ async def _run_subprocess(
         stdin_data: Optional bytes to pipe via stdin.
         uid: If set, run the subprocess as this user ID.
         max_output_size: If > 0, truncate stdout/stderr to this many characters.
+        cancel_event: If set and fired during execution, the subprocess is
+            terminated (SIGTERM → SIGKILL) and the function returns with
+            exit_code -15 (M766).
 
     Returns:
         (stdout, stderr, success, exit_code) where success is True iff
@@ -67,7 +90,27 @@ async def _run_subprocess(
             proc = await asyncio.create_subprocess_exec("bash", "-c", cmd, **kwargs)
         else:
             proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)
-        stdout_bytes, stderr_bytes = await proc.communicate(input=stdin_data)
+
+        # M766: race communicate() against cancel_event
+        if cancel_event is not None and cancel_event.is_set():
+            # Already cancelled — kill immediately
+            await _kill_proc(proc)
+            return "", "cancelled", False, -15
+        if cancel_event is not None:
+            comm_task = asyncio.ensure_future(proc.communicate(input=stdin_data))
+            cancel_task = asyncio.ensure_future(cancel_event.wait())
+            done, pending = await asyncio.wait(
+                {comm_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+            if cancel_task in done:
+                # Cancel fired — kill subprocess
+                await _kill_proc(proc)
+                return "", "cancelled", False, -15
+            stdout_bytes, stderr_bytes = comm_task.result()
+        else:
+            stdout_bytes, stderr_bytes = await proc.communicate(input=stdin_data)
     except OSError as e:
         return "", f"Executable not found: {e}", False, -1
 
