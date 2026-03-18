@@ -47,6 +47,44 @@ def list_installed_presets() -> list[dict]:
     return results
 
 
+def _auto_install_tools(tool_names: list[str]) -> list[str]:
+    """Auto-install tools by name. Returns list of successfully installed names."""
+    import argparse
+    from cli.tool import _tool_install
+
+    installed: list[str] = []
+    for name in tool_names:
+        print(f"  Installing tool '{name}'...")
+        fake_args = argparse.Namespace(
+            target=name, name=None, show_deps=False, no_deps=False,
+        )
+        try:
+            _tool_install(fake_args)
+            installed.append(name)
+        except (SystemExit, Exception) as e:
+            print(f"  warning: failed to install tool '{name}': {e}", file=sys.stderr)
+    return installed
+
+
+def _auto_install_connectors(connector_names: list[str]) -> list[str]:
+    """Auto-install connectors by name. Returns list of successfully installed names."""
+    import argparse
+    from cli.connector import _connector_install
+
+    installed: list[str] = []
+    for name in connector_names:
+        print(f"  Installing connector '{name}'...")
+        fake_args = argparse.Namespace(
+            target=name, name=None, show_deps=False, no_deps=False,
+        )
+        try:
+            _connector_install(fake_args)
+            installed.append(name)
+        except (SystemExit, Exception) as e:
+            print(f"  warning: failed to install connector '{name}': {e}", file=sys.stderr)
+    return installed
+
+
 def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> None:
     """Orchestrate preset installation.
 
@@ -112,6 +150,17 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         except SystemExit:
             print(f"warning: failed to seed behavior: {behavior[:60]}", file=sys.stderr)
 
+    # M758: auto-install tools and connectors
+    no_tools = getattr(args, "no_tools", False)
+    installed_tools: list[str] = []
+    installed_connectors: list[str] = []
+
+    if manifest.tools and not no_tools:
+        installed_tools = _auto_install_tools(manifest.tools)
+
+    if manifest.connectors and not no_tools:
+        installed_connectors = _auto_install_connectors(manifest.connectors)
+
     # Save tracking file
     tracking = {
         "name": manifest.name,
@@ -122,6 +171,8 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         "tools": manifest.tools,
         "skills": manifest.skills,
         "connectors": manifest.connectors,
+        "installed_tools": installed_tools,
+        "installed_connectors": installed_connectors,
     }
     _save_installed(manifest.name, tracking)
 
@@ -131,14 +182,13 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         print(f"  Seeded {len(fact_ids)} knowledge facts.")
     if behavior_ids:
         print(f"  Seeded {len(behavior_ids)} behaviors.")
-
-    # Print tool/skill install instructions
-    if manifest.tools:
-        print(f"\n  Install tools: {', '.join(f'kiso tool install {t}' for t in manifest.tools)}")
-    if manifest.skills:
-        print(f"  Install skills: {', '.join(f'kiso skill install {s}' for s in manifest.skills)}")
-    if manifest.connectors:
-        print(f"  Install connectors: {', '.join(f'kiso connector install {c}' for c in manifest.connectors)}")
+    if installed_tools:
+        print(f"  Installed tools: {', '.join(installed_tools)}")
+    skipped_tools = set(manifest.tools) - set(installed_tools)
+    if skipped_tools:
+        print(f"  Skipped tools (install manually): {', '.join(skipped_tools)}")
+    if installed_connectors:
+        print(f"  Installed connectors: {', '.join(installed_connectors)}")
 
     # Env var hints
     if manifest.env_vars:

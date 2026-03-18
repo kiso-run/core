@@ -472,6 +472,7 @@ def build_parser() -> argparse.ArgumentParser:
     preset_install_p = preset_sub.add_parser("install", help="install a preset")
     preset_install_p.add_argument("target", help="preset name or local path")
     preset_install_p.add_argument("--dry-run", action="store_true", help="show what would be installed")
+    preset_install_p.add_argument("--no-tools", action="store_true", help="skip automatic tool installation")
     preset_show_p = preset_sub.add_parser("show", help="show preset details")
     preset_show_p.add_argument("name", help="preset name or local path")
     preset_sub.add_parser("installed", help="list installed presets")
