@@ -11,10 +11,13 @@ import pytest
 from kiso.config import Config, Provider
 from kiso.sysenv import (
     PROBE_BINARIES,
+    _PKG_MANAGER_MAP,
     _collect_binaries,
     _collect_connectors,
     _collect_os_info,
+    _collect_user_info,
     _collect_workspace_files,
+    _detect_pkg_manager,
     build_system_env_section,
     collect_system_env,
     get_resource_limits,
@@ -62,6 +65,103 @@ class TestCollectOsInfo:
         assert info["system"]
         assert info["machine"]
         assert info["release"]
+
+    def test_m731_distro_key_on_linux(self):
+        """M731: _collect_os_info returns distro key when freedesktop_os_release works."""
+        fake_release = {"PRETTY_NAME": "Debian GNU/Linux 12 (bookworm)", "ID": "debian", "ID_LIKE": ""}
+        with patch("platform.freedesktop_os_release", return_value=fake_release):
+            info = _collect_os_info()
+        assert info["distro"] == "Debian GNU/Linux 12 (bookworm)"
+        assert info["distro_id"] == "debian"
+        assert info["pkg_manager"] == "apt"
+
+    def test_m731_distro_missing_on_oserror(self):
+        """M731: distro key absent when freedesktop_os_release raises OSError."""
+        with patch("platform.freedesktop_os_release", side_effect=OSError):
+            info = _collect_os_info()
+        assert "distro" not in info
+        assert "pkg_manager" not in info
+
+    def test_m731_id_like_fallback(self):
+        """M731: pkg_manager detected via ID_LIKE when ID is unknown."""
+        fake_release = {"PRETTY_NAME": "Pop!_OS 22.04", "ID": "pop", "ID_LIKE": "ubuntu debian"}
+        with patch("platform.freedesktop_os_release", return_value=fake_release):
+            info = _collect_os_info()
+        assert info["pkg_manager"] == "apt"
+
+
+# --- _detect_pkg_manager ---
+
+
+class TestDetectPkgManager:
+    def test_debian(self):
+        assert _detect_pkg_manager("debian", "") == "apt"
+
+    def test_ubuntu(self):
+        assert _detect_pkg_manager("ubuntu", "") == "apt"
+
+    def test_fedora(self):
+        assert _detect_pkg_manager("fedora", "") == "dnf"
+
+    def test_alpine(self):
+        assert _detect_pkg_manager("alpine", "") == "apk"
+
+    def test_arch(self):
+        assert _detect_pkg_manager("arch", "") == "pacman"
+
+    def test_unknown_with_debian_like(self):
+        assert _detect_pkg_manager("mylinux", "debian") == "apt"
+
+    def test_completely_unknown(self):
+        assert _detect_pkg_manager("unknown", "") is None
+
+    def test_all_mapped_distros_have_value(self):
+        """Every entry in _PKG_MANAGER_MAP returns a non-empty string."""
+        for distro_id, pkg in _PKG_MANAGER_MAP.items():
+            assert _detect_pkg_manager(distro_id, "") == pkg
+
+
+# --- _collect_user_info ---
+
+
+class TestCollectUserInfo:
+    def test_returns_expected_keys(self):
+        info = _collect_user_info()
+        assert "user" in info
+        assert "is_root" in info
+        assert "has_sudo" in info
+
+    def test_root_detection(self):
+        """M732: root user detected when uid is 0."""
+        import pwd as _pwd
+        with patch("os.getuid", return_value=0), \
+             patch.object(_pwd, "getpwuid") as mock_pw:
+            mock_pw.return_value = MagicMock(pw_name="root")
+            info = _collect_user_info()
+        assert info["is_root"] is True
+        assert info["user"] == "root"
+
+    def test_non_root_detection(self):
+        """M732: non-root user detected when uid is not 0."""
+        import pwd as _pwd
+        with patch("os.getuid", return_value=1000), \
+             patch.object(_pwd, "getpwuid") as mock_pw:
+            mock_pw.return_value = MagicMock(pw_name="kiso")
+            info = _collect_user_info()
+        assert info["is_root"] is False
+        assert info["user"] == "kiso"
+
+    def test_sudo_detected(self):
+        """M732: has_sudo is True when sudo binary exists."""
+        with patch("kiso.sysenv.shutil.which", return_value="/usr/bin/sudo"):
+            info = _collect_user_info()
+        assert info["has_sudo"] is True
+
+    def test_sudo_not_detected(self):
+        """M732: has_sudo is False when sudo binary missing."""
+        with patch("kiso.sysenv.shutil.which", return_value=None):
+            info = _collect_user_info()
+        assert info["has_sudo"] is False
 
 
 # --- _collect_binaries ---
@@ -287,6 +387,41 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "Linux x86_64 (6.17.0-14-generic)" in section
 
+    def test_m731_distro_in_os_line(self, sample_env):
+        """M731: distro name appended to OS line when present."""
+        sample_env["os"]["distro"] = "Debian GNU/Linux 12 (bookworm)"
+        section = build_system_env_section(sample_env)
+        assert "— Debian GNU/Linux 12 (bookworm)" in section
+
+    def test_m731_pkg_manager_line(self, sample_env):
+        """M731: Package manager line shown when detected."""
+        sample_env["os"]["pkg_manager"] = "apt"
+        section = build_system_env_section(sample_env)
+        assert "Package manager: apt" in section
+
+    def test_m731_no_pkg_manager_line_when_absent(self, sample_env):
+        """M731: No Package manager line when not detected."""
+        section = build_system_env_section(sample_env)
+        assert "Package manager:" not in section
+
+    def test_m732_user_root_sudo_not_needed(self, sample_env):
+        """M732: root user shows 'sudo not needed'."""
+        sample_env["user_info"] = {"user": "root", "is_root": True, "has_sudo": False}
+        section = build_system_env_section(sample_env)
+        assert "User: root (sudo not needed" in section
+
+    def test_m732_user_with_sudo(self, sample_env):
+        """M732: non-root user with sudo shows 'sudo available'."""
+        sample_env["user_info"] = {"user": "kiso", "is_root": False, "has_sudo": True}
+        section = build_system_env_section(sample_env)
+        assert "User: kiso (sudo available)" in section
+
+    def test_m732_user_without_sudo(self, sample_env):
+        """M732: non-root user without sudo shows 'sudo not available'."""
+        sample_env["user_info"] = {"user": "kiso", "is_root": False, "has_sudo": False}
+        section = build_system_env_section(sample_env)
+        assert "User: kiso (sudo not available)" in section
+
     def test_contains_available_binaries(self, sample_env):
         section = build_system_env_section(sample_env)
         assert "Available binaries: git, python3, curl" in section
@@ -443,6 +578,18 @@ class TestCollectBinariesSysBin:
 
 
 class TestCollectSystemEnvNewKeys:
+    def test_m732_includes_user_info(self, config):
+        """M732: collect_system_env includes user_info with expected keys."""
+        with patch("kiso.connectors.discover_connectors", return_value=[]):
+            env = collect_system_env(config)
+        assert "user_info" in env
+        ui = env["user_info"]
+        assert "user" in ui
+        assert "is_root" in ui
+        assert "has_sudo" in ui
+        assert isinstance(ui["is_root"], bool)
+        assert isinstance(ui["has_sudo"], bool)
+
     def test_includes_sys_bin_path(self, config):
         from kiso.config import KISO_DIR
         with patch("kiso.connectors.discover_connectors", return_value=[]):

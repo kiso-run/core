@@ -1246,6 +1246,13 @@ async def _handle_exec_task(
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_TRANSLATING)
         sys_env = get_system_env(ctx.config)
         sys_env_text = build_system_env_section(sys_env, session=ctx.session)
+
+        # M735: strip sudo from exec detail when running as root
+        _user_info = sys_env.get("user_info", {})
+        if _user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+            log.debug("Stripped sudo from exec detail (running as root)")
+
         _exec_outputs = briefed_outputs + ([local_plan_output] if local_plan_output else [])
         outputs_text = _format_plan_outputs_for_msg(_exec_outputs)
         idx_translate = get_usage_index()

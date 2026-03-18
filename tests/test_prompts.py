@@ -57,11 +57,23 @@ def test_role_prompt_has_core_terms(filename, terms):
         assert term in content, f"{filename}: missing core term '{term}'"
 
 
+class TestM734WorkerSudoRule:
+    """M734: worker prompt has sudo-stripping rule for root."""
+
+    def test_worker_prompt_has_strip_sudo(self):
+        content = (_ROLES_DIR / "worker.md").read_text()
+        assert "strip" in content.lower() and "sudo" in content.lower()
+
+    def test_worker_prompt_has_cannot_translate(self):
+        content = (_ROLES_DIR / "worker.md").read_text()
+        assert "CANNOT_TRANSLATE" in content
+
+
 class TestPromptSizeRegression:
     """Prompt files must not exceed size budgets (token cost guard)."""
 
     @pytest.mark.parametrize("filename,max_chars", [
-        ("planner.md", 9800),
+        ("planner.md", 10100),
         ("messenger.md", 2500),
         ("reviewer.md", 3200),
     ])

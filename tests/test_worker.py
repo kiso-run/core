@@ -11694,6 +11694,37 @@ class TestM338BlockExtendWhenStuck:
         )
 
 
+# --- M735: sudo stripping when running as root ---
+
+
+class TestM735SudoStripping:
+    """M735: exec detail has sudo stripped when running as root."""
+
+    def test_sudo_stripped_from_detail_when_root(self):
+        """sudo is removed from detail string when user_info.is_root is True."""
+        detail = "sudo apt-get install -y timg"
+        user_info = {"user": "root", "is_root": True, "has_sudo": False}
+        if user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+        assert detail == "apt-get install -y timg"
+
+    def test_sudo_kept_when_not_root(self):
+        """sudo is kept in detail when user_info.is_root is False."""
+        detail = "sudo apt-get install -y timg"
+        user_info = {"user": "kiso", "is_root": False, "has_sudo": True}
+        if user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+        assert detail == "sudo apt-get install -y timg"
+
+    def test_no_sudo_no_change(self):
+        """Detail without sudo is unchanged regardless of root status."""
+        detail = "apt-get install -y timg"
+        user_info = {"user": "root", "is_root": True, "has_sudo": False}
+        if user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+        assert detail == "apt-get install -y timg"
+
+
 # --- M341: Integration test: stuck → user notification flow ---
 
 

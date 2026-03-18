@@ -130,13 +130,55 @@ def get_resource_limits() -> dict:
     return result
 
 
+_PKG_MANAGER_MAP: dict[str, str] = {
+    "debian": "apt",
+    "ubuntu": "apt",
+    "linuxmint": "apt",
+    "pop": "apt",
+    "raspbian": "apt",
+    "fedora": "dnf",
+    "rhel": "dnf",
+    "centos": "dnf",
+    "rocky": "dnf",
+    "almalinux": "dnf",
+    "alpine": "apk",
+    "arch": "pacman",
+    "manjaro": "pacman",
+    "opensuse": "zypper",
+    "sles": "zypper",
+}
+
+
+def _detect_pkg_manager(distro_id: str, id_like: str = "") -> str | None:
+    """Deterministic mapping from distro ID to package manager name."""
+    if distro_id in _PKG_MANAGER_MAP:
+        return _PKG_MANAGER_MAP[distro_id]
+    for parent in id_like.split():
+        if parent in _PKG_MANAGER_MAP:
+            return _PKG_MANAGER_MAP[parent]
+    return None
+
+
 def _collect_os_info() -> dict[str, str]:
-    """Collect OS platform info."""
-    return {
+    """Collect OS platform info including distro details."""
+    info: dict[str, str] = {
         "system": platform.system(),
         "machine": platform.machine(),
         "release": platform.release(),
     }
+    try:
+        os_release = platform.freedesktop_os_release()
+        info["distro"] = os_release.get("PRETTY_NAME", "")
+        distro_id = os_release.get("ID", "")
+        id_like = os_release.get("ID_LIKE", "")
+        info["distro_id"] = distro_id
+        info["distro_id_like"] = id_like
+        pkg = _detect_pkg_manager(distro_id, id_like)
+        if pkg:
+            info["pkg_manager"] = pkg
+    except OSError:
+        pass
+    return info
 
 
 def _collect_binaries(
@@ -213,15 +255,35 @@ def _load_registry_hints() -> str:
         return ""
 
 
+def _collect_user_info() -> dict:
+    """Detect current user, root status, and sudo availability."""
+    import pwd
+
+    try:
+        uid = os.getuid()
+        username = pwd.getpwuid(uid).pw_name
+    except (KeyError, OSError):
+        uid = -1
+        username = os.getenv("USER", "unknown")
+
+    return {
+        "user": username,
+        "is_root": uid == 0,
+        "has_sudo": shutil.which("sudo") is not None,
+    }
+
+
 def collect_system_env(config: Config) -> dict:
     """Assemble all system environment info into one dict."""
     os_info = _collect_os_info()
     found_bins, missing_bins = _collect_binaries()
     connectors = _collect_connectors()
     registry_hints = _load_registry_hints()
+    user_info = _collect_user_info()
 
     return {
         "os": os_info,
+        "user_info": user_info,
         "shell": "/bin/sh",
         "exec_cwd": str(KISO_DIR / "sessions"),
         "exec_env": "PATH (sys/bin prepended) + HOME + git/ssh env vars when config exists",
@@ -315,9 +377,25 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     os_info = env["os"]
     lines: list[str] = []
 
-    lines.append(
-        f"OS: {os_info['system']} {os_info['machine']} ({os_info['release']})"
-    )
+    os_line = f"OS: {os_info['system']} {os_info['machine']} ({os_info['release']})"
+    distro = os_info.get("distro")
+    if distro:
+        os_line += f" — {distro}"
+    lines.append(os_line)
+    pkg_manager = os_info.get("pkg_manager")
+    if pkg_manager:
+        lines.append(f"Package manager: {pkg_manager}")
+    user_info = env.get("user_info", {})
+    if user_info:
+        username = user_info.get("user", "unknown")
+        is_root = user_info.get("is_root", False)
+        has_sudo = user_info.get("has_sudo", False)
+        if is_root:
+            lines.append(f"User: {username} (sudo not needed — already running as root)")
+        elif has_sudo:
+            lines.append(f"User: {username} (sudo available)")
+        else:
+            lines.append(f"User: {username} (sudo not available)")
     lines.append(f"Shell: {env['shell']}")
     if session:
         cwd = str(KISO_DIR / "sessions" / session)
