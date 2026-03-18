@@ -341,3 +341,59 @@ print('OK')
         """)
         assert result.returncode == 0, result.stderr
         assert "OK" in result.stdout
+
+
+class TestM745NetworkAndExternalUrl:
+    """M745: ask_network_and_external_url function and config template."""
+
+    def test_function_defined_in_lib_mode(self):
+        """ask_network_and_external_url function is available after sourcing."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            type ask_network_and_external_url >/dev/null 2>&1 && echo "DEFINED" || echo "MISSING"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "DEFINED" in result.stdout
+
+    def test_default_network_mode_is_public(self):
+        """NETWORK_MODE defaults to 'public'."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            echo "NETWORK_MODE=$NETWORK_MODE"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "NETWORK_MODE=public" in result.stdout
+
+    def test_external_url_default_empty(self):
+        """EXTERNAL_URL defaults to empty."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            echo "EXTERNAL_URL=$EXTERNAL_URL"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "EXTERNAL_URL=" in result.stdout
+
+    def test_config_template_contains_external_url(self):
+        """install.sh config template includes external_url setting."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert 'external_url' in content
+
+    def test_network_local_binds_127(self):
+        """install.sh has 127.0.0.1 binding logic for local mode."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "127.0.0.1:" in content
+
+    def test_http_warning_present(self):
+        """install.sh contains HTTP security warning text."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "API exposed over HTTP" in content
+        assert "docs/https.md" in content

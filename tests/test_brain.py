@@ -1011,6 +1011,60 @@ class TestBuildPlannerMessages:
         pending_pos = content.index("## Pending Questions")
         assert facts_pos < sysenv_pos < pending_pos
 
+    async def test_m740_distro_in_planner_context(self, db, config):
+        """M740: planner context contains distro and package manager from sysenv."""
+        await create_session(db, "sess1")
+        from kiso.config import KISO_DIR
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "distro_id": "debian",
+                   "distro_id_like": "", "pkg_manager": "apt"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git", "python3", "apt-get"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+        }
+        with patch("kiso.brain.get_system_env", return_value=fake_env):
+            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "install timg")
+        content = msgs[1]["content"]
+        assert "Debian GNU/Linux 12" in content
+        assert "Package manager: apt" in content
+
+    async def test_m740_user_info_in_planner_context(self, db, config):
+        """M740: planner context contains user/sudo info from sysenv."""
+        await create_session(db, "sess1")
+        from kiso.config import KISO_DIR
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+        }
+        with patch("kiso.brain.get_system_env", return_value=fake_env):
+            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "User: root" in content
+        assert "sudo not needed" in content
+
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
         with patch("kiso.brain.discover_tools", return_value=[]):
@@ -2416,6 +2470,28 @@ class TestBuildMessengerMessages:
         config = _make_brain_config()
         msgs = build_messenger_messages(config, "", [], "say hi")
         assert "Current User Request" not in msgs[1]["content"]
+
+    def test_m744_system_prompt_has_published_files_rule(self):
+        """M744: messenger system prompt contains Published files link rule."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "report file")
+        system = msgs[0]["content"]
+        assert "Published files" in system
+        assert "sandbox:" in system.lower() or "sandbox" in system.lower()
+
+    def test_m744_published_files_in_outputs_context(self):
+        """M744: when task output has Published files, messenger sees them."""
+        config = _make_brain_config()
+        outputs_text = (
+            "[1] exec: take screenshot\n"
+            "Status: done\n"
+            "screenshot taken\n\n"
+            "Published files:\n"
+            "- screenshot.png: https://miobot.com/pub/tok123/screenshot.png"
+        )
+        msgs = build_messenger_messages(config, "", [], "report", outputs_text)
+        content = msgs[1]["content"]
+        assert "https://miobot.com/pub/tok123/screenshot.png" in content
 
     def test_goal_appears_before_summary(self):
         config = _make_brain_config()
@@ -5994,6 +6070,31 @@ class TestM261PromptSizeReduction:
         replan_prompt = _load_modular_prompt("planner", ["replan", "tool_recovery"])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         assert len(replan_prompt) < len(all_modules) * 0.40
+
+    def test_m743_system_package_and_tool_recovery_coexist(self):
+        """M743: kiso_native allows system packages, tool_recovery blocks apt for deps.
+        Both rules must coexist in the full prompt without contradiction."""
+        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
+        # kiso_native: system packages allowed
+        assert "system package manager" in all_modules.lower()
+        # tool_recovery: apt-get blocked for broken deps
+        assert "Never apt-get/pip install to fix" in all_modules
+        # Both present in the same prompt
+        sys_pkg_pos = all_modules.lower().index("system package manager")
+        tool_rec_pos = all_modules.index("Never apt-get/pip install to fix")
+        # kiso_native comes before tool_recovery in the prompt
+        assert sys_pkg_pos < tool_rec_pos
+
+    def test_m743_kiso_native_module_has_system_package_rule(self):
+        """M743: kiso_native module individually contains system package rule."""
+        kiso_native = _load_modular_prompt("planner", ["kiso_native"])
+        assert "system package manager" in kiso_native.lower()
+        assert "apt-get install" in kiso_native.lower()
+
+    def test_m743_tool_recovery_module_still_blocks_apt(self):
+        """M743: tool_recovery module still blocks apt-get for broken tool deps."""
+        tool_recovery = _load_modular_prompt("planner", ["tool_recovery"])
+        assert "Never apt-get/pip install to fix" in tool_recovery
 
     def test_all_modules_cover_all_content(self):
         """All modules combined include all the content from planner.md."""

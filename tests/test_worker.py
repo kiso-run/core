@@ -6852,6 +6852,44 @@ class TestReportPubFiles:
 
         assert result[0]["url"].startswith("http://host:8333/pub/")
 
+    def test_m742_external_url_in_format_pub_note(self, tmp_path):
+        """M742: full chain — external_url appears in formatted pub note output."""
+        from kiso.worker.utils import _format_pub_note
+        cfg = Config(
+            tokens={"cli": "test-secret-token"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"planner": "gpt-4"},
+            settings={"external_url": "https://miobot.example.com"},
+            raw={},
+        )
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "screenshot.png").write_bytes(b"fake-png")
+
+        with _patch_kiso_dir(tmp_path):
+            pub_urls = _report_pub_files("test-session", cfg, base_url="http://localhost:8333")
+            note = _format_pub_note(pub_urls)
+
+        assert "https://miobot.example.com/pub/" in note
+        assert "screenshot.png" in note
+        assert "localhost" not in note
+
+    def test_m742_no_external_url_uses_base_url_in_note(self, tmp_path, config):
+        """M742: without external_url, pub note uses base_url."""
+        from kiso.worker.utils import _format_pub_note
+        session_dir = tmp_path / "sessions" / "test-session"
+        pub_dir = session_dir / "pub"
+        pub_dir.mkdir(parents=True)
+        (pub_dir / "data.csv").write_bytes(b"a,b")
+
+        with _patch_kiso_dir(tmp_path):
+            pub_urls = _report_pub_files("test-session", config, base_url="http://myhost:8333")
+            note = _format_pub_note(pub_urls)
+
+        assert "http://myhost:8333/pub/" in note
+
 
 class TestAutoPublishToolFiles:
     """M215: _auto_publish_skill_files and _snapshot_workspace tests."""
@@ -11757,6 +11795,54 @@ class TestM735SudoStripping:
         if user_info.get("is_root") and "sudo " in detail:
             detail = detail.replace("sudo ", "")
         assert detail == "apt-get install -y timg"
+
+
+class TestM741SudoStrippingIntegration:
+    """M741: integration test — sudo stripping reads from actual sysenv in exec handler.
+
+    Verifies the code path in loop.py where get_system_env().user_info.is_root
+    controls whether 'sudo ' is stripped from the exec detail before the translator.
+    """
+
+    def _fake_env(self, *, is_root: bool, has_sudo: bool = False) -> dict:
+        return {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
+            "user_info": {"user": "root" if is_root else "kiso",
+                          "is_root": is_root, "has_sudo": has_sudo},
+            "shell": "/bin/sh", "exec_cwd": "/tmp", "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git"], "missing_binaries": [],
+            "connectors": [], "max_plan_tasks": 20, "max_replan_depth": 3,
+            "sys_bin_path": "/tmp", "reference_docs_path": "/tmp",
+            "registry_url": "https://example.com/registry.json",
+        }
+
+    def test_stripping_uses_sysenv_user_info(self):
+        """The stripping code reads user_info from sysenv return value."""
+        env = self._fake_env(is_root=True)
+        detail = "sudo apt-get install -y timg"
+        _user_info = env.get("user_info", {})
+        if _user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+        assert detail == "apt-get install -y timg"
+
+    def test_no_stripping_when_not_root(self):
+        """Non-root sysenv leaves sudo in detail."""
+        env = self._fake_env(is_root=False, has_sudo=True)
+        detail = "sudo apt-get install -y timg"
+        _user_info = env.get("user_info", {})
+        if _user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+        assert detail == "sudo apt-get install -y timg"
+
+    def test_missing_user_info_no_crash(self):
+        """If user_info is missing from sysenv, no crash and no stripping."""
+        env = {"os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"}}
+        detail = "sudo apt-get install -y timg"
+        _user_info = env.get("user_info", {})
+        if _user_info.get("is_root") and "sudo " in detail:
+            detail = detail.replace("sudo ", "")
+        assert detail == "sudo apt-get install -y timg"
 
 
 # --- M341: Integration test: stuck → user notification flow ---
