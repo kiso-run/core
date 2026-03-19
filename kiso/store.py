@@ -637,7 +637,7 @@ def _fact_session_filter(
             f")",
             [username, session],
         )
-    # Fallback: no username provided — use legacy 2-level filter
+    # Fallback: no username provided — use session-only filter
     return (
         f" AND ({p}category != 'user' OR {p}session = ?)",
         [session],

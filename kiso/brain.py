@@ -1584,7 +1584,7 @@ async def classify_message(
                 log.info("Classifier: %s (literal 'category', lang=%s)", cat_part.strip(), lang_part.strip())
                 return cat_part.strip(), lang_part.strip()
 
-    # Backward compat: plain category without lang
+    # LLM fallback: plain category without lang code
     if result in CLASSIFIER_CATEGORIES:
         log.info("Classifier: %s (no lang)", result)
         return result, "en"
@@ -2447,7 +2447,7 @@ async def run_fact_consolidation(
     """Consolidate/deduplicate facts via LLM. Returns list of consolidated fact dicts.
 
     Each dict has keys: content (str), category (str), confidence (float).
-    Plain strings from backward-compatible LLM responses are wrapped into dicts.
+    Plain strings from non-structured LLM responses are wrapped into dicts.
 
     Raises SummarizerError on failure.
     """
@@ -2475,7 +2475,7 @@ async def run_fact_consolidation(
         )
         result = result[:_MAX_CONSOLIDATION_ITEMS]
 
-    # Normalize items: dicts with content key, or plain strings (backward compat)
+    # Normalize items: dicts with content key, or plain strings (LLM output fallback)
     normalized: list[dict] = []
     for item in result:
         if isinstance(item, dict) and isinstance(item.get("content"), str):
