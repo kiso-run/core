@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12765,3 +12766,94 @@ class TestListSessionFiles:
 
         lines = [l for l in result.split("\n") if l.startswith("- ")]
         assert len(lines) == 20
+
+
+# ---------------------------------------------------------------------------
+# M823 — Cross-plan state: last plan summary persistence
+# ---------------------------------------------------------------------------
+
+
+class TestWriteLastPlanSummary:
+    """M823: _write_last_plan_summary persists cross-plan context."""
+
+    def test_writes_summary_with_produced_files(self, tmp_path):
+        from kiso.worker.utils import _write_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-sum")
+            pre = set(ws.rglob("*"))
+            # Simulate a tool producing a file
+            (ws / "screenshot.png").write_bytes(b"x" * 100)
+            completed = [
+                {"type": "exec", "skill": "browser", "reviewer_summary": "Screenshot taken successfully"},
+            ]
+            _write_last_plan_summary("s-sum", "Take a screenshot", completed, pre)
+
+            summary_path = ws / ".kiso" / "last_plan_summary.json"
+            assert summary_path.is_file()
+            data = json.loads(summary_path.read_text())
+            assert data["goal"] == "Take a screenshot"
+            assert len(data["produced_files"]) >= 1
+            assert data["produced_files"][0]["path"] == "screenshot.png"
+            assert data["produced_files"][0]["type"] == "image"
+            assert data["key_results"] == ["Screenshot taken successfully"]
+            assert "ts" in data
+
+    def test_empty_plan_writes_minimal_summary(self, tmp_path):
+        from kiso.worker.utils import _write_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-empty-plan")
+            pre = set(ws.rglob("*"))
+            _write_last_plan_summary("s-empty-plan", "Do nothing", [], pre)
+
+            summary_path = ws / ".kiso" / "last_plan_summary.json"
+            assert summary_path.is_file()
+            data = json.loads(summary_path.read_text())
+            assert data["goal"] == "Do nothing"
+            assert data["produced_files"] == []
+            assert data["key_results"] == []
+
+
+class TestLoadLastPlanSummary:
+    """M823: _load_last_plan_summary returns formatted text or None."""
+
+    def test_loads_fresh_summary(self, tmp_path):
+        from kiso.worker.utils import _load_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-load")
+            kiso_dir = ws / ".kiso"
+            kiso_dir.mkdir(exist_ok=True)
+            data = {
+                "goal": "Take a screenshot",
+                "produced_files": [{"path": "shot.png", "tool": "browser", "type": "image"}],
+                "key_results": ["Screenshot saved"],
+                "ts": "2026-03-20T10:00:00Z",
+            }
+            (kiso_dir / "last_plan_summary.json").write_text(json.dumps(data))
+
+            result = _load_last_plan_summary("s-load")
+            assert result is not None
+            assert "Take a screenshot" in result
+            assert "shot.png" in result
+            assert "Screenshot saved" in result
+
+    def test_skips_stale_summary(self, tmp_path):
+        import time
+        from kiso.worker.utils import _load_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-stale")
+            kiso_dir = ws / ".kiso"
+            kiso_dir.mkdir(exist_ok=True)
+            path = kiso_dir / "last_plan_summary.json"
+            path.write_text('{"goal": "old"}')
+            # Set mtime to 31 min ago
+            old_time = time.time() - 31 * 60
+            os.utime(path, (old_time, old_time))
+
+            result = _load_last_plan_summary("s-stale")
+            assert result is None
+
+    def test_returns_none_when_no_file(self, tmp_path):
+        from kiso.worker.utils import _load_last_plan_summary
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            result = _load_last_plan_summary("s-nofile")
+            assert result is None

@@ -485,6 +485,107 @@ def _list_session_files(session: str) -> str:
     return "Session workspace files:\n" + "\n".join(lines)
 
 
+_LAST_PLAN_SUMMARY = ".kiso/last_plan_summary.json"
+_PLAN_SUMMARY_MAX_AGE = 30 * 60  # 30 minutes
+
+
+def _write_last_plan_summary(
+    session: str,
+    goal: str,
+    completed_tasks: list[dict],
+    pre_snapshot: set[Path],
+) -> None:
+    """Persist a compact summary of the completed plan for cross-plan context."""
+    import datetime
+
+    workspace = _session_workspace(session)
+    post_snapshot = set(workspace.rglob("*"))
+    new_files = post_snapshot - pre_snapshot
+
+    # Produced files — only real files, skip ignored dirs and dotfiles
+    produced_files: list[dict] = []
+    for f in sorted(new_files):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(workspace)
+        parts = rel.parts
+        if parts[0] == ".kiso" or parts[0] in _PUB_IGNORE_DIRS:
+            continue
+        if any(p.startswith(".") for p in parts):
+            continue
+        # Find source tool from completed tasks
+        source_tool = None
+        for t in completed_tasks:
+            if t.get("skill") or t.get("tool"):
+                source_tool = t.get("skill") or t.get("tool")
+        ext = f.suffix.lower()
+        category = _FILE_TYPE_MAP.get(ext, "other")
+        produced_files.append({
+            "path": str(rel),
+            "tool": source_tool,
+            "type": category,
+        })
+
+    # Key results — reviewer summaries from completed tasks
+    key_results: list[str] = []
+    for t in completed_tasks:
+        summary = t.get("reviewer_summary", "")
+        if summary:
+            key_results.append(summary[:200])
+        if len(key_results) >= 3:
+            break
+
+    data = {
+        "goal": goal,
+        "produced_files": produced_files[:10],
+        "key_results": key_results,
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+
+    # Enforce budget: truncate JSON to ~2000 chars
+    raw = json.dumps(data, ensure_ascii=False)
+    if len(raw) > 2000:
+        data["key_results"] = [r[:100] for r in key_results[:2]]
+        data["produced_files"] = produced_files[:5]
+
+    kiso_dir = workspace / ".kiso"
+    kiso_dir.mkdir(exist_ok=True)
+    path = kiso_dir / "last_plan_summary.json"
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_last_plan_summary(session: str) -> str | None:
+    """Load the last plan summary if fresh (< 30 min). Returns formatted text or None."""
+    import time
+
+    workspace = _session_workspace(session)
+    path = workspace / _LAST_PLAN_SUMMARY
+    if not path.is_file():
+        return None
+
+    try:
+        stat = path.stat()
+        if time.time() - stat.st_mtime > _PLAN_SUMMARY_MAX_AGE:
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    goal = data.get("goal", "unknown")
+    parts = [f"Last plan: {goal}"]
+
+    files = data.get("produced_files", [])
+    if files:
+        file_strs = [f"{f['path']} ({f.get('type', 'other')})" for f in files]
+        parts.append(f"Produced: {', '.join(file_strs)}")
+
+    results = data.get("key_results", [])
+    if results:
+        parts.append("Results: " + "; ".join(results))
+
+    return "\n".join(parts)
+
+
 # centralized output budget constants
 class OutputBudgets:
     """All output-size thresholds in one place."""

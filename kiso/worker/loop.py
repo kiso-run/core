@@ -137,6 +137,7 @@ from kiso.worker.utils import (
     _check_disk_limit,
     _cleanup_plan_outputs,
     _ensure_sandbox_user,
+    _write_last_plan_summary,
     _format_plan_outputs_for_msg,
     _format_pub_note,
     _report_pub_files,
@@ -1546,6 +1547,9 @@ async def _execute_plan(
         sandbox_uid=None,
     )
 
+    # Snapshot workspace for cross-plan summary (M823)
+    pre_snapshot = _snapshot_workspace(session)
+
     # --- Build execution batches from parallel groups ---
     batches = _build_execution_batches(tasks)
 
@@ -1725,6 +1729,11 @@ async def _execute_plan(
                 await _cleanup_plan_outputs(session)
                 return False, "cancelled", None, completed, [dict(t) for t in tasks[idx + 1:]], ctx.plan_outputs
 
+    # M823: persist cross-plan summary before cleanup
+    try:
+        _write_last_plan_summary(session, goal, completed, pre_snapshot)
+    except Exception as exc:
+        log.warning("Failed to write plan summary: %s", exc)
     await _cleanup_plan_outputs(session)
     return True, None, None, completed, [], ctx.plan_outputs
 
