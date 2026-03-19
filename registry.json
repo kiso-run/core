@@ -26,7 +26,11 @@
     },
     {
       "name": "transcriber",
-      "description": "Audio transcription — convert voice messages and recordings to text via Whisper API"
+      "description": "Audio transcription — convert voice messages and recordings to text via Gemini multimodal"
+    },
+    {
+      "name": "ocr",
+      "description": "Image OCR — extract text from photos, screenshots, receipts, whiteboards via Gemini vision"
     }
   ],
   "recipes": [],
