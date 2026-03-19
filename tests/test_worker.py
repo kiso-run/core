@@ -1661,12 +1661,6 @@ class TestBuildReplanContext:
         assert "intent message" not in ctx
         assert "hello user" not in ctx
 
-    def test_history_without_what_was_tried(self):
-        """Handles legacy history entries without what_was_tried."""
-        history = [{"goal": "old", "failure": "reason"}]
-        ctx = _build_replan_context([], [], "fail", history)
-        assert "Tried: nothing" in ctx
-
     def test_all_sections(self):
         completed = [{"type": "exec", "detail": "ls", "status": "done", "output": "files"}]
         remaining = [{"type": "msg", "detail": "tell user"}]
@@ -2596,16 +2590,6 @@ class TestM201IntentMsgInjection:
         # step3 and step4 are NOT in the summary (max 3)
         assert "step3" not in detail
 
-    def test_legacy_lang_tag_still_works(self):
-        """Legacy [Lang: xx] format is still supported during transition."""
-        tasks = [
-            {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "[Lang: it] fatto", "tool": None, "args": None, "expect": None},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "greet")
-        assert len(result) == 3
-        assert result[0]["detail"].startswith("[Lang: it]")
-
     async def test_replan_skips_intent_msg(self, tmp_path):
         """M279: intent msg is NOT injected for replan — user already saw the intent."""
         from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
@@ -2978,7 +2962,7 @@ class TestMakePlanOutput:
         assert entry["output"] == small_output
 
     def test_no_session_skips_save(self):
-        """M140: without session, large output stays inline (backward compat)."""
+        """Without session, large output stays inline."""
         big_output = "x" * 5000
         entry = _make_plan_output(1, "exec", "cmd", big_output, "done")
         assert entry["output"] == big_output

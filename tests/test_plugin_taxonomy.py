@@ -65,28 +65,6 @@ class TestPluginListAggregation:
         assert "discord" in out
 
 
-class TestBackwardCompat:
-    """Old kiso.toml [kiso.tool] section still works."""
-
-    def test_old_skill_section_loads(self):
-        """kiso/tools.py reads both [kiso.tool] and [kiso.tool] from manifests."""
-        from kiso.tools import _validate_manifest
-
-        # Old-style manifest with [kiso.tool]
-        old_manifest = {
-            "kiso": {
-                "name": "legacy-tool",
-                "skill": {
-                    "exec": "run.sh",
-                    "description": "A legacy tool",
-                },
-            },
-        }
-        # Should not raise — backward compat reads "skill" key
-        errors = _validate_manifest(old_manifest, Path("/fake"))
-        assert not errors or all("exec" not in e for e in errors)
-
-
 class TestRegistryStructure:
     """registry.json has expected entries."""
 

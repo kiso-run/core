@@ -1630,8 +1630,8 @@ class TestBuildReviewerMessages:
         if note_keyword:
             assert note_keyword in content.lower()
 
-    async def test_exit_code_none_backward_compat(self):
-        """exit_code=None falls back to old format."""
+    async def test_exit_code_none_fallback(self):
+        """exit_code=None shows generic failure message."""
         msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e", output="o", user_message="m",
             success=False, exit_code=None,
@@ -2100,7 +2100,7 @@ class TestRunFactConsolidation:
         assert result[0]["category"] == "project"
         assert result[0]["confidence"] == 1.0
 
-    async def test_backward_compat_plain_strings(self, config):
+    async def test_plain_string_llm_fallback(self, config):
         """LLM returns plain strings → wrapped into dicts with defaults."""
         facts = [
             {"id": 1, "content": "Uses Python"},
@@ -3313,7 +3313,7 @@ class TestClassifyMessage:
         ("chat:en", "hello", "chat", "en"),
         ("chat_kb:it", "cosa sai su te stesso?", "chat_kb", "it"),
         ("plan:en", "list files", "plan", "en"),
-        ("chat", "hello", "chat", "en"),  # backward compat plain category
+        ("chat", "hello", "chat", "en"),  # LLM fallback: plain category without lang
         ("  chat:fr\n", "merci", "chat", "fr"),  # strips whitespace
         ("CHAT:EN", "thanks", "chat", "en"),  # case insensitive
         ("I think this is a chat", "hello", "plan", "en"),  # unexpected → plan
@@ -3323,7 +3323,7 @@ class TestClassifyMessage:
         ("category:it:plan", "vai su google", "plan", "it"),  # M612 category:lang:cat
         ("category:fr:chat", "merci", "chat", "fr"),  # M612 category:lang:chat
     ], ids=[
-        "chat-en", "chat_kb-it", "plan-en", "backward-compat",
+        "chat-en", "chat_kb-it", "plan-en", "plain-category-fallback",
         "whitespace", "case-insensitive", "unexpected-fallback",
         "empty-fallback", "invalid-lang", "M612-category-it",
         "M612-category-it-plan", "M612-category-fr-chat",

@@ -467,7 +467,7 @@ def test_render_banner_with_resources():
 
 
 def test_render_banner_no_resources():
-    """M219: banner without resources still works (backward compatible)."""
+    """Banner without resources parameter renders correctly."""
     result = render_banner("Kiso", "host@alice", _COLOR)
     assert "RAM:" not in result
     assert "Kiso" in result
@@ -1692,7 +1692,7 @@ def test_task_header_substatus_executing():
 
 
 def test_task_header_no_substatus():
-    """Empty substatus = spinner only (backwards compatible)."""
+    """Empty substatus defaults to spinner only."""
     task = {"type": "exec", "detail": "ls", "status": "running"}
     result = render_task_header(task, 1, 2, _COLOR, spinner_frame="\u280b")
     assert "\u280b" in result

@@ -69,22 +69,6 @@ python = ">=3.11"
 bin = ["curl"]
 """
 
-# Backward compat: old manifests with [kiso.tool]
-LEGACY_TOML = """\
-[kiso]
-type = "tool"
-name = "echo"
-version = "0.1.0"
-description = "Echo tool (legacy)"
-
-[kiso.tool]
-summary = "Echoes input back"
-usage_guide = "Just pass any text."
-
-[kiso.tool.args]
-text = { type = "string", required = true, description = "text to echo" }
-"""
-
 
 def _create_tool(tmp_path: Path, name: str, toml_content: str) -> Path:
     """Create a tool directory with kiso.toml, run.py, pyproject.toml."""
@@ -304,15 +288,6 @@ class TestValidateManifest:
         errors = _validate_manifest(manifest, tmp_path / "bad")
         assert any("usage_guide is required" in e for e in errors)
 
-    def test_backward_compat_skill_section(self, tmp_path):
-        """Old manifests with [kiso.tool] and type='skill' still validate."""
-        _create_tool(tmp_path, "legacy", LEGACY_TOML)
-        import tomllib
-        with open(tmp_path / "legacy" / "kiso.toml", "rb") as f:
-            manifest = tomllib.load(f)
-        errors = _validate_manifest(manifest, tmp_path / "legacy")
-        assert errors == []
-
 
 # --- _env_var_name ---
 
@@ -454,16 +429,6 @@ class TestDiscoverTools:
         (tool_dir / "usage_guide.local.md").write_text("My custom guide\n")
         result = discover_tools(tools_dir)
         assert result[0]["usage_guide"] == "My custom guide"
-
-    def test_backward_compat_legacy_manifest(self, tmp_path):
-        """Old manifests with [kiso.tool] and type='skill' are discovered."""
-        tools_dir = tmp_path / "tools"
-        tools_dir.mkdir()
-        _create_tool(tools_dir, "echo", LEGACY_TOML)
-        result = discover_tools(tools_dir)
-        assert len(result) == 1
-        assert result[0]["name"] == "echo"
-        assert result[0]["summary"] == "Echoes input back"
 
 
 # --- check_deps ---

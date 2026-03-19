@@ -1472,32 +1472,32 @@ async def test_search_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
 
 
 async def test_search_facts_session_none_no_admin(db: aiosqlite.Connection):
-    """M42: session=None + is_admin=False uses unconstrained path (mirrors get_facts behaviour).
+    """session=None + is_admin=False uses unconstrained path (mirrors get_facts behaviour).
 
     When no session is provided and the caller is not an admin, search_facts
-    should return global facts plus legacy user facts (session IS NULL), but
-    it MUST NOT restrict by any session — matching the get_facts fallback path.
+    should return global facts plus user facts without session, but it MUST NOT
+    restrict by any session — matching the get_facts fallback path.
     """
     # Global project fact
     await save_fact(db, "FastAPI is the Python web framework", "curator",
                     category="project")
-    # Legacy user fact with no session (pre-M43 row)
+    # User fact with no session
     await db.execute(
         "INSERT INTO facts (content, source, category, confidence) VALUES (?, ?, ?, ?)",
-        ("Legacy Python preference", "curator", "user", 1.0),
+        ("Python preference", "curator", "user", 1.0),
     )
     await db.commit()
     # Rebuild FTS index manually since we bypassed save_fact trigger
     await db.execute(
         "INSERT INTO kiso_facts_fts(rowid, content) "
-        "SELECT id, content FROM facts WHERE content = 'Legacy Python preference'"
+        "SELECT id, content FROM facts WHERE content = 'Python preference'"
     )
     await db.commit()
 
     results = await search_facts(db, "python", session=None, is_admin=False)
     contents = [f["content"] for f in results]
     assert "FastAPI is the Python web framework" in contents
-    assert "Legacy Python preference" in contents
+    assert "Python preference" in contents
 
 
 async def test_search_facts_unicode_content_and_query(db: aiosqlite.Connection):

@@ -1,8 +1,7 @@
-"""M448: Integration test — verify skill → tool rename completeness.
+"""Integration test — verify skill → tool rename completeness.
 
 Checks structural invariants: new files exist, imports point to new modules,
-registry uses new keys, and no stale imports of old module names remain in
-non-shim files.
+registry uses new keys, and no stale imports of old module names remain.
 """
 
 from __future__ import annotations
@@ -18,22 +17,13 @@ SRC = ROOT / "kiso"
 CLI = ROOT / "cli"
 TESTS = ROOT / "tests"
 
-# Backward compat shim files — these intentionally re-export old names
-_SHIM_FILES = {
-    SRC / "skills.py",
-    SRC / "skill_repair.py",
-    SRC / "worker" / "skill.py",
-}
 
-
-def _source_files(*, include_shims: bool = False) -> list[Path]:
+def _source_files() -> list[Path]:
     """Collect all .py files in kiso/, cli/, tests/ (excluding __pycache__)."""
     files = []
     for d in (SRC, CLI, TESTS):
         for f in d.rglob("*.py"):
             if "__pycache__" in str(f):
-                continue
-            if not include_shims and f.resolve() in {s.resolve() for s in _SHIM_FILES}:
                 continue
             files.append(f)
     return files
@@ -49,19 +39,11 @@ class TestRenameCompleteness:
         assert (SRC / "worker" / "tool.py").exists(), "kiso/worker/tool.py missing"
         assert (CLI / "tool.py").exists(), "cli/tool.py missing"
 
-    def test_shim_files_only_re_export(self):
-        """Backward compat shim files must only contain re-exports."""
-        for shim in _SHIM_FILES:
-            if not shim.exists():
-                continue  # shim already removed — fine
-            content = shim.read_text()
-            for line in content.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or line.startswith('"""') or line.startswith("from "):
-                    continue
-                pytest.fail(
-                    f"{shim.relative_to(ROOT)}: shim contains non-import line: {line}"
-                )
+    def test_shim_files_removed(self):
+        """Old backward compat shim files must not exist."""
+        assert not (SRC / "skills.py").exists(), "kiso/skills.py still exists"
+        assert not (SRC / "skill_repair.py").exists(), "kiso/skill_repair.py still exists"
+        assert not (SRC / "worker" / "skill.py").exists(), "kiso/worker/skill.py still exists"
 
     def test_no_direct_import_of_old_modules_in_source(self):
         """Non-shim source files must not import from old module names."""

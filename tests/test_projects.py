@@ -253,21 +253,20 @@ async def test_search_facts_by_tags_respects_project_scope(db):
     assert any("Tagged project fact" in f["content"] for f in results)
 
 
-async def test_fact_no_username_legacy_filter(db):
-    """Without username, legacy 2-level filter applies (user category filtered by session)."""
-    await save_fact(db, "Legacy user-scoped fact in session", "curator",
+async def test_fact_session_only_filter(db):
+    """Without username, session-only filter applies (user category filtered by session)."""
+    await save_fact(db, "User-scoped fact in session", "curator",
                     category="user", session="sess1")
-    await save_fact(db, "Legacy global general fact content", "curator", category="general")
-    # Legacy filter: no username
+    await save_fact(db, "Global general fact content", "curator", category="general")
     facts = await get_facts(db, session="sess1")
-    assert any("Legacy user-scoped" in f["content"] for f in facts)
-    assert any("Legacy global general" in f["content"] for f in facts)
+    assert any("User-scoped" in f["content"] for f in facts)
+    assert any("Global general" in f["content"] for f in facts)
     # Different session — user fact not visible
     facts = await get_facts(db, session="sess2")
-    assert not any("Legacy user-scoped" in f["content"] for f in facts)
+    assert not any("User-scoped" in f["content"] for f in facts)
 
 
-# --- M686: API access control tests ---
+# --- API access control tests ---
 
 
 @pytest.fixture()

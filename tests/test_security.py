@@ -266,13 +266,6 @@ class TestCollectDeploySecrets:
             "KISO_CONNECTOR_TOKEN": "ct-456",
         }
 
-    def test_env_vars_backward_compat_skill_prefix(self):
-        """KISO_SKILL_* env vars still collected for backward compat."""
-        env = {"KISO_SKILL_API_KEY": "sk-old"}
-        with patch.dict(os.environ, env, clear=True):
-            secrets = collect_deploy_secrets()
-        assert secrets == {"KISO_SKILL_API_KEY": "sk-old"}
-
     def test_llm_api_key(self):
         env = {"KISO_LLM_API_KEY": "sk-test-key"}
         with patch.dict(os.environ, env, clear=True):
