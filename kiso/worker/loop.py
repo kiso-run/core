@@ -685,14 +685,17 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
                 lang_prefix = m.group(0)
                 break
 
+    # Summarize only action tasks (exec/tool/search) — exclude msg tasks
+    # to prevent the messenger from fabricating their expected content
+    action_tasks = [t for t in tasks if t["type"] != TASK_TYPE_MSG]
     task_summary = ", ".join(
-        f"{t['type']}: {t['detail'][:60]}" for t in tasks[:3]
+        f"{t['type']}: {t['detail'][:40]}" for t in action_tasks[:3]
     )
     intent_task = {
         "type": TASK_TYPE_MSG,
         "detail": (
             f"{lang_prefix}Briefly tell the user what the system is about to do. "
-            f"Plan: {task_summary}"
+            f"Steps: {task_summary}"
         ),
         "tool": None,
         "args": None,

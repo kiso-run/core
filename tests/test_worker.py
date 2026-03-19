@@ -2620,6 +2620,22 @@ class TestM201IntentMsgInjection:
         assert "the system is about to do" in result[0]["detail"]
         assert "you're about to do" not in result[0]["detail"]
 
+    def test_intent_excludes_msg_tasks(self):
+        """Intent summary should not include msg task details to prevent fabrication."""
+        tasks = [
+            {"type": "tool", "detail": "Navigate to example.com", "tool": "browser", "args": "{}", "expect": "page loads"},
+            {"type": "tool", "detail": "Take screenshot", "tool": "browser", "args": "{}", "expect": "screenshot saved"},
+            {"type": "msg", "detail": "Answer in Italian. Ho navigato e catturato lo screenshot.", "tool": None, "args": None, "expect": None},
+        ]
+        result = _maybe_inject_intent_msg(tasks, "navigate and screenshot")
+        intent_detail = result[0]["detail"]
+        # Action tasks should be in the summary
+        assert "Navigate" in intent_detail
+        assert "screenshot" in intent_detail.lower()
+        # The msg task's expected answer should NOT be in the summary
+        assert "Ho navigato" not in intent_detail
+        assert "catturato" not in intent_detail
+
 
 # --- store: save_learning ---
 
