@@ -152,8 +152,30 @@ def _plugin_install(
     plugin_dir = parent_dir / name
 
     if plugin_dir.exists():
-        print(f"{plugin_type.capitalize()} '{name}' is already installed at {plugin_dir}")
-        return  # idempotent — desired state achieved
+        # Already installed — re-run setup to ensure deps are fresh (idempotent repair)
+        print(f"{plugin_type.capitalize()} '{name}' is already installed — refreshing deps...")
+        try:
+            subprocess.run(["uv", "sync"], cwd=str(plugin_dir), capture_output=True, text=True)
+            deps_path = plugin_dir / "deps.sh"
+            if deps_path.exists() and not args.no_deps:
+                result = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"warning: deps.sh failed: {result.stderr.strip()}")
+            # Check binary deps
+            toml_path = plugin_dir / "kiso.toml"
+            if toml_path.exists():
+                with open(toml_path, "rb") as f:
+                    manifest = tomllib.load(f)
+                kiso_section = manifest.get("kiso", {})
+                plugin_info = {"path": str(plugin_dir), "deps": kiso_section.get("deps", {})}
+                missing = check_deps_fn(plugin_info)
+                if missing:
+                    print(f"warning: still missing binaries: {', '.join(missing)}")
+                else:
+                    print(f"  {plugin_type} '{name}' is healthy")
+        except Exception as e:
+            print(f"warning: deps refresh failed: {e}")
+        return
 
     try:
         parent_dir.mkdir(parents=True, exist_ok=True)
