@@ -815,6 +815,12 @@ class _PlanCtx:
     def __post_init__(self) -> None:
         self.installed_tools_by_name = {s["name"]: s for s in self.installed_tools}
 
+    def refresh_tool_cache(self) -> None:
+        """Invalidate cache, rediscover tools, rebuild lookup dict."""
+        invalidate_tools_cache()
+        self.installed_tools = discover_tools()
+        self.installed_tools_by_name = {s["name"]: s for s in self.installed_tools}
+
 
 @dataclass
 class _TaskHandlerResult:
@@ -1621,9 +1627,7 @@ async def _execute_plan(
 
             # Refresh tool cache if any task was exec/tool.
             if any(tr["type"] in (TASK_TYPE_EXEC, TASK_TYPE_TOOL) for _, tr in batch):
-                invalidate_tools_cache()
-                ctx.installed_tools = discover_tools()
-                ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
+                ctx.refresh_tool_cache()
 
             # Check for stop signals (use first stop encountered).
             stop_result = next((r for r in results if r.stop), None)
@@ -1674,8 +1678,7 @@ async def _execute_plan(
 
             # Refresh tool cache after exec/tool tasks
             if task_type in (TASK_TYPE_EXEC, TASK_TYPE_TOOL):
-                invalidate_tools_cache()
-                ctx.installed_tools = discover_tools()
+                ctx.refresh_tool_cache()
                 if (
                     task_type == TASK_TYPE_EXEC
                     and not result.stop
@@ -1683,8 +1686,7 @@ async def _execute_plan(
                     and any(not t.get("healthy", True) for t in ctx.installed_tools)
                 ):
                     await asyncio.sleep(_POST_INSTALL_RESCAN_DELAY)
-                    invalidate_tools_cache()
-                    ctx.installed_tools = discover_tools()
+                    ctx.refresh_tool_cache()
                     still_unhealthy = [t["name"] for t in ctx.installed_tools if not t.get("healthy", True)]
                     log.info(
                         "Post-install rescan complete: %d tools, %d still unhealthy%s",
@@ -1692,7 +1694,6 @@ async def _execute_plan(
                         len(still_unhealthy),
                         f" ({', '.join(still_unhealthy)})" if still_unhealthy else "",
                     )
-                ctx.installed_tools_by_name = {s["name"]: s for s in ctx.installed_tools}
 
             if result.plan_output is not None:
                 ctx.plan_outputs.append(result.plan_output)
