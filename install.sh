@@ -1265,6 +1265,9 @@ echo "    kiso instance start/stop/restart $INST_NAME"
 echo
 echo "  Config:   $CONFIG"
 echo "  API:      http://localhost:$SERVER_PORT"
+if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" != *"localhost"* ]]; then
+echo "  Public:   $EXTERNAL_URL"
+fi
 echo "  Registry: $INSTANCES_JSON"
 echo
 
