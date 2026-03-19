@@ -5101,6 +5101,49 @@ class TestRunBriefer:
         assert result["relevant_tags"] == ["browser"]
 
     @pytest.mark.asyncio
+    async def test_real_tool_description_in_context_pool(self, config):
+        """M805: briefer works with realistic tool descriptions containing newlines/quotes.
+
+        The key insight: descriptions stay in context_pool and are never put into
+        the briefer's JSON output. The briefer only returns tool names.
+        """
+        # Realistic browser tool description with newlines, quotes, special chars
+        real_description = (
+            "Available tools:\n"
+            "- browser — Navigate to specific URLs, inspect page elements, click, fill forms, take screenshots\n"
+            '  args: action (string, required): one of: navigate, text, links, forms, snapshot, click, fill, screenshot\n'
+            '  args: url (string, optional): URL to navigate to (required for \'navigate\')\n'
+            '  args: element (string, optional): element reference like [3] or a CSS selector\n'
+            '  guide: This tool is for navigating to SPECIFIC known URLs.\n'
+            '  NEVER use it for web searches — use search instead.\n'
+            '\n'
+            'Actions:\n'
+            '  navigate — go to a specific URL (required first step)\n'
+            '  snapshot — list interactive elements numbered [1], [2], ...\n'
+            '  screenshot — save a PNG to the session workspace\n'
+            '\n'
+            'Browser state (cookies, localStorage) persists between calls.'
+        )
+        # Briefer returns just the name — no description in JSON
+        response = json.dumps({
+            "modules": [],
+            "tools": ["browser"],
+            "context": "Navigate to guidance.studio and screenshot.",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        })
+        ctx = {"tools": real_description}
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
+            result = await run_briefer(config, "planner", "go to guidance.studio", ctx)
+        # Briefer output has the name, not the description
+        assert result["tools"] == ["browser"]
+        # No newlines/quotes in the tools field — it's just a name
+        for tool in result["tools"]:
+            assert "\n" not in tool
+            assert len(tool) < 50  # names are short
+
+    @pytest.mark.asyncio
     async def test_empty_briefing(self, config):
         response = json.dumps({
             "modules": [],
