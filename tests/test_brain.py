@@ -1124,6 +1124,32 @@ class TestBuildPlannerMessages:
         assert names == []
         assert "discover_tools() returned empty" in caplog.text
 
+    async def test_upload_hint_when_docreader_missing(self, db, config):
+        """Upload hint injected when message has [Uploaded files:] and docreader not installed."""
+        await create_session(db, "sess1")
+        with patch("kiso.brain.discover_tools", return_value=[]):
+            msgs, *_ = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "Read this file\n\n[Uploaded files: report.pdf]",
+            )
+        content = msgs[1]["content"]
+        assert "uploaded files" in content.lower() or "uploads/" in content
+
+    async def test_no_upload_hint_when_docreader_installed(self, db, config):
+        """No upload hint when docreader is installed — briefer handles it."""
+        await create_session(db, "sess1")
+        fake_tool = {
+            "name": "docreader", "summary": "Read docs", "path": "/t",
+            "args_schema": {}, "healthy": True, "usage_guide": "",
+        }
+        with patch("kiso.brain.discover_tools", return_value=[fake_tool]):
+            msgs, *_ = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "Read this\n\n[Uploaded files: report.pdf]",
+            )
+        content = msgs[1]["content"]
+        assert "Use exec tasks" not in content
+
 
 # --- run_planner ---
 

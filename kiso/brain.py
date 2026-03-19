@@ -1074,6 +1074,13 @@ async def build_planner_messages(
 
     msg_lower = new_message.lower()
 
+    # Uploaded files hint — only when docreader is NOT installed
+    if "[uploaded files:" in msg_lower and "docreader" not in installed_names:
+        context_pool["upload_hint"] = (
+            "The user's message references uploaded files. "
+            "Use exec tasks (cat, head, python) to read them from the uploads/ directory."
+        )
+
     # --- Registry: show available-but-not-installed tools ---
     # Only fetch when no tools are installed.  Skip on replans — registry
     # data is identical to the initial plan and tools won't change mid-replan.
