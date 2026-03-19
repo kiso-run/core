@@ -8,18 +8,18 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /opt/kiso
 
-# Install dependencies (cached layer — re-runs only when deps change)
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# Install dependencies — cached layer invalidates ONLY when uv.lock changes.
+# A stub pyproject.toml avoids cache busting on version bumps or code changes.
+COPY uv.lock ./
+RUN printf '[project]\nname = "kiso"\nversion = "0.0.0"\nrequires-python = ">=3.11"\n' > pyproject.toml && \
+    uv sync --frozen --no-dev --no-install-project && \
+    rm pyproject.toml
 
-# Copy source and install project
+# Copy source and install project (real pyproject.toml needed for project install)
+COPY pyproject.toml ./
 COPY kiso/ kiso/
 COPY cli/ cli/
 RUN uv sync --frozen --no-dev
-
-# Pre-install skills (optional — uncomment and provide config.toml):
-# COPY config.toml /root/.kiso/config.toml
-# RUN uv run kiso skill install search
 
 ARG KISO_BUILD_HASH=dev
 ENV KISO_BUILD_HASH=$KISO_BUILD_HASH
