@@ -5085,7 +5085,7 @@ class TestRunBriefer:
     async def test_success(self, config):
         response = json.dumps({
             "modules": ["web"],
-            "tools": ["browser: navigate"],
+            "tools": ["browser"],
             "context": "User wants to browse",
             "output_indices": [1],
             "relevant_tags": ["browser"],
@@ -5095,7 +5095,7 @@ class TestRunBriefer:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit a website", ctx)
         assert result["modules"] == ["web"]
-        assert result["tools"] == ["browser: navigate"]
+        assert result["tools"] == ["browser"]
         assert result["context"] == "User wants to browse"
         assert result["output_indices"] == [1]
         assert result["relevant_tags"] == ["browser"]
@@ -5131,10 +5131,10 @@ class TestRunBriefer:
 
     @pytest.mark.asyncio
     async def test_m368_filters_hallucinated_skills(self, config):
-        """M368: run_briefer filters skills not matching context pool."""
+        """M368: run_briefer filters tool names not matching installed tools."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser: navigate and screenshot", "Retrieve CPU details"],
+            "tools": ["browser", "cpu-info"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5143,16 +5143,16 @@ class TestRunBriefer:
         ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit example.com", ctx)
-        # "browser" matches context pool, "Retrieve CPU details" does not
-        assert any("browser" in s for s in result["tools"])
-        assert not any("Retrieve" in s for s in result["tools"])
+        # "browser" matches installed tools, "cpu-info" does not
+        assert "browser" in result["tools"]
+        assert "cpu-info" not in result["tools"]
 
     @pytest.mark.asyncio
     async def test_m368_preserves_valid_skills(self, config):
-        """M368: run_briefer preserves skills that match context pool."""
+        """M368: run_briefer preserves tool names that match installed tools."""
         response = json.dumps({
             "modules": [],
-            "tools": ["search: web search for queries"],
+            "tools": ["search"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5162,7 +5162,7 @@ class TestRunBriefer:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "find info", ctx)
         assert len(result["tools"]) == 1
-        assert "search" in result["tools"][0]
+        assert result["tools"][0] == "search"
 
     @pytest.mark.asyncio
     async def test_m387_clears_skills_when_none_installed(self, config):
@@ -5378,7 +5378,7 @@ class TestBrieferPlannerIntegration:
         """When briefer succeeds, planner prompt uses selected modules only."""
         briefing = {
             "modules": ["web"],
-            "tools": ["browser: navigate, screenshot"],
+            "tools": ["browser"],
             "context": "User wants to browse a website.",
             "output_indices": [],
             "relevant_tags": [],
@@ -5415,8 +5415,9 @@ class TestBrieferPlannerIntegration:
         assert "extend_replan" not in system
         # Briefer's synthesized context used
         assert "## Context\nUser wants to browse a website." in user_content
-        # Briefer-filtered skills used
-        assert "browser: navigate, screenshot" in user_content
+        # build_planner_tool_list rebuilds full descriptions from installed tools
+        assert "browser" in user_content
+        assert "Navigate, click, fill, screenshot, text" in user_content
         # M258: sys_env NOT unconditionally included in briefer path
         assert "## System Environment" not in user_content
 

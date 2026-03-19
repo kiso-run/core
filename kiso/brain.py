@@ -1221,9 +1221,13 @@ async def build_planner_messages(
     if not briefing and context_pool.get("recipes"):
         context_parts.append(f"## Available Recipes\n{context_pool['recipes']}")
 
-    # Tools section — briefer filters or full list
+    # Tools section — briefer selects by name, code injects full descriptions
     if briefing and briefing["tools"]:
-        context_parts.append(f"## Tools\n" + "\n".join(briefing["tools"]))
+        selected_names = set(briefing["tools"])
+        selected_tools = [t for t in installed if t["name"] in selected_names]
+        selected_tool_text = build_planner_tool_list(selected_tools, user_role, user_tools)
+        if selected_tool_text:
+            context_parts.append(f"## Tools\n{selected_tool_text}")
     elif full_tool_list:
         context_parts.append(f"## Tools\n{full_tool_list}")
 
@@ -1497,10 +1501,9 @@ async def run_briefer(
     if _simple:
         briefing["modules"] = []
 
-    # post-validation filtering — remove hallucinated tools
+    # post-validation filtering — remove hallucinated tool names
     if briefing["tools"]:
         if not context_pool.get("tools"):
-            # No tools installed — any briefer tool selection is hallucinated
             log.debug("Briefer: cleared %d hallucinated tool(s) (none installed)",
                       len(briefing["tools"]))
             briefing["tools"] = []
@@ -1512,13 +1515,14 @@ async def run_briefer(
                 if m:
                     installed_tool_names.add(m.group(1).lower())
             original_count = len(briefing["tools"])
+            # briefer now returns short names — normalize and filter
             briefing["tools"] = [
-                s for s in briefing["tools"]
-                if s.split(":")[0].split()[0].strip().lower() in installed_tool_names
+                name.strip().lower() for name in briefing["tools"]
+                if name.strip().lower() in installed_tool_names
             ]
             filtered = original_count - len(briefing["tools"])
             if filtered:
-                log.debug("Briefer: filtered %d hallucinated tool(s)", filtered)
+                log.debug("Briefer: filtered %d hallucinated tool name(s)", filtered)
 
     log.info(
         "Briefer for %s: %d modules, %d tools, %d output_indices, %d tags",

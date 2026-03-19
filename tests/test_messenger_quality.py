@@ -204,7 +204,7 @@ class TestBrieferToolFilterNoTools:
         """When context_pool has no tools, briefer tools are cleared."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser: navigate", "aider: code assist"],
+            "tools": ["browser", "aider"],
             "context": "Some context",
             "output_indices": [],
             "relevant_tags": [],
@@ -219,7 +219,7 @@ class TestBrieferToolFilterNoTools:
         """When context_pool has tools, only matching ones pass."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser: navigate and click", "fake_skill: does nothing"],
+            "tools": ["browser", "fake_skill"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -228,15 +228,15 @@ class TestBrieferToolFilterNoTools:
         ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
-        assert any("browser" in s for s in result["tools"])
-        assert not any("fake_skill" in s for s in result["tools"])
+        assert "browser" in result["tools"]
+        assert "fake_skill" not in result["tools"]
 
     @pytest.mark.asyncio
     async def test_tool_filter_exact_name_no_substring(self, config):
         """M394: 'git' installed must NOT match briefer tool 'github'."""
         response = json.dumps({
             "modules": [],
-            "tools": ["github: integration", "git: version control"],
+            "tools": ["github", "git"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -245,5 +245,5 @@ class TestBrieferToolFilterNoTools:
         ctx = {"tools": "Available skills:\n- git — version control operations"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
-        assert any("git:" in s for s in result["tools"])
-        assert not any("github" in s for s in result["tools"])
+        assert "git" in result["tools"]
+        assert "github" not in result["tools"]

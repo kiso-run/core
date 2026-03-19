@@ -119,7 +119,7 @@ class TestBrieferScenarios:
         """Web request → briefer selects web module + browser skill."""
         briefing = _briefing(
             modules=["web"],
-            tools=["browser: navigate to URLs, take screenshots"],
+            tools=["browser"],
             context="User wants to visit gazzetta.it for sports news.",
         )
 
@@ -145,7 +145,9 @@ class TestBrieferScenarios:
         # Web module injected
         assert "Web interaction:" in system
         # Browser skill present
-        assert "browser: navigate" in user_content
+        # build_planner_tool_list rebuilds full descriptions from installed tools
+        assert "browser" in user_content
+        assert "Navigate, click, fill, screenshot" in user_content
         # Other modules absent
         assert "extend_replan" not in system
         assert "Scripting:" not in system
