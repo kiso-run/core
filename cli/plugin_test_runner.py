@@ -20,6 +20,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 OFFICIAL_ORG = "kiso-run"
+
+# ANSI colors (matching utils/run_tests.sh)
+_GREEN = "\033[0;32m"
+_RED = "\033[0;31m"
+_YELLOW = "\033[0;33m"
+_DIM = "\033[2m"
+_NC = "\033[0m"
+_USE_COLOR = sys.stdout.isatty()
 _GIT_ENV = {
     "GIT_TERMINAL_PROMPT": "0",
     "PATH": os.environ.get("PATH", ""),
@@ -36,6 +44,14 @@ class PluginTestResult:
     error: str | None = None
     duration_s: float = 0.0
     test_count: int = 0
+
+
+def _cprint(text: str, color: str) -> None:
+    """Print with ANSI color if stdout is a TTY."""
+    if _USE_COLOR:
+        print(f"{color}{text}{_NC}")
+    else:
+        print(text)
 
 
 def _git_url(plugin_type: str, name: str) -> str:
@@ -215,13 +231,13 @@ def test_plugins(
             print(f"\n  Testing {label}...", flush=True)
             r = _test_one_plugin(work_dir, plugin_type, name)
             results.append(r)
-            # Inline status
+            # Inline status with colors
             if r.skipped:
-                print(f"  ⊘ {label}: skipped ({r.error})")
+                _cprint(f"  ⊘ {label}: skipped ({r.error})", _YELLOW)
             elif r.passed:
-                print(f"  ✓ {label}: {r.test_count} tests, {r.duration_s:.1f}s")
+                _cprint(f"  ✓ {label}: {r.test_count} tests, {r.duration_s:.1f}s", _GREEN)
             else:
-                print(f"  ✗ {label}: failed at {r.stage} ({r.error})")
+                _cprint(f"  ✗ {label}: failed at {r.stage} ({r.error})", _RED)
 
     _print_report(results)
     return results
@@ -237,15 +253,14 @@ def _print_report(results: list[PluginTestResult]) -> None:
     skipped = sum(1 for r in results if r.skipped)
     total = len(results)
 
-    print(f"\n  Plugin Test Summary: ", end="")
     parts = []
     if passed:
-        parts.append(f"{passed} passed")
+        parts.append(f"{_GREEN}{passed} passed{_NC}" if _USE_COLOR else f"{passed} passed")
     if failed:
-        parts.append(f"{failed} failed")
+        parts.append(f"{_RED}{failed} failed{_NC}" if _USE_COLOR else f"{failed} failed")
     if skipped:
-        parts.append(f"{skipped} skipped")
-    print(", ".join(parts) + f" (of {total})")
+        parts.append(f"{_YELLOW}{skipped} skipped{_NC}" if _USE_COLOR else f"{skipped} skipped")
+    print(f"\n  Plugin Test Summary: {', '.join(parts)} (of {total})")
 
 
 def main(filter_arg: str = "") -> int:
