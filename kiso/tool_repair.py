@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 from kiso.config import KISO_DIR
 from kiso.tools import check_deps, discover_tools, invalidate_tools_cache
 
 log = logging.getLogger(__name__)
+
+# Image ID file baked into the Docker image at build time.
+_IMAGE_ID_PATH = Path("/opt/kiso/.image_id")
+# Persisted marker on host volume — survives container rebuilds.
+_LAST_IMAGE_ID_PATH = KISO_DIR / ".last_image_id"
 
 # Limits to prevent startup from hanging
 _PER_TOOL_TIMEOUT = 60  # seconds per tool deps.sh
@@ -71,3 +77,86 @@ async def repair_unhealthy_tools(tools_dir: Path | None = None) -> list[str]:
         invalidate_tools_cache()
 
     return repaired
+
+
+def _is_container_rebuilt() -> bool:
+    """Check if the container image changed since last boot.
+
+    Compares the image ID baked into the Docker image with the last known
+    image ID persisted on the host volume. Returns True on first boot or
+    after a rebuild.
+    """
+    if not _IMAGE_ID_PATH.is_file():
+        return False  # not running in Docker, or old image without marker
+    current = _IMAGE_ID_PATH.read_text().strip()
+    if not current:
+        return False
+    if not _LAST_IMAGE_ID_PATH.is_file():
+        return True  # first boot
+    last = _LAST_IMAGE_ID_PATH.read_text().strip()
+    return current != last
+
+
+def _mark_image_id() -> None:
+    """Persist the current image ID so next boot can detect a rebuild."""
+    if not _IMAGE_ID_PATH.is_file():
+        return
+    current = _IMAGE_ID_PATH.read_text().strip()
+    if current:
+        _LAST_IMAGE_ID_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _LAST_IMAGE_ID_PATH.write_text(current)
+
+
+async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
+    """Re-run deps.sh for ALL installed tools (after container rebuild).
+
+    Returns list of tool names where deps.sh was executed.
+    """
+    resolved_dir = tools_dir or (KISO_DIR / "tools")
+    tools = discover_tools(resolved_dir)
+    if not tools:
+        return []
+
+    log.info("Container rebuilt — re-running deps.sh for %d installed tool(s)", len(tools))
+    executed: list[str] = []
+    total_start = asyncio.get_event_loop().time()
+
+    for tool in tools:
+        elapsed = asyncio.get_event_loop().time() - total_start
+        if elapsed >= _TOTAL_TIMEOUT:
+            log.warning("deps.sh re-run total timeout (%ds) reached, skipping remaining", _TOTAL_TIMEOUT)
+            break
+
+        tool_path = Path(tool["path"])
+        deps_sh = tool_path / "deps.sh"
+        if not deps_sh.exists():
+            continue
+
+        log.info("Re-running deps.sh for '%s'...", tool["name"])
+        remaining = min(_PER_TOOL_TIMEOUT, _TOTAL_TIMEOUT - elapsed)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash", str(deps_sh),
+                cwd=str(tool_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=remaining)
+            if proc.returncode == 0:
+                log.info("Tool '%s' deps.sh succeeded", tool["name"])
+            else:
+                log.warning(
+                    "Tool '%s' deps.sh failed (exit %d): %s",
+                    tool["name"], proc.returncode, stderr.decode(errors="replace")[:500],
+                )
+        except asyncio.TimeoutError:
+            log.warning("Tool '%s' deps.sh timed out after %ds", tool["name"], remaining)
+        except OSError as e:
+            log.warning("Tool '%s' deps.sh error: %s", tool["name"], e)
+
+        executed.append(tool["name"])
+
+    if executed:
+        invalidate_tools_cache()
+
+    return executed

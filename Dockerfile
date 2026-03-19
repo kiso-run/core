@@ -24,6 +24,9 @@ RUN uv sync --frozen --no-dev
 ARG KISO_BUILD_HASH=dev
 ENV KISO_BUILD_HASH=$KISO_BUILD_HASH
 
+# Image marker for post-rebuild tool dep repair
+RUN echo "$KISO_BUILD_HASH" > /opt/kiso/.image_id
+
 EXPOSE 8333
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

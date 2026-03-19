@@ -494,8 +494,18 @@ async def lifespan(app: FastAPI):
 
     await _startup_recovery(db, config)
 
+    # Re-run deps.sh for all tools if container was rebuilt
+    from kiso.tool_repair import _is_container_rebuilt, _mark_image_id, rerun_all_deps, repair_unhealthy_tools
+    try:
+        if _is_container_rebuilt():
+            reran = await rerun_all_deps()
+            if reran:
+                log.info("Container rebuilt — re-ran deps.sh for: %s", reran)
+            _mark_image_id()
+    except Exception as e:
+        log.warning("Post-rebuild deps re-run failed: %s", e)
+
     # Auto-repair unhealthy tools (re-run deps.sh for missing binaries)
-    from kiso.tool_repair import repair_unhealthy_tools
     try:
         repaired = await repair_unhealthy_tools()
         if repaired:
