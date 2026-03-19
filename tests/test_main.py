@@ -190,20 +190,20 @@ class TestInitKisoDirs:
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
         ref_dir = tmp_path / "reference"
-        assert (ref_dir / "skills.md").is_file()
+        assert (ref_dir / "tools.md").is_file()
         assert (ref_dir / "connectors.md").is_file()
         # Verify content is non-empty
-        assert len((ref_dir / "skills.md").read_text()) > 0
+        assert len((ref_dir / "tools.md").read_text()) > 0
         assert len((ref_dir / "connectors.md").read_text()) > 0
 
     def test_only_writes_when_changed(self, tmp_path):
         """_init_kiso_dirs doesn't rewrite files that haven't changed."""
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
-        mtime1 = (tmp_path / "reference" / "skills.md").stat().st_mtime
+        mtime1 = (tmp_path / "reference" / "tools.md").stat().st_mtime
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
-        mtime2 = (tmp_path / "reference" / "skills.md").stat().st_mtime
+        mtime2 = (tmp_path / "reference" / "tools.md").stat().st_mtime
         assert mtime1 == mtime2
 
     def test_idempotent(self, tmp_path):

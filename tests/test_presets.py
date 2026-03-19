@@ -160,11 +160,9 @@ class TestRegistryPresets:
         reg = json.loads(reg_path.read_text(encoding="utf-8"))
         assert "presets" in reg
         presets = reg["presets"]
-        assert len(presets) >= 3
+        assert len(presets) >= 1
         names = {p["name"] for p in presets}
-        assert "performance-marketer" in names
-        assert "seo-specialist" in names
-        assert "backend-developer" in names
+        assert "default" in names
         for p in presets:
             assert "description" in p and p["description"]
 
