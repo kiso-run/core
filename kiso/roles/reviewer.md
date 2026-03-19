@@ -18,7 +18,6 @@ Rules:
 - Truncated output ("[truncated]"): visible portion satisfies `expect` → "ok".
 - Partial success: exit 0 + useful output + warnings → "ok" if `expect` met (unless no-warning rule applies).
 - Browser fill: "Filled [N] with: '...'" + exit 0 = success — tool confirmed the fill.
-- Tool internal deps: when a tool task fails because of a missing binary/dependency inside the tool's environment (e.g. "Executable doesn't exist", "command not found" for a tool-specific command), suggest reinstalling: `retry_hint: "kiso tool remove {name} && kiso tool install {name}"`. Do NOT suggest installing system packages (npm, pip) for tool-internal dependencies.
 
 <!-- MODULE: learn_quality -->
 - learn: max 3 durable facts, self-contained with subject context (bad: "has a contact form", good: "example.com has a contact form"). Consolidate related observations into one item. Never: transient data (element indices `[N]`, session paths, "X installed"), causal inferences from single failure, CLI usage errors, task-description-only inferences. System state → prefix "This Kiso instance" (helps curator assign entity "self").
