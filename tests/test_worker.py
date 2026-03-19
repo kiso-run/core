@@ -4013,6 +4013,38 @@ class TestApplyCuratorResult:
         assert len(items) == 0
 
 
+    async def test_promote_writes_learning_tags_to_task(self, db):
+        """M793: curator promote writes entity+tags back to the task's review_learning_tags."""
+        # Create a task with review_learning
+        plan_id = await create_plan(db, "sess1", 1, "test goal")
+        task_id = await create_task(db, plan_id, "sess1", "exec", "echo hello")
+        await db.execute(
+            "UPDATE tasks SET status='done', review_verdict='ok', review_learning=? WHERE id=?",
+            ("Flask uses port 5000 by default", task_id),
+        )
+        await db.commit()
+
+        # Save learning + curator promote with entity+tags
+        lid = await save_learning(db, "Flask uses port 5000 by default", "sess1")
+        result = {"evaluations": [{
+            "learning_id": lid, "verdict": "promote",
+            "fact": "Flask default port is 5000",
+            "category": "tool", "tags": ["web-framework", "python"],
+            "entity_name": "flask", "entity_kind": "tool",
+            "reason": "Durable fact",
+        }]}
+        await _apply_curator_result(db, "sess1", result)
+
+        # Verify task has review_learning_tags
+        cur = await db.execute("SELECT review_learning_tags FROM tasks WHERE id = ?", (task_id,))
+        row = await cur.fetchone()
+        tags = row[0] if isinstance(row, tuple) else row["review_learning_tags"]
+        assert tags is not None
+        assert "flask" in tags
+        assert "tool" in tags
+        assert "web-framework" in tags
+
+
 # --- M344: _apply_curator_result — entity creation + fact linking ---
 
 

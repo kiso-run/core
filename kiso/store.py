@@ -344,6 +344,9 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     if "parallel_group" not in existing_cols:
         await db.execute("ALTER TABLE tasks ADD COLUMN parallel_group INTEGER")
         await db.commit()
+    if "review_learning_tags" not in existing_cols:
+        await db.execute("ALTER TABLE tasks ADD COLUMN review_learning_tags TEXT")
+        await db.commit()
 
     # add project_id to sessions and facts tables
     cur = await db.execute("PRAGMA table_info(sessions)")

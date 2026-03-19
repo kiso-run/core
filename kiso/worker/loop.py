@@ -1732,6 +1732,42 @@ async def _execute_plan(
 _PROJECT_SCOPED_CATEGORIES = frozenset({"project", "behavior"})
 
 
+async def _tag_task_from_curator(
+    db: aiosqlite.Connection, learning_id: int, evaluation: dict,
+) -> None:
+    """Write entity+tags from curator evaluation back to the task that produced the learning.
+
+    Looks up the learning content, finds the task with matching review_learning,
+    and sets review_learning_tags for CLI display.
+    """
+    try:
+        cur = await db.execute("SELECT content FROM learnings WHERE id = ?", (learning_id,))
+        row = await cur.fetchone()
+        if not row:
+            return
+        learning_content = row[0] if isinstance(row, tuple) else row["content"]
+
+        # Build tags string: "entity:name (kind), tag1, tag2"
+        parts: list[str] = []
+        entity_name = evaluation.get("entity_name")
+        entity_kind = evaluation.get("entity_kind")
+        if entity_name:
+            parts.append(f"entity:{entity_name}" + (f" ({entity_kind})" if entity_kind else ""))
+        for tag in evaluation.get("tags") or []:
+            parts.append(tag)
+        if not parts:
+            return
+
+        tags_str = ", ".join(parts)
+        await db.execute(
+            "UPDATE tasks SET review_learning_tags = ? WHERE review_learning = ? AND review_learning_tags IS NULL",
+            (tags_str, learning_content),
+        )
+        await db.commit()
+    except Exception as e:
+        log.debug("Failed to tag task from curator: %s", e)
+
+
 async def _apply_curator_result(
     db: aiosqlite.Connection, session: str, result: dict
 ) -> None:
@@ -1774,6 +1810,8 @@ async def _apply_curator_result(
                 entity_id=entity_id, project_id=fact_project_id,
             )
             await update_learning(db, lid, "promoted")
+            # Write entity+tags back to the task for CLI display
+            await _tag_task_from_curator(db, lid, ev)
         elif verdict == CURATOR_VERDICT_ASK:
             question = ev.get("question")
             if not question:
