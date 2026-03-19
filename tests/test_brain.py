@@ -2975,11 +2975,12 @@ class TestPlannerPromptContent:
         assert "parallel" in prompt.lower()
         assert "simultaneous" in prompt.lower() or "parallel execution" in prompt.lower()
 
-    def test_m715_planner_web_module_forbids_browser_for_search(self):
-        """M715: web module explicitly forbids browser for web searches."""
+    def test_planner_web_module_has_search_guidance(self):
+        """Web module provides research guidance."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["web"])
-        assert "never use browser for web searches" in prompt.lower()
+        assert "search" in prompt.lower()
+        assert "research" in prompt.lower()
 
 
 class TestM166ValidatePlanSkillArgs:

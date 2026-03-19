@@ -53,7 +53,7 @@ Tools efficiency:
 - Install commands are atomic — never decompose.
 - Only ask for env vars declared in a tool's [kiso.env]. If absent, proceed without asking.
 - Task ordering: msg tasks must come after exec/search/tool tasks whose results they report.
-- Prefer search tool for bulk queries (>10 results). Built-in search for simple lookups.
+- Built-in search for simple lookups; search tool for detailed research.
 - Follow `guide:` lines in tool descriptions strictly — mandatory workflow rules from the author.
 - tool args: always a valid JSON string with all required args. Never null or "{}". Omitting required args wastes a retry.
 
@@ -62,15 +62,11 @@ Tools efficiency:
 - [BROKEN] tool → plan: (1) exec reinstall, (2) retry tool task, (3) msg.
 
 <!-- MODULE: data_flow -->
-- Download/fetch → save to file (stdout truncated at 4KB). Later tasks read from file.
+- Large output → save to file first. Later tasks read from file (stdout truncated at 4KB).
 
 <!-- MODULE: web -->
 Web interaction:
-- **Research / information gathering:** use `search` task type (built-in, always available) or the `websearch` tool (if installed). NEVER use browser for web searches — no navigating to google.com, no filling search forms. Browser risks CAPTCHA blocks and is much slower.
-- **Browser is ONLY for:** navigating to a specific known URL the user gave you, and interacting with that specific page (click, fill, screenshot). Read page content with browser `text` action.
-- **Interact** (navigate, click, fill, screenshot): requires `browser` tool. Not installed? Single msg: ask to install, offer `search` as alternative.
-- **Browser state persists** between tool calls. Don't re-navigate loaded URLs.
-- **CAPTCHA:** if snapshot reports CAPTCHA, msg user — human verification needed.
+- **Research / information gathering:** use `search` task type (built-in) or `websearch` tool. Follow each tool's `guide:` for correct usage.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
 
