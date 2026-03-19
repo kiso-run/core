@@ -1230,6 +1230,21 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     fi
 fi
 
+# ── 7c. Smoke test ────────────────────────────────────────────────────────
+
+echo
+bold "Verifying installation..."
+if docker exec "$CONTAINER" uv run kiso tool list >/dev/null 2>&1; then
+    _broken=$(docker exec "$CONTAINER" uv run kiso tool list 2>/dev/null | grep -c "\[BROKEN\]" || true)
+    if [[ "$_broken" -gt 0 ]]; then
+        yellow "  warning: $_broken tool(s) marked [BROKEN] — check: kiso instance logs $INST_NAME"
+    else
+        green "  system verified"
+    fi
+else
+    yellow "  warning: verification failed — check: kiso instance logs $INST_NAME"
+fi
+
 # ── 8. Summary ──────────────────────────────────────────────────────────────
 
 echo
