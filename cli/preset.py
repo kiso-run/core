@@ -6,8 +6,37 @@ import argparse
 import sys
 from pathlib import Path
 
+import shutil
+import subprocess
+import tempfile
+
 from cli._http import cli_get
 from cli.plugin_ops import fetch_registry, render_aligned_list
+
+
+def _clone_and_load_preset(git_url: str):
+    """Clone a preset repo to a temp dir, load and return the manifest."""
+    from kiso.presets import load_preset
+
+    tmpdir = tempfile.mkdtemp()
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", git_url, tmpdir + "/preset"],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(f"error: git clone failed: {result.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+        preset_path = Path(tmpdir) / "preset" / "preset.toml"
+        if not preset_path.is_file():
+            print(f"error: preset.toml not found in cloned repo", file=sys.stderr)
+            sys.exit(1)
+        return load_preset(preset_path)
+    except Exception as e:
+        print(f"error: failed to load preset: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def preset_list(args: argparse.Namespace) -> None:
@@ -50,20 +79,20 @@ def preset_install(args: argparse.Namespace) -> None:
             sys.exit(1)
         from kiso.presets import load_preset
         manifest = load_preset(path)
+    elif target.startswith("https://") or target.startswith("git@"):
+        # Git URL: clone to temp, load preset.toml
+        git_url = target
+        manifest = _clone_and_load_preset(git_url)
     else:
-        # Registry name: download and create a minimal manifest
-        # For now, registry presets are just metadata — they need a local preset.toml
-        # or a git URL. We'll check if it's a known registry name.
+        # Registry name: clone the official repo
         registry = fetch_registry()
         presets = registry.get("presets", [])
         match = next((p for p in presets if p["name"] == target), None)
         if not match:
             print(f"error: preset '{target}' not found in registry or as local path", file=sys.stderr)
             sys.exit(1)
-        print(f"error: registry preset '{target}' requires a local preset.toml file.", file=sys.stderr)
-        print(f"  Download it first: git clone https://github.com/kiso-run/preset-{target}.git", file=sys.stderr)
-        print(f"  Then: kiso preset install ./preset-{target}/preset.toml", file=sys.stderr)
-        sys.exit(1)
+        git_url = f"https://github.com/kiso-run/preset-{target}.git"
+        manifest = _clone_and_load_preset(git_url)
 
     dry_run = getattr(args, "dry_run", False)
 

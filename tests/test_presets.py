@@ -384,16 +384,25 @@ class TestPresetInstallCLI:
         out = capsys.readouterr().out
         assert "Dry run" in out
 
-    def test_install_registry_name_shows_instructions(self, capsys):
+    def test_install_registry_name_clones_repo(self, tmp_path, capsys):
+        """Registry name triggers git clone of preset repo."""
         from cli.preset import preset_install
-        reg = {"presets": [{"name": "seo-specialist", "description": "SEO"}]}
-        args = make_cli_args(target="seo-specialist", dry_run=False)
+        reg = {"presets": [{"name": "test-preset", "description": "Test"}]}
+        args = make_cli_args(target="test-preset", dry_run=False)
+
+        # Mock _clone_and_load_preset to return a valid manifest
+        from kiso.presets import PresetManifest
+        mock_manifest = PresetManifest(
+            name="test-preset", version="1.0.0", description="Test",
+            tools=[], behaviors=["Always be helpful."],
+        )
         with patch("cli.plugin_ops.require_admin"), \
              patch("cli.preset.fetch_registry", return_value=reg), \
-             pytest.raises(SystemExit):
+             patch("cli.preset._clone_and_load_preset", return_value=mock_manifest), \
+             patch("cli.preset_ops.install_preset") as mock_install:
             preset_install(args)
-        err = capsys.readouterr().err
-        assert "requires a local preset.toml" in err
+        mock_install.assert_called_once()
+        assert mock_install.call_args[0][1].name == "test-preset"
 
     def test_install_unknown_name_errors(self, capsys):
         from cli.preset import preset_install
