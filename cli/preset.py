@@ -20,6 +20,7 @@ def _clone_and_load_preset(git_url: str):
 
     tmpdir = tempfile.mkdtemp()
     try:
+        print(f"  Fetching preset from {git_url}...", flush=True)
         result = subprocess.run(
             ["git", "clone", "--depth", "1", git_url, tmpdir + "/preset"],
             capture_output=True, text=True,
