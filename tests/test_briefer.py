@@ -659,3 +659,57 @@ class TestM824ToolFilterThreshold:
         # threshold=0 → briefer filtering applies: only browser, not ocr
         assert "Navigate pages" in user_content
         assert "Extract text from images" not in user_content
+
+
+# ---------------------------------------------------------------------------
+# M825 — Planner prompt: session file awareness rules
+# ---------------------------------------------------------------------------
+
+
+class TestM825SessionFilesModule:
+    """M825: session_files module injected when workspace has files."""
+
+    async def test_session_with_files_gets_module(self, db):
+        """Session workspace files → session_files module in prompt."""
+        briefing = _briefing(
+            modules=["planning_rules"],
+            context="User wants to read a file.",
+        )
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.worker.utils._list_session_files", return_value="Session workspace files:\n- test.png (1 KB, image, just now)"):
+            msgs, _, _ = await build_planner_messages(
+                db, _config(), "sess1", "admin", "read the screenshot",
+            )
+
+        system = msgs[0]["content"]
+        assert "Session file rules:" in system
+        assert "absolute path" in system
+
+    async def test_empty_session_no_module(self, db):
+        """Empty session → session_files module absent."""
+        briefing = _briefing(
+            modules=["planning_rules"],
+            context="Simple chat.",
+        )
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.worker.utils._list_session_files", return_value=""):
+            msgs, _, _ = await build_planner_messages(
+                db, _config(), "sess1", "admin", "hello",
+            )
+
+        system = msgs[0]["content"]
+        assert "Session file rules:" not in system

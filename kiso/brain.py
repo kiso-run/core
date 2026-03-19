@@ -1118,6 +1118,9 @@ async def build_planner_messages(
         except Exception as exc:
             log.warning("Briefer failed for planner, falling back to full context: %s", exc)
 
+    # M825: session_files module when files exist in workspace
+    _has_session_files = "session_files" in context_pool
+
     if briefing:
         # Briefer path: modules selected by the briefer LLM.
         # Safety net: force plugin_install when tools need installing.
@@ -1125,6 +1128,8 @@ async def build_planner_messages(
         if not installed or registry_text:
             if "plugin_install" not in modules:
                 modules.append("plugin_install")
+        if _has_session_files and "session_files" not in modules:
+            modules.append("session_files")
         system_prompt = _load_modular_prompt("planner", modules)
     else:
         # Fallback path: keyword-based module selection (no briefer).
@@ -1143,6 +1148,8 @@ async def build_planner_messages(
         )
         if _plugin_kw_hit or not installed or registry_text:
             fallback_modules.append("plugin_install")
+        if _has_session_files:
+            fallback_modules.append("session_files")
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
     if not installed:

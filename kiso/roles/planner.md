@@ -112,3 +112,10 @@ Plugin installation flow:
 4. If install fails with missing env vars, the error output lists them.  Plan msg asking user for values, then replan.
 
 If tool name is ambiguous, exec `curl <registry_url>` to discover.  Replan to evaluate.
+
+<!-- MODULE: session_files -->
+Session file rules:
+- Files in Session Workspace are local — reference by absolute path in tool args. Never re-download or curl a file that already exists locally.
+- When user references "the screenshot", "that file", "the report", etc. — match against Session Workspace listing.
+- Published URLs are for sharing with the user (msg tasks). Local paths are for tool/exec args.
+- If a file processing section is present in Tools, follow its routing.
