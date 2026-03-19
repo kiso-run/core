@@ -896,6 +896,19 @@ def validate_plan(
 _FACT_CHAR_LIMIT = 200
 
 
+def _format_split_facts(
+    facts: list[dict], session: str, is_admin: bool,
+) -> tuple[str, str]:
+    """Split facts by session, group by category, return (primary_text, other_text).
+
+    Each text is pre-formatted with grouped facts. Empty string if no facts.
+    """
+    primary, other = _split_facts_by_session(facts, session, is_admin)
+    primary_text = "\n".join(_group_facts_by_category(primary)) if primary else ""
+    other_text = "\n".join(_group_facts_by_category(other, label_session=True)) if other else ""
+    return primary_text, other_text
+
+
 def _split_facts_by_session(
     facts: list[dict], session: str, is_admin: bool,
 ) -> tuple[list[dict], list[dict]]:
@@ -970,17 +983,12 @@ async def _gather_planner_context(
     # Format facts for context pool
     facts_text = ""
     if facts:
-        primary, other = _split_facts_by_session(facts, session, is_admin)
+        primary_text, other_text = _format_split_facts(facts, session, is_admin)
         parts: list[str] = []
-        if primary:
-            grouped = _group_facts_by_category(primary)
-            if grouped:
-                parts.extend(grouped)
-        if other:
-            grouped = _group_facts_by_category(other, label_session=True)
-            if grouped:
-                parts.append("### From Other Sessions")
-                parts.extend(grouped)
+        if primary_text:
+            parts.append(primary_text)
+        if other_text:
+            parts.append("### From Other Sessions\n" + other_text)
         facts_text = "\n".join(parts)
 
     pending_text = _format_pending_items(pending)
@@ -1163,17 +1171,11 @@ async def build_planner_messages(
         _add_section(context_parts, "Session Summary", summary)
 
         if facts:
-            primary, other = _split_facts_by_session(facts, session, is_admin)
-
-            if primary:
-                parts = _group_facts_by_category(primary)
-                if parts:
-                    context_parts.append("## Known Facts\n" + "\n".join(parts))
-
-            if other:
-                parts = _group_facts_by_category(other, label_session=True)
-                if parts:
-                    context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
+            primary_text, other_text = _format_split_facts(facts, session, is_admin)
+            if primary_text:
+                context_parts.append("## Known Facts\n" + primary_text)
+            if other_text:
+                context_parts.append("## Context from Other Sessions\n" + other_text)
 
         # entity-based fact enrichment (parity with briefer path)
         # Use word-level matching with normalization so "config" matches entity "configuration"
