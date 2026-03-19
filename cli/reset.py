@@ -142,13 +142,13 @@ def _reset_factory(args) -> None:
         DB_PATH.unlink()
 
     # Delete directories
-    for dirname in ("sessions", "audit", "skills", "connectors", "roles", "reference", "sys"):
+    for dirname in ("sessions", "audit", "tools", "connectors", "presets", "roles", "reference", "sys"):
         d = KISO_DIR / dirname
         if d.exists():
             shutil.rmtree(d)
 
     # Delete individual files
-    for filename in (".chat_history", "server.log"):
+    for filename in (".chat_history", "server.log", ".last_image_id"):
         f = KISO_DIR / filename
         if f.exists():
             f.unlink()
