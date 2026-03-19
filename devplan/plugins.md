@@ -90,8 +90,8 @@ Reference: `docs/tools.md` (tool spec), `docs/connectors.md` (connector spec), `
 - [x] PDF page ranges, XLSX multi-sheet, path traversal guard, 100K output truncation
 - [x] Pushed to git@github.com:kiso-run/tool-docreader.git
 - [x] Dependencies: pypdf, python-docx, openpyxl (no system deps needed)
-- [ ] Unit tests pending (M2 in tool-docreader DEVPLAN)
-- [ ] Registry integration pending (M3 in tool-docreader DEVPLAN)
+- [x] Unit tests done (35 tests, M2 in tool-docreader DEVPLAN)
+- [x] Registry already had docreader entry; live install test pending (M3)
 
 ---
 
