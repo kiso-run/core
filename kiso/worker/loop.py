@@ -1054,6 +1054,26 @@ async def _handle_msg_task(
 # shared review-result helpers (used by tool, exec, search handlers)
 
 
+async def _should_retry_task(
+    ctx: _PlanCtx, task_id: int, review: dict, retries: int, task_type: str,
+) -> bool:
+    """Check if a task should be retried based on review result.
+
+    Returns True if retry_hint exists and retries < max. Updates DB retry count
+    and logs the retry. Caller must increment its own local counter on True.
+    """
+    retry_hint = review.get("retry_hint")
+    if not retry_hint or retries >= ctx.max_worker_retries:
+        return False
+    await update_task_retry_count(ctx.db, task_id, retries + 1)
+    if ctx.slog:
+        ctx.slog.info(
+            "Task %d %s retry %d/%d: %s",
+            task_id, task_type, retries + 1, ctx.max_worker_retries, retry_hint,
+        )
+    return True
+
+
 async def _review_stop_stuck(
     ctx: _PlanCtx, task_id: int, review: dict, plan_output: "dict | None",
     usage_idx_before: int,
@@ -1201,14 +1221,8 @@ async def _handle_tool_task(
             return await _review_stop_stuck(ctx, task_id, review, plan_output_entry, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
-            retry_hint = review.get("retry_hint")
-            # internal retry for transient tool failures
-            if retry_hint and tool_retries < ctx.max_worker_retries:
+            if await _should_retry_task(ctx, task_id, review, tool_retries, "tool"):
                 tool_retries += 1
-                await update_task_retry_count(ctx.db, task_id, tool_retries)
-                if ctx.slog:
-                    ctx.slog.info("Task %d tool retry %d/%d: %s",
-                                  task_id, tool_retries, ctx.max_worker_retries, retry_hint)
                 continue
             return await _review_stop_replan(ctx, task_id, review, plan_output_entry, usage_idx_before, tool_retries)
 
@@ -1345,20 +1359,15 @@ async def _handle_exec_task(
             return await _review_stop_stuck(ctx, task_id, review, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
-            retry_hint = review.get("retry_hint")
-            if retry_hint and exec_retries < ctx.max_worker_retries:
+            if await _should_retry_task(ctx, task_id, review, exec_retries, "exec"):
                 exec_retries += 1
-                await update_task_retry_count(ctx.db, task_id, exec_retries)
                 retry_context = (
                     f"Attempt {exec_retries} failed.\n"
                     f"Command: {command}\n"
                     f"Output: {stdout[:500]}\n"
                     f"Stderr: {stderr[:500]}\n"
-                    f"Hint: {retry_hint}"
+                    f"Hint: {review.get('retry_hint')}"
                 )
-                if ctx.slog:
-                    ctx.slog.info("Task %d retry %d/%d: %s",
-                                  task_id, exec_retries, ctx.max_worker_retries, retry_hint)
                 continue
             return await _review_stop_replan(ctx, task_id, review, local_plan_output, usage_idx_before, exec_retries)
 
@@ -1426,17 +1435,12 @@ async def _handle_search_task(
             return await _review_stop_stuck(ctx, task_id, review, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
-            retry_hint = review.get("retry_hint")
-            if retry_hint and search_retries < ctx.max_worker_retries:
+            if await _should_retry_task(ctx, task_id, review, search_retries, "search"):
                 search_retries += 1
-                await update_task_retry_count(ctx.db, task_id, search_retries)
                 search_extra_context += (
                     f"\n\n[Retry {search_retries}] Previous search was insufficient. "
-                    f"Hint: {retry_hint}"
+                    f"Hint: {review.get('retry_hint')}"
                 )
-                if ctx.slog:
-                    ctx.slog.info("Task %d search retry %d/%d: %s",
-                                  task_id, search_retries, ctx.max_worker_retries, retry_hint)
                 continue
             await update_task(ctx.db, task_id, "done", output=search_result)
             return await _review_stop_replan(ctx, task_id, review, local_plan_output, usage_idx_before, search_retries)
