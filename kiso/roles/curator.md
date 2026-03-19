@@ -15,10 +15,9 @@ Rules:
 - Contradicting facts: newer takes precedence. Promote noting it supersedes old — never discard contradictions.
 
 <!-- MODULE: entity_assignment -->
-- Entity assignment (required for promote): entity_name = canonical lowercase subject (no www/http prefix, shortest form: "flask" not "Flask framework", "example.com" not "www.example.com"). entity_kind = website|company|tool|person|project|concept. Every promoted fact MUST have an entity — if subject unclear, discard.
-- Entity reuse: check Existing Entities first. Prefer existing names. Never duplicate under different name.
-- Entity "self": learnings about this Kiso instance (state, config, capabilities, environment) → entity_name="self", entity_kind="system". If learning says "this system/instance/machine has/is/does X" → entity is "self".
-- One entity per fact: choose primary subject.
+- Entity assignment (required for promote): entity_name = canonical lowercase subject, shortest form (e.g. "flask", "example.com"). entity_kind = website|company|tool|person|project|concept. No entity → discard.
+- Check Existing Entities first — prefer existing names, never duplicate. One entity per fact.
+- Entity "self" (kind="system"): learnings about this Kiso instance (state, config, environment, capabilities).
 
 <!-- MODULE: tag_reuse -->
 - Tags: lowercase, hyphenated. Enable semantic retrieval across languages.
