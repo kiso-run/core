@@ -1071,7 +1071,7 @@ if [[ "$NEED_BUILD" == true ]]; then
 
     bold "Waiting for healthcheck..."
     elapsed=0
-    while [[ $elapsed -lt 30 ]]; do
+    while [[ $elapsed -lt 60 ]]; do
         if curl -sf "http://localhost:$SERVER_PORT/health" &>/dev/null; then
             echo
             green "  healthy!"
@@ -1084,7 +1084,7 @@ if [[ "$NEED_BUILD" == true ]]; then
 
     if [[ $elapsed -ge 30 ]]; then
         echo
-        yellow "  Healthcheck timed out (30s). Container may still be starting."
+        yellow "  Healthcheck timed out (60s). Container may still be starting."
         yellow "  Check with: kiso instance logs $INST_NAME"
     fi
 else
@@ -1109,7 +1109,7 @@ if [[ "$RESET_REQUESTED" == true ]]; then
     docker restart "$CONTAINER"
     # Wait for container to be healthy after restart
     _reset_elapsed=0
-    while [[ $_reset_elapsed -lt 30 ]]; do
+    while [[ $_reset_elapsed -lt 60 ]]; do
         if curl -sf "http://localhost:$SERVER_PORT/health" &>/dev/null; then
             break
         fi
