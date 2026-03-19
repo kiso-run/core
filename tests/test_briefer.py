@@ -428,12 +428,12 @@ class TestBrieferPromptBudget:
 # ---------------------------------------------------------------------------
 
 
-class TestMdSkillsInBriefer:
-    """Verify MD skills are injected into the briefer context pool."""
+class TestRecipesInBriefer:
+    """Verify recipes are injected into the briefer context pool."""
 
-    async def test_md_skills_appear_in_context_pool(self, db):
-        """When MD skills exist, they appear in the briefer context pool."""
-        fake_md_skills = [
+    async def test_recipes_appear_in_context_pool(self, db):
+        """When recipes exist, they appear in the briefer context pool."""
+        fake_recipes = [
             {"name": "data-analyst", "summary": "Data analysis guidance",
              "instructions": "Use pandas for tabular data.", "path": "/fake/data-analyst.md"},
         ]
@@ -449,19 +449,19 @@ class TestMdSkillsInBriefer:
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
              patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills", return_value=fake_md_skills):
+             patch("kiso.brain.discover_recipes", return_value=fake_recipes):
             await build_planner_messages(
                 db, _config(), "sess1", "user", "analyze this data",
             )
 
-        # Briefer should receive the MD skills section
+        # Briefer should receive the recipes section
         briefer_input = captured_messages[1]["content"]
-        assert "Available Skills" in briefer_input
+        assert "Available Recipes" in briefer_input
         assert "data-analyst" in briefer_input
         assert "Data analysis guidance" in briefer_input
 
-    async def test_no_md_skills_no_section(self, db):
-        """When no MD skills exist, no skills section in briefer context."""
+    async def test_no_recipes_no_section(self, db):
+        """When no recipes exist, no recipes section in briefer context."""
         briefing = _briefing(context="Simple request.")
 
         captured_messages = []
@@ -474,23 +474,23 @@ class TestMdSkillsInBriefer:
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
              patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills", return_value=[]):
+             patch("kiso.brain.discover_recipes", return_value=[]):
             await build_planner_messages(
                 db, _config(), "sess1", "user", "hello",
             )
 
         briefer_input = captured_messages[1]["content"]
-        assert "Available Skills" not in briefer_input
+        assert "Available Recipes" not in briefer_input
 
-    async def test_md_skills_in_planner_context_when_briefer_selects(self, db):
-        """MD skill instructions appear in planner messages when briefer passes them through."""
-        fake_md_skills = [
+    async def test_recipes_in_planner_context_when_briefer_selects(self, db):
+        """Recipe instructions appear in planner messages when briefer passes them through."""
+        fake_recipes = [
             {"name": "data-analyst", "summary": "Data analysis guidance",
              "instructions": "Use pandas for tabular data.", "path": "/fake/data-analyst.md"},
         ]
         briefing = _briefing(
             context="User wants data analysis help.\n\n"
-                    "## Available Skills\n- data-analyst — Data analysis guidance\n  Use pandas for tabular data.",
+                    "## Available Recipes\n- data-analyst — Data analysis guidance\n  Use pandas for tabular data.",
         )
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -500,7 +500,7 @@ class TestMdSkillsInBriefer:
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
              patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills", return_value=fake_md_skills):
+             patch("kiso.brain.discover_recipes", return_value=fake_recipes):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "analyze this data",
             )

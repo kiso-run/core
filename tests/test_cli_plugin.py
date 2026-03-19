@@ -22,7 +22,7 @@ _FAKE_TOOLS = [
      "path": "/fake", "summary": "", "args_schema": {}, "env": {}, "session_secrets": []},
 ]
 
-_FAKE_SKILLS = [
+_FAKE_RECIPES = [
     {"name": "data-analyst", "summary": "Data analysis guidance",
      "instructions": "Use pandas.", "path": "/fake/data-analyst.md"},
 ]
@@ -36,36 +36,36 @@ _FAKE_CONNECTORS = [
 class TestPluginList:
     def test_list_all_types(self, capsys):
         with patch("cli.plugin.discover_tools", return_value=_FAKE_TOOLS), \
-             patch("cli.plugin.discover_md_skills", return_value=_FAKE_SKILLS), \
+             patch("cli.plugin.discover_recipes", return_value=_FAKE_RECIPES), \
              patch("cli.plugin.discover_connectors", return_value=_FAKE_CONNECTORS), \
-             patch("cli.plugin.invalidate_md_skills_cache"):
+             patch("cli.plugin.invalidate_recipes_cache"):
             _plugin_list()
 
         out = capsys.readouterr().out
         assert "Tools:" in out
         assert "browser" in out
-        assert "Skills:" in out
+        assert "Recipes:" in out
         assert "data-analyst" in out
         assert "Connectors:" in out
         assert "discord" in out
 
     def test_list_tools_only(self, capsys):
         with patch("cli.plugin.discover_tools", return_value=_FAKE_TOOLS), \
-             patch("cli.plugin.discover_md_skills", return_value=[]), \
+             patch("cli.plugin.discover_recipes", return_value=[]), \
              patch("cli.plugin.discover_connectors", return_value=[]), \
-             patch("cli.plugin.invalidate_md_skills_cache"):
+             patch("cli.plugin.invalidate_recipes_cache"):
             _plugin_list()
 
         out = capsys.readouterr().out
         assert "Tools:" in out
-        assert "Skills:" not in out
+        assert "Recipes:" not in out
         assert "Connectors:" not in out
 
     def test_list_empty(self, capsys):
         with patch("cli.plugin.discover_tools", return_value=[]), \
-             patch("cli.plugin.discover_md_skills", return_value=[]), \
+             patch("cli.plugin.discover_recipes", return_value=[]), \
              patch("cli.plugin.discover_connectors", return_value=[]), \
-             patch("cli.plugin.invalidate_md_skills_cache"):
+             patch("cli.plugin.invalidate_recipes_cache"):
             _plugin_list()
 
         out = capsys.readouterr().out
@@ -76,7 +76,7 @@ class TestPluginSearch:
     def test_search_across_types(self, capsys):
         registry = {
             "tools": [{"name": "browser", "description": "Browser automation"}],
-            "skills": [],
+            "recipes": [],
             "connectors": [{"name": "discord", "description": "Discord bridge"}],
         }
         args = _FakeArgs(query="")
@@ -90,7 +90,7 @@ class TestPluginSearch:
         assert "discord" in out
 
     def test_search_no_results(self, capsys):
-        registry = {"tools": [], "skills": [], "connectors": []}
+        registry = {"tools": [], "recipes": [], "connectors": []}
         args = _FakeArgs(query="nonexistent")
         with patch("cli.plugin.fetch_registry", return_value=registry):
             _plugin_search(args)

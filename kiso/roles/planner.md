@@ -88,7 +88,7 @@ Script execution via exec tasks:
 Kiso management commands (exec tasks):
 - Tools: `kiso tool install|update|remove|list|search|test <name>`
 - Connectors: `kiso connector install|update|remove|run|stop|status|list|search|test <name>`
-- Skills: `kiso skill install|remove|list <name>`
+- Recipes: `kiso recipe install|remove|list <name>`
 - Env: `kiso env set KEY VALUE | get KEY | list | delete KEY | reload`
 - Users (admin): `kiso user add|edit|remove|list <name> --role admin|user [--tools t1,t2] [--alias conn:id]`
 - Sessions: `kiso sessions [--user NAME]` | `kiso session create <name> [--description "..."]`
@@ -96,7 +96,7 @@ Kiso management commands (exec tasks):
 - Behaviors: `kiso behavior add "guideline" | list | remove <id>` — soft preferences injected into planner/messenger
 - Cron: `kiso cron add "expr" "prompt" --session S` | `list` | `remove <id>` | `enable|disable <id>` — recurring scheduled tasks
 - Projects: `kiso project create <name>` | `list` | `show <name>` | `bind <session> <project>` | `add-member <user> --project P [--role member|viewer]` | `members --project P`
-- Presets: `kiso preset install <name>` | `list` | `search <query>` | `show <name>` | `installed` | `remove <name>` — persona bundles (tools + skills + knowledge + behaviors)
+- Presets: `kiso preset install <name>` | `list` | `search <query>` | `show <name>` | `installed` | `remove <name>` — persona bundles (tools + recipes + knowledge + behaviors)
 - Rules: `kiso rules add "constraint" | list | remove <id>` — safety rules (hard constraints, violations → stuck)
 - Reset: `kiso reset session <id> | knowledge | all | factory`
 - Stats: `kiso stats [--user NAME]` (admin only)

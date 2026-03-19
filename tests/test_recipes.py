@@ -1,6 +1,6 @@
-"""M452: Integration test — MD skill discovery through briefer flow.
+"""M773: Integration test — recipe discovery through briefer flow.
 
-End-to-end test: temp .md skills → discover → context_pool → briefer → planner messages.
+End-to-end test: temp .md recipes → discover → context_pool → briefer → planner messages.
 """
 
 from __future__ import annotations
@@ -11,11 +11,11 @@ import pytest
 
 from kiso.brain import build_planner_messages
 from kiso.config import Config, Provider
-from kiso.skill_loader import discover_md_skills, invalidate_md_skills_cache
+from kiso.recipe_loader import discover_recipes, invalidate_recipes_cache
 from kiso.store import create_session, init_db
 
 
-_SKILL_DATA_ANALYST = """\
+_RECIPE_DATA_ANALYST = """\
 ---
 name: data-analyst
 summary: Guides planner for data analysis tasks
@@ -26,7 +26,7 @@ When the user asks about data analysis:
 - Use matplotlib for charts
 """
 
-_SKILL_CODE_REVIEW = """\
+_RECIPE_CODE_REVIEW = """\
 ---
 name: code-reviewer
 summary: Code review best practices
@@ -72,35 +72,35 @@ async def db(tmp_path):
     await conn.close()
 
 
-class TestMdSkillEndToEnd:
+class TestRecipeEndToEnd:
     """Integration: .md files → discovery → briefer context pool → planner."""
 
     async def test_discover_from_temp_dir(self, tmp_path):
-        """Skills in a temp dir are discovered and parsed correctly."""
-        (tmp_path / "data-analyst.md").write_text(_SKILL_DATA_ANALYST)
-        (tmp_path / "code-reviewer.md").write_text(_SKILL_CODE_REVIEW)
+        """Recipes in a temp dir are discovered and parsed correctly."""
+        (tmp_path / "data-analyst.md").write_text(_RECIPE_DATA_ANALYST)
+        (tmp_path / "code-reviewer.md").write_text(_RECIPE_CODE_REVIEW)
 
-        invalidate_md_skills_cache()
-        skills = discover_md_skills(tmp_path)
+        invalidate_recipes_cache()
+        recipes = discover_recipes(tmp_path)
 
-        assert len(skills) == 2
-        names = {s["name"] for s in skills}
+        assert len(recipes) == 2
+        names = {r["name"] for r in recipes}
         assert names == {"code-reviewer", "data-analyst"}
-        analyst = next(s for s in skills if s["name"] == "data-analyst")
+        analyst = next(r for r in recipes if r["name"] == "data-analyst")
         assert "pandas" in analyst["instructions"]
 
-    async def test_skills_with_briefer_disabled(self, db, tmp_path):
-        """When briefer is disabled, skills still appear in planner context (fallback path)."""
-        (tmp_path / "data-analyst.md").write_text(_SKILL_DATA_ANALYST)
-        invalidate_md_skills_cache()
+    async def test_recipes_with_briefer_disabled(self, db, tmp_path):
+        """When briefer is disabled, recipes still appear in planner context (fallback path)."""
+        (tmp_path / "data-analyst.md").write_text(_RECIPE_DATA_ANALYST)
+        invalidate_recipes_cache()
 
         async def _fake_llm(cfg, role, messages, **kw):
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
              patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.discover_md_skills",
-                   side_effect=lambda *a, **k: discover_md_skills(tmp_path)):
+             patch("kiso.brain.discover_recipes",
+                   side_effect=lambda *a, **k: discover_recipes(tmp_path)):
             msgs, _, _ = await build_planner_messages(
                 db, _config(briefer_enabled=False), "sess1", "user",
                 "analyze this data",

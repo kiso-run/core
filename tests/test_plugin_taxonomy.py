@@ -1,6 +1,6 @@
 """M454: Integration test — plugin taxonomy end-to-end.
 
-Verifies the three plugin types (tools, skills, connectors) work together:
+Verifies the three plugin types (tools, recipes, connectors) work together:
 CLI entrypoints, plugin list aggregation, backward compat, registry structure.
 """
 
@@ -20,7 +20,7 @@ class TestPluginTaxonomyCLIEntrypoints:
 
     @pytest.mark.parametrize("module,func,attr", [
         ("cli.tool", "run_tool_command", "tool_command"),
-        ("cli.skill", "run_skill_command", "skill_command"),
+        ("cli.recipe", "run_recipe_command", "recipe_command"),
         ("cli.connector", "run_connector_command", "connector_command"),
         ("cli.plugin", "run_plugin_command", "plugin_command"),
     ])
@@ -46,20 +46,20 @@ class TestPluginListAggregation:
         fake_tools = [{"name": "search", "description": "Web search", "version": "1.0",
                         "path": "/f", "summary": "", "args_schema": {}, "env": {},
                         "session_secrets": []}]
-        fake_skills = [{"name": "analyst", "summary": "Analysis", "instructions": "", "path": "/f"}]
+        fake_recipes = [{"name": "analyst", "summary": "Analysis", "instructions": "", "path": "/f"}]
         fake_connectors = [{"name": "discord", "description": "Discord", "version": "1.0",
                             "path": "/f", "summary": "", "env": {}}]
 
         with patch("cli.plugin.discover_tools", return_value=fake_tools), \
-             patch("cli.plugin.discover_md_skills", return_value=fake_skills), \
+             patch("cli.plugin.discover_recipes", return_value=fake_recipes), \
              patch("cli.plugin.discover_connectors", return_value=fake_connectors), \
-             patch("cli.plugin.invalidate_md_skills_cache"):
+             patch("cli.plugin.invalidate_recipes_cache"):
             _plugin_list()
 
         out = capsys.readouterr().out
         assert "Tools:" in out
         assert "search" in out
-        assert "Skills:" in out
+        assert "Recipes:" in out
         assert "analyst" in out
         assert "Connectors:" in out
         assert "discord" in out
@@ -92,7 +92,7 @@ class TestRegistryStructure:
 
     def test_entries_have_name_and_description(self):
         registry = json.loads((ROOT / "registry.json").read_text())
-        for section in ("tools", "skills", "connectors"):
+        for section in ("tools", "recipes", "connectors"):
             for entry in registry[section]:
                 assert "name" in entry, f"{section} entry missing 'name'"
                 assert "description" in entry, f"{section} entry missing 'description'"

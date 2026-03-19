@@ -1,11 +1,11 @@
-# MD Skills
+# Recipes
 
-MD skills are lightweight planner instructions stored as markdown files. They shape **how kiso plans tasks**, not how it executes them.
+Recipes are lightweight planner instructions stored as markdown files. They shape **how kiso plans tasks**, not how it executes them.
 
 ## How It Works
 
 ```
-~/.kiso/skills/
+~/.kiso/recipes/
 ├── research-workflow.md
 └── debug-strategy.md
 ```
@@ -26,23 +26,23 @@ When researching a topic:
 
 ### Pipeline
 
-1. `discover_md_skills()` scans `~/.kiso/skills/` for `.md` files (cached 30s)
-2. The **briefer** decides which skills are relevant for the current request
-3. Selected skill instructions are injected into the **planner prompt**
+1. `discover_recipes()` scans `~/.kiso/recipes/` for `.md` files (cached 30s)
+2. The **briefer** decides which recipes are relevant for the current request
+3. Selected recipe instructions are injected into the **planner prompt**
 4. The planner reads them and incorporates them into the plan structure
 
-Skills are additive context — they never override core planner rules.
+Recipes are additive context — they never override core planner rules.
 
-## What Skills CAN Influence
+## What Recipes CAN Influence
 
-Skills shape the **plan** — the sequence of tasks the planner creates:
+Recipes shape the **plan** — the sequence of tasks the planner creates:
 
 - **Task ordering**: "search first, then verify, then report"
 - **Strategy**: "use 2+ sources", "backup before modifying"
 - **Tool selection**: "prefer websearch over browser for research"
 - **Task detail specificity**: more detailed exec descriptions → better worker output
 
-### Example: Good Skill
+### Example: Good Recipe
 
 ```markdown
 ---
@@ -58,16 +58,16 @@ When debugging a reported bug:
 
 This works because it changes the **plan structure** (3 exec tasks in a specific order instead of 1 "fix the bug" task).
 
-## What Skills CANNOT Influence
+## What Recipes CANNOT Influence
 
-Skills do NOT reach the execution layer:
+Recipes do NOT reach the execution layer:
 
-- **Worker output**: the worker (shell command translator) has its own prompt and doesn't see skills
-- **Tool behavior**: tools (aider, browser, websearch) run as separate processes — skill instructions don't reach them
+- **Worker output**: the worker (shell command translator) has its own prompt and doesn't see recipes
+- **Tool behavior**: tools (aider, browser, websearch) run as separate processes — recipe instructions don't reach them
 - **Messenger style**: the messenger has its own prompt for formatting responses
 - **Generated code quality**: scripts written by exec tasks are produced by the worker LLM, not the planner
 
-### Example: Bad Skill (won't work)
+### Example: Bad Recipe (won't work)
 
 ```markdown
 ---
@@ -81,26 +81,26 @@ When writing Python code:
 - Follow PEP 8 naming conventions
 ```
 
-This **won't work** because the planner doesn't write code. It creates an exec task like `"Write a Python script to do X"`, and the **worker** LLM translates that into a shell command. The worker never sees this skill.
+This **won't work** because the planner doesn't write code. It creates an exec task like `"Write a Python script to do X"`, and the **worker** LLM translates that into a shell command. The worker never sees this recipe.
 
 ## Key Principle
 
-> Skills shape the PLAN, not the EXECUTION.
+> Recipes shape the PLAN, not the EXECUTION.
 > The planner decides **what** to do; the worker and tools decide **how** to do it.
 
-## Managing Skills
+## Managing Recipes
 
 ```bash
-kiso skill install /path/to/skill.md    # copy to ~/.kiso/skills/
-kiso skill list                          # list installed skills
-kiso skill remove <name>                 # remove a skill
+kiso recipe install /path/to/recipe.md    # copy to ~/.kiso/recipes/
+kiso recipe list                           # list installed recipes
+kiso recipe remove <name>                  # remove a recipe
 ```
 
-## When to Create a Skill
+## When to Create a Recipe
 
-Create a skill when you find yourself repeatedly telling kiso to follow a specific workflow. For example, if you always say "search first, then verify, then report", a skill encodes that pattern so the planner follows it automatically.
+Create a recipe when you find yourself repeatedly telling kiso to follow a specific workflow. For example, if you always say "search first, then verify, then report", a recipe encodes that pattern so the planner follows it automatically.
 
-Do NOT create a skill for:
+Do NOT create a recipe for:
 - Code style preferences (use aider config or `.editorconfig` instead)
 - Response formatting (use behaviors: `kiso behavior add "..."`)
 - Tool-specific settings (configure the tool itself)

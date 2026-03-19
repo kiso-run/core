@@ -15,7 +15,7 @@ from kiso.config import Config, KISO_DIR, setting_bool
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_tools
 from kiso.security import fence_content
-from kiso.skill_loader import discover_md_skills, build_planner_skill_list
+from kiso.recipe_loader import discover_recipes, build_planner_recipe_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
 from kiso.store import (
     _normalize_entity_name,
@@ -1006,11 +1006,11 @@ async def _gather_planner_context(
     # sys_env_text always present — semi-static
     context_pool["system_env"] = sys_env_text
 
-    # M449/M450: inject MD-based skills into context pool
-    md_skills = discover_md_skills()
-    md_skills_text = build_planner_skill_list(md_skills)
-    if md_skills_text:
-        context_pool["md_skills"] = md_skills_text
+    # M449/M450→M773: inject recipes into context pool
+    recipes = discover_recipes()
+    recipes_text = build_planner_recipe_list(recipes)
+    if recipes_text:
+        context_pool["recipes"] = recipes_text
 
     # M346: inject available entities for briefer selection
     all_entities = await get_all_entities(db)
@@ -1210,9 +1210,9 @@ async def build_planner_messages(
                 f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
             )
 
-    # MD skills section — briefer includes via context_pool; fallback path adds directly
-    if not briefing and context_pool.get("md_skills"):
-        context_parts.append(f"## Available Skills\n{context_pool['md_skills']}")
+    # Recipes section — briefer includes via context_pool; fallback path adds directly
+    if not briefing and context_pool.get("recipes"):
+        context_parts.append(f"## Available Recipes\n{context_pool['recipes']}")
 
     # Tools section — briefer filters or full list
     if briefing and briefing["tools"]:
@@ -1352,7 +1352,7 @@ async def run_planner(
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("tools", "Available Tools"),
-    ("md_skills", "Available Skills (planner instructions)"),
+    ("recipes", "Available Recipes"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
     ("summary", "Session Summary"),
@@ -1382,9 +1382,9 @@ def _prefilter_context_pool(
     # but not by planner on first plan
     if not is_replan and consumer_role == "planner":
         pool.pop("plan_outputs", None)
-    # md_skills only relevant when skills are installed
-    if not pool.get("md_skills"):
-        pool.pop("md_skills", None)
+    # recipes only relevant when recipes are installed
+    if not pool.get("recipes"):
+        pool.pop("recipes", None)
     return pool
 
 

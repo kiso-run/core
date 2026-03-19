@@ -23,7 +23,6 @@ _SHIM_FILES = {
     SRC / "skills.py",
     SRC / "skill_repair.py",
     SRC / "worker" / "skill.py",
-    # CLI / "skill.py" repurposed for MD-based skills in M451
 }
 
 
@@ -73,6 +72,10 @@ class TestRenameCompleteness:
             "import kiso.skill_repair",
             "from kiso.worker.skill ",
             "import kiso.worker.skill",
+            "from kiso.skill_loader ",
+            "import kiso.skill_loader",
+            "from cli.skill ",
+            "import cli.skill",
         ]
         violations = []
         for f in _source_files():
@@ -94,6 +97,9 @@ class TestRenameCompleteness:
             '"kiso.worker.loop.discover_skills"',
             '"kiso.worker.loop._skill_task"',
             '"kiso.worker.discover_skills"',
+            '"kiso.brain.discover_md_skills"',
+            '"cli.plugin.discover_md_skills"',
+            '"cli.plugin.invalidate_md_skills_cache"',
         ]
         violations = []
         for f in _source_files():
@@ -124,6 +130,17 @@ class TestRenameCompleteness:
         ]
         for f in expected:
             assert f.exists(), f"{f.relative_to(ROOT)} missing"
+
+    def test_recipe_files_exist(self):
+        """Recipe-renamed files must exist."""
+        assert (SRC / "recipe_loader.py").exists(), "kiso/recipe_loader.py missing"
+        assert (CLI / "recipe.py").exists(), "cli/recipe.py missing"
+        assert (ROOT / "docs" / "recipes.md").exists(), "docs/recipes.md missing"
+
+    def test_old_skill_loader_removed(self):
+        """Old skill_loader.py and cli/skill.py must not exist."""
+        assert not (SRC / "skill_loader.py").exists(), "kiso/skill_loader.py still exists"
+        assert not (CLI / "skill.py").exists(), "cli/skill.py still exists"
 
     def test_new_doc_files_exist(self):
         """Renamed doc files must exist."""

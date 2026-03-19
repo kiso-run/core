@@ -77,7 +77,7 @@ def test_quiet_short_flag():
     assert args.quiet is True
 
 
-@pytest.mark.parametrize("cmd", ["skill", "connector", "sessions", "env", "reset"])
+@pytest.mark.parametrize("cmd", ["recipe", "connector", "sessions", "env", "reset"])
 def test_subcommand_parsed(cmd: str):
     parser = build_parser()
     args = parser.parse_args([cmd])
@@ -3177,7 +3177,7 @@ def test_spinner_restored_after_inflight_clears_it():
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
     running_task = {
         "id": 10, "plan_id": 1, "type": "exec", "detail": "install browser",
-        "status": "running", "output": "", "command": "kiso skill install browser",
+        "status": "running", "output": "", "command": "kiso tool install browser",
     }
     inflight = {
         "role": "worker", "model": "deepseek/deepseek-v3",

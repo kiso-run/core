@@ -1,6 +1,6 @@
-"""Discover and parse .md skill files (lightweight planner instructions).
+"""Discover and parse .md recipe files (lightweight planner instructions).
 
-A skill is a markdown file in ~/.kiso/skills/ with YAML frontmatter:
+A recipe is a markdown file in ~/.kiso/recipes/ with YAML frontmatter:
 
     ---
     name: data-analyst
@@ -9,8 +9,8 @@ A skill is a markdown file in ~/.kiso/skills/ with YAML frontmatter:
 
     (planner instructions body)
 
-Skills are additive context for the planner — they don't execute anything.
-The briefer decides which skills are relevant for each request.
+Recipes are additive context for the planner — they don't execute anything.
+The briefer decides which recipes are relevant for each request.
 """
 
 from __future__ import annotations
@@ -23,64 +23,64 @@ from kiso.config import KISO_DIR
 
 log = logging.getLogger(__name__)
 
-_SKILLS_DIR = KISO_DIR / "skills"
-_SKILLS_TTL = 30  # seconds
+_RECIPES_DIR = KISO_DIR / "recipes"
+_RECIPES_TTL = 30  # seconds
 
 _cache: dict[Path, tuple[float, list[dict]]] = {}
 
 
-def discover_md_skills(skills_dir: Path | None = None) -> list[dict]:
-    """Discover .md skill files and parse their frontmatter.
+def discover_recipes(recipes_dir: Path | None = None) -> list[dict]:
+    """Discover .md recipe files and parse their frontmatter.
 
     Returns list of {"name", "summary", "instructions", "path"} dicts.
     Results are cached with a TTL to avoid repeated filesystem scans.
     """
-    d = skills_dir or _SKILLS_DIR
+    d = recipes_dir or _RECIPES_DIR
     now = time.monotonic()
 
     cached = _cache.get(d)
-    if cached and (now - cached[0]) < _SKILLS_TTL:
+    if cached and (now - cached[0]) < _RECIPES_TTL:
         return cached[1]
 
     if not d.is_dir():
         _cache[d] = (now, [])
         return []
 
-    skills: list[dict] = []
+    recipes: list[dict] = []
     for f in sorted(d.glob("*.md")):
-        parsed = _parse_skill_file(f)
+        parsed = _parse_recipe_file(f)
         if parsed:
-            skills.append(parsed)
+            recipes.append(parsed)
 
-    _cache[d] = (now, skills)
-    log.debug("Discovered %d MD skills in %s", len(skills), d)
-    return skills
+    _cache[d] = (now, recipes)
+    log.debug("Discovered %d recipes in %s", len(recipes), d)
+    return recipes
 
 
-def invalidate_md_skills_cache() -> None:
-    """Clear the skills cache (used after install/remove)."""
+def invalidate_recipes_cache() -> None:
+    """Clear the recipes cache (used after install/remove)."""
     _cache.clear()
 
 
-def _parse_skill_file(path: Path) -> dict | None:
-    """Parse a .md skill file with YAML frontmatter.
+def _parse_recipe_file(path: Path) -> dict | None:
+    """Parse a .md recipe file with YAML frontmatter.
 
     Returns {"name", "summary", "instructions", "path"} or None on error.
     """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        log.warning("Cannot read skill file: %s", path)
+        log.warning("Cannot read recipe file: %s", path)
         return None
 
     # Parse frontmatter between --- markers
     if not text.startswith("---"):
-        log.warning("Skill file missing frontmatter: %s", path)
+        log.warning("Recipe file missing frontmatter: %s", path)
         return None
 
     end = text.find("---", 3)
     if end == -1:
-        log.warning("Skill file has unclosed frontmatter: %s", path)
+        log.warning("Recipe file has unclosed frontmatter: %s", path)
         return None
 
     frontmatter = text[3:end].strip()
@@ -102,10 +102,10 @@ def _parse_skill_file(path: Path) -> dict | None:
     name = meta.get("name")
     summary = meta.get("summary")
     if not name:
-        log.warning("Skill file missing 'name' in frontmatter: %s", path)
+        log.warning("Recipe file missing 'name' in frontmatter: %s", path)
         return None
     if not summary:
-        log.warning("Skill file missing 'summary' in frontmatter: %s", path)
+        log.warning("Recipe file missing 'summary' in frontmatter: %s", path)
         return None
 
     return {
@@ -116,20 +116,20 @@ def _parse_skill_file(path: Path) -> dict | None:
     }
 
 
-def build_planner_skill_list(skills: list[dict]) -> str:
-    """Format skill list for planner context.
+def build_planner_recipe_list(recipes: list[dict]) -> str:
+    """Format recipe list for planner context.
 
     Each entry: - {name} — {summary} + instructions block.
     """
-    if not skills:
+    if not recipes:
         return ""
     parts: list[str] = []
-    for s in skills:
-        entry = f"- {s['name']} — {s['summary']}"
-        if s.get("instructions"):
-            # Indent instructions under the skill entry
+    for r in recipes:
+        entry = f"- {r['name']} — {r['summary']}"
+        if r.get("instructions"):
+            # Indent instructions under the recipe entry
             indented = "\n".join(
-                f"  {line}" for line in s["instructions"].splitlines()
+                f"  {line}" for line in r["instructions"].splitlines()
             )
             entry += f"\n{indented}"
         parts.append(entry)

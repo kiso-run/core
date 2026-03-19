@@ -6,7 +6,7 @@ import sys
 
 from cli.plugin_ops import fetch_registry, search_entries
 from kiso.connectors import discover_connectors
-from kiso.skill_loader import discover_md_skills, invalidate_md_skills_cache
+from kiso.recipe_loader import discover_recipes, invalidate_recipes_cache
 from kiso.tools import discover_tools
 
 
@@ -21,15 +21,15 @@ def run_plugin_command(args) -> None:
 def _plugin_list() -> None:
     """List all installed plugins grouped by type."""
     tools = discover_tools()
-    invalidate_md_skills_cache()
-    skills = discover_md_skills()
+    invalidate_recipes_cache()
+    recipes = discover_recipes()
     connectors = discover_connectors()
 
-    if not tools and not skills and not connectors:
+    if not tools and not recipes and not connectors:
         print("No plugins installed.")
         return
 
-    for label, items in [("Tools", tools), ("Skills", skills), ("Connectors", connectors)]:
+    for label, items in [("Tools", tools), ("Recipes", recipes), ("Connectors", connectors)]:
         if not items:
             continue
         print(f"{label}:")
@@ -46,7 +46,7 @@ def _plugin_search(args) -> None:
     query = getattr(args, "query", "")
 
     found_any = False
-    for section, label in [("tools", "Tools"), ("skills", "Skills"), ("connectors", "Connectors")]:
+    for section, label in [("tools", "Tools"), ("recipes", "Recipes"), ("connectors", "Connectors")]:
         entries = registry.get(section, [])
         results = search_entries(entries, query)
         if results:

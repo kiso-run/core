@@ -201,14 +201,14 @@ def build_parser() -> argparse.ArgumentParser:
     tool_parser = sub.add_parser("tool", help="manage tools")
     _add_tool_subcommands(tool_parser)
 
-    # MD-based skill management
-    skill_parser = sub.add_parser("skill", help="manage MD-based skills")
-    skill_sub = skill_parser.add_subparsers(dest="skill_command")
-    skill_sub.add_parser("list", help="list installed skills")
-    si = skill_sub.add_parser("install", help="install a skill from a .md file")
-    si.add_argument("source", help="path to .md skill file")
-    sr = skill_sub.add_parser("remove", help="remove a skill")
-    sr.add_argument("name", help="skill name")
+    # Recipe management (planner instructions)
+    recipe_parser = sub.add_parser("recipe", help="manage recipes (planner instructions)")
+    recipe_sub = recipe_parser.add_subparsers(dest="recipe_command")
+    recipe_sub.add_parser("list", help="list installed recipes")
+    ri = recipe_sub.add_parser("install", help="install a recipe from a .md file")
+    ri.add_argument("source", help="path to .md recipe file")
+    rr = recipe_sub.add_parser("remove", help="remove a recipe")
+    rr.add_argument("name", help="recipe name")
 
     # Plugin umbrella command
     plugin_parser = sub.add_parser("plugin", help="unified plugin view")
@@ -493,10 +493,10 @@ def main() -> None:
         from cli.tool import run_tool_command
 
         run_tool_command(args)
-    elif args.command == "skill":
-        from cli.skill import run_skill_command
+    elif args.command == "recipe":
+        from cli.recipe import run_recipe_command
 
-        run_skill_command(args)
+        run_recipe_command(args)
     elif args.command == "plugin":
         from cli.plugin import run_plugin_command
 
@@ -973,7 +973,7 @@ def _render_other_task(
     idx: int,
     total: int,
 ) -> None:
-    """Render an exec/skill/search/replan task: header, output, review."""
+    """Render an exec/tool/search/replan task: header, output, review."""
 
     if quiet:
         return
