@@ -274,7 +274,6 @@ _KISO_DIR_MODULES = [
     "kiso.config",
     "kiso.brain",
     "kiso.tools",
-    "kiso.skills",
     "kiso.main",
     "kiso.pub",
     "kiso.log",
