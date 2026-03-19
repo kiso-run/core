@@ -148,8 +148,11 @@ RUN apt-get update -qq && \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /opt/kiso
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# Deps layer — only uv.lock, stub pyproject.toml (cache survives version bumps)
+COPY uv.lock ./
+RUN printf '[project]\nname="kiso"\nversion="0.0.0"\nrequires-python=">=3.11"\n' > pyproject.toml && \
+    uv sync --frozen --no-dev --no-install-project && rm pyproject.toml
+COPY pyproject.toml ./
 COPY kiso/ kiso/
 COPY cli/ cli/
 RUN uv sync --frozen --no-dev
