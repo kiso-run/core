@@ -42,8 +42,8 @@
   ],
   "presets": [
     {
-      "name": "basic",
-      "description": "Starter kit — web search, browser, code editing, and document reading"
+      "name": "default",
+      "description": "Default preset — all general-purpose tools for a complete assistant"
     },
     {
       "name": "performance-marketer",
