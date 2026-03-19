@@ -84,13 +84,14 @@ Reference: `docs/tools.md` (tool spec), `docs/connectors.md` (connector spec), `
 
 ## Phase 4 — Document Reader Tool
 
-### M8 — tool-docreader: create plugin
-- [ ] Create `plugins/tool-docreader/` with standard structure
-- [ ] kiso.toml: type=tool, name=docreader, args: action (read/extract), file_path, pages (optional)
-- [ ] run.py: read PDF (via pypdf), DOCX (via python-docx), CSV, XLSX (via openpyxl), plain text
-- [ ] Output: extracted text content
-- [ ] deps.sh: install any needed system deps (poppler-utils for PDF if needed)
-- [ ] Tests, README, LICENSE
+### M8 — tool-docreader: create plugin ✅
+- [x] Created `tool-docreader/` with full structure: kiso.toml, pyproject.toml, run.py, deps.sh, README, LICENSE, DEVPLAN
+- [x] Actions: read (PDF/DOCX/XLSX/CSV/text), info (metadata), list (uploads/)
+- [x] PDF page ranges, XLSX multi-sheet, path traversal guard, 100K output truncation
+- [x] Pushed to git@github.com:kiso-run/tool-docreader.git
+- [x] Dependencies: pypdf, python-docx, openpyxl (no system deps needed)
+- [ ] Unit tests pending (M2 in tool-docreader DEVPLAN)
+- [ ] Registry integration pending (M3 in tool-docreader DEVPLAN)
 
 ---
 
