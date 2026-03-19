@@ -51,8 +51,8 @@ class TestToolInstallHealthSmoke:
             dest = Path(cmd[3])
             dest.mkdir(parents=True, exist_ok=True)
             (dest / "kiso.toml").write_text(
-                '[kiso]\ntype = "skill"\nname = "browser"\n'
-                "[kiso.skill]\n"
+                '[kiso]\ntype = "tool"\nname = "browser"\n'
+                "[kiso.tool]\n"
                 'summary = "Browser automation"\n'
                 'usage_guide = "Use browser"\n'
                 '[kiso.deps]\nbin = ["fake_binary"]\n'
@@ -94,8 +94,8 @@ class TestToolInstallHealthSmoke:
         tool_dir = tmp_path / "browser"
         tool_dir.mkdir()
         (tool_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "browser"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "browser"\n'
+            "[kiso.tool]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["fake_binary"]\n'
@@ -115,8 +115,8 @@ class TestToolInstallHealthSmoke:
         tool_dir = tmp_path / "browser"
         tool_dir.mkdir()
         (tool_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "browser"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "browser"\n'
+            "[kiso.tool]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["fake_binary"]\n'

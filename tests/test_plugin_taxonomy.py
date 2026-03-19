@@ -66,13 +66,13 @@ class TestPluginListAggregation:
 
 
 class TestBackwardCompat:
-    """Old kiso.toml [kiso.skill] section still works."""
+    """Old kiso.toml [kiso.tool] section still works."""
 
     def test_old_skill_section_loads(self):
-        """kiso/tools.py reads both [kiso.tool] and [kiso.skill] from manifests."""
+        """kiso/tools.py reads both [kiso.tool] and [kiso.tool] from manifests."""
         from kiso.tools import _validate_manifest
 
-        # Old-style manifest with [kiso.skill]
+        # Old-style manifest with [kiso.tool]
         old_manifest = {
             "kiso": {
                 "name": "legacy-tool",

@@ -188,7 +188,7 @@ def _init_kiso_dirs() -> None:
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to sync reference docs: %s", e)
 
-    # --- SSH key generation (M355) ---
+    # --- SSH key generation ---
     _init_ssh_keys()
 
 
@@ -239,7 +239,7 @@ def _init_ssh_keys() -> None:
 
 
 async def _collect_boot_facts(db) -> None:
-    """Collect and store system self-knowledge facts at boot (M356)."""
+    """Collect and store system self-knowledge facts at boot."""
     import platform as _plat
 
     from kiso.store import find_or_create_entity, save_fact
@@ -486,7 +486,7 @@ async def lifespan(app: FastAPI):
 
     await _collect_boot_facts(db)
 
-    # M382: backfill entity_id for facts created before entity model
+    # backfill entity_id for facts created before entity model
     from kiso.store import backfill_fact_entities
     backfilled = await backfill_fact_entities(db)
     if backfilled:
@@ -511,7 +511,7 @@ async def lifespan(app: FastAPI):
             len(webhook_secret),
         )
 
-    # M679: Start cron scheduler background task
+    # Start cron scheduler background task
     cron_task = asyncio.create_task(_cron_scheduler(db, config, app))
 
     yield
@@ -597,7 +597,7 @@ async def get_pub(token: str, filename: str, request: Request):
 
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     response = FileResponse(path=file_path, filename=Path(filename).name, media_type=media_type)
-    # M553: prevent XSS if HTML files are published
+    # prevent XSS if HTML files are published
     response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
@@ -655,7 +655,7 @@ async def post_msg(
 
     await create_session(db, body.session, connector=auth.token_name)
 
-    # M686: project role enforcement — member required for posting messages
+    # project role enforcement — member required for posting messages
     if not _is_admin(resolved):
         await _require_project_role(db, body.session, resolved.username, min_role="member")
 
@@ -676,7 +676,7 @@ async def post_msg(
             "base_url": str(request.base_url).rstrip("/"),
         }
 
-        # --- In-flight message handling (M407/M408) ---
+        # --- In-flight message handling ---
         entry = _workers.get(body.session)
         worker_busy = (
             entry is not None
@@ -685,14 +685,14 @@ async def post_msg(
         )
 
         if worker_busy:
-            # M407: fast-path stop detection
+            # fast-path stop detection
             if is_stop_message(body.content):
                 log.info("Fast-path stop detected: %r (session=%s)", body.content, body.session)
                 entry.cancel_event.set()
                 return {"queued": False, "session": body.session, "message_id": msg_id,
                         "inflight": "stop"}
 
-            # M408/M752: classify in-flight message with conversation context
+            # classify in-flight message with conversation context
             plan = await get_plan_for_session(db, body.session)
             plan_goal = (plan.get("goal", "") if plan else "") or ""
             from kiso.brain import build_recent_context
@@ -753,7 +753,7 @@ async def get_status(
     if not is_admin and not await session_owned_by(db, session, resolved.username):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # M686: project role enforcement — viewer or member can view status
+    # project role enforcement — viewer or member can view status
     if not is_admin:
         await _require_project_role(db, session, resolved.username, min_role="viewer")
 
@@ -872,7 +872,7 @@ async def post_cancel(
     return {"cancelled": True, "plan_id": plan["id"], "drained": len(drained_ids)}
 
 
-# --- M413: Safety rules API ---
+# --- Safety rules API ---
 
 
 class SafetyRuleRequest(BaseModel):
@@ -926,7 +926,7 @@ async def delete_safety_rule(
     return {"deleted": True, "id": rule_id}
 
 
-# --- M672: Knowledge management endpoints ---
+# --- Knowledge management endpoints ---
 
 
 class KnowledgeRequest(BaseModel):
@@ -1018,7 +1018,7 @@ async def delete_knowledge(
     return {"deleted": True, "id": fact_id}
 
 
-# --- M680: Cron management endpoints ---
+# --- Cron management endpoints ---
 
 
 class CronRequest(BaseModel):
@@ -1105,7 +1105,7 @@ async def update_cron(
     return {"id": job_id, "enabled": enabled}
 
 
-# --- M687/M688: Project management endpoints ---
+# --- Project management endpoints ---
 
 
 class ProjectRequest(BaseModel):

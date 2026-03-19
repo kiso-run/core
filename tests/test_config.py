@@ -163,7 +163,7 @@ role = "admin"
 discord = "alice123"
 [users.bob]
 role = "user"
-skills = "*"
+tools = "*"
 [users.bob.aliases]
 discord = "alice123"
 """

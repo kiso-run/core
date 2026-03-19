@@ -345,7 +345,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         await db.execute("ALTER TABLE tasks ADD COLUMN parallel_group INTEGER")
         await db.commit()
 
-    # M684: add project_id to sessions and facts tables
+    # add project_id to sessions and facts tables
     cur = await db.execute("PRAGMA table_info(sessions)")
     sess_cols = {row[1] for row in await cur.fetchall()}
     if "project_id" not in sess_cols:
@@ -357,14 +357,14 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         await db.execute("ALTER TABLE facts ADD COLUMN project_id INTEGER REFERENCES projects(id)")
         await db.commit()
 
-    # M682: add source column to messages table
+    # add source column to messages table
     cur = await db.execute("PRAGMA table_info(messages)")
     msg_cols = {row[1] for row in await cur.fetchall()}
     if "source" not in msg_cols:
         await db.execute("ALTER TABLE messages ADD COLUMN source TEXT DEFAULT 'user'")
         await db.commit()
 
-    # M615: add install_proposal to plans table
+    # add install_proposal to plans table
     cur = await db.execute("PRAGMA table_info(plans)")
     plan_cols = {row[1] for row in await cur.fetchall()}
     if "install_proposal" not in plan_cols:
@@ -373,7 +373,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         )
         await db.commit()
 
-    # M342: add entity_id to facts table
+    # add entity_id to facts table
     cur = await db.execute("PRAGMA table_info(facts)")
     fact_cols = {row[1] for row in await cur.fetchall()}
     if "entity_id" not in fact_cols:
@@ -382,7 +382,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         )
         await db.commit()
 
-    # M345: migrate entity: tags to entity records
+    # migrate entity: tags to entity records
     cur = await db.execute("SELECT DISTINCT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
     entity_tags = await cur.fetchall()
     for row in entity_tags:
@@ -547,7 +547,7 @@ async def session_has_install_proposal(db: aiosqlite.Connection, session: str) -
     Returns True when the last done/failed plan has ``install_proposal`` set.
     The flag is set server-side by ``run_planner`` when validation detected
     uninstalled-tool errors and the planner responded with a msg-only plan.
-    No keyword heuristics — purely structural detection (M615).
+    No keyword heuristics — purely structural detection.
     """
     cur = await db.execute(
         "SELECT install_proposal FROM plans "
@@ -616,7 +616,7 @@ def _fact_session_filter(
 
     Admin users or ``session=None`` get no filter (empty string, no params).
 
-    3-level scoping (M685):
+    3-level scoping:
     - Global: project_id IS NULL AND category NOT IN ('user')
     - Project-scoped: project_id in user's projects (via project_members)
     - Session-scoped: category='user' AND session = current session
@@ -658,7 +658,7 @@ async def get_facts(
     - user-category facts are visible only in the session where they were created.
     - Admin users bypass all filtering and receive every fact.
     - limit caps the number of rows returned (None = no cap, uses LIMIT -1 internally).
-    - username enables 3-level project scoping (M685).
+    - username enables 3-level project scoping.
     """
     limit_val = limit if limit is not None else -1
     filt, filt_params = _fact_session_filter(is_admin, session, username=username)
@@ -693,7 +693,7 @@ async def search_facts(
     """Return up to *limit* facts most relevant to *query* (FTS5 BM25 ranking).
 
     Session scoping: user-category facts are filtered to the current session
-    unless *is_admin* is ``True``.  *username* enables project scoping (M685).
+    unless *is_admin* is ``True``.  *username* enables project scoping.
 
     Falls back to :func:`get_facts` when:
     - FTS5 is not compiled into the SQLite build
@@ -883,7 +883,7 @@ async def update_plan_goal(
 async def update_plan_install_proposal(
     db: aiosqlite.Connection, plan_id: int, value: bool = True,
 ) -> None:
-    """Mark a plan as an install proposal (M615)."""
+    """Mark a plan as an install proposal."""
     await _update_field(db, "plans", "install_proposal", int(value), plan_id)
 
 
@@ -943,7 +943,7 @@ _DEDUP_STOPWORDS = frozenset({
 def _word_overlap_ratio(a: str, b: str) -> float:
     """Return the Jaccard similarity of word sets from *a* and *b*.
 
-    Strips stopwords and trailing punctuation before computing overlap (M339).
+    Strips stopwords and trailing punctuation before computing overlap.
     """
     wa = {w.strip(".,;:!?\"'()") for w in a.lower().split()} - _DEDUP_STOPWORDS
     wb = {w.strip(".,;:!?\"'()") for w in b.lower().split()} - _DEDUP_STOPWORDS
@@ -1106,7 +1106,7 @@ async def search_facts_by_tags(
     """Return facts that have ANY of the given tags, ranked by tag overlap count.
 
     Non-admin users only see facts from their session or global facts.
-    *username* enables project scoping (M685).
+    *username* enables project scoping.
     """
     if not tags:
         return []
@@ -1140,7 +1140,7 @@ async def find_or_create_entity(
     cur = await db.execute("SELECT id, kind FROM entities WHERE name = ?", (canonical,))
     existing = await cur.fetchone()
     if existing:
-        # M395: update kind if caller provides different classification
+        # update kind if caller provides different classification
         if existing["kind"] != kind:
             await db.execute(
                 "UPDATE entities SET kind = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1285,7 +1285,7 @@ async def search_facts_scored(
     Returns top *limit* facts ordered by score desc, then last_used desc.
 
     At least one of *entity_id*, *tags*, or *keywords* must be provided.
-    *username* enables project scoping (M685).
+    *username* enables project scoping.
     """
     if not entity_id and not tags and not keywords:
         return []
@@ -1338,7 +1338,7 @@ async def search_facts_scored(
 async def backfill_fact_entities(db: aiosqlite.Connection) -> int:
     """Backfill entity_id for facts that match known entities by content.
 
-    Facts created before the entity model (M342) have entity_id=NULL and are
+    Facts with entity_id=NULL are
     invisible to entity-scoped queries.  This scans NULL-entity facts and links
     them when the fact content mentions a known entity name.
     """
@@ -1355,7 +1355,7 @@ async def backfill_fact_entities(db: aiosqlite.Connection) -> int:
     for row in orphans:
         content_lower = row["content"].lower()
         for entity in entities:
-            # M393: word-boundary match to avoid "java" matching "javascript"
+            # word-boundary match to avoid "java" matching "javascript"
             if re.search(r'\b' + re.escape(entity["name"]) + r'\b', content_lower):
                 await db.execute(
                     "UPDATE facts SET entity_id = ? WHERE id = ?",
@@ -1630,7 +1630,7 @@ async def create_task(
     return cur.lastrowid  # type: ignore[return-value]
 
 
-# --- M678: Cron job store functions ---
+# --- Cron job store functions ---
 
 
 async def create_cron_job(
@@ -1705,7 +1705,7 @@ async def update_cron_last_run(
     await db.commit()
 
 
-# --- M683: Project store functions ---
+# --- Project store functions ---
 
 
 async def create_project(

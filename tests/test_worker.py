@@ -3275,9 +3275,9 @@ def _create_echo_skill(tmp_path: Path) -> dict:
         "print(json.dumps(data['args']))\n"
     )
     (skill_dir / "kiso.toml").write_text(
-        '[kiso]\ntype = "skill"\nname = "echo"\n'
-        '[kiso.skill]\nsummary = "Echo"\n'
-        '[kiso.skill.args]\ntext = { type = "string", required = true }\n'
+        '[kiso]\ntype = "tool"\nname = "echo"\n'
+        '[kiso.tool]\nsummary = "Echo"\n'
+        '[kiso.tool.args]\ntext = { type = "string", required = true }\n'
     )
     (skill_dir / "pyproject.toml").write_text('[project]\nname = "echo"\nversion = "0.1.0"')
     return {
@@ -3311,8 +3311,8 @@ class TestToolTask:
             "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data))\n"
         )
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "dump"\n'
-            '[kiso.skill]\nsummary = "Dump"\n'
+            '[kiso]\ntype = "tool"\nname = "dump"\n'
+            '[kiso.tool]\nsummary = "Dump"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "dump"\nversion = "0.1.0"')
         skill = {
@@ -3337,8 +3337,8 @@ class TestToolTask:
             "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
         )
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "sec"\n'
-            '[kiso.skill]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
+            '[kiso]\ntype = "tool"\nname = "sec"\n'
+            '[kiso.tool]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
         skill = {
@@ -3361,8 +3361,8 @@ class TestToolTask:
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import sys; print('err msg', file=sys.stderr); sys.exit(1)")
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "fail"\n'
-            '[kiso.skill]\nsummary = "Fail"\n'
+            '[kiso]\ntype = "tool"\nname = "fail"\n'
+            '[kiso.tool]\nsummary = "Fail"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "fail"\nversion = "0.1.0"')
         skill = {
@@ -3383,8 +3383,8 @@ class TestToolTask:
         # Point run.py to a nonexistent path
         (skill_dir / "run.py").write_text("pass")
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "broken"\n'
-            '[kiso.skill]\nsummary = "Broken"\n'
+            '[kiso]\ntype = "tool"\nname = "broken"\n'
+            '[kiso.tool]\nsummary = "Broken"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "broken"\nversion = "0.1.0"')
         # Create a venv with a python "file" that is actually a directory
@@ -3409,8 +3409,8 @@ class TestToolTask:
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import os; print(os.getcwd())")
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "pwd"\n'
-            '[kiso.skill]\nsummary = "Pwd"\n'
+            '[kiso]\ntype = "tool"\nname = "pwd"\n'
+            '[kiso.tool]\nsummary = "Pwd"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "pwd"\nversion = "0.1.0"')
         skill = {
@@ -3537,8 +3537,8 @@ class TestExecutePlanTool:
             "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
         )
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "sec"\n'
-            '[kiso.skill]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
+            '[kiso]\ntype = "tool"\nname = "sec"\n'
+            '[kiso.tool]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
         skill = {
@@ -5241,8 +5241,8 @@ class TestOutputTruncation:
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("print('B' * 2000)")
         (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "big"\n'
-            '[kiso.skill]\nsummary = "Big"\n'
+            '[kiso]\ntype = "tool"\nname = "big"\n'
+            '[kiso.tool]\nsummary = "Big"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "big"\nversion = "0.1.0"')
         skill = {

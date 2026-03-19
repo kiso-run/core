@@ -150,7 +150,7 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         except SystemExit:
             print(f"warning: failed to seed behavior: {behavior[:60]}", file=sys.stderr)
 
-    # M758: auto-install tools and connectors
+    # auto-install tools and connectors
     installed_tools: list[str] = []
     installed_connectors: list[str] = []
 

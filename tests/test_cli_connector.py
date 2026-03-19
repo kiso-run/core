@@ -1265,7 +1265,7 @@ def test_discover_connectors_invalid_manifest_skipped(tmp_path, caplog):
     connectors_dir.mkdir()
     d = connectors_dir / "bad"
     d.mkdir()
-    (d / "kiso.toml").write_text('[kiso]\nname = "bad"\ntype = "skill"\n')
+    (d / "kiso.toml").write_text('[kiso]\nname = "bad"\ntype = "tool"\n')
     (d / "run.py").write_text("pass\n")
     (d / "pyproject.toml").write_text("[project]\nname = 'bad'\n")
 

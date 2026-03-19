@@ -81,10 +81,7 @@ def _tool_list(args) -> None:
 def _tool_search(args) -> None:
     """Search official tools from the registry."""
     registry = _fetch_registry()
-    # Accept both "tools" and legacy "skills" registry sections
-    results = _search_entries(
-        registry.get("tools", registry.get("skills", [])), args.query,
-    )
+    results = _search_entries(registry.get("tools", []), args.query)
     _render_search_results(results, args.query, "tool", registry)
 
 

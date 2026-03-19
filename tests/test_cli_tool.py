@@ -419,8 +419,8 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "search"\n'
+            "[kiso.tool]\n"
             'summary = "Search"\n'
             'usage_guide = "Use default guidance."\n'
         )
@@ -526,7 +526,7 @@ def test_skill_update_single(tmp_path, mock_admin, capsys):
     tools_dir.mkdir()
     tool_dir = tools_dir / "search"
     tool_dir.mkdir()
-    (tool_dir / "kiso.toml").write_text('[kiso]\ntype = "skill"\nname = "search"\n')
+    (tool_dir / "kiso.toml").write_text('[kiso]\ntype = "tool"\nname = "search"\n')
 
     with (
         patch("cli.tool.TOOLS_DIR", tools_dir),
@@ -547,7 +547,7 @@ def test_skill_update_all(tmp_path, mock_admin, capsys):
     for name in ["search", "aider"]:
         d = tools_dir / name
         d.mkdir()
-        (d / "kiso.toml").write_text(f'[kiso]\ntype = "skill"\nname = "{name}"\n')
+        (d / "kiso.toml").write_text(f'[kiso]\ntype = "tool"\nname = "{name}"\n')
 
     with (
         patch("cli.tool.TOOLS_DIR", tools_dir),
@@ -737,7 +737,7 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n[kiso.skill]\nsummary = "s"\nusage_guide = "g"\n'
+            '[kiso]\ntype = "tool"\nname = "search"\n[kiso.tool]\nsummary = "s"\nusage_guide = "g"\n'
         )
         (dest / "run.py").write_text("pass\n")
         (dest / "pyproject.toml").write_text("[project]\nname = 'search'\n")
@@ -807,8 +807,8 @@ def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, c
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "browser"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "browser"\n'
+            "[kiso.tool]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["playwright"]\n'
@@ -855,8 +855,8 @@ def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin,
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "browser"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "browser"\n'
+            "[kiso.tool]\n"
             'summary = "Browser"\nusage_guide = "Use it"\n'
             '[kiso.deps]\nbin = ["playwright"]\n'
         )
@@ -905,11 +905,11 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "search"\n'
+            "[kiso.tool]\n"
             'summary = "Search"\n'
             'usage_guide = "Use default guidance."\n'
-            "[kiso.skill.env]\n"
+            "[kiso.tool.env]\n"
             'api_key = "Required API key"\n'
         )
         (dest / "run.py").write_text("pass\n")
@@ -1030,8 +1030,8 @@ def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "search"\n'
+            "[kiso.tool]\n"
             'summary = "Search"\n'
             f'usage_guide = "{guide_text}"\n'
         )
@@ -1072,8 +1072,8 @@ def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "search"\n'
+            "[kiso.tool]\n"
             'summary = "Search"\n'
             'usage_guide = "Some guide"\n'
         )
@@ -1115,8 +1115,8 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "search"\n'
+            "[kiso.tool]\n"
             'summary = "Search"\n'
             'usage_guide = "g"\n'  # minimal to pass validation
         )
@@ -1155,8 +1155,8 @@ def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
         dest = Path(cmd[3])
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "kiso.toml").write_text(
-            '[kiso]\ntype = "skill"\nname = "search"\n'
-            "[kiso.skill]\n"
+            '[kiso]\ntype = "tool"\nname = "search"\n'
+            "[kiso.tool]\n"
             'summary = "Search"\n'
             'usage_guide = "Default guide"\n'
         )

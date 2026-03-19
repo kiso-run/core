@@ -81,12 +81,12 @@ MODEL_DEFAULTS: dict[str, str] = {
     "searcher": "perplexity/sonar",
 }
 
-# M271: Per-role reasoning config sent to OpenRouter.  Roles not listed here
+# Per-role reasoning config sent to OpenRouter.  Roles not listed here
 # (or mapped to None) get no reasoning parameter — the provider's default applies.
 # Valid effort levels: "minimal", "low", "medium", "high".
 REASONING_DEFAULTS: dict[str, dict | None] = {}
 
-# M296: Per-role max_tokens defaults.  Applied when call_llm receives
+# Per-role max_tokens defaults.  Applied when call_llm receives
 # max_tokens=None.  Prevents runaway generation and reduces cost.
 # Override per-role via config [max_tokens] section.
 MAX_TOKENS_DEFAULTS: dict[str, int] = {
@@ -343,8 +343,7 @@ def _build_config(path: Path, on_error) -> Config:
         if role not in ("admin", "user"):
             on_error(f"user '{uname}': role must be 'admin' or 'user', got '{role}'")
 
-        # tools (backward compat: accept "skills" key too)
-        tools = udata.get("tools", udata.get("skills"))
+        tools = udata.get("tools")
         if role == "user":
             if tools is None:
                 on_error(f"user '{uname}' has role=user but no 'tools' field")
@@ -380,14 +379,6 @@ def _build_config(path: Path, on_error) -> Config:
 
     # --- settings: start from defaults, override with config values ---
     settings_raw = raw.get("settings", {})
-    # Backward compat: map old exec_timeout → llm_timeout
-    if "exec_timeout" in settings_raw and "llm_timeout" not in settings_raw:
-        settings_raw["llm_timeout"] = settings_raw.pop("exec_timeout")
-    elif "exec_timeout" in settings_raw:
-        del settings_raw["exec_timeout"]
-    # Backward compat: ignore removed per-role timeouts (M422)
-    settings_raw.pop("planner_timeout", None)
-    settings_raw.pop("messenger_timeout", None)
     settings = dict(SETTINGS_DEFAULTS)
     settings.update(settings_raw)
 

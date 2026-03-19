@@ -29,11 +29,11 @@ _FMT_JSON_OBJECT = "json_object"
 # Cached per model string to avoid retrying the json_schema format on every call.
 _json_object_only_models: set[str] = set()
 
-# M479: transport retry settings. Backoff set to 0 in tests.
+# transport retry settings. Backoff set to 0 in tests.
 _TRANSPORT_RETRY_BACKOFF: float = 1.0
 _MAX_TRANSPORT_RETRIES = 2
 
-# M629: circuit breaker — protects against provider-wide degradation.
+# circuit breaker — protects against provider-wide degradation.
 # When consecutive transport failures exceed the threshold, subsequent
 # calls fail immediately instead of wasting time on doomed retries.
 _CB_FAILURE_THRESHOLD = 5
@@ -390,7 +390,7 @@ async def call_llm(
 
     _json_schema_retried = False  # track whether we already fell back to json_object
 
-    # M629: circuit breaker — fail fast when provider is degraded
+    # circuit breaker — fail fast when provider is degraded
     if _cb_is_open():
         raise LLMError(
             f"Circuit breaker open — provider transport degraded, failing fast "
@@ -406,11 +406,11 @@ async def call_llm(
         }
         if effective_format:
             payload["response_format"] = effective_format
-        # M296: apply per-role max_tokens default when not explicitly set.
+        # apply per-role max_tokens default when not explicitly set.
         effective_max_tokens = max_tokens if max_tokens is not None else MAX_TOKENS_DEFAULTS.get(role)
         if effective_max_tokens is not None:
             payload["max_tokens"] = effective_max_tokens
-        # M271: per-role reasoning config (limits thinking tokens for simple roles)
+        # per-role reasoning config (limits thinking tokens for simple roles)
         reasoning = REASONING_DEFAULTS.get(role)
         if reasoning:
             payload["reasoning"] = reasoning
@@ -505,7 +505,7 @@ async def call_llm(
         )
 
     if not content:
-        # M305: reasoning→content fallback for structured roles.
+        # reasoning→content fallback for structured roles.
         # Some models put JSON output in reasoning_content instead of content.
         if reasoning_api.strip() and role in STRUCTURED_ROLES and reasoning_api.strip().startswith("{"):
             log.warning(

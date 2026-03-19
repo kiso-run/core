@@ -36,8 +36,6 @@ TASK_TYPE_REPLAN = "replan"
 TASK_TYPES: frozenset[str] = frozenset({
     TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_TOOL, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
 })
-# Backward compat alias — callers migrated in M440/M446
-TASK_TYPE_SKILL = TASK_TYPE_TOOL
 
 # Review status constants
 REVIEW_STATUS_OK = "ok"
@@ -71,8 +69,8 @@ WORKER_PHASES: frozenset[str] = frozenset({
 # Fact constants
 _MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
-_MESSENGER_RETRY_BACKOFF: float = 1.0  # M480: seconds between retries (0 in tests)
-_MAX_MESSENGER_RETRIES = 2  # M480: max retries on transient LLM errors
+_MESSENGER_RETRY_BACKOFF: float = 1.0  # seconds between retries (0 in tests)
+_MAX_MESSENGER_RETRIES = 2  # max retries on transient LLM errors
 _VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety", "behavior"})
 _ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
 
@@ -189,7 +187,7 @@ def _repair_json(text: str) -> str:
 _INSTALL_CMD_RE = re.compile(
     r"kiso\s+(tool|skill|connector)\s+install", re.IGNORECASE,
 )
-# M615: marker substring in validation errors for uninstalled-tool detection.
+# marker substring in validation errors for uninstalled-tool detection.
 # Used both when generating the error (validate_plan) and detecting it
 # (_retry_llm_with_validation).  Keep in sync.
 _TOOL_NOT_INSTALLED_MARKER = "is not installed"
@@ -235,7 +233,7 @@ async def _retry_llm_with_validation(
         on_retry: Optional callback(attempt, max_attempts, reason) called before
             each retry attempt (not called on the first attempt).
         fallback_model: Optional model to switch to when primary model exhausts
-            LLM retries (M308).  Only used once — after fallback, exhaustion
+            LLM retries.  Only used once — after fallback, exhaustion
             raises normally.
 
     Returns:
@@ -246,20 +244,20 @@ async def _retry_llm_with_validation(
     max_total = max_validation_retries + max_llm_retries
 
     last_errors: list[str] = []
-    prev_error_set: frozenset[str] = frozenset()  # M186: track repeated identical errors
+    prev_error_set: frozenset[str] = frozenset()  # track repeated identical errors
     repeat_count: int = 0
     llm_errors = 0
     validation_errors = 0
     attempt = 0
-    active_model: str | None = None  # M308: None means use default from config
-    saw_uninstalled_tool = False  # M615: track uninstalled-tool validation errors
+    active_model: str | None = None  # None means use default from config
+    saw_uninstalled_tool = False  # track uninstalled-tool validation errors
 
     while attempt < max_total:
         attempt += 1
 
         if last_errors:
             error_lines = [f"- {e}" for e in last_errors]
-            # M186: escalate after 2+ identical error patterns
+            # escalate after 2+ identical error patterns
             if repeat_count >= 2:
                 error_lines.append(
                     "\nIMPORTANT: You have made this same error "
@@ -279,7 +277,7 @@ async def _retry_llm_with_validation(
                 session=session, model_override=active_model,
             )
         except LLMStallError as e:
-            # M652: stall = provider-level issue — retry on same model is futile.
+            # stall = provider-level issue — retry on same model is futile.
             # Switch to fallback immediately without consuming retry budget.
             if fallback_model and active_model != fallback_model:
                 log.warning("SSE stall on %s, switching to fallback %s", role, fallback_model)
@@ -295,7 +293,7 @@ async def _retry_llm_with_validation(
             raise exc
         except LLMError as e:
             llm_errors += 1
-            # M630: circuit breaker open → switch to fallback immediately
+            # circuit breaker open → switch to fallback immediately
             _is_cb = "Circuit breaker open" in str(e)
             if _is_cb and fallback_model and active_model != fallback_model:
                 log.warning("Circuit breaker open; switching to fallback %s", fallback_model)
@@ -307,7 +305,7 @@ async def _retry_llm_with_validation(
                 continue
             log.warning("LLM error (%d/%d LLM retries): %s", llm_errors, max_llm_retries, e)
             if llm_errors >= max_llm_retries:
-                # M308: switch to fallback model instead of raising
+                # switch to fallback model instead of raising
                 if fallback_model and active_model != fallback_model:
                     log.warning(
                         "Primary model exhausted %d retries; switching to fallback %s",
@@ -320,9 +318,9 @@ async def _retry_llm_with_validation(
                         on_retry(attempt + 1, max_total, f"Switching to fallback model: {fallback_model}")
                     continue
                 exc = error_class(f"LLM call failed after {llm_errors} attempts: {e}")
-                exc.last_errors = last_errors  # preserve for M195 auto-correction
+                exc.last_errors = last_errors  # preserve for auto-correction
                 raise exc
-            # M297: notify caller before retry
+            # notify caller before retry
             if on_retry is not None:
                 on_retry(attempt + 1, max_total, str(e))
             continue
@@ -351,7 +349,7 @@ async def _retry_llm_with_validation(
         errors = validate_fn(result)
         if not errors:
             log.info("%s accepted (attempt %d)", error_noun, attempt)
-            # M615: propagate uninstalled-tool signal on the result dict
+            # propagate uninstalled-tool signal on the result dict
             result["_saw_uninstalled_tool"] = saw_uninstalled_tool
             return result
 
@@ -365,11 +363,11 @@ async def _retry_llm_with_validation(
             exc.last_errors = errors
             raise exc
 
-        # M615: detect uninstalled-tool errors for install-proposal detection
+        # detect uninstalled-tool errors for install-proposal detection
         if not saw_uninstalled_tool and any(_TOOL_NOT_INSTALLED_MARKER in e for e in errors):
             saw_uninstalled_tool = True
 
-        # M186: track consecutive identical errors for escalation
+        # track consecutive identical errors for escalation
         error_set = frozenset(errors)
         if error_set == prev_error_set:
             repeat_count += 1
@@ -735,7 +733,7 @@ def _validate_plan_tasks(
     return errors
 
 
-# M627: goal-plan mismatch — detect artifact requests with no exec/tool task.
+# goal-plan mismatch — detect artifact requests with no exec/tool task.
 _ARTIFACT_VERBS = frozenset({"create", "write", "generate", "build", "produce", "make"})
 _ARTIFACT_NOUNS = frozenset({
     "file", "document", "script", "markdown", "csv", "report",
@@ -760,7 +758,7 @@ def _validate_plan_ordering(
             f"Msg tasks communicate results — place them after investigation."
         )
 
-    # M420/M428: install execs allowed in replans or when user approved in prior
+    # install execs allowed in replans or when user approved in prior
     # msg cycle.  In a first plan without prior approval the planner must ask.
     if not is_replan and not install_approved:
         first_install_idx = next(
@@ -777,7 +775,7 @@ def _validate_plan_ordering(
                 f"next cycle after the user approves."
             )
 
-    # M631: after installing a tool that was proposed in a prior turn, the
+    # after installing a tool that was proposed in a prior turn, the
     # original request is still pending — must replan to continue with it.
     if install_approved:
         has_install_exec = any(
@@ -799,7 +797,7 @@ def _validate_plan_ordering(
     return errors
 
 
-# M695: Types that can participate in parallel groups.
+# Types that can participate in parallel groups.
 _GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL})
 
 
@@ -855,8 +853,8 @@ def validate_plan(
     If installed_skills is provided, tool tasks are validated against it.
     If max_tasks is provided, plans with more tasks are rejected.
     If installed_skills_info is provided (name→tool dict), tool args are
-    validated against the schema at plan time (M166).
-    If is_replan is False, extend_replan is stripped (M171).
+    validated against the schema at plan time.
+    If is_replan is False, extend_replan is stripped.
     """
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
@@ -868,7 +866,7 @@ def validate_plan(
     errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
     errors.extend(_validate_plan_groups(tasks))
 
-    # M627: goal mentions creating a file/artifact but plan has no exec/tool task
+    # goal mentions creating a file/artifact but plan has no exec/tool task
     goal_words = set(plan.get("goal", "").lower().split())
     has_verb = bool(goal_words & _ARTIFACT_VERBS)
     has_noun = bool(goal_words & _ARTIFACT_NOUNS)
@@ -882,7 +880,7 @@ def validate_plan(
             "auto-publish will generate a download URL automatically."
         )
 
-    # M640: coherence — tools listed in needs_install must not appear in tool tasks
+    # coherence — tools listed in needs_install must not appear in tool tasks
     needs = plan.get("needs_install") or []
     if needs:
         for i, t in enumerate(tasks, 1):
@@ -960,7 +958,7 @@ async def _gather_planner_context(
     is_admin = user_role == "admin"
     context_limit = int(config.settings["context_messages"])
 
-    # M545: batch independent DB queries
+    # batch independent DB queries
     sess, facts, pending, recent = await asyncio.gather(
         get_session(db, session),
         search_facts(db, new_message, session=session, is_admin=is_admin),
@@ -1006,13 +1004,13 @@ async def _gather_planner_context(
     # sys_env_text always present — semi-static
     context_pool["system_env"] = sys_env_text
 
-    # M449/M450→M773: inject recipes into context pool
+    # inject recipes into context pool
     recipes = discover_recipes()
     recipes_text = build_planner_recipe_list(recipes)
     if recipes_text:
         context_pool["recipes"] = recipes_text
 
-    # M346: inject available entities for briefer selection
+    # inject available entities for briefer selection
     all_entities = await get_all_entities(db)
     if all_entities:
         context_pool["available_entities"] = "\n".join(
@@ -1052,7 +1050,7 @@ async def build_planner_messages(
             db, config, session, user_role, new_message, paraphrased_context,
         )
 
-    # M309: system env doesn't change between plan and replan — exclude from
+    # system env doesn't change between plan and replan — exclude from
     # briefer context pool to reduce redundant tokens.
     if is_replan:
         context_pool.pop("system_env", None)
@@ -1126,14 +1124,14 @@ async def build_planner_messages(
 
     is_admin = user_role == "admin"
 
-    # --- M390: Scored fact retrieval (briefer path only) ---
+    # --- Scored fact retrieval (briefer path only) ---
     scored_facts_text = ""
     if briefing:
         entity_id = None
         if briefing.get("relevant_entities"):
             all_entities = await get_all_entities(db)
             entity_map = {_normalize_entity_name(e["name"]): e["id"] for e in all_entities}
-            # M552: filter out hallucinated entity names
+            # filter out hallucinated entity names
             valid_entities = []
             for ename in briefing["relevant_entities"]:
                 eid = entity_map.get(_normalize_entity_name(ename))
@@ -1177,7 +1175,7 @@ async def build_planner_messages(
                 if parts:
                     context_parts.append("## Context from Other Sessions\n" + "\n".join(parts))
 
-        # M522/M551: entity-based fact enrichment (parity with briefer path)
+        # entity-based fact enrichment (parity with briefer path)
         # Use word-level matching with normalization so "config" matches entity "configuration"
         all_entities = await get_all_entities(db)
         if all_entities:
@@ -1220,7 +1218,7 @@ async def build_planner_messages(
     elif full_tool_list:
         context_parts.append(f"## Tools\n{full_tool_list}")
 
-    # M266/M544: warn planner when web module is active but browser isn't installed.
+    # warn planner when web module is active but browser isn't installed.
     # Emphasise that built-in search works without any tool for research queries.
     if "web" in (modules if briefing else fallback_modules) and "browser" not in installed_names:
         context_parts.append(
@@ -1233,17 +1231,17 @@ async def build_planner_messages(
             "If interactive browsing is required: single msg asking to install, end plan."
         )
 
-    # M411: always-inject safety facts (not gated by briefer)
+    # always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
     _add_section(context_parts, "Safety Rules (MUST OBEY)",
                  _join_or_empty(safety_facts, lambda f: f"- {f['content']}"))
 
-    # M675: always-inject behavior facts (soft guidelines, not hard constraints)
+    # always-inject behavior facts (soft guidelines, not hard constraints)
     behavior_facts = await get_behavior_facts(db)
     _add_section(context_parts, "Behavior Guidelines (follow these preferences)",
                  _join_or_empty(behavior_facts, lambda f: f"- {f['content']}"))
 
-    # M712: tell the planner it may proceed with install execs when approved.
+    # tell the planner it may proceed with install execs when approved.
     if install_approved:
         context_parts.append(
             "## Install Status\n"
@@ -1283,9 +1281,9 @@ async def run_planner(
             this to flush intermediate usage so the CLI can render briefer
             panels while the planner is still running.
         on_retry: Optional callback(attempt, max_attempts, reason) called
-            before each retry attempt (M297).
-        max_tasks_override: M698 — override max_plan_tasks (used by replan
-            shrinking to reduce the limit at deeper replan depths).
+            before each retry attempt.
+        max_tasks_override: override max_plan_tasks (used by replan shrinking
+            to reduce the limit at deeper replan depths).
 
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
@@ -1301,7 +1299,7 @@ async def run_planner(
 
     max_tasks = max_tasks_override if max_tasks_override is not None else int(config.settings["max_plan_tasks"])
 
-    # M698: inject task budget into planner context so LLM knows the limit.
+    # inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
     for msg in reversed(messages):
         if msg["role"] == "user":
@@ -1321,7 +1319,7 @@ async def run_planner(
         on_retry=on_retry,
         fallback_model=fallback,
     )
-    # M640/M670/M711: detect install proposal from three sources:
+    # detect install proposal from three sources:
     # 1. Planner explicitly declared needs_install (preferred, direct)
     # 2. Validation saw uninstalled-tool errors (backup, indirect)
     # 3. No tools installed AND plan has no tool tasks — on a fresh instance,
@@ -1406,7 +1404,7 @@ def build_briefer_messages(
     pool = _prefilter_context_pool(context_pool, consumer_role, is_replan)
     system_prompt = _load_system_prompt("briefer")
 
-    # M272: messenger/worker never use modules or skills — omit those sections
+    # messenger/worker never use modules or skills — omit those sections
     # to save ~400 tokens per briefer call for these simple consumers.
     _simple_consumer = consumer_role in ("messenger", "worker")
 
@@ -1417,7 +1415,7 @@ def build_briefer_messages(
     if not _simple_consumer:
         parts.append(f"## Available Modules\n{_BRIEFER_MODULES_STR}")
 
-    # M272: skip sections irrelevant for simple consumers
+    # skip sections irrelevant for simple consumers
     _skip_keys = {"tools", "system_env", "connectors"} if _simple_consumer else set()
 
     for key, heading in _CONTEXT_POOL_SECTIONS:
@@ -1474,7 +1472,7 @@ async def run_briefer(
         consumer_role, task_description, context_pool, is_replan=is_replan,
     )
 
-    # M304: simple consumers never use modules — skip module name validation
+    # simple consumers never use modules — skip module name validation
     # to avoid wasted retries when the model hallucinates names.
     _simple = consumer_role in ("messenger", "worker")
     vfn = (lambda b: validate_briefing(b, check_modules=False)) if _simple else validate_briefing
@@ -1486,11 +1484,11 @@ async def run_briefer(
         session=session,
     )
 
-    # M304: force modules=[] for simple consumers (defensive cleanup)
+    # force modules=[] for simple consumers (defensive cleanup)
     if _simple:
         briefing["modules"] = []
 
-    # M368/M387: post-validation filtering — remove hallucinated tools
+    # post-validation filtering — remove hallucinated tools
     if briefing["tools"]:
         if not context_pool.get("tools"):
             # No tools installed — any briefer tool selection is hallucinated
@@ -1498,7 +1496,7 @@ async def run_briefer(
                       len(briefing["tools"]))
             briefing["tools"] = []
         else:
-            # M394: extract installed tool names for exact matching
+            # extract installed tool names for exact matching
             installed_tool_names: set[str] = set()
             for line in context_pool["tools"].split("\n"):
                 m = re.match(r"^-\s+(\S+)", line)
@@ -1594,7 +1592,7 @@ async def classify_message(
     return "plan", "en"
 
 
-# --- Stop pattern fast-path (M407) ---
+# --- Stop pattern fast-path ---
 
 _STOP_PATTERNS = re.compile(
     r"^(stop|ferma|fermati|annulla|cancel|abort|basta|quit)[\s!.]*$",
@@ -1618,7 +1616,7 @@ def is_stop_message(text: str) -> bool:
     return False
 
 
-# --- In-flight message classification (M406) ---
+# --- In-flight message classification ---
 
 
 def build_inflight_classifier_messages(
@@ -1676,7 +1674,7 @@ def validate_review(review: dict) -> list[str]:
     return errors
 
 
-# --- Learning quality filters (M320) ---
+# --- Learning quality filters ---
 
 _EPHEMERAL_LEARN_RE = re.compile(
     r"\[\d+\].*\[\d+\]"  # 2+ browser element indices like [8], [9]
@@ -1722,7 +1720,7 @@ def clean_learn_items(
     - Too short (< 15 chars) — fragmentary
     - Contain 2+ browser element indices ``[N]`` — ephemeral session data
     - Match transient patterns like "X installed successfully"
-    - Negative claims contradicted by task output (M373)
+    - Negative claims contradicted by task output
     """
     kept: list[str] = []
     for item in items:
@@ -1893,7 +1891,7 @@ def build_reviewer_messages(
             status_text = "succeeded (exit code 0)" if success else "FAILED (non-zero exit code)"
         context += f"\n\n## Command Status\n{status_text}"
 
-    # M412: inject safety rules for compliance check
+    # inject safety rules for compliance check
     rules_text = _join_or_empty(safety_rules)
     if rules_text:
         context += f"\n\n## Safety Rules (violations → stuck)\n{rules_text}"
@@ -1998,7 +1996,7 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
                 errors.append(f"Evaluation {i}: category must be one of {sorted(_VALID_FACT_CATEGORIES)}")
         if verdict == CURATOR_VERDICT_ASK and not ev.get("question"):
             errors.append(f"Evaluation {i}: ask verdict requires a non-empty question")
-        # M343: entity required for promote
+        # entity required for promote
         if verdict == CURATOR_VERDICT_PROMOTE:
             if not ev.get("entity_name"):
                 errors.append(f"Evaluation {i}: promoted fact must have entity_name")
@@ -2198,7 +2196,7 @@ def build_messenger_messages(
     system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
 
     context_parts: list[str] = []
-    # M502: extract language from "Answer in {lang}." prefix and inject as
+    # extract language from "Answer in {lang}." prefix and inject as
     # a dedicated top-level section so the LLM cannot miss it.
     _lang_m = _ANSWER_IN_LANG_RE.match(detail)
     if _lang_m:
@@ -2223,7 +2221,7 @@ def build_messenger_messages(
         context_parts.append(
             f"## Recent Conversation\n{fence_content(build_recent_context(recent_messages, kiso_truncate=0), 'MESSAGES')}"
         )
-    # M675: inject behavioral guidelines
+    # inject behavioral guidelines
     if behavior_rules:
         _add_section(context_parts, "Behavior Guidelines (follow these preferences)",
                      "\n".join(f"- {r}" for r in behavior_rules))
@@ -2265,7 +2263,7 @@ async def run_messenger(
     if include_recent:
         context_limit = int(config.settings["context_messages"])
         recent = await get_recent_messages(db, session, limit=context_limit)
-    # M675: fetch behavior guidelines for messenger
+    # fetch behavior guidelines for messenger
     behavior_facts = await get_behavior_facts(db)
     behavior_rules = [f["content"] for f in behavior_facts] if behavior_facts else None
     messages = build_messenger_messages(
@@ -2273,8 +2271,8 @@ async def run_messenger(
         recent_messages=recent or None, user_message=user_message,
         briefing_context=briefing_context, behavior_rules=behavior_rules,
     )
-    # M480: retry messenger LLM call up to 2 times on transient errors.
-    # M666: on SSE stall, switch to fallback model immediately (don't waste retries).
+    # retry messenger LLM call up to 2 times on transient errors.
+    # on SSE stall, switch to fallback model immediately (don't waste retries).
     _fallback = config.settings.get("planner_fallback_model", "google/gemini-2.5-flash-lite")
     _using_fallback = False
     _last_err: LLMError | None = None
@@ -2305,7 +2303,7 @@ async def run_messenger(
     raise MessengerError(f"LLM call failed after {_MAX_MESSENGER_RETRIES + 1} attempts: {_last_err}")
 
 
-# M369: strip hallucinated XML/tool markup from messenger output
+# strip hallucinated XML/tool markup from messenger output
 _TOOL_CALL_BLOCK_RE = re.compile(
     r"<(tool_call|function_call)[^>]*>.*?</\1>", re.DOTALL,
 )
@@ -2417,7 +2415,7 @@ async def run_exec_translator(
         raise ExecTranslatorError(
             f"Cannot translate task to shell command: {detail}"
         )
-    # M504: syntax-check long commands before execution
+    # syntax-check long commands before execution
     if len(command) > 120:
         try:
             proc = await asyncio.create_subprocess_exec(

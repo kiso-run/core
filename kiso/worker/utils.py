@@ -28,7 +28,7 @@ _CANCEL_GRACE_PERIOD = 2  # seconds to wait after SIGTERM before SIGKILL
 
 
 async def _kill_proc(proc: asyncio.subprocess.Process) -> None:
-    """Send SIGTERM, wait briefly, then SIGKILL if still alive (M766)."""
+    """Send SIGTERM, wait briefly, then SIGKILL if still alive."""
     try:
         proc.terminate()
     except ProcessLookupError:
@@ -66,7 +66,7 @@ async def _run_subprocess(
         max_output_size: If > 0, truncate stdout/stderr to this many characters.
         cancel_event: If set and fired during execution, the subprocess is
             terminated (SIGTERM → SIGKILL) and the function returns with
-            exit_code -15 (M766).
+            exit_code -15.
 
     Returns:
         (stdout, stderr, success, exit_code) where success is True iff
@@ -91,7 +91,7 @@ async def _run_subprocess(
         else:
             proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)
 
-        # M766: race communicate() against cancel_event
+        # race communicate() against cancel_event
         if cancel_event is not None and cancel_event.is_set():
             # Already cancelled — kill immediately
             await _kill_proc(proc)
@@ -210,7 +210,7 @@ def _build_exec_env() -> dict[str, str]:
     sys_bin = sys_dir / "bin"
     base_path = os.environ.get("PATH", "/usr/bin:/bin")
 
-    # M636: include the kiso process's own venv bin so that entry-point
+    # include the kiso process's own venv bin so that entry-point
     # scripts (kiso CLI, uv, etc.) are available to exec tasks.
     venv_bin = str(Path(sys.executable).parent)
 
@@ -228,7 +228,7 @@ def _build_exec_env() -> dict[str, str]:
     # Path.home() / ".kiso" would resolve to /root/.kiso/.kiso (double nesting).
     env["HOME"] = str(Path.home())
 
-    # M543: propagate KISO_HOME so child processes (kiso CLI) resolve KISO_DIR
+    # propagate KISO_HOME so child processes (kiso CLI) resolve KISO_DIR
     # to the same directory as the parent — critical for test isolation.
     env["KISO_HOME"] = str(KISO_DIR)
 
@@ -238,7 +238,7 @@ def _build_exec_env() -> dict[str, str]:
 
     ssh_dir = sys_dir / "ssh"
     if ssh_dir.is_dir() and (ssh_dir / "config").is_file() and (ssh_dir / "id_ed25519").is_file():
-        # M509: quote paths to prevent shell injection if path contains spaces/special chars
+        # quote paths to prevent shell injection if path contains spaces/special chars
         env["GIT_SSH_COMMAND"] = (
             f"ssh -F '{ssh_dir}/config' "
             f"-o UserKnownHostsFile='{ssh_dir}/known_hosts' "
@@ -315,7 +315,7 @@ def _report_pub_files(
         all_paths.append(p)
     if truncated:
         log.warning("pub/ for session %r has >%d entries, listing truncated", session, OutputBudgets.PUB_SCAN_MAX)
-    # M736: prefer external_url setting over request-derived base_url
+    # prefer external_url setting over request-derived base_url
     external_url = config.settings.get("external_url", "")
     if external_url:
         prefix = external_url.rstrip("/")
@@ -400,11 +400,11 @@ def _auto_publish_skill_files(
     return published
 
 
-# M508: centralized output budget constants
+# centralized output budget constants
 class OutputBudgets:
     """All output-size thresholds in one place."""
     PLAN_OUTPUTS = 8000          # max total chars for plan_outputs in LLM context
-    REPLAN_EXEC = 1000           # chars per exec/tool task output (M309)
+    REPLAN_EXEC = 1000           # chars per exec/tool task output
     REPLAN_SEARCH = 2000         # chars per search task output
     REPLAN_CONTEXT = 20000       # total replan context budget (~5000 tokens)
     LARGE_THRESHOLD = 4096       # chars — above this, save to file
@@ -413,7 +413,7 @@ class OutputBudgets:
 
 
 def _extract_published_urls(plan_outputs: list[dict]) -> list[str]:
-    """Extract published file URL lines from plan outputs (M763).
+    """Extract published file URL lines from plan outputs.
 
     Scans raw output (not reviewer summary) for the ``Published files:``
     block appended by ``_format_pub_note`` and returns the ``- file: url``
@@ -447,13 +447,13 @@ def _format_plan_outputs_for_msg(
     is exhausted, older entries are reduced to one-line summaries.
 
     Published file URLs are extracted and placed in a prominent header
-    section (M763) so the messenger always has exact URLs available, even
+    section so the messenger always has exact URLs available, even
     when task outputs are truncated or summarized.
     """
     if not plan_outputs:
         return ""
 
-    # M763: collect published file URLs before any truncation
+    # collect published file URLs before any truncation
     pub_urls = _extract_published_urls(plan_outputs)
 
     # Build full entries in reverse, track budget
@@ -465,7 +465,7 @@ def _format_plan_outputs_for_msg(
         idx = entry["index"]
         header = f"[{idx}] {entry['type']}: {entry['detail']}"
         status = entry["status"]
-        # Prefer reviewer summary over raw output when available (M247)
+        # Prefer reviewer summary over raw output when available
         reviewer_summary = entry.get("reviewer_summary")
         if reviewer_summary:
             output = f"Summary: {reviewer_summary}"
@@ -484,7 +484,7 @@ def _format_plan_outputs_for_msg(
     summary_parts.sort(key=lambda x: x[0])
 
     parts: list[str] = []
-    # M763: published file URLs at the top so messenger never misses them
+    # published file URLs at the top so messenger never misses them
     if pub_urls:
         parts.append("## Published Files\n" + "\n".join(pub_urls))
     if summary_parts:
@@ -493,7 +493,6 @@ def _format_plan_outputs_for_msg(
     return "\n\n".join(parts)
 
 
-# Legacy aliases — kept for backward compat with any external references
 _REPLAN_OUTPUT_LIMIT = OutputBudgets.REPLAN_EXEC
 _REPLAN_SEARCH_OUTPUT_LIMIT = OutputBudgets.REPLAN_SEARCH
 _REPLAN_CONTEXT_CHAR_BUDGET = OutputBudgets.REPLAN_CONTEXT
@@ -617,7 +616,7 @@ def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
         if not out:
             continue
 
-        # M546: try JSON registry parse first
+        # try JSON registry parse first
         registry_facts = _facts_from_registry(out, seen)
         if registry_facts is not None:
             facts.extend(registry_facts)
@@ -756,7 +755,7 @@ def _build_replan_context(
     update_hints: list[str] | None = None,
 ) -> str:
     """Build extra context for replanning."""
-    # M309: strip msg-type tasks — intent messages are noise for replanning
+    # strip msg-type tasks — intent messages are noise for replanning
     completed = [t for t in completed if t.get("type") != "msg"]
     parts: list[str] = []
     parts.extend(_format_replan_hints(update_hints, replan_history))
@@ -804,7 +803,7 @@ def _build_failure_summary(
     completed_text = _format_task_list(completed, "Completed successfully")
     parts.append(completed_text or "No tasks were completed.")
 
-    # M270: when all tasks succeeded but replanning failed, make it explicit
+    # when all tasks succeeded but replanning failed, make it explicit
     if completed and not remaining:
         parts.append(
             "All planned tasks completed successfully. "
@@ -823,7 +822,7 @@ def _build_failure_summary(
     return "\n\n".join(parts)
 
 
-# ── Language detection for replan notifications (M332, M585) ──
+# ── Language detection for replan notifications ──
 
 from kiso.worker.l10n import LANG_MARKERS, REPLAN_TEMPLATES
 

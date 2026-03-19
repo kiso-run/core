@@ -64,11 +64,7 @@ def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None
     else:
         other_type = "connectors"
         other_cmd = "connector"
-    # Backward compat: old registries use "skills" key instead of "tools"
-    other_entries = registry.get(
-        other_type,
-        registry.get("skills", []) if other_type == "tools" else [],
-    )
+    other_entries = registry.get(other_type, [])
     matches = search_entries(other_entries, query)
     if matches:
         names = ", ".join(m["name"] for m in matches)

@@ -24,15 +24,15 @@ from kiso.tool_repair import repair_unhealthy_tools
 # Minimal valid kiso.toml
 _TOML = """\
 [kiso]
-type = "skill"
+type = "tool"
 name = "{name}"
 version = "0.1.0"
 
-[kiso.skill]
+[kiso.tool]
 summary = "{summary}"
 usage_guide = "test guide"
 
-[kiso.skill.args]
+[kiso.tool.args]
 action = {{ type = "string", required = true }}
 
 [kiso.deps]

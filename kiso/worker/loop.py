@@ -246,12 +246,12 @@ async def _msg_task(
         on_briefer_done: Optional async callback invoked after the briefer
             completes but before the messenger LLM call.  The caller can use
             this to flush intermediate usage so the CLI can render briefer
-            panels while the messenger is still running (M273).
+            panels while the messenger is still running.
         response_lang: ISO 639-1 code for the desired response language.
             If set and the detail doesn't already start with "Answer in",
             prepends "Answer in {language}." to ensure correct language.
     """
-    # M650/M653: ensure correct response language prefix
+    # ensure correct response language prefix
     if response_lang:
         lang_name = LANG_NAMES.get(response_lang, "English")
         expected_prefix = f"Answer in {lang_name}."
@@ -266,7 +266,7 @@ async def _msg_task(
     selected_outputs = plan_outputs
     briefing_context: str | None = None
 
-    # M523/M582: skip briefer if LLM budget is nearly exhausted
+    # skip briefer if LLM budget is nearly exhausted
     _briefer_ok = _is_briefer_budget_ok(config)
 
     if _briefer_ok:
@@ -286,11 +286,11 @@ async def _msg_task(
             facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
             if facts:
                 context_pool["facts"] = "\n".join(f"- {f['content']}" for f in facts)
-            # M385: inject available tags for briefer relevant_tags selection
+            # inject available tags for briefer relevant_tags selection
             all_tags = await get_all_tags(db)
             if all_tags:
                 context_pool["available_tags"] = ", ".join(all_tags)
-            # M365: inject available entities so briefer can select relevant ones
+            # inject available entities so briefer can select relevant ones
             all_entities = await get_all_entities(db)
             if all_entities:
                 context_pool["available_entities"] = "\n".join(
@@ -310,7 +310,7 @@ async def _msg_task(
             # Use briefer's synthesized context instead of raw summary/facts
             if briefing.get("context"):
                 briefing_context = briefing["context"]
-            # M391: scored fact retrieval for messenger
+            # scored fact retrieval for messenger
             entity_id = None
             if briefing.get("relevant_entities") and all_entities:
                 entity_map = {_normalize_entity_name(e["name"]): e["id"] for e in all_entities}
@@ -334,7 +334,7 @@ async def _msg_task(
         except (BrieferError, LLMError, asyncio.TimeoutError):
             log.debug("Briefer failed for messenger, using full context")
 
-    # M273: flush briefer usage before messenger call
+    # flush briefer usage before messenger call
     if on_briefer_done:
         await on_briefer_done()
 
@@ -398,7 +398,7 @@ async def _post_plan_knowledge(
         try:
             tags = await get_all_tags(db)
             entities = await get_all_entities(db)
-            # M392/M505: scored fact retrieval for curator dedup
+            # scored fact retrieval for curator dedup
             # Build lowercase content cache once, then dict-lookup entities
             lower_contents = [l["content"].lower() for l in learnings]
             matched: list[dict] = [
@@ -425,7 +425,7 @@ async def _post_plan_knowledge(
                 timeout=llm_timeout,
             )
             await _apply_curator_result(db, session, curator_result)
-            # M382: backfill entity_id for older facts matching newly created entities
+            # backfill entity_id for older facts matching newly created entities
             from kiso.store import backfill_fact_entities
             await backfill_fact_entities(db)
         except asyncio.TimeoutError:
@@ -684,10 +684,6 @@ def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
             if m:
                 lang_prefix = m.group(0)
                 break
-            # Legacy [Lang: xx] support during transition
-            if detail.startswith("[Lang:") and "]" in detail:
-                lang_prefix = detail[:detail.index("]") + 1] + " "
-                break
 
     task_summary = ", ".join(
         f"{t['type']}: {t['detail'][:60]}" for t in tasks[:3]
@@ -737,7 +733,7 @@ async def _review_task(
     stderr = task_row.get("stderr") or ""
     full_output = prepare_reviewer_output(output, stderr)
 
-    # M412: fetch safety rules for compliance check
+    # fetch safety rules for compliance check
     safety_facts = await get_safety_facts(db)
     safety_rules = [f["content"] for f in safety_facts] if safety_facts else None
 
@@ -770,7 +766,7 @@ async def _review_task(
             log.warning("Discarding %d learning(s) for task %d — empty output",
                         len(learn_items), task_row.get("id", 0))
         learn_items = []
-    # Filter low-quality items (M320, M373)
+    # Filter low-quality items
     learn_items = clean_learn_items(learn_items, task_output=full_output)
     has_learning = bool(learn_items)
     for item in learn_items:
@@ -811,7 +807,7 @@ class _PlanCtx:
     sandbox_uid: "int | None"
     base_url: str = ""
     response_lang: str = "en"
-    cancel_event: "asyncio.Event | None" = None  # M767: threaded to subprocess
+    cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
     installed_tools_by_name: dict[str, dict] = field(init=False)
@@ -952,7 +948,7 @@ async def _run_review_step(
         log.error("Review failed for task %d: %s", task_id, e)
         return None, str(e)
     await _append_calls(ctx.db, task_id, idx)
-    # Attach reviewer summary for downstream context (M146, M247)
+    # Attach reviewer summary for downstream context
     summary = review.get("summary")
     if summary:
         task_row["reviewer_summary"] = summary[:1500]
@@ -991,7 +987,7 @@ async def _handle_msg_task(
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_COMPOSING)
         idx_msg = get_usage_index()
         # Track index after briefer flush so post-messenger flush
-        # doesn't re-append briefer calls (M273 fix).
+        # doesn't re-append briefer calls.
         idx_after_briefer = [idx_msg]
 
         async def _flush_briefer():
@@ -1005,7 +1001,7 @@ async def _handle_msg_task(
                     ctx.config, ctx.db, ctx.session, detail,
                     plan_outputs=ctx.plan_outputs,
                     goal=ctx.goal,
-                    include_recent=True,  # M753: messenger sees conversation
+                    include_recent=True,  # messenger sees conversation
                     user_message=ctx.user_message,
                     on_briefer_done=_flush_briefer,
                     response_lang=ctx.response_lang,
@@ -1015,7 +1011,7 @@ async def _handle_msg_task(
         except asyncio.TimeoutError:
             raise MessengerError(f"Messenger timed out after {ctx.messenger_timeout}s")
     except (LLMError, MessengerError) as e:
-        # M481: final msg task falls back to raw detail instead of killing
+        # final msg task falls back to raw detail instead of killing
         # the plan. Non-final msg errors still stop execution.
         if is_final:
             log.warning("Final msg task %d messenger failed, falling back to raw detail: %s", task_id, e)
@@ -1025,7 +1021,7 @@ async def _handle_msg_task(
             log.error("Msg task %d messenger error: %s", task_id, e)
             await update_task(ctx.db, task_id, "failed", output=str(e), duration_ms=task_duration_ms)
             _audit_task(ctx, task_id, TASK_TYPE_MSG, detail, "failed", task_duration_ms)
-            # M396: append LLM calls so verbose panels show attempted messenger/briefer
+            # append LLM calls so verbose panels show attempted messenger/briefer
             await _append_calls(ctx.db, task_id, idx_after_briefer[0])
             await _store_step_usage(ctx.db, task_id, usage_idx_before)
             return _TaskHandlerResult(stop=True, stop_success=False)
@@ -1049,7 +1045,7 @@ async def _handle_msg_task(
     )
 
 
-# M507: shared review-result helpers (used by tool, exec, search handlers)
+# shared review-result helpers (used by tool, exec, search handlers)
 
 
 async def _review_stop_stuck(
@@ -1142,12 +1138,12 @@ async def _handle_tool_task(
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
-    # Disk limit check (M218)
+    # Disk limit check
     disk_err = _check_disk_limit(ctx.config)
     if disk_err:
         return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_TOOL, detail, disk_err, i + 1)
 
-    # Snapshot workspace before execution to detect new files (M215)
+    # Snapshot workspace before execution to detect new files
     pre_snapshot = _snapshot_workspace(ctx.session)
 
     tool_retries = 0
@@ -1163,7 +1159,7 @@ async def _handle_tool_task(
             cancel_event=ctx.cancel_event,
         )
 
-        # M767: subprocess cancelled — mark task cancelled, skip review
+        # subprocess cancelled — mark task cancelled, skip review
         if exit_code == -15 and stderr == "cancelled":
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
@@ -1174,7 +1170,7 @@ async def _handle_tool_task(
         status = "done" if success else "failed"
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
 
-        # Auto-publish new files to pub/ and append URLs (M215)
+        # Auto-publish new files to pub/ and append URLs
         _auto_publish_skill_files(ctx.session, pre_snapshot)
         pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
         stdout += _format_pub_note(pub_urls)
@@ -1200,7 +1196,7 @@ async def _handle_tool_task(
 
         if review["status"] == REVIEW_STATUS_REPLAN:
             retry_hint = review.get("retry_hint")
-            # M204: internal retry for transient tool failures
+            # internal retry for transient tool failures
             if retry_hint and tool_retries < ctx.max_worker_retries:
                 tool_retries += 1
                 await update_task_retry_count(ctx.db, task_id, tool_retries)
@@ -1224,7 +1220,7 @@ async def _handle_exec_task(
     detail = task_row["detail"]
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
-    # Disk limit check (M218)
+    # Disk limit check
     disk_err = _check_disk_limit(ctx.config)
     if disk_err:
         return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_EXEC, detail, disk_err, i + 1)
@@ -1246,7 +1242,7 @@ async def _handle_exec_task(
                     briefed_outputs = filtered
         except (BrieferError, LLMError, asyncio.TimeoutError):
             log.debug("Briefer failed for worker task %d, using all plan_outputs", task_id)
-    # M273: flush briefer calls so CLI renders panels before translator runs
+    # flush briefer calls so CLI renders panels before translator runs
     await _append_calls(ctx.db, task_id, idx_exec)
 
     # Snapshot workspace before execution to detect new files for auto-publish
@@ -1260,7 +1256,7 @@ async def _handle_exec_task(
         sys_env = get_system_env(ctx.config)
         sys_env_text = build_system_env_section(sys_env, session=ctx.session)
 
-        # M735: strip sudo from exec detail when running as root
+        # strip sudo from exec detail when running as root
         _user_info = sys_env.get("user_info", {})
         if _user_info.get("is_root") and "sudo " in detail:
             detail = detail.replace("sudo ", "")
@@ -1296,7 +1292,7 @@ async def _handle_exec_task(
         )
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
 
-        # M767: subprocess cancelled — mark task cancelled, skip review
+        # subprocess cancelled — mark task cancelled, skip review
         if exit_code == -15 and stderr == "cancelled":
             await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
             _audit_task(ctx, task_id, TASK_TYPE_EXEC, detail, "cancelled", task_duration_ms)
@@ -1305,14 +1301,14 @@ async def _handle_exec_task(
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
 
-        # M637: log exec output on failure so errors are visible in test/production logs
+        # log exec output on failure so errors are visible in test/production logs
         if not success:
             log.warning(
                 "Exec task %d failed (exit %d): stdout=%.500s stderr=%.500s",
                 task_id, exit_code, stdout or "", stderr or "",
             )
 
-        # M371: invalidate sysenv cache after package install so new binaries are visible
+        # invalidate sysenv cache after package install so new binaries are visible
         if success and any(pkg_cmd in command for pkg_cmd in (
             "apt-get install", "apt install", "apk add",
             "yum install", "dnf install", "pip install",
@@ -1337,7 +1333,6 @@ async def _handle_exec_task(
 
         review, review_error = await _run_review_step(ctx, task_row)
         if review_error is not None:
-            # M562: removed spurious update_task("failed") — task status already set by execution
             return await _handle_review_error(ctx, task_id, review_error, local_plan_output, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_STUCK:
@@ -1538,7 +1533,7 @@ async def _execute_plan(
         sandbox_uid=None,
     )
 
-    # --- M696: Build execution batches from parallel groups ---
+    # --- Build execution batches from parallel groups ---
     batches = _build_execution_batches(tasks)
 
     # Flat index tracking for remaining-task calculation on early exit.
@@ -1595,7 +1590,7 @@ async def _execute_plan(
         is_parallel = len(batch) > 1
 
         if is_parallel:
-            # --- M696: Parallel execution ---
+            # --- Parallel execution ---
             log.info("Executing parallel group: %d tasks (indices %d-%d)",
                      len(batch), batch[0][0] + 1, batch[-1][0] + 1)
             for idx, task_row in batch:
@@ -1639,7 +1634,7 @@ async def _execute_plan(
                 return (stop_result.stop_success, stop_result.stop_replan,
                         stop_result.stop_stuck, completed, remaining, ctx.plan_outputs)
 
-            # M768: cancel check after parallel batch completes
+            # cancel check after parallel batch completes
             if cancel_event is not None and cancel_event.is_set():
                 last_batch_idx = batch[-1][0]
                 for t in tasks[last_batch_idx + 1:]:
@@ -1709,7 +1704,7 @@ async def _execute_plan(
                 await _cleanup_plan_outputs(session)
                 return result.stop_success, result.stop_replan, result.stop_stuck, completed, remaining, ctx.plan_outputs
 
-            # M768: cancel check after each task (not just at batch start)
+            # cancel check after each task (not just at batch start)
             if cancel_event is not None and cancel_event.is_set():
                 for t in tasks[idx + 1:]:
                     await update_task(db, t["id"], "cancelled")
@@ -1738,7 +1733,7 @@ async def _apply_curator_result(
     are scoped to that project. Facts with category in {"general", "tool", "system"}
     remain global (project_id=NULL).
     """
-    # M689: resolve project_id once for the session
+    # resolve project_id once for the session
     session_project_id = await get_session_project_id(db, session)
 
     for ev in result.get("evaluations", []):
@@ -1759,7 +1754,7 @@ async def _apply_curator_result(
             entity_id = None
             if ev.get("entity_name") and ev.get("entity_kind"):
                 entity_id = await find_or_create_entity(db, ev["entity_name"], ev["entity_kind"])
-            # M689: scope project/behavior facts to session's project
+            # scope project/behavior facts to session's project
             fact_project_id = (
                 session_project_id
                 if session_project_id and category in _PROJECT_SCOPED_CATEGORIES
@@ -1797,7 +1792,7 @@ async def run_worker(
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
     classifier_timeout = setting_int(config.settings, "classifier_timeout", lo=1)
     llm_timeout = setting_int(config.settings, "llm_timeout", lo=1)
-    messenger_timeout = llm_timeout  # unified (M422)
+    messenger_timeout = llm_timeout  # unified
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
@@ -1807,7 +1802,7 @@ async def run_worker(
         while True:
             _notify_phase(set_phase, WORKER_PHASE_IDLE)
 
-            # M408: drain pending_messages (independent in-flight messages)
+            # drain pending_messages (independent in-flight messages)
             # into the queue before waiting for new messages
             if pending_messages:
                 while pending_messages:
@@ -2047,7 +2042,7 @@ async def _run_planning_loop(
             await _handle_loop_success(db, session, current_plan_id, content, user_role, slog)
             break
 
-        # --- Stuck handling (M336): unsolvable task, skip replan entirely ---
+        # --- Stuck handling: unsolvable task, skip replan entirely ---
         if stuck_reason:
             log.info("Task stuck (unsolvable): %s", stuck_reason)
             if slog:
@@ -2072,7 +2067,7 @@ async def _run_planning_loop(
             break
 
         if replan_reason is None:
-            # Auto-replan safety net (M172): if there are failed outputs and
+            # Auto-replan safety net: if there are failed outputs and
             # replan budget remains, generate a reason from the last failure.
             failed_outputs = [
                 po for po in plan_outputs if po.get("status") == "failed"
@@ -2080,7 +2075,7 @@ async def _run_planning_loop(
             if failed_outputs and replan_depth < max_replan_depth:
                 last_fail = failed_outputs[-1]
                 replan_reason = f"Task failed: {(last_fail.get('output') or 'unknown error')[:200]}"
-                log.info("Auto-generating replan reason (M172): %s", replan_reason)
+                log.info("Auto-generating replan reason: %s", replan_reason)
             else:
                 log.info("Plan %d failed (no replan)", current_plan_id)
                 if slog:
@@ -2130,7 +2125,7 @@ async def _run_planning_loop(
             out = (t.get("output") or "")[:500]
             if out:
                 key_outputs.append(f"[{t['type']}] {out}")
-        # Extract retry hints and reviewer summaries from plan_outputs (M145/M550)
+        # Extract retry hints and reviewer summaries from plan_outputs
         retry_hints = [
             po["retry_hint"] for po in plan_outputs
             if po.get("retry_hint")
@@ -2156,7 +2151,7 @@ async def _run_planning_loop(
             history_entry["reviewer_summaries"] = reviewer_summaries
         replan_history.append(history_entry)
 
-        # Detect circular replanning (M337: scan ALL history, not just [-2] vs [-1])
+        # Detect circular replanning (scan ALL history entries)
         # 1. Word overlap in failure reasons (>60%) against any previous entry
         # 2. Strategy fingerprint similarity (>50% Jaccard) against any previous entry
         stuck_detected = False
@@ -2185,7 +2180,7 @@ async def _run_planning_loop(
                         log.warning("Circular replan detected (%.0f%% strategy overlap): %s",
                                     jaccard * 100, replan_reason)
 
-        # M371: detect install→use→fail loops
+        # detect install→use→fail loops
         if not stuck_detected and len(replan_history) >= 2:
             _install_kws = {"install", "apt-get", "apt", "apk", "yum", "dnf", "pip"}
             _fail_kws = {"not found", "cannot_translate", "command not found",
@@ -2228,7 +2223,7 @@ async def _run_planning_loop(
             session_secrets=session_secrets,
         )
 
-        # M429: stuck_detected → stop replan loop immediately
+        # stuck_detected → stop replan loop immediately
         if stuck_detected:
             log.info("Stuck detected — stopping replan loop session=%s", session)
             await _handle_loop_failure(
@@ -2254,7 +2249,7 @@ async def _run_planning_loop(
 
         # Call planner with enriched context
         _notify_phase(set_phase, WORKER_PHASE_PLANNING)
-        # M409: drain update hints into replan context, then clear them
+        # drain update hints into replan context, then clear them
         consumed_hints = list(update_hints) if update_hints else None
         if update_hints:
             update_hints.clear()
@@ -2269,7 +2264,7 @@ async def _run_planning_loop(
                      attempt, max_attempts, session, reason)
 
         replan_usage_idx = get_usage_index()
-        # M698: shrink task limit at deeper replan depths — forces focused plans.
+        # shrink task limit at deeper replan depths — forces focused plans.
         _max_plan_tasks = int(config.settings["max_plan_tasks"])
         _effective_max = max(4, _max_plan_tasks - replan_depth * 3)
         try:
@@ -2293,12 +2288,12 @@ async def _run_planning_loop(
 
         # Create new plan BEFORE finalizing the old one, so the CLI never
         # sees a window where the old plan is done/failed but no successor
-        # exists yet (M103a — race condition fix).
+        # exists yet (race condition fix).
         new_plan_id = await create_plan(
             db, session, msg_id, new_plan["goal"],
             parent_id=current_plan_id,
         )
-        # M279: skip intent injection on replan — user already saw the intent
+        # skip intent injection on replan — user already saw the intent
         await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
 
         # Now finalize old plan status — the new plan is already visible.
@@ -2325,7 +2320,7 @@ async def _run_planning_loop(
             )
 
         # Handle extend_replan: planner can request extra attempts, capped globally
-        # M338: deny extensions when stuck pattern detected
+        # deny extensions when stuck pattern detected
         extend = new_plan.get("extend_replan")
         if extend and isinstance(extend, int) and extend > 0:
             remaining_budget = _MAX_EXTEND_REPLAN - total_extensions
@@ -2406,7 +2401,7 @@ async def _process_message(
     # Paraphraser is intentionally skipped here — the messenger only sees
     # session summary + facts + the current user message (all trusted).
     # Untrusted messages feed into planner context, not messenger context.
-    # M751: fetch recent conversation (user + kiso) for classifier context
+    # fetch recent conversation (user + kiso) for classifier context
     _recent_for_classifier = await get_recent_messages(db, session, limit=3)
     _classifier_ctx = build_recent_context(_recent_for_classifier, max_chars=500)
 
@@ -2485,7 +2480,7 @@ async def _process_message(
         log.info("Retrying planner (attempt %d/%d) session=%s: %s",
                  attempt, max_attempts, session, reason)
 
-    # M428: check if user approved install in a prior msg cycle
+    # check if user approved install in a prior msg cycle
     _install_approved = await session_has_install_proposal(db, session)
 
     try:
@@ -2524,7 +2519,7 @@ async def _process_message(
     # Update plan with real goal and persist tasks
     await update_plan_goal(db, plan_id, plan["goal"])
 
-    # M615: persist install_proposal flag detected by run_planner
+    # persist install_proposal flag detected by run_planner
     if plan.get("install_proposal"):
         await update_plan_install_proposal(db, plan_id)
 

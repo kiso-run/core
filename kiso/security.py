@@ -115,7 +115,7 @@ def build_secret_variants(value: str) -> list[str]:
     encoded = quote(value, safe="")
     if encoded != value:
         variants.add(encoded)
-    # M506: JSON string escaping (catches secrets inside JSON output)
+    # JSON string escaping (catches secrets inside JSON output)
     json_escaped = json.dumps(value)[1:-1]  # strip surrounding quotes
     if json_escaped != value:
         variants.add(json_escaped)
@@ -162,7 +162,7 @@ def collect_deploy_secrets() -> dict[str, str]:
     """Collect KISO_TOOL_*, KISO_CONNECTOR_* env vars + LLM API key."""
     secrets: dict[str, str] = {}
     for k, v in os.environ.items():
-        if k.startswith(("KISO_TOOL_", "KISO_SKILL_", "KISO_CONNECTOR_")):
+        if k.startswith(("KISO_TOOL_", "KISO_CONNECTOR_")):
             secrets[k] = v
     val = os.environ.get(LLM_API_KEY_ENV)
     if val:

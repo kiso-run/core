@@ -223,7 +223,7 @@ def _plugin_install(
             "deps": kiso_section.get("deps", {}),
         }
         missing = check_deps_fn(plugin_info)
-        # M187: auto-retry deps.sh once if binaries still missing
+        # auto-retry deps.sh once if binaries still missing
         if missing and deps_path.exists() and not args.no_deps:
             print(f"Missing binaries: {', '.join(missing)} — re-running deps.sh...")
             retry_result = subprocess.run(

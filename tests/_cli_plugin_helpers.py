@@ -115,8 +115,8 @@ def fake_clone_plugin(plugin_type: str, name: str = "test", **extra_manifest):
             summary = extra_manifest.get("summary", f"{name} tool")
             usage = extra_manifest.get("usage_guide", "Use default guidance.")
             (dest / "kiso.toml").write_text(
-                f'[kiso]\ntype = "skill"\nname = "{name}"\n'
-                f"[kiso.skill]\n"
+                f'[kiso]\ntype = "tool"\nname = "{name}"\n'
+                f"[kiso.tool]\n"
                 f'summary = "{summary}"\n'
                 f'usage_guide = "{usage}"\n'
             )

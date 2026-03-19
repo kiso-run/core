@@ -257,7 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="show all sessions (admin only)",
     )
 
-    # M699: session create
+    # session create
     session_parser = sub.add_parser("session", help="manage sessions")
     session_sub = session_parser.add_subparsers(dest="session_cmd")
     sess_create_p = session_sub.add_parser("create", help="create a named session")
@@ -376,7 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="session to cancel (default: current session)",
     )
 
-    # --- M413: rules subcommand ---
+    # --- rules subcommand ---
     rules_parser = sub.add_parser("rules", help="manage safety rules")
     rules_sub = rules_parser.add_subparsers(dest="rules_cmd")
     rules_sub.add_parser("list", help="list all safety rules")
@@ -385,7 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
     rules_rm_p = rules_sub.add_parser("remove", help="remove a safety rule by ID")
     rules_rm_p.add_argument("rule_id", type=int, help="rule ID to remove")
 
-    # --- M673: knowledge subcommand ---
+    # --- knowledge subcommand ---
     know_parser = sub.add_parser("knowledge", help="manage knowledge facts")
     know_sub = know_parser.add_subparsers(dest="knowledge_cmd")
     know_list_p = know_sub.add_parser("list", help="list knowledge facts")
@@ -413,7 +413,7 @@ def build_parser() -> argparse.ArgumentParser:
     know_imp_p.add_argument("--category", "-c", help="default category (default: general)")
     know_imp_p.add_argument("--dry-run", action="store_true", help="show what would be imported")
 
-    # --- M681: cron subcommand ---
+    # --- cron subcommand ---
     cron_parser = sub.add_parser("cron", help="manage cron jobs")
     cron_sub = cron_parser.add_subparsers(dest="cron_cmd")
     cron_sub.add_parser("list", help="list cron jobs").add_argument(
@@ -429,7 +429,7 @@ def build_parser() -> argparse.ArgumentParser:
     cron_sub.add_parser("disable", help="disable a cron job").add_argument(
         "job_id", type=int, help="cron job ID")
 
-    # --- M687/M688: project subcommand ---
+    # --- project subcommand ---
     proj_parser = sub.add_parser("project", help="manage projects")
     proj_sub = proj_parser.add_subparsers(dest="project_cmd")
     proj_sub.add_parser("list", help="list projects")
@@ -454,7 +454,7 @@ def build_parser() -> argparse.ArgumentParser:
     proj_mem_p = proj_sub.add_parser("members", help="list project members")
     proj_mem_p.add_argument("--project", "-p", required=True, help="project name")
 
-    # --- M674: behavior subcommand ---
+    # --- behavior subcommand ---
     beh_parser = sub.add_parser("behavior", help="manage behavioral guidelines")
     beh_sub = beh_parser.add_subparsers(dest="behavior_cmd")
     beh_sub.add_parser("list", help="list all behavioral guidelines")
@@ -463,7 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     beh_rm_p = beh_sub.add_parser("remove", help="remove a behavioral guideline by ID")
     beh_rm_p.add_argument("behavior_id", type=int, help="behavior ID to remove")
 
-    # --- M693/M694: preset subcommand ---
+    # --- preset subcommand ---
     preset_parser = sub.add_parser("preset", help="manage persona presets")
     preset_sub = preset_parser.add_subparsers(dest="preset_cmd")
     preset_sub.add_parser("list", help="list available presets from registry")
@@ -861,7 +861,7 @@ def _print_verbose_panels(calls: list[dict], caps, state: _PollRenderState) -> N
         out_panel = render_llm_call_output_panel(c, caps)
         if out_panel:
             print(out_panel)
-        # M267: allow this role to show a new inflight indicator in future phases
+        # allow this role to show a new inflight indicator in future phases
         role = c.get("role")
         if role:
             state.inflight_roles_shown.discard(role)
@@ -1085,7 +1085,7 @@ def _render_plan_status(
             state.shown_plan_id = pid
             state.shown_plan_goal = goal
         elif pid == state.shown_plan_id and goal != state.shown_plan_goal and task_count > 0:
-            # Plan goal updated (e.g. "Planning..." → real goal) — re-render header (M229)
+            # Plan goal updated (e.g. "Planning..." → real goal) — re-render header
             _clear_spinner()
             _render_plan_header(goal, task_count, caps, tasks)
             state.shown_plan_goal = goal
@@ -1135,7 +1135,7 @@ def _render_plan_status(
         if state.seen.get(tid) == task_key:
             continue
 
-        # M331: suppress pending task headers — only show when status transitions
+        # suppress pending task headers — only show when status transitions
         if status == "pending":
             state.seen[tid] = task_key
             continue
@@ -1215,7 +1215,7 @@ def _render_plan_status(
             inflight_role = inflight.get("role") or None
             if inflight_ts and inflight_ts not in state.seen_inflight_ts:
                 state.seen_inflight_ts.add(inflight_ts)
-                # M267: skip duplicate indicator for same role (e.g. planner validation retry)
+                # skip duplicate indicator for same role (e.g. planner validation retry)
                 if inflight_role is None or inflight_role not in state.inflight_roles_shown:
                     _clear_spinner()
                     in_panel = render_llm_call_input_panel(inflight, caps)
@@ -1227,14 +1227,14 @@ def _render_plan_status(
                     if inflight_role is not None:
                         state.inflight_roles_shown.add(inflight_role)
 
-        # M303/M306: show live partial content from streaming chunks.
+        # show live partial content from streaming chunks.
         inflight_role = inflight.get("role") if inflight else None
         partial = ""
         if inflight_role in _STREAMING_VISIBLE_ROLES:
             partial = inflight.get("partial_content", "")
         if partial and len(partial) > state.partial_content_len:
             _clear_spinner()
-            # M306: overwrite previous partial lines on TTY
+            # overwrite previous partial lines on TTY
             if caps.tty and state.partial_lines_rendered > 0:
                 print(f"\033[{state.partial_lines_rendered}A\033[J", end="")
             rendered = render_partial_content(partial, caps)
@@ -1288,8 +1288,6 @@ def _poll_status(
             text without a trailing newline (e.g. an inline prompt) so the
             spinner always opens on a fresh line instead of overwriting it.
         user: user forwarded as the ``user`` query param to ``/status``.
-            Always pass an explicit value; the empty-string default is only
-            provided to avoid breaking legacy test call sites.
     """
 
     state = _PollRenderState(seen={}, max_task_id=base_task_id, at_col0=_at_col0, verbose_shown={})

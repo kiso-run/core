@@ -12,15 +12,15 @@ from kiso.tool_repair import repair_unhealthy_tools
 # Minimal valid kiso.toml for a tool with a binary dep
 _TOML_WITH_DEP = """\
 [kiso]
-type = "skill"
+type = "tool"
 name = "{name}"
 version = "0.1.0"
 
-[kiso.skill]
+[kiso.tool]
 summary = "Test tool"
 usage_guide = "test"
 
-[kiso.skill.args]
+[kiso.tool.args]
 action = {{ type = "string", required = true }}
 
 [kiso.deps]
@@ -29,15 +29,15 @@ bin = ["{binary}"]
 
 _TOML_NO_DEPS = """\
 [kiso]
-type = "skill"
+type = "tool"
 name = "{name}"
 version = "0.1.0"
 
-[kiso.skill]
+[kiso.tool]
 summary = "Test tool"
 usage_guide = "test"
 
-[kiso.skill.args]
+[kiso.tool.args]
 action = { type = "string", required = true }
 """
 

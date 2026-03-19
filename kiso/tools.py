@@ -42,25 +42,7 @@ class ToolError(Exception):
 
 
 def _validate_manifest(manifest: dict, tool_dir: Path) -> list[str]:
-    """Validate a kiso.toml manifest. Returns list of error strings.
-
-    Accepts both [kiso.tool] (canonical) and [kiso.skill] (backward compat).
-    """
-    # Normalize backward compat: type="skill" → "tool", [kiso.skill] → [kiso.tool]
-    # Note: normalization is local to this function (manifest is rebound, not mutated).
-    # Callers like discover_tools() must still use their own fallback for the section key.
-    kiso = manifest.get("kiso")
-    if isinstance(kiso, dict):
-        needs_type = kiso.get("type") == "skill"
-        needs_alias = "tool" not in kiso and "skill" in kiso
-        if needs_type or needs_alias:
-            normalized = dict(kiso)
-            if needs_type:
-                normalized["type"] = "tool"
-            if needs_alias:
-                normalized["tool"] = dict(normalized["skill"])
-            manifest = dict(manifest, kiso=normalized)
-
+    """Validate a kiso.toml manifest. Returns list of error strings."""
     errors = _validate_plugin_manifest_base(manifest, tool_dir, "tool")
 
     # Base already checked [kiso] and [kiso.tool] sections; if either is
@@ -124,8 +106,6 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
     repeated filesystem scans on every planner call. Call
     invalidate_tools_cache() after installing or removing a tool.
 
-    Accepts both [kiso.tool] (canonical) and [kiso.skill] (backward compat)
-    in kiso.toml manifests.
     """
     resolved_dir = tools_dir or (KISO_DIR / "tools")
 
@@ -151,9 +131,7 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
             continue
         seen_names.add(name)
 
-        # Backward compat: accept [kiso.tool] or [kiso.skill].
-        # Load-bearing fallback — _validate_manifest normalization is local only.
-        tool_section = kiso.get("tool", kiso.get("skill", {}))
+        tool_section = kiso.get("tool", {})
         args_schema = tool_section.get("args", {})
         env_decl = tool_section.get("env", {})
         session_secrets = tool_section.get("session_secrets", [])
@@ -250,7 +228,7 @@ def build_planner_tool_list(
             )
         else:
             lines.append(f"- {t['name']} — {t['summary']}")
-        # M510: show required args + top 3 optional to reduce prompt tokens
+        # show required args + top 3 optional to reduce prompt tokens
         args_schema = t.get("args_schema", {})
         required_args = {k: v for k, v in args_schema.items() if v.get("required")}
         optional_args = {k: v for k, v in args_schema.items() if not v.get("required")}
