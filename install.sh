@@ -1015,6 +1015,8 @@ echo
 # if the actual port differs, update the external_url to match.
 if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
     EXTERNAL_URL="${EXTERNAL_URL%:8333}:${SERVER_PORT}"
+    # M820: patch config.toml — it was written before port assignment
+    sed -i "s|^external_url .*=.*|external_url                 = \"$EXTERNAL_URL\"|" "$CONFIG"
 fi
 
 # ── 6. Build and start ──────────────────────────────────────────────────────

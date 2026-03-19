@@ -471,6 +471,56 @@ class TestM769ExternalUrlPortFix:
         assert "EXTERNAL_URL=" in content
 
 
+class TestM820ConfigTomlPatch:
+    """M820: config.toml external_url is patched when port changes."""
+
+    def test_config_toml_patched_when_port_differs(self, tmp_path):
+        """sed patches config.toml external_url after M769 variable correction."""
+        config = tmp_path / "config.toml"
+        config.write_text('external_url                 = "http://1.2.3.4:8333"\n')
+        result = _run_bash(f"""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            EXTERNAL_URL="http://1.2.3.4:8333"
+            SERVER_PORT="8334"
+            CONFIG="{config}"
+            if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
+                EXTERNAL_URL="${{EXTERNAL_URL%:8333}}:${{SERVER_PORT}}"
+                sed -i "s|^external_url .*=.*|external_url                 = \\"$EXTERNAL_URL\\"|" "$CONFIG"
+            fi
+            cat "$CONFIG"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert '"http://1.2.3.4:8334"' in result.stdout
+
+    def test_config_toml_unchanged_when_port_matches(self, tmp_path):
+        """config.toml not touched when port is already 8333."""
+        config = tmp_path / "config.toml"
+        config.write_text('external_url                 = "http://1.2.3.4:8333"\n')
+        result = _run_bash(f"""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            EXTERNAL_URL="http://1.2.3.4:8333"
+            SERVER_PORT="8333"
+            CONFIG="{config}"
+            if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
+                EXTERNAL_URL="${{EXTERNAL_URL%:8333}}:${{SERVER_PORT}}"
+                sed -i "s|^external_url .*=.*|external_url                 = \\"$EXTERNAL_URL\\"|" "$CONFIG"
+            fi
+            cat "$CONFIG"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert '"http://1.2.3.4:8333"' in result.stdout
+
+    def test_m820_sed_present_in_install_sh(self):
+        """M820 sed patch block exists in install.sh."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        with open(script_path) as f:
+            content = f.read()
+        assert "M820" in content
+        assert 'sed -i' in content
+
+
 class TestM759PresetStep:
     """M759: installer post-install preset selection."""
 
