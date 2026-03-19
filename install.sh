@@ -1107,6 +1107,15 @@ if [[ "$RESET_REQUESTED" == true ]]; then
     bold "Running factory reset..."
     docker exec "$CONTAINER" uv run kiso reset factory --yes
     docker restart "$CONTAINER"
+    # Wait for container to be healthy after restart
+    _reset_elapsed=0
+    while [[ $_reset_elapsed -lt 30 ]]; do
+        if curl -sf "http://localhost:$SERVER_PORT/health" &>/dev/null; then
+            break
+        fi
+        sleep 2 || true
+        _reset_elapsed=$((_reset_elapsed + 2))
+    done
     green "  factory reset complete"
 fi
 
@@ -1156,6 +1165,9 @@ except Exception:
     pass
 " 2>/dev/null || true)
 
+    if [[ -z "$_PRESETS" ]]; then
+        yellow "  (could not fetch presets from registry — skipping)"
+    fi
     if [[ -n "$_PRESETS" ]]; then
         bold "Presets — install a starter configuration?"
         echo "    0) Skip — I'll set things up myself"
