@@ -1266,6 +1266,16 @@ class TestReviewerModularPrompt:
         assert "Sole criterion" in system  # rules module
         assert "durable facts" in system  # learn_quality module
 
+    def test_reviewer_tool_reinstall_rule(self):
+        """Reviewer prompt contains tool reinstall hint rule."""
+        msgs = build_reviewer_messages(
+            goal="g", detail="d", expect="e",
+            output="output", user_message="m",
+        )
+        system = msgs[0]["content"]
+        assert "kiso tool remove" in system
+        assert "kiso tool install" in system
+
     def test_reviewer_no_compliance_without_safety_rules(self):
         msgs = build_reviewer_messages(
             goal="g", detail="d", expect="e",
