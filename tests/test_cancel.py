@@ -266,3 +266,18 @@ async def test_cancel_after_task_cancels_remaining(tmp_path):
     # cancel_event is now set — _execute_plan would check it after this task
     # and cancel remaining tasks without starting them
     assert cancel.is_set()
+
+
+# ---------------------------------------------------------------------------
+# M778: cancel handler returns correct stop signal
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_handler_result_fields():
+    """Cancel handler must set stop=True and stop_replan as a string, not a bool."""
+    from kiso.worker.loop import _TaskHandlerResult
+
+    result = _TaskHandlerResult(stop=True, stop_replan="cancelled")
+    assert result.stop is True
+    assert result.stop_replan == "cancelled"
+    assert isinstance(result.stop_replan, str)

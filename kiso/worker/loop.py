@@ -1164,7 +1164,7 @@ async def _handle_tool_task(
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
             _audit_task(ctx, task_id, "tool", detail, "cancelled", task_duration_ms)
-            return _TaskHandlerResult(stop_replan=True, replan_reason="cancelled")
+            return _TaskHandlerResult(stop=True, stop_replan="cancelled")
 
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
@@ -1296,7 +1296,7 @@ async def _handle_exec_task(
         if exit_code == -15 and stderr == "cancelled":
             await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
             _audit_task(ctx, task_id, TASK_TYPE_EXEC, detail, "cancelled", task_duration_ms)
-            return _TaskHandlerResult(stop_replan=True, replan_reason="cancelled")
+            return _TaskHandlerResult(stop=True, stop_replan="cancelled")
 
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
