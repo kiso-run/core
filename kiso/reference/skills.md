@@ -51,7 +51,7 @@ bin = ["curl"]                  # checked with `which` after install
 
 ### Env Var Naming
 
-Convention: `KISO_SKILL_{NAME}_{KEY}` (uppercased, `-` → `_`).
+Convention: `KISO_TOOL_{NAME}_{KEY}` (uppercased, `-` → `_`).
 
 ## config.example.toml
 

@@ -198,7 +198,7 @@ class TestReviewerLive:
                 goal="Install the aider skill",
                 detail="kiso skill install aider",
                 expect="Skill 'aider' installed successfully, exits 0",
-                output="warning: KISO_SKILL_AIDER_API_KEY not set\n"
+                output="warning: KISO_TOOL_AIDER_API_KEY not set\n"
                        "Skill 'aider' installed successfully.",
                 user_message="install the aider skill",
                 success=True,
@@ -220,7 +220,7 @@ class TestReviewerLive:
                 goal="Install the aider skill cleanly",
                 detail="kiso skill install aider",
                 expect="Skill installed with no warnings or errors",
-                output="warning: KISO_SKILL_AIDER_API_KEY not set\n"
+                output="warning: KISO_TOOL_AIDER_API_KEY not set\n"
                        "Skill 'aider' installed successfully.",
                 user_message="install aider with no issues",
                 success=True,
@@ -242,7 +242,7 @@ class TestReviewerLive:
                 goal="Install the aider skill",
                 detail="kiso skill install aider",
                 expect="Skill 'aider' installed successfully, exits 0",
-                output="warning: KISO_SKILL_AIDER_API_KEY not set\n"
+                output="warning: KISO_TOOL_AIDER_API_KEY not set\n"
                        "error: installation failed",
                 user_message="install the aider skill",
                 success=False,
