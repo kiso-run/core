@@ -1010,6 +1010,33 @@ class TestBuildToolEnv:
         assert env["KISO_TOOL_SEARCH_TOKEN"] == "tok1"
 
 
+    def test_legacy_skill_prefix_fallback(self):
+        """M2: KISO_SKILL_ prefix falls back when KISO_TOOL_ is not set."""
+        tool = {"name": "aider", "env": {"api_key": {"required": True}}}
+        with patch.dict(os.environ, {"KISO_SKILL_AIDER_API_KEY": "legacy-key"}, clear=True):
+            os.environ["PATH"] = "/usr/bin"
+            env = build_tool_env(tool)
+        assert env["KISO_TOOL_AIDER_API_KEY"] == "legacy-key"
+
+    def test_tool_prefix_takes_priority_over_skill(self):
+        """M2: KISO_TOOL_ takes priority over KISO_SKILL_ when both set."""
+        tool = {"name": "aider", "env": {"api_key": {"required": True}}}
+        with patch.dict(os.environ, {
+            "KISO_TOOL_AIDER_API_KEY": "new-key",
+            "KISO_SKILL_AIDER_API_KEY": "old-key",
+        }):
+            env = build_tool_env(tool)
+        assert env["KISO_TOOL_AIDER_API_KEY"] == "new-key"
+
+    def test_no_fallback_when_neither_set(self):
+        """M2: No fallback available — var missing, warning logged."""
+        tool = {"name": "aider", "env": {"api_key": {"required": True}}}
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ["PATH"] = "/usr/bin"
+            env = build_tool_env(tool)
+        assert "KISO_TOOL_AIDER_API_KEY" not in env
+
+
 # --- discover_tools TTL cache behaviour ---
 
 
