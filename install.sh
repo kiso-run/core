@@ -1132,9 +1132,10 @@ _INST_HASH=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
 register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE" "$_INST_VERSION" "$_INST_HASH"
 green "  registered in $INSTANCES_JSON"
 
-# ── 6d. Preset selection (M759) ────────────────────────────────────────────
+# ── 6d. Preset selection (M759, M789) ──────────────────────────────────────
+# Show on new install OR on update with data reset (fresh start).
 
-if [[ "$MODE" == "new" && "$NEED_BUILD" == true ]]; then
+if [[ ("$MODE" == "new" && "$NEED_BUILD" == true) || "$DO_RESET" == true ]]; then
     # Non-interactive: install preset if --preset flag was given
     if [[ -n "$ARG_PRESET" ]]; then
         bold "Installing preset '$ARG_PRESET'..."
