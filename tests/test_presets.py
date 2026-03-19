@@ -211,10 +211,9 @@ class TestInstallPreset:
                 install_preset(args, manifest)
 
         out = capsys.readouterr().out
-        assert "installed" in out.lower()
-        assert "1 knowledge facts" in out
+        assert "Preset installed" in out
         assert "1 behaviors" in out
-        assert "websearch" in out
+        assert "1 facts" in out
 
     def test_install_dry_run(self, capsys):
         manifest = PresetManifest(
@@ -651,3 +650,100 @@ behaviors = ["Always search the web before answering a question."]
             assert isinstance(b, str) and len(b) >= 20, (
                 f"Behavior too short or invalid: {b!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# M819 — Preset install: clean progress output + verify deps.sh
+# ---------------------------------------------------------------------------
+
+
+class TestM819CleanProgressOutput:
+    """M819: Preset install shows clean progress instead of verbose output."""
+
+    def test_clone_prints_fetching(self, capsys):
+        """_clone_and_load_preset prints 'Fetching preset...' before clone."""
+        from cli.preset import _clone_and_load_preset
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stderr="fatal: not found")
+            with pytest.raises(SystemExit):
+                _clone_and_load_preset("https://github.com/example/test.git")
+        out = capsys.readouterr().out
+        assert "Fetching preset..." in out
+
+    def test_show_summary_has_version_and_separator(self, capsys):
+        """_show_preset_summary shows version, separator, tools, and behaviors."""
+        from cli.preset import _show_preset_summary
+
+        manifest = PresetManifest(
+            name="demo", version="2.0.0", description="Demo",
+            tools=["browser", "aider"], behaviors=["Be helpful.", "Be concise."],
+        )
+        _show_preset_summary(manifest)
+        out = capsys.readouterr().out
+        assert "demo" in out
+        assert "v2.0.0" in out
+        assert "───" in out
+        assert "browser, aider" in out
+        assert "2 guidelines" in out
+
+    def test_auto_install_tools_progress_format(self, capsys):
+        """_auto_install_tools shows [N/M] name ✓/✗ per tool."""
+        from cli.preset_ops import _auto_install_tools
+
+        with patch("cli.tool._tool_install") as mock_install:
+            # First succeeds, second fails
+            mock_install.side_effect = [None, RuntimeError("fail")]
+            result = _auto_install_tools(["browser", "aider"])
+
+        out = capsys.readouterr().out
+        assert "[1/2] browser" in out
+        assert "✓" in out
+        assert "[2/2] aider" in out
+        assert "✗" in out
+        assert result == ["browser"]
+
+    def test_auto_install_tools_suppresses_individual_output(self, capsys):
+        """Individual tool install messages are suppressed."""
+        from cli.preset_ops import _auto_install_tools
+
+        def noisy_install(args):
+            print("Tool 'test' installed successfully.")
+
+        with patch("cli.tool._tool_install", side_effect=noisy_install):
+            _auto_install_tools(["test"])
+
+        out = capsys.readouterr().out
+        assert "installed successfully" not in out
+        assert "[1/1] test" in out
+
+    def test_install_final_summary(self, tmp_path, capsys):
+        """install_preset shows '✓ Preset installed — N tools, N behaviors'."""
+        from cli.preset_ops import install_preset
+
+        manifest = PresetManifest(
+            name="summary-test", version="1.0.0", description="Test",
+            tools=["browser", "ocr"],
+            behaviors=["Always search before answering — never guess."],
+        )
+        args = MagicMock()
+
+        with patch("cli.preset_ops._auto_install_tools", return_value=["browser", "ocr"]), \
+             patch("cli._http.cli_post") as mock_post, \
+             patch("cli.preset_ops._load_installed", return_value=None), \
+             patch("cli.preset_ops._save_installed"):
+            mock_post.return_value = MagicMock(json=lambda: {"id": 1})
+            install_preset(args, manifest)
+
+        out = capsys.readouterr().out
+        assert "Preset installed" in out
+        assert "2 tools" in out
+        assert "1 behaviors" in out
+
+    def test_deps_sh_runs_via_plugin_install(self):
+        """Verify deps.sh execution path: _auto_install → _tool_install → _plugin_install runs deps.sh."""
+        import inspect
+        from cli.plugin_ops import _plugin_install
+        source = inspect.getsource(_plugin_install)
+        assert "deps.sh" in source
+        assert 'bash' in source

@@ -18,6 +18,7 @@ def _clone_and_load_preset(git_url: str):
     """Clone a preset repo to a temp dir, load and return the manifest."""
     from kiso.presets import load_preset
 
+    print("  Fetching preset...")
     tmpdir = tempfile.mkdtemp()
     try:
         result = subprocess.run(
@@ -41,12 +42,16 @@ def _clone_and_load_preset(git_url: str):
 
 def _show_preset_summary(manifest) -> None:
     """Display preset contents summary before installing."""
+    header = f"Installing preset '{manifest.name}' v{manifest.version}"
+    print(f"  {header}")
+    print(f"  {'─' * len(header)}")
     if manifest.tools:
-        print(f"  Tools: {', '.join(manifest.tools)}")
+        print(f"  Tools:     {', '.join(manifest.tools)}")
     if manifest.connectors:
         print(f"  Connectors: {', '.join(manifest.connectors)}")
     if manifest.behaviors:
         print(f"  Behaviors: {len(manifest.behaviors)} guidelines")
+    print()
 
 
 def preset_list(args: argparse.Namespace) -> None:

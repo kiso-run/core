@@ -47,41 +47,59 @@ def list_installed_presets() -> list[dict]:
     return results
 
 
+from cli.render import _GREEN, _RED, _RESET, detect_caps
+
+
+def _c(text: str, color: str) -> str:
+    return f"{color}{text}{_RESET}" if detect_caps().color else text
+
+
 def _auto_install_tools(tool_names: list[str]) -> list[str]:
     """Auto-install tools by name. Returns list of successfully installed names."""
     import argparse
+    import io
+    import contextlib
     from cli.tool import _tool_install
 
+    total = len(tool_names)
     installed: list[str] = []
-    for name in tool_names:
-        print(f"  Installing tool '{name}'...")
+    for i, name in enumerate(tool_names, 1):
         fake_args = argparse.Namespace(
             target=name, name=None, show_deps=False, no_deps=False,
         )
         try:
-            _tool_install(fake_args)
+            # Suppress individual tool install output (stdout + stderr)
+            with contextlib.redirect_stdout(io.StringIO()), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                _tool_install(fake_args)
             installed.append(name)
-        except (SystemExit, Exception) as e:
-            print(f"  warning: failed to install tool '{name}': {e}", file=sys.stderr)
+            print(f"  [{i}/{total}] {name} {_c('✓', _GREEN)}")
+        except (SystemExit, Exception):
+            print(f"  [{i}/{total}] {name} {_c('✗', _RED)}")
     return installed
 
 
 def _auto_install_connectors(connector_names: list[str]) -> list[str]:
     """Auto-install connectors by name. Returns list of successfully installed names."""
     import argparse
+    import contextlib
+    import io
     from cli.connector import _connector_install
 
+    total = len(connector_names)
     installed: list[str] = []
-    for name in connector_names:
-        print(f"  Installing connector '{name}'...")
+    for i, name in enumerate(connector_names, 1):
         fake_args = argparse.Namespace(
             target=name, name=None, show_deps=False, no_deps=False,
         )
         try:
-            _connector_install(fake_args)
+            with contextlib.redirect_stdout(io.StringIO()), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                _connector_install(fake_args)
             installed.append(name)
-        except (SystemExit, Exception) as e:
-            print(f"  warning: failed to install connector '{name}': {e}", file=sys.stderr)
+            print(f"  [{i}/{total}] {name} {_c('✓', _GREEN)}")
+        except (SystemExit, Exception):
+            print(f"  [{i}/{total}] {name} {_c('✗', _RED)}")
     return installed
 
 
@@ -175,19 +193,23 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     }
     _save_installed(manifest.name, tracking)
 
-    # Report
-    print(f"Preset '{manifest.name}' v{manifest.version} installed.")
-    if fact_ids:
-        print(f"  Seeded {len(fact_ids)} knowledge facts.")
-    if behavior_ids:
-        print(f"  Seeded {len(behavior_ids)} behaviors.")
+    # Report — clean summary
+    parts: list[str] = []
     if installed_tools:
-        print(f"  Installed tools: {', '.join(installed_tools)}")
+        parts.append(f"{len(installed_tools)} tools")
     skipped_tools = set(manifest.tools) - set(installed_tools)
     if skipped_tools:
-        print(f"  Skipped tools (install manually): {', '.join(skipped_tools)}")
+        parts.append(f"{len(skipped_tools)} tools skipped")
     if installed_connectors:
-        print(f"  Installed connectors: {', '.join(installed_connectors)}")
+        parts.append(f"{len(installed_connectors)} connectors")
+    if behavior_ids:
+        parts.append(f"{len(behavior_ids)} behaviors")
+    if fact_ids:
+        parts.append(f"{len(fact_ids)} facts")
+    summary = ", ".join(parts) if parts else "no components"
+    print(f"\n  {_c('✓', _GREEN)} Preset installed — {summary}")
+    if skipped_tools:
+        print(f"  Skipped (install manually): {', '.join(skipped_tools)}")
 
     # Env var hints
     if manifest.env_vars:
