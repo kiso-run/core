@@ -16,7 +16,7 @@
 #   ./run_tests.sh --auto --interactive   # only interactive
 
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # ---------------------------------------------------------------------------
 # Colors

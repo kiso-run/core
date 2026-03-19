@@ -44,19 +44,19 @@ Each level answers a different question:
 
 ```bash
 # Interactive menu — pick which suites to run
-./run_tests.sh
+./utils/run_tests.sh
 
 # CI / scripting (non-interactive, combinable flags)
-./run_tests.sh --auto              # all automatic suites (1-6, no interactive)
-./run_tests.sh --auto --unit       # only unit
-./run_tests.sh --auto --bash       # only bash/BATS
-./run_tests.sh --auto --unit --live  # unit + live (combinable)
-./run_tests.sh --auto --all        # everything including interactive + plugins
-./run_tests.sh --auto --interactive  # only interactive
-./run_tests.sh --auto --plugins              # all plugins from registry
-./run_tests.sh --auto --plugins=tools        # all tools
-./run_tests.sh --auto --plugins=connectors   # all connectors
-./run_tests.sh --auto --plugins=browser      # specific plugin
+./utils/run_tests.sh --auto              # all automatic suites (1-6, no interactive)
+./utils/run_tests.sh --auto --unit       # only unit
+./utils/run_tests.sh --auto --bash       # only bash/BATS
+./utils/run_tests.sh --auto --unit --live  # unit + live (combinable)
+./utils/run_tests.sh --auto --all        # everything including interactive + plugins
+./utils/run_tests.sh --auto --interactive  # only interactive
+./utils/run_tests.sh --auto --plugins              # all plugins from registry
+./utils/run_tests.sh --auto --plugins=tools        # all tools
+./utils/run_tests.sh --auto --plugins=connectors   # all connectors
+./utils/run_tests.sh --auto --plugins=browser      # specific plugin
 
 # Quick unit-only during development
 uv run pytest tests/ -q

@@ -4,13 +4,13 @@
 
 ```bash
 # Interactive menu — pick which suites to run
-./run_tests.sh
+./utils/run_tests.sh
 
 # CI / scripting (non-interactive)
-./run_tests.sh --auto              # all automatic suites
-./run_tests.sh --auto --unit       # only unit
-./run_tests.sh --auto --bash       # only bash/BATS
-./run_tests.sh --auto --all        # everything including interactive
+./utils/run_tests.sh --auto              # all automatic suites
+./utils/run_tests.sh --auto --unit       # only unit
+./utils/run_tests.sh --auto --bash       # only bash/BATS
+./utils/run_tests.sh --auto --all        # everything including interactive
 
 # Direct invocation
 uv run pytest tests/ -q            # unit tests only
@@ -19,19 +19,19 @@ bats tests/bash/                   # bash tests only
 
 ### Full suite runner
 
-`run_tests.sh` is the test entry point. Interactive by default (shows a menu), or use `--auto` for CI:
+`utils/run_tests.sh` is the test entry point. Interactive by default (shows a menu), or use `--auto` for CI:
 
 ```bash
-./run_tests.sh                        # interactive menu
-./run_tests.sh --auto                 # all automatic suites (no interactive)
-./run_tests.sh --auto --unit          # only unit tests
-./run_tests.sh --auto --live          # only live LLM + network tests
-./run_tests.sh --auto --func          # only functional tests (real LLM + real exec)
-./run_tests.sh --auto --docker        # only docker sandbox tests
-./run_tests.sh --auto --integration   # connector protocol tests
-./run_tests.sh --auto --interactive   # human-in-the-loop tests
-./run_tests.sh --auto --all           # everything including interactive
-./run_tests.sh --auto --unit --live   # flags are combinable
+./utils/run_tests.sh                        # interactive menu
+./utils/run_tests.sh --auto                 # all automatic suites (no interactive)
+./utils/run_tests.sh --auto --unit          # only unit tests
+./utils/run_tests.sh --auto --live          # only live LLM + network tests
+./utils/run_tests.sh --auto --func          # only functional tests (real LLM + real exec)
+./utils/run_tests.sh --auto --docker        # only docker sandbox tests
+./utils/run_tests.sh --auto --integration   # connector protocol tests
+./utils/run_tests.sh --auto --interactive   # human-in-the-loop tests
+./utils/run_tests.sh --auto --all           # everything including interactive
+./utils/run_tests.sh --auto --unit --live   # flags are combinable
 ```
 
 The script reads `~/.kiso/instances/kiso/.env` and maps `KISO_LLM_API_KEY` to `OPENROUTER_API_KEY` automatically. Override the path with `KISO_ENV_FILE=/path/to/.env` if needed. Environment variables already set in the shell take precedence over the file.
@@ -115,7 +115,7 @@ No network, no secrets, no side effects.
 ### Bash tests — kiso-host.sh and install.sh
 
 ```bash
-./run_tests.sh --auto --bash   # via test runner
+./utils/run_tests.sh --auto --bash   # via test runner
 bats tests/bash/               # direct invocation
 bats tests/bash/test_host_instance_commands.bats  # single file
 ```
@@ -220,7 +220,7 @@ For live test internals (flags, markers, timeouts, flakiness, troubleshooting), 
 
 ## Debugging verbose sessions
 
-When `/verbose-on` is active, the CLI shows full LLM input/output for every role call. For long sessions this can be thousands of lines. Use `summary.sh` to compact a verbose session into deduplicated JSON for analysis.
+When `/verbose-on` is active, the CLI shows full LLM input/output for every role call. For long sessions this can be thousands of lines. Use `utils/summary.sh` to compact a verbose session into deduplicated JSON for analysis.
 
 ### How it works
 
@@ -237,16 +237,16 @@ The output JSON has three sections: `meta` (compression stats), `defs` (unique c
 
 ```bash
 # Compact a saved verbose session
-./summary.sh session.log --pretty
+./utils/summary.sh session.log --pretty
 
 # Save compact JSON to file
-./summary.sh session.log --out flow.json
+./utils/summary.sh session.log --out flow.json
 
 # Paste mode (CTRL-D to finish)
-./summary.sh --pretty
+./utils/summary.sh --pretty
 
 # Pipe-friendly (stdout is clean JSON, decorations go to stderr)
-./summary.sh session.log | jq '.meta.stats'
+./utils/summary.sh session.log | jq '.meta.stats'
 ```
 
 ### What to look for

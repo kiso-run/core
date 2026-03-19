@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
 summary.sh — compact verbose Kiso CLI output into deduplicated JSON.
 
 Usage:
-  ./summary.sh [file] [options]
+  ./utils/summary.sh [file] [options]
 
 Modes:
   With [file]:    read input from file
@@ -58,13 +58,13 @@ Options:
 
 Examples:
   # Paste a verbose session and view compact summary
-  ./summary.sh
+  ./utils/summary.sh
 
   # Compact a saved file, save result
-  ./summary.sh session.log --out flow.json
+  ./utils/summary.sh session.log --out flow.json
 
   # Pretty-print for reading
-  ./summary.sh session.log --pretty | less
+  ./utils/summary.sh session.log --pretty | less
 USAGE
       exit 0
       ;;

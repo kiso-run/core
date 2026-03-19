@@ -1,6 +1,6 @@
 """Plugin test runner — clone, install, test official plugins from the registry.
 
-Usage (from run_tests.sh or directly):
+Usage (from utils/run_tests.sh or directly):
     python -m cli.plugin_test_runner                    # all tools + connectors
     python -m cli.plugin_test_runner tools              # all tools
     python -m cli.plugin_test_runner connectors         # all connectors
