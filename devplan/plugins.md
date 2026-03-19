@@ -55,19 +55,15 @@ Reference: `docs/tools.md` (tool spec), `docs/connectors.md` (connector spec), `
 
 ## Phase 2 — Discord Connector File Uploads
 
-### M3 — connector-discord: download attachments to uploads/
-- [ ] In `_handle_message()`, detect `message.attachments` (Discord.py's Attachment objects)
-- [ ] For each attachment: download to `uploads/{filename}` in the session workspace
-  - Path: `~/.kiso/sessions/{session}/uploads/{filename}`
-  - Handle filename collisions (append counter)
-  - Respect size limits (skip files > 25MB with a warning in message text)
-- [ ] Append attachment info to the forwarded message content, e.g.: `\n\n[Attached: image.png, report.pdf]`
-- [ ] The planner will see the attachment note and can decide to use docreader/browser/exec to process them
-- [ ] Add unit tests with mocked Discord attachments
+### M3 — connector-discord: download attachments to uploads/ ✅
+- [x] `_download_attachments()` method: downloads Discord attachments to `~/.kiso/sessions/{session}/uploads/`
+- [x] Filename collision handling (appends `_1`, `_2`, etc.)
+- [x] Size limit: skips files > 25MB with warning
+- [x] Error handling: logs and skips on download failure
+- [x] `_handle_message()` appends `[Uploaded files: ...]` to content before forwarding
+- [x] Unit tests: single attachment, oversized skip, collision, multiple, download error
 
-### M4 — connector-discord: mention uploaded files in message
-- [ ] Ensure the message text includes `[Uploaded files: ...]` so the planner knows files are available in `uploads/`
-- [ ] Test: message with 1 attachment, message with multiple, message with oversized file (skipped with note)
+### M4 — (merged into M3) ✅
 
 ---
 
