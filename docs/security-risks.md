@@ -1,6 +1,6 @@
 # Security Risks & Known Limitations
 
-Analysis of logical flaws, LLM hallucination risks, and attack surfaces in the kiso pipeline. Each item has a severity rating, description of the attack chain, current mitigations, and planned fixes (see `DEV_PLAN.md` § M21).
+Analysis of logical flaws, LLM hallucination risks, and attack surfaces in the kiso pipeline. Each item has a severity rating, description of the attack chain, and current mitigations.
 
 ## Risk Summary
 
