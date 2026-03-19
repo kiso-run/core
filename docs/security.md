@@ -439,7 +439,7 @@ On startup, kiso recovers from unclean shutdowns:
 
 1. **Stale plans/tasks**: Any plans or tasks left in `running` status (from a previous crash) are marked `failed`. Tasks receive output `"Server restarted"`.
 2. **Unprocessed messages**: Trusted messages with `processed=0` are re-enqueued to their session workers. User roles and tools are re-resolved from the current config (not cached from ingestion time).
-3. **Graceful shutdown**: On shutdown, workers receive a cancel signal and are given `exec_timeout` seconds to finish. Workers that don't finish are force-cancelled.
+3. **Graceful shutdown**: On shutdown, workers receive a cancel signal and are given `llm_timeout` seconds to finish. Workers that don't finish are force-cancelled.
 
 ### Audit File Locking
 
@@ -467,7 +467,7 @@ Exec and tool output is capped at a configurable max size (`max_output_size`, de
 
 ### Post-Plan LLM Timeouts
 
-Post-plan knowledge processing calls (curator, summarizer, fact consolidation) are wrapped in `asyncio.wait_for` with the same `exec_timeout` used for subprocess tasks. If an LLM provider hangs, the call times out with a warning and the worker continues to the next step. This prevents a single hung LLM call from blocking the worker indefinitely.
+Post-plan knowledge processing calls (curator, summarizer, fact consolidation) are wrapped in `asyncio.wait_for` with `llm_timeout`. If an LLM provider hangs, the call times out with a warning and the worker continues to the next step. This prevents a single hung LLM call from blocking the worker indefinitely.
 
 ### Config File Error Handling
 

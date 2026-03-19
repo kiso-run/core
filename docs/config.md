@@ -93,9 +93,7 @@ max_plan_tasks            = 20
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
-llm_timeout               = 300      # seconds; timeout for post-plan LLM calls (curator, summarizer)
-planner_timeout           = 300      # seconds for planner LLM calls (higher for reasoning models)
-messenger_timeout         = 120      # seconds for messenger LLM calls (fast-path + msg tasks)
+llm_timeout               = 300      # seconds; timeout for all LLM calls (planner, messenger, curator, etc.)
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 2
 
@@ -159,9 +157,7 @@ webhook_max_payload       = 1048576
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
 | `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
-| `llm_timeout` | `300` | Seconds for post-plan LLM calls (curator, summarizer, fact consolidation) and graceful shutdown per worker. Also the HTTP timeout for non-planner/non-messenger LLM calls. |
-| `planner_timeout` | `300` | Seconds before a planner LLM call is cancelled (both HTTP timeout and asyncio wrapper). Higher default for reasoning models that need time to think. |
-| `messenger_timeout` | `120` | Seconds before a messenger LLM call is cancelled (applies to fast-path chat and `msg` plan tasks). Tune independently from `planner_timeout` when planner and messenger use different models with different latency profiles. |
+| `llm_timeout` | `300` | Seconds before any LLM call is cancelled (planner, messenger, curator, summarizer). Also used for graceful shutdown per worker. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or tool task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `2` | Max worker-level retries per exec/search task before escalating to a full replan. |
 | `max_memory_gb` | `4` | Container RAM limit (applied via docker run/update). |

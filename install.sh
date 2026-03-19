@@ -911,8 +911,7 @@ max_plan_tasks               = 20
 max_replan_depth             = 3
 max_validation_retries       = 3
 max_worker_retries           = 1
-llm_timeout                  = 120    # seconds; timeout for post-plan LLM calls
-planner_timeout              = 300    # seconds for planner LLM calls (higher for reasoning models)
+llm_timeout                  = 300    # seconds; timeout for all LLM calls
 max_output_size              = 1048576  # bytes (1 MB)
 fast_path_enabled            = true   # skip planner for simple chat messages
 

@@ -2,7 +2,6 @@
 
 A tool is a git-cloned package in `~/.kiso/instances/{instance}/tools/{name}/` on the host (mounted at `/root/.kiso/tools/{name}/` inside the container). Runs as a subprocess in a `uv`-managed venv.
 
-> **Migration note:** Tools were previously called "skills". Old `[kiso.skill]` manifest sections still work — the loader checks for `[kiso.tool]` first, then falls back to `[kiso.skill]`.
 
 ## Structure
 
@@ -102,7 +101,6 @@ Env vars follow the convention `KISO_TOOL_{NAME}_{KEY}`, built automatically:
 
 Name and key are uppercased, `-` becomes `_`.
 
-> **Backward compat:** `KISO_SKILL_*` env vars are still recognized for deploy secret collection.
 
 ### Version
 

@@ -1,13 +1,13 @@
-# Skill Authoring Reference
+# Tool Authoring Reference
 
 ## File Structure
 
 ```
-~/.kiso/skills/{name}/
+~/.kiso/instances/{instance}/tools/{name}/
 ├── kiso.toml           # manifest (required)
 ├── pyproject.toml      # python deps (required, uv-managed)
 ├── run.py              # entry point (required)
-├── LICENSE             # MIT for official skills (required)
+├── LICENSE             # MIT for official tools (required)
 ├── config.example.toml # default config (optional, copied to config.toml on install)
 ├── deps.sh             # system deps (optional, must be idempotent)
 ├── .gitignore
@@ -22,21 +22,21 @@ No `src/` layout. Kiso runs `.venv/bin/python run.py` as a subprocess. All code 
 
 ```toml
 [kiso]
-type = "skill"
+type = "tool"
 name = "search"
 version = "0.1.0"
 description = "Web search using Brave Search API"
 
-[kiso.skill]
+[kiso.tool]
 summary = "Web search using Brave Search API"    # one-liner shown to planner
 # session_secrets = ["github_token"]             # user-provided credentials (optional)
 # usage_guide = "Use short queries."             # operational guidance for planner
 
-[kiso.skill.args]
+[kiso.tool.args]
 query = { type = "string", required = true, description = "search query" }
 max_results = { type = "int", required = false, default = 5, description = "max results" }
 
-[kiso.skill.env]
+[kiso.tool.env]
 api_key = { required = true }   # → env var KISO_TOOL_WEBSEARCH_API_KEY
 
 [kiso.deps]
@@ -46,7 +46,7 @@ bin = ["curl"]                  # checked with `which` after install
 
 ### Secrets
 
-- `[kiso.skill.env]` → deploy secrets (env vars, set via `kiso env`)
+- `[kiso.tool.env]` → deploy secrets (env vars, set via `kiso env`)
 - `session_secrets` → ephemeral (user-provided at runtime, in memory only, passed via input JSON)
 
 ### Env Var Naming
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
 ### SIGTERM handling
 
-For long-running skills, forward SIGTERM to child processes for graceful shutdown:
+For long-running tools, forward SIGTERM to child processes for graceful shutdown:
 
 ```python
 import signal
@@ -153,7 +153,7 @@ config.toml
 
 ## Testing
 
-Skills have their own venv and `pyproject.toml`, so tests live inside the skill repo. Assumes kiso is installed and the skill's venv is set up (`kiso skill install` or `uv sync`).
+Tools have their own venv and `pyproject.toml`, so tests live inside the tool repo. Assumes kiso is installed and the tool's venv is set up (`kiso tool install` or `uv sync`).
 
 ### pyproject.toml — add test deps
 
@@ -209,7 +209,7 @@ def test_stdin_stdout_contract():
 ### Running tests
 
 ```bash
-cd ~/.kiso/skills/{name}
+cd ~/.kiso/tools/{name}
 uv run --group dev pytest tests/ -v
 ```
 
@@ -222,15 +222,15 @@ uv run --group dev pytest tests/ -v
 
 ## License
 
-Official skills use the **MIT License**. Include a `LICENSE` file in the repo root. Third-party skills can use any license.
+Official tools use the **MIT License**. Include a `LICENSE` file in the repo root. Third-party tools can use any license.
 
 ## Key Conventions
 
-- Install: `kiso skill install {name|url}` (official: `kiso-run/skill-{name}`)
-- Discovery: rescanned from `~/.kiso/skills/` before each planner call
+- Install: `kiso tool install {name|url}` (official: `kiso-run/tool-{name}`)
+- Discovery: rescanned from `~/.kiso/tools/` before each planner call
 - Execution: `.venv/bin/python run.py` with JSON piped to stdin, `cwd=session workspace`
-- Environment: only `PATH` + declared env vars from `[kiso.skill.env]`
+- Environment: only `PATH` + declared env vars from `[kiso.tool.env]`
 - Exit 0 = success, exit 1 = failure (kiso marks as failed task)
 - Output sanitized (secrets stripped) before storage and LLM inclusion
-- All skill tasks are reviewed by the reviewer after execution
+- All tool tasks are reviewed by the reviewer after execution
 - `uv` for dependency management — kiso runs `uv sync` on install
