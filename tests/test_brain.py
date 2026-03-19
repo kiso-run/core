@@ -3002,11 +3002,12 @@ class TestPlannerPromptContent:
         assert "simultaneous" in prompt.lower() or "parallel execution" in prompt.lower()
 
     def test_planner_web_module_has_search_guidance(self):
-        """Web module provides research guidance."""
+        """Web module provides research guidance and search-over-browser routing."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["web"])
         assert "search" in prompt.lower()
         assert "research" in prompt.lower()
+        assert "never use browser for web searches" in prompt.lower()
 
 
 class TestM166ValidatePlanSkillArgs:

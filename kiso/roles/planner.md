@@ -66,7 +66,7 @@ Tools efficiency:
 
 <!-- MODULE: web -->
 Web interaction:
-- **Research / information gathering:** use `search` task type (built-in) or `websearch` tool. Follow each tool's `guide:` for correct usage.
+- **Research / information gathering:** use `search` task type (built-in) or `websearch` tool. NEVER use browser for web searches — browser is for interacting with a specific known URL, not for finding information.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
 

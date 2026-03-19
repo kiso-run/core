@@ -404,6 +404,30 @@ class TestPresetInstallCLI:
         mock_install.assert_called_once()
         assert mock_install.call_args[0][1].name == "test-preset"
 
+    def test_install_git_url_clones(self, capsys):
+        """Git URL triggers clone."""
+        from cli.preset import preset_install
+        mock_manifest = PresetManifest(
+            name="custom", version="1.0.0", description="Custom",
+            tools=[], behaviors=["Be concise."],
+        )
+        args = make_cli_args(target="https://github.com/example/preset-custom.git", dry_run=False)
+        with patch("cli.plugin_ops.require_admin"), \
+             patch("cli.preset._clone_and_load_preset", return_value=mock_manifest) as mock_clone, \
+             patch("cli.preset_ops.install_preset"):
+            preset_install(args)
+        mock_clone.assert_called_once_with("https://github.com/example/preset-custom.git")
+
+    def test_clone_and_load_preset_failure(self, capsys):
+        """Failed git clone → clean error."""
+        from cli.preset import _clone_and_load_preset
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stderr="fatal: repo not found")
+            with pytest.raises(SystemExit):
+                _clone_and_load_preset("https://github.com/example/nope.git")
+        err = capsys.readouterr().err
+        assert "git clone failed" in err
+
     def test_install_unknown_name_errors(self, capsys):
         from cli.preset import preset_install
         reg = {"presets": []}
