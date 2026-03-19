@@ -35,7 +35,7 @@
   "presets": [
     {
       "name": "basic",
-      "description": "Starter kit — web search, browser, and code editing"
+      "description": "Starter kit — web search, browser, code editing, and document reading"
     },
     {
       "name": "performance-marketer",
