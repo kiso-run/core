@@ -63,13 +63,13 @@ tools = ["search", "aider"]
 [models]
 briefer     = "google/gemini-2.5-flash-lite"
 classifier  = "google/gemini-2.5-flash-lite"
-planner     = "z-ai/glm-4.7"
-reviewer    = "stepfun/step-3.5-flash"
+planner     = "deepseek/deepseek-v3.2"
+reviewer    = "google/gemini-2.5-flash-lite"
 curator     = "google/gemini-2.5-flash-lite"
-worker      = "stepfun/step-3.5-flash"
+worker      = "google/gemini-2.5-flash-lite"
 summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "qwen/qwen3.5-flash-02-23"
+messenger   = "deepseek/deepseek-v3.2"
 searcher    = "perplexity/sonar"
 
 [settings]
@@ -89,13 +89,17 @@ fact_consolidation_min_ratio  = 0.3
 # --- planning ---
 max_replan_depth          = 5
 max_validation_retries    = 3
+max_llm_retries           = 3        # retries on LLM HTTP/stall errors (per call)
 max_plan_tasks            = 20
+planner_fallback_model    = "google/gemini-2.5-flash-lite"  # fallback when primary planner model fails
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
-llm_timeout               = 300      # seconds; timeout for all LLM calls (planner, messenger, curator, etc.)
+llm_timeout               = 600      # seconds; timeout for all LLM calls
+stall_timeout             = 60       # seconds; SSE stall detection per chunk
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
 max_worker_retries        = 2
+external_url              = ""       # public URL for file download links (e.g. "http://1.2.3.4:8334")
 
 # --- resource limits ---
 max_memory_gb             = 4        # container RAM limit
@@ -155,11 +159,15 @@ webhook_max_payload       = 1048576
 | `fact_consolidation_min_ratio` | `0.3` | Minimum fraction of facts that must survive consolidation. If the LLM returns fewer than this fraction, consolidation is aborted and the original facts are kept. |
 | `max_replan_depth` | `5` | Max replan cycles per original message. |
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
+| `max_llm_retries` | `3` | Max retries on LLM HTTP errors or SSE stalls per call. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
+| `planner_fallback_model` | `"google/gemini-2.5-flash-lite"` | Fallback model when primary planner model exhausts retries. |
 | `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
-| `llm_timeout` | `300` | Seconds before any LLM call is cancelled (planner, messenger, curator, summarizer). Also used for graceful shutdown per worker. |
+| `llm_timeout` | `600` | Seconds before any LLM call is cancelled. Also used for graceful shutdown per worker. |
+| `stall_timeout` | `60` | Seconds without SSE data before declaring a stall. Triggers model switch to fallback. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or tool task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `2` | Max worker-level retries per exec/search task before escalating to a full replan. |
+| `external_url` | `""` | Public URL for published file download links. Set by installer when public network is chosen. |
 | `max_memory_gb` | `4` | Container RAM limit (applied via docker run/update). |
 | `max_cpus` | `2` | Container CPU limit (applied via docker run/update). |
 | `max_disk_gb` | `32` | App-level disk limit (applied immediately). |
