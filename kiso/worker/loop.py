@@ -2002,7 +2002,66 @@ async def _handle_loop_failure(
 
 
 # ---------------------------------------------------------------------------
-# M62c: Extracted planning loop
+# Circular replan detection
+# ---------------------------------------------------------------------------
+
+_INSTALL_KWS = frozenset({"install", "apt-get", "apt", "apk", "yum", "dnf", "pip"})
+_FAIL_KWS = ("not found", "cannot_translate", "command not found",
+             "no such file", "not installed")
+
+
+def _detect_circular_replan(
+    replan_history: list[dict], replan_reason: str,
+) -> bool:
+    """Detect circular replanning by scanning all history entries.
+
+    Returns True if stuck pattern detected:
+    1. Word overlap in failure reasons (>60%) against any previous entry
+    2. Strategy fingerprint similarity (>50% Jaccard) against any previous entry
+    3. Install→use→fail loops (install keywords in history + "not found" in current)
+    """
+    if len(replan_history) < 2:
+        return False
+
+    curr = replan_history[-1]
+    curr_words = set(curr["failure"].lower().split())
+    curr_fp = curr.get("strategy_fingerprint", frozenset())
+
+    for prev in replan_history[:-1]:
+        # Word overlap check
+        prev_words = set(prev["failure"].lower().split())
+        if prev_words and curr_words:
+            ratio = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
+            if ratio > 0.6:
+                log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
+                            ratio * 100, replan_reason)
+                return True
+        # Strategy fingerprint check
+        prev_fp = prev.get("strategy_fingerprint", frozenset())
+        if prev_fp and curr_fp:
+            union = prev_fp | curr_fp
+            jaccard = len(prev_fp & curr_fp) / len(union) if union else 0
+            if jaccard > 0.5:
+                log.warning("Circular replan detected (%.0f%% strategy overlap): %s",
+                            jaccard * 100, replan_reason)
+                return True
+
+    # Install→use→fail loop
+    has_install = any(
+        _INSTALL_KWS & set(h["failure"].lower().split())
+        for h in replan_history[:-1]
+    )
+    if has_install:
+        curr_fail_lower = curr["failure"].lower()
+        if any(kw in curr_fail_lower for kw in _FAIL_KWS):
+            log.warning("Install loop detected: installed package but binary still not found")
+            return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Planning loop
 # ---------------------------------------------------------------------------
 
 async def _run_planning_loop(
@@ -2156,49 +2215,7 @@ async def _run_planning_loop(
             history_entry["reviewer_summaries"] = reviewer_summaries
         replan_history.append(history_entry)
 
-        # Detect circular replanning (scan ALL history entries)
-        # 1. Word overlap in failure reasons (>60%) against any previous entry
-        # 2. Strategy fingerprint similarity (>50% Jaccard) against any previous entry
-        stuck_detected = False
-        if len(replan_history) >= 2:
-            curr_words = set(replan_history[-1]["failure"].lower().split())
-            curr_fp = replan_history[-1].get("strategy_fingerprint", frozenset())
-            for prev in replan_history[:-1]:
-                if stuck_detected:
-                    break
-                # Word overlap check
-                prev_words = set(prev["failure"].lower().split())
-                if prev_words and curr_words:
-                    ratio = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
-                    if ratio > 0.6:
-                        stuck_detected = True
-                        log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
-                                    ratio * 100, replan_reason)
-                        break
-                # Strategy fingerprint check
-                prev_fp = prev.get("strategy_fingerprint", frozenset())
-                if prev_fp and curr_fp:
-                    union = prev_fp | curr_fp
-                    jaccard = len(prev_fp & curr_fp) / len(union) if union else 0
-                    if jaccard > 0.5:
-                        stuck_detected = True
-                        log.warning("Circular replan detected (%.0f%% strategy overlap): %s",
-                                    jaccard * 100, replan_reason)
-
-        # detect install→use→fail loops
-        if not stuck_detected and len(replan_history) >= 2:
-            _install_kws = {"install", "apt-get", "apt", "apk", "yum", "dnf", "pip"}
-            _fail_kws = {"not found", "cannot_translate", "command not found",
-                         "no such file", "not installed"}
-            has_install = any(
-                _install_kws & set(h["failure"].lower().split())
-                for h in replan_history[:-1]
-            )
-            curr_fail_lower = replan_history[-1]["failure"].lower()
-            has_not_found = any(kw in curr_fail_lower for kw in _fail_kws)
-            if has_install and has_not_found:
-                stuck_detected = True
-                log.warning("Install loop detected: installed package but binary still not found")
+        stuck_detected = _detect_circular_replan(replan_history, replan_reason)
 
         # Notify user about replan (as a visible msg task + webhook)
         user_lang = detect_user_lang(content)

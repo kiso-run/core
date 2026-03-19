@@ -9544,8 +9544,64 @@ class TestRunPlanningLoop:
 # ---------------------------------------------------------------------------
 
 
+class TestDetectCircularReplanUnit:
+    """Unit tests for the extracted _detect_circular_replan function."""
+
+    def test_no_history(self):
+        from kiso.worker.loop import _detect_circular_replan
+        assert _detect_circular_replan([], "some failure") is False
+
+    def test_single_entry(self):
+        from kiso.worker.loop import _detect_circular_replan
+        history = [{"failure": "some failure", "goal": "g"}]
+        assert _detect_circular_replan(history, "some failure") is False
+
+    def test_word_overlap_detected(self):
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "browser skill not installed cannot navigate to site", "goal": "g"},
+            {"failure": "browser skill not installed cannot navigate to the site", "goal": "g"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_no_overlap(self):
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "file not found at /tmp/data.csv", "goal": "g"},
+            {"failure": "permission denied on database write", "goal": "g"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is False
+
+    def test_strategy_fingerprint_overlap(self):
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "reason A completely different", "goal": "g",
+             "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
+            {"failure": "reason B unrelated text here", "goal": "g",
+             "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_install_loop_detected(self):
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "apt-get install foo completed", "goal": "g"},
+            {"failure": "foo: command not found", "goal": "g"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_install_without_fail_not_stuck(self):
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "apt-get install foo completed", "goal": "g"},
+            {"failure": "output was unexpected format", "goal": "g"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is False
+
+
+@pytest.mark.asyncio
 class TestCircularReplanDetection:
-    """M127: detect circular replanning and show 'I'm stuck' message."""
+    """Integration: detect circular replanning and show 'I'm stuck' message."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
