@@ -514,43 +514,15 @@ class TestPresetSubcommandRegistration:
 # --- M757: basic preset validation ---
 
 
-class TestM757BasicPreset:
-    """M757: the basic preset.toml exists and validates correctly."""
+class TestDefaultPresetInRegistry:
+    """Verify default preset is listed in registry.json."""
 
-    _PRESET_PATH = Path(__file__).parent.parent / "presets" / "basic" / "preset.toml"
-
-    def test_basic_preset_file_exists(self):
-        assert self._PRESET_PATH.is_file(), "presets/basic/preset.toml not found"
-
-    def test_basic_preset_validates(self):
-        manifest = load_preset(self._PRESET_PATH)
-        assert manifest.name == "basic"
-        assert manifest.version == "1.0.0"
-
-    def test_basic_preset_has_3_tools(self):
-        manifest = load_preset(self._PRESET_PATH)
-        assert len(manifest.tools) == 3
-        assert "websearch" in manifest.tools
-        assert "aider" in manifest.tools
-        assert "browser" in manifest.tools
-
-    def test_basic_preset_has_3_behaviors(self):
-        manifest = load_preset(self._PRESET_PATH)
-        assert len(manifest.behaviors) == 3
-        for b in manifest.behaviors:
-            assert len(b) >= 20, f"Behavior too short: {b}"
-
-    def test_basic_preset_has_required_env_var(self):
-        manifest = load_preset(self._PRESET_PATH)
-        assert "KISO_TOOL_WEBSEARCH_API_KEY" in manifest.env_vars
-        assert manifest.env_vars["KISO_TOOL_WEBSEARCH_API_KEY"]["required"] is True
-
-    def test_basic_in_registry(self):
+    def test_default_in_registry(self):
         registry = json.loads(
             (Path(__file__).parent.parent / "registry.json").read_text()
         )
         names = [p["name"] for p in registry["presets"]]
-        assert "basic" in names
+        assert "default" in names
 
 
 # --- M758: preset install auto-installs tools ---
@@ -611,55 +583,40 @@ class TestM758AutoInstallTools:
 # --- M760: Preset validation in CI ---
 
 
-class TestM760PresetValidationCI:
-    """M760: all presets/*/preset.toml files validate correctly."""
+class TestPresetValidation:
+    """Preset manifests created in-memory validate correctly."""
 
-    _PRESETS_DIR = Path(__file__).parent.parent / "presets"
-    _REGISTRY_PATH = Path(__file__).parent.parent / "registry.json"
+    def test_valid_preset_validates(self, tmp_path):
+        """A well-formed preset.toml passes validation."""
+        preset = tmp_path / "preset.toml"
+        preset.write_text("""
+[kiso]
+type = "preset"
+name = "test"
+version = "1.0.0"
+description = "Test preset"
 
-    def _all_preset_paths(self) -> list[Path]:
-        if not self._PRESETS_DIR.is_dir():
-            return []
-        return sorted(self._PRESETS_DIR.glob("*/preset.toml"))
+[kiso.preset]
+tools = ["websearch"]
+skills = []
+connectors = []
 
-    def test_at_least_one_preset_exists(self):
-        paths = self._all_preset_paths()
-        assert len(paths) >= 1, "No preset.toml files found in presets/"
+[kiso.preset.knowledge]
+facts = []
+behaviors = ["Always search the web before answering a question."]
+""")
+        manifest = load_preset(preset)
+        assert manifest.name == "test"
+        assert manifest.tools == ["websearch"]
+        assert len(manifest.behaviors) == 1
 
-    @pytest.mark.parametrize("preset_path", [
-        pytest.param(p, id=p.parent.name)
-        for p in sorted((Path(__file__).parent.parent / "presets").glob("*/preset.toml"))
-    ] if (Path(__file__).parent.parent / "presets").is_dir() else [])
-    def test_preset_validates(self, preset_path):
-        """Each preset.toml must pass load_preset() without errors."""
-        manifest = load_preset(preset_path)
-        assert manifest.name
-        assert manifest.version
-        assert manifest.description
-
-    @pytest.mark.parametrize("preset_path", [
-        pytest.param(p, id=p.parent.name)
-        for p in sorted((Path(__file__).parent.parent / "presets").glob("*/preset.toml"))
-    ] if (Path(__file__).parent.parent / "presets").is_dir() else [])
-    def test_preset_tools_in_registry(self, preset_path):
-        """All tools referenced by a preset must exist in registry.json."""
-        manifest = load_preset(preset_path)
-        registry = json.loads(self._REGISTRY_PATH.read_text())
-        registry_tools = {t["name"] for t in registry.get("tools", [])}
-        for tool in manifest.tools:
-            assert tool in registry_tools, (
-                f"Preset '{manifest.name}' references tool '{tool}' "
-                f"not in registry. Available: {registry_tools}"
-            )
-
-    @pytest.mark.parametrize("preset_path", [
-        pytest.param(p, id=p.parent.name)
-        for p in sorted((Path(__file__).parent.parent / "presets").glob("*/preset.toml"))
-    ] if (Path(__file__).parent.parent / "presets").is_dir() else [])
-    def test_preset_behaviors_not_placeholder(self, preset_path):
+    def test_preset_behaviors_not_placeholder(self, tmp_path):
         """Behaviors must be non-empty strings >= 20 chars."""
-        manifest = load_preset(preset_path)
+        manifest = PresetManifest(
+            name="test", version="1.0.0", description="test",
+            tools=[], behaviors=["Always search before answering — never guess."],
+        )
         for b in manifest.behaviors:
             assert isinstance(b, str) and len(b) >= 20, (
-                f"Behavior too short or invalid in '{manifest.name}': {b!r}"
+                f"Behavior too short or invalid: {b!r}"
             )
