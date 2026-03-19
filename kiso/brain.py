@@ -1063,6 +1063,12 @@ async def build_planner_messages(
     if is_replan:
         context_pool.pop("system_env", None)
 
+    # Session workspace file listing — lets planner see what files exist
+    from kiso.worker.utils import _list_session_files
+    session_files = await asyncio.to_thread(_list_session_files, session)
+    if session_files:
+        context_pool["session_files"] = session_files
+
     # Tool discovery — rescan on each planner call
     installed = discover_tools()
     installed_names = [s["name"] for s in installed]

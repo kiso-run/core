@@ -12668,3 +12668,100 @@ class TestParallelGroupFromDB:
         await db.close()
 
 
+
+
+# ---------------------------------------------------------------------------
+# M822 — Session workspace file listing
+# ---------------------------------------------------------------------------
+
+
+class TestListSessionFiles:
+    """M822: _list_session_files returns formatted file listing."""
+
+    def test_session_with_files(self, tmp_path):
+        from kiso.worker.utils import _list_session_files
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = tmp_path / "sessions" / "s1"
+            ws.mkdir(parents=True)
+            (ws / "pub").mkdir()
+            (ws / "uploads").mkdir()
+            (ws / "screenshot.png").write_bytes(b"x" * 2048)
+            (ws / "uploads" / "report.pdf").write_bytes(b"y" * 1200000)
+
+            result = _list_session_files("s1")
+
+        assert "Session workspace files:" in result
+        assert "screenshot.png" in result
+        assert "image" in result
+        assert "report.pdf" in result
+        assert "document" in result
+
+    def test_empty_session(self, tmp_path):
+        from kiso.worker.utils import _list_session_files
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            result = _list_session_files("s-empty")
+        assert result == ""
+
+    def test_ignores_kiso_dir(self, tmp_path):
+        from kiso.worker.utils import _list_session_files
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = tmp_path / "sessions" / "s2"
+            ws.mkdir(parents=True)
+            (ws / "pub").mkdir()
+            (ws / "uploads").mkdir()
+            kiso_dir = ws / ".kiso"
+            kiso_dir.mkdir()
+            (kiso_dir / "plan_outputs.json").write_text("{}")
+            (ws / "visible.txt").write_text("hello")
+
+            result = _list_session_files("s2")
+
+        assert "plan_outputs" not in result
+        assert "visible.txt" in result
+
+    def test_ignores_hidden_dotfiles(self, tmp_path):
+        from kiso.worker.utils import _list_session_files
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = tmp_path / "sessions" / "s3"
+            ws.mkdir(parents=True)
+            (ws / "pub").mkdir()
+            (ws / "uploads").mkdir()
+            (ws / ".hidden").write_text("secret")
+            (ws / "visible.txt").write_text("hello")
+
+            result = _list_session_files("s3")
+
+        assert ".hidden" not in result
+        assert "visible.txt" in result
+
+    def test_ignores_pub_ignore_dirs(self, tmp_path):
+        from kiso.worker.utils import _list_session_files
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = tmp_path / "sessions" / "s4"
+            ws.mkdir(parents=True)
+            (ws / "pub").mkdir()
+            (ws / "uploads").mkdir()
+            cache_dir = ws / "__pycache__"
+            cache_dir.mkdir()
+            (cache_dir / "mod.pyc").write_bytes(b"x")
+            (ws / "real.py").write_text("print(1)")
+
+            result = _list_session_files("s4")
+
+        assert "__pycache__" not in result
+        assert "real.py" in result
+
+    def test_cap_at_20(self, tmp_path):
+        from kiso.worker.utils import _list_session_files
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = tmp_path / "sessions" / "s5"
+            ws.mkdir(parents=True)
+            (ws / "pub").mkdir()
+            (ws / "uploads").mkdir()
+            for i in range(25):
+                (ws / f"file_{i:02d}.txt").write_text(f"content {i}")
+
+            result = _list_session_files("s5")
+
+        lines = [l for l in result.split("\n") if l.startswith("- ")]
+        assert len(lines) == 20

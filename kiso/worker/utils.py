@@ -400,6 +400,91 @@ def _auto_publish_skill_files(
     return published
 
 
+# ── Session file listing ──────────────────────────────────────────────────
+
+_FILE_TYPE_MAP: dict[str, str] = {}
+for _ext, _cat in [
+    (".png", "image"), (".jpg", "image"), (".jpeg", "image"),
+    (".webp", "image"), (".gif", "image"), (".bmp", "image"), (".svg", "image"),
+    (".pdf", "document"), (".docx", "document"), (".xlsx", "document"),
+    (".csv", "document"), (".txt", "document"), (".md", "document"),
+    (".html", "document"),
+    (".mp3", "audio"), (".wav", "audio"), (".ogg", "audio"),
+    (".flac", "audio"), (".m4a", "audio"),
+    (".py", "code"), (".js", "code"), (".ts", "code"), (".go", "code"),
+    (".rs", "code"), (".sh", "code"), (".c", "code"), (".java", "code"),
+]:
+    _FILE_TYPE_MAP[_ext] = _cat
+
+_SESSION_FILES_CAP = 20
+
+
+def _human_size(nbytes: int) -> str:
+    """Format bytes as human-readable size."""
+    if nbytes < 1024:
+        return f"{nbytes} B"
+    if nbytes < 1024 * 1024:
+        return f"{nbytes / 1024:.0f} KB"
+    return f"{nbytes / (1024 * 1024):.1f} MB"
+
+
+def _human_age(seconds: float) -> str:
+    """Format age in seconds as human-readable relative time."""
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        m = int(seconds / 60)
+        return f"{m} min ago"
+    if seconds < 86400:
+        h = int(seconds / 3600)
+        return f"{h} h ago"
+    d = int(seconds / 86400)
+    return f"{d} d ago"
+
+
+def _list_session_files(session: str) -> str:
+    """List files in the session workspace for planner context.
+
+    Scans the workspace, excludes .kiso/, _PUB_IGNORE_DIRS, and hidden
+    dotfiles. Returns a formatted string or empty string if no files.
+    """
+    import time
+
+    workspace = _session_workspace(session)
+    now = time.time()
+    entries: list[tuple[float, str]] = []  # (mtime, formatted_line)
+
+    for f in workspace.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(workspace)
+        parts = rel.parts
+        # Skip .kiso/ directory
+        if parts[0] == ".kiso":
+            continue
+        # Skip _PUB_IGNORE_DIRS
+        if parts[0] in _PUB_IGNORE_DIRS:
+            continue
+        # Skip hidden dotfiles/dotdirs
+        if any(p.startswith(".") for p in parts):
+            continue
+
+        stat = f.stat()
+        size = _human_size(stat.st_size)
+        age = _human_age(now - stat.st_mtime)
+        ext = f.suffix.lower()
+        category = _FILE_TYPE_MAP.get(ext, "other")
+        entries.append((stat.st_mtime, f"- {rel} ({size}, {category}, {age})"))
+
+    if not entries:
+        return ""
+
+    # Sort by mtime descending, cap at 20
+    entries.sort(key=lambda e: e[0], reverse=True)
+    lines = [e[1] for e in entries[:_SESSION_FILES_CAP]]
+    return "Session workspace files:\n" + "\n".join(lines)
+
+
 # centralized output budget constants
 class OutputBudgets:
     """All output-size thresholds in one place."""
