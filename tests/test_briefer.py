@@ -509,3 +509,153 @@ class TestRecipesInBriefer:
 
         user_content = msgs[1]["content"]
         assert "pandas" in user_content
+
+
+# ---------------------------------------------------------------------------
+# M824 — Tool injection: skip briefer filtering when few tools installed
+# ---------------------------------------------------------------------------
+
+
+class TestM824ToolFilterThreshold:
+    """M824: briefer tool filter is skipped when installed tools <= threshold."""
+
+    async def test_few_tools_injects_all(self, db):
+        """5 tools installed with threshold=10 → planner sees all 5."""
+        # Briefer selects only 'browser' — but M824 overrides
+        briefing = _briefing(
+            modules=["web"],
+            tools=["browser"],
+            context="User wants to read a screenshot.",
+        )
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        fake_tools = [
+            {"name": n, "summary": f"{n} tool", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake",
+             "version": "0.1.0", "description": ""}
+            for n in ["browser", "ocr", "aider", "docreader", "transcriber"]
+        ]
+
+        cfg = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(
+                briefer_enabled=True,
+                briefer_tool_filter_threshold=10,
+            ),
+            raw={},
+        )
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=fake_tools):
+            msgs, _, _ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "read the screenshot",
+            )
+
+        user_content = msgs[1]["content"]
+        # All 5 tools should be present, not just briefer's selection
+        for name in ["browser", "ocr", "aider", "docreader", "transcriber"]:
+            assert name in user_content, f"Tool '{name}' missing from planner context"
+
+    async def test_many_tools_uses_briefer_filter(self, db):
+        """15 tools with threshold=10 → only briefer-selected tools appear."""
+        briefing = _briefing(
+            modules=["web"],
+            tools=["browser"],
+            context="User wants to browse.",
+        )
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        fake_tools = [
+            {"name": f"tool{i}", "summary": f"tool{i} desc", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake",
+             "version": "0.1.0", "description": ""}
+            for i in range(15)
+        ]
+        # Add browser so briefer selection works
+        fake_tools.append(
+            {"name": "browser", "summary": "Navigate pages", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake",
+             "version": "0.1.0", "description": ""}
+        )
+
+        cfg = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(
+                briefer_enabled=True,
+                briefer_tool_filter_threshold=10,
+            ),
+            raw={},
+        )
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=fake_tools):
+            msgs, _, _ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "browse example.com",
+            )
+
+        user_content = msgs[1]["content"]
+        # Only browser selected by briefer (16 tools > threshold 10)
+        assert "browser" in user_content
+        assert "Navigate pages" in user_content
+        # Other tools should NOT be present
+        assert "tool0 desc" not in user_content
+
+    async def test_threshold_zero_always_filters(self, db):
+        """threshold=0 → briefer filtering applies even with 1 tool."""
+        # Briefer selects only 'browser' out of 2 tools
+        briefing = _briefing(
+            modules=["web"],
+            tools=["browser"],
+            context="User wants to browse.",
+        )
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        fake_tools = [
+            {"name": "browser", "summary": "Navigate pages", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake",
+             "version": "0.1.0", "description": ""},
+            {"name": "ocr", "summary": "Extract text from images", "args_schema": {},
+             "env": {}, "session_secrets": [], "path": "/fake",
+             "version": "0.1.0", "description": ""},
+        ]
+
+        cfg = Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(),
+            settings=_full_settings(
+                briefer_enabled=True,
+                briefer_tool_filter_threshold=0,
+            ),
+            raw={},
+        )
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=fake_tools):
+            msgs, _, _ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "browse example.com",
+            )
+
+        user_content = msgs[1]["content"]
+        # threshold=0 → briefer filtering applies: only browser, not ocr
+        assert "Navigate pages" in user_content
+        assert "Extract text from images" not in user_content

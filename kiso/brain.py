@@ -11,7 +11,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from kiso.config import Config, KISO_DIR, setting_bool
+from kiso.config import Config, KISO_DIR, setting_bool, setting_int
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_tools
 from kiso.security import fence_content
@@ -1232,13 +1232,25 @@ async def build_planner_messages(
     if not briefing and context_pool.get("recipes"):
         context_parts.append(f"## Available Recipes\n{context_pool['recipes']}")
 
-    # Tools section — briefer selects by name, code injects full descriptions
+    # Tools section — briefer selects by name, code injects full descriptions.
+    # M824: skip briefer tool filtering when few tools installed — marginal
+    # token saving vs catastrophic risk of excluding the right tool.
+    tool_filter_threshold = setting_int(
+        config.settings, "briefer_tool_filter_threshold", lo=0,
+    )
     if briefing and briefing["tools"]:
-        selected_names = set(briefing["tools"])
-        selected_tools = [t for t in installed if t["name"] in selected_names]
-        selected_tool_text = build_planner_tool_list(selected_tools, user_role, user_tools)
-        if selected_tool_text:
-            context_parts.append(f"## Tools\n{selected_tool_text}")
+        if len(installed) <= tool_filter_threshold:
+            # Few tools — inject all, skip briefer's selection
+            log.debug("Skipping briefer tool filter: %d tools <= threshold %d",
+                      len(installed), tool_filter_threshold)
+            if full_tool_list:
+                context_parts.append(f"## Tools\n{full_tool_list}")
+        else:
+            selected_names = set(briefing["tools"])
+            selected_tools = [t for t in installed if t["name"] in selected_names]
+            selected_tool_text = build_planner_tool_list(selected_tools, user_role, user_tools)
+            if selected_tool_text:
+                context_parts.append(f"## Tools\n{selected_tool_text}")
     elif full_tool_list:
         context_parts.append(f"## Tools\n{full_tool_list}")
 

@@ -61,6 +61,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "fast_path_enabled": True,
     # briefer (context intelligence layer)
     "briefer_enabled": True,
+    "briefer_tool_filter_threshold": 10,
     # webhooks
     "webhook_allow_list": [],
     "webhook_require_https": True,
