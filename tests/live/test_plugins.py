@@ -115,3 +115,44 @@ class TestConnectorPlugins:
 
         for connector in connectors:
             _clone_and_test(tmp_path, "connector", connector["name"])
+
+
+# ---------------------------------------------------------------------------
+# L6.3 — Registry integrity: all entries have existing repos
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryIntegrity:
+    """Verify every entry in registry.json has a clonable GitHub repo."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.registry = _load_registry()
+
+    def _check_repo_exists(self, prefix: str, name: str) -> None:
+        """Assert that the GitHub repo exists via git ls-remote."""
+        git_url = f"https://github.com/{OFFICIAL_ORG}/{prefix}{name}.git"
+        result = subprocess.run(
+            ["git", "ls-remote", "--exit-code", git_url, "HEAD"],
+            capture_output=True, text=True, timeout=15,
+            env={"GIT_TERMINAL_PROMPT": "0", "PATH": subprocess.os.environ.get("PATH", "")},
+        )
+        assert result.returncode == 0, (
+            f"Registry lists '{prefix}{name}' but repo {git_url} does not exist "
+            f"or is not accessible: {result.stderr.strip()}"
+        )
+
+    def test_all_tools_exist(self):
+        """Every tool in registry.json has a GitHub repo."""
+        for tool in self.registry.get("tools", []):
+            self._check_repo_exists("tool-", tool["name"])
+
+    def test_all_connectors_exist(self):
+        """Every connector in registry.json has a GitHub repo."""
+        for conn in self.registry.get("connectors", []):
+            self._check_repo_exists("connector-", conn["name"])
+
+    def test_all_presets_exist(self):
+        """Every preset in registry.json has a GitHub repo."""
+        for preset in self.registry.get("presets", []):
+            self._check_repo_exists("preset-", preset["name"])
