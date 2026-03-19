@@ -17,6 +17,9 @@ log = logging.getLogger(__name__)
 # Supported arg types in kiso.toml [kiso.tool.args]
 _ARG_TYPES = {"string", "int", "float", "bool"}
 
+# Valid vocabulary for kiso.tool.consumes
+_CONSUMES_VOCAB = frozenset({"image", "document", "audio", "video", "code", "web_page"})
+
 # TTL cache for discover_tools() — keyed by resolved tools dir path.
 # Avoids repeated filesystem scans on every planner/executor call.
 # Cleared by invalidate_tools_cache() after install/remove.
@@ -144,6 +147,16 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
         else:
             usage_guide = usage_guide_default
 
+        # Parse and validate consumes field
+        raw_consumes = tool_section.get("consumes", [])
+        consumes: list[str] = []
+        if isinstance(raw_consumes, list):
+            for val in raw_consumes:
+                if isinstance(val, str) and val in _CONSUMES_VOCAB:
+                    consumes.append(val)
+                elif isinstance(val, str):
+                    log.warning("Tool '%s': unknown consumes value '%s' (skipped)", name, val)
+
         info = {
             "name": kiso["name"],
             "summary": tool_section["summary"],
@@ -155,6 +168,7 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
             "description": kiso.get("description", ""),
             "usage_guide": usage_guide,
             "deps": kiso.get("deps", {}),
+            "consumes": consumes,
         }
         missing = check_deps(info)
         info["healthy"] = len(missing) == 0
@@ -251,6 +265,30 @@ def build_planner_tool_list(
         guide = t.get("usage_guide", "")
         if guide:
             lines.append(f"  guide: {guide}")
+
+    # File processing section — auto-generated from consumes declarations
+    type_tools: dict[str, list[str]] = {}
+    for t in tools:
+        for ctype in t.get("consumes", []):
+            entry_text = t["name"]
+            # Short summary (first clause before ' — ' or first 40 chars)
+            summary = t.get("summary", "")
+            if " — " in summary:
+                short = summary.split(" — ")[0]
+            elif len(summary) > 40:
+                short = summary[:37] + "..."
+            else:
+                short = summary
+            if short:
+                entry_text = f"{t['name']} ({short})"
+            type_tools.setdefault(ctype, []).append(entry_text)
+
+    if type_tools:
+        lines.append("")
+        lines.append("File processing (match session workspace files to these tools):")
+        for ctype in sorted(type_tools):
+            tool_list = ", ".join(type_tools[ctype])
+            lines.append(f"- {ctype} files → {tool_list}")
 
     return "\n".join(lines)
 

@@ -1029,3 +1029,121 @@ class TestDiscoverToolsCache:
             result = discover_tools()
 
         assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# M826 — consumes field + file processing routing section
+# ---------------------------------------------------------------------------
+
+
+class TestM826ConsumesField:
+    """M826: consumes field in kiso.toml → file routing in planner tool list."""
+
+    def _make_tool(self, name, summary, consumes=None):
+        return {
+            "name": name,
+            "summary": summary,
+            "args_schema": {},
+            "env": {},
+            "session_secrets": [],
+            "path": "/fake",
+            "version": "0.1.0",
+            "description": "",
+            "consumes": consumes or [],
+        }
+
+    def test_tools_with_consumes_generate_routing(self):
+        """Tools with consumes → 'File processing' section in tool list."""
+        tools = [
+            self._make_tool("ocr", "Image OCR — extract text", consumes=["image"]),
+            self._make_tool("docreader", "Read documents", consumes=["document"]),
+            self._make_tool("transcriber", "Transcribe audio", consumes=["audio"]),
+        ]
+        result = build_planner_tool_list(tools, "admin")
+        assert "File processing" in result
+        assert "image files → ocr (Image OCR)" in result
+        assert "document files → docreader (Read documents)" in result
+        assert "audio files → transcriber (Transcribe audio)" in result
+
+    def test_no_consumes_no_section(self):
+        """Tools without consumes → no 'File processing' section."""
+        tools = [
+            self._make_tool("browser", "Navigate pages"),
+            self._make_tool("websearch", "Search the web"),
+        ]
+        result = build_planner_tool_list(tools, "admin")
+        assert "File processing" not in result
+
+    def test_mixed_tools(self):
+        """Mix of tools with/without consumes → only declared types shown."""
+        tools = [
+            self._make_tool("ocr", "Image OCR — extract text", consumes=["image"]),
+            self._make_tool("browser", "Navigate pages"),
+        ]
+        result = build_planner_tool_list(tools, "admin")
+        assert "File processing" in result
+        assert "image files → ocr" in result
+        assert "web_page" not in result  # browser has no consumes
+
+    def test_multiple_tools_same_type(self):
+        """Two tools consuming image → both listed on same line."""
+        tools = [
+            self._make_tool("ocr", "Extract text from images", consumes=["image"]),
+            self._make_tool("describe", "Describe image contents", consumes=["image"]),
+        ]
+        result = build_planner_tool_list(tools, "admin")
+        assert "image files →" in result
+        assert "ocr" in result
+        assert "describe" in result
+
+    def test_discover_tools_parses_consumes(self, tmp_path):
+        """discover_tools() includes consumes in tool info dict."""
+        tool_dir = tmp_path / "tools" / "ocr"
+        tool_dir.mkdir(parents=True)
+        (tool_dir / "run.py").write_text("pass")
+        (tool_dir / "pyproject.toml").write_text('[project]\nname = "ocr"\nversion = "0.1.0"')
+        (tool_dir / "kiso.toml").write_text("""
+[kiso]
+type = "tool"
+name = "ocr"
+version = "0.1.0"
+description = "OCR tool"
+
+[kiso.tool]
+summary = "Extract text from images"
+usage_guide = "Use this to extract text from images."
+consumes = ["image"]
+
+[kiso.tool.args]
+file_path = { type = "string", required = true, description = "path to image" }
+""")
+        invalidate_tools_cache()
+        result = discover_tools(tmp_path / "tools")
+        assert len(result) == 1
+        assert result[0]["consumes"] == ["image"]
+
+    def test_unknown_consumes_skipped(self, tmp_path):
+        """Unknown consumes value → warned and skipped."""
+        tool_dir = tmp_path / "tools" / "exotic"
+        tool_dir.mkdir(parents=True)
+        (tool_dir / "run.py").write_text("pass")
+        (tool_dir / "pyproject.toml").write_text('[project]\nname = "exotic"\nversion = "0.1.0"')
+        (tool_dir / "kiso.toml").write_text("""
+[kiso]
+type = "tool"
+name = "exotic"
+version = "0.1.0"
+description = "Exotic tool"
+
+[kiso.tool]
+summary = "Process exotic formats"
+usage_guide = "Handles exotic data."
+consumes = ["hologram", "image"]
+
+[kiso.tool.args]
+""")
+        invalidate_tools_cache()
+        result = discover_tools(tmp_path / "tools")
+        assert len(result) == 1
+        # "hologram" skipped, "image" kept
+        assert result[0]["consumes"] == ["image"]

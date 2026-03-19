@@ -35,6 +35,18 @@ Key files, dependencies, kiso integration points.
 | search | Web search | query: string | results JSON | ✅ |
 | click | Click element | selector: string | screenshot path | planned |
 
+### consumes
+
+Declare which file types this tool processes in `kiso.toml`:
+
+```toml
+[kiso.tool]
+consumes = ["image"]   # valid: image, document, audio, video, code, web_page
+```
+
+The planner uses this to auto-route session workspace files to the right
+tool. Tool devplans should track which `consumes` values are declared.
+
 ## Milestones
 
 Numbered from M1 (per-tool, independent of core numbering).

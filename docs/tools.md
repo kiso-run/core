@@ -50,6 +50,30 @@ python = ">=3.11"
 bin = ["curl"]                    # checked with `which` after install
 ```
 
+### consumes
+
+Optional field declaring what file types this tool can process. Used to
+auto-generate a "File processing" routing section in the planner context,
+so the planner knows which tool to use for which file type.
+
+```toml
+[kiso.tool]
+summary = "Image OCR — extract text from photos, screenshots, receipts"
+consumes = ["image"]
+```
+
+Valid vocabulary: `image`, `document`, `audio`, `video`, `code`, `web_page`.
+Unknown values are warned and skipped (forward-compatible).
+
+When at least one installed tool declares `consumes`, the planner sees:
+
+```
+File processing (match session workspace files to these tools):
+- image files → ocr (Image OCR), describe (Describe image contents)
+- document files → docreader (Read documents)
+- audio files → transcriber (Transcribe audio)
+```
+
 ### Two Kinds of Secrets
 
 - `[kiso.tool.env]` → **deploy secrets** (env vars, set by admin via `kiso env`, passed via subprocess environment)
