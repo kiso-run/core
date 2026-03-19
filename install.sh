@@ -1136,7 +1136,7 @@ fi
 
 # ── 6c. Register instance ─────────────────────────────────────────────────────
 
-_INST_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' "$REPO_DIR/kiso/_version.py" 2>/dev/null || echo "")
+_INST_VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' "$REPO_DIR/pyproject.toml" 2>/dev/null || echo "")
 _INST_HASH=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
 register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE" "$_INST_VERSION" "$_INST_HASH"
 green "  registered in $INSTANCES_JSON"
