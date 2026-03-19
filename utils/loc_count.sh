@@ -30,37 +30,39 @@ count_ext() {
 row() { printf "%-35s %5d\n" "$1" "$2"; }
 sep() { printf "%-35s %s\n" "───────────────────────────────────" "─────"; }
 
-code_total=0
+core_total=0
 test_total=0
 
 echo
-echo "── Code ──"
+echo "── Core (agent) ──"
 
 n=$(count_py "$ROOT/kiso")
-row "kiso/*.py" "$n"; code_total=$((code_total + n))
+row "kiso/*.py" "$n"; core_total=$((core_total + n))
 
 n=$(count_py "$ROOT/kiso/worker" true)
-row "kiso/worker/" "$n"; code_total=$((code_total + n))
+row "kiso/worker/" "$n"; core_total=$((core_total + n))
 
 n=$(count_ext "$ROOT/kiso/roles" "md")
-row "kiso/roles/ (.md)" "$n"; code_total=$((code_total + n))
+row "kiso/roles/ (.md)" "$n"; core_total=$((core_total + n))
 
 n=$(count_ext "$ROOT/kiso/reference" "md")
-row "kiso/reference/ (.md)" "$n"; code_total=$((code_total + n))
+row "kiso/reference/ (.md)" "$n"; core_total=$((core_total + n))
 
 if [[ -d "$ROOT/kiso/completions" ]]; then
     n=0
     while IFS= read -r -d '' f; do
         n=$((n + $(wc -l < "$f")))
     done < <(find "$ROOT/kiso/completions" -type f -not -name '__*' -print0 2>/dev/null)
-    row "kiso/completions/" "$n"; code_total=$((code_total + n))
+    row "kiso/completions/" "$n"; core_total=$((core_total + n))
 fi
 
-n=$(count_py "$ROOT/cli" true)
-row "cli/" "$n"; code_total=$((code_total + n))
-
 sep
-row "Code total" "$code_total"
+row "Core total" "$core_total"
+
+echo
+echo "── CLI ──"
+cli_total=$(count_py "$ROOT/cli" true)
+row "cli/" "$cli_total"
 
 echo
 echo "── Tests ──"
@@ -86,10 +88,10 @@ row "Tests total" "$test_total"
 
 echo
 echo "── Summary ──"
-if [[ "$test_total" -gt 0 ]]; then
-    ratio=$(echo "scale=1; $code_total / $test_total" | bc 2>/dev/null || echo "?")
-    printf "%-35s %4s:1\n" "Code:Test ratio" "$ratio"
+if [[ "$core_total" -gt 0 && "$test_total" -gt 0 ]]; then
+    ratio=$(echo "scale=1; $test_total / $core_total" | bc 2>/dev/null || echo "?")
+    printf "%-35s %4s\n" "Core:Test ratio" "1:$ratio"
 else
-    printf "%-35s %s\n" "Code:Test ratio" "N/A"
+    printf "%-35s %s\n" "Core:Test ratio" "N/A"
 fi
 echo
