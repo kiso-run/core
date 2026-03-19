@@ -13,6 +13,19 @@ import tomllib
 from pathlib import Path
 
 from kiso.config import KISO_DIR, load_config
+
+
+def _clean_env() -> dict[str, str]:
+    """Build a subprocess environment without VIRTUAL_ENV.
+
+    When running inside a kiso container, the parent process has
+    VIRTUAL_ENV=/opt/kiso/.venv. Tool deps.sh and uv sync need to
+    operate on the tool's own .venv, not kiso's. Removing VIRTUAL_ENV
+    prevents uv from getting confused.
+    """
+    env = dict(os.environ)
+    env.pop("VIRTUAL_ENV", None)
+    return env
 from kiso.registry import (
     cross_type_hint,
     fetch_registry as _fetch_registry_core,
@@ -155,10 +168,10 @@ def _plugin_install(
         # Already installed — re-run setup to ensure deps are fresh (idempotent repair)
         print(f"{plugin_type.capitalize()} '{name}' is already installed — refreshing deps...")
         try:
-            subprocess.run(["uv", "sync"], cwd=str(plugin_dir), capture_output=True, text=True)
+            subprocess.run(["uv", "sync"], cwd=str(plugin_dir), capture_output=True, text=True, env=_clean_env())
             deps_path = plugin_dir / "deps.sh"
             if deps_path.exists() and not args.no_deps:
-                result = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True)
+                result = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True, env=_clean_env())
                 if result.returncode != 0:
                     print(f"warning: deps.sh failed: {result.stderr.strip()}")
             # Check binary deps
@@ -225,7 +238,7 @@ def _plugin_install(
         subprocess.run(
             ["uv", "sync"],
             cwd=str(plugin_dir),
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=_clean_env(),
         )
 
         # Run deps.sh if present and not --no-deps
@@ -233,7 +246,7 @@ def _plugin_install(
         if deps_path.exists() and not args.no_deps:
             result = subprocess.run(
                 ["bash", str(deps_path)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, env=_clean_env(),
             )
             if result.returncode != 0:
                 print(f"warning: deps.sh failed: {result.stderr.strip()}")
@@ -250,7 +263,7 @@ def _plugin_install(
             print(f"Missing binaries: {', '.join(missing)} — re-running deps.sh...")
             retry_result = subprocess.run(
                 ["bash", str(deps_path)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, env=_clean_env(),
             )
             if retry_result.returncode != 0:
                 print(f"warning: deps.sh retry failed: {retry_result.stderr.strip()}")
@@ -395,17 +408,17 @@ def _update_plugin(
         deps_path = item_dir / "deps.sh"
 
         if uv_before_deps:
-            subprocess.run(["uv", "sync"], cwd=str(item_dir), capture_output=True, text=True)
+            subprocess.run(["uv", "sync"], cwd=str(item_dir), capture_output=True, text=True, env=_clean_env())
             if deps_path.exists():
-                r = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True)
+                r = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True, env=_clean_env())
                 if r.returncode != 0:
                     print(f"warning: deps.sh failed for '{name}': {r.stderr.strip()}")
         else:
             if deps_path.exists():
-                r = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True)
+                r = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True, env=_clean_env())
                 if r.returncode != 0:
                     print(f"warning: deps.sh failed for '{name}': {r.stderr.strip()}")
-            subprocess.run(["uv", "sync"], cwd=str(item_dir), capture_output=True, text=True)
+            subprocess.run(["uv", "sync"], cwd=str(item_dir), capture_output=True, text=True, env=_clean_env())
 
         info = {"path": str(item_dir)}
         missing = check_deps_fn(info)

@@ -10,6 +10,13 @@ from pathlib import Path
 from kiso.config import KISO_DIR
 from kiso.tools import check_deps, discover_tools, invalidate_tools_cache
 
+
+def _clean_env() -> dict[str, str]:
+    """Environment without VIRTUAL_ENV — prevents uv confusion in tool venvs."""
+    env = dict(os.environ)
+    env.pop("VIRTUAL_ENV", None)
+    return env
+
 log = logging.getLogger(__name__)
 
 # Image ID file baked into the Docker image at build time.
@@ -57,6 +64,7 @@ async def repair_unhealthy_tools(tools_dir: Path | None = None) -> list[str]:
                 cwd=str(tool_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=_clean_env(),
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=remaining)
             if proc.returncode == 0:
@@ -140,6 +148,7 @@ async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
                 cwd=str(tool_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=_clean_env(),
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=remaining)
             if proc.returncode == 0:
