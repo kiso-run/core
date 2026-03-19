@@ -23,6 +23,10 @@
     {
       "name": "docreader",
       "description": "Document reader — extract text from PDF, DOCX, CSV, XLSX files for analysis and search"
+    },
+    {
+      "name": "transcriber",
+      "description": "Audio transcription — convert voice messages and recordings to text via Whisper API"
     }
   ],
   "recipes": [],
