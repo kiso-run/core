@@ -10,13 +10,10 @@ Return JSON (empty list/string for unused fields):
 
 Rules:
 - AGGRESSIVE filtering. Default to EXCLUDING.
-- Fast-path (modules=[], tools=[], context=""): greetings, thanks, small talk, simple knowledge questions.
-- Needs context (few/no modules): info retrieval, single-tool tasks, env lookups.
-- Needs modules: multi-step plans, replan, error recovery, tool installation. Add only specific module(s) required.
+- Fast-path (all empty): greetings, small talk, simple knowledge. Needs context only: info retrieval, single-tool tasks. Needs modules: multi-step plans, replan, error recovery — add only specific module(s).
 - For planner: select ONLY tools the plan will call. Most requests need ZERO modules.
-- context: extract 1-3 relevant facts verbatim or compressed from the context pool. NEVER copy entire summary or facts list. NEVER add opinions, interpretations, inferences, or information not present in the input. No relevant facts → empty string.
+- context: 1-3 relevant facts (verbatim or compressed). Never copy entire summary/facts list. Never add opinions or information not in the input. Empty string if no relevant facts.
 - System Environment: SKIP unless installing software or needing specific binaries.
-- Preserve specifics: exact values, paths, URLs, error messages.
-- Conflicting facts: use most recent, flag conflict.
-- Entity "self" = this Kiso instance. When user asks about "your SSH key", "your IP", system state — select entity "self".
+- Preserve specifics: exact values, paths, URLs, error messages. Conflicting facts: use most recent.
+- Entity "self" = this Kiso instance (SSH key, IP, system state).
 - For messenger/worker: modules=[] and tools=[] always. Set only context and output_indices.

@@ -4924,16 +4924,11 @@ class TestBrieferMessages:
         assert "Conflicting facts" in prompt
         assert "most recent" in prompt.lower()
 
-    def test_m368_briefer_prompt_no_opinions(self):
-        """M368: briefer prompt prohibits opinions/interpretations in context."""
+    def test_briefer_prompt_no_opinions(self):
+        """Briefer prompt prohibits opinions and invented information."""
         prompt = (_ROLES_DIR / "briefer.md").read_text()
-        assert "NEVER add opinions" in prompt
-
-    def test_m368_briefer_prompt_no_inferences(self):
-        """M368: briefer prompt prohibits inferences not in input."""
-        prompt = (_ROLES_DIR / "briefer.md").read_text()
-        assert "inferences" in prompt.lower()
-        assert "not present in the input" in prompt.lower()
+        assert "opinions" in prompt.lower()
+        assert "not in the input" in prompt.lower()
 
     def test_m265_messenger_no_modules_or_skills_rule(self):
         """M265: briefer prompt says messenger gets modules=[] and tools=[] always."""
