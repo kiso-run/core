@@ -46,10 +46,8 @@ Reference: `docs/tools.md` (tool spec), `docs/connectors.md` (connector spec), `
 - [x] Fixed core reference doc (`kiso/reference/skills.md`)
 - [x] Existing installations need: `kiso env set KISO_TOOL_AIDER_API_KEY <value>`
 
-### M2 — core: env var backward compat SKILL → TOOL ✅
-- [x] In `build_tool_env` (kiso/tools.py), if `KISO_TOOL_{NAME}_{KEY}` is not set, fall back to `KISO_SKILL_{NAME}_{KEY}` in os.environ
-- [x] Log a deprecation warning when the fallback is used
-- [x] Unit tests: legacy fallback works, TOOL takes priority over SKILL, no fallback when neither set
+### M2 — ~~core: env var backward compat~~ REMOVED
+- Not needed — not yet distributed to anyone. Clean rename only, no shim.
 
 ---
 

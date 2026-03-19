@@ -404,12 +404,6 @@ def build_tool_env(tool: dict) -> dict[str, str]:
     for key, decl in env_decl.items():
         var_name = _env_var_name(tool_name, key)
         value = os.environ.get(var_name)
-        # M2: backward compat — fall back to legacy KISO_SKILL_ prefix
-        if value is None:
-            legacy_name = plugin_env_var_name("SKILL", tool_name, key)
-            value = os.environ.get(legacy_name)
-            if value is not None:
-                log.warning("Deprecated env var %s used — rename to %s", legacy_name, var_name)
         if value is not None:
             env[var_name] = value
         elif isinstance(decl, dict) and decl.get("required"):
