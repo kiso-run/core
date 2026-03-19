@@ -1159,10 +1159,18 @@ except Exception:
         bold "Presets — install a starter configuration?"
         echo "    0) Skip — I'll set things up myself"
         echo "$_PRESETS" | while IFS= read -r line; do echo "    $line"; done
+        echo "    Or paste a git URL for a custom preset."
         echo
         safe_read -rp "  Choice [0]: " _preset_choice
         _preset_choice="${_preset_choice:-0}"
-        if [[ "$_preset_choice" != "0" ]]; then
+        if [[ "$_preset_choice" == "0" ]]; then
+            green "  skipped"
+        elif [[ "$_preset_choice" == https://* || "$_preset_choice" == git@* ]]; then
+            bold "Installing custom preset from $_preset_choice..."
+            docker exec "$CONTAINER" uv run kiso preset install "$_preset_choice" \
+                && green "  preset installed" \
+                || yellow "  warning: preset install failed — you can do it later with: kiso preset install $_preset_choice"
+        else
             _preset_name=$(echo "$_PRESETS" | sed -n "${_preset_choice}p" | sed 's/^[0-9]*) //' | cut -d' ' -f1)
             if [[ -n "$_preset_name" ]]; then
                 bold "Installing preset '$_preset_name'..."
@@ -1170,8 +1178,6 @@ except Exception:
                     && green "  preset installed" \
                     || yellow "  warning: preset install failed — you can do it later with: kiso preset install $_preset_name"
             fi
-        else
-            green "  skipped"
         fi
     fi
     fi  # end elif [[ -t 0 ]]
