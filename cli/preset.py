@@ -39,6 +39,16 @@ def _clone_and_load_preset(git_url: str):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _show_preset_summary(manifest) -> None:
+    """Display preset contents summary before installing."""
+    if manifest.tools:
+        print(f"  Tools: {', '.join(manifest.tools)}")
+    if manifest.connectors:
+        print(f"  Connectors: {', '.join(manifest.connectors)}")
+    if manifest.behaviors:
+        print(f"  Behaviors: {len(manifest.behaviors)} guidelines")
+
+
 def preset_list(args: argparse.Namespace) -> None:
     """List presets from the official registry."""
     registry = fetch_registry()
@@ -93,6 +103,9 @@ def preset_install(args: argparse.Namespace) -> None:
             sys.exit(1)
         git_url = f"https://github.com/kiso-run/preset-{target}.git"
         manifest = _clone_and_load_preset(git_url)
+
+    # Show preset contents before installing
+    _show_preset_summary(manifest)
 
     dry_run = getattr(args, "dry_run", False)
 
