@@ -69,19 +69,16 @@ Reference: `docs/tools.md` (tool spec), `docs/connectors.md` (connector spec), `
 
 ## Phase 3 — Plugin Compliance Cleanup
 
-### M5 — Add missing README.md files
-- [ ] tool-moltbook: create README.md (description, setup, usage, env vars)
-- [ ] tool-gworkspace: create README.md (description, setup, auth flow, usage, env vars)
+### M5 — Add missing README.md files ✅
+- [x] tool-moltbook: README.md (description, register flow, actions, rate limits)
+- [x] tool-gworkspace: README.md (description, gws auth, actions, workflow)
 
-### M6 — Add missing LICENSE files
-- [ ] tool-moltbook: add MIT LICENSE
-- [ ] tool-gworkspace: add MIT LICENSE
+### M6 — Add missing LICENSE files ✅
+- [x] tool-moltbook: MIT LICENSE
+- [x] tool-gworkspace: MIT LICENSE
 
-### M7 — Add missing/empty deps.sh files
-- [ ] tool-websearch: create empty deps.sh (no system deps needed)
-- [ ] tool-aider: create deps.sh (git is already a bin dep but no system install needed in Docker)
-- [ ] tool-moltbook: create empty deps.sh
-- [ ] connector-discord: create empty deps.sh
+### M7 — Add missing/empty deps.sh files ✅
+- [x] tool-websearch, tool-aider, tool-moltbook, connector-discord: empty deps.sh (no system deps)
 
 ---
 
