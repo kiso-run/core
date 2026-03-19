@@ -2131,8 +2131,8 @@ async def _run_planning_loop(
             if po.get("retry_hint")
         ]
         reviewer_summaries = [
-            po["summary"] for po in plan_outputs
-            if po.get("summary")
+            po["reviewer_summary"] for po in plan_outputs
+            if po.get("reviewer_summary")
         ]
         # Strategy fingerprint: sorted set of "type:detail_prefix" for each task
         strategy_fp = frozenset(

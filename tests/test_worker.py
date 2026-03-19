@@ -10592,6 +10592,36 @@ class TestReviewerSummaryInReplanContext:
         assert "hi" in ctx
         assert "Summary:" not in ctx
 
+    def test_reviewer_summary_in_replan_history(self):
+        """Replan history builder extracts reviewer_summary (not 'summary') from plan outputs."""
+        plan_outputs = [
+            {
+                "index": 0, "type": "exec", "detail": "curl example.com",
+                "status": "done", "output": "raw html",
+                "reviewer_summary": "Site returned 200 OK with login form",
+            },
+            {
+                "index": 1, "type": "exec", "detail": "echo hello",
+                "status": "done", "output": "hello",
+            },
+        ]
+        # Extract reviewer summaries the same way the replan history builder does
+        reviewer_summaries = [
+            po["reviewer_summary"] for po in plan_outputs
+            if po.get("reviewer_summary")
+        ]
+        assert len(reviewer_summaries) == 1
+        assert reviewer_summaries[0] == "Site returned 200 OK with login form"
+
+        # Verify it flows through to replan context via history entry
+        history = [{
+            "goal": "fetch page", "failure": "page had captcha",
+            "what_was_tried": ["[exec] curl example.com"],
+            "reviewer_summaries": reviewer_summaries,
+        }]
+        ctx = _build_replan_context([], [], "need different approach", history)
+        assert "Site returned 200 OK with login form" in ctx
+
 
 @pytest.mark.asyncio
 class TestReviewerSummaryStoredOnCompletedRow:
