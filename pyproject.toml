@@ -29,6 +29,7 @@ markers = [
     "destructive: functional tests with irreversible side effects (requires --destructive)",
     "integration: connector protocol integration tests (requires --integration)",
     "interactive: tests requiring real human interaction (requires --interactive)",
+    "extended: long-running functional tests (multi-plan, >3min, requires --extended)",
 ]
 filterwarnings = [
     # pytest-asyncio: subprocess transport.__del__ fires after event loop closes.

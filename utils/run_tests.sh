@@ -149,6 +149,22 @@ run_plugins() {
     fi
 }
 
+run_extended() {
+    if [[ "$HAS_DOCKER" != true ]]; then
+        echo -e "${YELLOW}⚠ Skipping extended tests — Docker not available${NC}"
+        return
+    fi
+    if [[ "$HAS_API_KEY" != true ]]; then
+        echo -e "${YELLOW}⚠ Skipping extended tests — OPENROUTER_API_KEY not set${NC}"
+        return
+    fi
+    run_suite "Extended tests" \
+        docker compose -f docker-compose.test.yml run --build --rm \
+        -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+        test-functional \
+        uv run pytest tests/functional/ -v --functional --extended -m extended
+}
+
 run_interactive() {
     if [[ "$HAS_DOCKER" != true ]]; then
         echo -e "${YELLOW}⚠ Skipping interactive tests — Docker not available${NC}"
@@ -209,6 +225,7 @@ run_auto() {
             --live)         run_live ;;
             --docker)       run_docker ;;
             --func|--functional) run_functional ;;
+            --extended)     run_extended ;;
             --interactive)  run_interactive ;;
             --plugins)      run_plugins "" ;;
             --plugins=*)    run_plugins "${flag#*=}" ;;
@@ -261,11 +278,12 @@ run_interactive_menu() {
     echo -e "  ${CYAN}6${NC}  Functional tests      ${DIM}~10min, Docker + API key${NC}${docker_tag}${api_tag}"
     echo -e "  ${CYAN}7${NC}  Interactive tests      ${DIM}Docker + human${NC}${docker_tag}${api_tag}"
     echo -e "  ${CYAN}8${NC}  Plugin tests           ${DIM}clone + install + test from registry${NC}"
-    echo -e "  ${CYAN}9${NC}  All automatic          ${DIM}1-6 + plugins, skip interactive${NC}"
+    echo -e "  ${CYAN}9${NC}  All automatic          ${DIM}1-6 + plugins, skip extended/interactive${NC}"
+    echo -e "  ${CYAN}10${NC} Extended tests         ${DIM}~15min, Docker + API key (multi-plan)${NC}${docker_tag}${api_tag}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-9, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-10, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -315,6 +333,9 @@ run_interactive_menu() {
                 run_docker
                 run_functional
                 run_plugins ""
+                ;;
+            10)
+                run_extended
                 ;;
             *)
                 echo -e "${RED}Invalid choice: $sel${NC}"

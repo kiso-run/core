@@ -44,6 +44,10 @@ def pytest_addoption(parser):
         "--interactive", action="store_true", default=False,
         help="Run interactive tests requiring a human at the terminal",
     )
+    parser.addoption(
+        "--extended", action="store_true", default=False,
+        help="Run extended (long-running) functional tests",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -105,6 +109,15 @@ def pytest_collection_modifyitems(config, items):
         skip = pytest.mark.skip(reason="Need --interactive flag to run interactive tests")
         for item in items:
             if _has_marker(item, "interactive"):
+                item.add_marker(skip)
+
+    # --- extended gating ---
+    # Extended tests are also functional — they need --functional AND --extended.
+    # When --functional is set but --extended is not, skip extended tests.
+    if not config.getoption("--extended"):
+        skip = pytest.mark.skip(reason="Need --extended flag to run extended tests")
+        for item in items:
+            if _has_marker(item, "extended"):
                 item.add_marker(skip)
 
 # ---------------------------------------------------------------------------

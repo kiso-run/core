@@ -20,7 +20,7 @@ from tests.functional.conftest import (
     assert_no_failure_language,
 )
 
-pytestmark = pytest.mark.functional
+pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
 from tests.conftest import LLM_INSTALL_TIMEOUT as TOOL_TIMEOUT
 
