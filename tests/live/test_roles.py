@@ -581,9 +581,14 @@ class TestPlannerSystemPackageLive:
             )
 
         assert validate_plan(plan) == []
+        types = [t["type"] for t in plan["tasks"]]
         details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
-        assert "uv pip install" in details or "uv pip" in details, (
-            f"Expected 'uv pip install' for Python lib, got details: {details}"
+        assert "exec" in types, f"Expected exec task, got types: {types}"
+        assert "uv" in details, (
+            f"Expected 'uv' in details for Python lib install, got: {details}"
+        )
+        assert "apt" not in details, (
+            f"Python lib should use uv, not apt — got details: {details}"
         )
 
     async def test_kiso_tool_uses_needs_install(
