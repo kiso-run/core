@@ -1,6 +1,6 @@
 # Security
 
-Core layers: bot identity, API authentication, user identity, role-based permissions, secrets management, and prompt injection defense. Plus operational hardening: webhook validation, package trust, and implementation notes.
+Core layers: bot identity, API authentication, user identity, role-based permissions, secrets management, and prompt injection defense. Plus operational hardening: webhook validation, package trust, package installation policy, and implementation notes.
 
 ## 1. Bot Identity
 
@@ -395,7 +395,33 @@ If `deps.sh` is not present, the warning omits the script display.
 
 Use `--no-deps` to skip `deps.sh` execution entirely. Use `--show-deps` to display `deps.sh` content without installing.
 
-## 9. Implementation Notes
+## 9. Package Installation Policy
+
+Kiso enforces safe package installation inside the container:
+
+| Request | What happens | Why |
+|---------|-------------|-----|
+| "install flask" | `uv pip install flask` | Default for Python libraries |
+| "install flask with pipx" | `pipx install flask` | Explicit user choice, isolated env — allowed |
+| "install flask with pip" | **Blocked** → retried as `uv pip install flask` | Bare `pip install` can corrupt the system venv where kiso runs |
+| "install timg" | `apt-get install -y timg` | System package (not in registry_hints) |
+| "install browser" | `needs_install: ["browser"]` + msg asking for approval | Kiso tool (in registry_hints) |
+
+**Why bare `pip install` is blocked:**
+
+Kiso's Python environment (`/opt/kiso/.venv/`) contains the server itself and all its dependencies. Running `pip install` directly can overwrite or conflict with pinned packages, potentially breaking the server. `uv pip install` is safe because uv manages the environment with proper dependency resolution and isolation.
+
+**Enforcement layers:**
+
+1. **Prompt rule** (always visible in core prompt): tells the planner to use `uv pip install` for Python libraries
+2. **Safety net** (brain.py): forces the `kiso_native` module into the planner context when tools need installing, ensuring the full install decision tree is available
+3. **Validation** (brain.py `_PIP_INSTALL_RE`): deterministically rejects exec tasks containing `pip install` without `uv` prefix. Catches both literal (`pip install flask`) and natural language (`install flask using pip`) phrasings
+
+The validation feedback tells the LLM to retry with `uv pip install`. The user sees the successful result — the internal retry is transparent.
+
+**Tools that bypass the check:** `pipx install` is allowed because pipx creates isolated environments per application. `apt-get install` is allowed for system packages. Only bare `pip install` (which operates on the shared system venv) is blocked.
+
+## 10. Implementation Notes
 
 Hardening measures to implement for production deployments.
 
