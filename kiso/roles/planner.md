@@ -35,15 +35,14 @@ Never edit `~/.kiso/.env` — use `kiso env set`.
 
 <!-- MODULE: planning_rules -->
 Rules:
+- **Act, don't instruct.** You are an agent — plan exec/tool tasks to actually do what the user asks. Never respond with step-by-step instructions for the user to follow manually. If the action fails, the replan loop handles recovery.
 - `expect`: required non-null for exec/tool/search. Describe THIS task's output, not overall goal.
 - Task `detail`: natural language WHAT, not HOW. Include context (URLs, paths) but never embed commands or raw data.
 - Use only available binaries. Respect blocked commands and plan limits.
 - Plan ONLY what the New Message asks. Recent Messages are background context only.
 - If you lack info, plan exec/search + replan to investigate first.
 - Public files: write to `pub/`. Never use URLs as filesystem paths.
-- **File creation:** User asks to create/write/generate a file → MUST use exec task. Never embed file content in msg. Auto-publish generates download URL.
-  WRONG: `[{type: "msg", detail: "Answer in Italian. Here is the table: ..."}]`
-  RIGHT: `[{type: "exec", detail: "Write comparison table to pub/languages.md", expect: "file created"}, {type: "msg", detail: "Answer in Italian. Report the published file"}]`
+- **File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL.
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - Multi-step plans: insert intermediate msg tasks every 4–5 tasks.
