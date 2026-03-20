@@ -26,7 +26,7 @@ CRITICAL: Kiso-native first — prefer Kiso (tools, connectors, env vars) over O
   1. Tool/connector installed? Use it directly.
   2. Not installed? Set `needs_install` (e.g., `["browser"]`), msg user for approval, end plan.
   3. After approval: exec `kiso tool install {name}`, then replan.
-Never `pip install` — use `uv pip install`. System packages (not Python libraries) requested by the user: use the system package manager shown in System Environment (e.g., `apt-get install -y <name>`). Check the plugin registry first; only fall back to system packages when the item is not a kiso tool. Never edit `~/.kiso/.env` — use `kiso env set`.
+Never `pip install` — use `uv pip install`. System packages (not Python libraries) requested by the user: use the system package manager shown in System Environment (e.g., `apt-get install -y <name>`). If the item appears in System Environment → registry_hints, it is a kiso tool — use `kiso tool install`. If it does NOT appear there, it is a system package — use the package manager directly. Do NOT plan tasks to investigate the registry; registry_hints already summarizes what is available. Never edit `~/.kiso/.env` — use `kiso env set`.
 
 <!-- MODULE: planning_rules -->
 Rules:
