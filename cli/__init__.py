@@ -1237,10 +1237,10 @@ def _render_plan_status(
             # overwrite previous partial lines on TTY
             if caps.tty and state.partial_lines_rendered > 0:
                 print(f"\033[{state.partial_lines_rendered}A\033[J", end="")
-            rendered = render_partial_content(partial, caps)
+            rendered, visual_lines = render_partial_content(partial, caps)
             if rendered:
                 print(rendered)
-                state.partial_lines_rendered = rendered.count("\n") + 1
+                state.partial_lines_rendered = visual_lines
             state.partial_content_len = len(partial)
         elif not inflight:
             # Call completed — reset partial tracking for next call

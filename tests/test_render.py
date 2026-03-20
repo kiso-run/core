@@ -1841,39 +1841,63 @@ class TestM303RenderPartialContent:
     def test_empty_returns_empty(self):
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
-        assert render_partial_content("", caps) == ""
+        rendered, vlines = render_partial_content("", caps)
+        assert rendered == ""
+        assert vlines == 0
 
     def test_basic_content(self):
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
-        result = render_partial_content("hello world", caps)
-        assert "hello world" in result
-        assert ">" in result  # non-unicode icon
+        rendered, vlines = render_partial_content("hello world", caps)
+        assert "hello world" in rendered
+        assert ">" in rendered  # non-unicode icon
+        assert vlines == 1
 
     def test_unicode_icon(self):
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=True, tty=False, width=80, height=24)
-        result = render_partial_content("test", caps)
-        assert "\u25b8" in result
+        rendered, _ = render_partial_content("test", caps)
+        assert "\u25b8" in rendered
 
     def test_max_lines_truncation(self):
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
         text = "\n".join(f"line{i}" for i in range(20))
-        result = render_partial_content(text, caps, max_lines=3)
-        lines = result.strip().split("\n")
+        rendered, vlines = render_partial_content(text, caps, max_lines=3)
+        lines = rendered.strip().split("\n")
         assert len(lines) == 3
+        assert vlines == 3
         # Should show last 3 lines
-        assert "line17" in result
-        assert "line18" in result
-        assert "line19" in result
-        assert "line0" not in result
+        assert "line17" in rendered
+        assert "line18" in rendered
+        assert "line19" in rendered
+        assert "line0" not in rendered
 
     def test_multiline_content(self):
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=False, tty=False, width=80, height=24)
         text = "line1\nline2\nline3"
-        result = render_partial_content(text, caps)
-        assert "line1" in result
-        assert "line2" in result
-        assert "line3" in result
+        rendered, vlines = render_partial_content(text, caps)
+        assert "line1" in rendered
+        assert "line2" in rendered
+        assert "line3" in rendered
+        assert vlines == 3
+
+    def test_long_line_wraps_to_multiple_visual_lines(self):
+        """M842: long line on narrow terminal → visual lines > newline count."""
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=False, tty=True, width=40, height=24)
+        # "  > " prefix = 4 chars, plus 80 chars of content = 84 visible chars
+        # On 40-col terminal: ceil(84/40) = 3 visual lines
+        text = "A" * 80
+        rendered, vlines = render_partial_content(text, caps)
+        assert rendered.count("\n") == 0  # single logical line
+        assert vlines >= 2  # must wrap
+
+    def test_short_lines_no_extra_wrapping(self):
+        """M842: short lines within terminal width → visual == logical."""
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=False, tty=True, width=120, height=24)
+        text = "short\nlines\nhere"
+        rendered, vlines = render_partial_content(text, caps)
+        assert vlines == 3  # no wrapping needed

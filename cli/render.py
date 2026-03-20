@@ -886,19 +886,36 @@ def render_inflight_indicator(call: dict, caps: TermCaps) -> str:
     return _style(text, _DIM, caps=caps)
 
 
-def render_partial_content(text: str, caps: TermCaps, max_lines: int = 6) -> str:
+def _visible_len(text: str) -> int:
+    """Return the visible length of *text*, stripping ANSI escape codes."""
+    import re
+    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+
+
+def render_partial_content(
+    text: str, caps: TermCaps, max_lines: int = 6,
+) -> tuple[str, int]:
     """Render a compact partial-content block from live streaming output.
 
     Shows the last *max_lines* lines of *text*, dimmed, with a streaming icon.
+
+    Returns (rendered_string, visual_line_count) where visual_line_count
+    accounts for terminal line wrapping.
     """
     if not text:
-        return ""
+        return "", 0
     lines = text.splitlines()
     if len(lines) > max_lines:
         lines = lines[-max_lines:]
     icon = _sym("\u25b8", ">", caps)
     styled = [_style(f"  {icon} {line}", _DIM, caps=caps) for line in lines]
-    return "\n".join(styled)
+    rendered = "\n".join(styled)
+    # Calculate visual lines accounting for terminal width wrapping.
+    visual_lines = 0
+    for s in styled:
+        vlen = _visible_len(s)
+        visual_lines += max(1, -(-vlen // caps.width))  # ceil division
+    return rendered, visual_lines
 
 
 def render_cancel_done(
