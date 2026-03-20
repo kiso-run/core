@@ -3577,13 +3577,13 @@ class TestRolePromptContent:
         ("planner", [
             (["background context only"], None),
         ]),
-        # M106a: planner kiso-native-first
+        # M106a: planner install decision (registry_hints first)
         ("planner", [
-            (["kiso-native", "kiso layer"], "any"),
+            (["registry_hints", "kiso tool"], "any"),
         ]),
-        # M106a: planner check skills before os
+        # M106a: planner system package manager path
         ("planner", [
-            (["apt-get", "os-level"], "any_mixed"),
+            (["apt-get", "uv pip install"], "any_mixed"),
         ]),
         # M106b: reviewer exit code — verification task exit1
         ("reviewer", [
@@ -5344,7 +5344,7 @@ class TestLoadModularPrompt:
         assert "Broken tool recovery" not in result
         assert "File-based data flow" not in result
         assert "Tools efficiency:" not in result
-        assert "Kiso-native first" not in result
+        assert "registry_hints" not in result
         assert "Recent Messages" not in result
 
     # M600: parametrized module loading tests
@@ -5355,8 +5355,8 @@ class TestLoadModularPrompt:
         ("tool_recovery", ["broken tool deps"], []),
         ("data_flow", ["save to file"], []),
         ("planning_rules", ["expect", "invent"], ["tools efficiency"]),
-        ("kiso_native", ["kiso-native first"], ["tools efficiency"]),
-        ("tools_rules", ["tools efficiency", "atomic"], ["kiso-native first"]),
+        ("kiso_native", ["registry_hints"], ["tools efficiency"]),
+        ("tools_rules", ["tools efficiency", "atomic"], ["registry_hints"]),
         ("kiso_commands", ["kiso tool install", "kiso env set"], []),
         ("user_mgmt", ["kiso user add"], []),
         ("plugin_install", ["plugin installation"], []),
@@ -5385,7 +5385,7 @@ class TestLoadModularPrompt:
         assert "Broken tool deps" in modular
         assert "save to file" in modular
         assert "Tools efficiency:" in modular
-        assert "Kiso-native first" in modular
+        assert "registry_hints" in modular
         assert "Recent Messages" in modular
         # Former appendixes now modules
         assert "kiso tool install" in modular
@@ -6206,7 +6206,7 @@ class TestM261PromptSizeReduction:
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Key content from each module should be present
         assert "Kiso planner" in all_modules  # core
-        assert "Kiso-native first" in all_modules  # kiso_native
+        assert "registry_hints" in all_modules  # kiso_native
         assert "natural language WHAT" in all_modules  # planning_rules
         assert "atomic" in all_modules  # tools_rules
         assert "apt-get" in all_modules  # tool_recovery
