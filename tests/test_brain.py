@@ -377,6 +377,25 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("'msg' is a task TYPE" in e for e in errors)
 
+    def test_tool_name_is_prompt_module_code_execution(self):
+        """M833: tool='code_execution' is a prompt module, not a tool."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "run echo", "expect": "ok", "tool": "code_execution", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("prompt module" in e for e in errors)
+        assert any("type='exec'" in e for e in errors)
+
+    def test_tool_name_is_prompt_module_web(self):
+        """M833: tool='web' is a prompt module, not a tool."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "browse site", "expect": "ok", "tool": "web", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. done", "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("prompt module" in e for e in errors)
+
     def test_skill_installed_passes(self):
         plan = {"tasks": [
             {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},

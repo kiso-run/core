@@ -686,6 +686,12 @@ def _validate_plan_tasks(
                     f"Use type='{tool_name}' instead of type='tool' with "
                     f"tool='{tool_name}'."
                 )
+            elif tool_name in BRIEFER_MODULES:
+                errors.append(
+                    f"Task {i}: '{tool_name}' is a prompt module, not a tool. "
+                    f"For shell commands, use type='exec'. For installed tools, "
+                    f"use type='tool' with an actual tool name from the available list."
+                )
             elif installed_skills is not None and tool_name not in installed_skills:
                 available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
                 if install_approved:
