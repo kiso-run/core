@@ -171,25 +171,44 @@ run_interactive() {
 run_auto() {
     shift  # remove --auto
 
-    if [[ $# -eq 0 ]]; then
-        # No suite flags → run all automatic (no interactive)
-        run_unit
-        run_bash
-        run_integration
-        run_live
-        run_docker
-        run_functional
+    # Collect --no-X skip flags
+    local skip_unit=false skip_bash=false skip_integration=false
+    local skip_live=false skip_docker=false skip_func=false skip_plugins=false
+    local has_suite=false
+    local flags=()
+    for arg in "$@"; do
+        case "$arg" in
+            --no-unit)        skip_unit=true ;;
+            --no-bash)        skip_bash=true ;;
+            --no-integration) skip_integration=true ;;
+            --no-live)        skip_live=true ;;
+            --no-docker)      skip_docker=true ;;
+            --no-func|--no-functional) skip_func=true ;;
+            --no-plugins)     skip_plugins=true ;;
+            *)                flags+=("$arg"); has_suite=true ;;
+        esac
+    done
+
+    if [[ "$has_suite" == false ]]; then
+        # No suite flags → run all automatic (no interactive/extended)
+        [[ "$skip_unit" == false ]]        && run_unit
+        [[ "$skip_bash" == false ]]        && run_bash
+        [[ "$skip_integration" == false ]] && run_integration
+        [[ "$skip_live" == false ]]        && run_live
+        [[ "$skip_docker" == false ]]      && run_docker
+        [[ "$skip_func" == false ]]        && run_functional
+        [[ "$skip_plugins" == false ]]     && run_plugins ""
         return
     fi
 
-    for flag in "$@"; do
+    for flag in "${flags[@]}"; do
         case "$flag" in
             --unit)         run_unit ;;
             --bash)         run_bash ;;
             --integration)  run_integration ;;
             --live)         run_live ;;
             --docker)       run_docker ;;
-            --func)         run_functional ;;
+            --func|--functional) run_functional ;;
             --interactive)  run_interactive ;;
             --plugins)      run_plugins "" ;;
             --plugins=*)    run_plugins "${flag#*=}" ;;
@@ -205,7 +224,8 @@ run_auto() {
                 ;;
             *)
                 echo -e "${RED}Unknown flag: $flag${NC}"
-                echo "Available: --unit --bash --integration --live --docker --func --interactive --plugins[=filter] --all"
+                echo "Available: --unit --bash --integration --live --docker --func/--functional --interactive --plugins[=filter] --all"
+                echo "Skip flags: --no-unit --no-bash --no-integration --no-live --no-docker --no-func --no-plugins"
                 exit 1
                 ;;
         esac
@@ -241,7 +261,7 @@ run_interactive_menu() {
     echo -e "  ${CYAN}6${NC}  Functional tests      ${DIM}~10min, Docker + API key${NC}${docker_tag}${api_tag}"
     echo -e "  ${CYAN}7${NC}  Interactive tests      ${DIM}Docker + human${NC}${docker_tag}${api_tag}"
     echo -e "  ${CYAN}8${NC}  Plugin tests           ${DIM}clone + install + test from registry${NC}"
-    echo -e "  ${CYAN}9${NC}  All automatic          ${DIM}1-6, skip interactive/plugins${NC}"
+    echo -e "  ${CYAN}9${NC}  All automatic          ${DIM}1-6 + plugins, skip interactive${NC}"
     echo ""
 
     local choice
@@ -294,6 +314,7 @@ run_interactive_menu() {
                 run_live
                 run_docker
                 run_functional
+                run_plugins ""
                 ;;
             *)
                 echo -e "${RED}Invalid choice: $sel${NC}"

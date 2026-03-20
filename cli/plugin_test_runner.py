@@ -244,7 +244,7 @@ def test_plugins(
 
 
 def _print_report(results: list[PluginTestResult]) -> None:
-    """Print final summary."""
+    """Print final summary with total test count and elapsed time."""
     if not results:
         return
 
@@ -252,6 +252,8 @@ def _print_report(results: list[PluginTestResult]) -> None:
     failed = sum(1 for r in results if not r.passed)
     skipped = sum(1 for r in results if r.skipped)
     total = len(results)
+    total_tests = sum(r.test_count for r in results)
+    total_time = sum(r.duration_s for r in results)
 
     parts = []
     if passed:
@@ -261,6 +263,7 @@ def _print_report(results: list[PluginTestResult]) -> None:
     if skipped:
         parts.append(f"{_YELLOW}{skipped} skipped{_NC}" if _USE_COLOR else f"{skipped} skipped")
     print(f"\n  Plugin Test Summary: {', '.join(parts)} (of {total})")
+    print(f"  {total_tests} tests across {total} plugins in {total_time:.1f}s")
 
 
 def main(filter_arg: str = "") -> int:

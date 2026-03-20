@@ -10,6 +10,7 @@ import pytest
 
 from cli.plugin_test_runner import (
     PluginTestResult,
+    _print_report,
     _resolve_filter,
     _test_one_plugin,
     test_plugins as run_plugin_tests,
@@ -213,3 +214,25 @@ class TestMain:
     def test_main_empty_registry(self):
         with patch("cli.plugin_test_runner.test_plugins", return_value=[]):
             assert main("") == 0
+
+
+class TestPrintReport:
+    """M852: summary shows total test count and elapsed time."""
+
+    def test_summary_shows_total_tests_and_time(self, capsys):
+        results = [
+            PluginTestResult(name="a", plugin_type="tool", stage="done",
+                             passed=True, test_count=50, duration_s=3.0),
+            PluginTestResult(name="b", plugin_type="tool", stage="done",
+                             passed=True, test_count=30, duration_s=2.5),
+        ]
+        _print_report(results)
+        out = capsys.readouterr().out
+        assert "80 tests" in out          # 50 + 30
+        assert "2 plugins" in out
+        assert "5.5s" in out              # 3.0 + 2.5
+
+    def test_summary_empty_results(self, capsys):
+        _print_report([])
+        out = capsys.readouterr().out
+        assert out == ""
