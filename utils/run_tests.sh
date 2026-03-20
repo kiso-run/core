@@ -209,14 +209,15 @@ run_auto() {
     done
 
     if [[ "$has_suite" == false ]]; then
-        # No suite flags → run all automatic (no interactive/extended)
+        # No suite flags → run all automatic (skip only interactive)
         [[ "$skip_unit" == false ]]        && run_unit
         [[ "$skip_bash" == false ]]        && run_bash
         [[ "$skip_integration" == false ]] && run_integration
         [[ "$skip_live" == false ]]        && run_live
         [[ "$skip_docker" == false ]]      && run_docker
-        [[ "$skip_func" == false ]]        && run_functional
         [[ "$skip_plugins" == false ]]     && run_plugins ""
+        [[ "$skip_func" == false ]]        && run_functional
+        run_extended
         return
     fi
 
@@ -294,7 +295,7 @@ run_interactive_menu() {
     echo ""
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
     echo -e "  ${CYAN}9${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
-    echo -e "  ${CYAN}10${NC} All automatic           ${DIM}1-7 (skip 8, 9)${NC}"
+    echo -e "  ${CYAN}10${NC} All automatic           ${DIM}1-8 (skip 9 interactive)${NC}"
     echo ""
 
     local choice
@@ -349,6 +350,7 @@ run_interactive_menu() {
                 run_docker
                 run_plugins ""
                 run_functional
+                run_extended
                 ;;
             *)
                 echo -e "${RED}Invalid choice: $sel${NC}"
