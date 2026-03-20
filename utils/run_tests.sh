@@ -283,18 +283,18 @@ run_interactive_menu() {
     echo ""
     echo -e "  ${DIM}── Docker container ──────────────────────────${NC}"
     echo -e "  ${CYAN}5${NC}  Docker tests            ${DIM}10 tests, <1s${NC}${miss_docker}"
-    echo -e "  ${CYAN}8${NC}  Plugin tests            ${DIM}~600 tests, ~35s${NC}"
+    echo -e "  ${CYAN}6${NC}  Plugin tests            ${DIM}~700 tests, ~35s${NC}"
     echo -e "     ${DIM}Clone + build + test each official plugin${NC}"
     echo ""
     echo -e "  ${DIM}── Full pipeline (Docker + API key) ─────────${NC}"
-    echo -e "  ${CYAN}6${NC}  Functional tests        ${DIM}~55 tests, ~10min${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}7${NC}  Functional tests        ${DIM}~55 tests, ~10min${NC}${miss_docker}${miss_api}"
     echo -e "     ${DIM}Single-plan end-to-end: classify → plan → exec → msg${NC}"
-    echo -e "  ${CYAN}10${NC} Extended tests          ${DIM}~15min, nightly${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}8${NC}  Extended tests          ${DIM}~15min, nightly${NC}${miss_docker}${miss_api}"
     echo -e "     ${DIM}Multi-plan orchestration (tool install → use → report)${NC}"
     echo ""
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
-    echo -e "  ${CYAN}7${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
-    echo -e "  ${CYAN}9${NC}  All automatic           ${DIM}1-6 + 8 (skip 7, 10)${NC}"
+    echo -e "  ${CYAN}9${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}10${NC} All automatic           ${DIM}1-7 (skip 8, 9)${NC}"
     echo ""
 
     local choice
@@ -316,9 +316,7 @@ run_interactive_menu() {
             3) run_integration ;;
             4) run_live ;;
             5) run_docker ;;
-            6) run_functional ;;
-            7) run_interactive ;;
-            8)
+            6)
                 echo ""
                 echo -e "  ${BOLD}What to test?${NC}"
                 echo -e "  a) All tools"
@@ -340,17 +338,17 @@ run_interactive_menu() {
                     *) echo -e "${RED}Invalid choice${NC}" ;;
                 esac
                 ;;
-            9)
+            7) run_functional ;;
+            8) run_extended ;;
+            9) run_interactive ;;
+            10)
                 run_unit
                 run_bash
                 run_integration
                 run_live
                 run_docker
-                run_functional
                 run_plugins ""
-                ;;
-            10)
-                run_extended
+                run_functional
                 ;;
             *)
                 echo -e "${RED}Invalid choice: $sel${NC}"

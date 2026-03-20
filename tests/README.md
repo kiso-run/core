@@ -84,18 +84,18 @@ uv run pytest tests/test_brain.py -v
 
   ── Docker container ──────────────────────────
   5  Docker tests            10 tests, <1s
-  8  Plugin tests            ~600 tests, ~35s
+  6  Plugin tests            ~700 tests, ~35s
      Clone + build + test each official plugin
 
   ── Full pipeline (Docker + API key) ─────────
-  6  Functional tests        ~55 tests, ~10min
+  7  Functional tests        ~55 tests, ~10min
      Single-plan end-to-end: classify → plan → exec → msg
-  10 Extended tests          ~15min, nightly
+  8  Extended tests          ~15min, nightly
      Multi-plan orchestration (tool install → use → report)
 
   ── Special ──────────────────────────────────
-  7  Interactive tests       requires human at terminal
-  9  All automatic           1-6 + 8 (skip 7, 10)
+  9  Interactive tests       requires human at terminal
+  10 All automatic           1-7 (skip 8, 9)
 ```
 
 
