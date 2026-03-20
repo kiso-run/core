@@ -9,6 +9,7 @@ Gated behind ``--live-network`` flag (requires git + network access).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -19,20 +20,40 @@ pytestmark = pytest.mark.live_network
 OFFICIAL_ORG = "kiso-run"
 
 
+def _clean_subprocess_env() -> dict[str, str]:
+    """Build a minimal env for plugin subprocess calls.
+
+    Prevents host secrets (KISO_LLM_API_KEY, KISO_TOOL_* etc.) from leaking
+    into plugin test suites, which could mask missing-key test assertions.
+    """
+    env: dict[str, str] = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", "/tmp"),
+    }
+    # uv needs its cache dir to avoid re-downloading packages
+    for key in ("UV_CACHE_DIR", "XDG_CACHE_HOME"):
+        val = os.environ.get(key)
+        if val:
+            env[key] = val
+    return env
+
+
 def _clone_and_test(tmp_path: Path, kind: str, name: str) -> None:
     """Clone an official plugin repo, sync deps, and run its tests."""
     prefix = "tool-" if kind == "tool" else "connector-"
     git_url = f"https://github.com/{OFFICIAL_ORG}/{prefix}{name}.git"
     plugin_dir = tmp_path / name
 
-    # Clone
+    # Clone — explicit minimal env (no secrets)
     result = subprocess.run(
         ["git", "clone", "--depth", "1", git_url, str(plugin_dir)],
         capture_output=True, text=True,
-        env={"GIT_TERMINAL_PROMPT": "0", "PATH": subprocess.os.environ.get("PATH", "")},
+        env={"GIT_TERMINAL_PROMPT": "0", "PATH": os.environ.get("PATH", "")},
     )
     if result.returncode != 0:
         pytest.skip(f"{prefix}{name} repo not available: {result.stderr.strip()}")
+
+    clean_env = _clean_subprocess_env()
 
     # Sync deps (including dev group for tests)
     result = subprocess.run(
@@ -40,6 +61,7 @@ def _clone_and_test(tmp_path: Path, kind: str, name: str) -> None:
         cwd=str(plugin_dir),
         capture_output=True, text=True,
         timeout=120,
+        env=clean_env,
     )
     if result.returncode != 0:
         pytest.fail(f"uv sync failed for {prefix}{name}: {result.stderr.strip()}")
@@ -49,12 +71,13 @@ def _clone_and_test(tmp_path: Path, kind: str, name: str) -> None:
     if not tests_dir.is_dir() or not list(tests_dir.glob("test_*.py")):
         pytest.skip(f"{prefix}{name} has no tests")
 
-    # Run tests
+    # Run tests — isolated env prevents host secrets from leaking
     result = subprocess.run(
         ["uv", "run", "--group", "dev", "pytest", "tests/", "-v", "--tb=short"],
         cwd=str(plugin_dir),
         capture_output=True, text=True,
         timeout=120,
+        env=clean_env,
     )
     if result.returncode != 0:
         pytest.fail(
