@@ -8,12 +8,13 @@
 #   ./run_tests.sh                  # menu
 #
 # Auto (CI):
-#   ./run_tests.sh --auto           # all automatic suites (no interactive)
+#   ./run_tests.sh --auto           # all automatic suites (no interactive/extended)
 #   ./run_tests.sh --auto --unit    # only unit
 #   ./run_tests.sh --auto --bash    # only bash/BATS
 #   ./run_tests.sh --auto --unit --live   # unit + live (combinable)
-#   ./run_tests.sh --auto --all     # everything including interactive
-#   ./run_tests.sh --auto --interactive   # only interactive
+#   ./run_tests.sh --auto --all     # everything including interactive + extended
+#   ./run_tests.sh --auto --no-live # all automatic except live tests
+#   ./run_tests.sh --auto --extended      # only extended (nightly)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -129,24 +130,12 @@ run_functional() {
         echo -e "${YELLOW}⚠ Skipping functional tests — OPENROUTER_API_KEY not set${NC}"
         return
     fi
+    # Exclude extended tests — those run separately via run_extended()
     run_suite "Functional tests" \
         docker compose -f docker-compose.test.yml run --build --rm \
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
-        test-functional
-}
-
-run_plugins() {
-    local filter="${1:-}"
-    if [[ "$HAS_DOCKER" == true ]]; then
-        # Docker: same environment as production, with dep-cache volume
-        local cmd="uv run python -m cli.plugin_test_runner ${filter}"
-        run_suite "Plugin tests${filter:+ ($filter)}" \
-            docker compose -f docker-compose.test.yml run --build --rm \
-            test-plugins $cmd
-    else
-        run_suite "Plugin tests${filter:+ ($filter)}" \
-            uv run python -m cli.plugin_test_runner "$filter"
-    fi
+        test-functional \
+        uv run pytest tests/functional/ -v --functional -m "functional and not extended"
 }
 
 run_extended() {
@@ -163,6 +152,20 @@ run_extended() {
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
         test-functional \
         uv run pytest tests/functional/ -v --functional --extended -m extended
+}
+
+run_plugins() {
+    local filter="${1:-}"
+    if [[ "$HAS_DOCKER" == true ]]; then
+        # Docker: same environment as production, with dep-cache volume
+        local cmd="uv run python -m cli.plugin_test_runner ${filter}"
+        run_suite "Plugin tests${filter:+ ($filter)}" \
+            docker compose -f docker-compose.test.yml run --build --rm \
+            test-plugins $cmd
+    else
+        run_suite "Plugin tests${filter:+ ($filter)}" \
+            uv run python -m cli.plugin_test_runner "$filter"
+    fi
 }
 
 run_interactive() {
@@ -236,12 +239,13 @@ run_auto() {
                 run_live
                 run_docker
                 run_functional
+                run_extended
                 run_plugins ""
                 run_interactive
                 ;;
             *)
                 echo -e "${RED}Unknown flag: $flag${NC}"
-                echo "Available: --unit --bash --integration --live --docker --func/--functional --interactive --plugins[=filter] --all"
+                echo "Available: --unit --bash --integration --live --docker --func/--functional --extended --interactive --plugins[=filter] --all"
                 echo "Skip flags: --no-unit --no-bash --no-integration --no-live --no-docker --no-func --no-plugins"
                 exit 1
                 ;;
@@ -254,32 +258,43 @@ run_auto() {
 # ---------------------------------------------------------------------------
 run_interactive_menu() {
     # Availability tags
-    local docker_tag=""
-    local api_tag=""
-    local bats_tag=""
+    local miss_docker="" miss_api="" miss_bats=""
     if [[ "$HAS_DOCKER" != true ]]; then
-        docker_tag="${DIM} (Docker not available)${NC}"
+        miss_docker=" ${RED}✗ no Docker${NC}"
     fi
     if [[ "$HAS_API_KEY" != true ]]; then
-        api_tag="${DIM} (API key not set)${NC}"
+        miss_api=" ${RED}✗ no API key${NC}"
     fi
     if [[ "$HAS_BATS" != true ]]; then
-        bats_tag="${DIM} (bats not installed)${NC}"
+        miss_bats=" ${RED}✗ no bats${NC}"
     fi
 
     echo ""
     echo -e "  ${BOLD}Kiso Test Runner${NC}"
     echo ""
-    echo -e "  ${CYAN}1${NC}  Unit tests           ${DIM}~90s, host${NC}"
-    echo -e "  ${CYAN}2${NC}  Bash tests            ${DIM}<5s, host, bats${NC}${bats_tag}"
-    echo -e "  ${CYAN}3${NC}  Integration tests     ${DIM}~7s, host, mock LLM${NC}"
-    echo -e "  ${CYAN}4${NC}  Live tests            ${DIM}~8min, API key${NC}${api_tag}"
-    echo -e "  ${CYAN}5${NC}  Docker tests          ${DIM}<1s, Docker${NC}${docker_tag}"
-    echo -e "  ${CYAN}6${NC}  Functional tests      ${DIM}~10min, Docker + API key${NC}${docker_tag}${api_tag}"
-    echo -e "  ${CYAN}7${NC}  Interactive tests      ${DIM}Docker + human${NC}${docker_tag}${api_tag}"
-    echo -e "  ${CYAN}8${NC}  Plugin tests           ${DIM}clone + install + test from registry${NC}"
-    echo -e "  ${CYAN}9${NC}  All automatic          ${DIM}1-6 + plugins, skip extended/interactive${NC}"
-    echo -e "  ${CYAN}10${NC} Extended tests         ${DIM}~15min, Docker + API key (multi-plan)${NC}${docker_tag}${api_tag}"
+    echo -e "  ${DIM}── Fast (host only) ──────────────────────────${NC}"
+    echo -e "  ${CYAN}1${NC}  Unit tests              ${DIM}~3650 tests, ~90s${NC}"
+    echo -e "  ${CYAN}2${NC}  Bash tests              ${DIM}89 tests, <5s${NC}${miss_bats}"
+    echo -e "  ${CYAN}3${NC}  Integration tests       ${DIM}9 tests, ~10s, mock LLM${NC}"
+    echo ""
+    echo -e "  ${DIM}── Real LLM (needs API key) ──────────────────${NC}"
+    echo -e "  ${CYAN}4${NC}  Live tests              ${DIM}72 tests, ~15min${NC}${miss_api}"
+    echo -e "     ${DIM}LLM compliance — prompts, schemas, roles${NC}"
+    echo ""
+    echo -e "  ${DIM}── Docker container ──────────────────────────${NC}"
+    echo -e "  ${CYAN}5${NC}  Docker tests            ${DIM}10 tests, <1s${NC}${miss_docker}"
+    echo -e "  ${CYAN}8${NC}  Plugin tests            ${DIM}~600 tests, ~35s${NC}"
+    echo -e "     ${DIM}Clone + build + test each official plugin${NC}"
+    echo ""
+    echo -e "  ${DIM}── Full pipeline (Docker + API key) ─────────${NC}"
+    echo -e "  ${CYAN}6${NC}  Functional tests        ${DIM}~55 tests, ~10min${NC}${miss_docker}${miss_api}"
+    echo -e "     ${DIM}Single-plan end-to-end: classify → plan → exec → msg${NC}"
+    echo -e "  ${CYAN}10${NC} Extended tests          ${DIM}~15min, nightly${NC}${miss_docker}${miss_api}"
+    echo -e "     ${DIM}Multi-plan orchestration (tool install → use → report)${NC}"
+    echo ""
+    echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
+    echo -e "  ${CYAN}7${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}9${NC}  All automatic           ${DIM}1-6 + 8 (skip 7, 10)${NC}"
     echo ""
 
     local choice

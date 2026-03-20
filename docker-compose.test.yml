@@ -24,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test
-    command: uv run pytest tests/functional/ -v --functional
+    command: uv run pytest tests/functional/ -v --functional -m "functional and not extended"
     environment:
       - OPENROUTER_API_KEY
       - KISO_LLM_API_KEY
