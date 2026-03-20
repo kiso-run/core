@@ -1600,11 +1600,14 @@ class ClassifierError(Exception):
 
 def build_classifier_messages(
     content: str, recent_context: str = "",
+    entity_names: str = "",
 ) -> list[dict]:
     """Build the message list for the classifier LLM call."""
     user_text = content
     if recent_context:
         user_text = f"{content}\n\n## Recent Conversation\n{recent_context}"
+    if entity_names:
+        user_text = f"{user_text}\n\n## Known Entities\n{entity_names}"
     return _build_messages(_load_system_prompt("classifier"), user_text)
 
 
@@ -1614,6 +1617,7 @@ CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({"plan", "chat", "chat_kb"})
 async def classify_message(
     config: Config, content: str, session: str = "",
     recent_context: str = "",
+    entity_names: str = "",
 ) -> tuple[str, str]:
     """Classify a user message and detect its language.
 
@@ -1622,7 +1626,9 @@ async def classify_message(
     (e.g. ``"en"``, ``"it"``).  On any error or ambiguous output,
     returns ``("plan", "en")`` as safe fallback.
     """
-    messages = build_classifier_messages(content, recent_context=recent_context)
+    messages = build_classifier_messages(
+        content, recent_context=recent_context, entity_names=entity_names,
+    )
     try:
         raw = await call_llm(config, "classifier", messages, session=session)
     except LLMError as e:

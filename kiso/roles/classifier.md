@@ -16,5 +16,6 @@ Imperative command requesting action (any language) → "plan".
 System state, real-time info, or anything that changes over time (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan". These require shell commands — never guess dynamic values.
 Self-referential knowledge ("what do you know", "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb".
 Questions about previously discussed topics or known entities → "chat_kb".
+If "## Known Entities" provided: message asks about a listed entity's properties → "chat_kb". Message asks to perform an action on a listed entity → "plan".
 General knowledge questions not about stored entities → "chat".
 When in doubt → "plan".

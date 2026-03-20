@@ -3426,6 +3426,17 @@ class TestBuildClassifierMessages:
         assert "plan" in msgs[0]["content"]
         assert "chat" in msgs[0]["content"]
 
+    def test_entity_names_included(self):
+        """M857: entity names appear in classifier messages when provided."""
+        msgs = build_classifier_messages("what about flask?", entity_names="flask, python, self")
+        assert "Known Entities" in msgs[1]["content"]
+        assert "flask, python, self" in msgs[1]["content"]
+
+    def test_entity_names_omitted_when_empty(self):
+        """M857: no entity section when no entities available."""
+        msgs = build_classifier_messages("hello")
+        assert "Known Entities" not in msgs[1]["content"]
+
 
 class TestClassifyMessage:
     @pytest.mark.parametrize("llm_return,message,expected_cat,expected_lang", [

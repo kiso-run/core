@@ -2477,6 +2477,10 @@ async def _process_message(
     _recent_for_classifier = await get_recent_messages(db, session, limit=3)
     _classifier_ctx = build_recent_context(_recent_for_classifier, max_chars=500)
 
+    # Compact entity names for classifier — helps distinguish chat_kb vs plan
+    _all_entities = await get_all_entities(db)
+    _entity_names = ", ".join(e["name"] for e in _all_entities) if _all_entities else ""
+
     # Create plan record before classifier so the CLI can render it immediately.
     # This ensures the plan header appears before inflight indicators.
     plan_id = await create_plan(db, session, msg_id, "Planning...")
@@ -2490,6 +2494,7 @@ async def _process_message(
                 classify_message(
                     config, content, session=session,
                     recent_context=_classifier_ctx,
+                    entity_names=_entity_names,
                 ),
                 timeout=classifier_timeout,
             )
