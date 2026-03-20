@@ -7921,6 +7921,21 @@ class TestPipToUvValidation:
         errors = validate_plan(self._plan("Check pip version"))
         assert not any("uv pip install" in e for e in errors)
 
+    def test_install_using_pip_rejected(self):
+        """M850: natural language 'install X using pip' also caught."""
+        errors = validate_plan(self._plan("install flask using pip"))
+        assert any("uv pip install" in e for e in errors)
+
+    def test_use_pip_to_install_rejected(self):
+        """M850: 'use pip to install' also caught."""
+        errors = validate_plan(self._plan("use pip to install pandas"))
+        assert any("uv pip install" in e for e in errors)
+
+    def test_install_without_pip_mention_accepted(self):
+        """M850: 'install flask' without mentioning pip → not rejected."""
+        errors = validate_plan(self._plan("install flask"))
+        assert not any("uv pip install" in e for e in errors)
+
 
 class TestNeedsInstallCoherence:
     """M640: needs_install + tool task for same tool → error."""

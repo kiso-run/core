@@ -188,6 +188,13 @@ def _repair_json(text: str) -> str:
 _INSTALL_CMD_RE = re.compile(
     r"kiso\s+(tool|skill|connector)\s+install", re.IGNORECASE,
 )
+# Exec details mentioning pip for package installation without uv prefix.
+# Catches: "pip install X", "install X using pip", "use pip to install".
+_PIP_INSTALL_RE = re.compile(
+    r"\bpip\s+install\b|\binstall\b.*\busing\s+pip\b|\buse\s+pip\b.*\binstall\b",
+    re.IGNORECASE,
+)
+_UV_PIP_RE = re.compile(r"\buv\s+pip\b", re.IGNORECASE)
 # marker substring in validation errors for uninstalled-tool detection.
 # Used both when generating the error (validate_plan) and detecting it
 # (_retry_llm_with_validation).  Keep in sync.
@@ -636,10 +643,10 @@ def _validate_plan_tasks(
                 f"rewrite as a concrete shell command description "
                 f"(e.g., 'Run kiso tool install browser')"
             )
-        if t == TASK_TYPE_EXEC and "pip install" in detail.lower() and "uv pip install" not in detail.lower():
+        if t == TASK_TYPE_EXEC and _PIP_INSTALL_RE.search(detail) and not _UV_PIP_RE.search(detail):
             errors.append(
-                f"Task {i}: use 'uv pip install' instead of 'pip install' — "
-                f"uv is the project's package manager"
+                f"Task {i}: use 'uv pip install' instead of bare 'pip install'. "
+                f"Direct pip can corrupt the system environment."
             )
         if t == TASK_TYPE_MSG:
             for field in ("expect", "tool", "args"):
