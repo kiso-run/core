@@ -317,17 +317,30 @@ class TestValidatePlan:
         assert any("tool 'search' is not installed" in e for e in errors)
         assert any("Available tools: echo" in e for e in errors)
 
-    def test_skill_not_installed_suggests_asking_user(self):
-        """M418/M419: validation error guides LLM to ask user, end plan with msg."""
+    def test_skill_not_installed_suggests_alternatives(self):
+        """M418/M847: validation error suggests alternatives before msg-only fallback."""
         plan = {"tasks": [
             {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
-        assert any("CANNOT use 'browser'" in e for e in errors)
-        assert any("SINGLE msg task" in e for e in errors)
-        assert any("offer alternatives" in e for e in errors)
-        assert any("End the plan" in e for e in errors)
+        err = " ".join(errors)
+        assert "Remove this tool task" in err
+        assert "built-in task types" in err or "search, exec" in err
+        assert "install 'browser'" in err  # fallback option still mentioned
+
+    def test_skill_not_installed_feedback_does_not_force_msg_only(self):
+        """M847: feedback mentions alternatives, doesn't mandate msg-only structure."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "search web", "expect": "results", "tool": "websearch", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["browser"])
+        err = " ".join(errors)
+        # Must NOT contain the old prescriptive "SINGLE msg task" language
+        assert "SINGLE msg task" not in err
+        # Must suggest built-in alternatives
+        assert "built-in task types" in err or "search, exec" in err
 
     def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [
@@ -348,15 +361,16 @@ class TestValidatePlan:
         assert any("exec task" in e for e in errors)
         assert not any("SINGLE msg task" in e for e in errors)
 
-    def test_skill_not_installed_not_approved_suggests_msg(self):
-        """M608: when install_approved=False, error guides to msg proposal."""
+    def test_skill_not_installed_not_approved_suggests_alternatives(self):
+        """M608/M847: when install_approved=False, error suggests alternatives first."""
         plan = {"tasks": [
             {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[], install_approved=False)
-        assert any("SINGLE msg task" in e for e in errors)
-        assert not any("exec task" in e for e in errors)
+        err = " ".join(errors)
+        assert "Remove this tool task" in err
+        assert "install 'browser'" in err  # fallback mentioned
 
     def test_tool_name_is_task_type_exec(self):
         """M613: tool='exec' is a task type confusion, not a real tool."""

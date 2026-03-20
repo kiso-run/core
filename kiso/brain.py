@@ -707,11 +707,10 @@ def _validate_plan_tasks(
                     errors.append(
                         f"Task {i}: tool '{tool_name}' is not installed. "
                         f"Available tools: {available}. "
-                        f"You CANNOT use '{tool_name}' in this plan. Remove the tool task. "
-                        f"Plan a SINGLE msg task asking the user whether to install "
-                        f"'{tool_name}', and offer alternatives (e.g. search instead of "
-                        f"browser). End the plan with that msg — the user's reply triggers "
-                        f"the next cycle."
+                        f"Remove this tool task. If the goal can be achieved with "
+                        f"built-in task types (search, exec) or installed tools "
+                        f"({available}), use those instead. Only if no alternative "
+                        f"exists, plan a msg asking whether to install '{tool_name}'."
                     )
             elif installed_skills_info and tool_name in installed_skills_info:
                 args_raw = task.get("args") or "{}"
