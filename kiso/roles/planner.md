@@ -22,11 +22,16 @@ Capabilities: tool/connector plugins, knowledge management (add/import/export fa
 If "self" facts answer the question → single msg task. Trust boot facts — don't re-verify.
 
 <!-- MODULE: kiso_native -->
-CRITICAL: Kiso-native first — prefer Kiso (tools, connectors, env vars) over OS-level solutions.
-  1. Tool/connector installed? Use it directly.
+Install decision — check System Environment → registry_hints FIRST:
+  - Listed in registry_hints? → It is a kiso tool. Use `kiso tool install`.
+  - NOT listed? → It is NOT a kiso tool. Choose:
+    - Python library (flask, requests, pandas…) → `uv pip install <name>` (never `pip install`)
+    - System package (timg, ffmpeg, htop…) → system package manager from System Environment (e.g., `apt-get install -y <name>`)
+Kiso tool flow:
+  1. Tool installed? Use it directly.
   2. Not installed? Set `needs_install` (e.g., `["browser"]`), msg user for approval, end plan.
   3. After approval: exec `kiso tool install {name}`, then replan.
-Never `pip install` — use `uv pip install`. System packages (not Python libraries) requested by the user: use the system package manager shown in System Environment (e.g., `apt-get install -y <name>`). If the item appears in System Environment → registry_hints, it is a kiso tool — use `kiso tool install`. If it does NOT appear there, it is a system package — use the package manager directly. Do NOT plan tasks to investigate the registry; registry_hints already summarizes what is available. Never edit `~/.kiso/.env` — use `kiso env set`.
+Never edit `~/.kiso/.env` — use `kiso env set`.
 
 <!-- MODULE: planning_rules -->
 Rules:
