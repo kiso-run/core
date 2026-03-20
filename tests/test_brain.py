@@ -1112,6 +1112,32 @@ class TestBuildPlannerMessages:
         content = msgs[1]["content"]
         assert "Safety Rules" not in content
 
+    async def test_connectors_in_context(self, db, config):
+        """M844: installed connectors appear in planner context."""
+        await create_session(db, "sess1")
+        fake_connectors = [
+            {"name": "discord", "description": "Discord messaging", "platform": "discord", "version": "0.1.0", "path": "/fake"},
+        ]
+        with (
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=fake_connectors),
+        ):
+            msgs, *_ = await build_planner_messages(db, config, "sess1", "admin", "setup discord")
+        content = msgs[1]["content"]
+        assert "discord" in content.lower()
+        assert "Connectors" in content or "connectors" in content.lower()
+
+    async def test_no_connectors_section_when_empty(self, db, config):
+        """M844: no connector section when none installed."""
+        await create_session(db, "sess1")
+        with (
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+        ):
+            msgs, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
+        content = msgs[1]["content"]
+        assert "## Available Connectors" not in content
+
     async def test_user_tools_filtered(self, db, config):
         await create_session(db, "sess1")
         fake_skills = [

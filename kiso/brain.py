@@ -15,6 +15,7 @@ from kiso.config import Config, KISO_DIR, setting_bool, setting_int
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_tools
 from kiso.security import fence_content
+from kiso.connectors import discover_connectors
 from kiso.recipe_loader import discover_recipes, build_planner_recipe_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
 from kiso.store import (
@@ -1088,6 +1089,14 @@ async def build_planner_messages(
     full_tool_list = build_planner_tool_list(installed, user_role, user_tools)
     if full_tool_list:
         context_pool["tools"] = full_tool_list
+
+    # Connector discovery — show installed connectors to planner
+    connectors = discover_connectors()
+    if connectors:
+        lines = ["Installed connectors:"]
+        for c in connectors:
+            lines.append(f"- {c['name']} — {c.get('description', '')} ({c.get('platform', '')})")
+        context_pool["connectors"] = "\n".join(lines)
 
     msg_lower = new_message.lower()
 
