@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 
-from kiso.config import KISO_DIR
+from kiso.config import KISO_DIR, LLM_API_KEY_ENV
 from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base, plugin_env_var_name
 
 log = logging.getLogger(__name__)
@@ -407,13 +407,19 @@ def build_tool_input(
 def build_tool_env(tool: dict) -> dict[str, str]:
     """Build the environment dict for a tool subprocess.
 
-    Includes PATH + deploy secret env vars (KISO_TOOL_{NAME}_{KEY}).
+    Includes PATH, the base LLM API key (when set), and any tool-specific
+    deploy secret env vars (KISO_TOOL_{NAME}_{KEY}).
     """
     venv_bin = _tool_venv_bin(tool)
     sys_path = os.environ.get("PATH", "/usr/bin:/bin")
     env: dict[str, str] = {
         "PATH": f"{venv_bin}:{sys_path}" if venv_bin else sys_path,
     }
+
+    # Propagate base LLM key so tools can fall back to it.
+    llm_key = os.environ.get(LLM_API_KEY_ENV)
+    if llm_key:
+        env[LLM_API_KEY_ENV] = llm_key
 
     env_decl = tool.get("env", {})
     tool_name = tool["name"]

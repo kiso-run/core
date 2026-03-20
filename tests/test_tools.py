@@ -926,7 +926,9 @@ class TestBuildToolInput:
 class TestBuildToolEnv:
     def test_basic_env(self):
         tool = {"name": "echo", "env": {}}
-        env = build_tool_env(tool)
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ["PATH"] = "/usr/bin"
+            env = build_tool_env(tool)
         assert "PATH" in env
         assert len(env) == 1
 
@@ -982,6 +984,21 @@ class TestBuildToolEnv:
             os.environ["PATH"] = "/usr/bin"
             env = build_tool_env(tool)
         assert "KISO_TOOL_AIDER_API_KEY" not in env
+
+    def test_llm_api_key_propagated(self):
+        """Base LLM key is included in tool env when set."""
+        tool = {"name": "echo", "env": {}}
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-base-key"}):
+            env = build_tool_env(tool)
+        assert env["KISO_LLM_API_KEY"] == "sk-base-key"
+
+    def test_llm_api_key_not_included_when_unset(self):
+        """Base LLM key is omitted when not set — no empty string leak."""
+        tool = {"name": "echo", "env": {}}
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ["PATH"] = "/usr/bin"
+            env = build_tool_env(tool)
+        assert "KISO_LLM_API_KEY" not in env
 
 
 # --- discover_tools TTL cache behaviour ---
