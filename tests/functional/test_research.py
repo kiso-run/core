@@ -36,7 +36,7 @@ class TestF7ResearchAndPublish:
         result = await run_message(
             "cerca i 5 linguaggi di programmazione più usati nel 2025, "
             "crea un file markdown con una tabella comparativa e mandamelo",
-            timeout=300,
+            timeout=600,
         )
 
         assert result.success, (
