@@ -1180,6 +1180,9 @@ class TestBuildPlannerMessages:
         system = msgs[0]["content"]
         # kiso_native content must be present despite briefer returning modules=[]
         assert "Kiso tool flow" in system
+        # M856: plugin_install must NOT be forced — its "curl registry" advice
+        # conflicts with the core "not in hints → apt-get" rule
+        assert "Plugin installation flow" not in system
 
     async def test_user_tools_filtered(self, db, config):
         await create_session(db, "sess1")

@@ -111,7 +111,7 @@ Plugin installation flow:
 3. Install: `kiso tool install {name}` (single exec task).  Replan after.
 4. If install fails with missing env vars, the error output lists them.  Plan msg asking user for values, then replan.
 
-If tool name is ambiguous, exec `curl <registry_url>` to discover.  Replan to evaluate.
+If tool name appears in registry_hints but details are unclear, exec `curl <registry_url>` to discover.  Replan to evaluate.  Do NOT curl for names absent from registry_hints — those are system packages, not kiso tools.
 
 <!-- MODULE: session_files -->
 Session file rules:

@@ -1144,12 +1144,14 @@ async def build_planner_messages(
 
     if briefing:
         # Briefer path: modules selected by the briefer LLM.
-        # Safety net: force install-related modules when tools need installing.
+        # Safety net: force kiso_native (install decision rules) when no tools.
+        # Note: plugin_install NOT forced here — it has "curl registry" advice
+        # that conflicts with the core "not in hints → apt-get" rule. The
+        # briefer selects plugin_install when actually needed.
         modules = list(briefing["modules"])
         if not installed or registry_text:
-            for _m in ("plugin_install", "kiso_native"):
-                if _m not in modules:
-                    modules.append(_m)
+            if "kiso_native" not in modules:
+                modules.append("kiso_native")
         if _has_session_files and "session_files" not in modules:
             modules.append("session_files")
         system_prompt = _load_modular_prompt("planner", modules)
