@@ -7886,6 +7886,22 @@ class TestArtifactGoalMismatch:
         errors = validate_plan(plan)
         assert any("file/document" in e for e in errors)
 
+    def test_replan_msg_only_accepted(self):
+        """M829: replan may legitimately explain why creation failed."""
+        plan = {"goal": "Create a report file in the project directory", "tasks": [
+            {"type": "msg", "detail": "Answer in English. The target directory does not exist"},
+        ]}
+        errors = validate_plan(plan, is_replan=True)
+        assert not any("file/document" in e for e in errors)
+
+    def test_first_plan_still_rejected(self):
+        """M829: first plan (not replan) still enforces artifact rule."""
+        plan = {"goal": "Create a report file in the project directory", "tasks": [
+            {"type": "msg", "detail": "Answer in English. Here is the report"},
+        ]}
+        errors = validate_plan(plan, is_replan=False)
+        assert any("file/document" in e for e in errors)
+
 
 # --- M558: _build_strict_schema + _join_or_empty helpers ---
 

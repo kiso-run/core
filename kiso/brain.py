@@ -873,7 +873,7 @@ def validate_plan(
     has_action_task = any(
         t.get("type") in (TASK_TYPE_EXEC, TASK_TYPE_TOOL) for t in tasks
     )
-    if has_verb and has_noun and not has_action_task:
+    if has_verb and has_noun and not has_action_task and not is_replan:
         errors.append(
             "Goal mentions creating a file/document but plan has no exec or tool task. "
             "Add an exec task to write the file to the workspace — "
