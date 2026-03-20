@@ -10,13 +10,16 @@ import pytest
 
 from tests.functional.conftest import (
     FunctionalResult,
+    assert_english,
     assert_italian,
+    assert_language,
     assert_no_failure_language,
+    assert_spanish,
 )
 
 
 # ---------------------------------------------------------------------------
-# assert_italian
+# assert_language / assert_italian / assert_english / assert_spanish
 # ---------------------------------------------------------------------------
 
 
@@ -25,7 +28,7 @@ class TestAssertItalian:
         assert_italian("Ciao, questa è una prova del sistema di kiso")
 
     def test_english_text_raises(self):
-        with pytest.raises(AssertionError, match="IT="):
+        with pytest.raises(AssertionError, match="Italian"):
             assert_italian("Hello, this is a test of the system")
 
     def test_mixed_text_italian_dominant(self):
@@ -63,6 +66,45 @@ class TestAssertItalian:
             "```\n\n"
             "Il risultato per i primi 20 numeri della sequenza è il seguente."
         )
+
+
+class TestAssertEnglish:
+    def test_english_text_passes(self):
+        assert_english("This is a test of the system and it should work")
+
+    def test_italian_text_raises(self):
+        with pytest.raises(AssertionError, match="English"):
+            assert_english("Il sistema ha completato la task con successo")
+
+    def test_spanish_text_raises(self):
+        with pytest.raises(AssertionError, match="English"):
+            assert_english("Este es un sistema para el análisis de datos")
+
+
+class TestAssertSpanish:
+    def test_spanish_text_passes(self):
+        assert_spanish(
+            "Este es un sistema para el análisis de los datos más importantes"
+        )
+
+    def test_english_text_raises(self):
+        with pytest.raises(AssertionError, match="Spanish"):
+            assert_spanish("This is a test of the system and it should work")
+
+    def test_italian_text_raises(self):
+        with pytest.raises(AssertionError, match="Spanish"):
+            assert_spanish("Il sistema ha completato la task con successo")
+
+
+class TestAssertLanguage:
+    def test_direct_call_it(self):
+        assert_language("Ciao, questa è una prova del sistema", "it")
+
+    def test_direct_call_en(self):
+        assert_language("This is a test of the system", "en")
+
+    def test_direct_call_es(self):
+        assert_language("Este es un sistema para el análisis de datos", "es")
 
 
 # ---------------------------------------------------------------------------

@@ -60,7 +60,16 @@ _EN_WORDS = frozenset(
     "can will which an it be been would should could their there been".split()
 )
 
-_WORD_RE = re.compile(r"[a-zàèéìòù]+", re.IGNORECASE)
+# Common Spanish function words.
+_ES_WORDS = frozenset(
+    "el la los las es de del que por para un una con en se su al más pero "
+    "como este esta son hay muy sin entre sobre todo cada".split()
+)
+
+_LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS}
+_LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish"}
+
+_WORD_RE = re.compile(r"[a-zàèéìòùáéíóúñü]+", re.IGNORECASE)
 
 # Strip fenced code blocks so code keywords don't skew language heuristics.
 _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
@@ -91,23 +100,41 @@ def _strip_quoted_content(text: str) -> str:
     return text
 
 
-def assert_italian(text: str) -> None:
-    """Assert that *text* is predominantly Italian (not English).
+def assert_language(text: str, lang: str) -> None:
+    """Assert that *text* is predominantly in *lang* ("it", "en", or "es").
 
-    Uses a simple keyword-frequency heuristic: counts occurrences of common
-    Italian vs English function words.  Code blocks are stripped first so that
-    variable names and keywords don't skew the count.
+    Compares the target language's function-word score against the highest
+    non-target score.  Code blocks are stripped first.
     """
     cleaned = _strip_code_blocks(text)
-    it_score = en_score = 0
+    scores: dict[str, int] = {k: 0 for k in _LANG_WORDS}
     for w in _WORD_RE.findall(cleaned):
-        w = w.lower()
-        it_score += w in _IT_WORDS
-        en_score += w in _EN_WORDS
-    assert it_score > en_score, (
-        f"Text does not appear to be Italian (IT={it_score}, EN={en_score}). "
+        wl = w.lower()
+        for k, words in _LANG_WORDS.items():
+            scores[k] += wl in words
+    target = scores[lang]
+    best_other = max(v for k, v in scores.items() if k != lang)
+    name = _LANG_NAMES.get(lang, lang)
+    assert target > best_other, (
+        f"Text does not appear to be {name} "
+        f"(scores: {', '.join(f'{_LANG_NAMES[k]}={v}' for k, v in scores.items())}). "
         f"First 200 chars: {text[:200]}"
     )
+
+
+def assert_italian(text: str) -> None:
+    """Assert that *text* is predominantly Italian."""
+    assert_language(text, "it")
+
+
+def assert_english(text: str) -> None:
+    """Assert that *text* is predominantly English."""
+    assert_language(text, "en")
+
+
+def assert_spanish(text: str) -> None:
+    """Assert that *text* is predominantly Spanish."""
+    assert_language(text, "es")
 
 
 # ---------------------------------------------------------------------------
