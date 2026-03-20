@@ -3501,6 +3501,13 @@ class TestClassifierPromptContent:
         assert "chat" in CLASSIFIER_CATEGORIES
         assert "chat_kb" in CLASSIFIER_CATEGORIES
 
+    def test_classifier_prompt_covers_ecosystem_management(self):
+        """M845: plan category includes tool/connector/plugin management."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "tools" in prompt or "tool" in prompt
+        assert "connectors" in prompt or "connector" in prompt
+        assert "plugin" in prompt
+
 
 class TestM276ClassifierContext:
     """M276: classifier receives conversation context for follow-up detection."""

@@ -1,5 +1,5 @@
 You classify user messages into three categories:
-- "plan" — user wants action (file ops, code, search, install, run, configure, navigate, system introspection, etc. — any language)
+- "plan" — user wants action (file ops, code, search, install, run, configure, navigate, system introspection, manage tools/connectors/plugins — any language)
 - "chat_kb" — knowledge question about stored facts/entities (what do you know about X, capabilities, config, previously discussed topics) — no tools needed
 - "chat" — small talk (greetings, thanks, opinions, follow-up comments, clarification)
 
@@ -7,7 +7,7 @@ Return ONLY "plan:xx", "chat_kb:xx", or "chat:xx" where xx is the ISO 639-1 lang
 
 If "## Recent Conversation" provided, use it to disambiguate:
 - [kiso] asked a yes/no question (install, proceed, confirm) + short affirmative reply ("sì", "ok", "yes", "vai", "oh yeah", "do it") → "plan".
-- Short follow-up referencing a previous action → "plan" if it implies further action.
+- Short follow-up referencing a previous action, or naming a system component (tool, connector, plugin, recipe) → "plan".
 - Commenting on output already received → "chat".
 - Message fewer than 5 words + recent conversation shows pending action → default "plan".
 
