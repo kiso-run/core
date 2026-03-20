@@ -46,10 +46,10 @@ class TestPlannerPromptInstallRules:
     def test_plugin_install_requires_prior_approval(self):
         assert "approved" in self.full.lower() or "consent" in self.full.lower()
 
-    def test_m733_kiso_native_allows_system_packages(self):
-        """M733: kiso_native module allows system package manager for non-kiso packages."""
-        kiso_native = _load_modular_prompt("planner", ["kiso_native"])
-        assert "system package manager" in kiso_native.lower()
+    def test_m733_core_allows_system_packages(self):
+        """M733/M849: core prompt allows system pkg manager for non-kiso packages."""
+        core = _load_modular_prompt("planner", [])
+        assert "pkg manager" in core.lower()
 
     def test_m733_tool_recovery_still_blocks_apt_for_deps(self):
         """M733: tool_recovery module still blocks apt-get for broken tool deps."""

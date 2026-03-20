@@ -1152,6 +1152,35 @@ class TestBuildPlannerMessages:
         content = msgs[1]["content"]
         assert "## Available Connectors" not in content
 
+    async def test_briefer_forces_kiso_native_when_no_tools(self, db, config):
+        """M849: briefer path forces kiso_native module when no tools installed."""
+        await create_session(db, "sess1")
+        # Enable briefer — the safety net should force kiso_native
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        with (
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            # Mock briefer to return empty modules (simulates aggressive filtering)
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": [], "context": "",
+                "output_indices": [], "relevant_tags": [],
+                "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "install flask",
+            )
+        system = msgs[0]["content"]
+        # kiso_native content must be present despite briefer returning modules=[]
+        assert "Kiso tool flow" in system
+
     async def test_user_tools_filtered(self, db, config):
         await create_session(db, "sess1")
         fake_skills = [
@@ -5392,7 +5421,8 @@ class TestLoadModularPrompt:
         assert "Broken tool recovery" not in result
         assert "File-based data flow" not in result
         assert "Tools efficiency:" not in result
-        assert "registry_hints" not in result
+        # registry_hints IS in core now (M849 — install rules in core prompt)
+        assert "registry_hints" in result
         assert "Recent Messages" not in result
 
     # M600: parametrized module loading tests
@@ -5403,8 +5433,8 @@ class TestLoadModularPrompt:
         ("tool_recovery", ["broken tool deps"], []),
         ("data_flow", ["save to file"], []),
         ("planning_rules", ["expect", "invent"], ["tools efficiency"]),
-        ("kiso_native", ["registry_hints"], ["tools efficiency"]),
-        ("tools_rules", ["tools efficiency", "atomic"], ["registry_hints"]),
+        ("kiso_native", ["Kiso tool flow"], ["tools efficiency"]),
+        ("tools_rules", ["tools efficiency", "atomic"], ["Kiso tool flow"]),
         ("kiso_commands", ["kiso tool install", "kiso env set"], []),
         ("user_mgmt", ["kiso user add"], []),
         ("plugin_install", ["plugin installation"], []),
@@ -6196,6 +6226,15 @@ class TestM266BrowserAvailability:
 class TestM261PromptSizeReduction:
     """M261: verify planner prompt size decreases with selective module loading."""
 
+    def test_core_always_contains_install_rules(self):
+        """M849: core prompt (no modules) contains critical install rules."""
+        core_only = _load_modular_prompt("planner", [])
+        assert "uv pip install" in core_only
+        assert "registry_hints" in core_only
+        assert "needs_install" in core_only
+        # Must NOT contain expanded kiso_native flow (that's in the module)
+        assert "Kiso tool flow (expanded)" not in core_only
+
     def test_core_only_is_smallest(self):
         """Core-only prompt (no modules) is significantly smaller than all modules."""
         core_only = _load_modular_prompt("planner", [])
@@ -6225,24 +6264,24 @@ class TestM261PromptSizeReduction:
         assert len(replan_prompt) < len(all_modules) * 0.40
 
     def test_m743_system_package_and_tool_recovery_coexist(self):
-        """M743: kiso_native allows system packages, tool_recovery blocks apt for deps.
+        """M743: core allows system packages, tool_recovery blocks apt for deps.
         Both rules must coexist in the full prompt without contradiction."""
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # kiso_native: system packages allowed
-        assert "system package manager" in all_modules.lower()
+        # Core: system packages allowed (M849 — in core now)
+        assert "pkg manager" in all_modules.lower()
         # tool_recovery: apt-get blocked for broken deps
         assert "Never apt-get/pip install to fix" in all_modules
-        # Both present in the same prompt
-        sys_pkg_pos = all_modules.lower().index("system package manager")
+        # Core pkg rule comes before tool_recovery
+        pkg_pos = all_modules.lower().index("pkg manager")
         tool_rec_pos = all_modules.index("Never apt-get/pip install to fix")
-        # kiso_native comes before tool_recovery in the prompt
-        assert sys_pkg_pos < tool_rec_pos
+        assert pkg_pos < tool_rec_pos
 
-    def test_m743_kiso_native_module_has_system_package_rule(self):
-        """M743: kiso_native module individually contains system package rule."""
-        kiso_native = _load_modular_prompt("planner", ["kiso_native"])
-        assert "system package manager" in kiso_native.lower()
-        assert "apt-get install" in kiso_native.lower()
+    def test_m849_core_has_install_rules(self):
+        """M849: core prompt (no modules) contains install decision rules."""
+        core_only = _load_modular_prompt("planner", [])
+        assert "uv pip install" in core_only
+        assert "pkg manager" in core_only.lower()
+        assert "needs_install" in core_only
 
     def test_m743_tool_recovery_module_still_blocks_apt(self):
         """M743: tool_recovery module still blocks apt-get for broken tool deps."""
