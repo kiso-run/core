@@ -3473,11 +3473,12 @@ class TestClassifierPromptContent:
         assert "Recent Conversation" in prompt
         assert "follow-up" in prompt.lower() or "follow up" in prompt.lower()
 
-    def test_classifier_prompt_covers_system_introspection(self):
-        """M350: classifier should route system self-inspection queries to plan."""
+    def test_classifier_prompt_covers_system_state(self):
+        """M350/M846: classifier routes system state and real-time queries to plan."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "system introspection" in prompt
-        assert "ssh key" in prompt or "ssh keys" in prompt
+        assert "system state" in prompt
+        assert "real-time" in prompt or "changes over time" in prompt
+        assert "never guess" in prompt or "never let" in prompt
 
     def test_classifier_prompt_defines_chat_kb(self):
         """M364: classifier prompt defines chat_kb category."""

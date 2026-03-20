@@ -13,7 +13,7 @@ If "## Recent Conversation" provided, use it to disambiguate:
 
 URL/domain in message + user wants info from it → "plan".
 Imperative command requesting action (any language) → "plan".
-System's own state, configuration, or resources (SSH keys, IP, disk, hostname, installed software, ports, "your X", "do you have X") → "plan". These require shell commands.
+System state, real-time info, or anything that changes over time (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan". These require shell commands — never guess dynamic values.
 Self-referential knowledge ("what do you know", "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb".
 Questions about previously discussed topics or known entities → "chat_kb".
 General knowledge questions not about stored entities → "chat".

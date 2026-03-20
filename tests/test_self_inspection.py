@@ -34,14 +34,14 @@ class TestM358SelfInspection:
         """Classifier system prompt contains rule to route SSH queries to plan."""
         msgs = build_classifier_messages("mostrami la tua chiave SSH pubblica")
         system = msgs[0]["content"]
-        assert "SSH" in system or "system's own state" in system
+        assert "SSH" in system or "System state" in system
         # The classifier prompt should mention self-inspection → plan
         assert "plan" in system.lower()
 
     def test_classifier_prompt_routes_hostname_to_plan(self):
         msgs = build_classifier_messages("what is your hostname?")
         system = msgs[0]["content"]
-        assert "hostname" in system or "system's own state" in system
+        assert "hostname" in system or "System state" in system
 
     def test_classifier_knowledge_question_not_special(self):
         """'What is SSH?' is a knowledge question — no self-inspection trigger."""
