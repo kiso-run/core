@@ -6,9 +6,18 @@ Each brain function called individually with a real LLM.
 from __future__ import annotations
 
 import asyncio
+import unicodedata
 from unittest.mock import patch
 
 import pytest
+
+
+def _strip_accents(text: str) -> str:
+    """Normalize unicode accents: París → Paris, café → cafe."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(c)
+    )
 
 from kiso.brain import (
     run_curator,
@@ -276,7 +285,7 @@ class TestWorkerLive:
         )
         assert isinstance(text, str)
         assert len(text) > 0
-        assert "paris" in text.lower()
+        assert "paris" in _strip_accents(text.lower())
 
     async def test_msg_task_with_goal(
         self, live_config, seeded_db, live_session,
