@@ -725,8 +725,8 @@ def _validate_plan_tasks(
                         f"Task {i}: tool '{tool_name}' is not installed. "
                         f"Available tools: {available}. "
                         f"You CANNOT use type=tool for uninstalled tools. "
-                        f"Installation is approved — plan an exec task: "
-                        f"`kiso tool install {tool_name}`, then replan to use it."
+                        f"Installation is approved — plan an exec task to install "
+                        f"{tool_name} via the kiso CLI, then replan to use it."
                     )
                 else:
                     errors.append(
@@ -923,9 +923,9 @@ def validate_plan(
                 if install_approved:
                     errors.append(
                         f"Task {i}: tool '{t['tool']}' is not installed yet. "
-                        f"Install is approved — plan ONLY exec `kiso tool install "
-                        f"{t['tool']}` + replan as last task. Tool tasks go in the "
-                        f"NEXT plan after install completes."
+                        f"Install is approved — plan ONLY an exec task to install "
+                        f"{t['tool']} via the kiso CLI, then replan as last task. "
+                        f"Tool tasks go in the NEXT plan after install completes."
                     )
                 else:
                     errors.append(
@@ -1348,9 +1348,9 @@ async def build_planner_messages(
         context_parts.append(
             "## Install Status\n"
             "A prior plan proposed tool installation and the user approved. "
-            "For tools NOT yet installed: plan exec `kiso tool install {name}` + "
-            "replan as last task. Do NOT add tool tasks for uninstalled tools — "
-            "they become available after the replan. "
+            "For tools NOT yet installed: plan an exec task to install them "
+            "via the kiso CLI, then replan as last task. Do NOT add tool tasks "
+            "for uninstalled tools — they become available after the replan. "
             "For tools already installed: use them directly."
         )
 

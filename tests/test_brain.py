@@ -357,8 +357,8 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[], install_approved=True)
-        assert any("kiso tool install browser" in e for e in errors)
         assert any("exec task" in e for e in errors)
+        assert any("kiso CLI" in e for e in errors)
         assert not any("SINGLE msg task" in e for e in errors)
 
     def test_skill_not_installed_not_approved_suggests_alternatives(self):
@@ -8024,7 +8024,7 @@ class TestNeedsInstallCoherence:
         ]}
         errors = validate_plan(plan, install_approved=True)
         err = " ".join(errors)
-        assert "exec `kiso tool install" in err
+        assert "exec task" in err and "kiso CLI" in err
         assert "replan" in err
         assert "NEXT plan" in err
 
