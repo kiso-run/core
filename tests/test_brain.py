@@ -3568,6 +3568,13 @@ class TestClassifierPromptContent:
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
         assert "tools" in prompt or "tool" in prompt
         assert "connectors" in prompt or "connector" in prompt
+
+    def test_classifier_prompt_supports_non_latin_languages(self):
+        """M877: classifier prompt includes non-Latin language examples."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text()
+        assert "ru" in prompt  # Russian/Cyrillic
+        assert "zh" in prompt  # Chinese/CJK
+        assert "Cyrillic" in prompt or "cyrillic" in prompt
         assert "plugin" in prompt
 
 
