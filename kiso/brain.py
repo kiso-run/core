@@ -109,6 +109,58 @@ def _format_message_history(messages: list[dict]) -> str:
     )
 
 
+_INSTALL_KEYWORDS = frozenset({
+    "install", "installa", "installo", "installare", "installer",
+    "needs_install", "tool install", "connector install",
+})
+_APPROVAL_KEYWORDS = frozenset({
+    "sì", "si", "yes", "ok", "vai", "do it", "proceed", "confirma",
+    "installa", "install",
+})
+
+
+def _compress_install_turns(lines: list[str]) -> list[str]:
+    """Compress install proposal→approval→result sequences in recent context.
+
+    Detects consecutive [kiso] install proposal + [user] approval + [kiso]
+    result and replaces them with a single "[install completed]" line,
+    keeping the original user request that triggered the proposal.
+
+    Non-install messages pass through unchanged.
+    """
+    if len(lines) < 3:
+        return lines
+
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        # Look for pattern: [kiso] install proposal + [user] approval + [kiso] result
+        if (
+            i + 2 < len(lines)
+            and lines[i].startswith("[kiso]")
+            and lines[i + 1].startswith("[user]")
+            and lines[i + 2].startswith("[kiso]")
+        ):
+            kiso_text = lines[i].lower()
+            user_text = lines[i + 1].lower()
+            kiso_result = lines[i + 2].lower()
+
+            is_proposal = any(kw in kiso_text for kw in _INSTALL_KEYWORDS)
+            is_approval = any(kw in user_text for kw in _APPROVAL_KEYWORDS)
+            is_result = "install" in kiso_result or "replan" in kiso_result
+
+            if is_proposal and is_approval and is_result:
+                # Compress: extract tool name heuristically
+                result.append("[install completed] tool installed and available.")
+                i += 3
+                continue
+
+        result.append(lines[i])
+        i += 1
+
+    return result
+
+
 def build_recent_context(
     messages: list[dict], *, max_chars: int = 0, kiso_truncate: int = 200,
 ) -> str:
@@ -123,6 +175,9 @@ def build_recent_context(
     User messages use ``[user] {username}``. Assistant/system messages use
     ``[kiso]`` with content truncated to *kiso_truncate* chars (kiso responses
     can be very long; the gist is enough for context).
+
+    Install proposal→approval→result sequences are compressed to reduce
+    context noise after tool installation cycles.
 
     When *max_chars* > 0, older messages are dropped to stay within budget
     (most recent messages preserved).
@@ -141,6 +196,9 @@ def build_recent_context(
         else:
             user = m.get("user") or "user"
             lines.append(f"[user] {user}: {m.get('content', '')}")
+
+    # Compress install turns to reduce noise after install cycles
+    lines = _compress_install_turns(lines)
 
     if max_chars > 0:
         # Keep most recent messages within budget

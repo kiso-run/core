@@ -8280,6 +8280,53 @@ class TestBuildRecentContext:
         assert "[user] user: hello" in result
 
 
+class TestCompressInstallTurns:
+    """M880: compress install proposal→approval→result sequences."""
+
+    def test_install_sequence_compressed(self):
+        from kiso.brain import _compress_install_turns
+        lines = [
+            "[user] root: Use aider to write a script",
+            "[kiso] Vuoi installare aider? needs_install...",
+            "[user] root: sì, installa il tool aider",
+            "[kiso] Tool aider installato. Replan...",
+        ]
+        result = _compress_install_turns(lines)
+        assert len(result) == 2  # original request + compressed install
+        assert "[user] root: Use aider" in result[0]
+        assert "install completed" in result[1].lower()
+
+    def test_non_install_messages_unchanged(self):
+        from kiso.brain import _compress_install_turns
+        lines = [
+            "[user] root: che ore sono?",
+            "[kiso] Sono le 15:30.",
+        ]
+        result = _compress_install_turns(lines)
+        assert result == lines
+
+    def test_mixed_install_and_regular(self):
+        from kiso.brain import _compress_install_turns
+        lines = [
+            "[user] root: hello",
+            "[kiso] Ciao!",
+            "[kiso] Vuoi installare browser? needs_install...",
+            "[user] root: yes",
+            "[kiso] Browser installed. Replan...",
+            "[user] root: now go to example.com",
+        ]
+        result = _compress_install_turns(lines)
+        # Regular messages preserved, install sequence compressed
+        assert any("hello" in l for l in result)
+        assert any("install completed" in l.lower() for l in result)
+        assert any("example.com" in l for l in result)
+
+    def test_short_list_unchanged(self):
+        from kiso.brain import _compress_install_turns
+        lines = ["[user] root: hi"]
+        assert _compress_install_turns(lines) == lines
+
+
 class TestFormatPendingItems:
     def test_formats_pending(self):
         from kiso.brain import _format_pending_items
