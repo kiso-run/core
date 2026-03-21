@@ -1237,6 +1237,9 @@ async def build_planner_messages(
         # Briefer path: use synthesized context + filtered skills
         _add_section(context_parts, "Context", briefing["context"])
         _add_section(context_parts, "Relevant Facts", scored_facts_text)
+        # System Environment is always included — the core prompt's install
+        # decision rule references registry_hints which live here.
+        context_parts.append(f"## System Environment\n{sys_env_text}")
     else:
         # Fallback path: full context dump (original behavior)
         _add_section(context_parts, "Session Summary", summary)

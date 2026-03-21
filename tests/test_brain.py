@@ -1183,6 +1183,10 @@ class TestBuildPlannerMessages:
         # M856: plugin_install must NOT be forced — its "curl registry" advice
         # conflicts with the core "not in hints → apt-get" rule
         assert "Plugin installation flow" not in system
+        # System Environment must always be in planner context — the core
+        # prompt's install decision references registry_hints which live there
+        user_content = msgs[1]["content"]
+        assert "System Environment" in user_content
 
     async def test_user_tools_filtered(self, db, config):
         await create_session(db, "sess1")
@@ -5573,8 +5577,8 @@ class TestBrieferPlannerIntegration:
         # build_planner_tool_list rebuilds full descriptions from installed tools
         assert "browser" in user_content
         assert "Navigate, click, fill, screenshot, text" in user_content
-        # M258: sys_env NOT unconditionally included in briefer path
-        assert "## System Environment" not in user_content
+        # System Environment always included — planner needs registry_hints
+        assert "## System Environment" in user_content
 
     async def test_briefer_disabled_uses_full_context(self, db):
         """When briefer_enabled=False, full context is used (original behavior)."""
@@ -6040,8 +6044,8 @@ class TestM258SysEnvAndGapFiltering:
             raw={},
         )
 
-    async def test_briefer_path_no_sys_env_in_user_content(self, db):
-        """M258: briefer path does NOT unconditionally append sys_env."""
+    async def test_briefer_path_always_has_sys_env(self, db):
+        """System Environment always included — planner needs registry_hints."""
         briefing = {
             "modules": [],
             "tools": [],
@@ -6064,7 +6068,7 @@ class TestM258SysEnvAndGapFiltering:
             )
 
         user_content = msgs[1]["content"]
-        assert "## System Environment" not in user_content
+        assert "## System Environment" in user_content
         assert "## Context\nUser wants a joke." in user_content
 
     async def test_fallback_path_has_sys_env(self, db):
