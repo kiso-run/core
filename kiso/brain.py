@@ -188,6 +188,12 @@ def _repair_json(text: str) -> str:
 _INSTALL_CMD_RE = re.compile(
     r"kiso\s+(tool|skill|connector)\s+install", re.IGNORECASE,
 )
+# Extract plugin name from "kiso tool install <name>" for registry validation.
+_INSTALL_NAME_RE = re.compile(
+    r"kiso\s+(?:tool|skill|connector)\s+install\s+(\S+)", re.IGNORECASE,
+)
+# Detect external git URLs — these bypass registry name validation.
+_GIT_URL_RE = re.compile(r"https?://|git@|\.git\b", re.IGNORECASE)
 # Exec details mentioning pip for package installation without uv prefix.
 # Catches: "pip install X", "install X using pip", "use pip to install".
 _PIP_INSTALL_RE = re.compile(
@@ -616,6 +622,7 @@ def _validate_plan_tasks(
     installed_skills: list[str] | None,
     installed_skills_info: dict[str, dict] | None,
     install_approved: bool = False,
+    registry_hint_names: frozenset[str] | None = None,
 ) -> list[str]:
     """Check per-task rules: type, detail, expect, args, tool validation."""
     errors: list[str] = []
@@ -648,6 +655,17 @@ def _validate_plan_tasks(
                 f"Task {i}: use 'uv pip install' instead of bare 'pip install'. "
                 f"Direct pip can corrupt the system environment."
             )
+        # M862: kiso plugin install for names not in registry (without git URL)
+        if t == TASK_TYPE_EXEC and registry_hint_names is not None:
+            name_match = _INSTALL_NAME_RE.search(detail)
+            if name_match and not _GIT_URL_RE.search(detail):
+                install_name = name_match.group(1).lower()
+                if install_name not in registry_hint_names:
+                    errors.append(
+                        f"Task {i}: '{install_name}' is not in the kiso plugin registry. "
+                        f"For system packages use the package manager (e.g. apt-get install), "
+                        f"for Python libraries use uv pip install."
+                    )
         if t == TASK_TYPE_MSG:
             for field in ("expect", "tool", "args"):
                 if task.get(field) is not None:
@@ -860,6 +878,7 @@ def validate_plan(
     installed_skills_info: dict[str, dict] | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
+    registry_hint_names: frozenset[str] | None = None,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
@@ -868,6 +887,8 @@ def validate_plan(
     If installed_skills_info is provided (name→tool dict), tool args are
     validated against the schema at plan time.
     If is_replan is False, extend_replan is stripped.
+    If registry_hint_names is provided, exec tasks with ``kiso tool install``
+    are validated: the name must be in the registry (or a git URL).
     """
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
@@ -875,6 +896,7 @@ def validate_plan(
     errors.extend(_validate_plan_tasks(
         tasks, installed_skills, installed_skills_info,
         install_approved=install_approved,
+        registry_hint_names=registry_hint_names,
     ))
     errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
     errors.extend(_validate_plan_groups(tasks))
@@ -1366,6 +1388,17 @@ async def run_planner(
 
     max_tasks = max_tasks_override if max_tasks_override is not None else int(config.settings["max_plan_tasks"])
 
+    # Extract registry hint names for install validation (M862).
+    _sysenv = get_system_env(config)
+    _hints_raw = _sysenv.get("registry_hints", "")
+    _reg_hint_names: frozenset[str] | None = None
+    if _hints_raw:
+        # "websearch (Web search); aider (Code editing)" → {"websearch", "aider"}
+        _reg_hint_names = frozenset(
+            part.split("(")[0].strip().lower()
+            for part in _hints_raw.split(";") if part.strip()
+        )
+
     # inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
     for msg in reversed(messages):
@@ -1380,7 +1413,8 @@ async def run_planner(
         config, "planner", messages, PLAN_SCHEMA,
         lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
                                 installed_skills_info=tools_by_name, is_replan=is_replan,
-                                install_approved=install_approved),
+                                install_approved=install_approved,
+                                registry_hint_names=_reg_hint_names),
         PlanError, "Plan",
         session=session,
         on_retry=on_retry,

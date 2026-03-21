@@ -7951,6 +7951,45 @@ class TestPipToUvValidation:
         assert not any("uv pip install" in e for e in errors)
 
 
+class TestRegistryInstallValidation:
+    """M862: kiso plugin install for names not in registry."""
+
+    _HINTS = frozenset({"websearch", "aider", "browser"})
+
+    def _plan(self, detail):
+        return {"tasks": [
+            {"type": "exec", "detail": detail, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+
+    def test_kiso_install_unknown_name_rejected(self):
+        errors = validate_plan(self._plan("kiso tool install timg"),
+                               registry_hint_names=self._HINTS)
+        assert any("not in the kiso plugin registry" in e for e in errors)
+
+    def test_kiso_install_known_name_accepted(self):
+        errors = validate_plan(self._plan("kiso tool install browser"),
+                               registry_hint_names=self._HINTS)
+        assert not any("not in the kiso plugin registry" in e for e in errors)
+
+    def test_kiso_install_with_git_url_accepted(self):
+        errors = validate_plan(
+            self._plan("kiso tool install https://github.com/someone/my-tool.git"),
+            registry_hint_names=self._HINTS,
+        )
+        assert not any("not in the kiso plugin registry" in e for e in errors)
+
+    def test_kiso_connector_install_unknown_rejected(self):
+        errors = validate_plan(self._plan("kiso connector install slack"),
+                               registry_hint_names=self._HINTS)
+        assert any("not in the kiso plugin registry" in e for e in errors)
+
+    def test_no_registry_hints_skips_check(self):
+        """When registry_hint_names is None, check is skipped."""
+        errors = validate_plan(self._plan("kiso tool install timg"))
+        assert not any("not in the kiso plugin registry" in e for e in errors)
+
+
 class TestNeedsInstallCoherence:
     """M640: needs_install + tool task for same tool → error."""
 
