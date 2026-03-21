@@ -50,7 +50,7 @@ class TestPlanAndExecuteMsg:
             plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
-                    "What is 2 + 2?",
+                    "What is 2 + 2? Reply with the numeral only.",
                 ),
                 timeout=TIMEOUT,
             )
