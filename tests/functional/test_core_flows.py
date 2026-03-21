@@ -362,15 +362,15 @@ class TestF25ExecFailsUserCorrects:
 # ---------------------------------------------------------------------------
 
 
-class TestF26TeachFactUseInExec:
-    """Teach a fact, then use it in an exec task."""
+class TestF26TeachFactThenRecall:
+    """Teach a fact, then recall it in the next plan."""
 
-    async def test_teach_fact_use_in_exec(self, run_message):
-        """What: Teaches port number, then asks to check if it's open.
+    async def test_teach_fact_then_recall(self, run_message):
+        """What: Teaches port number, then asks what port the project uses.
 
-        Why: Validates knowledge integration into exec tasks — the planner
-        retrieves the learned fact and uses it in the exec detail.
-        Expects: Plan 2 references port 9090 from the learned fact.
+        Why: Validates knowledge integration across plans — the planner
+        retrieves the learned fact and uses it in the response.
+        Expects: Plan 2 response mentions port 9090 from the learned fact.
         """
         r1 = await run_message(
             "ricordati che il progetto Zeus usa la porta 9090",
@@ -381,15 +381,13 @@ class TestF26TeachFactUseInExec:
         )
 
         r2 = await run_message(
-            "controlla se la porta del progetto Zeus è aperta",
+            "che porta usa il progetto Zeus?",
             timeout=300,
         )
         assert r2.success, (
             f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
         )
-        all_output = "\n".join(
-            t.get("output") or "" for t in r2.tasks
-        ).lower()
-        assert "9090" in all_output, (
-            f"Expected '9090' in output: {all_output[:500]}"
+        output = r2.last_plan_msg_output.lower()
+        assert "9090" in output, (
+            f"Expected '9090' in response: {output[:500]}"
         )

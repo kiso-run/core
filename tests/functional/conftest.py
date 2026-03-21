@@ -258,6 +258,11 @@ class FunctionalResult:
         """Return only tool-type tasks."""
         return [t for t in self.tasks if t.get("type") == "tool"]
 
+    @staticmethod
+    def task_tool_name(task: dict) -> str:
+        """Return the tool name for a task (handles DB column `skill` vs `tool`)."""
+        return task.get("skill") or task.get("tool") or ""
+
 
 # ---------------------------------------------------------------------------
 # Config fixture (session-scoped — same LLM config for all functional tests)
