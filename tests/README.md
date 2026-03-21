@@ -198,9 +198,12 @@ Each test sends a natural-language message through `_process_message()` and
 asserts on the response and side effects. Grouped by capability: browser,
 system, services, research, knowledge, core flows.
 
-**Extended tests** (`@pytest.mark.extended`) are multi-plan tests that take
->3 minutes each (e.g., F17: browser → ocr → aider → exec → msg). They're
-excluded from option 6 and run separately via option 10 or `--extended`.
+**Extended tests** (`@pytest.mark.extended`) include multi-plan tests and
+post-preset workflow tests (tools pre-installed via session fixture).
+Excluded from option 7 and run separately via option 8 or `--extended`.
+
+Post-preset workflows (`test_preset_workflows.py`): install browser/ocr/aider
+once, then test real workflows without install flow fragility (F27-F30).
 
 **Destructive tests** (`@pytest.mark.destructive`) create real accounts on
 external services. Gated by `--destructive`, never run in CI.
