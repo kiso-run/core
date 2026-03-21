@@ -185,6 +185,50 @@ run_interactive() {
 }
 
 # ---------------------------------------------------------------------------
+# Run a specific test — auto-detect host vs Docker from path
+# ---------------------------------------------------------------------------
+_run_specific() {
+    # $spec is intentionally unquoted in command position to allow
+    # multi-arg patterns like: tests/test_brain.py -k "pip_install"
+    local spec="$1"
+
+    # Use regex prefix match (not glob) so nested paths work
+    if [[ "$spec" =~ ^tests/docker/ ]]; then
+        if [[ "$HAS_DOCKER" != true ]]; then
+            echo -e "${RED}This test needs Docker (not available)${NC}"
+            return
+        fi
+        run_suite "Specific test" \
+            docker compose -f docker-compose.test.yml run --build --rm \
+            test-docker \
+            uv run pytest $spec -v
+    elif [[ "$spec" =~ ^tests/functional/ ]]; then
+        if [[ "$HAS_DOCKER" != true ]]; then
+            echo -e "${RED}This test needs Docker (not available)${NC}"
+            return
+        fi
+        if [[ "$HAS_API_KEY" != true ]]; then
+            echo -e "${RED}This test needs OPENROUTER_API_KEY (not set)${NC}"
+            return
+        fi
+        run_suite "Specific test" \
+            docker compose -f docker-compose.test.yml run --build --rm \
+            -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+            test-functional \
+            uv run pytest $spec -v --functional --extended
+    elif [[ "$spec" =~ ^tests/live/ ]]; then
+        run_suite "Specific test" \
+            uv run pytest $spec -v --llm-live --live-network
+    elif [[ "$spec" =~ ^tests/integration/ ]]; then
+        run_suite "Specific test" \
+            uv run pytest $spec -v --integration
+    else
+        run_suite "Specific test" \
+            uv run pytest $spec -v
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Auto mode (CI / scripting)
 # ---------------------------------------------------------------------------
 run_auto() {
@@ -296,10 +340,11 @@ run_interactive_menu() {
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
     echo -e "  ${CYAN}9${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
     echo -e "  ${CYAN}10${NC} All automatic           ${DIM}1-8 (skip 9 interactive)${NC}"
+    echo -e "  ${CYAN}s${NC}  Run specific test       ${DIM}path::Class::test or -k pattern${NC}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-10, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-10, s, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -351,6 +396,21 @@ run_interactive_menu() {
                 run_plugins ""
                 run_functional
                 run_extended
+                ;;
+            s|S)
+                echo ""
+                echo -e "  ${DIM}Examples:${NC}"
+                echo -e "  ${DIM}  tests/live/test_roles.py::TestPlannerSystemPackageLive::test_python_lib_uses_uv_pip${NC}"
+                echo -e "  ${DIM}  tests/test_brain.py -k \"pip_install\"${NC}"
+                echo -e "  ${DIM}  tests/functional/test_core_flows.py::TestF18SimpleQA${NC}"
+                echo ""
+                local spec
+                read -rp "  pytest args: " spec
+                if [[ -z "$spec" ]]; then
+                    echo -e "${RED}No pattern provided${NC}"
+                else
+                    _run_specific "$spec"
+                fi
                 ;;
             *)
                 echo -e "${RED}Invalid choice: $sel${NC}"

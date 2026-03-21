@@ -95,7 +95,21 @@ uv run pytest tests/test_brain.py -v
 
   ── Special ──────────────────────────────────
   9  Interactive tests       requires human at terminal
-  10 All automatic           1-7 (skip 8, 9)
+  10 All automatic           1-8 (skip 9 interactive)
+  s  Run specific test       path::Class::test or -k pattern
+```
+
+Option `s` auto-detects which flags and environment (host vs Docker) are needed
+based on the test path prefix. Examples:
+```bash
+# Run a single live test
+s → tests/live/test_roles.py::TestPlannerSystemPackageLive::test_python_lib_uses_uv_pip
+
+# Run unit tests matching a keyword
+s → tests/test_brain.py -k "pip_install"
+
+# Run a specific functional test (auto-detects Docker)
+s → tests/functional/test_core_flows.py::TestF18SimpleQA
 ```
 
 
