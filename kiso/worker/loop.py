@@ -2339,6 +2339,9 @@ async def _run_planning_loop(
         # shrink task limit at deeper replan depths — forces focused plans.
         _max_plan_tasks = int(config.settings["max_plan_tasks"])
         _effective_max = max(4, _max_plan_tasks - replan_depth * 3)
+        # M878: force fresh tool discovery — tools may have been installed
+        # during the previous plan execution.
+        invalidate_tools_cache()
         try:
             new_plan = await run_planner(
                 db, config, session, user_role, enriched_message,
@@ -2560,6 +2563,8 @@ async def _process_message(
     # check if user approved install in a prior msg cycle
     _install_approved = await session_has_install_proposal(db, session)
 
+    # M878: force fresh tool discovery for every planning decision.
+    invalidate_tools_cache()
     try:
         plan = await run_planner(
             db, config, session, user_role, content,
