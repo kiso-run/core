@@ -53,13 +53,19 @@ Each level answers a different question:
 ./utils/run_tests.sh
 
 # CI / scripting (non-interactive, combinable flags)
-./utils/run_tests.sh --auto                   # all automatic (1-6 + plugins)
+# Direct (by number — same as menu choices)
+./utils/run_tests.sh 4                        # run live tests
+./utils/run_tests.sh 1,3                      # run unit + integration
+./utils/run_tests.sh 10                       # all automatic
+./utils/run_tests.sh s "tests/live/test_roles.py::TestFoo"  # specific test
+
+# Auto (CI, named flags)
+./utils/run_tests.sh --auto                   # all automatic
 ./utils/run_tests.sh --auto --unit            # only unit
 ./utils/run_tests.sh --auto --unit --live     # combinable
 ./utils/run_tests.sh --auto --no-live         # all automatic except live
 ./utils/run_tests.sh --auto --extended        # only extended (nightly)
 ./utils/run_tests.sh --auto --all             # everything including interactive + extended
-./utils/run_tests.sh --auto --plugins=browser # specific plugin
 
 # Quick unit-only during development
 uv run pytest tests/ -q

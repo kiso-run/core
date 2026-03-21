@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # Kiso Test Runner
 #
-# Interactive by default — shows a menu to pick which suites to run.
-# Use --auto for CI/scripting (non-interactive, combinable flags).
+# Three modes:
 #
-# Interactive:
-#   ./run_tests.sh                  # menu
+# 1. Interactive (default):
+#   ./run_tests.sh                  # shows menu
 #
-# Auto (CI):
-#   ./run_tests.sh --auto           # all automatic suites (no interactive/extended)
+# 2. Direct (by number, same as menu choices):
+#   ./run_tests.sh 4                # run live tests
+#   ./run_tests.sh 1,3              # run unit + integration
+#   ./run_tests.sh 10               # all automatic
+#   ./run_tests.sh s "tests/live/test_roles.py::TestFoo"  # specific test
+#
+# 3. Auto (CI, named flags):
+#   ./run_tests.sh --auto           # all automatic suites
 #   ./run_tests.sh --auto --unit    # only unit
-#   ./run_tests.sh --auto --bash    # only bash/BATS
-#   ./run_tests.sh --auto --unit --live   # unit + live (combinable)
+#   ./run_tests.sh --auto --unit --live   # combinable
 #   ./run_tests.sh --auto --all     # everything including interactive + extended
 #   ./run_tests.sh --auto --no-live # all automatic except live tests
 #   ./run_tests.sh --auto --extended      # only extended (nightly)
@@ -351,8 +355,16 @@ run_interactive_menu() {
         exit 0
     fi
 
-    # Parse comma-separated choices
-    IFS=',' read -ra selections <<< "$choice"
+    _process_choices "$choice"
+}
+
+# Process one or more comma-separated menu choices.
+# Used by both interactive menu and direct CLI invocation.
+_process_choices() {
+    local input="$1"
+    local extra="${2:-}"  # extra args (e.g., test spec for "s")
+
+    IFS=',' read -ra selections <<< "$input"
 
     for sel in "${selections[@]}"; do
         sel="${sel// /}"  # trim spaces
@@ -363,26 +375,30 @@ run_interactive_menu() {
             4) run_live ;;
             5) run_docker ;;
             6)
-                echo ""
-                echo -e "  ${BOLD}What to test?${NC}"
-                echo -e "  a) All tools"
-                echo -e "  b) All connectors"
-                echo -e "  c) All plugins (tools + connectors)"
-                echo -e "  d) Specific (enter names)"
-                echo ""
-                local pchoice
-                read -rp "  Choice [a/b/c/d]: " pchoice
-                case "$pchoice" in
-                    a) run_plugins "tools" ;;
-                    b) run_plugins "connectors" ;;
-                    c) run_plugins "" ;;
-                    d)
-                        local pnames
-                        read -rp "  Names (comma-separated): " pnames
-                        run_plugins "$pnames"
-                        ;;
-                    *) echo -e "${RED}Invalid choice${NC}" ;;
-                esac
+                if [[ -n "$extra" ]]; then
+                    run_plugins "$extra"
+                else
+                    echo ""
+                    echo -e "  ${BOLD}What to test?${NC}"
+                    echo -e "  a) All tools"
+                    echo -e "  b) All connectors"
+                    echo -e "  c) All plugins (tools + connectors)"
+                    echo -e "  d) Specific (enter names)"
+                    echo ""
+                    local pchoice
+                    read -rp "  Choice [a/b/c/d]: " pchoice
+                    case "$pchoice" in
+                        a) run_plugins "tools" ;;
+                        b) run_plugins "connectors" ;;
+                        c) run_plugins "" ;;
+                        d)
+                            local pnames
+                            read -rp "  Names (comma-separated): " pnames
+                            run_plugins "$pnames"
+                            ;;
+                        *) echo -e "${RED}Invalid choice${NC}" ;;
+                    esac
+                fi
                 ;;
             7) run_functional ;;
             8) run_extended ;;
@@ -398,18 +414,22 @@ run_interactive_menu() {
                 run_extended
                 ;;
             s|S)
-                echo ""
-                echo -e "  ${DIM}Examples:${NC}"
-                echo -e "  ${DIM}  tests/live/test_roles.py::TestPlannerSystemPackageLive::test_python_lib_uses_uv_pip${NC}"
-                echo -e "  ${DIM}  tests/test_brain.py -k \"pip_install\"${NC}"
-                echo -e "  ${DIM}  tests/functional/test_core_flows.py::TestF18SimpleQA${NC}"
-                echo ""
-                local spec
-                read -rp "  pytest args: " spec
-                if [[ -z "$spec" ]]; then
-                    echo -e "${RED}No pattern provided${NC}"
+                if [[ -n "$extra" ]]; then
+                    _run_specific "$extra"
                 else
-                    _run_specific "$spec"
+                    echo ""
+                    echo -e "  ${DIM}Examples:${NC}"
+                    echo -e "  ${DIM}  tests/live/test_roles.py::TestPlannerSystemPackageLive::test_python_lib_uses_uv_pip${NC}"
+                    echo -e "  ${DIM}  tests/test_brain.py -k \"pip_install\"${NC}"
+                    echo -e "  ${DIM}  tests/functional/test_core_flows.py::TestF18SimpleQA${NC}"
+                    echo ""
+                    local spec
+                    read -rp "  pytest args: " spec
+                    if [[ -z "$spec" ]]; then
+                        echo -e "${RED}No pattern provided${NC}"
+                    else
+                        _run_specific "$spec"
+                    fi
                 fi
                 ;;
             *)
@@ -424,6 +444,9 @@ run_interactive_menu() {
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--auto" ]]; then
     run_auto "$@"
+elif [[ -n "${1:-}" ]]; then
+    # Direct invocation: ./run_tests.sh 4  or  ./run_tests.sh 1,3  or  ./run_tests.sh s "tests/..."
+    _process_choices "$1" "${2:-}"
 else
     run_interactive_menu
 fi
