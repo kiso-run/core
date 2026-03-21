@@ -1681,7 +1681,7 @@ async def classify_message(
         raw = await call_llm(config, "classifier", messages, session=session)
     except LLMError as e:
         log.warning("Classifier LLM failed, falling back to plan: %s", e)
-        return "plan", "en"
+        return "plan", ""
 
     result = raw.strip().lower()
 
@@ -1703,14 +1703,15 @@ async def classify_message(
                 log.info("Classifier: %s (literal 'category', lang=%s)", cat_part.strip(), lang_part.strip())
                 return cat_part.strip(), lang_part.strip()
 
-    # LLM fallback: plain category without lang code
+    # LLM fallback: plain category without lang code — don't force "en",
+    # let the messenger detect language from the user message.
     if result in CLASSIFIER_CATEGORIES:
-        log.info("Classifier: %s (no lang)", result)
-        return result, "en"
+        log.info("Classifier: %s (no lang — messenger will detect)", result)
+        return result, ""
 
-    # Ambiguous output — safe fallback
+    # Ambiguous output — safe fallback (plan, no forced language)
     log.warning("Classifier returned unexpected value %r, falling back to plan", raw.strip())
-    return "plan", "en"
+    return "plan", ""
 
 
 # --- Stop pattern fast-path ---

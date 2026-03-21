@@ -2489,7 +2489,7 @@ async def _process_message(
     plan_id = await create_plan(db, session, msg_id, "Planning...")
 
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
-    user_lang = "en"  # default; overwritten by classifier
+    user_lang = ""  # empty = messenger detects from user message
     if fast_path_enabled:
         _notify_phase(set_phase, WORKER_PHASE_CLASSIFYING)
         try:

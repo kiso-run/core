@@ -3447,12 +3447,12 @@ class TestClassifyMessage:
         ("chat:en", "hello", "chat", "en"),
         ("chat_kb:it", "cosa sai su te stesso?", "chat_kb", "it"),
         ("plan:en", "list files", "plan", "en"),
-        ("chat", "hello", "chat", "en"),  # LLM fallback: plain category without lang
+        ("chat", "hello", "chat", ""),  # LLM fallback: no lang → messenger detects
         ("  chat:fr\n", "merci", "chat", "fr"),  # strips whitespace
         ("CHAT:EN", "thanks", "chat", "en"),  # case insensitive
-        ("I think this is a chat", "hello", "plan", "en"),  # unexpected → plan
-        ("", "hello", "plan", "en"),  # empty → plan
-        ("chat:italian", "ciao", "plan", "en"),  # invalid lang code
+        ("I think this is a chat", "hello", "plan", ""),  # unexpected → plan, no forced lang
+        ("", "hello", "plan", ""),  # empty → plan, no forced lang
+        ("chat:italian", "ciao", "plan", ""),  # invalid lang code → no forced lang
         ("category:it", "dimmi qualcosa", "plan", "it"),  # M612 literal category
         ("category:it:plan", "vai su google", "plan", "it"),  # M612 category:lang:cat
         ("category:fr:chat", "merci", "chat", "fr"),  # M612 category:lang:chat
@@ -3470,21 +3470,21 @@ class TestClassifyMessage:
         assert lang == expected_lang
 
     async def test_llm_error_falls_back_to_plan(self):
-        """classify_message returns ('plan', 'en') when LLM call fails."""
+        """classify_message returns ('plan', '') when LLM call fails."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("timeout")):
             cat, lang = await classify_message(config, "hello")
         assert cat == "plan"
-        assert lang == "en"
+        assert lang == ""
 
     async def test_budget_exceeded_falls_back_to_plan(self):
-        """classify_message returns ('plan', 'en') when LLM budget is exhausted."""
+        """classify_message returns ('plan', '') when LLM budget is exhausted."""
         from kiso.llm import LLMBudgetExceeded
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("over")):
             cat, lang = await classify_message(config, "hello")
         assert cat == "plan"
-        assert lang == "en"
+        assert lang == ""
 
     async def test_uses_classifier_model(self):
         """classify_message should call LLM with 'classifier' role."""
@@ -3570,11 +3570,11 @@ class TestClassifierPromptContent:
         assert "connectors" in prompt or "connector" in prompt
 
     def test_classifier_prompt_supports_non_latin_languages(self):
-        """M877: classifier prompt includes non-Latin language examples."""
+        """M877/M879: classifier prompt includes non-Latin language examples."""
         prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "ru" in prompt  # Russian/Cyrillic
-        assert "zh" in prompt  # Chinese/CJK
-        assert "Cyrillic" in prompt or "cyrillic" in prompt
+        assert "ru" in prompt  # Russian
+        assert "zh" in prompt  # Chinese
+        assert "ALWAYS include the language code" in prompt
         assert "plugin" in prompt
 
 
