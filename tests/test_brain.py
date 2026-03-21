@@ -3381,8 +3381,8 @@ class TestM82PlannerAskThenAdd:
         user_msg = next((m for m in captured if m["role"] == "user"), None)
         assert user_msg is not None
         assert "Install Status" in user_msg["content"]
-        assert "may proceed" in user_msg["content"]
-        assert "Do not ask" in user_msg["content"]
+        assert "user approved" in user_msg["content"]
+        assert "replan" in user_msg["content"]
 
     async def test_m712_install_status_absent_when_not_approved(self, db, config):
         """M712: Install Status section absent when install_approved=False."""
@@ -8014,6 +8014,30 @@ class TestNeedsInstallCoherence:
         ], "extend_replan": None}
         errors = validate_plan(plan, installed_skills=["browser"])
         assert not any("needs_install" in e for e in errors)
+
+    def test_install_approved_gives_specific_guidance(self):
+        """M868: when install_approved, feedback says exec install + replan."""
+        plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
+            {"type": "tool", "detail": "write script", "tool": "aider",
+             "args": '{"message": "x"}', "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+        errors = validate_plan(plan, install_approved=True)
+        err = " ".join(errors)
+        assert "exec `kiso tool install" in err
+        assert "replan" in err
+        assert "NEXT plan" in err
+
+    def test_not_approved_gives_ask_user_guidance(self):
+        """M868: when not approved, feedback says ask user first."""
+        plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
+            {"type": "tool", "detail": "write script", "tool": "aider",
+             "args": '{"message": "x"}', "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+        errors = validate_plan(plan, install_approved=False)
+        err = " ".join(errors)
+        assert "msg asking" in err or "ask" in err.lower()
 
 
 class TestArtifactGoalMismatch:

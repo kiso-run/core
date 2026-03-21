@@ -920,10 +920,20 @@ def validate_plan(
     if needs:
         for i, t in enumerate(tasks, 1):
             if t.get("type") == TASK_TYPE_TOOL and t.get("tool") in needs:
-                errors.append(
-                    f"Task {i}: tool '{t['tool']}' is in needs_install (not available) "
-                    f"but used as a tool task. Remove the tool task or remove it from needs_install."
-                )
+                if install_approved:
+                    errors.append(
+                        f"Task {i}: tool '{t['tool']}' is not installed yet. "
+                        f"Install is approved — plan ONLY exec `kiso tool install "
+                        f"{t['tool']}` + replan as last task. Tool tasks go in the "
+                        f"NEXT plan after install completes."
+                    )
+                else:
+                    errors.append(
+                        f"Task {i}: tool '{t['tool']}' is in needs_install (not "
+                        f"available) but used as a tool task. Plan a msg asking "
+                        f"to install, then end the plan. The tool task goes in a "
+                        f"future plan after the user approves and the tool is installed."
+                    )
 
     return errors
 
@@ -1337,10 +1347,11 @@ async def build_planner_messages(
     if install_approved:
         context_parts.append(
             "## Install Status\n"
-            "A prior plan in this session proposed tool installation. The user has "
-            "since replied. You may proceed with `kiso tool install <name>` exec "
-            "tasks directly if the user's message requests or approves installation. "
-            "Do not ask for permission again."
+            "A prior plan proposed tool installation and the user approved. "
+            "For tools NOT yet installed: plan exec `kiso tool install {name}` + "
+            "replan as last task. Do NOT add tool tasks for uninstalled tools — "
+            "they become available after the replan. "
+            "For tools already installed: use them directly."
         )
 
     context_parts.append(f"## Caller Role\n{user_role}")
