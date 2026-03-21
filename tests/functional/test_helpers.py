@@ -10,11 +10,14 @@ import pytest
 
 from tests.functional.conftest import (
     FunctionalResult,
+    assert_chinese,
     assert_english,
     assert_italian,
     assert_language,
     assert_no_failure_language,
+    assert_russian,
     assert_spanish,
+    normalize_for_assertion,
 )
 
 
@@ -105,6 +108,47 @@ class TestAssertLanguage:
 
     def test_direct_call_es(self):
         assert_language("Este es un sistema para el análisis de datos", "es")
+
+    def test_direct_call_ru(self):
+        assert_language("Это тест системы и он должен работать правильно", "ru")
+
+    def test_direct_call_zh(self):
+        assert_language("这是一个系统测试它应该正常工作的结果", "zh")
+
+
+class TestAssertRussian:
+    def test_russian_text_passes(self):
+        assert_russian("Это тест системы и он должен работать правильно")
+
+    def test_english_text_raises(self):
+        with pytest.raises(AssertionError, match="Russian"):
+            assert_russian("This is a test of the system")
+
+
+class TestAssertChinese:
+    def test_chinese_text_passes(self):
+        assert_chinese("这是一个系统测试它应该正常工作的结果说明")
+
+    def test_english_text_raises(self):
+        with pytest.raises(AssertionError, match="Chinese"):
+            assert_chinese("This is a test with no CJK characters")
+
+
+class TestNormalizeForAssertion:
+    def test_latin_strips_accents(self):
+        assert normalize_for_assertion("París café") == "paris cafe"
+
+    def test_latin_lowercases(self):
+        assert normalize_for_assertion("HELLO World") == "hello world"
+
+    def test_non_latin_preserves_cyrillic(self):
+        result = normalize_for_assertion("Москва", latin=False)
+        assert "москва" in result
+
+    def test_non_latin_no_accent_strip(self):
+        # Cyrillic й should NOT be stripped (it's not a combining accent)
+        result = normalize_for_assertion("Россий", latin=False)
+        assert "россий" in result
 
 
 # ---------------------------------------------------------------------------

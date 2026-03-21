@@ -1,4 +1,4 @@
-"""F18-F23: Core pipeline functional tests.
+"""F18-F26, F31-F32: Core pipeline functional tests.
 
 F18: Simple Q&A without tools.
 F19: English response quality.
@@ -6,6 +6,9 @@ F20: Spanish response quality.
 F21: Replan recovery after exec failure.
 F22: Nonexistent tool request.
 F23: Cross-session knowledge sharing.
+F24-F26: Multistep (2-plan) flows.
+F31: Russian response quality.
+F32: Chinese response quality.
 """
 
 from __future__ import annotations
@@ -21,8 +24,10 @@ from kiso.store import create_session, save_message
 from kiso.worker import _process_message
 
 from tests.functional.conftest import (
+    assert_chinese,
     assert_english,
     assert_no_failure_language,
+    assert_russian,
     assert_spanish,
 )
 
@@ -390,4 +395,73 @@ class TestF26TeachFactThenRecall:
         output = r2.last_plan_msg_output.lower()
         assert "9090" in output, (
             f"Expected '9090' in response: {output[:500]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# F31 — Russian response quality
+# ---------------------------------------------------------------------------
+
+
+class TestF31RussianResponse:
+    """Ask in Russian, get substantive Russian response."""
+
+    async def test_russian_response_quality(self, run_message):
+        """What: Asks about popular programming languages in Russian.
+
+        Why: Validates non-Latin script (Cyrillic) handling.
+        Expects: Success, Russian response, mentions at least 2 languages.
+        """
+        result = await run_message(
+            "Какие 3 самых популярных языка программирования? "
+            "Кратко объясни почему каждый из них важен",
+            timeout=120,
+        )
+
+        assert result.success, (
+            f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
+        )
+        output = result.last_plan_msg_output
+        assert_russian(output)
+        assert len(output) > 100, f"Response too short ({len(output)} chars)"
+
+        known = ["python", "javascript", "java", "typescript", "c++", "go", "rust", "c#"]
+        found = [lang for lang in known if lang in output.lower()]
+        assert len(found) >= 2, (
+            f"Expected at least 2 programming languages, found: {found}. "
+            f"Output: {output[:300]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# F32 — Chinese response quality
+# ---------------------------------------------------------------------------
+
+
+class TestF32ChineseResponse:
+    """Ask in Chinese, get substantive Chinese response."""
+
+    async def test_chinese_response_quality(self, run_message):
+        """What: Asks about popular programming languages in Chinese.
+
+        Why: Validates CJK script handling.
+        Expects: Success, Chinese response, mentions at least 2 languages.
+        """
+        result = await run_message(
+            "最受欢迎的3种编程语言是什么？简要说明每种语言为什么重要",
+            timeout=120,
+        )
+
+        assert result.success, (
+            f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
+        )
+        output = result.last_plan_msg_output
+        assert_chinese(output)
+        assert len(output) > 50, f"Response too short ({len(output)} chars)"
+
+        known = ["python", "javascript", "java", "typescript", "c++", "go", "rust", "c#"]
+        found = [lang for lang in known if lang in output.lower()]
+        assert len(found) >= 2, (
+            f"Expected at least 2 programming languages, found: {found}. "
+            f"Output: {output[:300]}"
         )

@@ -66,10 +66,17 @@ _ES_WORDS = frozenset(
     "como este esta son hay muy sin entre sobre todo cada".split()
 )
 
-_LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS}
-_LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish"}
+# Common Russian function words.
+_RU_WORDS = frozenset(
+    "и в не на я что он с это как но из к за то по она мы они был бы"
+    " все так же от его до бы ее мне ему нет да".split()
+)
 
-_WORD_RE = re.compile(r"[a-zàèéìòùáéíóúñü]+", re.IGNORECASE)
+_LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS, "ru": _RU_WORDS}
+_LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish", "ru": "Russian",
+               "zh": "Chinese"}
+
+_WORD_RE = re.compile(r"[a-zàèéìòùáéíóúñüа-яё]+", re.IGNORECASE)
 
 # Strip fenced code blocks so code keywords don't skew language heuristics.
 _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
@@ -101,12 +108,24 @@ def _strip_quoted_content(text: str) -> str:
 
 
 def assert_language(text: str, lang: str) -> None:
-    """Assert that *text* is predominantly in *lang* ("it", "en", or "es").
+    """Assert that *text* is predominantly in *lang*.
 
-    Compares the target language's function-word score against the highest
-    non-target score.  Code blocks are stripped first.
+    Supports: it, en, es, ru (function-word scoring) and zh (CJK character detection).
+    Code blocks are stripped first.
     """
     cleaned = _strip_code_blocks(text)
+    name = _LANG_NAMES.get(lang, lang)
+
+    # Chinese: detect by CJK Unified Ideographs character presence
+    if lang == "zh":
+        cjk_count = sum(1 for c in cleaned if "\u4e00" <= c <= "\u9fff")
+        assert cjk_count > 5, (
+            f"Text does not appear to be {name} "
+            f"(CJK chars: {cjk_count}). First 200 chars: {text[:200]}"
+        )
+        return
+
+    # Function-word scoring for Latin/Cyrillic scripts
     scores: dict[str, int] = {k: 0 for k in _LANG_WORDS}
     for w in _WORD_RE.findall(cleaned):
         wl = w.lower()
@@ -114,7 +133,6 @@ def assert_language(text: str, lang: str) -> None:
             scores[k] += wl in words
     target = scores[lang]
     best_other = max(v for k, v in scores.items() if k != lang)
-    name = _LANG_NAMES.get(lang, lang)
     assert target > best_other, (
         f"Text does not appear to be {name} "
         f"(scores: {', '.join(f'{_LANG_NAMES[k]}={v}' for k, v in scores.items())}). "
@@ -130,6 +148,33 @@ def assert_italian(text: str) -> None:
 def assert_english(text: str) -> None:
     """Assert that *text* is predominantly English."""
     assert_language(text, "en")
+
+
+def assert_russian(text: str) -> None:
+    """Assert that *text* is predominantly Russian."""
+    assert_language(text, "ru")
+
+
+def assert_chinese(text: str) -> None:
+    """Assert that *text* is predominantly Chinese."""
+    assert_language(text, "zh")
+
+
+def normalize_for_assertion(text: str, *, latin: bool = True) -> str:
+    """Normalize LLM output for assertion matching.
+
+    When ``latin=True`` (default): strip accents (NFKD), lowercase.
+    When ``latin=False``: lowercase only (accent stripping is destructive
+    for Cyrillic/CJK scripts).
+    """
+    import unicodedata
+    text = text.lower()
+    if latin:
+        text = "".join(
+            c for c in unicodedata.normalize("NFKD", text)
+            if not unicodedata.combining(c)
+        )
+    return text
 
 
 def assert_spanish(text: str) -> None:
