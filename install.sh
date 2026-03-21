@@ -1176,8 +1176,8 @@ except Exception:
         echo "$_PRESETS" | while IFS= read -r line; do echo "    $line"; done
         echo "    Or paste a git URL for a custom preset."
         echo
-        safe_read -rp "  Choice [0]: " _preset_choice
-        _preset_choice="${_preset_choice:-0}"
+        safe_read -rp "  Choice [1]: " _preset_choice
+        _preset_choice="${_preset_choice:-1}"
         if [[ "$_preset_choice" == "0" ]]; then
             green "  skipped"
         elif [[ "$_preset_choice" == https://* || "$_preset_choice" == git@* ]]; then
