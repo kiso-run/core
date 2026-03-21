@@ -474,6 +474,9 @@ class TestPlannerSystemPackageLive:
     """M746: planner uses apt-get for system packages, uv pip for Python libs,
     and kiso tool install for kiso tools."""
 
+    # M864: validation retries + SSE stalls can exceed 120s.
+    _TIMEOUT = 180
+
     def _fake_sysenv_text(self) -> str:
         """Sysenv showing Debian root, apt available, no kiso tools."""
         from kiso.config import KISO_DIR
@@ -537,7 +540,7 @@ class TestPlannerSystemPackageLive:
                     seeded_db, live_config, live_session, "admin",
                     "installa timg",
                 ),
-                timeout=TIMEOUT,
+                timeout=self._TIMEOUT,
             )
 
         assert validate_plan(plan) == []
@@ -586,7 +589,7 @@ class TestPlannerSystemPackageLive:
                     seeded_db, live_config, live_session, "admin",
                     "installa flask",
                 ),
-                timeout=TIMEOUT,
+                timeout=self._TIMEOUT,
             )
 
         assert validate_plan(plan) == []
@@ -637,7 +640,7 @@ class TestPlannerSystemPackageLive:
                     seeded_db, live_config, live_session, "admin",
                     "installa browser",
                 ),
-                timeout=TIMEOUT,
+                timeout=self._TIMEOUT,
             )
 
         assert validate_plan(plan) == []
