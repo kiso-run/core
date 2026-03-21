@@ -282,3 +282,114 @@ class TestF23CrossSessionKnowledge:
             f"Session B did not recall the PostgreSQL fact. "
             f"Output: {output_b[:300]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# F24 — Create file → reference in next plan
+# ---------------------------------------------------------------------------
+
+
+class TestF24CreateThenReference:
+    """Create a file, then ask about it in a second plan."""
+
+    async def test_create_file_then_reference(self, run_message):
+        """What: Creates a file in plan 1, queries it in plan 2.
+
+        Why: Validates cross-plan state — the planner sees files created
+        in previous plans via session workspace listing (M822).
+        Expects: Plan 1 creates file, Plan 2 references it.
+        """
+        r1 = await run_message(
+            "crea un file hello.txt con scritto 'ciao mondo'",
+            timeout=300,
+        )
+        assert r1.success, (
+            f"Plan 1 failed: {[p.get('status') for p in r1.plans]}"
+        )
+
+        r2 = await run_message(
+            "quante parole ci sono nel file che hai appena creato?",
+            timeout=300,
+        )
+        assert r2.success, (
+            f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
+        )
+        output = r2.last_plan_msg_output.lower()
+        assert any(w in output for w in ("2", "due", "ciao", "mondo")), (
+            f"Plan 2 didn't reference file content: {r2.last_plan_msg_output[:300]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# F25 — Exec fails → user corrects → success
+# ---------------------------------------------------------------------------
+
+
+class TestF25ExecFailsUserCorrects:
+    """First exec fails, user gives correction, second succeeds."""
+
+    async def test_exec_fails_user_corrects(self, run_message):
+        """What: Runs a nonexistent script, then asks to create + run it.
+
+        Why: Validates error recovery via user correction across plans.
+        Expects: Plan 1 reports error, Plan 2 succeeds with output.
+        """
+        r1 = await run_message(
+            "esegui python3 myscript.py",
+            timeout=300,
+        )
+        # Plan 1 may succeed (explains error) or fail — both OK
+        assert r1.plans, "No plans created"
+
+        r2 = await run_message(
+            "scrivi prima lo script myscript.py che stampa 'hello world', "
+            "poi eseguilo",
+            timeout=300,
+        )
+        assert r2.success, (
+            f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
+        )
+        all_output = "\n".join(
+            t.get("output") or "" for t in r2.tasks
+        ).lower()
+        assert "hello world" in all_output, (
+            f"Expected 'hello world' in output: {all_output[:500]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# F26 — Teach fact → use in exec task
+# ---------------------------------------------------------------------------
+
+
+class TestF26TeachFactUseInExec:
+    """Teach a fact, then use it in an exec task."""
+
+    async def test_teach_fact_use_in_exec(self, run_message):
+        """What: Teaches port number, then asks to check if it's open.
+
+        Why: Validates knowledge integration into exec tasks — the planner
+        retrieves the learned fact and uses it in the exec detail.
+        Expects: Plan 2 references port 9090 from the learned fact.
+        """
+        r1 = await run_message(
+            "ricordati che il progetto Zeus usa la porta 9090",
+            timeout=300,
+        )
+        assert r1.success, (
+            f"Teach failed: {[p.get('status') for p in r1.plans]}"
+        )
+
+        r2 = await run_message(
+            "controlla se la porta del progetto Zeus è aperta",
+            timeout=300,
+        )
+        assert r2.success, (
+            f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
+        )
+        all_output = "\n".join(
+            t.get("output") or "" for t in r2.tasks
+        ).lower()
+        assert "9090" in all_output, (
+            f"Expected '9090' in output: {all_output[:500]}"
+        )
