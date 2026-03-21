@@ -68,6 +68,12 @@ class TestM734WorkerSudoRule:
         content = (_ROLES_DIR / "worker.md").read_text()
         assert "CANNOT_TRANSLATE" in content
 
+    def test_worker_prompt_has_fallback_rule(self):
+        """M871: translator uses alternatives when detail names unavailable tool."""
+        content = (_ROLES_DIR / "worker.md").read_text().lower()
+        assert "alternatives" in content
+        assert "ignore" in content or "available" in content
+
 
 class TestPromptSizeRegression:
     """Prompt files must not exceed size budgets (token cost guard)."""
