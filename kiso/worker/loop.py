@@ -1197,6 +1197,17 @@ async def _handle_tool_task(
         status = "done" if success else "failed"
         task_duration_ms = int((time.perf_counter() - t0) * 1000)
 
+        if not success:
+            log.warning(
+                "Tool task %d failed (exit %d): stdout=%.500s stderr=%.500s",
+                task_id, exit_code, stdout or "", stderr or "",
+            )
+        else:
+            log.info(
+                "Tool task %d ok: stdout=%.200s",
+                task_id, stdout[:200] if stdout else "",
+            )
+
         # Auto-publish new files to pub/ and append URLs
         _auto_publish_skill_files(ctx.session, pre_snapshot)
         pub_urls = _report_pub_files(ctx.session, ctx.config, base_url=ctx.base_url)
@@ -1322,11 +1333,16 @@ async def _handle_exec_task(
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
 
-        # log exec output on failure so errors are visible in test/production logs
+        # log exec output so results are visible in test/production logs
         if not success:
             log.warning(
                 "Exec task %d failed (exit %d): stdout=%.500s stderr=%.500s",
                 task_id, exit_code, stdout or "", stderr or "",
+            )
+        else:
+            log.info(
+                "Exec task %d ok: stdout=%.200s",
+                task_id, stdout[:200] if stdout else "",
             )
 
         # invalidate sysenv cache after package install so new binaries are visible

@@ -2125,7 +2125,8 @@ async def run_reviewer(
         validate_review, ReviewError, "Review",
         session=session,
     )
-    log.info("Review: status=%s", review["status"])
+    log.info("Review: status=%s reason=%s", review["status"],
+             (review.get("reason") or "")[:200])
     return review
 
 
