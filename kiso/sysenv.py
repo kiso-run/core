@@ -239,7 +239,7 @@ def _load_registry_hints() -> str:
         import json
         data = json.loads(registry_path.read_text())
         parts: list[str] = []
-        for s in data.get("skills", []):
+        for s in data.get("tools", []):
             name = s.get("name", "")
             desc = s.get("description", "")
             if name and desc:

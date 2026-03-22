@@ -18,6 +18,7 @@ from kiso.sysenv import (
     _collect_user_info,
     _collect_workspace_files,
     _detect_pkg_manager,
+    _load_registry_hints,
     build_system_env_section,
     collect_system_env,
     get_resource_limits,
@@ -860,3 +861,47 @@ class TestWorkspaceInBuildSection:
             section = build_system_env_section(sample_env, session="filter-test")
         assert "report.txt" in section
         assert "internal.json" not in section
+
+
+class TestM888LoadRegistryHints:
+    """M888: _load_registry_hints reads 'tools' key from registry.json."""
+
+    def test_returns_tool_descriptions(self, tmp_path):
+        """Reads registry.json and returns tool name + description pairs."""
+        reg = tmp_path / "registry.json"
+        reg.write_text('{"tools": [{"name": "browser", "description": "Headless browser"},'
+                        '{"name": "ocr", "description": "Image OCR"}],'
+                        '"connectors": [{"name": "discord", "description": "Discord bridge"}]}')
+        with patch("kiso.sysenv.Path") as MockPath:
+            # __file__ parent.parent should resolve to tmp_path
+            MockPath.return_value.parent.parent.__truediv__ = lambda self, name: reg
+            # Simpler: patch the function's file resolution
+            pass
+        # Direct approach: call with patched path
+        import kiso.sysenv as sysenv_mod
+        orig = sysenv_mod.Path
+        sysenv_mod.Path = lambda *a, **kw: type("P", (), {
+            "parent": type("P2", (), {"parent": tmp_path})()
+        })()
+        try:
+            result = _load_registry_hints()
+        finally:
+            sysenv_mod.Path = orig
+        assert "browser" in result
+        assert "Headless browser" in result
+        assert "ocr" in result
+        assert "Image OCR" in result
+        assert "discord" in result
+
+    def test_returns_empty_when_no_file(self, tmp_path):
+        """Returns empty string when registry.json doesn't exist."""
+        import kiso.sysenv as sysenv_mod
+        orig = sysenv_mod.Path
+        sysenv_mod.Path = lambda *a, **kw: type("P", (), {
+            "parent": type("P2", (), {"parent": tmp_path})()
+        })()
+        try:
+            result = _load_registry_hints()
+        finally:
+            sysenv_mod.Path = orig
+        assert result == ""
