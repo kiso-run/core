@@ -215,9 +215,10 @@ run_suite() {
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local start=$SECONDS rc=0
     # Use 'script' to create a pseudo-TTY so all commands (Docker BuildKit,
-    # pytest, bats) see a real terminal and emit colors. The output is tee'd
-    # to a capture log for the failure summary.
-    FORCE_COLOR=1 PY_COLORS=1 script -qefc "$(printf '%q ' "$@")" /dev/null \
+    # pytest, bats) see a real terminal and emit colors. COLUMNS propagates
+    # the terminal width so pytest aligns PASSED/FAILED correctly.
+    FORCE_COLOR=1 PY_COLORS=1 COLUMNS="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}" \
+        script -qefc "$(printf '%q ' "$@")" /dev/null \
         | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
