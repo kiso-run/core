@@ -782,14 +782,20 @@ def _validate_plan_tasks(
                         f"Installation is approved — plan an exec task to install "
                         f"{tool_name} via the kiso CLI, then replan to use it."
                     )
+                elif registry_hint_names and tool_name in registry_hint_names:
+                    errors.append(
+                        f"Task {i}: tool '{tool_name}' is not installed but IS "
+                        f"available in the registry. Plan a SINGLE msg task asking "
+                        f"whether to install '{tool_name}', then end the plan. "
+                        f"Do NOT fall back to exec — the user should decide whether "
+                        f"to install the dedicated tool."
+                    )
                 else:
                     errors.append(
-                        f"Task {i}: tool '{tool_name}' is not installed. "
-                        f"Available tools: {available}. "
-                        f"Remove this tool task. If the goal can be achieved with "
-                        f"built-in task types (search, exec) or installed tools "
-                        f"({available}), use those instead. Only if no alternative "
-                        f"exists, plan a msg asking whether to install '{tool_name}'."
+                        f"Task {i}: tool '{tool_name}' is not installed and not "
+                        f"in the registry. Available tools: {available}. "
+                        f"Remove this tool task and use built-in task types "
+                        f"(search, exec) or installed tools ({available}) instead."
                     )
             elif installed_skills_info and tool_name in installed_skills_info:
                 args_raw = task.get("args") or "{}"

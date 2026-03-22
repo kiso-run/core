@@ -325,19 +325,31 @@ class TestValidatePlan:
         ]}
         errors = validate_plan(plan, installed_skills=["echo"])
         assert any("tool 'search' is not installed" in e for e in errors)
-        assert any("Available tools: echo" in e for e in errors)
 
-    def test_skill_not_installed_suggests_alternatives(self):
-        """M418/M847: validation error suggests alternatives before msg-only fallback."""
+    def test_m903_uninstalled_registry_tool_proposes_install(self):
+        """M903: uninstalled tool in registry → 'propose install' not 'use exec'."""
         plan = {"tasks": [
             {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
-        errors = validate_plan(plan, installed_skills=[])
+        errors = validate_plan(plan, installed_skills=[],
+                               registry_hint_names=frozenset({"browser", "ocr", "aider"}))
         err = " ".join(errors)
+        assert "available in the registry" in err
+        assert "msg task asking whether to install" in err
+        assert "Do NOT fall back to exec" in err
+
+    def test_m903_uninstalled_unknown_tool_suggests_alternatives(self):
+        """M903: uninstalled tool NOT in registry → 'use exec' fallback."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "magic", "expect": "ok", "tool": "magic_tool", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=[],
+                               registry_hint_names=frozenset({"browser", "ocr"}))
+        err = " ".join(errors)
+        assert "not in the registry" in err
         assert "Remove this tool task" in err
-        assert "built-in task types" in err or "search, exec" in err
-        assert "install 'browser'" in err  # fallback option still mentioned
 
     def test_skill_not_installed_feedback_does_not_force_msg_only(self):
         """M847: feedback mentions alternatives, doesn't mandate msg-only structure."""
@@ -371,16 +383,16 @@ class TestValidatePlan:
         assert any("kiso CLI" in e for e in errors)
         assert not any("SINGLE msg task" in e for e in errors)
 
-    def test_skill_not_installed_not_approved_suggests_alternatives(self):
-        """M608/M847: when install_approved=False, error suggests alternatives first."""
+    def test_skill_not_installed_not_approved_unknown_suggests_exec(self):
+        """M608/M847/M903: unknown tool (not in registry) → suggests exec alternatives."""
         plan = {"tasks": [
             {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[], install_approved=False)
         err = " ".join(errors)
+        assert "not in the registry" in err
         assert "Remove this tool task" in err
-        assert "install 'browser'" in err  # fallback mentioned
 
     def test_tool_name_is_task_type_exec(self):
         """M613: tool='exec' is a task type confusion, not a real tool."""
