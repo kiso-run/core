@@ -579,3 +579,58 @@ class TestReplanInstallProposalPersistence:
         await update_plan_status(db, pid4, "done")
         assert await session_has_install_proposal(db, "sess1") is False
         await db.close()
+
+
+# --- M901: filter needs_install against installed tools ---
+
+
+@pytest.mark.asyncio
+class TestM901NeedsInstallFilter:
+    """M901: needs_install is filtered to remove already-installed tools."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import init_db, create_session
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    async def test_installed_tool_removed_from_needs_install(self, db):
+        """needs_install: ["browser"] with browser installed → filtered out, proposal=False."""
+        config = _make_config()
+        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_msg_only_plan(needs_install=["browser"])),
+            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "vai su example.com")
+        assert plan["install_proposal"] is False
+        assert plan["needs_install"] is None
+
+    async def test_uninstalled_tool_preserved_in_needs_install(self, db):
+        """needs_install: ["ocr"] with browser installed → ocr preserved, proposal=True."""
+        config = _make_config()
+        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_msg_only_plan(needs_install=["ocr"])),
+            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "fai OCR")
+        assert plan["install_proposal"] is True
+        assert plan["needs_install"] == ["ocr"]
+
+    async def test_mixed_installed_and_uninstalled_filtered(self, db):
+        """needs_install: ["browser", "ocr"] with browser installed → only ocr remains."""
+        config = _make_config()
+        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
+        with (
+            patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                  return_value=_msg_only_plan(needs_install=["browser", "ocr"])),
+            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+        ):
+            plan = await run_planner(db, config, "sess1", "admin", "fai screenshot e OCR")
+        assert plan["install_proposal"] is True
+        assert plan["needs_install"] == ["ocr"]

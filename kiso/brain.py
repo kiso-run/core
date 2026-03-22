@@ -1508,6 +1508,14 @@ async def run_planner(
     #    execs in the next turn, it doesn't force them.
     saw_uninstalled = plan.pop("_saw_uninstalled_tool", False)
     tasks = plan.get("tasks") or []
+
+    # Filter needs_install: remove tools that are already installed.
+    # The LLM sometimes lists installed tools in needs_install by mistake.
+    needs = plan.get("needs_install") or []
+    if needs and installed_names:
+        needs = [n for n in needs if n not in installed_names]
+        plan["needs_install"] = needs or None
+
     plan["install_proposal"] = (
         bool(plan.get("needs_install"))
         or saw_uninstalled
