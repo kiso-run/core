@@ -2131,6 +2131,7 @@ async def _run_planning_loop(
     base_url: str = "",
     update_hints: "list | None" = None,
     response_lang: str = "en",
+    install_approved: bool = False,
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
 
@@ -2345,6 +2346,7 @@ async def _run_planning_loop(
                 on_retry=_on_replan_retry,
                 is_replan=True,
                 max_tasks_override=_effective_max,
+                install_approved=install_approved,
             )
         except PlanError as e:
             log.error("Replan failed: %s", e)
@@ -2366,6 +2368,10 @@ async def _run_planning_loop(
         )
         # skip intent injection on replan — user already saw the intent
         await _persist_plan_tasks(db, new_plan_id, session, new_plan["tasks"])
+
+        # persist install_proposal on replan plans (same as initial path)
+        if new_plan.get("install_proposal"):
+            await update_plan_install_proposal(db, new_plan_id)
 
         # Now finalize old plan status — the new plan is already visible.
         if is_self_directed:
@@ -2626,6 +2632,7 @@ async def _process_message(
         session_secrets, cancel_event, max_replan_depth,
         username, slog, set_phase=set_phase, base_url=base_url,
         update_hints=update_hints, response_lang=user_lang,
+        install_approved=_install_approved,
     )
 
     # --- Store token usage on the final plan ---

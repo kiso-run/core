@@ -489,3 +489,93 @@ class TestM670MsgOnlyFreshInstanceProposal:
         ):
             plan = await run_planner(db, config, "sess1", "admin", "scrivi hello world")
         assert plan["install_proposal"] is True
+
+
+# --- M897: install_proposal persistence on replan plans ---
+
+
+@pytest.mark.asyncio
+class TestReplanInstallProposalPersistence:
+    """M897: replan plans must persist install_proposal like initial plans."""
+
+    async def test_replan_persists_install_proposal(self, tmp_path):
+        """Replan plan with install_proposal → session_has_install_proposal True."""
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, update_plan_install_proposal,
+            session_has_install_proposal, save_message,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+
+        # Initial plan (failed) with install_proposal
+        pid1 = await create_plan(db, "sess1", msg_id, "Exec plan")
+        await update_plan_install_proposal(db, pid1)
+        await update_plan_status(db, pid1, "failed")
+
+        # Replan (child of pid1) also with install_proposal
+        pid2 = await create_plan(db, "sess1", msg_id, "Replan exec",
+                                 parent_id=pid1)
+        await update_plan_install_proposal(db, pid2)
+        await create_task(db, pid2, "sess1", "msg", "Install browser?")
+        await update_plan_status(db, pid2, "done")
+
+        assert await session_has_install_proposal(db, "sess1") is True
+        await db.close()
+
+    async def test_replan_without_proposal_overrides_parent(self, tmp_path):
+        """Replan without install_proposal → False, even if parent had it."""
+        from kiso.store import (
+            init_db, create_session, create_plan, create_task,
+            update_plan_status, update_plan_install_proposal,
+            session_has_install_proposal, save_message,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+
+        pid1 = await create_plan(db, "sess1", msg_id, "Plan with proposal")
+        await update_plan_install_proposal(db, pid1)
+        await update_plan_status(db, pid1, "failed")
+
+        # Replan resolved without needing install
+        pid2 = await create_plan(db, "sess1", msg_id, "Replan succeeded",
+                                 parent_id=pid1)
+        await create_task(db, pid2, "sess1", "msg", "Done")
+        await update_plan_status(db, pid2, "done")
+
+        assert await session_has_install_proposal(db, "sess1") is False
+        await db.close()
+
+    async def test_multi_replan_chain_last_wins(self, tmp_path):
+        """In a chain of 3 replans, the last one's install_proposal wins."""
+        from kiso.store import (
+            init_db, create_session, create_plan,
+            update_plan_status, update_plan_install_proposal,
+            session_has_install_proposal, save_message,
+        )
+        db = await init_db(tmp_path / "test.db")
+        await create_session(db, "sess1")
+        msg_id = await save_message(db, "sess1", "alice", "user", "hi")
+
+        pid1 = await create_plan(db, "sess1", msg_id, "Plan 1")
+        await update_plan_status(db, pid1, "failed")
+
+        pid2 = await create_plan(db, "sess1", msg_id, "Replan 2",
+                                 parent_id=pid1)
+        await update_plan_install_proposal(db, pid2)
+        await update_plan_status(db, pid2, "failed")
+
+        pid3 = await create_plan(db, "sess1", msg_id, "Replan 3",
+                                 parent_id=pid2)
+        await update_plan_install_proposal(db, pid3)
+        await update_plan_status(db, pid3, "done")
+
+        assert await session_has_install_proposal(db, "sess1") is True
+
+        # Plan 4 without proposal overrides the chain
+        pid4 = await create_plan(db, "sess1", msg_id, "Plan 4 no proposal")
+        await update_plan_status(db, pid4, "done")
+        assert await session_has_install_proposal(db, "sess1") is False
+        await db.close()
