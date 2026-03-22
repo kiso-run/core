@@ -69,6 +69,134 @@ if command -v bats > /dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# Failure summary capture
+# ---------------------------------------------------------------------------
+_CAPTURE_DIR="$(mktemp -d)"
+_CAPTURE_LOG="$_CAPTURE_DIR/output.log"
+trap 'rm -rf "$_CAPTURE_DIR"' EXIT
+
+# Strip ANSI escape codes from a string
+_strip_ansi() {
+    sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+}
+
+# Extract a compact failure summary from captured pytest output.
+# Parses the FAILURES section, extracts test name + assertion + captured log.
+_extract_failure_summary() {
+    local logfile="$1"
+    [[ ! -s "$logfile" ]] && return
+
+    local clean
+    clean="$(_strip_ansi < "$logfile")"
+
+    # Extract everything between "= FAILURES =" and "= short test summary"
+    local failures
+    failures="$(echo "$clean" | sed -n '/^=* FAILURES =*/,/^=* short test summary/p' 2>/dev/null)" || true
+    [[ -z "$failures" ]] && return
+
+    echo ""
+    echo "--- FAILURE SUMMARY (paste into LLM) ---"
+    echo ""
+
+    local current_test=""
+    local in_captured_log=false
+    local in_captured_stderr=false
+    local log_lines=()
+    local error_lines=()
+
+    while IFS= read -r line; do
+        # Test name header: ___ TestClass.test_method ___
+        if [[ "$line" =~ ^___+\ (.+)\ ___+$ ]]; then
+            # Flush previous test
+            if [[ -n "$current_test" ]]; then
+                _flush_test_block "$current_test" error_lines log_lines
+            fi
+            current_test="${BASH_REMATCH[1]}"
+            error_lines=()
+            log_lines=()
+            in_captured_log=false
+            in_captured_stderr=false
+            continue
+        fi
+
+        # Captured log/stderr sections
+        if [[ "$line" =~ ^-+\ Captured\ (log|stderr)\ call\ -+$ ]]; then
+            in_captured_log=true
+            in_captured_stderr=true
+            continue
+        fi
+        # End of captured section (next dashed header or blank)
+        if [[ "$in_captured_log" == true ]] && [[ "$line" =~ ^-+\ Captured || "$line" =~ ^=+\ short ]]; then
+            in_captured_log=false
+            in_captured_stderr=false
+            continue
+        fi
+
+        # Collect captured log lines (kiso.* INFO/WARNING lines)
+        if [[ "$in_captured_log" == true ]]; then
+            if [[ "$line" =~ kiso\. || "$line" =~ "HTTP Request" ]]; then
+                log_lines+=("$line")
+            fi
+            continue
+        fi
+
+        # Collect error lines (E   ... assertion errors, TimeoutError)
+        if [[ "$line" =~ ^E\ + ]]; then
+            error_lines+=("$line")
+            continue
+        fi
+        # Also catch the final exception line
+        if [[ "$line" =~ TimeoutError || "$line" =~ AssertionError || "$line" =~ "assert " ]]; then
+            error_lines+=("$line")
+        fi
+    done <<< "$failures"
+
+    # Flush last test
+    if [[ -n "$current_test" ]]; then
+        _flush_test_block "$current_test" error_lines log_lines
+    fi
+
+    echo "--- END FAILURE SUMMARY ---"
+    echo ""
+}
+
+_flush_test_block() {
+    local test_name="$1"
+    local -n _errors=$2
+    local -n _logs=$3
+
+    echo "## $test_name FAILED"
+
+    # Error lines
+    if [[ ${#_errors[@]} -gt 0 ]]; then
+        echo "Error:"
+        local i start=0
+        if [[ ${#_errors[@]} -gt 5 ]]; then
+            start=$(( ${#_errors[@]} - 5 ))
+        fi
+        for (( i=start; i<${#_errors[@]}; i++ )); do
+            echo "  ${_errors[$i]}"
+        done
+    fi
+
+    # Log lines (last 30)
+    if [[ ${#_logs[@]} -gt 0 ]]; then
+        echo "Log:"
+        local i start=0
+        if [[ ${#_logs[@]} -gt 30 ]]; then
+            start=$(( ${#_logs[@]} - 30 ))
+        fi
+        for (( i=start; i<${#_logs[@]}; i++ )); do
+            # Trim the verbose prefix (timestamps, module paths)
+            local trimmed
+            trimmed="$(echo "${_logs[$i]}" | sed 's/^.*kiso\./kiso./; s/^INFO  *//; s/^WARNING  */⚠ /')"
+            echo "  $trimmed"
+        done
+    fi
+    echo ""
+}
+
+# ---------------------------------------------------------------------------
 # Suite runner
 # ---------------------------------------------------------------------------
 FAILED=0
@@ -77,7 +205,7 @@ run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local rc=0
-    "$@" || rc=$?
+    "$@" 2>&1 | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
     if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
         echo -e "${GREEN}✓ $name: PASSED${NC}"
     else
@@ -455,6 +583,7 @@ echo ""
 if [[ "$FAILED" -eq 0 ]]; then
     echo -e "${GREEN}All executed suites passed.${NC}"
 else
+    _extract_failure_summary "$_CAPTURE_LOG"
     echo -e "${RED}Some suites failed — check output above.${NC}"
     exit 1
 fi
