@@ -9,6 +9,7 @@
 # 2. Direct (by number, same as menu choices):
 #   ./run_tests.sh 4                # run live tests
 #   ./run_tests.sh 1,3              # run unit + integration
+#   ./run_tests.sh f                 # fast all (skip pipeline tests)
 #   ./run_tests.sh 10               # all automatic
 #   ./run_tests.sh s "tests/live/test_roles.py::TestFoo"  # specific test
 #
@@ -432,6 +433,14 @@ run_auto() {
             --interactive)  run_interactive ;;
             --plugins)      run_plugins "" ;;
             --plugins=*)    run_plugins "${flag#*=}" ;;
+            --fast)
+                run_unit
+                run_bash
+                run_integration
+                run_live
+                run_docker
+                run_plugins ""
+                ;;
             --all)
                 run_unit
                 run_bash
@@ -445,7 +454,7 @@ run_auto() {
                 ;;
             *)
                 echo -e "${RED}Unknown flag: $flag${NC}"
-                echo "Available: --unit --bash --integration --live --docker --func/--functional --extended --interactive --plugins[=filter] --all"
+                echo "Available: --unit --bash --integration --live --docker --func/--functional --extended --interactive --plugins[=filter] --fast --all"
                 echo "Skip flags: --no-unit --no-bash --no-integration --no-live --no-docker --no-func --no-plugins"
                 exit 1
                 ;;
@@ -495,11 +504,12 @@ run_interactive_menu() {
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
     echo -e "  ${CYAN}9${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
     echo -e "  ${CYAN}10${NC} All automatic           ${DIM}1-8 (skip 9 interactive)${NC}"
+    echo -e "  ${CYAN}f${NC}  Fast all               ${DIM}1-6 (~3min, skip pipeline tests)${NC}"
     echo -e "  ${CYAN}s${NC}  Run specific test       ${DIM}path::Class::test or -k pattern${NC}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-10, s, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-10, f, s, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -563,6 +573,14 @@ _process_choices() {
                 run_plugins ""
                 run_functional
                 run_extended
+                ;;
+            f|F)
+                run_unit
+                run_bash
+                run_integration
+                run_live
+                run_docker
+                run_plugins ""
                 ;;
             s|S)
                 if [[ -n "$extra" ]]; then
