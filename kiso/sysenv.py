@@ -47,7 +47,7 @@ PROBE_BINARIES: list[str] = [
     # Browsers
     "chromium", "chromium-browser", "lynx", "w3m", "html2text",
     # File ops
-    "diff", "file", "stat", "du", "cat",
+    "diff", "file", "stat", "du", "cat", "tree",
     # Process
     "kill", "pkill",
 ]
