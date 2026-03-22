@@ -2482,7 +2482,7 @@ async def _process_message(
 
     # Create plan record before classifier so the CLI can render it immediately.
     # This ensures the plan header appears before inflight indicators.
-    plan_id = await create_plan(db, session, msg_id, "Planning...")
+    plan_id = await create_plan(db, session, msg_id, "Thinking...")
 
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     user_lang = ""  # empty = messenger detects from user message

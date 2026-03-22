@@ -172,8 +172,8 @@ def test_render_plan_ascii():
 
 def test_render_plan_zero_tasks_no_count():
     """When task_count is 0, the parenthetical count should be omitted."""
-    result = render_plan("Planning...", 0, _COLOR)
-    assert "Plan: Planning..." in result
+    result = render_plan("Thinking...", 0, _COLOR)
+    assert "Plan: Thinking..." in result
     assert "task" not in result
     assert "(0" not in result
 

@@ -860,7 +860,7 @@ def test_poll_status_plan_header_updates_with_real_goal(capsys, plain_caps):
     mock_client = MagicMock()
     resp1 = MagicMock()
     resp1.json.return_value = {
-        "plan": {"id": 1, "message_id": 7, "goal": "Planning...", "status": "running"},
+        "plan": {"id": 1, "message_id": 7, "goal": "Thinking...", "status": "running"},
         "tasks": [],
     }
     resp1.raise_for_status = MagicMock()
@@ -881,8 +881,8 @@ def test_poll_status_plan_header_updates_with_real_goal(capsys, plain_caps):
         _poll_status(mock_client, "sess", 7, 0, quiet=False, verbose=False, caps=plain_caps)
 
     out = capsys.readouterr().out
-    # Initial "Planning..." should appear
-    assert "Planning..." in out
+    # Initial "Thinking..." should appear
+    assert "Thinking..." in out
     # Updated real goal should also appear
     assert "Install browser skill" in out
     # Task count should appear with the updated header
