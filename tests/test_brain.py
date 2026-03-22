@@ -6960,6 +6960,62 @@ class TestM274NoItalianKeywords:
         assert "PROTECTION" in system or "Caller Role" in system
 
 
+@pytest.mark.asyncio
+class TestM899RegistryToolsInjection:
+    """M899: registry tools always injected into planner context."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "test-session")
+        yield conn
+        await conn.close()
+
+    def _config(self):
+        return _make_brain_config()
+
+    async def test_registry_tools_in_context_when_uninstalled(self, db):
+        """Planner context includes registry tools when some are uninstalled."""
+        fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
+        registry = "- ocr — Image OCR\n- aider — Code editing"
+        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_tools", return_value=registry):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "extract text from screenshot",
+            )
+        user = msgs[1]["content"]
+        assert "Available Tools (not installed)" in user
+        assert "ocr" in user
+        assert "aider" in user
+
+    async def test_no_registry_section_when_all_installed(self, db):
+        """No registry section when get_registry_tools returns empty."""
+        fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
+        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_tools", return_value=""):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "what time is it",
+            )
+        user = msgs[1]["content"]
+        assert "Available Tools (not installed)" not in user
+
+    async def test_registry_tools_not_in_context_pool(self, db):
+        """Registry text is NOT in context_pool (injected directly, not via briefer)."""
+        fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
+        registry = "- ocr — Image OCR"
+        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_tools", return_value=registry):
+            msgs, *_ = await build_planner_messages(
+                db, self._config(), "test-session", "admin",
+                "do OCR on image",
+            )
+        # Verify registry text appears in user message (context block)
+        user = msgs[1]["content"]
+        assert "ocr" in user
+
+
 # --- Streaming mock helpers for tests that mock _http_client directly ---
 
 

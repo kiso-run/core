@@ -1212,8 +1212,6 @@ async def build_planner_messages(
         registry_text = await asyncio.to_thread(
             get_registry_tools, set(installed_names),
         )
-        if registry_text:
-            context_pool["available_registry_tools"] = registry_text
 
     # --- Briefer path ---
     briefing = None
@@ -1391,6 +1389,11 @@ async def build_planner_messages(
             "click, fill forms, take screenshots). "
             "If interactive browsing is required: single msg asking to install, end plan."
         )
+
+    # always-inject available registry tools (not gated by briefer) so the
+    # planner knows what tools can be installed via `kiso tool install`.
+    if registry_text:
+        context_parts.append(f"## Available Tools (not installed)\n{registry_text}")
 
     # always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
