@@ -309,12 +309,12 @@ def _report_pub_files(
     all_paths: list[Path] = []
     truncated = False
     for p in pub_dir.rglob("*"):
-        if len(all_paths) >= OutputBudgets.PUB_SCAN_MAX:
+        if len(all_paths) >= _PUB_SCAN_MAX:
             truncated = True
             break
         all_paths.append(p)
     if truncated:
-        log.warning("pub/ for session %r has >%d entries, listing truncated", session, OutputBudgets.PUB_SCAN_MAX)
+        log.warning("pub/ for session %r has >%d entries, listing truncated", session, _PUB_SCAN_MAX)
     # prefer external_url setting over request-derived base_url
     external_url = config.settings.get("external_url", "")
     if external_url:
@@ -586,16 +586,14 @@ def _load_last_plan_summary(session: str) -> str | None:
     return "\n".join(parts)
 
 
-# centralized output budget constants
-class OutputBudgets:
-    """All output-size thresholds in one place."""
-    PLAN_OUTPUTS = 8000          # max total chars for plan_outputs in LLM context
-    REPLAN_EXEC = 1000           # chars per exec/tool task output
-    REPLAN_SEARCH = 2000         # chars per search task output
-    REPLAN_CONTEXT = 20000       # total replan context budget (~5000 tokens)
-    LARGE_THRESHOLD = 4096       # chars — above this, save to file
-    LARGE_HEAD = 500             # chars to keep inline as preview
-    PUB_SCAN_MAX = 1000          # max pub/ entries to scan
+# output budget constants
+_PLAN_OUTPUTS_BUDGET = 8000      # max total chars for plan_outputs in LLM context
+_REPLAN_OUTPUT_LIMIT = 1000      # chars per exec/tool task output
+_REPLAN_SEARCH_OUTPUT_LIMIT = 2000  # chars per search task output
+_REPLAN_CONTEXT_CHAR_BUDGET = 20000  # total replan context budget (~5000 tokens)
+_LARGE_OUTPUT_THRESHOLD = 4096   # chars — above this, save to file
+_LARGE_OUTPUT_HEAD = 500         # chars to keep inline as preview
+_PUB_SCAN_MAX = 1000             # max pub/ entries to scan
 
 
 def _extract_published_urls(plan_outputs: list[dict]) -> list[str]:
@@ -624,7 +622,7 @@ def _extract_published_urls(plan_outputs: list[dict]) -> list[str]:
 
 
 def _format_plan_outputs_for_msg(
-    plan_outputs: list[dict], budget: int = OutputBudgets.PLAN_OUTPUTS,
+    plan_outputs: list[dict], budget: int = _PLAN_OUTPUTS_BUDGET,
 ) -> str:
     """Format plan_outputs as readable text for the worker LLM prompt.
 
@@ -678,12 +676,6 @@ def _format_plan_outputs_for_msg(
     parts.extend(t for _, t in full_parts)
     return "\n\n".join(parts)
 
-
-_REPLAN_OUTPUT_LIMIT = OutputBudgets.REPLAN_EXEC
-_REPLAN_SEARCH_OUTPUT_LIMIT = OutputBudgets.REPLAN_SEARCH
-_REPLAN_CONTEXT_CHAR_BUDGET = OutputBudgets.REPLAN_CONTEXT
-_LARGE_OUTPUT_THRESHOLD = OutputBudgets.LARGE_THRESHOLD
-_LARGE_OUTPUT_HEAD = OutputBudgets.LARGE_HEAD
 
 
 def _save_large_output(session: str, task_index: int, output: str) -> str:
