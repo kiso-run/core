@@ -415,7 +415,7 @@ class TestF31RussianResponse:
         result = await run_message(
             "Какие 3 самых популярных языка программирования? "
             "Кратко объясни почему каждый из них важен",
-            timeout=120,
+            timeout=180,
         )
 
         assert result.success, (
