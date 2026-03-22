@@ -77,7 +77,7 @@ trap 'rm -rf "$_CAPTURE_DIR"' EXIT
 
 # Strip ANSI escape codes from a string
 _strip_ansi() {
-    sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\r//g'
 }
 
 # Extract a compact failure summary from captured pytest output.
@@ -214,7 +214,11 @@ run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local start=$SECONDS rc=0
-    FORCE_COLOR=1 PY_COLORS=1 "$@" 2>&1 | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
+    # Use 'script' to create a pseudo-TTY so all commands (Docker BuildKit,
+    # pytest, bats) see a real terminal and emit colors. The output is tee'd
+    # to a capture log for the failure summary.
+    FORCE_COLOR=1 PY_COLORS=1 script -qefc "$(printf '%q ' "$@")" /dev/null \
+        | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
     if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
