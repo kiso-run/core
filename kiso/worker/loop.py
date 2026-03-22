@@ -144,7 +144,6 @@ from kiso.worker.utils import (
     _session_workspace,
     _snapshot_workspace,
     _write_plan_outputs,
-    detect_user_lang,
     get_replan_message,
 )
 from kiso.worker.exec import _exec_task
@@ -2266,22 +2265,21 @@ async def _run_planning_loop(
         stuck_detected = _detect_circular_replan(replan_history, replan_reason)
 
         # Notify user about replan (as a visible msg task + webhook)
-        user_lang = detect_user_lang(content)
         if stuck_detected:
             tried_summary = "; ".join(
                 f"{h['goal']}: {h['failure']}" for h in replan_history[-2:]
             )
             msg_text = get_replan_message(
-                user_lang, "stuck", replan_depth, max_replan_depth,
+                "stuck", replan_depth, max_replan_depth,
                 reason=replan_reason, tried=tried_summary,
             )
         elif is_self_directed:
             msg_text = get_replan_message(
-                user_lang, "investigating", replan_depth, max_replan_depth,
+                "investigating", replan_depth, max_replan_depth,
             )
         else:
             msg_text = get_replan_message(
-                user_lang, "replanning", replan_depth, max_replan_depth,
+                "replanning", replan_depth, max_replan_depth,
                 reason=replan_reason,
             )
         replan_notify_id = await create_task(db, current_plan_id, session, TASK_TYPE_MSG, msg_text)

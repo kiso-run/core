@@ -1008,33 +1008,28 @@ def _build_failure_summary(
     return "\n\n".join(parts)
 
 
-# ── Language detection for replan notifications ──
+# ── Replan notification messages ──
 
-from kiso.worker.l10n import LANG_MARKERS, REPLAN_TEMPLATES
-
-
-def detect_user_lang(text: str) -> str:
-    """Detect user language from common word patterns. Returns ISO 639-1 code."""
-    words = set(text.lower().split())
-    best_lang = "en"
-    best_score = 0
-    for lang, markers in LANG_MARKERS.items():
-        score = len(words & markers)
-        if score > best_score:
-            best_score = score
-            best_lang = lang
-    return best_lang
+_REPLAN_TEMPLATES: dict[str, str] = {
+    "investigating": "Investigating... ({depth}/{max})",
+    "replanning": "Replanning (attempt {depth}/{max}): {reason}",
+    "stuck": (
+        "I'm having trouble with this request. "
+        "I've tried replanning {depth} times but keep hitting "
+        "the same issue: {reason}\n"
+        "Previous attempts: {tried}\n"
+        "Can you help me with more details or a different approach?"
+    ),
+}
 
 
 def get_replan_message(
-    lang: str,
     kind: str,
     depth: int,
     max_depth: int,
     reason: str = "",
     tried: str = "",
 ) -> str:
-    """Get a localized replan notification message."""
-    templates = REPLAN_TEMPLATES.get(lang, REPLAN_TEMPLATES["en"])
-    template = templates.get(kind, REPLAN_TEMPLATES["en"][kind])
+    """Get a replan notification message."""
+    template = _REPLAN_TEMPLATES[kind]
     return template.format(depth=depth, max=max_depth, reason=reason, tried=tried)

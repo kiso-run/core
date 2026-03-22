@@ -11761,50 +11761,26 @@ class TestM310Phase13Integration:
         assert planner_kwargs_captured[0].get("is_replan") is True
 
 
-_DETECT_LANG_CASES = [
-    ("vai su guidance.studio", "it"),
-    ("go to guidance.studio", "en"),
-    ("busca información sobre el tema", "es"),
-    ("cherche des informations", "fr"),
-    ("suche nach Informationen", "de"),
-    ("busque informações sobre isso", "pt"),
-    ("ここに行ってください", "en"),  # unknown → English
-    ("", "en"),  # empty → English
-]
-
-
-class TestM332DetectUserLang:
-    """M332: detect user language for replan notifications."""
-
-    @pytest.mark.parametrize("text,expected_lang", _DETECT_LANG_CASES,
-                             ids=[c[1] + "_" + c[0][:20] for c in _DETECT_LANG_CASES])
-    def test_detect_user_lang(self, text, expected_lang):
-        from kiso.worker.utils import detect_user_lang
-        assert detect_user_lang(text) == expected_lang
-
-
-# (lang, phase, attempt, max_attempts, kwargs, expected_substrings)
+# (phase, attempt, max_attempts, kwargs, expected_substrings)
 _REPLAN_MSG_CASES = [
-    ("en", "replanning", 1, 3, {"reason": "timeout"}, ["Replanning (attempt 1/3): timeout"]),
-    ("it", "replanning", 2, 3, {"reason": "errore"}, ["Ripianificazione", "2/3", "errore"]),
-    ("it", "investigating", 1, 3, {}, ["Indagine in corso", "1/3"]),
-    ("en", "stuck", 3, 3, {"reason": "timeout", "tried": "attempt1; attempt2"},
+    ("replanning", 1, 3, {"reason": "timeout"}, ["Replanning (attempt 1/3): timeout"]),
+    ("investigating", 1, 3, {}, ["Investigating", "1/3"]),
+    ("stuck", 3, 3, {"reason": "timeout", "tried": "attempt1; attempt2"},
      ["I'm having trouble", "timeout", "attempt1; attempt2"]),
-    ("ja", "replanning", 1, 3, {"reason": "error"}, ["Replanning"]),  # fallback to English
 ]
 
 
 class TestM332GetReplanMessage:
-    """M332: localized replan messages."""
+    """M332/M883: English-only replan messages."""
 
     @pytest.mark.parametrize(
-        "lang,phase,attempt,max_attempts,kwargs,expected_subs",
+        "phase,attempt,max_attempts,kwargs,expected_subs",
         _REPLAN_MSG_CASES,
-        ids=[f"{c[0]}_{c[1]}" for c in _REPLAN_MSG_CASES],
+        ids=[c[0] for c in _REPLAN_MSG_CASES],
     )
-    def test_get_replan_message(self, lang, phase, attempt, max_attempts, kwargs, expected_subs):
+    def test_get_replan_message(self, phase, attempt, max_attempts, kwargs, expected_subs):
         from kiso.worker.utils import get_replan_message
-        msg = get_replan_message(lang, phase, attempt, max_attempts, **kwargs)
+        msg = get_replan_message(phase, attempt, max_attempts, **kwargs)
         for sub in expected_subs:
             assert sub in msg, f"Missing {sub!r} in {msg!r}"
 
