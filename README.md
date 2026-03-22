@@ -12,13 +12,13 @@ Kiso installs and configures in one command. It's built to be trusted with real 
 
 **Real multi-user enforcement.** Admin and user roles are enforced at the OS level — user commands literally run as a restricted Linux user with scoped permissions on their workspace. Not filtered in application code.
 
-**Review gates on every risky step.** A reviewer evaluates each exec, skill, and search task before the next one runs. Automatic and non-blocking, but structurally sound — errors don't cascade.
+**Review gates on every risky step.** A reviewer evaluates each exec, tool, and search task before the next one runs. Automatic and non-blocking, but structurally sound — errors don't cascade.
 
 **Runtime kill switch.** Any running job can be cancelled instantly — via CLI (`kiso cancel`), REST API (`POST /sessions/{sid}/cancel`), or programmatically from a wrapper. No session destruction required, no process kill. The bot confirms what was completed, what was cancelled.
 
 **In-flight message triage.** New messages arriving during an active job aren't blindly queued. A fast-path catches stop commands ("ferma", "STOP", "cancel") in milliseconds without LLM calls. Everything else is classified: updates modify the running plan, conflicts replace it, independent requests wait their turn with an immediate ack.
 
-**No silent installs.** If a task needs a skill, connector, or package that isn't installed, the bot asks first and offers alternatives. The install only happens after the user confirms — enforced structurally by plan validation, not just by prompt instructions.
+**No silent installs.** If a task needs a tool, connector, or package that isn't installed, the bot asks first and offers alternatives. The install only happens after the user confirms — enforced structurally by plan validation, not just by prompt instructions.
 
 **Safety rules.** Persistent, admin-defined constraints (`kiso rules add "never delete /data"`) that are always injected into the planner — not gated by the briefer, not subject to decay or compression. The reviewer flags violations as stuck, blocking execution.
 
@@ -32,7 +32,7 @@ Kiso installs and configures in one command. It's built to be trusted with real 
 
 **Behavioral guidelines.** Admin-defined preferences (`kiso behavior add "always use concrete metrics"`) that shape how the bot responds — injected into both planner and messenger. Softer than safety rules, but always present. The bot adapts to your working style.
 
-**Presets.** Install a persona in one command: `kiso preset install performance-marketer`. Bundles tools, skills, knowledge facts, and behavioral rules. Transform a generic instance into a specialized assistant — SEO analyst, backend developer, project manager.
+**Presets.** Install a persona in one command: `kiso preset install performance-marketer`. Bundles tools, knowledge facts, and behavioral rules. Transform a generic instance into a specialized assistant — SEO analyst, backend developer, project manager.
 
 **Cron scheduling.** Recurring tasks via standard cron expressions: `kiso cron add "0 9 * * *" "check competitor prices" --session marketing`. The bot wakes up, executes the full pipeline (plan → exec → review → report), and goes back to sleep.
 
@@ -40,7 +40,7 @@ Kiso installs and configures in one command. It's built to be trusted with real 
 
 **Fail loud.** Missing config → explicit error with the exact field name. No silent defaults, no undocumented fallbacks.
 
-One config file, one database, git-installable skills and connectors each in their own isolated venv, runs in Docker.
+One config file, one database, git-installable tools and connectors each in their own isolated venv, runs in Docker.
 
 ## Project Structure
 
@@ -51,10 +51,10 @@ kiso/                               # installable python package
 ├── brain.py                        # planner + reviewer + curator
 ├── worker/                         # per-session asyncio worker package
 │   ├── loop.py                     # message processing, plan orchestration
-│   ├── exec.py / skill.py / search.py  # task handlers
+│   ├── exec.py / tool.py / search.py  # task handlers
 │   └── utils.py                    # subprocess execution, workspace management
 ├── store.py                        # SQLite: sessions, messages, plans, tasks, facts, learnings
-├── skills.py / connectors.py       # plugin discovery
+├── tools.py / connectors.py        # plugin discovery
 ├── security.py / auth.py           # permission enforcement
 └── config.py                       # config loading and validation
 
@@ -67,7 +67,7 @@ kiso/                               # installable python package
         ├── store.db                # SQLite database
         ├── audit/                  # LLM call logs, task execution logs
         ├── roles/                  # system prompt overrides per LLM role
-        ├── skills/                 # bot capabilities (git clone)
+        ├── tools/                  # bot capabilities (git clone)
         │   └── {name}/
         │       ├── kiso.toml       # manifest: identity, args schema, deps
         │       ├── run.py          # entry point
@@ -87,17 +87,17 @@ kiso/                               # installable python package
 
 ## Packages
 
-Skills and connectors share the same base packaging format: `kiso.toml` manifest + `pyproject.toml` + `run.py` + optional `deps.sh`. Each `kiso.toml` declares its type, dependencies, and metadata. See [skills.md](docs/skills.md) and [connectors.md](docs/connectors.md).
+Tools and connectors share the same base packaging format: `kiso.toml` manifest + `pyproject.toml` + `run.py` + optional `deps.sh`. Each `kiso.toml` declares its type, dependencies, and metadata. See [tools.md](docs/tools.md) and [connectors.md](docs/connectors.md).
 
 Official packages live in the `kiso-run` GitHub org:
-- Skills: `kiso-run/skill-{name}` (topic: `kiso-skill`)
+- Tools: `kiso-run/tool-{name}` (topic: `kiso-tool`)
 - Connectors: `kiso-run/connector-{name}` (topic: `kiso-connector`)
 
 Unofficial packages: any git repo with a valid `kiso.toml`.
 
 ## Docker
 
-Kiso runs in Docker by default. The container comes with Python, `uv`, and common tools pre-installed. All user data lives in a single volume (`~/.kiso/`). Skills and connectors can be pre-installed in the Dockerfile or installed at runtime into the volume.
+Kiso runs in Docker by default. The container comes with Python, `uv`, and common tools pre-installed. All user data lives in a single volume (`~/.kiso/`). Tools and connectors can be pre-installed in the Dockerfile or installed at runtime into the volume.
 
 See [docker.md](docs/docker.md).
 
@@ -155,7 +155,7 @@ To start completely fresh, remove the data directory and rerun:
 # Stop and remove the container
 docker rm -f kiso
 
-# Remove all data (config, database, sessions, skills, connectors)
+# Remove all data (config, database, sessions, tools, connectors)
 # Uses Docker because some files are root-owned from the container
 docker run --rm -v ~/.kiso:/mnt/kiso alpine rm -rf /mnt/kiso/*
 rm -rf ~/.kiso
@@ -164,7 +164,7 @@ rm -rf ~/.kiso
 ./install.sh
 ```
 
-Or use the `--reset` flag to factory-reset during install (keeps config and API key, wipes sessions/knowledge/skills):
+Or use the `--reset` flag to factory-reset during install (keeps config and API key, wipes sessions/knowledge/tools):
 
 ```bash
 ./install.sh --reset
@@ -189,7 +189,7 @@ kiso session create dev   # create a named session
 
 # Plugins
 kiso tool install search  # install a tool
-kiso skill install seo    # install a markdown skill
+kiso tool install seo     # install a recipe tool
 kiso plugin list          # list all installed plugins
 kiso preset install performance-marketer  # install a persona bundle
 
@@ -228,7 +228,7 @@ Users can share credentials during conversation — the planner extracts them as
 - [database.md](docs/database.md) — Database schema
 - [llm-roles.md](docs/llm-roles.md) — LLM roles, their prompts, and what context each receives
 - [flow.md](docs/flow.md) — Full message lifecycle
-- [skills.md](docs/skills.md) — Skill system (subprocess, isolated venv)
+- [tools.md](docs/tools.md) — Tool system (subprocess, isolated venv)
 - [connectors.md](docs/connectors.md) — Platform bridges
 - [api.md](docs/api.md) — API endpoints
 - [cli.md](docs/cli.md) — Terminal client and management commands
