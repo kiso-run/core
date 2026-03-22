@@ -1204,10 +1204,11 @@ async def build_planner_messages(
         )
 
     # --- Registry: show available-but-not-installed tools ---
-    # Only fetch when no tools are installed.  Skip on replans — registry
-    # data is identical to the initial plan and tools won't change mid-replan.
+    # Show uninstalled registry tools so the planner knows what's available
+    # for install.  Filtered by installed_names, so returns empty when all
+    # tools are installed.  Skip on replans — tools won't change mid-replan.
     registry_text = ""
-    if not installed and not is_replan:
+    if not is_replan:
         registry_text = await asyncio.to_thread(
             get_registry_tools, set(installed_names),
         )

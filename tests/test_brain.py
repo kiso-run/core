@@ -4083,7 +4083,8 @@ class TestPlannerContextualRules:
     async def test_generic_message_has_no_appendix(self, db):
         """A message like 'what time is it' should not inject any appendix (when skills exist)."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse the web", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_tools", return_value=""):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
@@ -6931,7 +6932,8 @@ class TestM274NoItalianKeywords:
     async def test_installa_does_not_trigger_plugin_install(self, db):
         """Italian 'installa' no longer triggers plugin_install module."""
         fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
+        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_tools", return_value=""):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "installa il browser",
