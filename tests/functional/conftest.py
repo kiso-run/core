@@ -8,6 +8,12 @@ execution.  They are gated by ``--functional`` and optionally
 
 from __future__ import annotations
 
+import logging
+
+# Enable INFO logging for functional tests — shows classifier results,
+# planner decisions, validation errors, and LLM call details.
+logging.basicConfig(level=logging.INFO)
+
 import asyncio
 import fnmatch
 import getpass

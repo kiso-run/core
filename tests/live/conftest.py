@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
+
+# Enable INFO logging for live tests — shows classifier results,
+# planner decisions, validation errors, and LLM call details.
+logging.basicConfig(level=logging.INFO)
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 

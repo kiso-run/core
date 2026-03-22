@@ -1741,6 +1741,7 @@ async def classify_message(
         log.warning("Classifier LLM failed, falling back to plan: %s", e)
         return "plan", ""
 
+    log.info("Classifier raw LLM output: %r", raw.strip())
     result = raw.strip().lower()
 
     # Expected format: "cat:lang" (e.g. "chat:it", "plan:en")
