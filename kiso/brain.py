@@ -1728,9 +1728,9 @@ async def classify_message(
     """Classify a user message and detect its language.
 
     Returns ``(category, lang)`` where *category* is one of
-    :data:`CLASSIFIER_CATEGORIES` and *lang* is an ISO 639-1 code
-    (e.g. ``"en"``, ``"it"``).  On any error or ambiguous output,
-    returns ``("plan", "en")`` as safe fallback.
+    :data:`CLASSIFIER_CATEGORIES` and *lang* is a full English
+    language name (e.g. ``"English"``, ``"Italian"``).  On any error
+    or ambiguous output, returns ``("plan", "")`` as safe fallback.
     """
     messages = build_classifier_messages(
         content, recent_context=recent_context, entity_names=entity_names,
@@ -1742,31 +1742,34 @@ async def classify_message(
         return "plan", ""
 
     log.info("Classifier raw LLM output: %r", raw.strip())
-    result = raw.strip().lower()
+    result = raw.strip()
 
-    # Expected format: "cat:lang" (e.g. "chat:it", "plan:en")
+    # Expected format: "cat:Language" (e.g. "chat:Italian", "plan:English")
     if ":" in result:
         cat, lang = result.split(":", 1)
-        cat = cat.strip()
-        lang = lang.strip()
-        if cat in CLASSIFIER_CATEGORIES and len(lang) == 2:
+        cat = cat.strip().lower()
+        lang = lang.strip().title()  # "russian" → "Russian"
+        if cat in CLASSIFIER_CATEGORIES and lang:
             log.info("Classifier: %s (lang=%s)", cat, lang)
             return cat, lang
-        # Defensive: LLM returned literal "category:xx" or "category:xx:cat"
-        if cat == "category" and len(lang) == 2:
-            log.info("Classifier: plan (literal 'category', lang=%s)", lang)
-            return "plan", lang
+        # Defensive: LLM returned literal "category:Language" or
+        # "category:Language:cat"
         if cat == "category" and ":" in lang:
             lang_part, cat_part = lang.split(":", 1)
-            if cat_part.strip() in CLASSIFIER_CATEGORIES and len(lang_part.strip()) == 2:
-                log.info("Classifier: %s (literal 'category', lang=%s)", cat_part.strip(), lang_part.strip())
-                return cat_part.strip(), lang_part.strip()
+            lang_part = lang_part.strip().title()
+            cat_part = cat_part.strip().lower()
+            if cat_part in CLASSIFIER_CATEGORIES and lang_part:
+                log.info("Classifier: %s (literal 'category', lang=%s)", cat_part, lang_part)
+                return cat_part, lang_part
+        if cat == "category" and lang:
+            log.info("Classifier: plan (literal 'category', lang=%s)", lang)
+            return "plan", lang
 
-    # LLM fallback: plain category without lang code — don't force "en",
+    # LLM fallback: plain category without lang — don't force a language,
     # let the messenger detect language from the user message.
-    if result in CLASSIFIER_CATEGORIES:
-        log.info("Classifier: %s (no lang — messenger will detect)", result)
-        return result, ""
+    if result.lower() in CLASSIFIER_CATEGORIES:
+        log.info("Classifier: %s (no lang — messenger will detect)", result.lower())
+        return result.lower(), ""
 
     # Ambiguous output — safe fallback (plan, no forced language)
     log.warning("Classifier returned unexpected value %r, falling back to plan", raw.strip())

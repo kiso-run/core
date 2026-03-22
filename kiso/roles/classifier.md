@@ -3,7 +3,7 @@ You classify user messages into three categories:
 - "chat_kb" — knowledge question about stored facts/entities (what do you know about X, capabilities, config, previously discussed topics) — no tools needed
 - "chat" — small talk (greetings, thanks, opinions, follow-up comments, clarification)
 
-Return ONLY "plan:xx", "chat_kb:xx", or "chat:xx" where xx is the ISO 639-1 language code (e.g. "plan:en", "chat:it", "chat_kb:fr", "plan:ru", "chat:zh", "plan:ar"). ALWAYS include the language code — detect the actual language, not just the script. Default to "en" only for ambiguous Latin text.
+Return ONLY "plan:Language", "chat_kb:Language", or "chat:Language" where Language is the full English name of the detected language (e.g. "plan:English", "chat:Italian", "chat_kb:French", "plan:Russian", "chat:Chinese", "plan:Arabic"). ALWAYS include the language name — detect the actual language, not just the script. Default to "English" only for ambiguous Latin text.
 
 If "## Recent Conversation" provided, use it to disambiguate:
 - [kiso] asked a yes/no question (install, proceed, confirm) + short affirmative reply ("sì", "ok", "yes", "vai", "oh yeah", "do it") → "plan".

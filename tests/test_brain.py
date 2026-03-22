@@ -3444,23 +3444,25 @@ class TestBuildClassifierMessages:
 
 class TestClassifyMessage:
     @pytest.mark.parametrize("llm_return,message,expected_cat,expected_lang", [
-        ("chat:en", "hello", "chat", "en"),
-        ("chat_kb:it", "cosa sai su te stesso?", "chat_kb", "it"),
-        ("plan:en", "list files", "plan", "en"),
+        ("chat:English", "hello", "chat", "English"),
+        ("chat_kb:Italian", "cosa sai su te stesso?", "chat_kb", "Italian"),
+        ("plan:English", "list files", "plan", "English"),
         ("chat", "hello", "chat", ""),  # LLM fallback: no lang → messenger detects
-        ("  chat:fr\n", "merci", "chat", "fr"),  # strips whitespace
-        ("CHAT:EN", "thanks", "chat", "en"),  # case insensitive
+        ("  chat:French\n", "merci", "chat", "French"),  # strips whitespace
+        ("CHAT:ENGLISH", "thanks", "chat", "English"),  # case insensitive → title case
         ("I think this is a chat", "hello", "plan", ""),  # unexpected → plan, no forced lang
         ("", "hello", "plan", ""),  # empty → plan, no forced lang
-        ("chat:italian", "ciao", "plan", ""),  # invalid lang code → no forced lang
-        ("category:it", "dimmi qualcosa", "plan", "it"),  # M612 literal category
-        ("category:it:plan", "vai su google", "plan", "it"),  # M612 category:lang:cat
-        ("category:fr:chat", "merci", "chat", "fr"),  # M612 category:lang:chat
+        ("chat:Russian", "привет", "chat", "Russian"),  # M881: full language name
+        ("plan:Chinese", "列出文件", "plan", "Chinese"),  # M881: full language name
+        ("category:Italian", "dimmi qualcosa", "plan", "Italian"),  # M612 literal category
+        ("category:Italian:plan", "vai su google", "plan", "Italian"),  # M612 category:lang:cat
+        ("category:French:chat", "merci", "chat", "French"),  # M612 category:lang:chat
     ], ids=[
-        "chat-en", "chat_kb-it", "plan-en", "plain-category-fallback",
+        "chat-English", "chat_kb-Italian", "plan-English", "plain-category-fallback",
         "whitespace", "case-insensitive", "unexpected-fallback",
-        "empty-fallback", "invalid-lang", "M612-category-it",
-        "M612-category-it-plan", "M612-category-fr-chat",
+        "empty-fallback", "M881-Russian", "M881-Chinese",
+        "M612-category-Italian", "M612-category-Italian-plan",
+        "M612-category-French-chat",
     ])
     async def test_classify_message_parsing(self, llm_return, message, expected_cat, expected_lang):
         config = _make_config_for_classifier()
@@ -3570,11 +3572,11 @@ class TestClassifierPromptContent:
         assert "connectors" in prompt or "connector" in prompt
 
     def test_classifier_prompt_supports_non_latin_languages(self):
-        """M877/M879: classifier prompt includes non-Latin language examples."""
+        """M877/M879/M881: classifier prompt includes non-Latin language examples."""
         prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "ru" in prompt  # Russian
-        assert "zh" in prompt  # Chinese
-        assert "ALWAYS include the language code" in prompt
+        assert "Russian" in prompt
+        assert "Chinese" in prompt
+        assert "ALWAYS include the language name" in prompt
         assert "plugin" in prompt
 
 
