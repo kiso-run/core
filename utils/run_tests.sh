@@ -214,7 +214,7 @@ run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local start=$SECONDS rc=0
-    "$@" 2>&1 | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
+    FORCE_COLOR=1 PY_COLORS=1 "$@" 2>&1 | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
     if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
