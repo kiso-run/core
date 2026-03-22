@@ -2457,7 +2457,7 @@ async def run_messenger(
     )
     # retry messenger LLM call up to 2 times on transient errors.
     # on SSE stall, switch to fallback model immediately (don't waste retries).
-    _fallback = config.settings.get("planner_fallback_model", "google/gemini-2.5-flash-lite")
+    _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
     _using_fallback = False
     _last_err: LLMError | None = None
     for _attempt in range(_MAX_MESSENGER_RETRIES + 1):
@@ -2590,7 +2590,7 @@ async def run_exec_translator(
         config, detail, sys_env_text, plan_outputs_text,
         retry_context=retry_context,
     )
-    _fallback = config.settings.get("planner_fallback_model", "google/gemini-2.5-flash-lite")
+    _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
     raw = await _call_role(config, "worker", messages, ExecTranslatorError, session,
                            fallback_model=_fallback)
 

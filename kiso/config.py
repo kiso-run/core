@@ -37,7 +37,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "max_validation_retries": 3,
     "max_llm_retries": 3,
     "max_plan_tasks": 20,
-    "planner_fallback_model": "google/gemini-2.5-flash-lite",
+    "planner_fallback_model": "minimax/minimax-m2.7",
     # execution
     "classifier_timeout": 30,
     "llm_timeout": 600,
