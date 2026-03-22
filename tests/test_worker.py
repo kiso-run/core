@@ -378,7 +378,7 @@ class TestMsgTask:
         assert result == "Bot says hi"
 
     async def test_response_lang_prepends_prefix(self, db):
-        """M650: response_lang injects 'Answer in {lang}.' prefix."""
+        """M650/M882: response_lang injects 'Answer in {lang}.' prefix."""
         config = _make_config()
         captured = []
 
@@ -388,11 +388,11 @@ class TestMsgTask:
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
             await _msg_task(config, db, "sess1", "Tell the user hello",
-                            response_lang="it")
+                            response_lang="Italian")
         assert "Answer in Italian." in captured[0]
 
     async def test_response_lang_replaces_wrong_prefix(self, db):
-        """M653: wrong language prefix is replaced with correct one."""
+        """M653/M882: wrong language prefix is replaced with correct one."""
         config = _make_config()
         captured = []
 
@@ -403,7 +403,7 @@ class TestMsgTask:
         with patch("kiso.brain.call_llm", side_effect=_capture):
             await _msg_task(config, db, "sess1",
                             "Answer in English. Tell the user the Fibonacci results",
-                            response_lang="it")
+                            response_lang="Italian")
         # The messenger formats the detail into a message — check the detail
         # was corrected (Italian prefix, English prefix removed, content preserved)
         msg = captured[0]
@@ -412,7 +412,7 @@ class TestMsgTask:
         assert "Fibonacci" in msg
 
     async def test_response_lang_correct_prefix_unchanged(self, db):
-        """M653: correct language prefix is left as-is."""
+        """M653/M882: correct language prefix is left as-is."""
         config = _make_config()
         captured = []
 
@@ -423,7 +423,7 @@ class TestMsgTask:
         with patch("kiso.brain.call_llm", side_effect=_capture):
             await _msg_task(config, db, "sess1",
                             "Answer in Italian. Dimmi i risultati",
-                            response_lang="it")
+                            response_lang="Italian")
         # Should NOT double-prefix
         assert captured[0].count("Answer in Italian.") == 1
 

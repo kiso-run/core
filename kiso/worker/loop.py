@@ -128,7 +128,6 @@ from kiso.store import (
     update_task_usage,
 )
 
-from kiso.worker.l10n import LANG_NAMES
 from kiso.worker.utils import (
     _auto_publish_skill_files,
     _build_cancel_summary,
@@ -248,14 +247,13 @@ async def _msg_task(
             completes but before the messenger LLM call.  The caller can use
             this to flush intermediate usage so the CLI can render briefer
             panels while the messenger is still running.
-        response_lang: ISO 639-1 code for the desired response language.
+        response_lang: Full language name (e.g. "Italian", "Russian").
             If set and the detail doesn't already start with "Answer in",
             prepends "Answer in {language}." to ensure correct language.
     """
     # ensure correct response language prefix
     if response_lang:
-        lang_name = LANG_NAMES.get(response_lang, "English")
-        expected_prefix = f"Answer in {lang_name}."
+        expected_prefix = f"Answer in {response_lang}."
         if not detail.startswith(expected_prefix):
             # Strip wrong-language prefix if present (e.g. planner put "Answer in English.")
             if detail.startswith("Answer in "):
