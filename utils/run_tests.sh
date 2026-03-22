@@ -201,15 +201,26 @@ _flush_test_block() {
 # ---------------------------------------------------------------------------
 FAILED=0
 
+_format_elapsed() {
+    local secs=$1
+    if [[ $secs -ge 60 ]]; then
+        echo "$((secs / 60))m $((secs % 60))s"
+    else
+        echo "${secs}s"
+    fi
+}
+
 run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
-    local rc=0
+    local start=$SECONDS rc=0
     "$@" 2>&1 | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
+    local elapsed=$(( SECONDS - start ))
+    local time_str="$(_format_elapsed $elapsed)"
     if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
-        echo -e "${GREEN}✓ $name: PASSED${NC}"
+        echo -e "${GREEN}✓ $name: PASSED${NC} ${DIM}(${time_str})${NC}"
     else
-        echo -e "${RED}✗ $name: FAILED${NC}"
+        echo -e "${RED}✗ $name: FAILED${NC} ${DIM}(${time_str})${NC}"
         FAILED=1
     fi
 }
