@@ -524,12 +524,12 @@ Only admins can add, remove, or manage users.
 kiso user list                                                    # list all users with role, tools, aliases
 kiso user list --json                                             # machine-readable JSON output
 kiso user add <user> --role admin|user                        # add an admin (no tools needed)
-kiso user add <user> --role user --tools "*"                  # add a user with all tools
-kiso user add <user> --role user --tools "search,aider"       # add a user with specific tools
-kiso user add <user> --role user --tools "*" \
+kiso user add <user> --role user --skills "*"                  # add a user with all tools
+kiso user add <user> --role user --skills "search,aider"       # add a user with specific tools
+kiso user add <user> --role user --skills "*" \
     --alias discord:bob#1234 --alias slack:U0123456           # add with connector aliases
 kiso user edit <user> --role admin                            # change role in-place
-kiso user edit <user> --tools "read,write"                    # change tools in-place
+kiso user edit <user> --skills "read,write"                    # change tools in-place
 kiso user remove <user>                                       # remove a user
 kiso user alias <user> --connector discord --id "bob#1234"    # set a connector alias
 kiso user alias <user> --connector discord --remove           # remove a connector alias
@@ -546,7 +546,7 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--role admin\|user` | yes | User role. No default — must be explicit. |
-| `--tools` | if `role=user` | `"*"` for all tools, or comma-separated names (e.g. `"search,aider"`). Ignored for admins. |
+| `--skills` | if `role=user` | `"*"` for all tools, or comma-separated names (e.g. `"search,aider"`). Ignored for admins. |
 | `--alias CONNECTOR:ID` | no | Connector alias in `connector:platform_id` format. Repeatable. |
 | `--no-reload` | no | Skip hot-reload after writing config. |
 
@@ -554,8 +554,8 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--role admin\|user` | at least one of `--role`/`--tools` | New role. |
-| `--tools` | at least one of `--role`/`--tools` | New tools: `"*"` or comma-separated names. |
+| `--role admin\|user` | at least one of `--role`/`--skills` | New role. |
+| `--skills` | at least one of `--role`/`--skills` | New tools: `"*"` or comma-separated names. |
 | `--no-reload` | no | Skip hot-reload after writing config. |
 
 **Error handling:**
@@ -566,8 +566,8 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 | User already exists (`add`) | `error: user '...' already exists` |
 | User does not exist (`edit`/`remove`/`alias`) | `error: user '...' does not exist` |
 | `--role` omitted on `add` | `error: --role must be 'admin' or 'user'` |
-| `role=user` without `--tools` | `error: --tools required for role=user` |
-| Both `--role` and `--tools` omitted on `edit` | `error: at least one of --role or --tools must be provided` |
+| `role=user` without `--skills` | `error: --skills required for role=user` |
+| Both `--role` and `--skills` omitted on `edit` | `error: at least one of --role or --skills must be provided` |
 | Alias in wrong format | `error: alias '...' must be in 'connector:platform_id' format` |
 | Removing/demoting last admin | `error: cannot remove/demote the last admin` |
 
