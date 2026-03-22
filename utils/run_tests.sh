@@ -258,7 +258,8 @@ run_live() {
 run_docker() {
     if [[ "$HAS_DOCKER" == true ]]; then
         run_suite "Docker tests" \
-            docker compose -f docker-compose.test.yml run --build --rm test-docker
+            docker compose -f docker-compose.test.yml run --build --rm \
+            -e FORCE_COLOR=1 test-docker
     else
         echo -e "${YELLOW}⚠ Skipping docker tests — Docker not available${NC}"
     fi
@@ -277,6 +278,7 @@ run_functional() {
     run_suite "Functional tests" \
         docker compose -f docker-compose.test.yml run --build --rm \
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+        -e FORCE_COLOR=1 \
         test-functional \
         uv run pytest tests/functional/ -v --functional -m "functional and not extended"
 }
@@ -293,6 +295,7 @@ run_extended() {
     run_suite "Extended tests" \
         docker compose -f docker-compose.test.yml run --build --rm \
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+        -e FORCE_COLOR=1 \
         test-functional \
         uv run pytest tests/functional/ -v --functional --extended -m extended
 }
@@ -304,6 +307,7 @@ run_plugins() {
         local cmd="uv run python -m cli.plugin_test_runner ${filter}"
         run_suite "Plugin tests${filter:+ ($filter)}" \
             docker compose -f docker-compose.test.yml run --build --rm \
+            -e FORCE_COLOR=1 \
             test-plugins $cmd
     else
         run_suite "Plugin tests${filter:+ ($filter)}" \
@@ -323,6 +327,7 @@ run_interactive() {
     run_suite "Interactive tests" \
         docker compose -f docker-compose.test.yml run --build --rm \
         -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+        -e FORCE_COLOR=1 \
         test-functional \
         uv run pytest tests/interactive/ -v --interactive --functional
 }
@@ -343,6 +348,7 @@ _run_specific() {
         fi
         run_suite "Specific test" \
             docker compose -f docker-compose.test.yml run --build --rm \
+            -e FORCE_COLOR=1 \
             test-docker \
             uv run pytest $spec -v
     elif [[ "$spec" =~ ^tests/functional/ ]]; then
@@ -357,6 +363,7 @@ _run_specific() {
         run_suite "Specific test" \
             docker compose -f docker-compose.test.yml run --build --rm \
             -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+            -e FORCE_COLOR=1 \
             test-functional \
             uv run pytest $spec -v --functional --extended
     elif [[ "$spec" =~ ^tests/live/ ]]; then
