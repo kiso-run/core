@@ -394,6 +394,25 @@ class TestValidatePlan:
         assert "not in the registry" in err
         assert "Remove this tool task" in err
 
+    def test_m906_file_goal_no_exec_rejected(self):
+        """M906: goal mentions file creation without exec/tool → rejected."""
+        plan = {"goal": "Write a Python script word_count.py", "tasks": [
+            {"type": "msg", "detail": "Here is your script", "expect": None,
+             "tool": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("Goal mentions creating" in e for e in errors)
+
+    def test_m906_file_goal_with_needs_install_accepted(self):
+        """M906: goal mentions file but needs_install is set → accepted (install first)."""
+        plan = {"goal": "Write a Python script word_count.py",
+                "needs_install": ["aider"], "tasks": [
+            {"type": "msg", "detail": "I need to install aider first",
+             "expect": None, "tool": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("Goal mentions creating" in e for e in errors)
+
     def test_tool_name_is_task_type_exec(self):
         """M613: tool='exec' is a task type confusion, not a real tool."""
         plan = {"tasks": [
