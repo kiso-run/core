@@ -161,12 +161,13 @@ class TestMsgDetailValidation:
     """P54: validate_plan rejects empty msg detail after language prefix."""
 
     def test_only_language_prefix_rejected(self):
+        """M902: msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.",
              "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("empty after language prefix" in e for e in errors)
+        assert any("empty or too short" in e for e in errors)
 
     def test_substantive_detail_accepted(self):
         plan = {"tasks": [
@@ -175,16 +176,17 @@ class TestMsgDetailValidation:
              "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("empty after language prefix" in e for e in errors)
+        assert not any("empty or too short" in e for e in errors)
 
-    def test_m487_no_prefix_detail_rejected(self):
-        """M487: msg detail without language prefix is rejected."""
+    def test_m902_no_prefix_substantive_detail_accepted(self):
+        """M902: msg detail without prefix is accepted if substantive (_msg_task adds prefix)."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "done",
+            {"type": "msg", "detail": "Tell the user the results",
              "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("must start with" in e for e in errors)
+        assert not any("empty or too short" in e for e in errors)
+        assert not any("must start with" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------

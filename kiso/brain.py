@@ -728,20 +728,16 @@ def _validate_plan_tasks(
             for field in ("expect", "tool", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
+            # Language prefix ("Answer in X.") is NOT validated here —
+            # _msg_task injects it at runtime from response_lang.
+            # Only check that the detail has real content.
             msg_detail = (task.get("detail") or "").strip()
-            has_lang_prefix = bool(_ANSWER_IN_LANG_RE.match(msg_detail))
-            if not has_lang_prefix:
+            cleaned = re.sub(r'^Answer in \w[\w\s]*\.\s*', '', msg_detail).strip()
+            if len(cleaned) < 5:
                 errors.append(
-                    f"Task {i}: msg detail must start with 'Answer in {{language}}.' — "
-                    f"always specify the response language, even for English"
+                    f"Task {i}: msg detail is empty or too short — "
+                    f"must contain WHAT to tell the user"
                 )
-            else:
-                cleaned = re.sub(r'^Answer in \w+\.\s*', '', msg_detail).strip()
-                if len(cleaned) < 5:
-                    errors.append(
-                        f"Task {i}: msg detail is empty after language prefix — "
-                        f"must contain WHAT to tell the user"
-                    )
         if t == TASK_TYPE_SEARCH:
             if _is_plugin_discovery_search(task.get("detail", "")):
                 errors.append(

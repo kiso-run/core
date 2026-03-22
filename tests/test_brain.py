@@ -245,12 +245,12 @@ class TestValidatePlan:
         assert any("msg task must have args = null" in e for e in errors)
 
     def test_m386_msg_detail_only_language_prefix_fails(self):
-        """M386: msg detail with only language prefix is rejected."""
+        """M386/M902: msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("empty after language prefix" in e for e in errors)
+        assert any("empty or too short" in e for e in errors)
 
     def test_m386_msg_detail_with_content_after_prefix_passes(self):
         """M386: msg detail with substantive content after prefix passes."""
@@ -259,15 +259,25 @@ class TestValidatePlan:
              "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("empty after language prefix" in e for e in errors)
+        assert not any("empty or too short" in e for e in errors)
 
-    def test_m487_msg_detail_without_prefix_fails(self):
-        """M487: msg detail without language prefix is rejected."""
+    def test_m902_msg_detail_without_prefix_accepted(self):
+        """M902: msg detail without language prefix is accepted (_msg_task injects it at runtime)."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Tell the user the results of the analysis",
+             "expect": None, "tool": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("must start with" in e for e in errors)
+        assert not any("empty or too short" in e for e in errors)
+
+    def test_m902_msg_detail_too_short_without_prefix_fails(self):
+        """M902: very short msg detail (no prefix, <5 chars) is still rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "done", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("must start with" in e for e in errors)
+        assert any("empty or too short" in e for e in errors)
 
     def test_last_task_not_msg(self):
         plan = {"tasks": [
