@@ -84,7 +84,7 @@ CREATE TABLE tasks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_id         INTEGER NOT NULL,   -- which plan this task belongs to
     session         TEXT NOT NULL,
-    type            TEXT NOT NULL,      -- exec | msg | tool
+    type            TEXT NOT NULL,      -- exec | msg | tool | search | replan
     detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg)
     tool            TEXT,               -- tool name (if type=tool)
     args            TEXT,               -- JSON string of tool args (parsed before execution)
