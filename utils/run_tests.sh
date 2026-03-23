@@ -96,7 +96,7 @@ _extract_failure_summary() {
     [[ -z "$failures" ]] && return
 
     echo ""
-    echo "--- FAILURE SUMMARY (paste into LLM) ---"
+    echo -e "${RED}${BOLD}━━━ FAILURE SUMMARY (paste into LLM) ━━━${NC}"
     echo ""
 
     local current_test=""
@@ -157,7 +157,7 @@ _extract_failure_summary() {
         _flush_test_block "$current_test" error_lines log_lines
     fi
 
-    echo "--- END FAILURE SUMMARY ---"
+    echo -e "${RED}${BOLD}━━━ END FAILURE SUMMARY ━━━${NC}"
     echo ""
 }
 
