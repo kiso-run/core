@@ -140,6 +140,7 @@ from kiso.worker.utils import (
     _format_plan_outputs_for_msg,
     _format_pub_note,
     _report_pub_files,
+    _list_session_files,
     _save_large_output,
     _session_workspace,
     _snapshot_workspace,
@@ -1296,12 +1297,14 @@ async def _handle_exec_task(
 
         _exec_outputs = briefed_outputs + ([local_plan_output] if local_plan_output else [])
         outputs_text = _format_plan_outputs_for_msg(_exec_outputs)
+        _ws_files = _list_session_files(ctx.session)
         idx_translate = get_usage_index()
         try:
             command = await run_exec_translator(
                 ctx.config, detail, sys_env_text,
                 plan_outputs_text=outputs_text, session=ctx.session,
                 retry_context=retry_context,
+                workspace_files=_ws_files,
             )
         except ExecTranslatorError as e:
             error_output = f"Translation failed: {e}"

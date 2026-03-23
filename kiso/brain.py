@@ -2579,10 +2579,12 @@ def build_exec_translator_messages(
     sys_env_text: str,
     plan_outputs_text: str = "",
     retry_context: str = "",
+    workspace_files: str = "",
 ) -> list[dict]:
     """Build the message list for the exec translator LLM call."""
     system_prompt = _load_system_prompt("worker")
     context_parts: list[str] = [f"## System Environment\n{sys_env_text}"]
+    _add_section(context_parts, "Workspace Files", workspace_files)
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
     _add_section(context_parts, "Retry Context", retry_context)
     context_parts.append(f"## Task\n{detail}")
@@ -2596,6 +2598,7 @@ async def run_exec_translator(
     plan_outputs_text: str = "",
     session: str = "",
     retry_context: str = "",
+    workspace_files: str = "",
 ) -> str:
     """Translate a natural-language exec task detail into a shell command.
 
@@ -2605,6 +2608,7 @@ async def run_exec_translator(
     messages = build_exec_translator_messages(
         config, detail, sys_env_text, plan_outputs_text,
         retry_context=retry_context,
+        workspace_files=workspace_files,
     )
     _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
     raw = await _call_role(config, "worker", messages, ExecTranslatorError, session,
