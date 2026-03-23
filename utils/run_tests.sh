@@ -161,6 +161,44 @@ _extract_failure_summary() {
     echo ""
 }
 
+# Extract failed test node IDs from pytest "short test summary" and print
+# a ready-to-paste rerun command.
+_extract_rerun_snippet() {
+    local logfile="$1"
+    [[ ! -s "$logfile" ]] && return
+
+    local clean
+    clean="$(_strip_ansi < "$logfile")"
+
+    # Collect FAILED lines from "short test summary info" sections
+    local -a failed_ids=()
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^FAILED\ (tests/.+) ]]; then
+            local node="${BASH_REMATCH[1]}"
+            # Strip trailing " - ..." pytest reason suffix if present
+            node="${node%% - *}"
+            failed_ids+=("$node")
+        fi
+    done <<< "$clean"
+
+    [[ ${#failed_ids[@]} -eq 0 ]] && return
+
+    # Deduplicate (same test can appear in multiple suite runs)
+    local -A seen=()
+    local -a unique=()
+    for id in "${failed_ids[@]}"; do
+        if [[ -z "${seen[$id]:-}" ]]; then
+            seen[$id]=1
+            unique+=("$id")
+        fi
+    done
+
+    echo -e "${YELLOW}${BOLD}━━━ RERUN FAILED TESTS ━━━${NC}"
+    echo ""
+    echo -e "./utils/run_tests.sh s \"${unique[*]}\""
+    echo ""
+}
+
 _flush_test_block() {
     local test_name="$1"
     local -n _errors=$2
@@ -625,6 +663,7 @@ if [[ "$FAILED" -eq 0 ]]; then
     echo -e "${GREEN}All executed suites passed.${NC}"
 else
     _extract_failure_summary "$_CAPTURE_LOG"
+    _extract_rerun_snippet "$_CAPTURE_LOG"
     echo -e "${RED}Some suites failed — check output above.${NC}"
     exit 1
 fi
