@@ -13,7 +13,7 @@ If "## Recent Conversation" provided, use it to disambiguate:
 
 URL/domain in message + user wants info from it → "plan".
 Imperative command requesting action (any language) → "plan".
-System state, real-time info, or anything that changes over time (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan". These require shell commands — never guess dynamic values.
+System state, real-time info, or anything that changes over time (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan" — UNLESS the value is already available in Known Entities below, in which case → "chat_kb" (the answer is already known, no shell command needed).
 Self-referential knowledge ("what do you know", "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb".
 Questions about previously discussed topics or known entities → "chat_kb".
 If "## Known Entities" provided: message asks about a listed entity's properties → "chat_kb". Message asks to perform an action on a listed entity → "plan".
