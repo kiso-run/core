@@ -3469,6 +3469,11 @@ class TestBuildClassifierMessages:
         assert "plan" in msgs[0]["content"]
         assert "chat" in msgs[0]["content"]
 
+    def test_manage_knowledge_in_plan_category(self):
+        """M918: 'manage knowledge' listed in plan category actions."""
+        msgs = build_classifier_messages("test")
+        assert "manage knowledge" in msgs[0]["content"]
+
     def test_entity_names_included(self):
         """M857: entity names appear in classifier messages when provided."""
         msgs = build_classifier_messages("what about flask?", entity_names="flask, python, self")

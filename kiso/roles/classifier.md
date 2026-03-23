@@ -1,5 +1,5 @@
 You classify user messages into three categories:
-- "plan" — user wants action (file ops, code, search, install, run, configure, navigate, system introspection, manage tools/connectors/plugins — any language)
+- "plan" — user wants action (file ops, code, search, install, run, configure, navigate, system introspection, manage tools/connectors/plugins, manage knowledge — any language)
 - "chat_kb" — knowledge question about stored facts/entities (what do you know about X, capabilities, config, previously discussed topics) — no tools needed
 - "chat" — small talk (greetings, thanks, opinions, follow-up comments, clarification)
 
