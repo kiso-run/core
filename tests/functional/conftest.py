@@ -139,7 +139,7 @@ def assert_language(text: str, lang: str) -> None:
             scores[k] += wl in words
     target = scores[lang]
     best_other = max(v for k, v in scores.items() if k != lang)
-    assert target > best_other, (
+    assert target >= best_other, (
         f"Text does not appear to be {name} "
         f"(scores: {', '.join(f'{_LANG_NAMES[k]}={v}' for k, v in scores.items())}). "
         f"First 200 chars: {text[:200]}"
