@@ -785,10 +785,10 @@ def _validate_plan_tasks(
                 elif registry_hint_names and tool_name in registry_hint_names:
                     errors.append(
                         f"Task {i}: tool '{tool_name}' is not installed but IS "
-                        f"available in the registry. Plan a SINGLE msg task asking "
-                        f"whether to install '{tool_name}', then end the plan. "
-                        f"Do NOT fall back to exec — the user should decide whether "
-                        f"to install the dedicated tool."
+                        f"available in the registry. If a built-in task type "
+                        f"(e.g. search) can achieve the same goal, use that "
+                        f"instead. Otherwise, plan a SINGLE msg task asking "
+                        f"whether to install '{tool_name}', then end the plan."
                     )
                 else:
                     errors.append(

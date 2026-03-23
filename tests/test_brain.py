@@ -337,7 +337,7 @@ class TestValidatePlan:
         err = " ".join(errors)
         assert "available in the registry" in err
         assert "msg task asking whether to install" in err
-        assert "Do NOT fall back to exec" in err
+        assert "built-in task type" in err
 
     def test_m903_uninstalled_unknown_tool_suggests_alternatives(self):
         """M903: uninstalled tool NOT in registry → 'use exec' fallback."""
