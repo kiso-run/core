@@ -792,10 +792,11 @@ def _validate_plan_tasks(
                     )
                 else:
                     errors.append(
-                        f"Task {i}: tool '{tool_name}' is not installed and not "
-                        f"in the registry. Available tools: {available}. "
-                        f"Remove this tool task and use built-in task types "
-                        f"(search, exec) or installed tools ({available}) instead."
+                        f"Task {i}: tool '{tool_name}' is not available — not "
+                        f"installed and not in the registry. Plan a msg task "
+                        f"informing the user that '{tool_name}' cannot be found "
+                        f"and suggesting alternatives from installed tools "
+                        f"({available or 'none'}) or the registry."
                     )
             elif installed_skills_info and tool_name in installed_skills_info:
                 args_raw = task.get("args") or "{}"

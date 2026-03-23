@@ -324,7 +324,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["echo"])
-        assert any("tool 'search' is not installed" in e for e in errors)
+        assert any("not available" in e for e in errors)
 
     def test_m903_uninstalled_registry_tool_proposes_install(self):
         """M903: uninstalled tool in registry → 'propose install' not 'use exec'."""
@@ -339,8 +339,8 @@ class TestValidatePlan:
         assert "msg task asking whether to install" in err
         assert "built-in task type" in err
 
-    def test_m903_uninstalled_unknown_tool_suggests_alternatives(self):
-        """M903: uninstalled tool NOT in registry → 'use exec' fallback."""
+    def test_m903_uninstalled_unknown_tool_informs_user(self):
+        """M903/M910: uninstalled tool NOT in registry → inform user."""
         plan = {"tasks": [
             {"type": "tool", "detail": "magic", "expect": "ok", "tool": "magic_tool", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -348,21 +348,19 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=[],
                                registry_hint_names=frozenset({"browser", "ocr"}))
         err = " ".join(errors)
+        assert "not available" in err
         assert "not in the registry" in err
-        assert "Remove this tool task" in err
+        assert "informing the user" in err
 
-    def test_skill_not_installed_feedback_does_not_force_msg_only(self):
-        """M847: feedback mentions alternatives, doesn't mandate msg-only structure."""
+    def test_skill_not_installed_feedback_informs_user(self):
+        """M847/M910: unknown tool → informs user, suggests alternatives."""
         plan = {"tasks": [
             {"type": "tool", "detail": "search web", "expect": "results", "tool": "websearch", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["browser"])
         err = " ".join(errors)
-        # Must NOT contain the old prescriptive "SINGLE msg task" language
-        assert "SINGLE msg task" not in err
-        # Must suggest built-in alternatives
-        assert "built-in task types" in err or "search, exec" in err
+        assert "informing the user" in err
 
     def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [
@@ -370,7 +368,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
-        assert any("Available tools: none" in e for e in errors)
+        assert any("not available" in e for e in errors)
 
     def test_skill_not_installed_approved_suggests_exec_install(self):
         """M608: when install_approved=True, error guides to exec install."""
@@ -383,16 +381,16 @@ class TestValidatePlan:
         assert any("kiso CLI" in e for e in errors)
         assert not any("SINGLE msg task" in e for e in errors)
 
-    def test_skill_not_installed_not_approved_unknown_suggests_exec(self):
-        """M608/M847/M903: unknown tool (not in registry) → suggests exec alternatives."""
+    def test_skill_not_installed_not_approved_unknown_informs_user(self):
+        """M608/M847/M910: unknown tool (not in registry) → inform user."""
         plan = {"tasks": [
             {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[], install_approved=False)
         err = " ".join(errors)
-        assert "not in the registry" in err
-        assert "Remove this tool task" in err
+        assert "not available" in err
+        assert "informing the user" in err
 
     def test_m906_file_goal_no_exec_rejected(self):
         """M906: goal mentions file creation without exec/tool → rejected."""
