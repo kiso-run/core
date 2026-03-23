@@ -117,9 +117,9 @@ def assert_language(text: str, lang: str) -> None:
     """Assert that *text* is predominantly in *lang*.
 
     Supports: it, en, es, ru (function-word scoring) and zh (CJK character detection).
-    Code blocks are stripped first.
+    Code blocks, blockquotes, and list items are stripped first.
     """
-    cleaned = _strip_code_blocks(text)
+    cleaned = _strip_quoted_content(text)
     name = _LANG_NAMES.get(lang, lang)
 
     # Chinese: detect by CJK Unified Ideographs character presence

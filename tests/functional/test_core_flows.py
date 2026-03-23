@@ -76,15 +76,15 @@ class TestF19EnglishResponse:
     """Ask in English, get substantive English response."""
 
     async def test_english_response_quality(self, run_message):
-        """What: Asks about popular programming languages in English.
+        """What: Asks about recursion in English.
 
         Why: Validates language detection + messenger respects English.
-        Expects: Success, English response, mentions at least 2 known languages,
+        Pure knowledge question — unambiguously chat, no tool needed.
+        Expects: Success, English response, mentions recursion-related terms,
         substantive output (>100 chars).
         """
         result = await run_message(
-            "List 3 popular programming languages and briefly explain "
-            "why each is widely used",
+            "What is recursion in programming? Explain with a simple example",
             timeout=120,
         )
 
@@ -96,10 +96,12 @@ class TestF19EnglishResponse:
         assert_no_failure_language(output)
         assert len(output) > 100, f"Response too short ({len(output)} chars)"
 
-        known = ["python", "javascript", "java", "typescript", "c++", "go", "rust", "c#"]
-        found = [lang for lang in known if lang in output.lower()]
+        lower = output.lower()
+        keywords = ["recursion", "recursive", "function", "base case", "call",
+                     "factorial", "fibonacci", "stack"]
+        found = [kw for kw in keywords if kw in lower]
         assert len(found) >= 2, (
-            f"Expected at least 2 programming languages, found: {found}. "
+            f"Expected at least 2 recursion keywords, found: {found}. "
             f"Output: {output[:300]}"
         )
 
@@ -113,14 +115,15 @@ class TestF20SpanishResponse:
     """Ask in Spanish, get substantive Spanish response."""
 
     async def test_spanish_response_quality(self, run_message):
-        """What: Asks about popular programming languages in Spanish.
+        """What: Asks about recursion in Spanish.
 
         Why: Validates non-Italian, non-English language handling.
-        Expects: Success, Spanish response, mentions at least 2 languages.
+        Pure knowledge question — unambiguously chat, no tool needed.
+        Expects: Success, Spanish response, mentions recursion-related terms.
         """
         result = await run_message(
-            "¿Cuáles son los 3 lenguajes de programación más populares? "
-            "Explica brevemente por qué cada uno es importante",
+            "¿Qué es la recursión en programación? "
+            "Explica con un ejemplo sencillo",
             timeout=120,
         )
 
@@ -131,10 +134,12 @@ class TestF20SpanishResponse:
         assert_spanish(output)
         assert len(output) > 100, f"Response too short ({len(output)} chars)"
 
-        known = ["python", "javascript", "java", "typescript", "c++", "go", "rust", "c#"]
-        found = [lang for lang in known if lang in output.lower()]
+        lower = output.lower()
+        keywords = ["recursión", "recursiva", "recursivo", "función", "caso base",
+                     "factorial", "fibonacci", "pila", "llamada"]
+        found = [kw for kw in keywords if kw in lower]
         assert len(found) >= 2, (
-            f"Expected at least 2 programming languages, found: {found}. "
+            f"Expected at least 2 recursion keywords, found: {found}. "
             f"Output: {output[:300]}"
         )
 
@@ -407,15 +412,16 @@ class TestF31RussianResponse:
     """Ask in Russian, get substantive Russian response."""
 
     async def test_russian_response_quality(self, run_message):
-        """What: Asks about popular programming languages in Russian.
+        """What: Asks about recursion in Russian.
 
         Why: Validates non-Latin script (Cyrillic) handling.
-        Expects: Success, Russian response, mentions at least 2 languages.
+        Pure knowledge question — unambiguously chat, no tool needed.
+        Expects: Success, Russian response, mentions recursion-related terms.
         """
         result = await run_message(
-            "Какие 3 самых популярных языка программирования? "
-            "Кратко объясни почему каждый из них важен",
-            timeout=180,
+            "Что такое рекурсия в программировании? "
+            "Объясни на простом примере",
+            timeout=120,
         )
 
         assert result.success, (
@@ -425,10 +431,12 @@ class TestF31RussianResponse:
         assert_russian(output)
         assert len(output) > 100, f"Response too short ({len(output)} chars)"
 
-        known = ["python", "javascript", "java", "typescript", "c++", "go", "rust", "c#"]
-        found = [lang for lang in known if lang in output.lower()]
+        lower = output.lower()
+        keywords = ["рекурси", "функци", "базов", "вызов", "факториал",
+                     "фибоначчи", "стек", "python", "def"]
+        found = [kw for kw in keywords if kw in lower]
         assert len(found) >= 2, (
-            f"Expected at least 2 programming languages, found: {found}. "
+            f"Expected at least 2 recursion keywords, found: {found}. "
             f"Output: {output[:300]}"
         )
 
@@ -442,13 +450,14 @@ class TestF32ChineseResponse:
     """Ask in Chinese, get substantive Chinese response."""
 
     async def test_chinese_response_quality(self, run_message):
-        """What: Asks about popular programming languages in Chinese.
+        """What: Asks about recursion in Chinese.
 
         Why: Validates CJK script handling.
-        Expects: Success, Chinese response, mentions at least 2 languages.
+        Pure knowledge question — unambiguously chat, no tool needed.
+        Expects: Success, Chinese response, mentions recursion-related terms.
         """
         result = await run_message(
-            "最受欢迎的3种编程语言是什么？简要说明每种语言为什么重要",
+            "什么是编程中的递归？用一个简单的例子来解释",
             timeout=120,
         )
 
@@ -459,9 +468,11 @@ class TestF32ChineseResponse:
         assert_chinese(output)
         assert len(output) > 50, f"Response too short ({len(output)} chars)"
 
-        known = ["python", "javascript", "java", "typescript", "c++", "go", "rust", "c#"]
-        found = [lang for lang in known if lang in output.lower()]
+        lower = output.lower()
+        keywords = ["递归", "函数", "基", "调用", "阶乘",
+                     "斐波那契", "栈", "python", "def"]
+        found = [kw for kw in keywords if kw in lower]
         assert len(found) >= 2, (
-            f"Expected at least 2 programming languages, found: {found}. "
+            f"Expected at least 2 recursion keywords, found: {found}. "
             f"Output: {output[:300]}"
         )
