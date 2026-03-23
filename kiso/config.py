@@ -75,7 +75,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "planner": "deepseek/deepseek-v3.2",
     "reviewer": "google/gemini-2.5-flash-lite",
     "curator": "google/gemini-2.5-flash-lite",
-    "worker": "google/gemini-2.5-flash-lite",
+    "worker": "deepseek/deepseek-v3.2",
     "summarizer": "google/gemini-2.5-flash-lite",
     "paraphraser": "google/gemini-2.5-flash-lite",
     "messenger": "deepseek/deepseek-v3.2",
@@ -144,7 +144,7 @@ classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, si
 planner     = "deepseek/deepseek-v3.2"          # plan generation (fast, structured output)
 reviewer    = "google/gemini-2.5-flash-lite"   # output review (1.8s, json_schema native)
 curator     = "google/gemini-2.5-flash-lite"   # knowledge curation (simple classification)
-worker      = "google/gemini-2.5-flash-lite"   # command translation (1.3s, cheapest)
+worker      = "deepseek/deepseek-v3.2"          # command translation (strict output format)
 summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
 messenger   = "qwen/qwen3.5-flash-02-23"            # user-facing responses (MMLU 82, natural)
