@@ -231,28 +231,24 @@ def _collect_connectors() -> list[dict[str, str]]:
 
 
 def _load_registry_hints() -> str:
-    """Load brief skill/connector descriptions from the local registry.json."""
-    registry_path = Path(__file__).parent.parent / "registry.json"
-    if not registry_path.is_file():
+    """Load brief tool/connector descriptions from the online registry."""
+    from kiso.registry import fetch_registry
+
+    data = fetch_registry()
+    if not data:
         return ""
-    try:
-        import json
-        data = json.loads(registry_path.read_text())
-        parts: list[str] = []
-        for s in data.get("tools", []):
-            name = s.get("name", "")
-            desc = s.get("description", "")
-            if name and desc:
-                parts.append(f"{name} ({desc})")
-        for c in data.get("connectors", []):
-            name = c.get("name", "")
-            desc = c.get("description", "")
-            if name and desc:
-                parts.append(f"{name} ({desc})")
-        return "; ".join(parts) if parts else ""
-    except Exception as exc:
-        log.warning("Failed to read registry.json for hints: %s", exc)
-        return ""
+    parts: list[str] = []
+    for s in data.get("tools", []):
+        name = s.get("name", "")
+        desc = s.get("description", "")
+        if name and desc:
+            parts.append(f"{name} ({desc})")
+    for c in data.get("connectors", []):
+        name = c.get("name", "")
+        desc = c.get("description", "")
+        if name and desc:
+            parts.append(f"{name} ({desc})")
+    return "; ".join(parts) if parts else ""
 
 
 def _collect_user_info() -> dict:
