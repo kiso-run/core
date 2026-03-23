@@ -104,6 +104,7 @@ Kiso management commands (exec tasks):
 
 <!-- MODULE: plugin_install -->
 `kiso tool install NAME` and `kiso connector install NAME` are idempotent and **self-contained** — they handle clone, deps.sh, venv creation, and config.example.toml copy internally.  Never decompose them into sub-steps.  Never pre-fetch kiso.toml, manually inspect env vars, or verify installation in separate tasks.
+Never quote names: `kiso tool install browser` (not `'browser'`).
 
 Plugin installation flow:
 1. User must have approved installation first (see kiso_native rule).
