@@ -1314,6 +1314,10 @@ async def build_planner_messages(
         # System Environment is always included — the core prompt's install
         # decision rule references registry_hints which live here.
         context_parts.append(f"## System Environment\n{sys_env_text}")
+        # Session workspace files + previous plan results — operational data
+        # that must reach the planner verbatim (not gated by briefer synthesis).
+        _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
+        _add_section(context_parts, "Previous Plan", context_pool.get("last_plan", ""))
     else:
         # Fallback path: full context dump (original behavior)
         _add_section(context_parts, "Session Summary", summary)
@@ -1344,6 +1348,9 @@ async def build_planner_messages(
 
         # System env in original position (after facts, before pending)
         context_parts.append(f"## System Environment\n{sys_env_text}")
+        # Session workspace files + previous plan results (same as briefer path)
+        _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
+        _add_section(context_parts, "Previous Plan", context_pool.get("last_plan", ""))
 
         _add_section(context_parts, "Pending Questions", _format_pending_items(pending))
 
@@ -1552,6 +1559,8 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("available_tags", "Available Fact Tags"),
     ("available_entities", "Available Entities"),
     ("paraphrased", "Paraphrased External Messages"),
+    ("session_files", "Session Workspace"),
+    ("last_plan", "Previous Plan"),
     ("replan_context", "Replan Context"),
     ("plan_outputs", "Plan Outputs"),
 )

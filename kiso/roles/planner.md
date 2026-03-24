@@ -116,7 +116,7 @@ If tool name appears in registry_hints but details are unclear, exec `curl <regi
 
 <!-- MODULE: session_files -->
 Session file rules:
-- Files in Session Workspace are local — reference by absolute path in tool args. Never re-download or curl a file that already exists locally.
+- Files in Session Workspace are local — use the exact path shown in the Session Workspace listing for tool args (e.g. `pub/screenshot.png`). Never re-download or curl a file that already exists locally.
 - When user references "the screenshot", "that file", "the report", etc. — match against Session Workspace listing.
-- Published URLs are for sharing with the user (msg tasks). Local paths are for tool/exec args.
+- Published URLs are for sharing with the user (msg tasks). Workspace paths are for tool/exec args.
 - If a file processing section is present in Tools, follow its routing.

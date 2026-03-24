@@ -690,7 +690,11 @@ class TestM825SessionFilesModule:
 
         system = msgs[0]["content"]
         assert "Session file rules:" in system
-        assert "absolute path" in system
+        assert "exact path shown in the Session Workspace listing" in system
+        # M933: verify the file listing also appears in user content
+        content = msgs[1]["content"]
+        assert "## Session Workspace" in content
+        assert "test.png" in content
 
     async def test_empty_session_no_module(self, db):
         """Empty session → session_files module absent."""
