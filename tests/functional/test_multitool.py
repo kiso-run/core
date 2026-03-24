@@ -106,11 +106,19 @@ class TestF17FullPipeline:
         )
         assert r2.success, f"Plan 2 (OCR) failed: {r2.task_types()}"
 
-        # Verify OCR found example.com content
-        ocr_output = " ".join(
-            t.get("output", "") or "" for t in r2.tasks
-            if t.get("status") == "done"
-        ).lower()
+        # Verify OCR found example.com content (filter to OCR tool tasks only,
+        # not msg tasks that might mention "example" without actual extraction)
+        last_plan_id = r2.plans[-1]["id"]
+        ocr_tool_outputs = [
+            t.get("output", "") or ""
+            for t in r2.tasks
+            if t.get("type") == "tool" and t.get("plan_id") == last_plan_id
+            and t.get("status") == "done"
+        ]
+        assert ocr_tool_outputs, (
+            f"No OCR tool tasks in last plan. Types: {r2.task_types()}"
+        )
+        ocr_output = " ".join(ocr_tool_outputs).lower()
         assert "example" in ocr_output, (
             f"OCR output missing 'example': {ocr_output[:500]}"
         )
