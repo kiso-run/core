@@ -198,6 +198,19 @@ class TestMessengerPublishedFilesRule:
         assert "Never construct" in text or "never construct" in text
 
 
+class TestM934PlannerMsgOrdering:
+    """M934: planning_rules must forbid msg as first task."""
+
+    def test_no_msg_first_rule(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        # Extract planning_rules module content
+        start = raw.index("<!-- MODULE: planning_rules -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        planning_rules = raw[start:end]
+        assert "first task must be exec, tool, search, or replan" in planning_rules
+        assert "never describe upcoming steps" in planning_rules.lower()
+
+
 class TestPlannerLanguageRuleDedup:
     """'Answer in {lang' must not be duplicated across planner modules."""
 
