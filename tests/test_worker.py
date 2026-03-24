@@ -9647,6 +9647,16 @@ class TestDetectCircularReplanUnit:
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is False
 
+    def test_word_overlap_at_50pct_detected(self):
+        """M928: 50% word overlap is enough to detect circular replan."""
+        from kiso.worker.loop import _detect_circular_replan
+        # 5/10 words match = exactly 50%: {tool, not, found, in, the}
+        history = [
+            {"failure": "tool not found in the registry listing output check", "goal": "g"},
+            {"failure": "tool not found in the system after installation attempt", "goal": "g"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
 
 @pytest.mark.asyncio
 class TestCircularReplanDetection:

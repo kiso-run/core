@@ -2100,7 +2100,7 @@ def _detect_circular_replan(
         prev_words = set(prev["failure"].lower().split())
         if prev_words and curr_words:
             ratio = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
-            if ratio > 0.6:
+            if ratio >= 0.5:
                 log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
                             ratio * 100, replan_reason)
                 return True
