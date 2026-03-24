@@ -226,7 +226,7 @@ async def assert_url_reachable(
     import httpx
 
     if client is not None:
-        resp = await client.get(url)
+        resp = await client.get(url, follow_redirects=True)
     else:
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as c:
             resp = await c.get(url)
