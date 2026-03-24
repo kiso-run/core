@@ -124,18 +124,19 @@ def pytest_collection_modifyitems(config, items):
 # M927: Inline per-test duration in verbose output
 # ---------------------------------------------------------------------------
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    outcome = yield
-    report = outcome.get_result()
-    if report.when == "call" and report.duration >= 0.1:
-        secs = report.duration
-        if secs >= 60:
-            m, s = divmod(int(secs), 60)
-            suffix = f" ({m}m {s}s)"
-        else:
-            suffix = f" ({secs:.1f}s)"
-        report.nodeid += suffix
+def pytest_report_teststatus(report, config):
+    if report.when != "call" or report.duration < 0.1:
+        return
+    secs = report.duration
+    if secs >= 60:
+        m, s = divmod(int(secs), 60)
+        dur = f"{m}m {s}s"
+    else:
+        dur = f"{secs:.1f}s"
+    if report.passed:
+        return "passed", ".", f"PASSED \033[2m({dur})\033[0m"
+    if report.failed:
+        return "failed", "F", f"FAILED \033[2m({dur})\033[0m"
 
 
 # ---------------------------------------------------------------------------
