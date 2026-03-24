@@ -211,6 +211,18 @@ class TestM934PlannerMsgOrdering:
         assert "never describe upcoming steps" in planning_rules.lower()
 
 
+class TestM935DetailExpectConsistency:
+    """M935: planning_rules must require detail/expect consistency."""
+
+    def test_detail_expect_consistency_rule(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: planning_rules -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        planning_rules = raw[start:end]
+        assert "detail" in planning_rules and "expect" in planning_rules
+        assert "ONLY criterion the reviewer checks" in planning_rules
+
+
 class TestPlannerLanguageRuleDedup:
     """'Answer in {lang' must not be duplicated across planner modules."""
 
