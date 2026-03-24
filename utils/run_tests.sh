@@ -10,7 +10,7 @@
 #   ./run_tests.sh 4                # run live tests
 #   ./run_tests.sh 1,3              # run unit + integration
 #   ./run_tests.sh f                 # fast all (skip pipeline tests)
-#   ./run_tests.sh 10               # all automatic
+#   ./run_tests.sh a                 # all automatic
 #   ./run_tests.sh s "tests/live/test_roles.py::TestFoo"  # specific test
 #
 # 3. Auto (CI, named flags):
@@ -541,13 +541,13 @@ run_interactive_menu() {
     echo ""
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
     echo -e "  ${CYAN}9${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
-    echo -e "  ${CYAN}10${NC} All automatic           ${DIM}1-8 (skip 9 interactive)${NC}"
+    echo -e "  ${CYAN}a${NC}  All automatic           ${DIM}1-8 (skip 9 interactive)${NC}"
     echo -e "  ${CYAN}f${NC}  Fast all               ${DIM}1-6 (~3min, skip pipeline tests)${NC}"
     echo -e "  ${CYAN}s${NC}  Run specific test       ${DIM}path::Class::test or -k pattern${NC}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-10, f, s, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-9, a, f, s, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -602,7 +602,7 @@ _process_choices() {
             7) run_functional ;;
             8) run_extended ;;
             9) run_interactive ;;
-            10)
+            a|A)
                 run_unit
                 run_bash
                 run_integration
