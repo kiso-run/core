@@ -121,6 +121,24 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip)
 
 # ---------------------------------------------------------------------------
+# M927: Inline per-test duration in verbose output
+# ---------------------------------------------------------------------------
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.duration >= 0.1:
+        secs = report.duration
+        if secs >= 60:
+            m, s = divmod(int(secs), 60)
+            suffix = f" ({m}m {s}s)"
+        else:
+            suffix = f" ({secs:.1f}s)"
+        report.nodeid += suffix
+
+
+# ---------------------------------------------------------------------------
 # M479/M480: Zero-delay retry backoff in unit tests
 # ---------------------------------------------------------------------------
 # Transport retries (kiso.llm) and messenger retries (kiso.brain) use
