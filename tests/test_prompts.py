@@ -223,6 +223,18 @@ class TestM935DetailExpectConsistency:
         assert "ONLY criterion the reviewer checks" in planning_rules
 
 
+class TestM942PluginInstallNoEscapeHatch:
+    """M942: plugin_install must not have 'details are unclear → curl' escape hatch."""
+
+    def test_no_unclear_details_clause(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: plugin_install -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        plugin_install = raw[start:end].lower()
+        assert "details are unclear" not in plugin_install
+        assert "already listed" in plugin_install or "kiso_native install flow" in plugin_install
+
+
 class TestPlannerLanguageRuleDedup:
     """'Answer in {lang' must not be duplicated across planner modules."""
 

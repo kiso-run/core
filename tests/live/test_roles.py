@@ -616,6 +616,12 @@ class TestPlannerSystemPackageLive:
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.get_registry_tools", return_value=(
+                "Available tools (not installed):\n"
+                "- websearch — Web search\n"
+                "- aider — Code editing\n"
+                "- browser — Browser automation"
+            )),
             patch("kiso.brain.get_system_env", return_value={
                 "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
                        "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
