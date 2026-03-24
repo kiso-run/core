@@ -661,48 +661,6 @@ async def _fast_path_chat(
     return plan_id
 
 
-_ANSWER_IN_RE = re.compile(r"^Answer in \w[\w\s]*\.\s*", re.IGNORECASE)
-
-
-def _maybe_inject_intent_msg(tasks: list[dict], goal: str) -> list[dict]:
-    """M201: prepend an intent msg so the user knows what's about to happen.
-
-    Skips injection when: plan has ≤1 task or first task is already a msg.
-    Propagates the ``Answer in {language}.`` prefix from existing msg tasks.
-    Returns a new list (does not mutate the input).
-    """
-    if len(tasks) <= 1 or tasks[0]["type"] == TASK_TYPE_MSG:
-        return tasks
-
-    # Extract "Answer in {language}." from existing msg tasks if available
-    lang_prefix = ""
-    for t in tasks:
-        if t["type"] == TASK_TYPE_MSG:
-            detail = t.get("detail") or ""
-            m = _ANSWER_IN_RE.match(detail)
-            if m:
-                lang_prefix = m.group(0)
-                break
-
-    # Summarize only action tasks (exec/tool/search) — exclude msg tasks
-    # to prevent the messenger from fabricating their expected content
-    action_tasks = [t for t in tasks if t["type"] != TASK_TYPE_MSG]
-    task_summary = ", ".join(
-        f"{t['type']}: {t['detail'][:40]}" for t in action_tasks[:3]
-    )
-    intent_task = {
-        "type": TASK_TYPE_MSG,
-        "detail": (
-            f"{lang_prefix}Briefly tell the user what the system is about to do. "
-            f"Steps: {task_summary}"
-        ),
-        "tool": None,
-        "args": None,
-        "expect": None,
-    }
-    return [intent_task] + tasks
-
-
 async def _persist_plan_tasks(
     db: aiosqlite.Connection,
     plan_id: int,
@@ -2628,7 +2586,7 @@ async def _process_message(
     if plan.get("install_proposal"):
         await update_plan_install_proposal(db, plan_id)
 
-    plan_tasks = _maybe_inject_intent_msg(plan["tasks"], plan["goal"])
+    plan_tasks = plan["tasks"]
 
     await _persist_plan_tasks(db, plan_id, session, plan_tasks)
     log.info("Plan %d: goal=%r, %d tasks", plan_id, plan["goal"], len(plan_tasks))

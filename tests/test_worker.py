@@ -37,7 +37,7 @@ from kiso.worker import (
     _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
     _report_pub_files, _run_subprocess, _tool_task, _session_workspace,
     _ensure_sandbox_user, _truncate_output, _save_large_output,
-    _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks, _maybe_inject_intent_msg,
+    _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
     _write_plan_outputs, _cleanup_plan_outputs, _extract_published_urls, _format_plan_outputs_for_msg,
     run_worker,
 )
@@ -113,14 +113,6 @@ def _patch_translator():
         "kiso.worker.loop.run_exec_translator",
         new_callable=AsyncMock,
         side_effect=_passthrough_translator,
-    )
-
-
-def _patch_no_intent():
-    """Suppress M201 intent msg injection for tests that don't expect it."""
-    return patch(
-        "kiso.worker.loop._maybe_inject_intent_msg",
-        side_effect=lambda tasks, goal: tasks,
     )
 
 
@@ -605,14 +597,13 @@ class TestRunWorker:
         assert plan["status"] == "done"
 
         tasks = await get_tasks_for_plan(db, plan["id"])
-        # Intent msg injected even without language prefix (M201 fix)
-        assert len(tasks) == 3
-        assert tasks[0]["type"] == "msg"  # intent msg
-        assert tasks[1]["type"] == "exec"
+        # M941: no intent msg injection — plan tasks persisted as-is
+        assert len(tasks) == 2
+        assert tasks[0]["type"] == "exec"
+        assert tasks[0]["status"] == "done"
+        assert "hello" in tasks[0]["output"]
+        assert tasks[1]["type"] == "msg"
         assert tasks[1]["status"] == "done"
-        assert "hello" in tasks[1]["output"]
-        assert tasks[2]["type"] == "msg"
-        assert tasks[2]["status"] == "done"
 
     async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
         """Secrets from the plan are extracted and available for skill execution."""
@@ -732,8 +723,7 @@ class TestRunWorker:
 
         with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=TOOL_PLAN), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Should eventually fail (after replan attempts hit max depth)
@@ -994,8 +984,7 @@ class TestRunWorker:
         with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # First plan should be failed
@@ -1042,8 +1031,7 @@ class TestRunWorker:
         with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Should have a recovery msg task with status=done
@@ -1092,8 +1080,7 @@ class TestRunWorker:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
 
         # Get first plan's tasks
@@ -2517,125 +2504,6 @@ class TestPersistPlanTasks:
         db_tasks = await get_tasks_for_plan(db, plan_id)
         assert db_tasks[0]["skill"] == "search"
         assert db_tasks[0]["args"] == '{"q":"test"}'
-
-
-# --- M201: _maybe_inject_intent_msg ---
-
-class TestM201IntentMsgInjection:
-    """M201: auto-inject intent msg before plan execution."""
-
-    def test_injects_msg_when_first_task_is_exec(self):
-        tasks = [
-            {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "echo world", "tool": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "Answer in Italian. fatto", "tool": None, "args": None, "expect": None},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "greet the world")
-        assert len(result) == 4
-        assert result[0]["type"] == "msg"
-        assert result[0]["detail"].startswith("Answer in Italian.")
-        assert "echo hello" in result[0]["detail"]
-        # Original tasks unchanged
-        assert result[1]["type"] == "exec"
-
-    def test_no_injection_when_first_task_is_msg(self):
-        tasks = [
-            {"type": "msg", "detail": "Answer in English. hello", "tool": None, "args": None, "expect": None},
-            {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "greet")
-        assert len(result) == 2
-        assert result[0]["detail"] == "Answer in English. hello"
-
-    def test_no_injection_for_single_task(self):
-        tasks = [
-            {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "greet")
-        assert len(result) == 1
-
-    def test_injection_without_lang_prefix(self):
-        """Inject intent msg even when no Answer in prefix — messenger infers language."""
-        tasks = [
-            {"type": "exec", "detail": "a", "tool": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "b", "tool": None, "args": None, "expect": "ok"},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "goal")
-        assert len(result) == 3  # injection happened
-        assert result[0]["type"] == "msg"
-        assert not result[0]["detail"].startswith("Answer in")  # no lang prefix
-
-    def test_does_not_mutate_input(self):
-        tasks = [
-            {"type": "exec", "detail": "a", "tool": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "b", "tool": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "Answer in English. done", "tool": None, "args": None, "expect": None},
-        ]
-        original_len = len(tasks)
-        result = _maybe_inject_intent_msg(tasks, "goal")
-        assert len(tasks) == original_len
-        assert len(result) == original_len + 1
-
-    def test_intent_detail_includes_up_to_3_steps(self):
-        tasks = [
-            {"type": "exec", "detail": f"step{i}", "tool": None, "args": None, "expect": "ok"}
-            for i in range(5)
-        ]
-        tasks.append({"type": "msg", "detail": "Answer in French. fini", "tool": None, "args": None, "expect": None})
-        result = _maybe_inject_intent_msg(tasks, "multi-step")
-        detail = result[0]["detail"]
-        assert detail.startswith("Answer in French.")
-        assert "step0" in detail
-        assert "step1" in detail
-        assert "step2" in detail
-        # step3 and step4 are NOT in the summary (max 3)
-        assert "step3" not in detail
-
-    async def test_replan_skips_intent_msg(self, tmp_path):
-        """M279: intent msg is NOT injected for replan — user already saw the intent."""
-        from kiso.store import init_db, create_session, create_plan, get_tasks_for_plan
-        db = await init_db(tmp_path / "test.db")
-        await create_session(db, "sess1")
-        plan_id = await create_plan(db, "sess1", 1, "Retry with new approach")
-
-        replan_tasks = [
-            {"type": "exec", "detail": "apt-get install foo", "tool": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "run test", "tool": None, "args": None, "expect": "pass"},
-            {"type": "msg", "detail": "Answer in Italian. report", "tool": None, "args": None, "expect": None},
-        ]
-        # Replan path persists tasks directly without _maybe_inject_intent_msg
-        await _persist_plan_tasks(db, plan_id, "sess1", replan_tasks)
-
-        db_tasks = await get_tasks_for_plan(db, plan_id)
-        assert len(db_tasks) == 3  # No injected intent msg
-        assert db_tasks[0]["type"] == "exec"
-        await db.close()
-
-    def test_m264_intent_msg_says_system(self):
-        """M264: intent msg says 'the system is about to do', not 'you're about to do'."""
-        tasks = [
-            {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "ok"},
-            {"type": "exec", "detail": "echo world", "tool": None, "args": None, "expect": "ok"},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "greet")
-        assert "the system is about to do" in result[0]["detail"]
-        assert "you're about to do" not in result[0]["detail"]
-
-    def test_intent_excludes_msg_tasks(self):
-        """Intent summary should not include msg task details to prevent fabrication."""
-        tasks = [
-            {"type": "tool", "detail": "Navigate to example.com", "tool": "browser", "args": "{}", "expect": "page loads"},
-            {"type": "tool", "detail": "Take screenshot", "tool": "browser", "args": "{}", "expect": "screenshot saved"},
-            {"type": "msg", "detail": "Answer in Italian. Ho navigato e catturato lo screenshot.", "tool": None, "args": None, "expect": None},
-        ]
-        result = _maybe_inject_intent_msg(tasks, "navigate and screenshot")
-        intent_detail = result[0]["detail"]
-        # Action tasks should be in the summary
-        assert "Navigate" in intent_detail
-        assert "screenshot" in intent_detail.lower()
-        # The msg task's expected answer should NOT be in the summary
-        assert "Ho navigato" not in intent_detail
-        assert "catturato" not in intent_detail
 
 
 # --- store: save_learning ---
@@ -5148,8 +5016,7 @@ class TestCancelMechanism:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Cancelled."), \
              patch("kiso.worker.loop.deliver_webhook", mock_webhook), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(
                 run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
                 timeout=5,
@@ -5235,8 +5102,7 @@ class TestCancelMechanism:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    side_effect=MessengerError("API down")), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(
                 run_worker(db, config, "sess1", queue, cancel_event=cancel_event),
                 timeout=5,
@@ -5433,8 +5299,7 @@ class TestCancelDuringReplanWindow:
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    side_effect=_review_and_cancel), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue,
                                               cancel_event=cancel_event), timeout=5)
 
@@ -6212,8 +6077,7 @@ class TestRecoveryMsgTask:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="I'm sorry, something went wrong with the task."), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         plan = await get_plan_for_session(db, "sess1")
@@ -9806,8 +9670,7 @@ class TestCircularReplanDetection:
                    return_value="search results"), \
              patch("kiso.worker.loop.save_message", side_effect=_save_msg), \
              _patch_translator(), \
-             _patch_kiso_dir(tmp_path), \
-             _patch_no_intent():
+             _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         stuck_msgs = [m for m in saved_messages if "I'm having trouble" in m]
