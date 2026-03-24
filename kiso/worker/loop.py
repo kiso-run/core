@@ -1208,6 +1208,8 @@ async def _handle_tool_task(
                 "Tool task %d ok: stdout=%.200s",
                 task_id, stdout[:200] if stdout else "",
             )
+            if stderr:
+                log.info("Tool task %d stderr: %.500s", task_id, stderr[:500])
 
         # Auto-publish new files to pub/ and append URLs
         _auto_publish_skill_files(ctx.session, pre_snapshot)
