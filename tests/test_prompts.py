@@ -27,7 +27,7 @@ _EXPECTED_ROLES = [
 _ROLE_CORE_TERMS: list[tuple[str, list[str]]] = [
     ("planner.md", ["json plan", "goal", "tasks", "msg", "replan"]),
     ("reviewer.md", ["ok", "replan", "stuck", "expect", "summary"]),
-    ("messenger.md", ["language", "verbatim", "fabricat", "published files"]),
+    ("messenger.md", ["language", "verbatim", "fabricat", "published files", "digits"]),
     ("worker.md", ["cannot_translate", "sudo"]),
     ("classifier.md", ["plan", "chat"]),
     ("briefer.md", ["context", "modules"]),
