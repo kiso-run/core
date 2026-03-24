@@ -1482,12 +1482,6 @@ async def run_planner(
             for part in _hints_raw.split(";") if part.strip()
         )
 
-    # M922: diagnostic — log what the planner sees for tool visibility
-    log.info(
-        "Planner tool visibility: installed=%s registry=%s",
-        installed_names, _reg_hint_names,
-    )
-
     # inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
     for msg in reversed(messages):
