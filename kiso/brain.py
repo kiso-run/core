@@ -24,7 +24,7 @@ from kiso.store import (
     get_behavior_facts, get_recent_messages, get_safety_facts, get_session, search_facts,
     search_facts_by_entity, search_facts_by_tags, search_facts_scored,
 )
-from kiso.sysenv import get_system_env, build_system_env_section
+from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section
 
 log = logging.getLogger(__name__)
 
@@ -1072,10 +1072,11 @@ async def _gather_planner_context(
     user_role: str,
     new_message: str,
     paraphrased_context: str | None = None,
-) -> tuple[str, list, list, list, dict, str]:
+) -> tuple[str, list, list, list, dict, str, str]:
     """Gather all raw context pieces for the planner.
 
-    Returns (summary, facts, pending, recent, context_pool, sys_env_text).
+    Returns (summary, facts, pending, recent, context_pool,
+    sys_env_essential, sys_env_full).
     The context_pool dict is suitable for the briefer.
     """
     is_admin = user_role == "admin"
@@ -1105,7 +1106,8 @@ async def _gather_planner_context(
     recent_text = build_recent_context(recent, kiso_truncate=0)
 
     sys_env = get_system_env(config)
-    sys_env_text = build_system_env_section(sys_env, session=session)
+    sys_env_essential = build_system_env_essential(sys_env, session=session)
+    sys_env_full = build_system_env_section(sys_env, session=session)
 
     context_pool: dict = {}
     if summary:
@@ -1119,8 +1121,9 @@ async def _gather_planner_context(
     if paraphrased_context:
         context_pool["paraphrased"] = paraphrased_context
 
-    # sys_env_text always present — semi-static
-    context_pool["system_env"] = sys_env_text
+    # Full system_env for briefer context pool (so briefer can decide
+    # whether the planner needs OS/binary details for install tasks).
+    context_pool["system_env"] = sys_env_full
 
     # inject recipes into context pool
     recipes = discover_recipes()
@@ -1135,7 +1138,7 @@ async def _gather_planner_context(
             f"{e['name']} ({e['kind']})" for e in all_entities
         )
 
-    return summary, facts, pending, recent, context_pool, sys_env_text
+    return summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full
 
 
 async def build_planner_messages(
@@ -1163,7 +1166,7 @@ async def build_planner_messages(
     tools_info list for args validation without rescanning the filesystem.
     """
     # Gather raw context
-    summary, facts, pending, recent, context_pool, sys_env_text = \
+    summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full = \
         await _gather_planner_context(
             db, config, session, user_role, new_message, paraphrased_context,
         )
@@ -1311,9 +1314,16 @@ async def build_planner_messages(
         # Briefer path: use synthesized context + filtered skills
         _add_section(context_parts, "Context", briefing["context"])
         _add_section(context_parts, "Relevant Facts", scored_facts_text)
-        # System Environment is always included — the core prompt's install
-        # decision rule references registry_hints which live here.
-        context_parts.append(f"## System Environment\n{sys_env_text}")
+        # M937: inject essential system env always (~60 tok). Full version
+        # (~400 tok) only when briefer selected install/system modules.
+        # Check briefer's raw selection — force-added modules (kiso_native
+        # safety net) don't count since they're added unconditionally.
+        _SYSENV_MODULES = {"plugin_install", "kiso_commands", "user_mgmt"}
+        _needs_full_sysenv = bool(set(briefing["modules"]) & _SYSENV_MODULES)
+        if _needs_full_sysenv:
+            context_parts.append(f"## System Environment\n{sys_env_full}")
+        else:
+            context_parts.append(f"## System Environment\n{sys_env_essential}")
         # Session workspace files + previous plan results — operational data
         # that must reach the planner verbatim (not gated by briefer synthesis).
         _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
@@ -1347,7 +1357,8 @@ async def build_planner_messages(
                         existing_ids.update(f["id"] for f in new_facts)
 
         # System env in original position (after facts, before pending)
-        context_parts.append(f"## System Environment\n{sys_env_text}")
+        # Fallback path: inject full system env (conservative, no briefer).
+        context_parts.append(f"## System Environment\n{sys_env_full}")
         # Session workspace files + previous plan results (same as briefer path)
         _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
         _add_section(context_parts, "Previous Plan", context_pool.get("last_plan", ""))

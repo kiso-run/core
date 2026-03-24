@@ -364,8 +364,29 @@ def _collect_workspace_files(session: str) -> str:
     return ", ".join(entries)
 
 
+def build_system_env_essential(env: dict, session: str = "") -> str:
+    """Minimal system env for the planner — always injected (~60 tokens).
+
+    Contains only what the planner needs for every plan: workspace path,
+    public file rule, blocked commands, and plan limits.
+    """
+    lines: list[str] = []
+    if session:
+        cwd = str(KISO_DIR / "sessions" / session)
+    else:
+        cwd = env["exec_cwd"] + "/<session>/"
+    lines.append(f"Exec CWD: {cwd}")
+    lines.append("Public files: write to pub/ in exec CWD → auto-served at /pub/ URLs (no auth needed)")
+    lines.append(f"Blocked commands: {_BLOCKED_COMMANDS}")
+    lines.append(
+        f"Plan limits: max {env['max_plan_tasks']} tasks per plan, "
+        f"max {env['max_replan_depth']} replans (extendable by planner up to +3)"
+    )
+    return "\n".join(lines)
+
+
 def build_system_env_section(env: dict, session: str = "") -> str:
-    """Format the system env dict into a concise text block for the planner.
+    """Full system env for the worker and install-related planner calls.
 
     When *session* is provided the ``Exec CWD`` line shows the actual
     absolute workspace path and a ``Session`` line is added.
@@ -413,9 +434,6 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
     lines.append(f"Reference docs: {env['reference_docs_path']} (tool/connector authoring guides — cat before planning)")
     lines.append(f"Plugin registry: {env['registry_url']} (curl to discover available tools/connectors)")
-    registry_hints = env.get("registry_hints")
-    if registry_hints:
-        lines.append(f"Registry tools available: {registry_hints}")
     lines.append(f"Max output: {_format_size(env['max_output_size'])}")
     lines.append("")
 
@@ -431,10 +449,6 @@ def build_system_env_section(env: dict, session: str = "") -> str:
         lines.append(f"Connectors: {', '.join(parts)}")
     else:
         lines.append("Connectors: none installed")
-    lines.append("")
-
-    lines.append("Kiso CLI (usable in exec tasks):")
-    lines.append(_KISO_CLI_COMMANDS)
     lines.append("")
 
     lines.append(f"Blocked commands: {_BLOCKED_COMMANDS}")

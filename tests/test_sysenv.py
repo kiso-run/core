@@ -19,6 +19,7 @@ from kiso.sysenv import (
     _collect_workspace_files,
     _detect_pkg_manager,
     _load_registry_hints,
+    build_system_env_essential,
     build_system_env_section,
     collect_system_env,
     get_resource_limits,
@@ -436,21 +437,15 @@ class TestBuildSystemEnvSection:
         assert "discord (running)" in section
         assert "telegram (stopped)" in section
 
-    def test_contains_kiso_cli_section(self, sample_env):
+    def test_no_kiso_cli_in_full(self, sample_env):
+        """M937: Kiso CLI commands removed — covered by kiso_commands module."""
         section = build_system_env_section(sample_env)
-        assert "Kiso CLI (usable in exec tasks):" in section
-        assert "kiso tool list" in section
-        assert "kiso connector run" in section
+        assert "Kiso CLI (usable in exec tasks):" not in section
 
-    def test_contains_registry_hints(self, sample_env):
+    def test_no_registry_hints_in_full(self, sample_env):
+        """M937: Registry hints removed — covered by registry tools section."""
         section = build_system_env_section(sample_env)
-        assert "Registry tools available:" in section
-        assert "browser" in section
-
-    def test_no_registry_hints_when_empty(self, sample_env):
-        sample_env["registry_hints"] = ""
-        section = build_system_env_section(sample_env)
-        assert "Registry skills available:" not in section
+        assert "Registry tools available:" not in section
 
     def test_contains_blocked_commands(self, sample_env):
         section = build_system_env_section(sample_env)
@@ -550,6 +545,67 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "Public files:" in section
         assert "pub/" in section
+
+
+# --- M937: build_system_env_essential ---
+
+
+class TestBuildSystemEnvEssential:
+    """M937: essential system env contains only planner-critical lines."""
+
+    @pytest.fixture()
+    def sample_env(self):
+        return {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1"},
+            "shell": "/bin/bash",
+            "exec_cwd": "/home/test/.kiso/sessions",
+            "exec_env": "PATH",
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "max_output_size": 1_048_576,
+        }
+
+    def test_contains_cwd(self, sample_env):
+        section = build_system_env_essential(sample_env, session="s1")
+        assert "Exec CWD:" in section
+
+    def test_contains_pub_rule(self, sample_env):
+        section = build_system_env_essential(sample_env)
+        assert "Public files:" in section
+        assert "pub/" in section
+
+    def test_contains_blocked_commands(self, sample_env):
+        section = build_system_env_essential(sample_env)
+        assert "Blocked commands:" in section
+
+    def test_contains_plan_limits(self, sample_env):
+        section = build_system_env_essential(sample_env)
+        assert "max 20 tasks" in section
+        assert "max 3 replans" in section
+
+    def test_no_os_info(self, sample_env):
+        section = build_system_env_essential(sample_env)
+        assert "OS:" not in section
+
+    def test_no_binaries(self, sample_env):
+        section = build_system_env_essential(sample_env)
+        assert "Available binaries:" not in section
+
+    def test_much_shorter_than_full(self, sample_env):
+        # Full needs extra keys — add them for comparison
+        full_env = {
+            **sample_env,
+            "exec_env": "PATH",
+            "sys_bin_path": "/fake/bin",
+            "reference_docs_path": "/fake/docs",
+            "registry_url": "https://example.com/registry.json",
+            "available_binaries": ["git", "python3"],
+            "missing_binaries": [],
+            "connectors": [],
+        }
+        essential = build_system_env_essential(sample_env)
+        full = build_system_env_section(full_env)
+        assert len(essential) < len(full) * 0.5
 
 
 # --- _collect_binaries with sys/bin ---
