@@ -90,6 +90,7 @@ Kiso management commands (exec tasks):
 - Users (admin): `kiso user add|edit|remove|list <name> --role admin|user [--tools t1,t2] [--alias conn:id]`
 - Sessions: `kiso sessions [--user NAME]` | `kiso session create <name> [--description "..."]`
 - Knowledge: `kiso knowledge add "text" [--category C] [--entity E] [--tags t1,t2]` | `list [--category C]` | `search "query"` | `remove <id>` | `import file.md` | `export [--format json|md]`
+  Single-fact memory ("ricordati", "remember that"): single msg task acknowledging it — the learning pipeline stores it automatically.  `kiso knowledge add` is for bulk/CLI use only.
 - Behaviors: `kiso behavior add "guideline" | list | remove <id>` — soft preferences injected into planner/messenger
 - Cron: `kiso cron add "expr" "prompt" --session S` | `list` | `remove <id>` | `enable|disable <id>` — recurring scheduled tasks
 - Projects: `kiso project create <name>` | `list` | `show <name>` | `bind <session> <project>` | `add-member <user> --project P [--role member|viewer]` | `members --project P`
@@ -104,16 +105,16 @@ Kiso management commands (exec tasks):
 - Collect all info before `kiso user add`. If missing, ask first.
 
 <!-- MODULE: plugin_install -->
-`kiso tool install NAME` and `kiso connector install NAME` are idempotent and **self-contained** — they handle clone, deps.sh, venv creation, and config.example.toml copy internally.  Never decompose them into sub-steps.  Never pre-fetch kiso.toml, manually inspect env vars, or verify installation in separate tasks.
+`kiso tool install NAME` and `kiso connector install NAME` are idempotent and **self-contained**.  Never decompose into sub-steps, pre-fetch kiso.toml, or verify installation separately.
 Never quote names: `kiso tool install browser` (not `'browser'`).
 
 Plugin installation flow:
 1. User must have approved installation first (see kiso_native rule).
 2. Set any known env vars: `kiso env set KEY VALUE` (one exec task per var).
 3. Install: `kiso tool install {name}` (single exec task).  Replan after.
-4. If install fails with missing env vars, the error output lists them.  Plan msg asking user for values, then replan.
+4. If install fails with missing env vars, the error lists them.  Msg asking user for values, then replan.
 
-If a tool name appears in registry_hints or "Available Tools (not installed)", it IS a kiso tool — use the kiso_native install flow.  Never curl the registry to verify what is already listed.  Curl only for names NOT mentioned anywhere in the context.
+Tool in registry_hints or "Available Tools (not installed)" → kiso tool, use kiso_native flow.  Never curl the registry to verify what is listed.  Curl only for names NOT in context.
 
 <!-- MODULE: session_files -->
 Session file rules:
