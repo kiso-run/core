@@ -2033,7 +2033,8 @@ async def _handle_loop_failure(
 
 _INSTALL_KWS = frozenset({"install", "apt-get", "apt", "apk", "yum", "dnf", "pip"})
 _FAIL_KWS = ("not found", "cannot_translate", "command not found",
-             "no such file", "not installed")
+             "no such file", "not installed", "could not be found",
+             "does not exist")
 
 
 def _detect_circular_replan(
@@ -2072,9 +2073,10 @@ def _detect_circular_replan(
                             jaccard * 100, replan_reason)
                 return True
 
-    # Install→use→fail loop
+    # Install→use→fail loop — check both goal and failure for install keywords
+    # (reviewer reasons often omit install verbs, but goals almost always have them)
     has_install = any(
-        _INSTALL_KWS & set(h["failure"].lower().split())
+        _INSTALL_KWS & (set(h["failure"].lower().split()) | set(h["goal"].lower().split()))
         for h in replan_history[:-1]
     )
     if has_install:

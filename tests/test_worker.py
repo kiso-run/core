@@ -9557,6 +9557,45 @@ class TestDetectCircularReplanUnit:
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is True
 
+    def test_install_loop_detected_via_goal(self):
+        """M953: install keywords in goal (not failure) still trigger detection."""
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "Package 'zzz_test_notreal' not found on PyPI.",
+             "goal": "Install and use the tool 'zzz_test_notreal' for system analysis"},
+            {"failure": "The package could not be found in the registry",
+             "goal": "Install and use the tool 'zzz_test_notreal'"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_install_goal_plus_could_not_be_found(self):
+        """M953: goal has install keyword + failure has 'could not be found'."""
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "pip install completed ok", "goal": "install numpy"},
+            {"failure": "the module could not be found in the environment",
+             "goal": "use numpy for analysis"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_install_failure_plus_does_not_exist(self):
+        """M953: failure has install keyword + next failure has 'does not exist'."""
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "ran apt-get install libfoo", "goal": "install libfoo"},
+            {"failure": "the binary does not exist after installation",
+             "goal": "use libfoo"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_goal_install_without_fail_keywords_not_stuck(self):
+        """Goal mentions install but failure is unrelated → not stuck."""
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "timeout waiting for response", "goal": "install websearch tool"},
+            {"failure": "network unreachable", "goal": "retry websearch installation"},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is False
 
 
 @pytest.mark.asyncio
