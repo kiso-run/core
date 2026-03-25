@@ -6326,6 +6326,127 @@ class TestM266BrowserAvailability:
 
 
 # ---------------------------------------------------------------------------
+# M954 — Built-in search note when websearch not installed
+# ---------------------------------------------------------------------------
+
+
+class TestM954BuiltinSearchNote:
+    """M954: planner gets unconditional note about built-in search."""
+
+    _REGISTRY_TEXT = "- websearch — Web search engine with multiple backends"
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    def _config(self, briefer_enabled=True):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=_full_models(planner="gpt-4"),
+            settings=_full_settings(
+                context_messages=3,
+                briefer_enabled=briefer_enabled,
+            ),
+            raw={},
+        )
+
+    async def test_websearch_not_installed_shows_note(self, db):
+        """When websearch is in registry but not installed, note is shown."""
+        briefing = {
+            "modules": [],  # briefer doesn't select web module
+            "tools": [],
+            "context": "User wants to search for programming languages.",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.get_registry_tools", return_value=self._REGISTRY_TEXT):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "cerca i 5 linguaggi più usati",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "built-in `search` task type" in user_content
+        assert "without any tool installation" in user_content
+
+    async def test_websearch_installed_no_note(self, db):
+        """When websearch IS installed, registry_text won't contain it → no note."""
+        briefing = {
+            "modules": [],
+            "tools": ["websearch — web search"],
+            "context": "User wants to search.",
+            "output_indices": [],
+            "relevant_tags": [],
+            "relevant_entities": [],
+        }
+        fake_skill = {
+            "name": "websearch", "summary": "web search",
+            "args": [], "guide": "",
+        }
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                return json.dumps(briefing)
+            return "{}"
+
+        config = self._config(briefer_enabled=True)
+        # get_registry_tools filters out installed tools → empty
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[fake_skill]), \
+             patch("kiso.brain.get_registry_tools", return_value=""):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "cerca qualcosa online",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "built-in `search` task type" not in user_content
+
+    async def test_no_registry_no_note(self, db):
+        """When registry returns empty, M954 note is not shown."""
+        config = self._config(briefer_enabled=False)
+        with patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.get_registry_tools", return_value=""):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "cerca qualcosa",
+            )
+
+        user_content = msgs[1]["content"]
+        # M954 note uses "without any tool installation"; Browser Availability
+        # section uses "it requires no tool" — check the M954-specific phrase.
+        assert "without any tool installation" not in user_content
+
+    async def test_fallback_path_also_shows_note(self, db):
+        """Fallback path (no briefer) also shows note when websearch not installed."""
+        config = self._config(briefer_enabled=False)
+        with patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.get_registry_tools", return_value=self._REGISTRY_TEXT):
+            msgs, _, _ = await build_planner_messages(
+                db, config, "sess1", "admin",
+                "cerca linguaggi di programmazione",
+            )
+
+        user_content = msgs[1]["content"]
+        assert "built-in `search` task type" in user_content
+
+
+# ---------------------------------------------------------------------------
 # M261 — End-to-end token reduction validation
 # ---------------------------------------------------------------------------
 
