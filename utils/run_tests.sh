@@ -173,8 +173,8 @@ _extract_rerun_snippet() {
     # Collect FAILED lines from "short test summary info" sections
     local -a failed_ids=()
     while IFS= read -r line; do
-        if [[ "$line" =~ ^FAILED\ (tests/.+) ]]; then
-            local node="${BASH_REMATCH[1]}"
+        if [[ "$line" =~ ^FAILED\ (\([0-9.smh\ ]+\)\ )?(tests/.+) ]]; then
+            local node="${BASH_REMATCH[2]}"
             # Strip trailing " - ..." pytest reason suffix if present
             node="${node%% - *}"
             failed_ids+=("$node")
