@@ -493,7 +493,7 @@ ask_network_and_external_url() {
     else
         NETWORK_MODE="public"
         yellow "  ⚠  API exposed over HTTP (no encryption)." >&2
-        yellow "  CLI token and API calls are visible to anyone on the network." >&2
+        yellow "  Make sure port ${SERVER_PORT:-8333} is reachable from outside (check firewall/router port forwarding)." >&2
         yellow "  For production use, set up HTTPS with a reverse proxy." >&2
         yellow "  See: docs/https.md — we recommend Caddy + Let's Encrypt." >&2
     fi
