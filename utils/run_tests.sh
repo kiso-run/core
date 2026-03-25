@@ -306,15 +306,66 @@ run_suite() {
     # Prefer tput (reads real TTY) over COLUMNS env.
     local _cols
     _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-120}"
-    # Collapse pytest's padding between PASSED/FAILED and the progress
-    # percentage.  pytest 9+ adds inline durations AFTER computing padding,
-    # pushing the percentage past the terminal width.  The sed below strips
-    # runs of spaces (possibly interspersed with ANSI codes) that appear
-    # between the result/duration and the bracket of the progress indicator.
-    # E.g.: "PASSED (1.2s)\e[0m\e[32m           [ 33%]" → "PASSED (1.2s) [ 33%]"
+    # Reformat pytest progress lines: strip excess padding and right-align
+    # the percentage indicator.  pytest 9+ adds inline durations AFTER
+    # computing padding, pushing the percentage past the terminal width.
+    #
+    # Strategy: work on a plain (ANSI-stripped) copy to locate the [N%]
+    # marker and calculate widths, but preserve the original ANSI-coloured
+    # content portion (everything before the padding) in the output.
     FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \
         script -qefc "stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
-        | sed -u 's/\(  \)\(\(\x1b\[[0-9;]*m\)*  *\)*\(\x1b\[[0-9;]*m\)*\(\[[ 0-9]*%\]\)/ \4\5/' \
+        | stdbuf -oL awk -v cols="$_cols" '
+        function strip_ansi(s) {
+            gsub(/\033\[[0-9;?]*[a-zA-Z]/, "", s)
+            gsub(/\r/, "", s)
+            return s
+        }
+        # Visible length of string (without ANSI codes)
+        function vlen(s) {
+            t = s
+            gsub(/\033\[[0-9;?]*[a-zA-Z]/, "", t)
+            return length(t)
+        }
+        {
+            plain = strip_ansi($0)
+            if (match(plain, /\[[ ]*[0-9]+%\][ ]*$/)) {
+                # Extract and normalise percentage: [  1%] → [1%]
+                pct = substr(plain, RSTART, RLENGTH)
+                gsub(/[ ]/, "", pct)
+
+                # Find the content end in the plain line (before padding)
+                content_end = RSTART - 1
+                while (content_end > 0 && substr(plain, content_end, 1) == " ")
+                    content_end--
+                content_w = content_end
+
+                # Extract the ANSI-coloured content from the raw line.
+                # We walk the raw line char-by-char, counting visible chars
+                # until we reach content_end visible chars.
+                raw = $0
+                gsub(/\r$/, "", raw)
+                n = length(raw); vi = 0; ci = 0; in_esc = 0
+                for (i = 1; i <= n; i++) {
+                    c = substr(raw, i, 1)
+                    if (c == "\033") { in_esc = 1 }
+                    if (!in_esc) vi++
+                    if (in_esc && c ~ /[a-zA-Z]/) in_esc = 0
+                    ci = i
+                    if (vi >= content_w) break
+                }
+                colored_content = substr(raw, 1, ci)
+                # Reset ANSI at the end of content
+                reset = "\033[0m"
+
+                pad = cols - content_w - length(pct)
+                if (pad < 1) pad = 1
+                printf "%s%s%*s%s\n", colored_content, reset, pad, "", pct
+                next
+            }
+            print
+        }
+        ' \
         | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
