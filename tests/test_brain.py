@@ -8140,6 +8140,63 @@ class TestRegistryInstallValidation:
         assert not any("not in the kiso plugin registry" in e for e in errors)
 
 
+class TestM950ForceMsgOnly:
+    """M950: force_msg_only rejects non-msg tasks after tool-not-in-registry."""
+
+    _MSG_ONLY_PLAN = {"tasks": [
+        {"type": "msg", "detail": "Answer in English. Tool not available"},
+    ]}
+    _EXEC_PLAN = {"tasks": [
+        {"type": "exec", "detail": "curl registry", "expect": "found"},
+        {"type": "msg", "detail": "Answer in English. result"},
+    ]}
+    _TOOL_PLAN = {"tasks": [
+        {"type": "tool", "detail": "do thing", "tool": "magic", "args": "{}", "expect": "ok"},
+        {"type": "msg", "detail": "Answer in English. result"},
+    ]}
+
+    def test_force_msg_only_rejects_exec(self):
+        errors = validate_plan(self._EXEC_PLAN, force_msg_only=True)
+        assert any("ONLY msg tasks" in e for e in errors)
+
+    def test_force_msg_only_rejects_tool(self):
+        errors = validate_plan(self._TOOL_PLAN, force_msg_only=True)
+        assert any("ONLY msg tasks" in e for e in errors)
+
+    def test_force_msg_only_allows_msg(self):
+        errors = validate_plan(self._MSG_ONLY_PLAN, force_msg_only=True)
+        assert not any("ONLY msg tasks" in e for e in errors)
+
+    def test_force_msg_only_false_no_effect(self):
+        """Default force_msg_only=False doesn't change existing behavior."""
+        errors = validate_plan(self._EXEC_PLAN, force_msg_only=False)
+        assert not any("ONLY msg tasks" in e for e in errors)
+
+    def test_marker_in_unavailable_error(self):
+        """The unavailable-tool error contains the marker string."""
+        from kiso.brain import _TOOL_UNAVAILABLE_MARKER
+        plan = {"tasks": [
+            {"type": "tool", "detail": "magic", "expect": "ok",
+             "tool": "zzz_fake", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+        errors = validate_plan(plan, installed_skills=[],
+                               registry_hint_names=frozenset({"browser"}))
+        assert any(_TOOL_UNAVAILABLE_MARKER in e for e in errors)
+
+    def test_marker_not_in_registry_available_error(self):
+        """Tool in registry but not installed does NOT contain unavailable marker."""
+        from kiso.brain import _TOOL_UNAVAILABLE_MARKER
+        plan = {"tasks": [
+            {"type": "tool", "detail": "search", "expect": "ok",
+             "tool": "websearch", "args": "{}"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+        errors = validate_plan(plan, installed_skills=[],
+                               registry_hint_names=frozenset({"websearch"}))
+        assert not any(_TOOL_UNAVAILABLE_MARKER in e for e in errors)
+
+
 class TestNeedsInstallCoherence:
     """M640: needs_install + tool task for same tool → error."""
 

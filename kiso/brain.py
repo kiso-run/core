@@ -263,6 +263,7 @@ _UV_PIP_RE = re.compile(r"\buv\s+pip\b", re.IGNORECASE)
 # Used both when generating the error (validate_plan) and detecting it
 # (_retry_llm_with_validation).  Keep in sync.
 _TOOL_NOT_INSTALLED_MARKER = "is not installed"
+_TOOL_UNAVAILABLE_MARKER = "not available — not installed and not in the registry"
 
 _PLUGIN_DISCOVERY_RE = re.compile(
     r"(?:tool|skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
@@ -795,11 +796,13 @@ def _validate_plan_tasks(
                     )
                 else:
                     errors.append(
-                        f"Task {i}: tool '{tool_name}' is not available — not "
-                        f"installed and not in the registry. Plan a msg task "
+                        f"Task {i}: tool '{tool_name}' is "
+                        f"{_TOOL_UNAVAILABLE_MARKER}. Plan a SINGLE msg task "
                         f"informing the user that '{tool_name}' cannot be found "
-                        f"and suggesting alternatives from installed tools "
-                        f"({available or 'none'}) or the registry."
+                        f"in the public registry. If the user may have a private "
+                        f"source, suggest providing a git URL or installation "
+                        f"instructions. Do NOT plan any exec, search, or tool "
+                        f"tasks referencing this tool."
                     )
             elif installed_skills_info and tool_name in installed_skills_info:
                 args_raw = task.get("args") or "{}"
@@ -943,6 +946,7 @@ def validate_plan(
     is_replan: bool = False,
     install_approved: bool = False,
     registry_hint_names: frozenset[str] | None = None,
+    force_msg_only: bool = False,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
@@ -953,10 +957,23 @@ def validate_plan(
     If is_replan is False, extend_replan is stripped.
     If registry_hint_names is provided, exec tasks with ``kiso tool install``
     are validated: the name must be in the registry (or a git URL).
+    If force_msg_only is True, only msg tasks are allowed — all other task
+    types are rejected (set after a tool-not-in-registry rejection).
     """
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
         return errors
+    # M950: after a tool was determined to not exist in any registry,
+    # force the planner to produce a msg-only plan.
+    if force_msg_only:
+        non_msg = [t for t in tasks if t.get("type") != TASK_TYPE_MSG]
+        if non_msg:
+            errors.append(
+                "The requested tool does not exist in any registry. "
+                "Plan ONLY msg tasks explaining the situation to the user. "
+                "Do NOT plan exec, tool, or search tasks."
+            )
+            return errors
     errors.extend(_validate_plan_tasks(
         tasks, installed_skills, installed_skills_info,
         install_approved=install_approved,
@@ -1509,13 +1526,28 @@ async def run_planner(
     else:
         log.warning("No user message found for budget injection")
 
+    # M950: track whether a tool was rejected as not-in-registry across
+    # validation retries.  Once triggered, subsequent retries must produce
+    # a msg-only plan (prevents the planner from circumventing via exec).
+    _force_msg = False
+
+    def _validate_plan(p: dict) -> list[str]:
+        nonlocal _force_msg
+        errs = validate_plan(
+            p, installed_skills=installed_names, max_tasks=max_tasks,
+            installed_skills_info=tools_by_name, is_replan=is_replan,
+            install_approved=install_approved,
+            registry_hint_names=_reg_hint_names,
+            force_msg_only=_force_msg,
+        )
+        if any(_TOOL_UNAVAILABLE_MARKER in e for e in errs):
+            _force_msg = True
+        return errs
+
     fallback = config.settings.get("planner_fallback_model") or None
     plan = await _retry_llm_with_validation(
         config, "planner", messages, PLAN_SCHEMA,
-        lambda p: validate_plan(p, installed_skills=installed_names, max_tasks=max_tasks,
-                                installed_skills_info=tools_by_name, is_replan=is_replan,
-                                install_approved=install_approved,
-                                registry_hint_names=_reg_hint_names),
+        _validate_plan,
         PlanError, "Plan",
         session=session,
         on_retry=on_retry,
