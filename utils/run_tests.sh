@@ -361,9 +361,11 @@ run_suite() {
                 pad = cols - content_w - length(pct)
                 if (pad < 1) pad = 1
                 printf "%s%s%*s%s\n", colored_content, reset, pad, "", pct
+                fflush()
                 next
             }
             print
+            fflush()
         }
         ' \
         | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
