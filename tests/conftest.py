@@ -125,14 +125,16 @@ def pytest_collection_modifyitems(config, items):
 # ---------------------------------------------------------------------------
 
 def pytest_report_teststatus(report, config):
-    if report.when != "call" or report.duration < 0.1:
+    if report.when != "call":
         return
     secs = report.duration
     if secs >= 60:
         m, s = divmod(int(secs), 60)
         dur = f"{m}m {s}s"
-    else:
+    elif secs >= 0.05:
         dur = f"{secs:.1f}s"
+    else:
+        dur = "0.0s"
     if report.passed:
         return "passed", ".", f"PASSED \033[2m({dur})\033[0m"
     if report.failed:
