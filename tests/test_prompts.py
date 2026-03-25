@@ -75,6 +75,29 @@ class TestM734WorkerSudoRule:
         assert "ignore" in content or "available" in content
 
 
+class TestM948PlannerSearchPreference:
+    """M948: planner prompt does not 'prefer' websearch over built-in search."""
+
+    def test_web_module_no_prefer(self):
+        content = (_ROLES_DIR / "planner.md").read_text()
+        # Extract the web module section
+        start = content.find("<!-- MODULE: web -->")
+        end = content.find("<!-- MODULE:", start + 1)
+        web_section = content[start:end].lower()
+        assert "prefer" not in web_section, (
+            "web module still contains 'prefer' — should say 'only use if installed'"
+        )
+
+    def test_tools_rules_no_prefer_search(self):
+        content = (_ROLES_DIR / "planner.md").read_text()
+        start = content.find("<!-- MODULE: tools_rules -->")
+        end = content.find("<!-- MODULE:", start + 1)
+        tools_section = content[start:end].lower()
+        assert "prefer" not in tools_section, (
+            "tools_rules still contains 'prefer' for search"
+        )
+
+
 class TestM947WorkerQuotedStrings:
     """M947: worker prompt has quoted-string preservation rule."""
 

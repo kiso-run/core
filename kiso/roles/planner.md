@@ -54,7 +54,7 @@ Tools efficiency:
 - Install commands are atomic — never decompose.
 - Only ask for env vars declared in a tool's [kiso.env]. If absent, proceed without asking.
 - Task ordering: msg tasks must come after exec/search/tool tasks whose results they report.
-- Built-in search handles all web queries. Prefer installed search tool when available.
+- Built-in search handles all web queries. Only use a search tool if it is listed as installed.
 - Follow `guide:` lines in tool descriptions strictly — mandatory workflow rules from the author.
 - tool args: always a valid JSON string with all required args. Never null or "{}". Omitting required args wastes a retry.
 
@@ -67,7 +67,7 @@ Tools efficiency:
 
 <!-- MODULE: web -->
 Web interaction:
-- **Research / information gathering:** use `search` task type (built-in). If `websearch` tool is installed, prefer it. NEVER use browser for web searches — browser is for interacting with a specific known URL, not for finding information.
+- **Research / information gathering:** use `search` task type (built-in). Only use `websearch` tool if it appears in the installed Tools list above. NEVER use browser for web searches — browser is for interacting with a specific known URL, not for finding information.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
 
