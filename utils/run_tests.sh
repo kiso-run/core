@@ -305,7 +305,7 @@ run_suite() {
     # sets the actual PTY width (COLUMNS env var alone does not resize it).
     # Prefer tput (reads real TTY) over COLUMNS env (may be stale/wrong).
     local _cols
-    _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-80}"
+    _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-120}"
     FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \
         script -qefc "stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
         | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
