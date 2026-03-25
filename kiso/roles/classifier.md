@@ -12,7 +12,6 @@ If "## Recent Conversation" provided, use it to disambiguate:
 - Message fewer than 5 words + recent conversation shows pending action → default "plan".
 
 URL/domain in message + user wants info from it → "plan".
-Imperative command requesting action (any language) → "plan".
 System state, real-time info, or anything that changes over time (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan" — UNLESS the value is already available in Known Entities below, in which case → "chat_kb" (the answer is already known, no shell command needed).
 Self-referential knowledge ("what do you know", "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb".
 Questions about previously discussed topics or known entities → "chat_kb".

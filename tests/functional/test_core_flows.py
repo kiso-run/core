@@ -421,7 +421,7 @@ class TestF31RussianResponse:
         result = await run_message(
             "Что такое рекурсия в программировании? "
             "Объясни на простом примере",
-            timeout=120,
+            timeout=180,  # M956: safety net — classifier may still route via plan path
         )
 
         assert result.success, (

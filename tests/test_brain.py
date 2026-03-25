@@ -3602,11 +3602,10 @@ class TestClassifierPromptContent:
         assert "url" in prompt or "website" in prompt
         assert "domain" in prompt
 
-    def test_classifier_prompt_covers_imperative_any_language(self):
-        """Classifier prompt should mention action commands in any language (M230)."""
+    def test_classifier_prompt_covers_any_language(self):
+        """Classifier prompt should handle actions in any language (M230, M956)."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
         assert "any language" in prompt
-        assert "imperative" in prompt
 
     def test_classifier_prompt_has_recent_context_rule(self):
         """M276/M751: classifier prompt accepts Recent Conversation for follow-up detection."""
