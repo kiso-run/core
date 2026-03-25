@@ -75,6 +75,15 @@ class TestM734WorkerSudoRule:
         assert "ignore" in content or "available" in content
 
 
+class TestM947WorkerQuotedStrings:
+    """M947: worker prompt has quoted-string preservation rule."""
+
+    def test_worker_prompt_has_verbatim_rule(self):
+        content = (_ROLES_DIR / "worker.md").read_text().lower()
+        assert "verbatim" in content
+        assert "quoted" in content
+
+
 class TestPromptSizeRegression:
     """Prompt files must not exceed size budgets (token cost guard)."""
 
