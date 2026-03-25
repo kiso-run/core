@@ -254,10 +254,13 @@ run_suite() {
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local start=$SECONDS rc=0
     # Use 'script' to create a pseudo-TTY so all commands (Docker BuildKit,
-    # pytest, bats) see a real terminal and emit colors. COLUMNS propagates
-    # the terminal width so pytest aligns PASSED/FAILED correctly.
-    FORCE_COLOR=1 PY_COLORS=1 COLUMNS="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}" \
-        script -qefc "$(printf '%q ' "$@")" /dev/null \
+    # pytest, bats) see a real terminal and emit colors.  'stty columns'
+    # sets the actual PTY width (COLUMNS env var alone does not resize it).
+    # Prefer tput (reads real TTY) over COLUMNS env (may be stale/wrong).
+    local _cols
+    _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-80}"
+    FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \
+        script -qefc "stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
         | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
