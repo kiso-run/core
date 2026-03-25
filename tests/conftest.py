@@ -135,10 +135,13 @@ def pytest_report_teststatus(report, config):
         dur = f"{secs:.1f}s"
     else:
         dur = "0.0s"
+    # Return plain text — no ANSI codes.  Embedded ANSI causes pytest's
+    # TerminalWriter to miscalculate line width, breaking progress padding.
+    # pytest applies its own coloring to the returned word.
     if report.passed:
-        return "passed", ".", f"PASSED \033[2m({dur})\033[0m"
+        return "passed", ".", f"PASSED ({dur})"
     if report.failed:
-        return "failed", "F", f"FAILED \033[2m({dur})\033[0m"
+        return "failed", "F", f"FAILED ({dur})"
 
 
 # ---------------------------------------------------------------------------

@@ -300,14 +300,10 @@ run_suite() {
     # Capture this suite's output separately for per-suite counting
     local _suite_log
     _suite_log="$(mktemp "$_CAPTURE_DIR/suite_XXXX.log")"
-    # Use 'script' to create a pseudo-TTY for colors.  Subtract 10 from
-    # terminal width so pytest leaves room for inline durations "(1m 7s)"
-    # which it adds AFTER computing the progress bar padding.
-    # Both COLUMNS env (read by Python's shutil.get_terminal_size) and
-    # stty (read by os.get_terminal_size) are set inside the PTY.
-    local _real_cols _cols
-    _real_cols="$(tput cols 2>/dev/null)" || _real_cols="${COLUMNS:-120}"
-    _cols=$(( _real_cols > 30 ? _real_cols - 10 : _real_cols ))
+    # Use 'script' to create a pseudo-TTY for colors.
+    # Prefer tput (reads real TTY) over COLUMNS env.
+    local _cols
+    _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-120}"
     FORCE_COLOR=1 PY_COLORS=1 \
         script -qefc "export COLUMNS=$_cols; stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
         | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
