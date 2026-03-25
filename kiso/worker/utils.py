@@ -699,11 +699,19 @@ def _save_large_output(session: str, task_index: int, output: str) -> str:
     )
 
 
+def _task_type_label(t: dict) -> str:
+    """Format task type, including tool name when present (e.g. 'tool/ocr')."""
+    label = t["type"]
+    if t.get("tool"):
+        label += f"/{t['tool']}"
+    return label
+
+
 def _format_task_list(tasks: list[dict], label: str) -> str:
     """Format a task list with label and count, e.g. 'Completed (3):\\n- [exec] ...'."""
     if not tasks:
         return ""
-    items = [f"- [{t['type']}] {t['detail']}" for t in tasks]
+    items = [f"- [{_task_type_label(t)}] {t['detail']}" for t in tasks]
     return f"{label} ({len(tasks)}):\n" + "\n".join(items)
 
 
@@ -874,7 +882,7 @@ def _format_replan_tasks(
         for t in completed:
             limit = _REPLAN_SEARCH_OUTPUT_LIMIT if t.get("type") == "search" else _REPLAN_OUTPUT_LIMIT
             if total_chars >= _REPLAN_CONTEXT_CHAR_BUDGET:
-                items.append(f"- [{t['type']}] {t['detail']}: {t['status']}")
+                items.append(f"- [{_task_type_label(t)}] {t['detail']}: {t['status']}")
                 continue
             reviewer_summary = t.get("reviewer_summary")
             if reviewer_summary:
@@ -883,12 +891,12 @@ def _format_replan_tasks(
                 raw_out = t.get("output") or ""
                 out = _smart_truncate(raw_out, limit)
                 out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
-            item = f"- [{t['type']}] {t['detail']}: {t['status']} →\n{out_fenced}"
+            item = f"- [{_task_type_label(t)}] {t['detail']}: {t['status']} →\n{out_fenced}"
             items.append(item)
             total_chars += len(item)
         parts.append("## Completed Tasks\n" + "\n".join(items))
     if remaining:
-        items = [f"- [{t['type']}] {t['detail']}" for t in remaining]
+        items = [f"- [{_task_type_label(t)}] {t['detail']}" for t in remaining]
         parts.append("## Remaining Tasks (not executed)\n" + "\n".join(items))
     return parts
 

@@ -1761,6 +1761,42 @@ class TestBuildReplanContext:
         assert len(facts) <= 15
 
 
+class TestM949TaskTypeLabel:
+    """M949: replan context includes tool name in task type labels."""
+
+    def test_tool_task_includes_tool_name(self):
+        completed = [{"type": "tool", "tool": "ocr", "detail": "Extract text",
+                       "status": "done", "output": "hello"}]
+        ctx = _build_replan_context(completed, [], "failed", [])
+        assert "[tool/ocr]" in ctx
+
+    def test_exec_task_no_tool_suffix(self):
+        completed = [{"type": "exec", "detail": "echo hi",
+                       "status": "done", "output": "hi"}]
+        ctx = _build_replan_context(completed, [], "failed", [])
+        assert "[exec]" in ctx
+        assert "[exec/" not in ctx
+
+    def test_remaining_tool_task_includes_tool_name(self):
+        remaining = [{"type": "tool", "tool": "browser", "detail": "Navigate"}]
+        ctx = _build_replan_context([], remaining, "failed", [])
+        assert "[tool/browser]" in ctx
+
+    def test_remaining_msg_no_tool_suffix(self):
+        remaining = [{"type": "msg", "detail": "report"}]
+        ctx = _build_replan_context([], remaining, "failed", [])
+        assert "[msg]" in ctx
+        assert "[msg/" not in ctx
+
+    def test_tool_none_no_suffix(self):
+        """Tool field is None (e.g. exec task) — no slash suffix."""
+        completed = [{"type": "exec", "tool": None, "detail": "ls",
+                       "status": "done", "output": "files"}]
+        ctx = _build_replan_context(completed, [], "failed", [])
+        assert "[exec]" in ctx
+        assert "[exec/" not in ctx
+
+
 # --- _execute_plan ---
 
 class TestExecutePlan:
@@ -9520,6 +9556,7 @@ class TestDetectCircularReplanUnit:
             {"failure": "tool not found in the system after installation attempt", "goal": "g"},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
 
 
 @pytest.mark.asyncio
