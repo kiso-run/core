@@ -303,71 +303,18 @@ run_suite() {
     # Use 'script' to create a pseudo-TTY so all commands (Docker BuildKit,
     # pytest, bats) see a real terminal and emit colors.  'stty columns'
     # sets the actual PTY width (COLUMNS env var alone does not resize it).
-    # Prefer tput (reads real TTY) over COLUMNS env.
-    local _cols
-    _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-120}"
-    # Reformat pytest progress lines: strip excess padding and right-align
-    # the percentage indicator.  pytest 9+ adds inline durations AFTER
-    # computing padding, pushing the percentage past the terminal width.
-    #
-    # Strategy: work on a plain (ANSI-stripped) copy to locate the [N%]
-    # marker and calculate widths, but preserve the original ANSI-coloured
-    # content portion (everything before the padding) in the output.
+    # Subtract 10 from terminal width so pytest leaves room for inline
+    # durations "(1m 7s)" which it adds AFTER computing the padding.
+    local _real_cols _cols
+    _real_cols="$(tput cols 2>/dev/null)" || _real_cols="${COLUMNS:-120}"
+    _cols=$(( _real_cols > 30 ? _real_cols - 10 : _real_cols ))
+    # Real-time output: script | tee (no intermediate processing).
+    # Adding awk/sed between script and tee causes buffering that
+    # delays output until the suite finishes — not acceptable for
+    # long-running suites (live, functional) where the user needs to
+    # see progress.
     FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \
         script -qefc "stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
-        | stdbuf -oL awk -v cols="$_cols" '
-        function strip_ansi(s) {
-            gsub(/\033\[[0-9;?]*[a-zA-Z]/, "", s)
-            gsub(/\r/, "", s)
-            return s
-        }
-        # Visible length of string (without ANSI codes)
-        function vlen(s) {
-            t = s
-            gsub(/\033\[[0-9;?]*[a-zA-Z]/, "", t)
-            return length(t)
-        }
-        {
-            plain = strip_ansi($0)
-            if (match(plain, /\[[ ]*[0-9]+%\][ ]*$/)) {
-                # Extract and normalise percentage: [  1%] → [1%]
-                pct = substr(plain, RSTART, RLENGTH)
-                gsub(/[ ]/, "", pct)
-
-                # Find the content end in the plain line (before padding)
-                content_end = RSTART - 1
-                while (content_end > 0 && substr(plain, content_end, 1) == " ")
-                    content_end--
-                content_w = content_end
-
-                # Extract the ANSI-coloured content from the raw line.
-                # We walk the raw line char-by-char, counting visible chars
-                # until we reach content_end visible chars.
-                raw = $0
-                gsub(/\r$/, "", raw)
-                n = length(raw); vi = 0; ci = 0; in_esc = 0
-                for (i = 1; i <= n; i++) {
-                    c = substr(raw, i, 1)
-                    if (c == "\033") { in_esc = 1 }
-                    if (!in_esc) vi++
-                    if (in_esc && c ~ /[a-zA-Z]/) in_esc = 0
-                    ci = i
-                    if (vi >= content_w) break
-                }
-                colored_content = substr(raw, 1, ci)
-                # Reset ANSI at the end of content
-                reset = "\033[0m"
-
-                pad = cols - content_w - length(pct)
-                if (pad < 1) pad = 1
-                printf "%s%s%*s%s\n", colored_content, reset, pad, "", pct
-                fflush()
-                next
-            }
-            print
-            fflush()
-        }
-        ' \
         | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
