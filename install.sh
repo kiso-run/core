@@ -488,8 +488,8 @@ ask_network_and_external_url() {
     _net_choice="${_net_choice:-2}"
     if [[ "$_net_choice" == "1" ]]; then
         NETWORK_MODE="local"
-        yellow "  ℹ  Pub file links won't be reachable from outside." >&2
-        yellow "  Set up a reverse proxy for external access. See: docs/https.md" >&2
+        yellow "  ℹ  For file download links, use http://localhost:${SERVER_PORT:-8333}" >&2
+        yellow "  For external access, set up a reverse proxy. See: docs/https.md" >&2
     else
         NETWORK_MODE="public"
         yellow "  ⚠  API exposed over HTTP (no encryption)." >&2
@@ -499,24 +499,29 @@ ask_network_and_external_url() {
     fi
     echo >&2
 
-    # Autodetect public IP (prefer IPv4, fallback to IPv6)
+    # External URL for file download links
     bold "External URL (for file download links):" >&2
     local pub_ip default_url _port="${SERVER_PORT:-8333}"
-    pub_ip=$(curl -4 -sf --max-time 5 https://ifconfig.me 2>/dev/null \
-          || curl -4 -sf --max-time 5 https://api.ipify.org 2>/dev/null \
-          || curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
-          || true)
-    if [[ -n "$pub_ip" ]]; then
-        # IPv6 addresses need brackets in URLs
-        if [[ "$pub_ip" == *:* ]]; then
-            default_url="http://[${pub_ip}]:${_port}"
-        else
-            default_url="http://${pub_ip}:${_port}"
-        fi
-        yellow "  Detected public IP: $pub_ip" >&2
+    if [[ "$NETWORK_MODE" == "local" ]]; then
+        default_url="http://localhost:${_port}"
     else
-        default_url=""
-        yellow "  Could not detect public IP. Leave empty for local use." >&2
+        # Autodetect public IP (prefer IPv4, fallback to IPv6)
+        pub_ip=$(curl -4 -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+              || curl -4 -sf --max-time 5 https://api.ipify.org 2>/dev/null \
+              || curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+              || true)
+        if [[ -n "$pub_ip" ]]; then
+            # IPv6 addresses need brackets in URLs
+            if [[ "$pub_ip" == *:* ]]; then
+                default_url="http://[${pub_ip}]:${_port}"
+            else
+                default_url="http://${pub_ip}:${_port}"
+            fi
+            yellow "  Detected public IP: $pub_ip" >&2
+        else
+            default_url="http://localhost:${_port}"
+            yellow "  Could not detect public IP." >&2
+        fi
     fi
     safe_read -rp "  External URL [$default_url]: " EXTERNAL_URL
     EXTERNAL_URL="${EXTERNAL_URL:-$default_url}"
