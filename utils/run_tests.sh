@@ -240,6 +240,12 @@ _flush_test_block() {
 # ---------------------------------------------------------------------------
 FAILED=0
 
+# Track suite results for the recap
+declare -a _SUITE_NAMES=()
+declare -a _SUITE_STATUSES=()   # "passed" | "failed" | "skipped"
+declare -a _SUITE_TIMES=()
+declare -a _SUITE_DETAILS=()    # "N passed, M failed" or skip reason
+
 _format_elapsed() {
     local secs=$1
     if [[ $secs -ge 60 ]]; then
@@ -249,10 +255,51 @@ _format_elapsed() {
     fi
 }
 
+# Record a skipped suite (called when prerequisites are missing).
+_record_skip() {
+    local name="$1" reason="$2"
+    _SUITE_NAMES+=("$name")
+    _SUITE_STATUSES+=("skipped")
+    _SUITE_TIMES+=("-")
+    _SUITE_DETAILS+=("$reason")
+}
+
+# Extract test counts from captured output.  Sets _PYTEST_SUMMARY.
+# Handles pytest ("3 passed, 1 failed in 2.50s") and bats ("ok 1 ..").
+_extract_pytest_counts() {
+    local logfile="$1"
+    _PYTEST_SUMMARY=""
+    [[ ! -s "$logfile" ]] && return
+    local clean
+    clean="$(_strip_ansi < "$logfile")"
+
+    # pytest: grab the last summary line including "in X.XXs"
+    local line
+    line="$(echo "$clean" | grep -oP '\d+ (passed|failed|skipped|error|warnings?|deselected)(,\s*\d+ (passed|failed|skipped|error|warnings?|deselected))*(\s+in\s+[\d.]+s)?' | tail -1)" || true
+    if [[ -n "$line" ]]; then
+        _PYTEST_SUMMARY="$line"
+        return
+    fi
+
+    # bats: TAP format ("ok N"/"not ok N") or pretty ("N/M ✓"/"N/M ✗")
+    local ok not_ok
+    ok="$(echo "$clean" | grep -cP '(^ok \d+|\d+/\d+\s*✓)' 2>/dev/null)" || ok=0
+    not_ok="$(echo "$clean" | grep -cP '(^not ok \d+|\d+/\d+\s*✗)' 2>/dev/null)" || not_ok=0
+    if [[ $(( ok + not_ok )) -gt 0 ]]; then
+        _PYTEST_SUMMARY="${ok} passed"
+        if [[ $not_ok -gt 0 ]]; then
+            _PYTEST_SUMMARY+=", ${not_ok} failed"
+        fi
+    fi
+}
+
 run_suite() {
     local name="$1"; shift
     echo -e "\n${YELLOW}━━━ $name ━━━${NC}"
     local start=$SECONDS rc=0
+    # Capture this suite's output separately for per-suite counting
+    local _suite_log
+    _suite_log="$(mktemp "$_CAPTURE_DIR/suite_XXXX.log")"
     # Use 'script' to create a pseudo-TTY so all commands (Docker BuildKit,
     # pytest, bats) see a real terminal and emit colors.  'stty columns'
     # sets the actual PTY width (COLUMNS env var alone does not resize it).
@@ -261,15 +308,28 @@ run_suite() {
     _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-80}"
     FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \
         script -qefc "stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
-        | tee -a "$_CAPTURE_LOG" || rc=${PIPESTATUS[0]}
+        | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
+
+    _extract_pytest_counts "$_suite_log"
+    local detail="${_PYTEST_SUMMARY:-done}"
+
     if [[ "$rc" -eq 0 || "$rc" -eq 5 ]]; then
         echo -e "${GREEN}✓ $name: PASSED${NC} ${DIM}(${time_str})${NC}"
+        _SUITE_NAMES+=("$name")
+        _SUITE_STATUSES+=("passed")
+        _SUITE_TIMES+=("$time_str")
+        _SUITE_DETAILS+=("$detail")
     else
         echo -e "${RED}✗ $name: FAILED${NC} ${DIM}(${time_str})${NC}"
         FAILED=1
+        _SUITE_NAMES+=("$name")
+        _SUITE_STATUSES+=("failed")
+        _SUITE_TIMES+=("$time_str")
+        _SUITE_DETAILS+=("$detail")
     fi
+    rm -f "$_suite_log"
 }
 
 # ---------------------------------------------------------------------------
@@ -286,7 +346,8 @@ run_bash() {
     if [[ "$HAS_BATS" == true ]]; then
         run_suite "Bash tests" bats tests/bash/
     else
-        echo -e "${YELLOW}⚠ Skipping bash tests — bats not installed (npm install -g bats)${NC}"
+        echo -e "${YELLOW}⚠ Skipping bash tests — bats not installed${NC}"
+        _record_skip "Bash tests" "no bats"
     fi
 }
 
@@ -298,7 +359,8 @@ run_live() {
     if [[ "$HAS_API_KEY" == true ]]; then
         run_suite "Live tests" uv run pytest tests/live/ -v --live-network --llm-live
     else
-        echo -e "${YELLOW}⚠ Skipping live tests — OPENROUTER_API_KEY not set${NC}"
+        echo -e "${YELLOW}⚠ Skipping live tests — no API key${NC}"
+        _record_skip "Live tests" "no API key"
     fi
 }
 
@@ -308,17 +370,20 @@ run_docker() {
             docker compose -f docker-compose.test.yml run --build --rm \
             -e FORCE_COLOR=1 test-docker
     else
-        echo -e "${YELLOW}⚠ Skipping docker tests — Docker not available${NC}"
+        echo -e "${YELLOW}⚠ Skipping docker tests — no Docker${NC}"
+        _record_skip "Docker tests" "no Docker"
     fi
 }
 
 run_functional() {
     if [[ "$HAS_DOCKER" != true ]]; then
-        echo -e "${YELLOW}⚠ Skipping functional tests — Docker not available${NC}"
+        echo -e "${YELLOW}⚠ Skipping functional tests — no Docker${NC}"
+        _record_skip "Functional tests" "no Docker"
         return
     fi
     if [[ "$HAS_API_KEY" != true ]]; then
-        echo -e "${YELLOW}⚠ Skipping functional tests — OPENROUTER_API_KEY not set${NC}"
+        echo -e "${YELLOW}⚠ Skipping functional tests — no API key${NC}"
+        _record_skip "Functional tests" "no API key"
         return
     fi
     # Exclude extended tests — those run separately via run_extended()
@@ -332,11 +397,13 @@ run_functional() {
 
 run_extended() {
     if [[ "$HAS_DOCKER" != true ]]; then
-        echo -e "${YELLOW}⚠ Skipping extended tests — Docker not available${NC}"
+        echo -e "${YELLOW}⚠ Skipping extended tests — no Docker${NC}"
+        _record_skip "Extended tests" "no Docker"
         return
     fi
     if [[ "$HAS_API_KEY" != true ]]; then
-        echo -e "${YELLOW}⚠ Skipping extended tests — OPENROUTER_API_KEY not set${NC}"
+        echo -e "${YELLOW}⚠ Skipping extended tests — no API key${NC}"
+        _record_skip "Extended tests" "no API key"
         return
     fi
     run_suite "Extended tests" \
@@ -364,11 +431,13 @@ run_plugins() {
 
 run_interactive() {
     if [[ "$HAS_DOCKER" != true ]]; then
-        echo -e "${YELLOW}⚠ Skipping interactive tests — Docker not available${NC}"
+        echo -e "${YELLOW}⚠ Skipping interactive tests — no Docker${NC}"
+        _record_skip "Interactive tests" "no Docker"
         return
     fi
     if [[ "$HAS_API_KEY" != true ]]; then
-        echo -e "${YELLOW}⚠ Skipping interactive tests — OPENROUTER_API_KEY not set${NC}"
+        echo -e "${YELLOW}⚠ Skipping interactive tests — no API key${NC}"
+        _record_skip "Interactive tests" "no API key"
         return
     fi
     run_suite "Interactive tests" \
@@ -661,7 +730,63 @@ else
     run_interactive_menu
 fi
 
-echo ""
+# ---------------------------------------------------------------------------
+# Recap
+# ---------------------------------------------------------------------------
+_print_recap() {
+    local n_passed=0 n_failed=0 n_skipped=0
+    for s in "${_SUITE_STATUSES[@]}"; do
+        case "$s" in
+            passed)  n_passed=$(( n_passed + 1 )) ;;
+            failed)  n_failed=$(( n_failed + 1 )) ;;
+            skipped) n_skipped=$(( n_skipped + 1 )) ;;
+        esac
+    done
+    local total=$(( n_passed + n_failed + n_skipped ))
+    [[ $total -eq 0 ]] && return
+
+    echo ""
+    echo -e "${BOLD}━━━ RECAP ━━━${NC}"
+    echo ""
+
+    for i in "${!_SUITE_NAMES[@]}"; do
+        local name="${_SUITE_NAMES[$i]}"
+        local status="${_SUITE_STATUSES[$i]}"
+        local time="${_SUITE_TIMES[$i]}"
+        local detail="${_SUITE_DETAILS[$i]}"
+
+        local icon color
+        case "$status" in
+            passed)  icon="✓"; color="$GREEN" ;;
+            failed)  icon="✗"; color="$RED" ;;
+            skipped) icon="⊘"; color="$YELLOW" ;;
+        esac
+
+        printf "${color}  %s %-24s${NC}" "$icon" "$name"
+        if [[ "$status" == "skipped" ]]; then
+            echo -e " ${DIM}($detail)${NC}"
+        elif [[ "$detail" == *" in "* ]]; then
+            # pytest summary already includes timing (e.g. "3696 passed in 94s")
+            echo -e " ${DIM}${detail}${NC}"
+        else
+            echo -e " ${DIM}${detail} (${time})${NC}"
+        fi
+    done
+
+    echo ""
+    local summary="${GREEN}${n_passed} passed${NC}"
+    if [[ $n_failed -gt 0 ]]; then
+        summary+=", ${RED}${n_failed} failed${NC}"
+    fi
+    if [[ $n_skipped -gt 0 ]]; then
+        summary+=", ${YELLOW}${n_skipped} skipped${NC}"
+    fi
+    echo -e "  ${BOLD}Suites:${NC} $summary"
+    echo ""
+}
+
+_print_recap
+
 if [[ "$FAILED" -eq 0 ]]; then
     echo -e "${GREEN}All executed suites passed.${NC}"
 else
