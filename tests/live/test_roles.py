@@ -718,45 +718,9 @@ class TestExecTranslatorSudoLive:
         )
         assert "apt" in command.lower()
 
-    async def test_non_root_with_sudo_keeps_sudo(self, live_config):
-        """What: Translates same task with non-root sysenv + sudo available.
-
-        Why: Validates the worker keeps sudo when not running as root.
-        Expects: Command containing 'sudo'.
-        """
-        from kiso.config import KISO_DIR
-        fake_env = {
-            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
-                   "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
-            "user_info": {"user": "kiso", "is_root": False, "has_sudo": True},
-            "shell": "/bin/sh",
-            "exec_cwd": str(KISO_DIR / "sessions"),
-            "exec_env": "PATH",
-            "max_output_size": 1_048_576,
-            "available_binaries": ["apt-get", "curl", "git", "sudo"],
-            "missing_binaries": [],
-            "connectors": [],
-            "max_plan_tasks": 20,
-            "max_replan_depth": 3,
-            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
-            "reference_docs_path": str(KISO_DIR / "reference"),
-            "registry_url": "https://example.com/registry.json",
-        }
-        sys_env_text = build_system_env_section(fake_env, session="test-sess")
-        command = await asyncio.wait_for(
-            run_exec_translator(
-                live_config,
-                "Install timg using sudo apt install",
-                sys_env_text,
-            ),
-            timeout=TIMEOUT,
-        )
-        assert isinstance(command, str)
-        assert len(command) > 0
-        assert command != "CANNOT_TRANSLATE"
-        assert "sudo" in command.lower(), (
-            f"Worker should keep sudo for non-root, got: {command}"
-        )
+    # M951: test_non_root_with_sudo_keeps_sudo removed — Kiso runs
+    # exclusively as root in Docker; non-root + sudo scenario doesn't
+    # exist in production.
 
 
 # ---------------------------------------------------------------------------
