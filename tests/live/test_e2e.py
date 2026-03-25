@@ -151,14 +151,12 @@ class TestReplanFlowE2E:
             seeded_db, live_session, msg_id,
             "Create a report file in the project directory",
         )
-        # Deliberately failing exec — writing to a nonexistent deep path is
-        # clearly an action (not verification), so the translator won't add
-        # || true.  mkdir -p won't be used either because the detail says
-        # "write to" an existing path.
+        # Deliberately failing exec — /proc is a virtual filesystem where
+        # mkdir -p always fails, even as root.  No workaround exists.
         await create_task(
             seeded_db, plan_id, live_session,
             type="exec",
-            detail="Write 'hello world' to /absolutely_nonexistent_dir_xyz_12345/report.txt",
+            detail="Write 'hello world' to /proc/nonexistent/report.txt",
             expect="File created successfully at the specified path",
         )
         await create_task(
