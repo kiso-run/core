@@ -306,8 +306,15 @@ run_suite() {
     # Prefer tput (reads real TTY) over COLUMNS env.
     local _cols
     _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-120}"
+    # Collapse pytest's padding between PASSED/FAILED and the progress
+    # percentage.  pytest 9+ adds inline durations AFTER computing padding,
+    # pushing the percentage past the terminal width.  The sed below strips
+    # runs of spaces (possibly interspersed with ANSI codes) that appear
+    # between the result/duration and the bracket of the progress indicator.
+    # E.g.: "PASSED (1.2s)\e[0m\e[32m           [ 33%]" → "PASSED (1.2s) [ 33%]"
     FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \
         script -qefc "stty columns $_cols 2>/dev/null; $(printf '%q ' "$@")" /dev/null \
+        | sed -u 's/\(  \)\(\(\x1b\[[0-9;]*m\)*  *\)*\(\x1b\[[0-9;]*m\)*\(\[[ 0-9]*%\]\)/ \4\5/' \
         | tee -a "$_CAPTURE_LOG" "$_suite_log" || rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local time_str="$(_format_elapsed $elapsed)"
