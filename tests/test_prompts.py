@@ -26,7 +26,7 @@ _EXPECTED_ROLES = [
 # Only include terms that are structurally essential, not cosmetic phrasing.
 _ROLE_CORE_TERMS: list[tuple[str, list[str]]] = [
     ("planner.md", ["json plan", "goal", "tasks", "msg", "replan"]),
-    ("reviewer.md", ["ok", "replan", "stuck", "expect", "summary"]),
+    ("reviewer.md", ["ok", "replan", "stuck", "expect", "summary", "deterministic"]),
     ("messenger.md", ["language", "verbatim", "fabricat", "published files", "digits"]),
     ("worker.md", ["cannot_translate", "sudo"]),
     ("classifier.md", ["plan", "chat"]),

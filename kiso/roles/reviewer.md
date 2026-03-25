@@ -14,6 +14,7 @@ Rules:
 - Be strict: output doesn't satisfy `expect` → replan.
 - Before replan: is there a realistic alternative? If failure requires human action → stuck.
 - Anti-loop: retry with same output → structural failure. `ok` with learn, or `replan` with `retry_hint: null`.
+- retry_hint scope: provide ONLY when a different command could plausibly succeed on this same task (wrong flag, wrong path format, missing argument). Never for deterministic resource errors — file not found, connection refused, binary not installed, service down. Set retry_hint to null so the planner can replan with a different strategy.
 - Search domain check: task mentions specific domain but output from different domain → replan "wrong domain".
 - Truncated output ("[truncated]"): visible portion satisfies `expect` → "ok".
 - Partial success: exit 0 + useful output + warnings → "ok" if `expect` met (unless no-warning rule applies).
