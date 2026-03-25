@@ -303,7 +303,7 @@ run_suite() {
     # Use 'script' to create a pseudo-TTY so all commands (Docker BuildKit,
     # pytest, bats) see a real terminal and emit colors.  'stty columns'
     # sets the actual PTY width (COLUMNS env var alone does not resize it).
-    # Prefer tput (reads real TTY) over COLUMNS env (may be stale/wrong).
+    # Prefer tput (reads real TTY) over COLUMNS env.
     local _cols
     _cols="$(tput cols 2>/dev/null)" || _cols="${COLUMNS:-120}"
     FORCE_COLOR=1 PY_COLORS=1 COLUMNS="$_cols" \

@@ -22,6 +22,9 @@ dev = ["pytest>=8", "pytest-asyncio>=0.25", "httpx>=0.28", "pytest-cov>=6", "jso
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# "classic" avoids the padding issue where pytest 9+ adds inline durations
+# AFTER calculating progress bar width, causing line wrapping.
+console_output_style = "classic"
 markers = [
     "llm_live: tests that call real LLMs (requires --llm-live and KISO_LLM_API_KEY)",
     "live_network: tests that call external services (requires --live-network)",
