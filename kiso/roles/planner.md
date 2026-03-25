@@ -39,7 +39,7 @@ Rules:
 - Plan ONLY what the New Message asks. Recent Messages are background context only.
 - If you lack info, plan exec/search + replan to investigate first.
 - Public files: write to `pub/`. Never use URLs as filesystem paths.
-- **File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL.
+- **File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL — never ask exec tasks to echo or output pub/ URLs.
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
 - The first task must be exec, tool, search, or replan — never msg. Intermediate msg tasks report results from already-completed tasks only. Never describe upcoming steps or announce the plan. For plans with 8+ tasks: one intermediate msg after every 5 completed exec/tool/search tasks. Shorter plans need only the final msg.

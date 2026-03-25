@@ -111,7 +111,7 @@ class TestPromptSizeRegression:
     """Prompt files must not exceed size budgets (token cost guard)."""
 
     @pytest.mark.parametrize("filename,max_chars", [
-        ("planner.md", 10500),
+        ("planner.md", 10700),  # M958: +120 chars (pub URL rule)
         ("messenger.md", 2500),
         ("reviewer.md", 3200),
     ])
@@ -208,7 +208,7 @@ class TestPromptSizes:
     def test_planner_prompt_word_count(self):
         text = _ROLES_DIR.joinpath("planner.md").read_text()
         words = len(text.split())
-        assert words <= 1600, f"planner.md has {words} words (max 1600)"
+        assert words <= 1650, f"planner.md has {words} words (max 1650)"
 
     def test_messenger_prompt_word_count(self):
         text = _ROLES_DIR.joinpath("messenger.md").read_text()

@@ -376,7 +376,7 @@ def build_system_env_essential(env: dict, session: str = "") -> str:
     else:
         cwd = env["exec_cwd"] + "/<session>/"
     lines.append(f"Exec CWD: {cwd}")
-    lines.append("Public files: write to pub/ in exec CWD → auto-served at /pub/ URLs (no auth needed)")
+    lines.append("Public files: write to pub/ in exec CWD → system auto-generates authenticated download URLs")
     lines.append(f"Blocked commands: {_BLOCKED_COMMANDS}")
     lines.append(
         f"Plan limits: max {env['max_plan_tasks']} tasks per plan, "
@@ -421,7 +421,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
         cwd = env["exec_cwd"] + "/<session>/"
     lines.append(f"Exec CWD: {cwd}")
     lines.append("Network: outbound internet access available (use `curl` for HTTP requests, `wget` for downloads)")
-    lines.append("Public files: write to pub/ in exec CWD → auto-served at /pub/ URLs (no auth needed)")
+    lines.append("Public files: write to pub/ in exec CWD → system auto-generates authenticated download URLs")
     if session:
         ws_files = _collect_workspace_files(session)
         if ws_files:
