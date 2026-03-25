@@ -532,7 +532,6 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "Plugin registry:" in section
         assert "registry.json" in section
-        assert "curl to discover" in section
 
     def test_contains_network_line(self, sample_env):
         """Output contains the Network line."""

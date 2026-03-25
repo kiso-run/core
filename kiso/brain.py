@@ -743,10 +743,13 @@ def _validate_plan_tasks(
             if _is_plugin_discovery_search(task.get("detail", "")):
                 errors.append(
                     f"Task {i}: search cannot be used for kiso plugin discovery. "
-                    "Check registry_hints: if the tool name appears there, "
-                    "use an exec task with `curl <registry_url>` to discover details. "
-                    "If the tool name is NOT in registry_hints, it is not a kiso tool — "
-                    "plan a msg task informing the user the tool is not available"
+                    "If the tool name appears in registry_hints or "
+                    "'Available Tools (not installed)', it is a kiso tool — "
+                    "use the kiso_native install flow (set needs_install, "
+                    "msg for approval). If it does NOT appear there, it is "
+                    "not a kiso plugin — for system packages use the package "
+                    "manager (e.g. apt-get install), for Python libraries "
+                    "use uv pip install."
                 )
             if task.get("tool") is not None:
                 errors.append(f"Task {i}: search task must have tool = null")

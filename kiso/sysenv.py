@@ -433,7 +433,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
     lines.append(f"Reference docs: {env['reference_docs_path']} (tool/connector authoring guides — cat before planning)")
-    lines.append(f"Plugin registry: {env['registry_url']} (curl to discover available tools/connectors)")
+    lines.append(f"Plugin registry: {env['registry_url']}")
     lines.append(f"Max output: {_format_size(env['max_output_size'])}")
     lines.append("")
 
