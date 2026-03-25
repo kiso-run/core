@@ -110,9 +110,10 @@ class TestF8ScriptExecution:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
 
-        # Response is in Italian
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
+        # Response is in Italian (use last_plan_msg_output to exclude
+        # English replan notifications from earlier plans)
+        assert_italian(result.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
         # Check that Fibonacci computation ran — accept either counting convention:
         # 0-indexed: [0, 1, ..., 4181] or 1-indexed: [1, 1, ..., 6765]
