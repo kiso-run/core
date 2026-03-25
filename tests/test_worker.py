@@ -1479,7 +1479,7 @@ class TestReviewTaskLargeOutput:
 
         # Reviewer should have received truncated output, not 100KB
         assert len(captured_output) == 1
-        assert len(captured_output[0]) <= 5000  # well under 100KB
+        assert len(captured_output[0]) <= 17000  # well under 100KB, within 16K limit
 
     async def test_error_in_middle_reaches_reviewer(self, db):
         """Error line buried in large stdout reaches the reviewer via grep section."""
