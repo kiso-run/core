@@ -1227,6 +1227,97 @@ class TestBuildPlannerMessages:
         user_content = msgs[1]["content"]
         assert "System Environment" in user_content
 
+    async def test_install_context_injected_with_kiso_native(self, db, config):
+        """M963: Install Context section injected when kiso_native is force-added."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        with (
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": [], "context": "",
+                "output_indices": [], "relevant_tags": [],
+                "relevant_entities": [],
+            }),
+            patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git, python3, uv"),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "install flask",
+            )
+        user_content = msgs[1]["content"]
+        assert "Install Context" in user_content
+        assert "Available binaries" in user_content
+
+    async def test_install_context_not_injected_with_full_sysenv(self, db, config):
+        """M963: Install Context skipped when full sysenv is already injected."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        with (
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            # Briefer selects plugin_install → triggers full sysenv
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": ["plugin_install"], "tools": [],
+                "context": "", "output_indices": [],
+                "relevant_tags": [], "relevant_entities": [],
+            }),
+            patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git"),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "install browser tool",
+            )
+        user_content = msgs[1]["content"]
+        # Full sysenv already has binaries, Install Context should not be duplicated
+        assert "Install Context" not in user_content
+
+    async def test_install_context_not_injected_when_tools_installed(self, db, config):
+        """M963: Install Context skipped when tools are installed and no registry."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        fake_skill = {
+            "name": "browser", "summary": "browser automation",
+            "args": [], "guide": "",
+        }
+        with (
+            patch("kiso.brain.discover_tools", return_value=[fake_skill]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            # Empty registry → kiso_native not force-added
+            patch("kiso.brain.get_registry_tools", return_value=""),
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": ["browser — navigate"],
+                "context": "", "output_indices": [],
+                "relevant_tags": [], "relevant_entities": [],
+            }),
+            patch("kiso.brain.build_install_context", return_value="Package manager: apt"),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "take a screenshot",
+            )
+        user_content = msgs[1]["content"]
+        # Tools installed + empty registry → kiso_native not force-added → no Install Context
+        assert "Install Context" not in user_content
+
     async def test_briefer_always_forces_planning_rules(self, db, config):
         """M959: briefer path always includes planning_rules module."""
         await create_session(db, "sess1")

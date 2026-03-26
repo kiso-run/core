@@ -385,6 +385,23 @@ def build_system_env_essential(env: dict, session: str = "") -> str:
     return "\n".join(lines)
 
 
+def build_install_context(env: dict) -> str:
+    """Install-critical fields for the planner (~40-80 tokens).
+
+    Injected alongside ``sys_env_essential`` when the planner loads
+    kiso_native install-decision rules but the full system environment
+    is not warranted.  Contains only what the planner needs to route
+    install commands correctly: package manager and available binaries.
+    """
+    lines: list[str] = []
+    pkg_manager = env.get("os", {}).get("pkg_manager")
+    if pkg_manager:
+        lines.append(f"Package manager: {pkg_manager}")
+    if env.get("available_binaries"):
+        lines.append(f"Available binaries: {', '.join(env['available_binaries'])}")
+    return "\n".join(lines)
+
+
 def build_system_env_section(env: dict, session: str = "") -> str:
     """Full system env for the worker and install-related planner calls.
 

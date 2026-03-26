@@ -24,7 +24,7 @@ from kiso.store import (
     get_behavior_facts, get_recent_messages, get_safety_facts, get_session, search_facts,
     search_facts_by_entity, search_facts_by_tags, search_facts_scored,
 )
-from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section
+from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section, build_install_context
 
 log = logging.getLogger(__name__)
 
@@ -1092,11 +1092,11 @@ async def _gather_planner_context(
     user_role: str,
     new_message: str,
     paraphrased_context: str | None = None,
-) -> tuple[str, list, list, list, dict, str, str]:
+) -> tuple[str, list, list, list, dict, str, str, str]:
     """Gather all raw context pieces for the planner.
 
     Returns (summary, facts, pending, recent, context_pool,
-    sys_env_essential, sys_env_full).
+    sys_env_essential, sys_env_full, install_ctx).
     The context_pool dict is suitable for the briefer.
     """
     is_admin = user_role == "admin"
@@ -1128,6 +1128,7 @@ async def _gather_planner_context(
     sys_env = get_system_env(config)
     sys_env_essential = build_system_env_essential(sys_env, session=session)
     sys_env_full = build_system_env_section(sys_env, session=session)
+    install_ctx = build_install_context(sys_env)
 
     context_pool: dict = {}
     if summary:
@@ -1158,7 +1159,7 @@ async def _gather_planner_context(
             f"{e['name']} ({e['kind']})" for e in all_entities
         )
 
-    return summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full
+    return summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full, install_ctx
 
 
 async def build_planner_messages(
@@ -1186,7 +1187,7 @@ async def build_planner_messages(
     tools_info list for args validation without rescanning the filesystem.
     """
     # Gather raw context
-    summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full = \
+    summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full, install_ctx = \
         await _gather_planner_context(
             db, config, session, user_role, new_message, paraphrased_context,
         )
@@ -1348,6 +1349,11 @@ async def build_planner_messages(
             context_parts.append(f"## System Environment\n{sys_env_full}")
         else:
             context_parts.append(f"## System Environment\n{sys_env_essential}")
+            # M963: when kiso_native is loaded (install-decision rules) but
+            # full sysenv isn't warranted, inject just the install-critical
+            # fields so the planner can route install commands correctly.
+            if "kiso_native" in modules and install_ctx:
+                _add_section(context_parts, "Install Context", install_ctx)
         # Session workspace files + previous plan results — operational data
         # that must reach the planner verbatim (not gated by briefer synthesis).
         _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))

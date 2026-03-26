@@ -19,6 +19,7 @@ from kiso.sysenv import (
     _collect_workspace_files,
     _detect_pkg_manager,
     _load_registry_hints,
+    build_install_context,
     build_system_env_essential,
     build_system_env_section,
     collect_system_env,
@@ -605,6 +606,39 @@ class TestBuildSystemEnvEssential:
         essential = build_system_env_essential(sample_env)
         full = build_system_env_section(full_env)
         assert len(essential) < len(full) * 0.5
+
+
+# --- M963: build_install_context ---
+
+
+class TestBuildInstallContext:
+    """M963: install context contains only pkg_manager and available_binaries."""
+
+    def test_both_present(self):
+        env = {
+            "os": {"pkg_manager": "apt"},
+            "available_binaries": ["git", "python3", "uv"],
+        }
+        ctx = build_install_context(env)
+        assert "Package manager: apt" in ctx
+        assert "Available binaries: git, python3, uv" in ctx
+
+    def test_empty_when_nothing_available(self):
+        env = {"os": {}, "available_binaries": []}
+        ctx = build_install_context(env)
+        assert ctx == ""
+
+    def test_only_pkg_manager(self):
+        env = {"os": {"pkg_manager": "dnf"}, "available_binaries": []}
+        ctx = build_install_context(env)
+        assert "Package manager: dnf" in ctx
+        assert "Available binaries" not in ctx
+
+    def test_only_binaries(self):
+        env = {"os": {}, "available_binaries": ["curl", "wget"]}
+        ctx = build_install_context(env)
+        assert "Package manager" not in ctx
+        assert "Available binaries: curl, wget" in ctx
 
 
 # --- _collect_binaries with sys/bin ---
