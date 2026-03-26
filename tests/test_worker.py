@@ -8743,6 +8743,56 @@ class TestTaskHandlers:
         assert result.plan_output["index"] == 1
         assert result.plan_output["detail"] == "echo hello"
 
+    async def test_handle_exec_install_blocked_without_approval(self, db, plan_id, tmp_path):
+        """M965: exec install command blocked when install_approved=False."""
+        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
+        ctx = _make_ctx(db)
+        assert ctx.install_approved is False
+        with patch(
+            "kiso.worker.loop.run_exec_translator",
+            new_callable=AsyncMock,
+            return_value="kiso tool install ocr",
+        ), _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert "approval required" in (result.stop_replan or "")
+
+    async def test_handle_exec_install_allowed_with_approval(self, db, plan_id, tmp_path):
+        """M965: exec install command allowed when install_approved=True."""
+        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
+        ctx = _make_ctx(db)
+        ctx.install_approved = True
+        with patch(
+            "kiso.worker.loop.run_exec_translator",
+            new_callable=AsyncMock,
+            return_value="kiso tool install ocr",
+        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                 return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        # Should NOT be blocked — runs through to review
+        assert result.completed_row is not None
+
+    async def test_handle_exec_tool_list_not_blocked(self, db, plan_id, tmp_path):
+        """M965: kiso tool list is not blocked (not an install command)."""
+        task_row = await _make_task_row(db, plan_id, "exec", "List installed tools")
+        ctx = _make_ctx(db)
+        assert ctx.install_approved is False
+        with patch(
+            "kiso.worker.loop.run_exec_translator",
+            new_callable=AsyncMock,
+            return_value="kiso tool list",
+        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                 return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        # tool list should pass through — not an install command
+        assert result.completed_row is not None
+
     # --- _handle_search_task ---
 
     async def test_handle_search_task_success(self, db, plan_id, tmp_path):

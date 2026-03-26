@@ -767,6 +767,7 @@ class _PlanCtx:
     sandbox_uid: "int | None"
     base_url: str = ""
     response_lang: str = "en"
+    install_approved: bool = False
     cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
@@ -1278,6 +1279,19 @@ async def _handle_exec_task(
         if ctx.slog:
             ctx.slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
 
+        # M965: block tool install commands that bypassed the approval flow.
+        # The planner should use needs_install + msg, not exec install.
+        if not ctx.install_approved and _INSTALL_CMD_RE.search(command):
+            error_output = (
+                "Tool installation blocked — user approval required. "
+                "Set needs_install in your plan and ask the user first."
+            )
+            log.warning("Exec task %d blocked: install without approval: %s", task_id, command[:120])
+            return await _fail_task_and_audit(
+                ctx, task_id, TASK_TYPE_EXEC, detail, error_output, i + 1,
+                output="", stderr=error_output,
+            )
+
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
         stdout, stderr, success, exit_code = await _exec_task(
@@ -1487,6 +1501,7 @@ async def _execute_plan(
     slog: SessionLogger | None = None,
     base_url: str = "",
     response_lang: str = "en",
+    install_approved: bool = False,
 ) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
@@ -1518,6 +1533,7 @@ async def _execute_plan(
         installed_tools=installed_tools,
         slog=slog,
         base_url=base_url,
+        install_approved=install_approved,
         response_lang=response_lang,
         cancel_event=cancel_event,
         sandbox_uid=None,
@@ -2129,6 +2145,7 @@ async def _run_planning_loop(
             session_secrets=session_secrets, username=username,
             cancel_event=cancel_event, slog=slog, base_url=base_url,
             response_lang=response_lang,
+            install_approved=install_approved,
         )
 
         if success:
