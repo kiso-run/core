@@ -279,6 +279,30 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("empty or too short" in e for e in errors)
 
+    def test_knowledge_valid_items_accepted(self):
+        """M968: knowledge items with sufficient length pass validation."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "tool": None, "args": None},
+        ], "knowledge": ["Artemis project uses PostgreSQL 16 as primary database"]}
+        errors = validate_plan(plan)
+        assert not any("knowledge" in e for e in errors)
+
+    def test_knowledge_null_accepted(self):
+        """M968: knowledge=null passes validation."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "tool": None, "args": None},
+        ], "knowledge": None}
+        errors = validate_plan(plan)
+        assert not any("knowledge" in e for e in errors)
+
+    def test_knowledge_short_item_rejected(self):
+        """M968: knowledge items shorter than _MIN_PROMOTED_FACT_LEN are rejected."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "tool": None, "args": None},
+        ], "knowledge": ["too short"]}
+        errors = validate_plan(plan)
+        assert any("knowledge" in e for e in errors)
+
     def test_last_task_not_msg(self):
         plan = {"tasks": [
             {"type": "exec", "detail": "ls", "expect": "ok"},
@@ -1679,7 +1703,7 @@ class TestM83PlanSchema:
             _jsonschema.validate(instance=instance, schema=_PLAN_SCHEMA_INNER)
 
     def _plan(self, **overrides):
-        base = {"goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}], "extend_replan": None, "needs_install": None}
+        base = {"goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}], "extend_replan": None, "needs_install": None, "knowledge": None}
         base.update(overrides)
         return base
 
@@ -1769,6 +1793,19 @@ class TestM83PlanSchema:
         self._valid(self._plan(tasks=[
             {"type": "msg", "detail": "Hello", "tool": None, "args": None, "expect": None},
         ]))
+
+    # M968: knowledge field
+    def test_knowledge_null_valid(self):
+        self._valid(self._plan(knowledge=None))
+
+    def test_knowledge_array_valid(self):
+        self._valid(self._plan(knowledge=["Artemis uses PostgreSQL 16"]))
+
+    def test_knowledge_empty_array_valid(self):
+        self._valid(self._plan(knowledge=[]))
+
+    def test_knowledge_non_string_invalid(self):
+        self._invalid(self._plan(knowledge=[123]))
 
 
 class TestM83ReviewSchema:
@@ -8593,6 +8630,7 @@ class TestBuildStrictSchema:
         assert "secrets" in schema["properties"]
         assert "extend_replan" in schema["properties"]
         assert "needs_install" in schema["properties"]
+        assert "knowledge" in schema["properties"]
         assert schema["additionalProperties"] is False
 
     def test_review_schema_unchanged(self):

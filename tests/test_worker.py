@@ -9354,6 +9354,47 @@ class TestRunPlanningLoop:
         p = await get_plan_for_session(db, "sess1")
         assert p["status"] == "done"
 
+    async def test_knowledge_items_saved_as_learnings(self, db, tmp_path):
+        """M968: knowledge items in plan are saved as learnings before execution."""
+        plan = {**VALID_PLAN, "knowledge": ["Artemis project uses PostgreSQL 16"]}
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = _make_config()
+
+        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Done!"), \
+             _patch_kiso_dir(tmp_path):
+            await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 30,
+                {}, None, 3, None, None,
+            )
+
+        from kiso.store import get_pending_learnings
+        learnings = await get_pending_learnings(db)
+        contents = [l["content"] for l in learnings]
+        assert "Artemis project uses PostgreSQL 16" in contents
+
+    async def test_knowledge_null_creates_no_learnings(self, db, tmp_path):
+        """M968: knowledge=null creates no learnings."""
+        plan = {**VALID_PLAN, "knowledge": None}
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = _make_config()
+
+        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
+                   return_value="Done!"), \
+             _patch_kiso_dir(tmp_path):
+            await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 30,
+                {}, None, 3, None, None,
+            )
+
+        from kiso.store import get_pending_learnings
+        learnings = await get_pending_learnings(db)
+        assert len(learnings) == 0
+
     async def test_failure_no_replan_path(self, db, tmp_path):
         """On _execute_plan failure (no replan), loop handles failure and breaks.
         M481: final msg task failure now falls back to raw detail (plan='done'),

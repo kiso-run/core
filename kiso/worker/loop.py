@@ -2132,6 +2132,12 @@ async def _run_planning_loop(
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
 
+    # M968: save knowledge items as learnings before execution.
+    # The curator will process them in the background task after plan completion.
+    for item in plan.get("knowledge") or []:
+        if isinstance(item, str) and item.strip():
+            await save_learning(db, item.strip(), session)
+
     replan_history: list[dict] = []
     current_plan_id = plan_id
     current_goal = plan["goal"]

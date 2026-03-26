@@ -488,7 +488,11 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
         {"type": "array", "items": {"type": "string"}},
         {"type": "null"},
     ]},
-}, ["goal", "secrets", "tasks", "extend_replan", "needs_install"])
+    "knowledge": {"anyOf": [
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "null"},
+    ]},
+}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge"])
 
 
 REVIEW_SCHEMA: dict = _build_strict_schema("review", {
@@ -999,6 +1003,15 @@ def validate_plan(
             "Add an exec task to write the file to the workspace — "
             "auto-publish will generate a download URL automatically."
         )
+
+    # M968: validate knowledge items (if present)
+    knowledge = plan.get("knowledge") or []
+    for ki, item in enumerate(knowledge, 1):
+        if not isinstance(item, str) or len(item.strip()) < _MIN_PROMOTED_FACT_LEN:
+            errors.append(
+                f"knowledge[{ki}]: must be a string with at least "
+                f"{_MIN_PROMOTED_FACT_LEN} characters"
+            )
 
     # coherence — tools listed in needs_install must not appear in tool tasks
     needs = plan.get("needs_install") or []
