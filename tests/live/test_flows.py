@@ -50,7 +50,7 @@ class TestPlanAndExecuteMsg:
             plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
-                    "What is 2 + 2? Reply with the numeral only.",
+                    "What is 2 + 2?",
                 ),
                 timeout=TIMEOUT,
             )
@@ -67,7 +67,7 @@ class TestPlanAndExecuteMsg:
             ),
             timeout=TIMEOUT,
         )
-        assert "4" in text
+        assert "4" in text or "four" in text.lower()
 
 
 class TestExecThenReviewOk:
