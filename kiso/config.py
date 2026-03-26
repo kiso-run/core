@@ -70,14 +70,14 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 }
 
 MODEL_DEFAULTS: dict[str, str] = {
-    "briefer": "google/gemini-2.5-flash-lite",
-    "classifier": "google/gemini-2.5-flash-lite",
+    "briefer": "qwen/qwen3.5-flash-02-23",
+    "classifier": "deepseek/deepseek-v3.2",
     "planner": "deepseek/deepseek-v3.2",
-    "reviewer": "google/gemini-2.5-flash-lite",
-    "curator": "google/gemini-2.5-flash-lite",
+    "reviewer": "deepseek/deepseek-v3.2",
+    "curator": "deepseek/deepseek-v3.2",
     "worker": "deepseek/deepseek-v3.2",
-    "summarizer": "google/gemini-2.5-flash-lite",
-    "paraphraser": "google/gemini-2.5-flash-lite",
+    "summarizer": "deepseek/deepseek-v3.2",
+    "paraphraser": "deepseek/deepseek-v3.2",
     "messenger": "deepseek/deepseek-v3.2",
     "searcher": "perplexity/sonar",
 }

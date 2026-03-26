@@ -4663,7 +4663,7 @@ class TestM106ExitCodeNotes:
 
 
 class TestM106DefaultPlannerModel:
-    """M110c: default planner model is deepseek-v3.2."""
+    """M110c/M969: default planner model is deepseek-v3.2."""
 
     def test_default_planner_model(self):
         from kiso.config import MODEL_DEFAULTS
