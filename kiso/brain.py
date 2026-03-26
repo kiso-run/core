@@ -714,6 +714,19 @@ def _validate_plan_tasks(
                 f"Task {i}: use 'uv pip install' instead of bare 'pip install'. "
                 f"Direct pip can corrupt the system environment."
             )
+        # M964: exec tasks must not invoke installed tools — use tool task type
+        if t == TASK_TYPE_EXEC and installed_skills:
+            detail_lower = detail.lower()
+            _is_install_cmd = "kiso tool install" in detail_lower
+            if not _is_install_cmd:
+                for sname in installed_skills:
+                    if sname in detail_lower:
+                        errors.append(
+                            f"Task {i}: '{sname}' is an installed tool — use "
+                            f"type='tool' with tool='{sname}' instead of exec. "
+                            f"Exec tasks cannot invoke kiso tools directly."
+                        )
+                        break
         # M862: kiso plugin install for names not in registry (without git URL)
         if t == TASK_TYPE_EXEC and registry_hint_names is not None:
             name_match = _INSTALL_NAME_RE.search(detail)
@@ -1211,6 +1224,8 @@ async def build_planner_messages(
     # Tool discovery — rescan on each planner call
     installed = discover_tools()
     installed_names = [s["name"] for s in installed]
+    if installed_names:
+        log.info("discover_tools() found: %s", ", ".join(installed_names))
 
     # Build the tool list text for context pool
     full_tool_list = build_planner_tool_list(installed, user_role, user_tools)

@@ -8360,6 +8360,43 @@ class TestPipToUvValidation:
         assert not any("uv pip install" in e for e in errors)
 
 
+class TestExecInvokesInstalledTool:
+    """M964: exec tasks must not invoke installed tools."""
+
+    def _plan(self, detail):
+        return {"tasks": [
+            {"type": "exec", "detail": detail, "expect": "done", "tool": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
+        ]}
+
+    def test_exec_invoking_installed_tool_rejected(self):
+        errors = validate_plan(
+            self._plan("Run aider to write a script"),
+            installed_skills=["browser", "aider", "ocr"],
+        )
+        assert any("installed tool" in e for e in errors)
+
+    def test_exec_not_invoking_tool_accepted(self):
+        errors = validate_plan(
+            self._plan("Run python3 script.py"),
+            installed_skills=["browser", "aider"],
+        )
+        assert not any("installed tool" in e for e in errors)
+
+    def test_kiso_tool_install_allowed(self):
+        """Install commands are allowed even if tool name appears."""
+        errors = validate_plan(
+            self._plan("Run kiso tool install aider"),
+            installed_skills=["browser"],
+        )
+        assert not any("installed tool" in e for e in errors)
+
+    def test_no_installed_skills_skipped(self):
+        """When installed_skills is None, no check is done."""
+        errors = validate_plan(self._plan("Run aider to write a script"))
+        assert not any("installed tool" in e for e in errors)
+
+
 class TestRegistryInstallValidation:
     """M862: kiso plugin install for names not in registry."""
 
