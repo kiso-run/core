@@ -1227,6 +1227,42 @@ class TestBuildPlannerMessages:
         user_content = msgs[1]["content"]
         assert "System Environment" in user_content
 
+    async def test_briefer_always_forces_planning_rules(self, db, config):
+        """M959: briefer path always includes planning_rules module."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        fake_skill = {
+            "name": "browser", "summary": "browser automation",
+            "args": [], "guide": "",
+        }
+        with (
+            patch("kiso.brain.discover_tools", return_value=[fake_skill]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            # Briefer returns zero modules (single-tool task)
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": ["browser — navigate"],
+                "context": "User wants a screenshot.",
+                "output_indices": [], "relevant_tags": [],
+                "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin",
+                "take a screenshot of example.com",
+            )
+        system = msgs[0]["content"]
+        # planning_rules must be present even when briefer returns modules=[]
+        assert "first task must be" in system.lower() or "never msg" in system.lower(), (
+            "planning_rules module missing from planner prompt"
+        )
+
     async def test_user_tools_filtered(self, db, config):
         await create_session(db, "sess1")
         fake_skills = [
@@ -2068,19 +2104,12 @@ class TestValidateCurator:
 # --- M9: build_curator_messages ---
 
 class TestCuratorModularPrompt:
-    def test_select_modules_with_tags(self):
+    def test_select_modules_always_includes_both(self):
+        """M962: tag_reuse is always loaded alongside entity_assignment."""
         from kiso.brain import _select_curator_modules
-        modules = _select_curator_modules(
-            [{"id": 1, "content": "x"}], ["python", "flask"], None)
+        modules = _select_curator_modules()
         assert "entity_assignment" in modules
         assert "tag_reuse" in modules
-
-    def test_select_modules_without_tags(self):
-        from kiso.brain import _select_curator_modules
-        modules = _select_curator_modules(
-            [{"id": 1, "content": "x"}], None, None)
-        assert "entity_assignment" in modules
-        assert "tag_reuse" not in modules
 
     def test_curator_uses_modular_prompt(self):
         msgs = build_curator_messages(
@@ -2092,13 +2121,14 @@ class TestCuratorModularPrompt:
         assert "Entity assignment" in system  # entity_assignment module
         assert "Tag reuse" in system  # tag_reuse module
 
-    def test_curator_no_tag_reuse_without_tags(self):
+    def test_curator_tag_reuse_always_loaded(self):
+        """M962: tag_reuse is always loaded for tag formatting guidance."""
         msgs = build_curator_messages(
             [{"id": 1, "content": "Uses Flask"}],
         )
         system = msgs[0]["content"]
         assert "knowledge curator" in system
-        assert "Tag reuse" not in system
+        assert "Tag reuse" in system
 
 
 class TestBuildCuratorMessages:

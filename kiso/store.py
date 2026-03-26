@@ -1294,6 +1294,7 @@ async def search_facts_scored(
         return []
 
     session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.", username=username)
+    sp = list(session_params)  # materialise once for reuse
     fetch_limit = limit * 2  # over-fetch for Python re-rank
 
     has_entity_or_tags = entity_id is not None or bool(tags)
@@ -1303,15 +1304,25 @@ async def search_facts_scored(
             entity_id=entity_id,
             tags=tags,
             session_filter=session_filter,
-            session_params=list(session_params),
+            session_params=sp,
             fetch_limit=fetch_limit,
         )
+        # M962: tagless facts shouldn't become unfindable — fall back to
+        # keyword FTS when entity/tag search yields nothing.
+        if not rows and keywords:
+            rows = await _search_facts_by_keywords(
+                db,
+                keywords,
+                session_filter=session_filter,
+                session_params=sp,
+                fetch_limit=fetch_limit,
+            )
     else:
         rows = await _search_facts_by_keywords(
             db,
             keywords or [],
             session_filter=session_filter,
-            session_params=list(session_params),
+            session_params=sp,
             fetch_limit=fetch_limit,
         )
 

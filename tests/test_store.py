@@ -2594,6 +2594,40 @@ async def test_scored_keywords_only(db: aiosqlite.Connection):
     assert f2 not in ids
 
 
+async def test_scored_keyword_fallback_on_empty_entity_tag(db: aiosqlite.Connection):
+    """M962: when entity/tag search returns nothing, fall back to keyword FTS."""
+    await create_session(db, "s1")
+    # Fact with NO tags and NO entity — invisible to entity/tag search
+    f1 = await save_fact(db, "Project uses Python 3.12 with FastAPI framework", "curator")
+
+    # Search with tags (briefer-invented, won't match anything in DB)
+    # AND keywords from the user message
+    results = await search_facts_scored(
+        db, tags=["web-framework"], keywords=["python", "fastapi"],
+    )
+    ids = [r["id"] for r in results]
+    assert f1 in ids, "Tagless fact should be found via keyword fallback"
+
+
+async def test_scored_keyword_fallback_skipped_when_entity_tag_has_results(
+    db: aiosqlite.Connection,
+):
+    """M962: keyword fallback does NOT run when entity/tag search has results."""
+    await create_session(db, "s1")
+    eid = await find_or_create_entity(db, "flask", "framework")
+    f1 = await save_fact(db, "Flask is a micro web framework", "curator", entity_id=eid)
+    # f2 has a keyword match but no entity/tag link
+    f2 = await save_fact(db, "Django is a full-featured web framework", "curator")
+
+    results = await search_facts_scored(
+        db, entity_id=eid, keywords=["web", "framework"],
+    )
+    ids = [r["id"] for r in results]
+    assert f1 in ids
+    # f2 should NOT appear — entity/tag search found results, no fallback
+    assert f2 not in ids
+
+
 # ---------------------------------------------------------------------------
 # M410 — Safety fact category
 # ---------------------------------------------------------------------------

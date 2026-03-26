@@ -1273,6 +1273,10 @@ async def build_planner_messages(
                 modules.append("kiso_native")
         if _has_session_files and "session_files" not in modules:
             modules.append("session_files")
+        # M959: planning_rules contains fundamental task-ordering and
+        # expect rules that must always be present (matches fallback path).
+        if "planning_rules" not in modules:
+            modules.append("planning_rules")
         system_prompt = _load_modular_prompt("planner", modules)
     else:
         # Fallback path: keyword-based module selection (no briefer).
@@ -2270,21 +2274,16 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
     return errors
 
 
-def _select_curator_modules(
-    learnings: list[dict],
-    available_tags: list[str] | None,
-    available_entities: list[dict] | None,
-) -> list[str]:
-    """Heuristic module selection for curator.
+def _select_curator_modules() -> list[str]:
+    """Select prompt modules for the curator.
 
-    Always includes ``entity_assignment`` (needed for any promote).
-    Includes ``tag_reuse`` only when existing tags are available
-    (otherwise the "check existing tags" instruction is vacuous).
+    Always includes ``entity_assignment`` (needed for any promote) and
+    ``tag_reuse`` (tag formatting/semantic-retrieval guidance).  When no
+    existing tags are available the "check existing tags first" instruction
+    is a harmless no-op; the formatting rules ("lowercase, hyphenated")
+    are always valuable and ensure promoted facts get well-formed tags.
     """
-    modules: list[str] = ["entity_assignment"]
-    if available_tags:
-        modules.append("tag_reuse")
-    return modules
+    return ["entity_assignment", "tag_reuse"]
 
 
 def build_curator_messages(
@@ -2294,7 +2293,7 @@ def build_curator_messages(
     existing_facts: list[dict] | None = None,
 ) -> list[dict]:
     """Build the message list for the curator LLM call."""
-    modules = _select_curator_modules(learnings, available_tags, available_entities)
+    modules = _select_curator_modules()
     system_prompt = _load_modular_prompt("curator", modules)
     items = "\n".join(
         f"{i}. [id={l['id']}] {l['content']}"
