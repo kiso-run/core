@@ -346,6 +346,28 @@ class TestDiscoverTools:
         result = discover_tools(tools_dir)
         assert result == []
 
+    def test_logs_scan_path_and_found_tools(self, tmp_path, caplog):
+        """M966: discover_tools logs the scanned path and found tool names."""
+        import logging
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        _create_tool(tools_dir, "echo", MINIMAL_TOML)
+        with caplog.at_level(logging.DEBUG, logger="kiso.tools"):
+            discover_tools(tools_dir)
+        assert f"scanning {tools_dir}" in caplog.text
+        assert "found 1 tools: echo" in caplog.text
+
+    def test_logs_empty_scan_with_subdirs(self, tmp_path, caplog):
+        """M966: discover_tools logs subdirectory names when 0 tools found."""
+        import logging
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        (tools_dir / "broken").mkdir()  # no kiso.toml → skipped
+        with caplog.at_level(logging.DEBUG, logger="kiso.tools"):
+            discover_tools(tools_dir)
+        assert "0 tools found" in caplog.text
+        assert "broken" in caplog.text
+
     def test_skips_invalid_manifest(self, tmp_path):
         tools_dir = tmp_path / "tools"
         tools_dir.mkdir()

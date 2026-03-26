@@ -117,6 +117,8 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
     if cached is not None and now - cached[0] < _TOOLS_TTL:
         return cached[1]
 
+    log.debug("discover_tools: scanning %s", resolved_dir)
+
     if not resolved_dir.is_dir():
         log.warning(
             "Tools directory not found: %s (exists=%s)",
@@ -174,6 +176,13 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
         info["healthy"] = len(missing) == 0
         info["missing_deps"] = missing
         tools.append(info)
+
+    if tools:
+        log.debug("discover_tools: found %d tools: %s",
+                  len(tools), ", ".join(t["name"] for t in tools))
+    else:
+        subdirs = [e.name for e in resolved_dir.iterdir() if e.is_dir()] if resolved_dir.is_dir() else []
+        log.debug("discover_tools: 0 tools found (subdirs: %s)", subdirs or "none")
 
     _tools_cache[resolved_dir] = (now, tools)
     return tools
