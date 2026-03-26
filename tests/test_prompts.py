@@ -268,15 +268,15 @@ class TestM942PluginInstallNoEscapeHatch:
 
 
 class TestM943KnowledgeLearningPipeline:
-    """M943: kiso_commands must route single-fact memory to msg, not CLI."""
+    """M943/M968: kiso_commands must route single-fact memory via knowledge field."""
 
     def test_remember_rule_in_kiso_commands(self):
         raw = _ROLES_DIR.joinpath("planner.md").read_text()
         start = raw.index("<!-- MODULE: kiso_commands -->")
         end = raw.index("<!-- MODULE:", start + 1)
         kiso_commands = raw[start:end].lower()
-        assert "learning pipeline" in kiso_commands
-        assert "ricordati" in kiso_commands or "remember" in kiso_commands
+        assert "knowledge" in kiso_commands
+        assert "remember" in kiso_commands
 
 
 class TestPlannerLanguageRuleDedup:
