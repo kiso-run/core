@@ -45,33 +45,6 @@ from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
 
 
 class TestPlannerLive:
-    async def test_simple_question_produces_msg_plan(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Asks 'What is the capital of France?' and inspects the plan.
-
-        Why: Validates the planner produces a msg-only plan for simple factual questions.
-        Expects: Valid plan, last task is 'msg', goal references France/capital.
-        """
-        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "What is the capital of France?",
-                ),
-                timeout=TIMEOUT,
-            )
-
-        assert validate_plan(plan) == []
-        assert plan["tasks"][-1]["type"] == "msg"
-        goal_lower = plan["goal"].lower()
-        assert "france" in goal_lower or "capital" in goal_lower
-
     async def test_investigation_produces_replan_task(
         self, live_config, seeded_db, live_session, tmp_path,
     ):

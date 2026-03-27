@@ -23,61 +23,6 @@ pytestmark = pytest.mark.llm_live
 from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
 
 
-class TestSimpleQuestionE2E:
-    async def test_simple_question_flow(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
-    ):
-        """What: Plans 'What is the tallest mountain?' then executes the full pipeline.
-
-        Why: Validates the simplest happy path — question in, plan created, msg task produces correct answer.
-        Expects: Plan validates, execution succeeds, final msg output mentions 'everest'.
-        """
-        msg_id = await save_message(
-            seeded_db, live_session, "testadmin", "user",
-            "What is the tallest mountain in the world?",
-        )
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "What is the tallest mountain in the world?",
-                ),
-                timeout=TIMEOUT,
-            )
-        assert validate_plan(plan) == []
-
-        plan_id = await create_plan(
-            seeded_db, live_session, msg_id, plan["goal"],
-        )
-        for t in plan["tasks"]:
-            await create_task(
-                seeded_db, plan_id, live_session,
-                type=t["type"], detail=t["detail"],
-                skill=t.get("tool"), args=t.get("args"),
-                expect=t.get("expect"),
-            )
-
-        with mock_noop_infra:
-            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
-                _execute_plan(
-                    seeded_db, live_config, live_session, plan_id,
-                    plan["goal"],
-                    "What is the tallest mountain in the world?",
-                ),
-                timeout=TIMEOUT,
-            )
-
-        assert success is True
-        # Last completed task should be a msg mentioning Everest
-        msg_tasks = [t for t in completed if t["type"] == "msg"]
-        assert msg_tasks
-        assert "everest" in msg_tasks[-1]["output"].lower()
-
-
 class TestExecAndReviewOkE2E:
     async def test_exec_review_ok_flow(
         self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,

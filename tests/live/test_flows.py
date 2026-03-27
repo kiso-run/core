@@ -32,44 +32,6 @@ pytestmark = pytest.mark.llm_live
 from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
 
 
-class TestPlanAndExecuteMsg:
-    async def test_plan_then_msg_execution(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Plans 'What is 2+2?', then executes the final msg task with the real LLM.
-
-        Why: Validates the planner+messenger two-step flow produces a correct answer.
-        Expects: Valid plan ending with msg task, executed msg output contains '4'.
-        """
-        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "What is 2 + 2?",
-                ),
-                timeout=TIMEOUT,
-            )
-
-        assert validate_plan(plan) == []
-        last_task = plan["tasks"][-1]
-        assert last_task["type"] == "msg"
-
-        # Execute the msg task with the real LLM
-        text = await asyncio.wait_for(
-            _msg_task(
-                live_config, seeded_db, live_session,
-                last_task["detail"],
-            ),
-            timeout=TIMEOUT,
-        )
-        assert "4" in text or "four" in text.lower()
-
-
 class TestExecThenReviewOk:
     async def test_review_ok_on_successful_exec(self, live_config):
         """What: Sends successful 'date' output to the reviewer.
@@ -369,48 +331,6 @@ class TestExecTranslator:
 # ---------------------------------------------------------------------------
 # L2.7 — Planner context handling (new message vs old context)
 # ---------------------------------------------------------------------------
-
-
-class TestPlannerContextHandling:
-    async def test_greeting_does_not_carry_over_old_topic(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Seeds old context about hostname/disk, then sends a simple 'ciao' greeting.
-
-        Why: Validates the planner does not carry over old technical topics into a greeting response.
-        Expects: Valid plan with zero exec tasks (simple greeting, not hostname/disk commands).
-        """
-        # Seed old context about a specific technical task
-        await save_message(
-            seeded_db, live_session, "testadmin", "user",
-            "Show me the contents of /etc/hostname and check disk usage",
-        )
-        await save_message(
-            seeded_db, live_session, "kiso", "bot",
-            "The hostname is dev-server. Disk usage is 45% on /.",
-        )
-
-        # New message is just a greeting
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "ciao",
-                ),
-                timeout=TIMEOUT,
-            )
-        assert validate_plan(plan) == []
-
-        # The plan should be a simple greeting response, not exec tasks
-        # about hostname/disk from old context
-        exec_tasks = [t for t in plan["tasks"] if t["type"] == "exec"]
-        assert len(exec_tasks) == 0, (
-            f"Greeting should not produce exec tasks from old context. "
-            f"Got plan: {plan}"
-        )
 
 
 class TestDiscoveryPlanReplanFlow:

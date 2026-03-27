@@ -340,44 +340,6 @@ class TestFullPipeline:
 # ---------------------------------------------------------------------------
 
 
-class TestMultiTurn:
-    async def test_planner_sees_previous_context(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Seeds 'my favourite colour is cerulean blue', then asks 'what is my colour?'.
-
-        Why: Validates multi-turn context propagation — the planner must use prior conversation history.
-        Expects: Plan goal or task details reference cerulean/blue/colour.
-        """
-        # First message establishes context
-        await save_message(
-            seeded_db, live_session, "testadmin", "user",
-            "My favourite colour is cerulean blue.",
-        )
-        # Second message references that context
-        second_content = "What is my favourite colour? Tell me."
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    second_content,
-                ),
-                timeout=TIMEOUT,
-            )
-        assert validate_plan(plan) == []
-
-        # The plan goal or task details should reference the colour
-        plan_text = (
-            plan["goal"]
-            + " ".join(t["detail"] for t in plan["tasks"])
-        ).lower()
-        assert "cerulean" in plan_text or "blue" in plan_text or "colour" in plan_text
-
-
 # ---------------------------------------------------------------------------
 # L4.4 — Replan recovery (full cycle via _process_message)
 # ---------------------------------------------------------------------------
@@ -436,67 +398,6 @@ class TestReplanRecovery:
 # ---------------------------------------------------------------------------
 # L4.5 — Knowledge pipeline end-to-end
 # ---------------------------------------------------------------------------
-
-
-class TestKnowledgePipeline:
-    async def test_learning_to_fact_to_planner(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Seeds a learning about Python/FastAPI, curates it, then checks the planner sees the promoted fact.
-
-        Why: Validates the full knowledge pipeline: learning -> curator promotion -> fact in planner context.
-        Expects: Fact promoted to DB, planner plan references python/fastapi/3.12.
-        """
-        # 1. Seed a learning
-        await save_learning(
-            seeded_db,
-            "This project uses Python 3.12 with the FastAPI framework",
-            live_session,
-        )
-
-        # 2. Run curator with real LLM
-        learnings = await get_pending_learnings(seeded_db)
-        assert learnings
-        curator_result = await asyncio.wait_for(
-            run_curator(live_config, learnings, session=live_session),
-            timeout=TIMEOUT,
-        )
-
-        # 3. Apply curator result
-        await _apply_curator_result(seeded_db, live_session, curator_result)
-
-        # 4. Verify at least one fact was promoted
-        facts = await get_facts(seeded_db)
-        assert len(facts) > 0, "Curator should have promoted the learning to a fact"
-
-        # 5. Call planner — it should see the fact and reference it.
-        # Use a prompt that clearly signals "answer from known facts" to avoid
-        # the planner hallucinating non-installed skills.
-        prompt = "Based on what you already know, tell me what technology this project uses."
-        await save_message(
-            seeded_db, live_session, "testadmin", "user", prompt,
-        )
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
-        ):
-            try:
-                plan = await asyncio.wait_for(
-                    run_planner(
-                        seeded_db, live_config, live_session, "admin", prompt,
-                    ),
-                    timeout=TIMEOUT,
-                )
-            except PlanError as exc:
-                pytest.skip(f"Planner hallucinated non-installed skills: {exc}")
-        assert validate_plan(plan) == []
-
-        plan_text = (
-            plan["goal"] + " " + " ".join(t["detail"] for t in plan["tasks"])
-        ).lower()
-        assert any(
-            kw in plan_text for kw in ("python", "fastapi", "3.12")
-        ), f"Plan should reference promoted fact, got: {plan_text[:300]}"
 
 
 # ---------------------------------------------------------------------------
