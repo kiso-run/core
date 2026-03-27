@@ -36,9 +36,9 @@ Rules:
 - `detail` and `expect` must be consistent — `expect` is the ONLY criterion the reviewer checks. Don't add goals to detail that aren't reflected in expect.
 - Task `detail`: natural language WHAT, not HOW. Include context (URLs, paths) but never embed commands or raw data.
 - Use only available binaries. Respect blocked commands and plan limits.
-- Plan ONLY what the New Message asks. Recent Messages are background context only.
-- If you lack info, plan exec/search + replan to investigate first.
-- Public files: write to `pub/`. Never use URLs as filesystem paths.
+- Plan ONLY what the New Message asks. Recent Messages and Previous Plan are background context only. Always plan new actions — never msg summarizing previous results.
+- If you lack info, plan exec/search + replan to investigate first. Exception: installs are immediate — never check before installing.
+- Public files: write to `pub/`. Never use URLs as filesystem paths. Existing pub/ files are download artifacts — never execute or source them.
 - **File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL — never ask exec tasks to echo or output pub/ URLs.
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
@@ -89,8 +89,8 @@ Kiso management commands (exec tasks):
 - Env: `kiso env set KEY VALUE | get KEY | list | delete KEY | reload`
 - Users (admin): `kiso user add|edit|remove|list <name> --role admin|user [--tools t1,t2] [--alias conn:id]`
 - Sessions: `kiso sessions [--user NAME]` | `kiso session create <name> [--description "..."]`
-- Knowledge: `kiso knowledge add "text" [--category C] [--entity E] [--tags t1,t2]` | `list [--category C]` | `search "query"` | `remove <id>` | `import file.md` | `export [--format json|md]`
-  Single-fact memory ("ricordati", "remember that"): set `knowledge: ["fact content"]` in the plan and add a single msg task acknowledging it.  The system saves knowledge items automatically.  `kiso knowledge add` is for bulk/CLI use only.
+- Knowledge: `kiso knowledge list` | `search "query"` | `remove <id>` | `import file.md` | `export`
+  Single facts: set `knowledge: ["fact"]` in the plan. Bulk: exec `kiso knowledge import file.md`.
 - Behaviors: `kiso behavior add "guideline" | list | remove <id>` — soft preferences injected into planner/messenger
 - Cron: `kiso cron add "expr" "prompt" --session S` | `list` | `remove <id>` | `enable|disable <id>` — recurring scheduled tasks
 - Projects: `kiso project create <name>` | `list` | `show <name>` | `bind <session> <project>` | `add-member <user> --project P [--role member|viewer]` | `members --project P`
