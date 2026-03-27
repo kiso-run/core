@@ -16,5 +16,6 @@ System state, real-time info, or anything that changes over time (time, date, up
 Self-referential knowledge ("what do you know", "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb".
 Questions about previously discussed topics or known entities → "chat_kb".
 If "## Known Entities" provided: message asks about a listed entity's properties → "chat_kb". Message asks to perform an action on a listed entity → "plan".
+User teaches, informs, or corrects the system about new facts, preferences, or project details (even if phrased as reminders) → "plan" — this is a knowledge management action, not a knowledge query.
 General knowledge questions not about stored entities → "chat".
 When in doubt → "plan".

@@ -390,10 +390,10 @@ for role in MODEL_DEFAULTS:
     default = MODEL_DEFAULTS[role]
     print(f'{role}|{desc}|{default}')
 " 2>/dev/null || cat <<'FALLBACK'
-briefer|selects relevant context for planner|qwen/qwen3.5-flash-02-23
+briefer|selects relevant context for planner|google/gemini-2.5-flash
 classifier|classifies messages as plan or chat|google/gemini-2.5-flash-lite
 planner|interprets requests, creates task plans|deepseek/deepseek-v3.2
-reviewer|checks task output, decides replan|deepseek/deepseek-v3.2
+reviewer|checks task output, decides replan|google/gemini-2.5-flash-lite
 curator|manages learned knowledge|deepseek/deepseek-v3.2
 worker|translates tasks to shell commands|deepseek/deepseek-v3.2
 summarizer|compresses conversation history|google/gemini-2.5-flash-lite
