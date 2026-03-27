@@ -725,17 +725,17 @@ class TestClassifierConversationLive:
         )
 
     async def test_greeting_without_context_is_chat(self, live_config):
-        """What: 'oh yeah' without any context.
+        """What: 'good morning' without any context.
 
-        Why: Validates that without conversation context, a short message is
+        Why: Validates that without conversation context, a greeting is
         classified as chat (no action implied).
         Expects: Classified as 'chat'.
         """
         from kiso.brain import classify_message
         category, lang = await asyncio.wait_for(
-            classify_message(live_config, "oh yeah", recent_context=""),
+            classify_message(live_config, "good morning", recent_context=""),
             timeout=TIMEOUT,
         )
         assert category == "chat", (
-            f"Expected 'chat' for 'oh yeah' without context, got '{category}'"
+            f"Expected 'chat' for 'good morning' without context, got '{category}'"
         )
