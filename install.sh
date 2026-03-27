@@ -391,13 +391,13 @@ for role in MODEL_DEFAULTS:
     print(f'{role}|{desc}|{default}')
 " 2>/dev/null || cat <<'FALLBACK'
 briefer|selects relevant context for planner|qwen/qwen3.5-flash-02-23
-classifier|classifies messages as plan or chat|deepseek/deepseek-v3.2
+classifier|classifies messages as plan or chat|google/gemini-2.5-flash-lite
 planner|interprets requests, creates task plans|deepseek/deepseek-v3.2
 reviewer|checks task output, decides replan|deepseek/deepseek-v3.2
 curator|manages learned knowledge|deepseek/deepseek-v3.2
 worker|translates tasks to shell commands|deepseek/deepseek-v3.2
-summarizer|compresses conversation history|deepseek/deepseek-v3.2
-paraphraser|prompt injection defense|deepseek/deepseek-v3.2
+summarizer|compresses conversation history|google/gemini-2.5-flash-lite
+paraphraser|prompt injection defense|google/gemini-2.5-flash-lite
 messenger|writes human-readable responses|deepseek/deepseek-v3.2
 searcher|web search (native search)|perplexity/sonar
 FALLBACK
