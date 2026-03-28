@@ -6258,6 +6258,63 @@ class TestM346BrieferEntityRetrieval:
         assert "flask" in briefer_content
         assert "Available Entities" in briefer_content
 
+    async def test_entities_enriched_with_fact_tags(self, db):
+        """M978: available_entities include fact tags for briefer context."""
+        from kiso.store import find_or_create_entity, save_fact, save_fact_tags
+        eid = await find_or_create_entity(db, "self", "system")
+        fid = await save_fact(db, "SSH key at ~/.kiso/sys/ssh/", "curator", entity_id=eid)
+        await save_fact_tags(db, fid, ["ssh", "credentials"])
+
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return json.dumps({
+                    "modules": [], "tools": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            return "{}"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]):
+            await build_planner_messages(
+                db, self._config(), "sess1", "user", "show ssh key",
+            )
+
+        briefer_content = captured_messages[1]["content"]
+        assert "self (system)" in briefer_content
+        assert "ssh" in briefer_content
+        assert "credentials" in briefer_content
+
+    async def test_entities_without_facts_no_tags(self, db):
+        """M978: entities with no facts show no tag brackets."""
+        from kiso.store import find_or_create_entity
+        await find_or_create_entity(db, "empty", "concept")
+
+        captured_messages = []
+
+        async def _fake_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return json.dumps({
+                    "modules": [], "tools": [], "context": "",
+                    "output_indices": [], "relevant_tags": [],
+                    "relevant_entities": [],
+                })
+            return "{}"
+
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]):
+            await build_planner_messages(
+                db, self._config(), "sess1", "user", "hello",
+            )
+
+        briefer_content = captured_messages[1]["content"]
+        assert "empty (concept)" in briefer_content
+        assert "[" not in briefer_content.split("empty (concept)")[1].split("\n")[0]
+
     async def test_empty_relevant_entities_no_section(self, db):
         """M346: empty relevant_entities produces no entity-matched section."""
         briefing = {

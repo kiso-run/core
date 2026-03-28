@@ -1165,12 +1165,33 @@ async def _gather_planner_context(
     if recipes_text:
         context_pool["recipes"] = recipes_text
 
-    # inject available entities for briefer selection
+    # inject available entities for briefer selection, enriched with fact tags
     all_entities = await get_all_entities(db)
     if all_entities:
-        context_pool["available_entities"] = "\n".join(
-            f"{e['name']} ({e['kind']})" for e in all_entities
+        # M978: collect fact tags per entity so the briefer knows what each contains
+        entity_ids = [e["id"] for e in all_entities]
+        placeholders = ",".join("?" * len(entity_ids))
+        cur = await db.execute(
+            f"SELECT f.entity_id, ft.tag FROM facts f "
+            f"JOIN fact_tags ft ON ft.fact_id = f.id "
+            f"WHERE f.entity_id IN ({placeholders}) "
+            f"GROUP BY f.entity_id, ft.tag",
+            entity_ids,
         )
+        entity_tags: dict[int, list[str]] = {}
+        for row in await cur.fetchall():
+            eid = row[0] if isinstance(row, tuple) else row["entity_id"]
+            tag = row[1] if isinstance(row, tuple) else row["tag"]
+            entity_tags.setdefault(eid, []).append(tag)
+
+        lines = []
+        for e in all_entities:
+            tags = entity_tags.get(e["id"], [])
+            if tags:
+                lines.append(f"{e['name']} ({e['kind']}) [{', '.join(sorted(tags))}]")
+            else:
+                lines.append(f"{e['name']} ({e['kind']})")
+        context_pool["available_entities"] = "\n".join(lines)
 
     return summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full, install_ctx
 
