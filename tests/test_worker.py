@@ -8743,10 +8743,11 @@ class TestTaskHandlers:
         assert result.plan_output["index"] == 1
         assert result.plan_output["detail"] == "echo hello"
 
-    async def test_handle_exec_install_blocked_without_approval(self, db, plan_id, tmp_path):
-        """M965: exec install command blocked when install_approved=False."""
+    async def test_handle_exec_install_blocked_with_needs_install(self, db, plan_id, tmp_path):
+        """M965/M979: install blocked when plan has needs_install (mixed propose+install)."""
         task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
         ctx = _make_ctx(db)
+        ctx.plan_has_needs_install = True
         assert ctx.install_approved is False
         with patch(
             "kiso.worker.loop.run_exec_translator",
@@ -8758,6 +8759,24 @@ class TestTaskHandlers:
         assert result.stop is True
         assert result.stop_success is False
         assert "approval required" in (result.stop_replan or "")
+
+    async def test_handle_exec_install_allowed_user_initiated(self, db, plan_id, tmp_path):
+        """M979: install allowed when plan has no needs_install (user asked directly)."""
+        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
+        ctx = _make_ctx(db)
+        ctx.plan_has_needs_install = False
+        assert ctx.install_approved is False
+        with patch(
+            "kiso.worker.loop.run_exec_translator",
+            new_callable=AsyncMock,
+            return_value="kiso tool install ocr",
+        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                 return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        # User-initiated: no needs_install → allowed
+        assert result.completed_row is not None
 
     async def test_handle_exec_install_allowed_with_approval(self, db, plan_id, tmp_path):
         """M965: exec install command allowed when install_approved=True."""

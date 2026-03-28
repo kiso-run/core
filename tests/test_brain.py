@@ -717,21 +717,21 @@ class TestValidatePlan:
     # --- M420: install only allowed in replan ---
 
     def test_m420_install_in_first_plan_rejected(self):
-        """exec install in first plan (is_replan=False) → error."""
+        """M979: exec install + needs_install set in first plan → error (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ]}
+        ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
     def test_m420_msg_then_install_still_rejected(self):
-        """msg + exec install in same first plan → still rejected (user can't reply)."""
+        """M979: msg + exec install + needs_install → still rejected (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Confirm install", "expect": None},
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "replan", "detail": "continue after install", "expect": None},
-        ]}
+        ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
@@ -753,23 +753,23 @@ class TestValidatePlan:
         assert not any("first plan" in e for e in errors)
 
     def test_m420_multiple_installs_single_error(self):
-        """Multiple install execs → only one error (first install)."""
+        """M979: Multiple install execs + needs_install → only one error."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
             {"type": "exec", "detail": "kiso connector install slack", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ]}
+        ], "needs_install": ["browser", "slack"]}
         errors = validate_plan(plan)
         install_errors = [e for e in errors if "first plan" in e]
         assert len(install_errors) == 1
         assert "Task 1:" in install_errors[0]
 
     def test_m420_connector_install_also_caught(self):
-        """kiso connector install also blocked in first plan."""
+        """M979: kiso connector install + needs_install → blocked."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso connector install telegram", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ]}
+        ], "needs_install": ["telegram"]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
@@ -8201,14 +8201,25 @@ class TestValidatePlanOrdering:
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
         assert any("msg task must come after" in e for e in errors)
 
-    def test_install_in_first_plan_rejected(self):
+    def test_install_with_needs_install_blocked(self):
+        """M979: install exec + needs_install set → blocked (mixed propose+install)."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. done"},
         ]
-        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False, has_needs_install=True)
         assert any("installs a tool" in e for e in errors)
+
+    def test_install_without_needs_install_allowed(self):
+        """M979: install exec without needs_install → user-initiated, allowed."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. done"},
+        ]
+        errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False, has_needs_install=False)
+        assert not any("installs a tool" in e for e in errors)
 
     def test_install_in_replan_allowed(self):
         from kiso.brain import _validate_plan_ordering

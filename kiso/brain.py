@@ -848,6 +848,7 @@ _ARTIFACT_NOUNS = frozenset({
 
 def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
+    has_needs_install: bool = False,
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
@@ -863,9 +864,10 @@ def _validate_plan_ordering(
             f"Msg tasks communicate results — place them after investigation."
         )
 
-    # install execs allowed in replans or when user approved in prior
-    # msg cycle.  In a first plan without prior approval the planner must ask.
-    if not is_replan and not install_approved:
+    # install execs allowed in replans, when user approved in prior msg cycle,
+    # or when user directly requested install (needs_install is empty — no proposal).
+    # M979: only block when needs_install IS set (mixed propose+install in same plan).
+    if not is_replan and not install_approved and has_needs_install:
         first_install_idx = next(
             (i for i, t in enumerate(tasks)
              if t.get("type") == TASK_TYPE_EXEC and _INSTALL_CMD_RE.search(t.get("detail", ""))),
@@ -986,7 +988,10 @@ def validate_plan(
         install_approved=install_approved,
         registry_hint_names=registry_hint_names,
     ))
-    errors.extend(_validate_plan_ordering(tasks, is_replan, install_approved))
+    errors.extend(_validate_plan_ordering(
+        tasks, is_replan, install_approved,
+        has_needs_install=bool(plan.get("needs_install")),
+    ))
     errors.extend(_validate_plan_groups(tasks))
 
     # goal mentions creating a file/artifact but plan has no exec/tool task

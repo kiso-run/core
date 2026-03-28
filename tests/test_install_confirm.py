@@ -64,20 +64,21 @@ class TestValidatePlanInstallConfirmation:
     """Install execs are blocked in first plan; only allowed in replan."""
 
     def test_install_in_first_plan_rejected(self):
+        """M979: install + needs_install → blocked (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ]}
+        ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
     def test_msg_then_install_same_plan_rejected(self):
-        """msg + exec install in same first plan → rejected (user can't reply)."""
+        """M979: msg + exec install + needs_install → rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Install browser?", "expect": None},
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
-        ]}
+        ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
@@ -90,10 +91,11 @@ class TestValidatePlanInstallConfirmation:
         assert not any("first plan" in e for e in errors)
 
     def test_connector_install_also_caught(self):
+        """M979: connector install + needs_install → blocked."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso connector install slack", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ]}
+        ], "needs_install": ["slack"]}
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
@@ -138,11 +140,12 @@ class TestValidatePlanInstallApproved:
         errors = validate_plan(plan, is_replan=False, install_approved=True)
         assert not any("first plan" in e for e in errors)
 
-    def test_install_not_approved_blocks_first_plan(self):
+    def test_install_not_approved_with_needs_install_blocks(self):
+        """M979: not approved + needs_install → blocked."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ]}
+        ], "needs_install": ["browser"]}
         errors = validate_plan(plan, is_replan=False, install_approved=False)
         assert any("first plan" in e for e in errors)
 

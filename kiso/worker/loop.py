@@ -768,6 +768,7 @@ class _PlanCtx:
     base_url: str = ""
     response_lang: str = "en"
     install_approved: bool = False
+    plan_has_needs_install: bool = False
     cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
@@ -1279,9 +1280,10 @@ async def _handle_exec_task(
         if ctx.slog:
             ctx.slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
 
-        # M965: block tool install commands that bypassed the approval flow.
-        # The planner should use needs_install + msg, not exec install.
-        if not ctx.install_approved and _INSTALL_CMD_RE.search(command):
+        # M965/M979: block install commands only when the plan ALSO proposed
+        # install (needs_install set = mixed propose+install in same plan).
+        # User-initiated installs (needs_install empty) are allowed.
+        if not ctx.install_approved and ctx.plan_has_needs_install and _INSTALL_CMD_RE.search(command):
             error_output = (
                 "Tool installation blocked — user approval required. "
                 "Set needs_install in your plan and ask the user first."
@@ -1502,6 +1504,7 @@ async def _execute_plan(
     base_url: str = "",
     response_lang: str = "en",
     install_approved: bool = False,
+    plan_has_needs_install: bool = False,
 ) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
@@ -1534,6 +1537,7 @@ async def _execute_plan(
         slog=slog,
         base_url=base_url,
         install_approved=install_approved,
+        plan_has_needs_install=plan_has_needs_install,
         response_lang=response_lang,
         cancel_event=cancel_event,
         sandbox_uid=None,
@@ -2144,6 +2148,8 @@ async def _run_planning_loop(
     replan_depth = 0
     total_extensions = 0
 
+    _current_needs_install = bool(plan.get("needs_install"))
+
     while True:
         success, replan_reason, stuck_reason, completed, remaining, plan_outputs = await _execute_plan(
             db, config, session, current_plan_id, current_goal,
@@ -2152,6 +2158,7 @@ async def _run_planning_loop(
             cancel_event=cancel_event, slog=slog, base_url=base_url,
             response_lang=response_lang,
             install_approved=install_approved,
+            plan_has_needs_install=_current_needs_install,
         )
 
         if success:
@@ -2417,6 +2424,7 @@ async def _run_planning_loop(
 
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
+        _current_needs_install = bool(new_plan.get("needs_install"))
         _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
 
     return current_plan_id
