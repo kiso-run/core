@@ -1018,6 +1018,17 @@ def validate_plan(
                 f"{_MIN_PROMOTED_FACT_LEN} characters"
             )
 
+    # M984: needs_install plans are proposal plans — only msg tasks allowed.
+    # Execution tasks go in the NEXT plan after the user approves installation.
+    if plan.get("needs_install"):
+        non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
+        if non_msg:
+            errors.append(
+                f"needs_install is set — only msg tasks are allowed "
+                f"(found: {non_msg}). End the plan with a msg asking for approval."
+            )
+            return errors
+
     # coherence — tools listed in needs_install must not appear in tool tasks
     needs = plan.get("needs_install") or []
     if needs:

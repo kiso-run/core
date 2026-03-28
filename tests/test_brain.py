@@ -8573,27 +8573,26 @@ class TestNeedsInstallCoherence:
         errors = validate_plan(plan)
         assert any("needs_install" in e for e in errors)
 
-    def test_tool_not_in_needs_install_accepted(self):
+    def test_tool_not_in_needs_install_rejected(self):
+        """M984: needs_install is set → only msg tasks allowed, even if tool not in needs_install."""
         plan = {"goal": "test", "needs_install": ["aider"], "tasks": [
             {"type": "tool", "detail": "navigate", "tool": "browser",
              "args": '{"url": "http://x"}', "expect": "page loaded"},
             {"type": "msg", "detail": "Answer in English. result"},
         ], "extend_replan": None}
         errors = validate_plan(plan, installed_skills=["browser"])
-        assert not any("needs_install" in e for e in errors)
+        assert any("needs_install is set" in e for e in errors)
 
     def test_install_approved_gives_specific_guidance(self):
-        """M868: when install_approved, feedback says exec install + replan."""
+        """M984: needs_install set with tool task → M984 fires (only msg tasks allowed).
+        Previously M868 coherence check fired here, but M984 supersedes it."""
         plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
             {"type": "tool", "detail": "write script", "tool": "aider",
              "args": '{"message": "x"}', "expect": "done"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
         errors = validate_plan(plan, install_approved=True)
-        err = " ".join(errors)
-        assert "exec task" in err and "kiso CLI" in err
-        assert "replan" in err
-        assert "NEXT plan" in err
+        assert any("needs_install is set" in e for e in errors)
 
     def test_not_approved_gives_ask_user_guidance(self):
         """M868: when not approved, feedback says ask user first."""
@@ -8605,6 +8604,35 @@ class TestNeedsInstallCoherence:
         errors = validate_plan(plan, install_approved=False)
         err = " ".join(errors)
         assert "msg asking" in err or "ask" in err.lower()
+
+
+class TestM984NeedsInstallMsgOnly:
+    """M984: needs_install set → only msg tasks allowed."""
+
+    def test_needs_install_with_exec_rejected(self):
+        plan = {"goal": "Install browser", "needs_install": ["browser"], "tasks": [
+            {"type": "exec", "detail": "apt install chromium", "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. Done"},
+        ]}
+        errors = validate_plan(plan)
+        assert any("needs_install is set" in e for e in errors)
+        assert any("exec" in e for e in errors)
+
+    def test_needs_install_with_msg_only_accepted(self):
+        plan = {"goal": "Install browser", "needs_install": ["browser"], "tasks": [
+            {"type": "msg", "detail": "Answer in English. Shall I install the browser tool?"},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("needs_install is set" in e for e in errors)
+
+    def test_no_needs_install_exec_accepted(self):
+        """needs_install=None → M984 does not fire."""
+        plan = {"goal": "Search web", "needs_install": None, "tasks": [
+            {"type": "exec", "detail": "echo hello", "expect": "hello"},
+            {"type": "msg", "detail": "Answer in English. Done"},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("needs_install is set" in e for e in errors)
 
 
 class TestArtifactGoalMismatch:
