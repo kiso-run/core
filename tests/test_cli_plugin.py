@@ -104,3 +104,41 @@ class TestRunPluginCommand:
         args = _FakeArgs(plugin_command=None)
         with pytest.raises(SystemExit):
             run_plugin_command(args)
+
+
+class TestPluginInstallGitPull:
+    """M980: kiso tool install runs git pull when plugin already exists."""
+
+    def test_git_pull_called_on_reinstall(self, tmp_path):
+        from cli.plugin_ops import _plugin_install
+        from kiso.tools import _validate_manifest as validate_fn, check_deps
+
+        # Create a fake installed plugin dir with kiso.toml
+        plugin_dir = tmp_path / "tools" / "test-tool"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "kiso.toml").write_text(
+            '[kiso]\nname = "test-tool"\ntype = "tool"\n\n'
+            '[kiso.tool]\nsummary = "Test"\n\n'
+            '[kiso.tool.args]\n'
+        )
+
+        calls = []
+
+        def _mock_run(cmd, **kw):
+            calls.append(cmd)
+            result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            return result
+
+        args = type("A", (), {"no_deps": True, "target": "test-tool", "name": None, "show_deps": False})()
+
+        with patch("cli.plugin_ops.subprocess.run", side_effect=_mock_run):
+            _plugin_install(
+                "tool", "tool-",
+                tmp_path / "tools",
+                validate_fn, check_deps,
+                args,
+            )
+
+        # git pull should be called before uv sync
+        git_calls = [c for c in calls if c[0] == "git"]
+        assert any("pull" in c for c in git_calls), f"Expected git pull, got: {calls}"

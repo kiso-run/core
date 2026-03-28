@@ -165,9 +165,14 @@ def _plugin_install(
     plugin_dir = parent_dir / name
 
     if plugin_dir.exists():
-        # Already installed — re-run setup to ensure deps are fresh (idempotent repair)
+        # Already installed — update source code and refresh deps
         print(f"{plugin_type.capitalize()} '{name}' is already installed — refreshing deps...")
         try:
+            # M980: git pull to update source code (not just deps)
+            subprocess.run(
+                ["git", "pull", "--ff-only"],
+                cwd=str(plugin_dir), capture_output=True, text=True,
+            )
             subprocess.run(["uv", "sync"], cwd=str(plugin_dir), capture_output=True, text=True, env=_clean_env())
             deps_path = plugin_dir / "deps.sh"
             if deps_path.exists() and not args.no_deps:
