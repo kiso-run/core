@@ -9509,6 +9509,36 @@ class TestRunPlanningLoop:
         p = await get_plan_for_session(db, "sess1")
         assert p["status"] == "failed"
 
+    async def test_auto_replan_skipped_when_reviewer_ok(self, db, tmp_path):
+        """M983: failed output with reviewer_ok=True does NOT trigger auto-replan safety net."""
+        plan = EXEC_THEN_MSG_PLAN
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = _make_config()
+
+        # A failed output that was accepted by the reviewer (reviewer_ok=True)
+        reviewer_ok_output = _make_plan_output(1, "exec", "exit 1", "error output", "failed")
+        reviewer_ok_output["reviewer_ok"] = True
+
+        call_count = [0]
+
+        async def _mock_execute_plan(*args, **kwargs):
+            call_count[0] += 1
+            # Return failure with reviewer_ok output — should NOT trigger replan
+            return (False, None, None, [], [{"type": "msg", "detail": "done"}], [reviewer_ok_output])
+
+        with patch("kiso.worker.loop._execute_plan", side_effect=_mock_execute_plan), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 30,
+                {}, None, 3, None, None,
+            )
+
+        # No replan should have happened — execute_plan called only once
+        assert call_count[0] == 1
+        assert returned_id == plan_id
+
     async def test_old_plan_stays_replanning_until_new_plan_persisted(self, db, tmp_path):
         """M103a: old plan stays 'replanning' until the new plan + tasks are persisted.
 

@@ -1084,6 +1084,10 @@ async def _review_finalize_ok(
     if plan_output is not None and task_row.get("reviewer_summary"):
         plan_output["reviewer_summary"] = task_row["reviewer_summary"]
     if task_row["status"] == "failed":
+        # M983: mark reviewer_ok so the auto-replan safety net doesn't treat
+        # this as an unexpected failure that needs replanning.
+        if plan_output is not None:
+            plan_output["reviewer_ok"] = True
         return _TaskHandlerResult(stop=True, stop_success=False, plan_output=plan_output)
     return _TaskHandlerResult(completed_row=task_row, plan_output=plan_output)
 
@@ -2193,7 +2197,8 @@ async def _run_planning_loop(
             # Auto-replan safety net: if there are failed outputs and
             # replan budget remains, generate a reason from the last failure.
             failed_outputs = [
-                po for po in plan_outputs if po.get("status") == "failed"
+                po for po in plan_outputs
+                if po.get("status") == "failed" and not po.get("reviewer_ok")
             ]
             if failed_outputs and replan_depth < max_replan_depth:
                 last_fail = failed_outputs[-1]
