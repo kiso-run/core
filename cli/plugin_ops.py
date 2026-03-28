@@ -169,10 +169,14 @@ def _plugin_install(
         print(f"{plugin_type.capitalize()} '{name}' is already installed — refreshing deps...")
         try:
             # M980: git pull to update source code (not just deps)
-            subprocess.run(
-                ["git", "pull", "--ff-only"],
+            # M982: pass safe.directory to avoid "dubious ownership" errors
+            #       when kiso runs as a different user than the plugin owner.
+            result = subprocess.run(
+                ["git", "-c", f"safe.directory={plugin_dir}", "pull", "--ff-only"],
                 cwd=str(plugin_dir), capture_output=True, text=True,
             )
+            if result.returncode != 0:
+                print(f"warning: git pull failed for '{name}': {result.stderr.strip()}")
             subprocess.run(["uv", "sync"], cwd=str(plugin_dir), capture_output=True, text=True, env=_clean_env())
             deps_path = plugin_dir / "deps.sh"
             if deps_path.exists() and not args.no_deps:

@@ -490,6 +490,69 @@ def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
     assert "already installed" in out
 
 
+def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_admin, capsys):
+    """M982: git pull failure in already-installed path prints a warning (does not abort)."""
+    from cli.tool import _tool_install
+
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "search").mkdir()
+
+    def fake_run(cmd, **kwargs):
+        if "pull" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="error: cannot fast-forward")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("subprocess.run", side_effect=fake_run),
+    ):
+        args = argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        )
+        _tool_install(args)  # should NOT raise SystemExit
+
+    out = capsys.readouterr().out
+    assert "already installed" in out
+    assert "git pull failed" in out
+    assert "cannot fast-forward" in out
+
+
+def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, mock_admin, capsys):
+    """M982: git pull in already-installed path passes safe.directory config."""
+    from cli.tool import _tool_install
+
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    tool_dir = tools_dir / "search"
+    tool_dir.mkdir()
+
+    git_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        git_cmds.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("subprocess.run", side_effect=fake_run),
+    ):
+        args = argparse.Namespace(
+            target="search", name=None, no_deps=False, show_deps=False,
+        )
+        _tool_install(args)
+
+    # Find the git pull command
+    pull_cmds = [c for c in git_cmds if "pull" in c]
+    assert pull_cmds, "No git pull command found"
+    pull_cmd = pull_cmds[0]
+    # Check that -c safe.directory=<plugin_dir> is present
+    assert "-c" in pull_cmd
+    safe_dir_arg = next((a for a in pull_cmd if a.startswith("safe.directory=")), None)
+    assert safe_dir_arg is not None, f"safe.directory not in pull cmd: {pull_cmd}"
+    assert str(tool_dir) in safe_dir_arg
+
+
 def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
     from cli.tool import _tool_install
 
