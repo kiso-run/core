@@ -92,7 +92,8 @@ class TestF17FullPipeline:
         # --- Plan 1: screenshot (installs browser if needed) ---
         r1 = await _run_with_tool_install(
             run_message, "browser",
-            "Navigate to http://example.com and take a screenshot of the page",
+            "Navigate to https://en.wikipedia.org/wiki/Python_(programming_language) "
+            "and take a screenshot of the page",
         )
         assert r1.success, f"Plan 1 (screenshot) failed: {r1.task_types()}"
         assert r1.has_published_file("*.png"), (
@@ -106,8 +107,8 @@ class TestF17FullPipeline:
         )
         assert r2.success, f"Plan 2 (OCR) failed: {r2.task_types()}"
 
-        # Verify OCR found example.com content (filter to OCR tool tasks only,
-        # not msg tasks that might mention "example" without actual extraction)
+        # Verify OCR extracted text from the Wikipedia page (filter to OCR tool
+        # tasks only, not msg tasks that might mention "python" without extraction)
         last_plan_id = r2.plans[-1]["id"]
         ocr_tool_outputs = [
             t.get("output", "") or ""
@@ -119,8 +120,8 @@ class TestF17FullPipeline:
             f"No OCR tool tasks in last plan. Types: {r2.task_types()}"
         )
         ocr_output = " ".join(ocr_tool_outputs).lower()
-        assert "example" in ocr_output, (
-            f"OCR output missing 'example': {ocr_output[:500]}"
+        assert "python" in ocr_output, (
+            f"OCR output missing 'python': {ocr_output[:500]}"
         )
 
         # --- Plan 3: write word count script with aider (installs aider if needed) ---

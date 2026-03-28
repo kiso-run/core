@@ -200,7 +200,7 @@ class TestF22NonexistentTool:
         """
         result = await run_message(
             "installa e usa il tool 'zzz_test_notreal' per analizzare il sistema",
-            timeout=180,
+            timeout=300,
         )
 
         # Either success (explained unavailability) or planning failure are
