@@ -176,8 +176,8 @@ class TestF30FullPipeline:
         """
         # Plan 1: screenshot + OCR
         r1 = await run_message(
-            "fai screenshot di https://en.wikipedia.org/wiki/Python_(programming_language), "
-            "estrai il testo con OCR e salva il testo estratto in un file",
+            "fai screenshot di example.com, estrai il testo con OCR "
+            "e salva il testo estratto in un file",
             timeout=300,
         )
         assert r1.success, f"Plan 1 failed: {r1.task_types()}"
