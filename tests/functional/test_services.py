@@ -50,8 +50,8 @@ class TestF5MoltbookSignup:
         )
 
         # Response is in Italian
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
+        assert_italian(result.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
         # Browser skill was used
         tool_names = [t.get("skill") for t in result.tool_tasks()]
@@ -109,8 +109,8 @@ class TestF6MoltbookPost:
         )
 
         # Response is in Italian
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
+        assert_italian(result.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
         # Browser skill was used
         tool_names = [t.get("skill") for t in result.tool_tasks()]

@@ -46,9 +46,9 @@ class TestF3SSHKey:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
 
-        # Response is in Italian
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
+        # Response is in Italian (use last_plan to exclude English replan notifications)
+        assert_italian(result.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
         # SSH key is present somewhere in task outputs (msg or exec)
         all_output = "\n".join(
@@ -89,9 +89,9 @@ class TestF4GitAiderPush:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
 
-        # Response is in Italian
-        assert_italian(result.msg_output)
-        assert_no_failure_language(result.msg_output)
+        # Response is in Italian (use last_plan to exclude English replan notifications)
+        assert_italian(result.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
         # Verify git push happened: check all task outputs for push confirmation
         all_output = "\n".join(

@@ -114,7 +114,7 @@ class TestEntityTagEnrichment:
             timeout=120,
         )
         assert result.success
-        assert_italian(result.msg_output)
+        assert_italian(result.last_plan_msg_output)
         # Should mention onboarding or SaaS from the pre-seeded fact
         output_lower = result.msg_output.lower()
         assert "onboarding" in output_lower or "saas" in output_lower
@@ -152,7 +152,7 @@ class TestF13ChatKBClassification:
         )
         result = await run_message("cosa sai di guidance.studio?", timeout=120)
         assert result.success
-        assert_italian(result.msg_output)
+        assert_italian(result.last_plan_msg_output)
         # Response should contain pre-seeded fact content
         output_lower = result.msg_output.lower()
         assert "onboarding" in output_lower or "saas" in output_lower or "workflow" in output_lower
@@ -355,7 +355,7 @@ class TestF16ScoredFactRetrieval:
             timeout=120,
         )
         assert result.success
-        assert_italian(result.msg_output)
+        assert_italian(result.last_plan_msg_output)
         output_lower = result.msg_output.lower()
         # Should mention Flask and/or Django
         assert "flask" in output_lower or "django" in output_lower, (
@@ -393,7 +393,7 @@ class TestMessengerQuality:
         """
         result = await run_message("dimmi cosa sai fare", timeout=120)
         assert result.success
-        assert_italian(result.msg_output)
+        assert_italian(result.last_plan_msg_output)
         # No emoji
         assert not _EMOJI_RE.search(result.msg_output), (
             f"Emoji found in output: {result.msg_output[:300]}"
