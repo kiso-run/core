@@ -368,13 +368,20 @@ class TestDiscoveryPlanReplanFlow:
             f"Expected plan to end with replan or msg, "
             f"got: {[t['type'] for t in discovery_plan['tasks']]}"
         )
-        # Must have at least one investigation task
+        # M989: two valid strategies:
+        #  a) exec/search investigation tasks (discovery plan)
+        #  b) msg-only proposal when needs_install is set (M984 semantic)
         task_types = [t["type"] for t in discovery_plan["tasks"]]
-        assert any(t in ("exec", "search") for t in task_types), (
-            f"Expected at least one exec/search task, got: {task_types}"
+        has_investigation = any(t in ("exec", "search") for t in task_types)
+        has_install_proposal = bool(discovery_plan.get("needs_install"))
+        assert has_investigation or has_install_proposal, (
+            f"Expected exec/search tasks or needs_install proposal, "
+            f"got types={task_types}, needs_install={discovery_plan.get('needs_install')}"
         )
 
         # Step 2: Simulate exec outputs (pretend we ran the investigation)
+        # If plan was msg-only (install proposal), simulate the approval context
+        # instead of exec outputs.
         completed = []
         for task in discovery_plan["tasks"]:
             if task["type"] == "exec":
@@ -393,8 +400,18 @@ class TestDiscoveryPlanReplanFlow:
                     "status": "done",
                     "output": "Replan requested by planner",
                 })
+            elif task["type"] == "msg":
+                completed.append({
+                    **task,
+                    "status": "done",
+                    "output": "User approved websearch installation.",
+                })
 
-        replan_reason = f"Self-directed replan: {discovery_plan['tasks'][-1]['detail']}"
+        replan_reason = (
+            f"Self-directed replan: {discovery_plan['tasks'][-1]['detail']}"
+            if not has_install_proposal
+            else "User approved installation of websearch tool"
+        )
         replan_context = _build_replan_context(
             completed, [], replan_reason, [],
         )
