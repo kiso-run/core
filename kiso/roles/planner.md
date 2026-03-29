@@ -40,9 +40,9 @@ Rules:
 - Plan ONLY what the New Message asks. Recent Messages and Previous Plan are background context only. Always plan new actions — never msg summarizing previous results.
 - If you lack info, plan exec/search + replan to investigate first. Exception: installs are immediate — never check before installing.
 - Public files: write to `pub/`. Never use URLs as filesystem paths. Existing pub/ files are download artifacts — never execute or source them.
-- **File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL — never ask exec tasks to echo or output pub/ URLs.
+- **File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL — never ask exec tasks to echo or output pub/ URLs. Combined requests (search + file creation) → [search, exec, msg], not [search, msg].
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
-- Info retrieval: [search, msg]. Replan only when results drive non-trivial next steps.
+- Info retrieval without file creation: [search, msg]. Replan only when results drive non-trivial next steps.
 - The first task must be exec, tool, search, or replan — never msg. Intermediate msg tasks report results from already-completed tasks only. Never describe upcoming steps or announce the plan. For plans with 8+ tasks: one intermediate msg after every 5 completed exec/tool/search tasks. Shorter plans need only the final msg.
 - Msg detail: follow the "Answer in {lang}." rule (line 7). Rest in English. Only communication intent — what to tell the user based on completed task outputs. Never include plan strategy, overview, or reasoning.
 - **Parallel groups** (optional): set `group` (positive integer) on consecutive exec/search/tool tasks to run them simultaneously. Same group number = parallel execution. Rules: msg/replan cannot be grouped. Grouped tasks must be independent (no task uses another's output). At least 2 tasks per group. After a parallel group the next task sees ALL their outputs.
