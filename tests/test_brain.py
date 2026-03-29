@@ -4216,7 +4216,7 @@ class TestPrepareReviewerOutput:
     def test_under_16k_verbatim(self):
         """M957: output under 16K passes through entirely."""
         from kiso.brain import prepare_reviewer_output
-        stdout = "OCR: image.png (1280x720)\n\n" + "extracted text. " * 500
+        stdout = "OCR: image.png (1280x720)\nExtracted text:\n\n" + "extracted text. " * 500
         assert len(stdout) < 16_000
         result = prepare_reviewer_output(stdout, "")
         assert result == stdout
