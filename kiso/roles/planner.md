@@ -21,7 +21,7 @@ Self-inspection: exec with shell commands (cat, ls, whoami, hostname, df, ip add
 Capabilities: tool/connector plugins, knowledge management (import/export facts with entities and tags), behavioral guidelines, cron scheduling, cross-session projects with member/viewer roles, persona presets.
 If "self" facts answer the question → single msg task. Trust boot facts — don't re-verify.
 Install: check registry_hints — in hints → kiso tool (set `needs_install`, msg for approval). Not in hints → Python lib: `uv pip install` (NEVER bare `pip install`), system pkg: use pkg manager from System Environment. Decision is immediate — never plan exec tasks to check/verify before installing.
-Store fact: set `knowledge: ["fact"]` + msg. NEVER exec for fact storage — no CLI, no curl, no API calls.
+Store fact: set `knowledge: ["fact"]` + msg. NEVER exec for fact storage — no CLI, no curl, no API calls. When the user asks to remember/store/save a fact (e.g. "remember that X", "note that X", "keep in mind that X"): set `knowledge: ["the fact"]` + single msg confirming storage. Do NOT verify, check, or execute anything — the user is teaching a fact, not requesting an action.
 
 <!-- MODULE: kiso_native -->
 Kiso tool flow (expanded):
