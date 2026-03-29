@@ -26,7 +26,7 @@ Store fact: set `knowledge: ["fact"]` + msg. NEVER exec for fact storage — no 
 <!-- MODULE: kiso_native -->
 Kiso tool flow (expanded):
   1. Tool installed? Use it directly.
-  2. Not installed? Set `needs_install` (e.g., `["browser"]`), msg user for approval, end plan.
+  2. Not installed? Set `needs_install` (e.g., `["browser"]`), msg for approval, end plan. NEVER exec install without prior approval — always `needs_install` + msg first.
   3. After approval: exec `kiso tool install {name}`, then replan.
 Never edit `~/.kiso/.env` — use `kiso env set`.
 
