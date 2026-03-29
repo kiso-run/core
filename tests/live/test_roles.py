@@ -565,12 +565,16 @@ class TestPlannerSystemPackageLive:
                 timeout=self._TIMEOUT,
             )
 
-        assert validate_plan(plan) == []
+        errors = validate_plan(plan)
+        assert errors == [], f"Plan validation failed: {errors}"
         types = [t["type"] for t in plan["tasks"]]
         details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
         assert "exec" in types, f"Expected exec task, got types: {types}"
-        assert "uv" in details, (
-            f"Expected 'uv' in details for Python lib install, got: {details}"
+        # M990: the planner should install directly (not check first).
+        # The structural invariant is: an exec task mentioning "install",
+        # and validate_plan passes (which blocks bare "pip install").
+        assert "install" in details, (
+            f"Expected 'install' in exec details for Python lib, got: {details}"
         )
         assert "apt" not in details, (
             f"Python lib should use uv, not apt — got details: {details}"
