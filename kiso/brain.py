@@ -2307,6 +2307,8 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
     evals = result.get("evaluations", [])
     if expected_count is not None and len(evals) > expected_count:
         errors.append(f"Expected at most {expected_count} evaluations, got {len(evals)}")
+    if expected_count is not None and expected_count > 0 and len(evals) == 0:
+        errors.append("Expected at least 1 evaluation but got 0 — every learning must be evaluated")
     for i, ev in enumerate(evals, 1):
         verdict = ev.get("verdict")
         if not ev.get("reason"):

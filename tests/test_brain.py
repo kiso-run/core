@@ -2204,6 +2204,17 @@ class TestValidateCurator:
         errors = validate_curator(result, expected_count=2)
         assert any("at most 2" in e for e in errors)
 
+    def test_validate_curator_zero_evals_error(self):
+        """M995: 0 evaluations for ≥1 input is an error (every learning must be evaluated)."""
+        result = {"evaluations": []}
+        errors = validate_curator(result, expected_count=1)
+        assert any("at least 1" in e for e in errors)
+
+    def test_validate_curator_zero_evals_zero_expected_ok(self):
+        """M995: 0 evaluations with 0 expected is OK (edge case)."""
+        result = {"evaluations": []}
+        assert validate_curator(result, expected_count=0) == []
+
     def test_validate_curator_no_count_check(self):
         """No error when expected_count is None (backwards compat)."""
         result = {"evaluations": [
