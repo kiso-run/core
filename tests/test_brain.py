@@ -3928,9 +3928,9 @@ class TestRolePromptContent:
         ("planner", [
             (["background context only"], None),
         ]),
-        # M106a: planner install decision (registry_hints first)
+        # M106a: planner install decision (Available Tools reference)
         ("planner", [
-            (["registry_hints", "kiso tool"], "any"),
+            (["Available Tools", "kiso tool"], "any"),
         ]),
         # M106a: planner system package manager path
         ("planner", [
@@ -5714,8 +5714,8 @@ class TestLoadModularPrompt:
         assert "Broken tool recovery" not in result
         assert "File-based data flow" not in result
         assert "Tools efficiency:" not in result
-        # registry_hints IS in core now (M849 — install rules in core prompt)
-        assert "registry_hints" in result
+        # M999: install rule references concrete "Available Tools" section name
+        assert "Available Tools" in result
         assert "Recent Messages" not in result
 
     # M600: parametrized module loading tests
@@ -5756,7 +5756,7 @@ class TestLoadModularPrompt:
         assert "Broken tool deps" in modular
         assert "save to file" in modular
         assert "Tools efficiency:" in modular
-        assert "registry_hints" in modular
+        assert "Available Tools" in modular
         assert "Recent Messages" in modular
         # Former appendixes now modules
         assert "kiso tool install" in modular
@@ -6701,7 +6701,7 @@ class TestM261PromptSizeReduction:
         """M849: core prompt (no modules) contains critical install rules."""
         core_only = _load_modular_prompt("planner", [])
         assert "uv pip install" in core_only
-        assert "registry_hints" in core_only
+        assert "Available Tools" in core_only
         assert "needs_install" in core_only
         # Must NOT contain expanded kiso_native flow (that's in the module)
         assert "Kiso tool flow (expanded)" not in core_only
@@ -6764,7 +6764,7 @@ class TestM261PromptSizeReduction:
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Key content from each module should be present
         assert "Kiso planner" in all_modules  # core
-        assert "registry_hints" in all_modules  # kiso_native
+        assert "needs_install" in all_modules  # kiso_native
         assert "natural language WHAT" in all_modules  # planning_rules
         assert "atomic" in all_modules  # tools_rules
         assert "apt-get" in all_modules  # tool_recovery
