@@ -196,8 +196,10 @@ class TestF39ToolInstallAndUse:
             )
 
         # Stage 3: repeat request → browser should be used
+        # "scritto nella pagina" forces planner detail → "report text content"
+        # → messenger cites page text (aligned with F27/F1b pattern)
         r3 = await run_message(
-            "vai su example.com e dimmi cosa c'è",
+            "vai su example.com e dimmi cosa c'è scritto nella pagina",
             timeout=300,
         )
         assert r3.success, f"Stage 3 failed: {r3.task_types()}"
@@ -210,9 +212,13 @@ class TestF39ToolInstallAndUse:
             f"Browser not used in stage 3. Tool names: {tool_names}"
         )
 
+        # Keywords aligned with F1b (test_browser.py:139-141)
         output = r3.last_plan_msg_output.lower()
         assert any(
-            w in output for w in ("example", "dominio", "iana", "domain")
+            w in output for w in (
+                "example", "dominio", "iana", "domain",
+                "illustrativ", "esempio", "documentazione",
+            )
         ), f"Stage 3 output missing example.com content: {output[:300]}"
 
 
