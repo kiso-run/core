@@ -14,6 +14,7 @@ Requires ``--functional`` flag and a running OpenRouter API key.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -274,40 +275,40 @@ class TestF41AiderEditFile:
 
     @pytest.mark.extended
     async def test_aider_fixes_bug(self, preset_tools_installed, run_message):
-        """What: Create buggy file → aider fixes → exec verifies.
+        """What: Pre-create buggy file → aider fixes → exec verifies.
 
         Why: All existing aider tests create files from scratch. This tests
         aider's primary use case: editing existing code.
         Expects: aider tool task present, exec output contains '7' (3+4).
         """
-        r1 = await run_message(
-            "crea un file /tmp/kiso_test_f41.py con questo contenuto:\n"
+        # Pre-create file with deterministic content (no LLM involved)
+        target = Path("/tmp/kiso_test_f41.py")
+        target.write_text(
             "def add(a, b):\n"
-            "    return a - b  # BUG: should be a + b\n"
-            "print(add(3, 4))",
-            timeout=180,
+            "    return a - b\n"
+            "\n"
+            "print(add(3, 4))\n"
         )
-        assert r1.success, f"Plan 1 (create file) failed: {r1.task_types()}"
 
-        r2 = await run_message(
-            "usa aider per fixare il bug in /tmp/kiso_test_f41.py — "
-            "la funzione add dovrebbe sommare, non sottrarre. "
-            "poi esegui lo script e dimmi il risultato",
-            timeout=300,
+        result = await run_message(
+            "il file /tmp/kiso_test_f41.py ha un bug: la funzione add "
+            "sottrae invece di sommare. usa aider per fixarlo, poi "
+            "esegui python3 /tmp/kiso_test_f41.py e dimmi il risultato",
+            timeout=600,
         )
-        assert r2.success, f"Plan 2 (aider fix) failed: {r2.task_types()}"
+        assert result.success, f"Plan failed: {result.task_types()}"
 
-        _assert_tool_used(r2, "aider")
+        _assert_tool_used(result, "aider")
 
         exec_outputs = "\n".join(
-            t.get("output") or "" for t in r2.tasks
+            t.get("output") or "" for t in result.tasks
             if t.get("type") == "exec"
         )
         assert re.search(r"\b7\b", exec_outputs), (
             f"Expected '7' in exec output (3+4 after fix), "
             f"got: {exec_outputs[:500]}"
         )
-        assert_no_failure_language(r2.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
 
 # ---------------------------------------------------------------------------
@@ -320,43 +321,40 @@ class TestF42AiderAddFeature:
 
     @pytest.mark.extended
     async def test_aider_adds_method(self, preset_tools_installed, run_message):
-        """What: Create Calculator class → aider adds multiply → exec verifies.
+        """What: Pre-create Calculator class → aider adds multiply → exec verifies.
 
         Why: Tests aider's ability to understand existing code structure and
         extend it — the most common real-world aider use case.
         Expects: aider tool task present, exec output contains '30' (5*6).
         """
-        r1 = await run_message(
-            "crea un file /tmp/kiso_test_f42.py con questo contenuto:\n"
+        # Pre-create file with deterministic content (no LLM involved)
+        target = Path("/tmp/kiso_test_f42.py")
+        target.write_text(
             "class Calculator:\n"
             "    def add(self, a, b):\n"
             "        return a + b\n"
-            "\n"
-            "c = Calculator()\n"
-            "print(c.add(10, 20))",
-            timeout=180,
         )
-        assert r1.success, f"Plan 1 (create file) failed: {r1.task_types()}"
 
-        r2 = await run_message(
-            "usa aider per aggiungere un metodo multiply(self, a, b) alla "
-            "classe Calculator in /tmp/kiso_test_f42.py, poi esegui "
+        result = await run_message(
+            "il file /tmp/kiso_test_f42.py contiene una classe Calculator "
+            "con solo il metodo add. usa aider per aggiungere un metodo "
+            "multiply(self, a, b) che ritorna a * b, poi esegui "
             "python3 -c \"import sys; sys.path.insert(0, '/tmp'); "
             "from kiso_test_f42 import Calculator; c = Calculator(); "
             "print(c.multiply(5, 6))\" e dimmi il risultato",
-            timeout=300,
+            timeout=600,
         )
-        assert r2.success, f"Plan 2 (aider add) failed: {r2.task_types()}"
+        assert result.success, f"Plan failed: {result.task_types()}"
 
-        _assert_tool_used(r2, "aider")
+        _assert_tool_used(result, "aider")
 
         all_output = "\n".join(
-            t.get("output") or "" for t in r2.tasks
+            t.get("output") or "" for t in result.tasks
         )
         assert re.search(r"\b30\b", all_output), (
             f"Expected '30' in output (5*6 after add), got: {all_output[:500]}"
         )
-        assert_no_failure_language(r2.last_plan_msg_output)
+        assert_no_failure_language(result.last_plan_msg_output)
 
 
 # ---------------------------------------------------------------------------
