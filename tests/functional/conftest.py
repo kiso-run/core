@@ -598,3 +598,50 @@ async def run_message(func_config, func_db, func_session):
         )
 
     return _run
+
+
+# ---------------------------------------------------------------------------
+# Tool install helpers (shared across functional test files)
+# ---------------------------------------------------------------------------
+
+
+def tool_installed(name: str) -> bool:
+    """Check if a specific tool is installed (cache-busting)."""
+    from kiso.tools import discover_tools, invalidate_tools_cache
+
+    invalidate_tools_cache()
+    return any(t["name"] == name for t in discover_tools())
+
+
+_PRESET_TOOLS = ["browser", "ocr", "aider"]
+
+
+@pytest.fixture(scope="session")
+def preset_tools_installed():
+    """Install browser, ocr, and aider before any test that needs them.
+
+    Session-scoped — runs once per test session.
+    """
+    import subprocess
+    from kiso.tools import discover_tools, invalidate_tools_cache
+
+    invalidate_tools_cache()
+    installed = {t["name"] for t in discover_tools()}
+
+    for name in _PRESET_TOOLS:
+        if name in installed:
+            continue
+        result = subprocess.run(
+            ["uv", "run", "kiso", "tool", "install", name],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            pytest.skip(
+                f"Could not install {name}: {result.stderr[:200]}"
+            )
+
+    invalidate_tools_cache()
+    installed = {t["name"] for t in discover_tools()}
+    missing = [n for n in _PRESET_TOOLS if n not in installed]
+    if missing:
+        pytest.skip(f"Tools not available after install: {missing}")

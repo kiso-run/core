@@ -9,48 +9,14 @@ Marked @pytest.mark.extended because the initial preset install is slow.
 
 from __future__ import annotations
 
-import subprocess
-
 import pytest
 
-from kiso.tools import discover_tools, invalidate_tools_cache
 from tests.functional.conftest import (
     FunctionalResult,
     assert_no_failure_language,
 )
 
 pytestmark = [pytest.mark.functional, pytest.mark.extended]
-
-_REQUIRED_TOOLS = ["browser", "ocr", "aider"]
-
-
-@pytest.fixture(scope="session")
-def _preset_tools_installed():
-    """Install browser, ocr, and aider before any test in this file.
-
-    Uses subprocess kiso tool install (same as production). Skips if
-    a tool is already installed. Session-scoped — runs once per test session.
-    """
-    invalidate_tools_cache()
-    installed = {t["name"] for t in discover_tools()}
-
-    for name in _REQUIRED_TOOLS:
-        if name in installed:
-            continue
-        result = subprocess.run(
-            ["uv", "run", "kiso", "tool", "install", name],
-            capture_output=True, text=True, timeout=300,
-        )
-        if result.returncode != 0:
-            pytest.skip(
-                f"Could not install {name}: {result.stderr[:200]}"
-            )
-
-    invalidate_tools_cache()
-    installed = {t["name"] for t in discover_tools()}
-    missing = [n for n in _REQUIRED_TOOLS if n not in installed]
-    if missing:
-        pytest.skip(f"Tools not available after install: {missing}")
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +27,7 @@ def _preset_tools_installed():
 class TestF27BrowseAndDescribe:
     """Browse a website and describe its content — browser tool only."""
 
-    async def test_browse_and_describe(self, _preset_tools_installed, run_message):
+    async def test_browse_and_describe(self, preset_tools_installed, run_message):
         """What: Navigates to example.com and describes the page.
 
         Why: Validates browser tool works end-to-end without install flow.
@@ -93,7 +59,7 @@ class TestF27BrowseAndDescribe:
 class TestF28ScreenshotOCR:
     """Take screenshot and extract text — browser + ocr pipeline."""
 
-    async def test_screenshot_and_ocr(self, _preset_tools_installed, run_message):
+    async def test_screenshot_and_ocr(self, preset_tools_installed, run_message):
         """What: Screenshots example.com and extracts text via OCR.
 
         Why: Validates browser→ocr cross-tool pipeline and file routing (M826).
@@ -131,7 +97,7 @@ class TestF28ScreenshotOCR:
 class TestF29AiderWriteCode:
     """Write a Python script using aider tool."""
 
-    async def test_aider_write_script(self, _preset_tools_installed, run_message):
+    async def test_aider_write_script(self, preset_tools_installed, run_message):
         """What: Asks aider to write a hello.py script.
 
         Why: Validates aider tool works for code generation.
@@ -165,7 +131,7 @@ class TestF29AiderWriteCode:
 class TestF30FullPipeline:
     """Full multi-tool pipeline without install flow fragility."""
 
-    async def test_browse_ocr_aider_exec(self, _preset_tools_installed, run_message):
+    async def test_browse_ocr_aider_exec(self, preset_tools_installed, run_message):
         """What: Screenshot + OCR, then write + run word count script.
 
         Why: Replaces F17 — same coverage but tools pre-installed, no install

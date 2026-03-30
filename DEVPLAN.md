@@ -1,8 +1,9 @@
 # Development Plan
 
-Active devplan: [devplan/v0.7_wip.md](devplan/v0.7_wip.md)
+Active devplan: [devplan/v0.8.md](devplan/v0.8.md)
 
 Previous:
+- [devplan/v0.7.md](devplan/v0.7.md) (M656-M999 completed)
 - [devplan/v0.6.md](devplan/v0.6.md) (M436-M655 completed)
 - [devplan/v0.5.md](devplan/v0.5.md) (M318-M435 completed)
 - [devplan/v0.4.md](devplan/v0.4.md) (M242-M317 completed)
