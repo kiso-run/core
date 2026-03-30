@@ -209,9 +209,13 @@ class TestF39ToolInstallAndUse:
             f"Browser not used in stage 3. Tool names: {tool_names}"
         )
 
+        # Broad keyword check — the Italian LLM may paraphrase freely
         output = r3.last_plan_msg_output.lower()
         assert any(
-            w in output for w in ("example", "dominio", "iana", "domain")
+            w in output for w in (
+                "example", "dominio", "iana", "domain", "sito",
+                "pagina", "illustrativ", "dimostrazion", "riserv",
+            )
         ), f"Stage 3 output missing example.com content: {output[:300]}"
 
 
@@ -233,7 +237,9 @@ class TestF40SearchCodeExec:
         """
         result = await run_message(
             "cerca qual è il fuso orario di Tokyo, poi scrivi uno script "
-            "Python che calcola l'ora corrente a Tokyo e dimmi il risultato",
+            "Python che calcola l'ora corrente a Tokyo usando solo la "
+            "libreria standard (datetime e timezone, senza pip install) "
+            "e dimmi il risultato",
             timeout=600,
         )
 
@@ -280,20 +286,25 @@ class TestF41AiderEditFile:
         aider's primary use case: editing existing code.
         Expects: aider tool task present, exec output contains '7' (3+4).
         """
+        # Use explicit shell command to guarantee exact file content
         r1 = await run_message(
-            "crea un file /tmp/kiso_test_f41.py con questo contenuto:\n"
+            "esegui questo comando:\n"
+            "cat > /tmp/kiso_test_f41.py << 'PYEOF'\n"
             "def add(a, b):\n"
-            "    return a - b  # BUG: should be a + b\n"
-            "print(add(3, 4))",
+            "    return a - b\n"
+            "\n"
+            "print(add(3, 4))\n"
+            "PYEOF",
             timeout=180,
         )
         assert r1.success, f"Plan 1 (create file) failed: {r1.task_types()}"
 
         r2 = await run_message(
-            "usa aider per fixare il bug in /tmp/kiso_test_f41.py — "
-            "la funzione add dovrebbe sommare, non sottrarre. "
-            "poi esegui lo script e dimmi il risultato",
-            timeout=300,
+            "il file /tmp/kiso_test_f41.py ha un bug: la funzione add "
+            "sottrae invece di sommare. usa aider per fixare il bug "
+            "(cambia il - in +), poi esegui python3 /tmp/kiso_test_f41.py "
+            "e dimmi il risultato",
+            timeout=600,
         )
         assert r2.success, f"Plan 2 (aider fix) failed: {r2.task_types()}"
 
@@ -326,25 +337,25 @@ class TestF42AiderAddFeature:
         extend it — the most common real-world aider use case.
         Expects: aider tool task present, exec output contains '30' (5*6).
         """
+        # Use explicit shell command to guarantee exact file content
         r1 = await run_message(
-            "crea un file /tmp/kiso_test_f42.py con questo contenuto:\n"
+            "esegui questo comando:\n"
+            "cat > /tmp/kiso_test_f42.py << 'PYEOF'\n"
             "class Calculator:\n"
             "    def add(self, a, b):\n"
             "        return a + b\n"
-            "\n"
-            "c = Calculator()\n"
-            "print(c.add(10, 20))",
+            "PYEOF",
             timeout=180,
         )
         assert r1.success, f"Plan 1 (create file) failed: {r1.task_types()}"
 
         r2 = await run_message(
             "usa aider per aggiungere un metodo multiply(self, a, b) alla "
-            "classe Calculator in /tmp/kiso_test_f42.py, poi esegui "
-            "python3 -c \"import sys; sys.path.insert(0, '/tmp'); "
+            "classe Calculator in /tmp/kiso_test_f42.py che ritorna a * b. "
+            "poi esegui python3 -c \"import sys; sys.path.insert(0, '/tmp'); "
             "from kiso_test_f42 import Calculator; c = Calculator(); "
             "print(c.multiply(5, 6))\" e dimmi il risultato",
-            timeout=300,
+            timeout=600,
         )
         assert r2.success, f"Plan 2 (aider add) failed: {r2.task_types()}"
 

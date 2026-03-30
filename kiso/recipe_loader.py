@@ -23,7 +23,6 @@ from kiso.config import KISO_DIR
 
 log = logging.getLogger(__name__)
 
-_RECIPES_DIR = KISO_DIR / "recipes"
 _RECIPES_TTL = 30  # seconds
 
 _cache: dict[Path, tuple[float, list[dict]]] = {}
@@ -35,7 +34,7 @@ def discover_recipes(recipes_dir: Path | None = None) -> list[dict]:
     Returns list of {"name", "summary", "instructions", "path"} dicts.
     Results are cached with a TTL to avoid repeated filesystem scans.
     """
-    d = recipes_dir or _RECIPES_DIR
+    d = recipes_dir or (KISO_DIR / "recipes")
     now = time.monotonic()
 
     cached = _cache.get(d)
