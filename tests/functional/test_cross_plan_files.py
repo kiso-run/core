@@ -75,15 +75,16 @@ class TestF36CrossPlanFileHandoff:
             f"No .png published. Pub files: {r1.pub_files}"
         )
 
-        # M934: first task must NOT be msg (no announce)
-        last_plan_id = r1.plans[-1]["id"]
-        last_plan_tasks = [
-            t for t in r1.tasks if t.get("plan_id") == last_plan_id
-        ]
-        if last_plan_tasks:
-            assert last_plan_tasks[0].get("type") != "msg", (
-                f"First task is msg (announce): {last_plan_tasks[0].get('detail', '')[:100]}"
-            )
+        # M934: first task of action plans must NOT be msg (no announce).
+        # Skip msg-only plans (post-completion summaries from _ensure_tool replay).
+        _ACTION_TYPES = {"exec", "tool", "search"}
+        for p in reversed(r1.plans):
+            tasks = [t for t in r1.tasks if t.get("plan_id") == p["id"]]
+            if any(t.get("type") in _ACTION_TYPES for t in tasks):
+                assert tasks[0].get("type") != "msg", (
+                    f"First task is msg (announce): {tasks[0].get('detail', '')[:100]}"
+                )
+                break
 
         # No hallucination in messenger output
         for marker in _HALLUCINATION_MARKERS:
@@ -116,11 +117,14 @@ class TestF36CrossPlanFileHandoff:
                 f"Download task created (file should be local): {detail[:200]}"
             )
 
-        # M934: first task must NOT be msg
-        if last_plan_tasks:
-            assert last_plan_tasks[0].get("type") != "msg", (
-                f"First task is msg (announce): {last_plan_tasks[0].get('detail', '')[:100]}"
-            )
+        # M934: first task of action plans must NOT be msg
+        for p in reversed(r2.plans):
+            tasks = [t for t in r2.tasks if t.get("plan_id") == p["id"]]
+            if any(t.get("type") in _ACTION_TYPES for t in tasks):
+                assert tasks[0].get("type") != "msg", (
+                    f"First task is msg (announce): {tasks[0].get('detail', '')[:100]}"
+                )
+                break
 
         # OCR tool task should have correct path with pub/ prefix
         ocr_tasks = [
