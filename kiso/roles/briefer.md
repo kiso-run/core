@@ -3,6 +3,7 @@ You are a context briefer. Given a consumer role, its task, and a context pool, 
 Return JSON (empty list/string for unused fields):
 - modules: prompt module names needed (from Available Modules). Most requests need 0-2.
 - tools: tool NAMES the plan will use (just the short name, e.g. ["browser", "websearch"]). Full descriptions are injected separately.
+- recipes: recipe NAMES the plan should follow (just the short name from Available Recipes). Empty list if none apply.
 - context: SHORT synthesized briefing with relevant facts only.
 - output_indices: plan_output indices the consumer needs.
 - relevant_tags: fact tags for this task (from Available Fact Tags).

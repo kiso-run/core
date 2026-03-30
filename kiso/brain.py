@@ -510,11 +510,12 @@ REVIEW_SCHEMA: dict = _build_strict_schema("review", {
 BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "modules": {"type": "array", "items": {"type": "string"}},
     "tools": {"type": "array", "items": {"type": "string"}},
+    "recipes": {"type": "array", "items": {"type": "string"}},
     "context": {"type": "string"},
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "tools", "context", "output_indices", "relevant_tags", "relevant_entities"])
+}, ["modules", "tools", "recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1180,6 +1181,7 @@ async def _gather_planner_context(
     recipes_text = build_planner_recipe_list(recipes)
     if recipes_text:
         context_pool["recipes"] = recipes_text
+        context_pool["_raw_recipes"] = recipes
 
     # inject available entities for briefer selection, enriched with fact tags
     all_entities = await get_all_entities(db)
@@ -1458,8 +1460,15 @@ async def build_planner_messages(
                 f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
             )
 
-    # Recipes section — briefer includes via context_pool; fallback path adds directly
-    if not briefing and context_pool.get("recipes"):
+    # Recipes section — briefer selects by name, fallback injects all.
+    if briefing and briefing.get("recipes") and context_pool.get("recipes"):
+        raw_recipes = context_pool.get("_raw_recipes", [])
+        selected_names = {n.lower() for n in briefing["recipes"]}
+        selected = [r for r in raw_recipes if r["name"].lower() in selected_names]
+        if selected:
+            selected_text = build_planner_recipe_list(selected)
+            context_parts.append(f"## Available Recipes\n{selected_text}")
+    elif not briefing and context_pool.get("recipes"):
         context_parts.append(f"## Available Recipes\n{context_pool['recipes']}")
 
     # Tools section — briefer selects by name, code injects full descriptions.
@@ -1702,6 +1711,8 @@ def _prefilter_context_pool(
     # recipes only relevant when recipes are installed
     if not pool.get("recipes"):
         pool.pop("recipes", None)
+    # _raw_recipes is internal (list of dicts), not for LLM consumption
+    pool.pop("_raw_recipes", None)
     return pool
 
 
@@ -1763,6 +1774,8 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
                 errors.append(f"unknown module: {m!r}")
     if not isinstance(briefing.get("tools"), list):
         errors.append("tools must be an array")
+    if not isinstance(briefing.get("recipes"), list):
+        errors.append("recipes must be an array")
     if not isinstance(briefing.get("context"), str):
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
@@ -1772,6 +1785,36 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
     if not isinstance(briefing.get("relevant_entities"), list):
         errors.append("relevant_entities must be an array")
     return errors
+
+
+_POOL_NAME_RE = re.compile(r"^-\s+(\S+)")
+
+
+def _filter_briefer_names(
+    names: list[str], pool_text: str | None, label: str,
+) -> list[str]:
+    """Filter hallucinated briefer names against available names in *pool_text*.
+
+    *pool_text* is the formatted context_pool section (e.g. tools or recipes).
+    Names are extracted from lines matching ``- name ...``.
+    Returns the filtered list (normalized to lowercase).
+    """
+    if not names:
+        return []
+    if not pool_text:
+        log.debug("Briefer: cleared %d hallucinated %s(s) (none available)",
+                   len(names), label)
+        return []
+    available: set[str] = set()
+    for line in pool_text.split("\n"):
+        m = _POOL_NAME_RE.match(line)
+        if m:
+            available.add(m.group(1).lower())
+    filtered = [n.strip().lower() for n in names if n.strip().lower() in available]
+    removed = len(names) - len(filtered)
+    if removed:
+        log.debug("Briefer: filtered %d hallucinated %s name(s)", removed, label)
+    return filtered
 
 
 async def run_briefer(
@@ -1803,38 +1846,23 @@ async def run_briefer(
         session=session,
     )
 
-    # force modules=[] for simple consumers (defensive cleanup)
+    # force modules/recipes=[] for simple consumers (defensive cleanup)
     if _simple:
         briefing["modules"] = []
+        briefing["recipes"] = []
 
-    # post-validation filtering — remove hallucinated tool names
-    if briefing["tools"]:
-        if not context_pool.get("tools"):
-            log.debug("Briefer: cleared %d hallucinated tool(s) (none installed)",
-                      len(briefing["tools"]))
-            briefing["tools"] = []
-        else:
-            # extract installed tool names for exact matching
-            installed_tool_names: set[str] = set()
-            for line in context_pool["tools"].split("\n"):
-                m = re.match(r"^-\s+(\S+)", line)
-                if m:
-                    installed_tool_names.add(m.group(1).lower())
-            original_count = len(briefing["tools"])
-            # briefer now returns short names — normalize and filter
-            briefing["tools"] = [
-                name.strip().lower() for name in briefing["tools"]
-                if name.strip().lower() in installed_tool_names
-            ]
-            filtered = original_count - len(briefing["tools"])
-            if filtered:
-                log.debug("Briefer: filtered %d hallucinated tool name(s)", filtered)
+    # post-validation filtering — remove hallucinated names
+    briefing["tools"] = _filter_briefer_names(
+        briefing.get("tools", []), context_pool.get("tools"), "tool")
+    briefing["recipes"] = _filter_briefer_names(
+        briefing.get("recipes", []), context_pool.get("recipes"), "recipe")
 
     log.info(
-        "Briefer for %s: %d modules, %d tools, %d output_indices, %d tags",
+        "Briefer for %s: %d modules, %d tools, %d recipes, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
         len(briefing["tools"]),
+        len(briefing.get("recipes", [])),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),
     )

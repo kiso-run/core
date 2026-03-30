@@ -140,7 +140,7 @@ class TestMessengerBrieferTagInjection:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "relevant_entities": [],
+                    "recipes": [], "relevant_entities": [],
                 })
             return "ok"
 
@@ -210,7 +210,7 @@ class TestBrieferToolFilterNoTools:
             "context": "Some context",
             "output_indices": [],
             "relevant_tags": [],
-            "relevant_entities": [],
+            "recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", {})
@@ -225,7 +225,7 @@ class TestBrieferToolFilterNoTools:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "relevant_entities": [],
+            "recipes": [], "relevant_entities": [],
         })
         ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
@@ -242,7 +242,7 @@ class TestBrieferToolFilterNoTools:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "relevant_entities": [],
+            "recipes": [], "relevant_entities": [],
         })
         ctx = {"tools": "Available skills:\n- git — version control operations"}
         with patch("kiso.brain.call_llm", return_value=response):

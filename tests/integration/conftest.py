@@ -163,7 +163,7 @@ def make_briefing_response() -> str:
         "context": [],
         "output_indices": [],
         "relevant_tags": [],
-        "relevant_entities": [],
+        "recipes": [], "relevant_entities": [],
     })
 
 
