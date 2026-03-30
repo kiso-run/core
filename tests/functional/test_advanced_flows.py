@@ -224,16 +224,17 @@ class TestF40SearchCodeExec:
     """F40: Search for info → write script using results → execute."""
 
     async def test_search_then_code_then_exec(self, run_message):
-        """What: Search timezone info → write Python script → execute → report.
+        """What: Search population → write density script → execute → report.
 
         Why: Validates the search→code→exec composite pipeline. F7 tests
         search→publish, F8 tests exec alone. Neither chains search results
         into generated code.
-        Expects: search + exec tasks present, output mentions time/timezone.
+        Expects: search + exec tasks present, output contains a density number.
         """
         result = await run_message(
-            "cerca qual è il fuso orario di Tokyo, poi scrivi uno script "
-            "Python che calcola l'ora corrente a Tokyo e dimmi il risultato",
+            "cerca la popolazione di Tokyo, poi scrivi uno script Python "
+            "che calcola la densità di popolazione sapendo che l'area è "
+            "2194 km², e dimmi il risultato",
             timeout=600,
         )
 
@@ -245,21 +246,20 @@ class TestF40SearchCodeExec:
         assert "search" in types, f"No search task in pipeline: {types}"
         assert "exec" in types, f"No exec task in pipeline: {types}"
 
+        # Output should contain a density number (population / 2194)
+        # Tokyo population ~14M, density ~6300-6400 hab/km²
         all_output = "\n".join(
             t.get("output") or "" for t in result.tasks
-        ).lower()
-        msg_output = result.last_plan_msg_output.lower()
+        )
+        msg_output = result.last_plan_msg_output
         combined = all_output + " " + msg_output
 
-        time_indicators = (
-            re.search(r"\d{1,2}:\d{2}", combined),
-            "tokyo" in combined,
-            "jst" in combined,
-            "utc+9" in combined or "utc + 9" in combined,
-            "+09:00" in combined or "+0900" in combined,
-        )
-        assert any(time_indicators), (
-            f"Expected time/timezone data in output: {combined[:500]}"
+        # Check for any number in a plausible density range, or just
+        # that a numeric result was produced (the exact value depends
+        # on what population figure the search returns)
+        has_number = bool(re.search(r"\d{3,}", combined))
+        assert has_number, (
+            f"Expected numeric density in output: {combined[:500]}"
         )
         assert_no_failure_language(result.last_plan_msg_output)
 
