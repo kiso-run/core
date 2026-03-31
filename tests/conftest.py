@@ -294,6 +294,30 @@ def full_models(**overrides) -> dict:
     return {**MODEL_DEFAULTS, **overrides}
 
 
+def make_config(**overrides) -> "Config":
+    """Build a :class:`Config` for tests with sensible defaults.
+
+    ``settings`` may be passed as a nested dict — its entries are *merged*
+    into the base settings rather than replacing them.  All other keyword
+    arguments are forwarded straight to :class:`Config`.
+    """
+    from kiso.config import Config, Provider
+
+    base_settings = full_settings(worker_idle_timeout=0.05, llm_timeout=5)
+    if "settings" in overrides:
+        base_settings.update(overrides.pop("settings"))
+    defaults = dict(
+        tokens={"cli": "tok"},
+        providers={"local": Provider(base_url="http://localhost:11434/v1")},
+        users={},
+        models=full_models(planner="gpt-4", worker="gpt-3.5", reviewer="gpt-4"),
+        settings=base_settings,
+        raw={},
+    )
+    defaults.update(overrides)
+    return Config(**defaults)
+
+
 @pytest_asyncio.fixture()
 async def client(tmp_path: Path, test_config_path: Path):
     """Async httpx client wired to the FastAPI app via ASGI transport.

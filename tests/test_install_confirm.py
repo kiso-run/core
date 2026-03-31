@@ -17,7 +17,6 @@ from kiso.brain import (
     run_planner,
     validate_plan,
 )
-from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 
 
 # --- 1. Planner prompt rules reference user confirmation ---
@@ -288,15 +287,7 @@ class TestInstallProposalEdgeCases:
 # --- M615: server-side install-proposal detection ---
 
 
-def _make_config(**settings_overrides):
-    return Config(
-        tokens={"cli": "test"},
-        providers={"openrouter": Provider(base_url="https://test.local/v1")},
-        users={},
-        models=dict(MODEL_DEFAULTS),
-        settings={**SETTINGS_DEFAULTS, "briefer_enabled": False, **settings_overrides},
-        raw={},
-    )
+from tests.conftest import make_config
 
 
 @pytest.mark.asyncio
@@ -320,7 +311,7 @@ class TestRetryLoopUninstalledToolFlag:
                         "args": None, "expect": None}],
         })
         mock_llm = AsyncMock(side_effect=[bad_plan, good_plan])
-        config = _make_config()
+        config = make_config()
         call_count = 0
 
         def validate(plan):
@@ -346,7 +337,7 @@ class TestRetryLoopUninstalledToolFlag:
                         "args": None, "expect": None}],
         })
         mock_llm = AsyncMock(return_value=good_plan)
-        config = _make_config()
+        config = make_config()
 
         with patch("kiso.brain.call_llm", mock_llm):
             result = await _retry_llm_with_validation(
@@ -369,7 +360,7 @@ class TestRetryLoopUninstalledToolFlag:
                         "args": None, "expect": None}],
         })
         mock_llm = AsyncMock(side_effect=[bad, good])
-        config = _make_config()
+        config = make_config()
         call_count = 0
 
         def validate(plan):
@@ -450,7 +441,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
 
     async def test_msg_only_no_tools_sets_install_proposal(self, db):
         """msg-only plan + no installed tools + needs_install=null → True."""
-        config = _make_config()
+        config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=None)),
@@ -461,7 +452,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
 
     async def test_msg_only_with_tools_installed_no_forced_proposal(self, db):
         """msg-only plan + tools installed → follows needs_install (False)."""
-        config = _make_config()
+        config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -473,7 +464,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
 
     async def test_msg_only_needs_install_explicit(self, db):
         """msg-only + needs_install=["browser"] → True regardless of tools."""
-        config = _make_config()
+        config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=["browser"])),
@@ -484,7 +475,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
 
     async def test_exec_msg_plan_no_tools_sets_proposal(self, db):
         """M711: exec+msg plan + no tools → install_proposal=True (no tool tasks)."""
-        config = _make_config()
+        config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_exec_msg_plan()),
@@ -601,7 +592,7 @@ class TestM901NeedsInstallFilter:
 
     async def test_installed_tool_removed_from_needs_install(self, db):
         """needs_install: ["browser"] with browser installed → filtered out, proposal=False."""
-        config = _make_config()
+        config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -614,7 +605,7 @@ class TestM901NeedsInstallFilter:
 
     async def test_uninstalled_tool_preserved_in_needs_install(self, db):
         """needs_install: ["ocr"] with browser installed → ocr preserved, proposal=True."""
-        config = _make_config()
+        config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -627,7 +618,7 @@ class TestM901NeedsInstallFilter:
 
     async def test_mixed_installed_and_uninstalled_filtered(self, db):
         """needs_install: ["browser", "ocr"] with browser installed → only ocr remains."""
-        config = _make_config()
+        config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,

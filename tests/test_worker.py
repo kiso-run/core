@@ -116,27 +116,7 @@ def _patch_translator():
     )
 
 
-def _make_config(**overrides) -> Config:
-    from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
-    base_settings = {
-        **SETTINGS_DEFAULTS,
-        "worker_idle_timeout": 0.05,  # sub-second for fast tests
-        "llm_timeout": 5,
-        "briefer_enabled": False,  # avoid interfering with mocked call_llm
-    }
-    # Merge settings overrides rather than replacing the whole dict
-    if "settings" in overrides:
-        base_settings.update(overrides.pop("settings"))
-    defaults = dict(
-        tokens={"cli": "tok"},
-        providers={"local": Provider(base_url="http://localhost:11434/v1")},
-        users={},
-        models={**MODEL_DEFAULTS, "planner": "gpt-4", "worker": "gpt-3.5", "reviewer": "gpt-4"},
-        settings=base_settings,
-        raw={},
-    )
-    defaults.update(overrides)
-    return Config(**defaults)
+from tests.conftest import make_config
 
 
 # --- _run_subprocess ---
@@ -364,14 +344,14 @@ class TestMsgTask:
         await conn.close()
 
     async def test_successful_call(self, db):
-        config = _make_config()
+        config = make_config()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="Bot says hi"):
             result = await _msg_task(config, db, "sess1", "Say hello to the user")
         assert result == "Bot says hi"
 
     async def test_response_lang_prepends_prefix(self, db):
         """M650/M882: response_lang injects 'Answer in {lang}.' prefix."""
-        config = _make_config()
+        config = make_config()
         captured = []
 
         async def _capture(cfg, role, messages, **kw):
@@ -385,7 +365,7 @@ class TestMsgTask:
 
     async def test_response_lang_replaces_wrong_prefix(self, db):
         """M653/M882: wrong language prefix is replaced with correct one."""
-        config = _make_config()
+        config = make_config()
         captured = []
 
         async def _capture(cfg, role, messages, **kw):
@@ -405,7 +385,7 @@ class TestMsgTask:
 
     async def test_response_lang_correct_prefix_unchanged(self, db):
         """M653/M882: correct language prefix is left as-is."""
-        config = _make_config()
+        config = make_config()
         captured = []
 
         async def _capture(cfg, role, messages, **kw):
@@ -420,7 +400,7 @@ class TestMsgTask:
         assert captured[0].count("Answer in Italian.") == 1
 
     async def test_includes_summary_in_context(self, db):
-        config = _make_config()
+        config = make_config()
         await db.execute("UPDATE sessions SET summary = 'Project uses Flask' WHERE session = 'sess1'")
         await db.commit()
 
@@ -437,7 +417,7 @@ class TestMsgTask:
         assert "Project uses Flask" in user_content
 
     async def test_includes_facts_in_context(self, db):
-        config = _make_config()
+        config = make_config()
         await db.execute("INSERT INTO facts (content, source) VALUES (?, ?)", ("Uses Python", "curator"))
         await db.commit()
 
@@ -455,7 +435,7 @@ class TestMsgTask:
 
     async def test_goal_reaches_messenger_context(self, db):
         """_msg_task passes goal parameter through to messenger context."""
-        config = _make_config()
+        config = make_config()
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kwargs):
@@ -469,7 +449,7 @@ class TestMsgTask:
 
     async def test_user_message_reaches_messenger_context(self, db):
         """M214: _msg_task passes user_message to messenger context."""
-        config = _make_config()
+        config = make_config()
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kwargs):
@@ -485,7 +465,7 @@ class TestMsgTask:
 
     async def test_messenger_error_propagates(self, db):
         from kiso.brain import MessengerError
-        config = _make_config()
+        config = make_config()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("API down")):
             with pytest.raises(MessengerError, match="API down"):
                 await _msg_task(config, db, "sess1", "task")
@@ -494,7 +474,7 @@ class TestMsgTask:
         """M496: briefer returning mixed-case entity name still matches DB entity."""
         from kiso.store import find_or_create_entity, save_fact
 
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         eid = await find_or_create_entity(db, "guidance.studio", "website")
         await save_fact(
             db, "guidance.studio is a SaaS onboarding platform",
@@ -526,7 +506,7 @@ class TestMsgTask:
 
     async def test_briefer_skipped_when_budget_near_limit(self, db):
         """M523: briefer is skipped when LLM budget is nearly exhausted."""
-        config = _make_config(settings={"briefer_enabled": True, "max_llm_calls_per_message": 10})
+        config = make_config(settings={"briefer_enabled": True, "max_llm_calls_per_message": 10})
 
         async def _capture(cfg, role, messages, **kwargs):
             return "Budget test response"
@@ -555,7 +535,7 @@ class TestRunWorker:
         await conn.close()
 
     async def test_msg_only_plan_succeeds(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -579,7 +559,7 @@ class TestRunWorker:
         assert tasks[0]["output"] == "Hi there!"
 
     async def test_exec_then_msg_plan_succeeds(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "list files", processed=False)
 
@@ -607,7 +587,7 @@ class TestRunWorker:
 
     async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
         """Secrets from the plan are extracted and available for skill execution."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "use token", processed=False)
 
@@ -630,7 +610,7 @@ class TestRunWorker:
 
     async def test_exec_failure_review_replan(self, db, tmp_path):
         """Exec fails, reviewer says replan, but max_replan_depth=0 → immediate failure."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -663,7 +643,7 @@ class TestRunWorker:
 
     async def test_exec_failure_review_error_marks_failed(self, db, tmp_path):
         """Exec fails, reviewer errors → plan fails (after replan attempts, M170)."""
-        config = _make_config(settings={"max_replan_depth": 1})
+        config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
 
@@ -692,7 +672,7 @@ class TestRunWorker:
     async def test_msg_llm_error_marks_plan_failed(self, db, tmp_path):
         # M481: when the only task is a final msg task and messenger fails,
         # the plan falls back to raw detail and is marked "done" (not "failed").
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -714,7 +694,7 @@ class TestRunWorker:
         assert msg_task["output"] == "Hello!"
 
     async def test_tool_task_fails_not_implemented(self, db, tmp_path):
-        config = _make_config(settings={"max_replan_depth": 1})
+        config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -734,7 +714,7 @@ class TestRunWorker:
 
     async def test_planning_error_continues(self, db, tmp_path):
         """If planning fails, the worker should continue to the next message."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg1 = await save_message(db, "sess1", "alice", "user", "bad", processed=False)
         msg2 = await save_message(db, "sess1", "alice", "user", "good", processed=False)
@@ -770,7 +750,7 @@ class TestRunWorker:
         assert plans[1]["status"] == "done"
 
     async def test_marks_message_processed(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -786,7 +766,7 @@ class TestRunWorker:
 
     async def test_idle_timeout_exits(self, db, tmp_path):
         """Worker exits after idle_timeout with no messages."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 0.1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -802,7 +782,7 @@ class TestRunWorker:
         # If we get here, the worker exited cleanly
 
     async def test_multiple_messages_processed_sequentially(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg1 = await save_message(db, "sess1", "alice", "user", "first", processed=False)
         msg2 = await save_message(db, "sess1", "alice", "user", "second", processed=False)
@@ -825,7 +805,7 @@ class TestRunWorker:
 
     async def test_replan_succeeds_on_second_attempt(self, db, tmp_path):
         """Exec fails, reviewer requests replan, second plan succeeds."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
@@ -875,7 +855,7 @@ class TestRunWorker:
 
     async def test_replan_stores_learning(self, db, tmp_path):
         """Reviewer learning is stored in the learnings table."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
@@ -908,7 +888,7 @@ class TestRunWorker:
 
     async def test_max_replan_depth_notifies_user(self, db, tmp_path):
         """When max replan depth is reached, a recovery msg task is created via LLM."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -957,7 +937,7 @@ class TestRunWorker:
 
     async def test_replan_error_breaks_loop(self, db, tmp_path):
         """If replanning raises PlanError, worker breaks and moves on."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
 
@@ -1004,7 +984,7 @@ class TestRunWorker:
     async def test_replan_error_creates_recovery_msg_task(self, db, tmp_path):
         """When replanning raises PlanError, a recovery msg task is created
         so the CLI can display feedback to the user."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
 
@@ -1045,7 +1025,7 @@ class TestRunWorker:
 
     async def test_replan_marks_remaining_tasks_superseded(self, db, tmp_path):
         """On replan, remaining pending tasks from old plan are marked failed."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
@@ -1096,7 +1076,7 @@ class TestRunWorker:
 
     async def test_replan_notification_saved(self, db, tmp_path):
         """On replan, a system message notifying the user is saved."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
@@ -1156,7 +1136,7 @@ class TestRunWorker:
 
     async def test_replan_sets_replanning_status_during_planner_call(self, db, tmp_path):
         """Plan status transitions: running → replanning → failed, then new plan running."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
@@ -1216,7 +1196,7 @@ class TestRunWorker:
 
     async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
         """Skill task review error → plan fails (after replan attempts)."""
-        config = _make_config(settings={"max_replan_depth": 1})
+        config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -1233,7 +1213,7 @@ class TestRunWorker:
 
     async def test_skill_review_ok_still_fails_plan(self, db, tmp_path):
         """Even if reviewer says ok for a skill task, plan still fails (skill not installed)."""
-        config = _make_config(settings={"max_replan_depth": 1})
+        config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -1265,7 +1245,7 @@ class TestReviewTask:
         return task_id
 
     async def test_ok_review(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db, "echo hi", "prints hi")
         task_row = {"id": tid, "detail": "echo hi", "expect": "prints hi", "output": "hi\n", "stderr": ""}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
@@ -1273,7 +1253,7 @@ class TestReviewTask:
         assert review["status"] == "ok"
 
     async def test_replan_review(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db, "ls", "files")
         task_row = {"id": tid, "detail": "ls", "expect": "files", "output": "", "stderr": "not found"}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN):
@@ -1281,7 +1261,7 @@ class TestReviewTask:
         assert review["status"] == "replan"
 
     async def test_stores_learning(self, db):
-        config = _make_config()
+        config = make_config()
         review_with_learn = {"status": "ok", "reason": None, "learn": ["Project uses Flask framework"]}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
@@ -1294,7 +1274,7 @@ class TestReviewTask:
         assert rows[0][0] == "Project uses Flask framework"
 
     async def test_no_learning_when_null(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
@@ -1306,7 +1286,7 @@ class TestReviewTask:
 
     async def test_learn_string_wrapped(self, db):
         """If reviewer returns learn as a plain string (malformed), wrap it in a list."""
-        config = _make_config()
+        config = make_config()
         review_str_learn = {"status": "ok", "reason": None, "learn": "Project uses Flask framework"}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
@@ -1319,7 +1299,7 @@ class TestReviewTask:
         assert rows[0][0] == "Project uses Flask framework"
 
     async def test_includes_stderr_in_output(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db, "ls", "files")
         task_row = {"id": tid, "detail": "ls", "expect": "files", "output": "out", "stderr": "warn"}
         captured_output = []
@@ -1335,7 +1315,7 @@ class TestReviewTask:
         assert "warn" in captured_output[0]
 
     async def test_no_stderr_section_when_empty(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": "ok", "stderr": ""}
         captured_output = []
@@ -1350,7 +1330,7 @@ class TestReviewTask:
         assert "stderr" not in captured_output[0]
 
     async def test_none_output_handled(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok", "output": None, "stderr": None}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
@@ -1358,7 +1338,7 @@ class TestReviewTask:
         assert review["status"] == "ok"
 
     async def test_review_verdict_persisted_after_exec(self, db):
-        config = _make_config()
+        config = make_config()
         tid = await self._make_task(db, "echo ok", "ok")
         task_row = {"id": tid, "detail": "echo ok", "expect": "ok", "output": "ok\n", "stderr": ""}
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK):
@@ -1373,7 +1353,7 @@ class TestReviewTask:
         assert row[2] is None
 
     async def test_review_replan_fields_persisted(self, db):
-        config = _make_config()
+        config = make_config()
         replan_with_learn = {"status": "replan", "reason": "Bad output", "learn": ["Task needs a different retry approach"]}
         tid = await self._make_task(db, "bad cmd", "ok")
         task_row = {"id": tid, "detail": "bad cmd", "expect": "ok", "output": "", "stderr": "err"}
@@ -1391,7 +1371,7 @@ class TestReviewTask:
 
     async def test_review_task_empty_output_discards_learnings(self, db):
         """M111d: learnings are discarded when task output is empty."""
-        config = _make_config()
+        config = make_config()
         review_with_learn = {"status": "ok", "reason": None, "learn": ["Inferred fact"]}
         tid = await self._make_task(db, "check version", "shows version")
         task_row = {"id": tid, "detail": "check version", "expect": "shows version",
@@ -1405,7 +1385,7 @@ class TestReviewTask:
 
     async def test_review_task_whitespace_output_discards_learnings(self, db):
         """M111d: learnings are discarded when task output is whitespace-only."""
-        config = _make_config()
+        config = make_config()
         review_with_learn = {"status": "ok", "reason": None, "learn": ["Inferred fact"]}
         tid = await self._make_task(db, "check", "ok")
         task_row = {"id": tid, "detail": "check", "expect": "ok",
@@ -1419,7 +1399,7 @@ class TestReviewTask:
 
     async def test_review_task_nonempty_output_keeps_learnings(self, db):
         """M111d: learnings are kept when output has real content."""
-        config = _make_config()
+        config = make_config()
         review_with_learn = {"status": "ok", "reason": None, "learn": ["Project uses Flask framework"]}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "echo", "expect": "ok",
@@ -1433,7 +1413,7 @@ class TestReviewTask:
 
     async def test_review_task_empty_output_but_stderr_keeps_learnings(self, db):
         """M111d: learnings kept when output is empty but stderr has content."""
-        config = _make_config()
+        config = make_config()
         review_with_learn = {"status": "ok", "reason": None, "learn": ["Uses Python 3.11"]}
         tid = await self._make_task(db)
         task_row = {"id": tid, "detail": "check", "expect": "ok",
@@ -1460,7 +1440,7 @@ class TestReviewTaskLargeOutput:
 
     async def test_large_stdout_truncated_for_reviewer(self, db):
         """100KB stdout is truncated before reaching the reviewer LLM."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tid = await create_task(db, plan_id, "sess1", type="exec", detail="big", expect="ok")
         large_output = "\n".join(f"line {i}: ok" for i in range(5000))
@@ -1483,7 +1463,7 @@ class TestReviewTaskLargeOutput:
 
     async def test_error_in_middle_reaches_reviewer(self, db):
         """Error line buried in large stdout reaches the reviewer via grep section."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tid = await create_task(db, plan_id, "sess1", type="exec", detail="build", expect="build succeeds")
         lines = [f"compiling module {i}..." for i in range(500)]
@@ -1508,7 +1488,7 @@ class TestReviewTaskLargeOutput:
 
     async def test_stderr_priority_in_large_output(self, db):
         """Stderr is preserved even when stdout is massive."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tid = await create_task(db, plan_id, "sess1", type="exec", detail="cmd", expect="ok")
         task_row = {"id": tid, "detail": "cmd", "expect": "ok",
@@ -1528,7 +1508,7 @@ class TestReviewTaskLargeOutput:
 
     async def test_small_output_unchanged(self, db):
         """Small output passes through without truncation marker."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tid = await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="prints hi")
         task_row = {"id": tid, "detail": "echo hi", "expect": "prints hi",
@@ -1808,7 +1788,7 @@ class TestExecutePlan:
         await conn.close()
 
     async def test_msg_only_success(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -1824,7 +1804,7 @@ class TestExecutePlan:
         assert remaining == []
 
     async def test_exec_reviewed_ok(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -1841,7 +1821,7 @@ class TestExecutePlan:
         assert len(completed) == 2
 
     async def test_exec_reviewed_replan(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="exit 1", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -1860,7 +1840,7 @@ class TestExecutePlan:
 
     async def test_exec_review_error_triggers_replan(self, db, tmp_path):
         """M170: exec review error triggers replan with task output preserved."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -1881,7 +1861,7 @@ class TestExecutePlan:
     async def test_msg_llm_error(self, db, tmp_path):
         # M481: final msg task messenger failure falls back to raw detail.
         # Plan succeeds (success=True) with 1 completed task containing raw detail.
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -1898,7 +1878,7 @@ class TestExecutePlan:
 
     async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
         """Skill not installed → replan with error message (M164)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="search", args="{}", expect="results")
@@ -1926,7 +1906,7 @@ class TestExecutePlan:
 
     async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
         """Invalid JSON in skill args → replan with error (M164)."""
-        config = _make_config()
+        config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="do thing",
@@ -1950,7 +1930,7 @@ class TestExecutePlan:
 
     async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
         """Skill args missing required field → replan with error (M164)."""
-        config = _make_config()
+        config = make_config()
         tool_info = {
             "name": "browser",
             "args_schema": {"action": {"type": "string", "required": True}},
@@ -1978,7 +1958,7 @@ class TestExecutePlan:
 
     async def test_skill_execution_failure_reviewer_replan(self, db, tmp_path):
         """M167: skill executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
-        config = _make_config()
+        config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="take screenshot",
@@ -2008,7 +1988,7 @@ class TestExecutePlan:
 
     async def test_skill_review_error(self, db, tmp_path):
         """Skill not installed → replan (M164); reviewer never reached."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="search", args="{}", expect="results")
@@ -2025,7 +2005,7 @@ class TestExecutePlan:
 
     async def test_multiple_exec_first_fails(self, db, tmp_path):
         """First exec fails → remaining tasks returned."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo second", expect="ok")
@@ -2054,7 +2034,7 @@ class TestExecutePlan:
 
     async def test_replan_task_triggers_replan(self, db, tmp_path):
         """Plan with exec + replan → returns (False, 'Self-directed replan: ...', completed, remaining)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Investigate")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo registry",
                           expect="JSON output")
@@ -2077,7 +2057,7 @@ class TestExecutePlan:
 
     async def test_replan_task_marked_done(self, db, tmp_path):
         """The replan task itself gets status 'done'."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Investigate")
         await create_task(db, plan_id, "sess1", type="replan",
                           detail="decide next steps")
@@ -2111,7 +2091,7 @@ class TestExecTranslatorIntegration:
 
     async def test_translator_called_with_detail(self, db, tmp_path):
         """run_exec_translator receives the natural-language detail."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="List all files in the current directory",
@@ -2139,7 +2119,7 @@ class TestExecTranslatorIntegration:
 
     async def test_translated_command_is_executed(self, db, tmp_path):
         """The translated command (not the detail) is what gets executed."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="Print the word translated",
@@ -2165,7 +2145,7 @@ class TestExecTranslatorIntegration:
 
     async def test_translator_failure_triggers_replan(self, db, tmp_path):
         """ExecTranslatorError → replan with error message (M168)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="Do something impossible",
@@ -2188,7 +2168,7 @@ class TestExecTranslatorIntegration:
 
     async def test_translator_receives_plan_outputs(self, db, tmp_path):
         """The translator receives preceding plan outputs for context."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="Create a file named hello.txt", expect="ok")
@@ -2227,7 +2207,7 @@ class TestExecTranslatorIntegration:
 
     async def test_translator_receives_sys_env(self, db, tmp_path):
         """The translator receives system environment context."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="List files", expect="ok")
@@ -2254,7 +2234,7 @@ class TestExecTranslatorIntegration:
 
     async def test_msg_tasks_skip_translator(self, db, tmp_path):
         """msg tasks do NOT go through the translator."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -2284,7 +2264,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_task_called_for_exec(self, db, tmp_path):
         """audit.log_task called for exec task execution."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -2310,7 +2290,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_review_called(self, db, tmp_path):
         """audit.log_review called after review."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -2330,7 +2310,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_review_with_learning(self, db, tmp_path):
         """audit.log_review records has_learning=True when learn is present."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -2349,7 +2329,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_webhook_called(self, db, tmp_path):
         """audit.log_webhook called after webhook delivery."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -2370,7 +2350,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_webhook_on_failure(self, db, tmp_path):
         """audit.log_webhook records failed delivery."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -2388,7 +2368,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_task_for_msg_only(self, db, tmp_path):
         """audit.log_task called for msg-only plan."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -2404,7 +2384,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_task_msg_passes_secrets(self, db, tmp_path):
         """audit.log_task for msg tasks passes deploy_secrets and session_secrets."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -2424,7 +2404,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_task_on_permission_denied(self, db, tmp_path):
         """audit.log_task called with status 'failed' when permission is denied."""
-        config = _make_config(users={"bob": User(role="admin")})
+        config = make_config(users={"bob": User(role="admin")})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="ok")
 
@@ -2444,7 +2424,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_task_on_cancel(self, db, tmp_path):
         """audit.log_task called for each cancelled task."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo a", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -2467,7 +2447,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_task_on_msg_llm_error(self, db, tmp_path):
         """M481: audit.log_task called with status 'done' on final msg MessengerError (fallback)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -2483,7 +2463,7 @@ class TestExecutePlanAudit:
 
     async def test_audit_log_webhook_passes_secrets(self, db, tmp_path):
         """audit.log_webhook passes deploy_secrets and session_secrets."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -2929,7 +2909,7 @@ class TestMsgTaskWithPlanOutputs:
         await conn.close()
 
     async def test_includes_plan_outputs_in_context(self, db):
-        config = _make_config()
+        config = make_config()
         plan_outputs = [
             {"index": 1, "type": "exec", "detail": "echo hi", "output": "hi\n", "status": "done"},
         ]
@@ -2947,7 +2927,7 @@ class TestMsgTaskWithPlanOutputs:
         assert "[1] exec: echo hi" in user_content
 
     async def test_no_plan_outputs_section_when_none(self, db):
-        config = _make_config()
+        config = make_config()
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kwargs):
@@ -2961,7 +2941,7 @@ class TestMsgTaskWithPlanOutputs:
         assert "Preceding Task Outputs" not in user_content
 
     async def test_no_plan_outputs_section_when_empty(self, db):
-        config = _make_config()
+        config = make_config()
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kwargs):
@@ -2988,7 +2968,7 @@ class TestExecutePlanSanitization:
 
     async def test_exec_output_sanitized(self, db, tmp_path):
         """Verify that deploy secrets are stripped from exec task output."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(
             db, plan_id, "sess1", type="exec",
@@ -3023,7 +3003,7 @@ class TestExecutePlanOutputChaining:
 
     async def test_plan_outputs_json_written_before_exec(self, db, tmp_path):
         """plan_outputs.json should exist in workspace before exec runs."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
         await create_task(db, plan_id, "sess1", type="exec", detail="cat .kiso/plan_outputs.json", expect="ok")
@@ -3046,7 +3026,7 @@ class TestExecutePlanOutputChaining:
         assert "first" in data[0]["output"]
 
     async def test_plan_outputs_cleaned_up_on_success(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
@@ -3061,7 +3041,7 @@ class TestExecutePlanOutputChaining:
         assert not outputs_file.exists()
 
     async def test_plan_outputs_cleaned_up_on_replan(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="exit 1", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -3080,7 +3060,7 @@ class TestExecutePlanOutputChaining:
     async def test_plan_outputs_cleaned_up_on_llm_error(self, db, tmp_path):
         # M481: final msg task messenger failure falls back to raw detail.
         # Plan succeeds with one plan_output containing the raw detail.
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -3097,7 +3077,7 @@ class TestExecutePlanOutputChaining:
 
     async def test_msg_receives_exec_outputs(self, db, tmp_path):
         """msg task should receive preceding exec outputs via plan_outputs."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo hello", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="Report what happened")
@@ -3125,7 +3105,7 @@ class TestExecutePlanOutputChaining:
 
     async def test_plan_outputs_accumulates_all_types(self, db, tmp_path):
         """plan_outputs should accumulate entries for exec, msg, and skill tasks."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo step1", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="Report step1")
@@ -3151,7 +3131,7 @@ class TestExecutePlanOutputChaining:
 
     async def test_skill_output_in_plan_outputs(self, db, tmp_path):
         """Skill task output should be accumulated in plan_outputs."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="search", args="{}", expect="results")
@@ -3343,7 +3323,7 @@ class TestExecutePlanTool:
         await conn.close()
 
     async def test_skill_not_installed(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="search",
                           skill="nonexistent", args='{"q":"test"}', expect="results")
@@ -3360,7 +3340,7 @@ class TestExecutePlanTool:
         assert "not installed" in tasks[0]["output"]
 
     async def test_skill_invalid_args_json(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args="not json", expect="ok")
@@ -3382,7 +3362,7 @@ class TestExecutePlanTool:
         assert "Invalid tool args JSON" in tasks[0]["output"]
 
     async def test_skill_args_validation_error(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         # Missing required arg 'text'
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
@@ -3404,7 +3384,7 @@ class TestExecutePlanTool:
         assert "missing required arg: text" in tasks[0]["output"]
 
     async def test_skill_executes_successfully(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hello"}', expect="ok")
@@ -3429,7 +3409,7 @@ class TestExecutePlanTool:
         assert result["text"] == "hello"
 
     async def test_skill_passes_session_secrets(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="sec",
                           skill="sec", args='{}', expect="ok")
@@ -3469,7 +3449,7 @@ class TestExecutePlanTool:
         assert result == {"api_token": "[REDACTED]"}
 
     async def test_skill_review_replan(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
@@ -3490,7 +3470,7 @@ class TestExecutePlanTool:
 
     async def test_skill_review_replan_carries_retry_hint(self, db, tmp_path):
         """M179: skill handler propagates retry_hint to plan_output on replan."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
@@ -3520,7 +3500,7 @@ class TestExecutePlanTool:
 
     async def test_skill_retry_on_transient_failure(self, db, tmp_path):
         """M204: skill retries internally when reviewer provides retry_hint."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
@@ -3553,7 +3533,7 @@ class TestExecutePlanTool:
 
     async def test_skill_retry_exhausted_escalates_to_replan(self, db, tmp_path):
         """M204: skill escalates to replan after max_worker_retries exhausted."""
-        config = _make_config(settings={"max_worker_retries": 1})
+        config = make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
@@ -3587,7 +3567,7 @@ class TestExecutePlanTool:
 
     async def test_skill_no_retry_without_hint(self, db, tmp_path):
         """M204: skill does NOT retry when reviewer returns replan without retry_hint."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="echo",
                           skill="echo", args='{"text":"hi"}', expect="ok")
@@ -3628,7 +3608,7 @@ class TestPostInstallRescan:
 
     async def test_rescan_triggered_after_install_exec(self, db, tmp_path):
         """If exec detail contains 'install' and a tool is unhealthy, rescan."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "install browser")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="kiso tool install browser", expect="tool installed")
@@ -3670,7 +3650,7 @@ class TestPostInstallRescan:
 
     async def test_no_rescan_without_install_keyword(self, db, tmp_path):
         """Non-install exec tasks don't trigger rescan even if tools unhealthy."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "check something")
         await create_task(db, plan_id, "sess1", type="exec",
                           detail="ls -la", expect="files listed")
@@ -3715,7 +3695,7 @@ class TestWebhookDelivery:
 
     async def test_msg_triggers_webhook(self, db, tmp_path):
         """msg task triggers webhook delivery when session has webhook."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3738,7 +3718,7 @@ class TestWebhookDelivery:
 
     async def test_no_webhook_no_delivery(self, db, tmp_path):
         """No webhook → no delivery attempted."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")  # no webhook
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -3755,7 +3735,7 @@ class TestWebhookDelivery:
 
     async def test_final_true_on_last_msg(self, db, tmp_path):
         """final: true on last msg task in the plan."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3783,7 +3763,7 @@ class TestWebhookDelivery:
 
     async def test_final_false_on_non_last_msg(self, db, tmp_path):
         """final: false on non-last msg task."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3813,7 +3793,7 @@ class TestWebhookDelivery:
 
     async def test_webhook_failure_doesnt_break_plan(self, db, tmp_path):
         """Webhook failure doesn't break plan execution."""
-        config = _make_config()
+        config = make_config()
         from kiso.store import upsert_session
         await upsert_session(db, "sess1", webhook="https://example.com/hook")
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -4039,7 +4019,7 @@ class TestKnowledgeProcessing:
         await conn.close()
 
     async def test_curator_called_with_pending_learnings(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
         await save_learning(db, "Uses Python", "sess1")
@@ -4064,7 +4044,7 @@ class TestKnowledgeProcessing:
         assert facts[0]["content"] == "Uses Python"
 
     async def test_curator_skipped_when_no_learnings(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -4080,7 +4060,7 @@ class TestKnowledgeProcessing:
         mock_curator.assert_not_called()
 
     async def test_curator_failure_doesnt_break_worker(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
         await save_learning(db, "Something", "sess1")
@@ -4099,7 +4079,7 @@ class TestKnowledgeProcessing:
         assert plan["status"] == "done"
 
     async def test_summarizer_called_when_threshold_reached(self, db, tmp_path):
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4128,7 +4108,7 @@ class TestKnowledgeProcessing:
         assert sess["summary"] == "New summary"
 
     async def test_summarizer_skipped_below_threshold(self, db, tmp_path):
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4151,7 +4131,7 @@ class TestKnowledgeProcessing:
         mock_summ.assert_not_called()
 
     async def test_summarizer_failure_doesnt_break_worker(self, db, tmp_path):
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4175,7 +4155,7 @@ class TestKnowledgeProcessing:
         assert plan["status"] == "done"
 
     async def test_fact_consolidation_when_over_max(self, db, tmp_path):
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4208,7 +4188,7 @@ class TestKnowledgeProcessing:
 
     async def test_consolidation_empty_result_preserves_facts(self, db, tmp_path):
         """Empty LLM consolidation result → facts NOT deleted."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4238,7 +4218,7 @@ class TestKnowledgeProcessing:
 
     async def test_consolidation_skipped_under_max(self, db, tmp_path):
         """Facts <= max → no consolidation call."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4263,7 +4243,7 @@ class TestKnowledgeProcessing:
 
     async def test_curator_nonexistent_learning_id(self, db, tmp_path):
         """Curator references nonexistent learning ID → silently handles without crash."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
         await save_learning(db, "Something", "sess1")
@@ -4288,7 +4268,7 @@ class TestKnowledgeProcessing:
 
     async def test_summarizer_threshold_exact_boundary(self, db, tmp_path):
         """count == threshold triggers summarizer."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4314,7 +4294,7 @@ class TestKnowledgeProcessing:
 
     async def test_multi_session_fact_visibility(self, db, tmp_path):
         """Fact created in session A is visible in session B planner context."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sessA")
         await create_session(db, "sessB")
         await save_fact(db, "Python 3.12", "curator", session="sessA")
@@ -4349,7 +4329,7 @@ class TestKnowledgeProcessing:
 
     async def test_knowledge_processing_order(self, db, tmp_path):
         """Curator runs before summarizer (order verified via side effects)."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4387,7 +4367,7 @@ class TestKnowledgeProcessing:
 
     async def test_fact_consolidation_failure_doesnt_break_worker(self, db, tmp_path):
         """SummarizerError in consolidation is caught, worker continues."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -4428,7 +4408,7 @@ class TestParaphraserIntegration:
         await conn.close()
 
     async def test_paraphraser_called_with_untrusted(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
         # Add untrusted message
@@ -4455,7 +4435,7 @@ class TestParaphraserIntegration:
         assert planner_calls[0].get("paraphrased_context") == "The stranger mentioned something."
 
     async def test_paraphraser_skipped_when_no_untrusted(self, db, tmp_path):
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -4472,7 +4452,7 @@ class TestParaphraserIntegration:
 
     async def test_paraphraser_failure_falls_back_to_none(self, db, tmp_path):
         """Paraphraser error is caught, planner still called with paraphrased_context=None."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
         await save_message(db, "sess1", "stranger", "user", "inject", trusted=False, processed=True)
@@ -4543,13 +4523,13 @@ class TestPermissionRevalidation:
 
     async def test_permission_revalidation_blocks_removed_user(self, db, tmp_path):
         """Config reload returns config without user → task fails."""
-        config = _make_config(users={"alice": User(role="admin")})
+        config = make_config(users={"alice": User(role="admin")})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         # Reload returns config without alice
-        config_without_alice = _make_config(users={"bob": User(role="admin")})
+        config_without_alice = make_config(users={"bob": User(role="admin")})
 
         with patch("kiso.worker.loop.reload_config", return_value=config_without_alice), \
              _patch_translator(), \
@@ -4567,7 +4547,7 @@ class TestPermissionRevalidation:
 
     async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
         """Skill removed from user's allowed list → fails."""
-        config = _make_config(users={"bob": User(role="user", tools=["search"])})
+        config = make_config(users={"bob": User(role="user", tools=["search"])})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="deploy",
                           skill="deploy", args="{}", expect="ok")
@@ -4587,7 +4567,7 @@ class TestPermissionRevalidation:
 
     async def test_config_reload_failure_uses_cached(self, db, tmp_path):
         """ConfigError → falls back to cached config, execution continues."""
-        config = _make_config(users={"alice": User(role="admin")})
+        config = make_config(users={"alice": User(role="admin")})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -4756,7 +4736,7 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_exec_allowed_for_user_role(self, db, tmp_path):
         """User role can run exec tasks (permission check only blocks removed users/skills)."""
-        config = _make_config(users={"bob": User(role="user", tools=["search"])})
+        config = make_config(users={"bob": User(role="user", tools=["search"])})
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -4777,8 +4757,8 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_permission_checked_per_task(self, db, tmp_path):
         """Permissions are re-checked before EACH task, not once per plan."""
-        config_with_alice = _make_config(users={"alice": User(role="admin")})
-        config_without_alice = _make_config(users={"bob": User(role="admin")})
+        config_with_alice = make_config(users={"alice": User(role="admin")})
+        config_without_alice = make_config(users={"bob": User(role="admin")})
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
@@ -4812,7 +4792,7 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_admin_skips_sandbox_in_execute_plan(self, db, tmp_path):
         """Admin user does NOT get sandboxed — _ensure_sandbox_user never called."""
-        config = _make_config(
+        config = make_config(
             users={"alice": User(role="admin")},
         )
 
@@ -4845,7 +4825,7 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_no_username_skips_permission_check(self, db, tmp_path):
         """username=None (system/anonymous) always passes permission check."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -4900,7 +4880,7 @@ class TestCancelMechanism:
 
     async def test_cancel_before_first_task(self, db, tmp_path):
         """cancel_event set before execution → all tasks cancelled, plan cancelled."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -4926,7 +4906,7 @@ class TestCancelMechanism:
 
     async def test_cancel_mid_plan(self, db, tmp_path):
         """Set event after first task starts → first completes normally, rest cancelled."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo second", expect="ok")
@@ -4963,7 +4943,7 @@ class TestCancelMechanism:
 
     async def test_cancel_generates_summary(self, db, tmp_path):
         """System message saved to DB with cancel summary."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
 
@@ -5017,7 +4997,7 @@ class TestCancelMechanism:
 
     async def test_cancel_delivers_webhook(self, db, tmp_path):
         """Webhook called with final=True for cancel summary."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
 
         # Register webhook on session
@@ -5065,7 +5045,7 @@ class TestCancelMechanism:
 
     async def test_cancel_clears_flag(self, db, tmp_path):
         """After cancel handling, event is cleared (next message can process)."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg1 = await save_message(db, "sess1", "alice", "user", "first", processed=False)
         msg2 = await save_message(db, "sess1", "alice", "user", "second", processed=False)
@@ -5110,7 +5090,7 @@ class TestCancelMechanism:
 
     async def test_cancel_llm_failure_uses_raw_summary(self, db, tmp_path):
         """LLMError in cancel summary → fallback to raw text."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
 
@@ -5226,7 +5206,7 @@ class TestPostPlanTimeouts:
         await conn.close()
 
     async def test_curator_timeout_does_not_crash(self, db, tmp_path):
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 1,
             "max_validation_retries": 1,
@@ -5254,7 +5234,7 @@ class TestPostPlanTimeouts:
         assert plan["status"] == "done"
 
     async def test_summarizer_timeout_does_not_crash(self, db, tmp_path):
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 1,
             "max_validation_retries": 1,
@@ -5294,7 +5274,7 @@ class TestCancelDuringReplanWindow:
     async def test_cancel_during_replan_window(self, db, tmp_path):
         """Set cancel_event after _execute_plan returns replan, before run_planner.
         Verify plan is cancelled and replan planner is never called."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5357,7 +5337,7 @@ class TestWorkerCrashRecovery:
     async def test_worker_crash_recovery_continues(self, db, tmp_path):
         """Mock run_planner to raise RuntimeError on first message, then succeed on second.
         Verify worker processes both."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg1 = await save_message(db, "sess1", "alice", "user", "crash", processed=False)
         msg2 = await save_message(db, "sess1", "alice", "user", "ok", processed=False)
@@ -5387,7 +5367,7 @@ class TestWorkerCrashRecovery:
 
     async def test_worker_crash_does_not_leave_running_tasks(self, db, tmp_path):
         """Inject crash during plan execution, verify no tasks remain in 'running' status."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "crash", processed=False)
 
@@ -5432,7 +5412,7 @@ class TestCancelEventNullSafety:
 
     async def test_cancel_event_none_no_crash(self, db, tmp_path):
         """run_worker with cancel_event=None completes without error."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -5465,7 +5445,7 @@ class TestMalformedSecrets:
 
     async def test_malformed_secrets_handled_gracefully(self, db, tmp_path):
         """Plan with malformed secrets (missing 'key'/'value') doesn't crash."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -5489,7 +5469,7 @@ class TestMalformedSecrets:
 
     async def test_non_dict_secrets_handled(self, db, tmp_path):
         """Plan with non-dict secrets entries doesn't crash."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
 
@@ -5527,7 +5507,7 @@ class TestSandboxWorkspaceInExecutePlan:
     async def test_user_role_triggers_sandbox_workspace(self, db, tmp_path):
         """When revalidate_permissions returns role='user' and sandbox UID is set,
         _session_workspace is called with sandbox_uid."""
-        config = _make_config(
+        config = make_config(
             users={"bob": User(role="user", tools="*")},
         )
         plan_id = await create_plan(db, "sess1", 1, "Test sandbox")
@@ -5579,7 +5559,7 @@ class TestFactConsolidationTimeout:
 
     async def test_fact_consolidation_timeout_doesnt_break_worker(self, db, tmp_path):
         """asyncio.TimeoutError in fact consolidation is caught, worker continues."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "llm_timeout": 1,
             "max_validation_retries": 1,
             "context_messages": 5,
@@ -5625,7 +5605,7 @@ class TestConsolidationSafetyGuards:
 
     async def test_consolidation_catastrophic_shrinkage_skipped(self, db, tmp_path):
         """10 facts → consolidation returns 1 (< 30%) → originals preserved."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5654,7 +5634,7 @@ class TestConsolidationSafetyGuards:
 
     async def test_consolidation_short_facts_filtered(self, db, tmp_path):
         """Consolidation returns mix of valid and <3-char → short ones filtered."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5698,7 +5678,7 @@ class TestConsolidationSafetyGuards:
         With ratio=0.3 (default): same 4/10=40% > 30% → consolidation accepted.
         This verifies the config value is actually driving the safety threshold.
         """
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5736,7 +5716,7 @@ class TestConsolidationSafetyGuards:
         After consolidation the re-inserted user fact must be visible in the
         session that triggered consolidation but hidden from a different session.
         """
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5795,7 +5775,7 @@ class TestFactUsageTracking:
 
     async def test_fact_usage_bumped_after_success(self, db, tmp_path):
         """Facts get use_count bumped after a successful plan."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "hello", processed=False)
         fid = await save_fact(db, "Important fact for planning", "curator")
@@ -5825,7 +5805,7 @@ class TestFactDecayInPostPlan:
 
     async def test_stale_facts_decayed_after_plan(self, db, tmp_path):
         """Stale facts get their confidence reduced via _post_plan_knowledge."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5853,7 +5833,7 @@ class TestFactDecayInPostPlan:
 
     async def test_low_confidence_facts_archived(self, db, tmp_path):
         """Facts with low confidence are archived via _post_plan_knowledge."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -5891,7 +5871,7 @@ class TestPlanErrorNotifiesUser:
 
     async def test_plan_error_saves_system_message(self, db, tmp_path):
         """PlanError → system message saved to DB."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "bad request", processed=False)
 
@@ -5921,7 +5901,7 @@ class TestPlanErrorNotifiesUser:
 
     async def test_plan_error_delivers_webhook(self, db, tmp_path):
         """PlanError + webhook → webhook called with error message."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         # Set webhook on session
         await db.execute(
@@ -5960,7 +5940,7 @@ class TestSanitizeTaskDetail:
 
     async def test_secret_in_exec_detail_redacted(self, db, tmp_path):
         """Secret value in exec detail → [REDACTED] in DB."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "deploy", processed=False)
 
@@ -5994,7 +5974,7 @@ class TestSanitizeTaskDetail:
 
     async def test_secret_in_skill_args_redacted(self, db, tmp_path):
         """Secret value in skill args → [REDACTED] in DB."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
 
@@ -6090,7 +6070,7 @@ class TestRecoveryMsgTask:
 
     async def test_plan_failure_creates_recovery_msg(self, db, tmp_path):
         """When plan fails without replan, a recovery msg task is created via LLM."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
 
@@ -6135,7 +6115,7 @@ class TestRecoveryMsgTask:
 
     async def test_plan_failure_llm_fallback(self, db, tmp_path):
         """When messenger also fails, raw failure detail is used as fallback."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
 
@@ -6168,7 +6148,7 @@ class TestRecoveryMsgTask:
 
     async def test_cancel_creates_msg_task_in_db(self, db, tmp_path):
         """Cancel handler creates a msg task record in the plan."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do stuff", processed=False)
 
@@ -6326,7 +6306,7 @@ class TestSelfDirectedReplan:
 
     async def test_self_directed_replan_marks_plan_done(self, db, tmp_path):
         """Self-directed replan marks the investigation plan as 'done' not 'failed'."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "install search skill", processed=False)
 
@@ -6381,7 +6361,7 @@ class TestSelfDirectedReplan:
 
     async def test_self_directed_replan_counts_toward_limit(self, db, tmp_path):
         """Self-directed replans increment replan_depth and count toward the limit."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -6417,7 +6397,7 @@ class TestSelfDirectedReplan:
 
     async def test_self_directed_replan_notification_message(self, db, tmp_path):
         """Self-directed replans send 'Investigating...' notification, not 'Replanning'."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "check registry", processed=False)
 
@@ -6472,7 +6452,7 @@ class TestExtendReplan:
 
     async def test_extend_replan_increases_limit(self, db, tmp_path):
         """Plan with extend_replan=2 raises max_replan_depth by 2."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -6558,7 +6538,7 @@ class TestExtendReplan:
 
     async def test_extend_replan_capped_at_3(self, db, tmp_path):
         """extend_replan=10 only adds 3 (capped)."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -6644,7 +6624,7 @@ class TestExtendReplan:
 
     async def test_extend_replan_cumulative_cap(self, db, tmp_path):
         """Multiple plans each requesting extend_replan are capped at 3 total."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -7163,7 +7143,7 @@ class TestExecutePlanSearch:
 
     async def test_search_calls_searcher(self, db, tmp_path):
         """Search task calls run_searcher with detail as query."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="best pizza in Rome", expect="restaurant list")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7184,7 +7164,7 @@ class TestExecutePlanSearch:
 
     async def test_search_with_params(self, db, tmp_path):
         """Search task parses args JSON and passes params to searcher."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(
             db, plan_id, "sess1", type="search",
@@ -7211,7 +7191,7 @@ class TestExecutePlanSearch:
 
     async def test_search_malformed_args(self, db, tmp_path):
         """Malformed JSON in args logs a warning and uses defaults."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(
             db, plan_id, "sess1", type="search",
@@ -7237,7 +7217,7 @@ class TestExecutePlanSearch:
     async def test_search_malformed_args_emits_warning(self, db, tmp_path, caplog):
         """M37: malformed search args emit a warning log."""
         import logging
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(
             db, plan_id, "sess1", type="search",
@@ -7257,7 +7237,7 @@ class TestExecutePlanSearch:
 
     async def test_search_params_invalid_types(self, db, tmp_path):
         """Invalid types in search params are coerced or set to None."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(
             db, plan_id, "sess1", type="search",
@@ -7287,7 +7267,7 @@ class TestExecutePlanSearch:
 
     async def test_search_searcher_error_triggers_replan(self, db, tmp_path):
         """SearcherError triggers replan with error message (M169)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7310,7 +7290,7 @@ class TestExecutePlanSearch:
 
     async def test_search_result_in_plan_outputs(self, db, tmp_path):
         """Search output flows to plan_outputs for subsequent msg task."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="find info", expect="info found")
         await create_task(db, plan_id, "sess1", type="msg", detail="report findings")
@@ -7334,7 +7314,7 @@ class TestExecutePlanSearch:
 
     async def test_search_review_ok(self, db, tmp_path):
         """Search with review ok completes the task successfully."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7357,7 +7337,7 @@ class TestExecutePlanSearch:
     async def test_search_status_not_done_during_retry(self, db, tmp_path):
         """M93c: search task must NOT be written as 'done' in the DB before reviewer approves.
         During a retry, the task stays 'running' (not 'done')."""
-        config = _make_config(settings={"max_worker_retries": 1})
+        config = make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7396,7 +7376,7 @@ class TestExecutePlanSearch:
 
     async def test_search_status_done_after_reviewer_ok(self, db, tmp_path):
         """M93c: task is 'done' in DB after reviewer returns ok (no retry needed)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7428,7 +7408,7 @@ class TestExecutePlanSearch:
     async def test_search_audit_duration_spans_retries(self, db, tmp_path):
         """Simplify fix: audit.log_task duration covers total time across all retries,
         not just the last iteration (regression guard for t0_total fix)."""
-        config = _make_config(settings={"max_worker_retries": 1})
+        config = make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7475,7 +7455,7 @@ class TestExecutePlanSearch:
 
     async def test_search_review_replan(self, db, tmp_path):
         """Review returns replan after search → plan returns replan reason."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7493,7 +7473,7 @@ class TestExecutePlanSearch:
 
     async def test_search_review_error_triggers_replan(self, db, tmp_path):
         """M170: ReviewError during search review triggers replan with output preserved."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7514,7 +7494,7 @@ class TestExecutePlanSearch:
     async def test_search_substatus_transitions(self, db, tmp_path):
         """Search task updates substatus: searching → reviewing."""
         from kiso.store import update_task_substatus
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7544,7 +7524,7 @@ class TestExecutePlanSearch:
 
     async def test_search_empty_result(self, db, tmp_path):
         """Empty string from searcher is stored and reviewed normally."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="obscure query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7565,7 +7545,7 @@ class TestExecutePlanSearch:
 
     async def test_search_empty_detail(self, db, tmp_path):
         """Search task with empty string detail still calls run_searcher."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -7589,7 +7569,7 @@ class TestExecutePlanSearch:
 
     async def test_search_multiple_sequential(self, db, tmp_path):
         """Two search tasks followed by msg: both complete and feed into messenger."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="first query", expect="results")
         await create_task(db, plan_id, "sess1", type="search", detail="second query", expect="results")
@@ -7630,7 +7610,7 @@ class TestFastPathChat:
 
     async def test_creates_plan_and_task(self, db, tmp_path):
         """_fast_path_chat creates a plan with a single msg task."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hello!"), \
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7643,7 +7623,7 @@ class TestFastPathChat:
 
     async def test_plan_status_done(self, db, tmp_path):
         """_fast_path_chat sets plan status to done."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7654,7 +7634,7 @@ class TestFastPathChat:
 
     async def test_saves_assistant_message(self, db, tmp_path):
         """_fast_path_chat saves the response as an assistant message."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Reply"), \
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7665,7 +7645,7 @@ class TestFastPathChat:
 
     async def test_messenger_failure_marks_plan_failed(self, db, tmp_path):
         """_fast_path_chat marks plan as failed when messenger errors."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7677,7 +7657,7 @@ class TestFastPathChat:
 
     async def test_webhook_delivered(self, db, tmp_path):
         """_fast_path_chat delivers webhook with final=True."""
-        config = _make_config()
+        config = make_config()
         mock_wh = AsyncMock()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              patch("kiso.worker.loop._deliver_webhook_if_configured", mock_wh), \
@@ -7690,7 +7670,7 @@ class TestFastPathChat:
 
     async def test_passes_content_as_goal(self, db, tmp_path):
         """_fast_path_chat passes the user message as both detail and goal."""
-        config = _make_config()
+        config = make_config()
         mock_messenger = AsyncMock(return_value="response")
         with patch("kiso.worker.loop.run_messenger", mock_messenger), \
              _patch_kiso_dir(tmp_path):
@@ -7726,7 +7706,7 @@ class TestFastPathIntegration:
     async def test_chat_message_skips_planner(self, db, tmp_path):
         """When classifier returns 'chat', planner should not be called."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value=("chat", "en"))
@@ -7748,7 +7728,7 @@ class TestFastPathIntegration:
     async def test_plan_message_goes_to_planner(self, db, tmp_path):
         """When classifier returns 'plan', normal planner flow is used."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value=("plan", "en"))
@@ -7769,7 +7749,7 @@ class TestFastPathIntegration:
     async def test_fast_path_disabled_skips_classifier(self, db, tmp_path):
         """When fast_path_enabled=False, classifier is not called."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": False})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": False})
         msg = self._make_msg(msg_id)
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value=("chat", "en"))
@@ -7790,7 +7770,7 @@ class TestFastPathIntegration:
     async def test_fast_path_runs_post_plan_knowledge(self, db, tmp_path):
         """Fast path should spawn background knowledge task (summarizer, etc.)."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
@@ -7812,7 +7792,7 @@ class TestFastPathIntegration:
     async def test_fast_path_skips_paraphraser(self, db, tmp_path):
         """Fast path must NOT call the paraphraser — context is already trusted."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
@@ -7842,7 +7822,7 @@ class TestFastPathEdgeCases:
 
     async def test_audit_log_on_success(self, db, tmp_path):
         """_fast_path_chat calls audit.log_task on success."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              patch("kiso.worker.loop.audit.log_task") as mock_audit, \
              _patch_kiso_dir(tmp_path):
@@ -7854,7 +7834,7 @@ class TestFastPathEdgeCases:
 
     async def test_audit_log_on_failure(self, db, tmp_path):
         """_fast_path_chat calls audit.log_task on messenger failure."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
              patch("kiso.worker.loop.audit.log_task") as mock_audit, \
              _patch_kiso_dir(tmp_path):
@@ -7865,7 +7845,7 @@ class TestFastPathEdgeCases:
 
     async def test_slog_on_failure(self, db, tmp_path):
         """_fast_path_chat logs to slog on messenger failure."""
-        config = _make_config()
+        config = make_config()
         mock_slog = type("MockSlog", (), {"info": lambda self, *a, **kw: None})()
         mock_slog.info = AsyncMock() if asyncio.iscoroutinefunction(getattr(mock_slog, "info", None)) else lambda *a, **kw: None
 
@@ -7884,7 +7864,7 @@ class TestFastPathEdgeCases:
 
     async def test_returns_plan_id(self, db, tmp_path):
         """_fast_path_chat returns the plan_id for post-plan processing."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
             plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7894,7 +7874,7 @@ class TestFastPathEdgeCases:
 
     async def test_returns_plan_id_on_failure(self, db, tmp_path):
         """_fast_path_chat returns plan_id even on failure."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
              _patch_kiso_dir(tmp_path):
             plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7904,7 +7884,7 @@ class TestFastPathEdgeCases:
 
     async def test_budget_exceeded_in_messenger(self, db, tmp_path):
         """LLMBudgetExceeded during messenger is caught (subclass of LLMError)."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("budget")), \
              _patch_kiso_dir(tmp_path):
             plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7915,7 +7895,7 @@ class TestFastPathEdgeCases:
 
     async def test_error_message_saved_as_system(self, db, tmp_path):
         """On failure, error message is saved as system role (not assistant)."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7926,7 +7906,7 @@ class TestFastPathEdgeCases:
 
     async def test_substatus_set_to_composing(self, db, tmp_path):
         """_fast_path_chat sets task substatus to composing."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
             await _fast_path_chat(db, config, "sess1", 1, "hello")
@@ -7951,8 +7931,8 @@ class TestWorkerRetry:
 
     async def test_exec_retry_on_hint_then_ok(self, db, tmp_path):
         """First review returns replan+hint → retry → second review ok."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 1,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -7987,8 +7967,8 @@ class TestWorkerRetry:
 
     async def test_exec_retry_still_fails_escalates(self, db, tmp_path):
         """Retry also returns replan+hint but retries exhausted → full replan."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 1,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8009,8 +7989,8 @@ class TestWorkerRetry:
 
     async def test_exec_no_retry_when_hint_is_null(self, db, tmp_path):
         """Null retry_hint → immediate replan (no retry)."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 1,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8029,8 +8009,8 @@ class TestWorkerRetry:
 
     async def test_exec_retry_context_passed_to_translator(self, db, tmp_path):
         """On retry, translator receives retry_context with hint."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 1,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8068,8 +8048,8 @@ class TestWorkerRetry:
 
     async def test_search_retry_on_hint(self, db, tmp_path):
         """Search task: first review returns hint → retry → second ok."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 1,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8102,8 +8082,8 @@ class TestWorkerRetry:
 
     async def test_max_worker_retries_zero_disables(self, db, tmp_path):
         """max_worker_retries=0 → hint is ignored, immediate replan."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 0,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8122,8 +8102,8 @@ class TestWorkerRetry:
 
     async def test_retry_count_persisted(self, db, tmp_path):
         """DB retry_count matches actual retry attempts."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 2,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8169,7 +8149,7 @@ class TestIncrementalLLMCalls:
 
     async def test_exec_task_appends_calls_after_translator_and_reviewer(self, db, tmp_path):
         """exec task: _append_calls called twice — after translator + after reviewer."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -8190,7 +8170,7 @@ class TestIncrementalLLMCalls:
 
     async def test_msg_task_appends_calls_after_messenger(self, db, tmp_path):
         """msg task: _append_calls called twice — M273 briefer flush + after messenger."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -8207,7 +8187,7 @@ class TestIncrementalLLMCalls:
 
     async def test_search_task_appends_calls_after_searcher_and_reviewer(self, db, tmp_path):
         """search task: _append_calls called twice — after searcher + after reviewer."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -8228,7 +8208,7 @@ class TestIncrementalLLMCalls:
 
     async def test_fast_path_appends_calls_after_messenger(self, db, tmp_path):
         """fast path: _append_calls called twice — briefer flush + messenger."""
-        config = _make_config()
+        config = make_config()
 
         mock_append = AsyncMock()
         with patch("kiso.worker.loop._append_calls", mock_append), \
@@ -8240,7 +8220,7 @@ class TestIncrementalLLMCalls:
 
     async def test_update_task_usage_not_passed_llm_calls(self, db, tmp_path):
         """M44e: update_task_usage is called WITHOUT llm_calls (sentinel path)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -8290,7 +8270,7 @@ class TestM44gAppendCallsRobustness:
 
     async def test_fast_path_failure_calls_append_calls(self, db, tmp_path):
         """_fast_path_chat calls _append_calls even when messenger fails."""
-        config = _make_config()
+        config = make_config()
         mock_append = AsyncMock()
 
         with patch("kiso.worker.loop._append_calls", mock_append), \
@@ -8304,7 +8284,7 @@ class TestM44gAppendCallsRobustness:
 
     async def test_fast_path_success_and_failure_append_same_count(self, db, tmp_path):
         """Both success and failure paths call _append_calls the same number of times."""
-        config = _make_config()
+        config = make_config()
 
         # Success path
         mock_append_ok = AsyncMock()
@@ -8330,7 +8310,7 @@ class TestM44gAppendCallsRobustness:
 
     async def test_fast_path_flushes_briefer_before_messenger(self, db, tmp_path):
         """Fast path flushes briefer calls before messenger runs (panel ordering)."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         call_order: list[str] = []
         real_append = AsyncMock(side_effect=lambda *a, **kw: call_order.append("append"))
 
@@ -8377,8 +8357,8 @@ class TestM44gRetryLLMCalls:
 
     async def test_retry_accumulates_append_calls(self, db, tmp_path):
         """On exec retry, _append_calls is called once per attempt (translator + reviewer each)."""
-        config = _make_config(settings={
-            **_make_config().settings,
+        config = make_config(settings={
+            **make_config().settings,
             "max_worker_retries": 1,
         })
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -8548,7 +8528,7 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_tools=None) -> _Plan
     """Build a minimal _PlanCtx for handler tests."""
     from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
     if config is None:
-        config = _make_config()
+        config = make_config()
     tools = installed_tools or []
     return _PlanCtx(
         db=db,
@@ -8941,7 +8921,7 @@ class TestHandlePlanError:
 
     async def test_creates_failed_plan_and_task(self, db):
         """_handle_plan_error creates a plan (status=failed) and a msg task."""
-        config = _make_config()
+        config = make_config()
         msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
 
         with patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
@@ -8960,7 +8940,7 @@ class TestHandlePlanError:
 
     async def test_saves_system_message(self, db):
         """_handle_plan_error saves a system message with the error text."""
-        config = _make_config()
+        config = make_config()
         msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
 
         with patch("kiso.worker.loop._deliver_webhook_if_configured", new_callable=AsyncMock):
@@ -8974,7 +8954,7 @@ class TestHandlePlanError:
 
     async def test_delivers_webhook(self, db):
         """_handle_plan_error always delivers a webhook."""
-        config = _make_config()
+        config = make_config()
         msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
         mock_webhook = AsyncMock()
 
@@ -9000,7 +8980,7 @@ class TestHandleLoopFailure:
 
     async def test_marks_plan_failed(self, db):
         """_handle_loop_failure sets plan status to 'failed'."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="fail msg"), \
@@ -9013,7 +8993,7 @@ class TestHandleLoopFailure:
 
     async def test_delivers_webhook_by_default(self, db):
         """_handle_loop_failure delivers webhook when deliver_webhook=True (default)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         mock_webhook = AsyncMock()
 
@@ -9026,7 +9006,7 @@ class TestHandleLoopFailure:
 
     async def test_skips_webhook_when_flag_false(self, db):
         """_handle_loop_failure does NOT deliver webhook when deliver_webhook=False."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         mock_webhook = AsyncMock()
 
@@ -9039,7 +9019,7 @@ class TestHandleLoopFailure:
 
     async def test_saves_system_message(self, db):
         """_handle_loop_failure saves a system message."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="failure text"), \
@@ -9054,7 +9034,7 @@ class TestHandleLoopFailure:
 
     async def test_failure_messenger_timeout_falls_back(self, db):
         """M94c: if _msg_task times out, _handle_loop_failure falls back to raw detail text."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         async def _hanging_msg(*args, **kwargs):
@@ -9078,7 +9058,7 @@ class TestHandleLoopFailure:
 
     async def test_msg_task_created_before_plan_status_change(self, db):
         """M307: msg task is created and set to 'running' BEFORE plan status changes."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         call_order: list[str] = []
 
@@ -9108,7 +9088,7 @@ class TestHandleLoopFailure:
 
     async def test_usage_updated_before_plan_status_change(self, db):
         """M307: plan usage is updated before plan status changes to 'failed'."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         call_order: list[str] = []
 
@@ -9133,7 +9113,7 @@ class TestHandleLoopFailure:
 
     async def test_msg_task_gets_done_with_composed_text(self, db):
         """M307: the placeholder msg task is updated to 'done' with composed text."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="composed failure"), \
@@ -9162,7 +9142,7 @@ class TestHandleLoopCancel:
 
     async def test_saves_system_message(self, db):
         """_handle_loop_cancel saves the cancel text as a system message."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="cancel text"), \
@@ -9177,7 +9157,7 @@ class TestHandleLoopCancel:
 
     async def test_marks_plan_cancelled(self, db):
         """_handle_loop_cancel sets plan status to 'cancelled'."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="cancelled msg"), \
@@ -9190,7 +9170,7 @@ class TestHandleLoopCancel:
 
     async def test_clears_cancel_event(self, db):
         """_handle_loop_cancel clears the cancel_event after handling."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         event = asyncio.Event()
         event.set()
@@ -9204,7 +9184,7 @@ class TestHandleLoopCancel:
 
     async def test_cancel_messenger_timeout_falls_back(self, db):
         """M94c: if _msg_task times out, _handle_loop_cancel falls back to raw detail text."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         async def _hanging_msg(*args, **kwargs):
@@ -9228,7 +9208,7 @@ class TestHandleLoopCancel:
 
     async def test_msg_task_created_before_plan_status_change(self, db):
         """M307: msg task is created and set to 'running' BEFORE plan status changes."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         call_order: list[str] = []
 
@@ -9256,7 +9236,7 @@ class TestHandleLoopCancel:
 
     async def test_usage_updated_before_plan_status_change(self, db):
         """M307: plan usage is updated before plan status changes to 'cancelled'."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         call_order: list[str] = []
 
@@ -9281,7 +9261,7 @@ class TestHandleLoopCancel:
 
     async def test_msg_task_gets_done_with_composed_text(self, db):
         """M307: the placeholder msg task is updated to 'done' with composed text."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
 
         with patch("kiso.worker.loop._msg_task_with_fallback", new_callable=AsyncMock, return_value="composed cancel"), \
@@ -9306,28 +9286,28 @@ class TestMsgTaskWithFallback:
 
     async def test_returns_msg_task_result_on_success(self):
         """Returns the LLM-generated text when _msg_task succeeds."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop._msg_task", new_callable=AsyncMock, return_value="hello"):
             result = await _msg_task_with_fallback(config, None, "sess1", "detail", "goal", 30)
         assert result == "hello"
 
     async def test_falls_back_on_llm_error(self):
         """Returns detail when _msg_task raises LLMError."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop._msg_task", side_effect=LLMError("boom")):
             result = await _msg_task_with_fallback(config, None, "sess1", "detail", "goal", 30)
         assert result == "detail"
 
     async def test_falls_back_on_messenger_error(self):
         """Returns detail when _msg_task raises MessengerError."""
-        config = _make_config()
+        config = make_config()
         with patch("kiso.worker.loop._msg_task", side_effect=MessengerError("boom")):
             result = await _msg_task_with_fallback(config, None, "sess1", "detail", "goal", 30)
         assert result == "detail"
 
     async def test_falls_back_on_timeout(self):
         """Returns detail when _msg_task times out."""
-        config = _make_config()
+        config = make_config()
 
         async def _hanging(*args, **kwargs):
             await asyncio.Event().wait()
@@ -9356,7 +9336,7 @@ class TestRunPlanningLoop:
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
         msg_id = 0
-        config = _make_config()
+        config = make_config()
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Done!"), \
@@ -9378,7 +9358,7 @@ class TestRunPlanningLoop:
         plan = {**VALID_PLAN, "knowledge": ["Artemis project uses PostgreSQL 16"]}
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
-        config = _make_config()
+        config = make_config()
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Done!"), \
@@ -9399,7 +9379,7 @@ class TestRunPlanningLoop:
         plan = {**VALID_PLAN, "knowledge": None}
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
-        config = _make_config()
+        config = make_config()
 
         with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Done!"), \
@@ -9428,7 +9408,7 @@ class TestRunPlanningLoop:
         }
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
-        config = _make_config()
+        config = make_config()
 
         # Exec task reviewer says replan, but max_replan_depth=0 → no replan possible
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
@@ -9451,7 +9431,7 @@ class TestRunPlanningLoop:
         initial_plan = EXEC_THEN_MSG_PLAN
         plan_id = await create_plan(db, "sess1", 0, initial_plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", initial_plan["tasks"])
-        config = _make_config()
+        config = make_config()
 
         call_count = [0]
         failed_output = _make_plan_output(1, "exec", "echo hello", "command not found", "failed")
@@ -9490,7 +9470,7 @@ class TestRunPlanningLoop:
         plan = VALID_PLAN
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
-        config = _make_config()
+        config = make_config()
 
         async def _mock_execute_plan(*args, **kwargs):
             # Simulate plan failure with no replan_reason and no failed plan_outputs
@@ -9514,7 +9494,7 @@ class TestRunPlanningLoop:
         plan = EXEC_THEN_MSG_PLAN
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
-        config = _make_config()
+        config = make_config()
 
         # A failed output that was accepted by the reviewer (reviewer_ok=True)
         reviewer_ok_output = _make_plan_output(1, "exec", "exit 1", "error output", "failed")
@@ -9567,7 +9547,7 @@ class TestRunPlanningLoop:
 
         plan_id = await create_plan(db, "sess1", 0, fail_plan["goal"])
         await _persist_plan_tasks(db, plan_id, "sess1", fail_plan["tasks"])
-        config = _make_config(settings={"max_replan_depth": 3})
+        config = make_config(settings={"max_replan_depth": 3})
 
         # Track the old plan status at the moment create_plan is called
         # for the new plan.  If M103a is correct, the old plan should still
@@ -9751,7 +9731,7 @@ class TestCircularReplanDetection:
 
     async def test_stuck_message_on_similar_failures(self, db, tmp_path):
         """When 2 consecutive replans have >60% word overlap, show stuck message."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -9820,7 +9800,7 @@ class TestCircularReplanDetection:
 
     async def test_no_stuck_message_on_genuinely_different_strategies(self, db, tmp_path):
         """Genuinely different strategies (different task types/details) should NOT trigger stuck."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -9894,7 +9874,7 @@ class TestCircularReplanDetection:
 
     async def test_strategy_fingerprint_detects_same_plan_different_errors(self, db, tmp_path):
         """M157: same strategy with different failure reasons detected as circular via fingerprint."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -9972,7 +9952,7 @@ class TestPostPlanKnowledgeParallel:
         await conn.close()
 
     def _cfg(self, **extra):
-        return _make_config(settings={
+        return make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -10127,7 +10107,7 @@ class TestSummarizeMessagesLimit:
         await conn.close()
 
     def _cfg(self, **extra):
-        return _make_config(settings={
+        return make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -10268,14 +10248,14 @@ class TestCancelledErrorPropagation:
         """CancelledError raised by decay_facts must propagate out of _post_plan_knowledge."""
         with patch("kiso.worker.loop.decay_facts", side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
-                await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
+                await _post_plan_knowledge(db, make_config(), "sess1", None, llm_timeout=5)
 
     async def test_cancelled_error_propagates_from_archive(self, db):
         """CancelledError raised by archive_low_confidence_facts must propagate."""
         with patch("kiso.worker.loop.archive_low_confidence_facts",
                    side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
-                await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
+                await _post_plan_knowledge(db, make_config(), "sess1", None, llm_timeout=5)
 
     async def test_cancelled_error_propagates_from_curator(self, db):
         """CancelledError raised by run_curator must propagate, not be swallowed.
@@ -10286,7 +10266,7 @@ class TestCancelledErrorPropagation:
         await save_learning(db, "a learning to process", "sess1")
         with patch("kiso.worker.loop.run_curator", side_effect=asyncio.CancelledError):
             with pytest.raises(asyncio.CancelledError):
-                await _post_plan_knowledge(db, _make_config(), "sess1", None, llm_timeout=5)
+                await _post_plan_knowledge(db, make_config(), "sess1", None, llm_timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -10308,7 +10288,7 @@ class TestPreReplanCancelFix:
     async def test_cancel_between_replans_saves_system_message(self, db, tmp_path):
         """When cancel fires after the replan notification is saved (but before the second
         planner call), a system cancel message is saved and cancel_event is cleared."""
-        config = _make_config()
+        config = make_config()
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
         cancel_event = asyncio.Event()
@@ -10389,7 +10369,7 @@ class TestMessengerTimeout:
         from kiso.worker.loop import _fast_path_chat
         msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
 
-        config = _make_config()
+        config = make_config()
 
         # Simulate the timeout by making _msg_task raise asyncio.TimeoutError,
         # which _fast_path_chat's inner try converts to MessengerError("timed out after Xs").
@@ -10457,7 +10437,7 @@ class TestSpawnKnowledgeTask:
     @pytest.mark.asyncio
     async def test_exception_logged_not_raised(self, db):
         """Background knowledge task should log exceptions, not propagate them."""
-        config = _make_config()
+        config = make_config()
         mock_post = AsyncMock(side_effect=RuntimeError("boom"))
         with patch("kiso.worker.loop._post_plan_knowledge", mock_post):
             task = _spawn_knowledge_task(db, config, "sess1", None, 60)
@@ -10469,7 +10449,7 @@ class TestSpawnKnowledgeTask:
     @pytest.mark.asyncio
     async def test_clears_budget_on_success(self, db):
         """Budget should be cleared after successful background task."""
-        config = _make_config()
+        config = make_config()
         mock_post = AsyncMock()
         with patch("kiso.worker.loop._post_plan_knowledge", mock_post):
             task = _spawn_knowledge_task(db, config, "sess1", None, 60)
@@ -10480,7 +10460,7 @@ class TestSpawnKnowledgeTask:
     @pytest.mark.asyncio
     async def test_clears_budget_on_failure(self, db):
         """Budget should be cleared even when the background task fails."""
-        config = _make_config()
+        config = make_config()
         mock_post = AsyncMock(side_effect=RuntimeError("fail"))
         with patch("kiso.worker.loop._post_plan_knowledge", mock_post):
             task = _spawn_knowledge_task(db, config, "sess1", None, 60)
@@ -10509,7 +10489,7 @@ class TestProcessMessagePhaseCallback:
     async def test_phase_transitions_for_chat(self, db, tmp_path):
         """Chat fast path should set classifying → executing → idle phases."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         msg = self._make_msg(msg_id)
         phases = []
 
@@ -10538,7 +10518,7 @@ class TestProcessMessagePhaseCallback:
         """During a replan, set_phase should emit 'planning' before replanning
         and 'executing' after the new plan is created."""
         conn, msg_id = db
-        config = _make_config(settings={**_make_config().settings, "fast_path_enabled": True})
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         # Use username=None to bypass runtime permission re-validation
         # (test config has no users defined)
         msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": None}
@@ -10613,7 +10593,7 @@ class TestRetryHintCarryForward:
 
     async def test_exec_replan_carries_retry_hint_in_plan_outputs(self, db, tmp_path):
         """When exec task escalates to replan, plan_outputs contain retry_hint."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo fail", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -10634,7 +10614,7 @@ class TestRetryHintCarryForward:
 
     async def test_search_replan_carries_retry_hint_in_plan_outputs(self, db, tmp_path):
         """When search task escalates to replan, plan_outputs contain retry_hint."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="find stuff", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -10830,7 +10810,7 @@ class TestReviewerSummaryStoredOnCompletedRow:
 
     async def test_exec_completed_row_has_summary(self, db, tmp_path):
         """Exec task: completed row carries reviewer_summary when present."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -10854,7 +10834,7 @@ class TestReviewerSummaryStoredOnCompletedRow:
 
     async def test_exec_no_summary_when_null(self, db, tmp_path):
         """Exec task: no reviewer_summary key when review summary is null."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -10898,7 +10878,7 @@ class TestE2EWebScenario:
 
     async def test_multi_plan_registry_then_install_then_use(self, db, tmp_path):
         """Full flow: plan1 (search + registry check) → plan2 (install) → plan3 (use skill + msg)."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -11085,7 +11065,7 @@ class TestDiskLimitIntegration:
 
     async def test_exec_task_blocked_by_disk_limit(self, db, tmp_path):
         """exec task over disk limit → fails with replan reason."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test disk limit")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="output")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -11103,7 +11083,7 @@ class TestDiskLimitIntegration:
 
     async def test_exec_task_passes_when_under_limit(self, db, tmp_path):
         """exec task under disk limit → proceeds normally (disk check returns None)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo hi", expect="output")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -11145,7 +11125,7 @@ class TestMsgTaskBrieferIntegration:
 
     async def test_briefer_filters_plan_outputs(self, db):
         """When briefer selects output_indices, only those outputs reach messenger."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         plan_outputs = self._plan_outputs()
 
         captured_outputs_text = []
@@ -11178,7 +11158,7 @@ class TestMsgTaskBrieferIntegration:
 
     async def test_briefer_disabled_passes_all_outputs(self, db):
         """When briefer is disabled, all plan_outputs reach messenger."""
-        config = _make_config(settings={"briefer_enabled": False})
+        config = make_config(settings={"briefer_enabled": False})
         plan_outputs = self._plan_outputs()
 
         captured = []
@@ -11201,7 +11181,7 @@ class TestMsgTaskBrieferIntegration:
 
     async def test_briefer_failure_falls_back_to_all_outputs(self, db):
         """When briefer fails, all plan_outputs reach messenger."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         plan_outputs = self._plan_outputs()
 
         call_count = [0]
@@ -11223,7 +11203,7 @@ class TestMsgTaskBrieferIntegration:
 
     async def test_no_plan_outputs_still_calls_briefer(self, db):
         """M260: briefer is called even without plan_outputs to filter context."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
 
         call_roles = []
 
@@ -11265,7 +11245,7 @@ class TestM365MsgTaskEntityEnrichment:
     async def test_entity_facts_injected_when_briefer_selects_entity(self, db):
         """When briefer returns relevant_entities, entity facts are added to context."""
         from kiso.store import find_or_create_entity, save_fact
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         # Create entity "self" with a fact
         eid = await find_or_create_entity(db, "self", "system")
         await save_fact(db, "Instance SSH key: ssh-ed25519 AAAA", source="system",
@@ -11295,7 +11275,7 @@ class TestM365MsgTaskEntityEnrichment:
 
     async def test_no_entity_facts_when_briefer_returns_empty_entities(self, db):
         """When briefer returns no relevant_entities, no entity facts added."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
 
         messenger_msgs = []
 
@@ -11317,7 +11297,7 @@ class TestM365MsgTaskEntityEnrichment:
 
     async def test_chat_kb_uses_fast_path(self, db, tmp_path):
         """chat_kb classification routes through _fast_path_chat like chat."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
 
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
@@ -11341,7 +11321,7 @@ class TestM365MsgTaskEntityEnrichment:
     async def test_entities_in_briefer_context_pool(self, db):
         """M365: available_entities injected into briefer context pool."""
         from kiso.store import find_or_create_entity
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         await find_or_create_entity(db, "self", "system")
         await find_or_create_entity(db, "flask", "tool")
 
@@ -11368,7 +11348,7 @@ class TestM365MsgTaskEntityEnrichment:
     async def test_tags_injected_into_briefer_context_pool(self, db):
         """M385: available_tags injected into briefer context pool."""
         from kiso.store import save_fact, save_fact_tags
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         # Create a fact with tags so get_all_tags returns them
         fid = await save_fact(db, "Flask uses Jinja2 for templates", "curator")
         await save_fact_tags(db, fid, ["flask", "web-framework"])
@@ -11394,7 +11374,7 @@ class TestM365MsgTaskEntityEnrichment:
 
     async def test_no_tags_key_when_no_tags_exist(self, db):
         """M385: when no tags exist, available_tags not in context pool."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
 
         briefer_msgs = []
 
@@ -11433,7 +11413,7 @@ class TestExecTaskBrieferIntegration:
 
     async def test_briefer_filters_outputs_for_translator(self, db, tmp_path):
         """Briefer selects relevant plan_outputs for exec translator."""
-        config = _make_config(settings={"briefer_enabled": True})
+        config = make_config(settings={"briefer_enabled": True})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
         await create_task(db, plan_id, "sess1", type="exec", detail="read the downloaded file", expect="ok")
@@ -11479,7 +11459,7 @@ class TestExecTaskBrieferIntegration:
 
     async def test_briefer_disabled_passes_all_outputs(self, db, tmp_path):
         """When briefer disabled, all preceding outputs reach translator."""
-        config = _make_config(settings={"briefer_enabled": False})
+        config = make_config(settings={"briefer_enabled": False})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo first", expect="ok")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo second", expect="ok")
@@ -11529,7 +11509,7 @@ class TestM273FlushBrieferUsage:
 
     async def test_msg_task_flush_before_messenger(self, db, tmp_path):
         """M273: msg task flushes briefer usage before messenger runs."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
 
@@ -11558,7 +11538,7 @@ class TestM273FlushBrieferUsage:
 
     async def test_exec_task_flush_before_translator(self, db, tmp_path):
         """M273: exec task flushes briefer usage before translator runs."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
@@ -11588,7 +11568,7 @@ class TestM273FlushBrieferUsage:
 
     async def test_msg_task_flush_even_without_briefer(self, db, tmp_path):
         """M273: on_briefer_done fires even when briefer is disabled (no-op flush)."""
-        config = _make_config()
+        config = make_config()
         # briefer_enabled defaults to False in _make_config, so no briefer runs
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -11629,7 +11609,7 @@ class TestM307FailureMsgRaceIntegration:
     async def test_failure_msg_task_visible_during_composition(self, db):
         """During failure msg composition, a 'running' msg task must exist
         and plan status must still be 'running' — CLI can see both."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         snapshots: list[dict] = []
 
@@ -11672,7 +11652,7 @@ class TestM307FailureMsgRaceIntegration:
     async def test_cancel_msg_task_visible_during_composition(self, db):
         """During cancel msg composition, a 'running' msg task must exist
         and plan status must still be 'running' — CLI can see both."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         snapshots: list[dict] = []
 
@@ -11718,7 +11698,7 @@ class TestM307FailureMsgRaceIntegration:
     async def test_failure_usage_reflects_in_plan_before_status_change(self, db):
         """Plan usage must be updated before status changes to 'failed',
         so CLI shows accurate token counts at break time."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         status_at_usage_time: list[str] = []
 
@@ -11764,7 +11744,7 @@ class TestM310Phase13Integration:
     async def test_replan_failure_creates_msg_task_before_status_change(self, db, tmp_path):
         """When _run_planning_loop encounters PlanError during replan,
         the failure msg task exists before plan status changes to 'failed'."""
-        config = _make_config()
+        config = make_config()
         # Create initial plan with one exec task that triggers replan
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         from kiso.store import create_task as ct, update_task as ut
@@ -11821,7 +11801,7 @@ class TestM310Phase13Integration:
 
     async def test_replan_passes_is_replan_to_planner(self, db, tmp_path):
         """_run_planning_loop passes is_replan=True to run_planner during replan."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 0, "Test goal")
         from kiso.store import create_task as ct, update_task as ut
         t1 = await ct(db, plan_id, "sess1", "exec", "ls -la")
@@ -11889,7 +11869,7 @@ class TestM336StuckHandling:
 
     async def test_skill_handler_returns_stop_stuck(self, db, tmp_path):
         """Skill handler sets stop_stuck (not stop_replan) for stuck reviews."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         skill = _create_echo_skill(tmp_path)
         await create_task(db, plan_id, "sess1", type="tool", detail="submit form",
@@ -11909,7 +11889,7 @@ class TestM336StuckHandling:
 
     async def test_exec_handler_returns_stop_stuck(self, db, tmp_path):
         """Exec handler sets stop_stuck for stuck reviews."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="curl site",
                           expect="page loaded")
@@ -11928,7 +11908,7 @@ class TestM336StuckHandling:
 
     async def test_replan_still_works_for_replan_status(self, db, tmp_path):
         """Regular replan status still produces stop_replan (not stop_stuck)."""
-        config = _make_config()
+        config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo test",
                           expect="ok")
@@ -11962,7 +11942,7 @@ class TestM337BroadenedCircularDetection:
 
     async def test_non_consecutive_word_overlap_detected(self, db, tmp_path):
         """Entry[0] and entry[2] have >60% word overlap but entry[1] is different → stuck."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -12049,7 +12029,7 @@ class TestM338BlockExtendWhenStuck:
         Replan 2: 2 entries, same failure → stuck → M429 breaks loop.
         Total: 1 initial + 1 replan = 2 planner calls.
         """
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -12191,7 +12171,7 @@ class TestM371SysenvRefreshAndInstallLoop:
     async def test_cache_invalidated_after_apt_install(self, db, tmp_path):
         """Sysenv cache is cleared after successful apt-get install exec."""
         from kiso.sysenv import invalidate_cache, _cached_env
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -12265,7 +12245,7 @@ class TestM341StuckFlow:
 
     async def test_stuck_skips_replan_sends_message(self, db, tmp_path):
         """Reviewer returns stuck → no replan, failure message sent to user."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -12325,7 +12305,7 @@ class TestM341StuckFlow:
 
     async def test_stuck_after_replan_terminates(self, db, tmp_path):
         """First attempt replans, second returns stuck → terminates without further replan."""
-        config = _make_config(settings={
+        config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
             "max_validation_retries": 1,
@@ -12392,7 +12372,7 @@ class TestPendingMessagesDrain:
 
     async def test_pending_messages_drained_after_job(self, db, tmp_path):
         """Pending messages are drained into the queue after a job completes."""
-        config = _make_config()
+        config = make_config()
         await create_session(db, "sess1")
         msg1_id = await save_message(db, "sess1", "alice", "user", "do task", processed=False)
         msg2_id = await save_message(db, "sess1", "alice", "user", "pending task", processed=False)

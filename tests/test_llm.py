@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
+from kiso.config import Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 from kiso.llm import (
     LLMBudgetExceeded,
     LLMError,
@@ -33,17 +33,7 @@ from kiso.llm import (
 
 # --- Minimal config fixtures ---
 
-def _make_config(**overrides) -> Config:
-    defaults = dict(
-        tokens={"cli": "tok"},
-        providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-        users={},
-        models={**MODEL_DEFAULTS, "planner": "gpt-4", "worker": "gpt-3.5"},
-        settings={**SETTINGS_DEFAULTS},
-        raw={},
-    )
-    defaults.update(overrides)
-    return Config(**defaults)
+from tests.conftest import make_config
 
 
 # --- SSE streaming mock helpers ---
@@ -123,13 +113,13 @@ def _setup_mock(mock_cls, stream_cm):
 
 class TestGetProvider:
     def test_no_colon_uses_first_provider(self):
-        config = _make_config()
+        config = make_config()
         provider, model = get_provider(config, "gpt-4")
         assert model == "gpt-4"
-        assert provider.base_url == "https://api.example.com/v1"
+        assert provider.base_url == "http://localhost:11434/v1"
 
     def test_colon_explicit_provider(self):
-        config = _make_config(providers={
+        config = make_config(providers={
             "openrouter": Provider(base_url="https://or.com/v1"),
             "ollama": Provider(base_url="http://localhost:11434/v1"),
         })
@@ -139,19 +129,19 @@ class TestGetProvider:
 
     def test_colon_unknown_provider_falls_through(self):
         """Colon with non-provider prefix uses first provider and full string."""
-        config = _make_config()
+        config = make_config()
         provider, model = get_provider(config, "google/gemini-2.5-flash-lite:online")
         assert model == "google/gemini-2.5-flash-lite:online"
-        assert provider.base_url == "https://api.example.com/v1"
+        assert provider.base_url == "http://localhost:11434/v1"
 
     def test_no_providers_raises(self):
-        config = _make_config(providers={})
+        config = make_config(providers={})
         with pytest.raises(LLMError, match="No providers configured"):
             get_provider(config, "gpt-4")
 
     def test_colon_in_model_name_splits_once(self):
         """Model strings like 'ollama:ns/model:tag' split on first colon only."""
-        config = _make_config(providers={
+        config = make_config(providers={
             "ollama": Provider(base_url="http://localhost:11434/v1"),
         })
         provider, model = get_provider(config, "ollama:ns/model:latest")
@@ -161,10 +151,10 @@ class TestGetProvider:
     def test_all_model_defaults_resolve(self):
         """M252: all MODEL_DEFAULTS resolve via a single gateway provider."""
         from kiso.config import MODEL_DEFAULTS
-        config = _make_config()
+        config = make_config()
         for role, model_str in MODEL_DEFAULTS.items():
             provider, model_name = get_provider(config, model_str)
-            assert provider.base_url == "https://api.example.com/v1", (
+            assert provider.base_url == "http://localhost:11434/v1", (
                 f"Role {role!r} model {model_str!r} should use the gateway provider"
             )
             assert model_name == model_str, (
@@ -190,20 +180,20 @@ class TestGetApiKey:
 class TestCallLlm:
     @pytest.mark.asyncio
     async def test_no_model_for_role_raises(self):
-        config = _make_config(models={})
+        config = make_config(models={})
         with pytest.raises(LLMError, match="No model configured for role 'planner'"):
             await call_llm(config, "planner", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
     async def test_structured_role_without_format_raises(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with pytest.raises(LLMError, match="requires structured output"):
                 await call_llm(config, "planner", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
     async def test_non_structured_role_without_format_ok(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("response text"))
@@ -212,7 +202,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_successful_call_returns_content(self):
-        config = _make_config()
+        config = make_config()
         schema = {"type": "json_schema", "json_schema": {"name": "test"}}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -222,7 +212,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_timeout_raises(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -232,7 +222,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_request_error_raises(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -243,7 +233,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_request_error_empty_message_includes_class_name(self):
         """M478: empty str(e) should still show error class and 'no detail'."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -254,7 +244,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_transport_retry_succeeds_on_second_attempt(self):
         """M479: transient RequestError retried, success on second attempt."""
-        config = _make_config()
+        config = make_config()
         ok = _ok_stream()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -271,7 +261,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_transport_retry_exhausted_raises(self):
         """M479: after max transport retries, raises LLMError."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -283,7 +273,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_non_200_raises(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(429, "rate limited"))
@@ -292,7 +282,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_400_error_hint(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(400, ""))
@@ -301,7 +291,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_401_error_hint(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(401, "unauthorized"))
@@ -310,7 +300,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_402_error_hint(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(402, "payment required"))
@@ -320,7 +310,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_empty_content_raises_error(self):
         """Stream with no content chunks raises Empty response error."""
-        config = _make_config()
+        config = make_config()
         # Send only a finish chunk with no content
         lines = [
             'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
@@ -334,7 +324,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_auth_header_sent_when_api_key(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -344,7 +334,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_no_auth_header_without_api_key(self):
-        config = _make_config(providers={
+        config = make_config(providers={
             "local": Provider(base_url="http://localhost:11434/v1"),
         }, models={"worker": "llama3"})
         with patch.dict(os.environ, {}, clear=True), \
@@ -356,7 +346,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_response_format_in_payload(self):
-        config = _make_config()
+        config = make_config()
         schema = {"type": "json_schema", "json_schema": {"name": "plan"}}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -368,7 +358,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_url_construction(self):
         """base_url trailing slash is stripped before appending /chat/completions."""
-        config = _make_config(providers={
+        config = make_config(providers={
             "local": Provider(base_url="http://localhost:11434/v1/"),
         }, models={"worker": "llama3"})
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -382,7 +372,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_stream_true_in_payload(self):
         """M299: payload always includes stream=True and stream_options."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -398,7 +388,7 @@ class TestCallLlm:
 class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_success(self):
-        config = _make_config()
+        config = make_config()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
@@ -410,7 +400,7 @@ class TestCallLlmAudit:
                 assert args[0] == "sess1"  # session
                 assert args[1] == "worker"  # role
                 assert args[2] == "gpt-3.5"  # model
-                assert args[3] == "openrouter"  # provider
+                assert args[3] == "local"  # provider
                 assert args[4] == 100  # input_tokens
                 assert args[5] == 50  # output_tokens
                 assert isinstance(args[6], int)  # duration_ms
@@ -418,7 +408,7 @@ class TestCallLlmAudit:
 
     @pytest.mark.asyncio
     async def test_audit_logged_on_error(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
@@ -432,7 +422,7 @@ class TestCallLlmAudit:
 
     @pytest.mark.asyncio
     async def test_audit_logged_on_non_200(self):
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
@@ -446,7 +436,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_request_error(self):
         """M479: audit logged on each transport attempt (initial + retries)."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
@@ -465,7 +455,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_empty_response(self):
         """Empty content triggers error audit."""
-        config = _make_config()
+        config = make_config()
         lines = [
             'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
             "data: [DONE]",
@@ -483,7 +473,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_defaults_tokens_to_zero(self):
         """When no usage in stream, tokens default to 0."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
@@ -501,7 +491,7 @@ class TestTimeoutConfig:
     @pytest.mark.asyncio
     async def test_timeout_uses_config_value(self):
         """Verify stream request receives timeout from llm_timeout config."""
-        config = _make_config(settings={"llm_timeout": 42})
+        config = make_config(settings={"llm_timeout": 42})
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
@@ -512,7 +502,7 @@ class TestTimeoutConfig:
     @pytest.mark.asyncio
     async def test_all_roles_use_llm_timeout(self):
         """M422: planner and messenger use unified llm_timeout, not per-role."""
-        config = _make_config(settings={"llm_timeout": 99})
+        config = make_config(settings={"llm_timeout": 99})
         # Test non-structured roles (structured roles require response_format)
         for role in ("messenger", "worker", "summarizer"):
             with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -540,7 +530,7 @@ class TestLLMBudget:
 
     @pytest.mark.asyncio
     async def test_budget_increments_on_call(self):
-        config = _make_config()
+        config = make_config()
         set_llm_budget(10)
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -555,7 +545,7 @@ class TestLLMBudget:
 
     @pytest.mark.asyncio
     async def test_budget_exceeded_raises(self):
-        config = _make_config()
+        config = make_config()
         set_llm_budget(1)
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -570,7 +560,7 @@ class TestLLMBudget:
     @pytest.mark.asyncio
     async def test_no_budget_allows_unlimited(self):
         """When no budget is set, calls are unlimited."""
-        config = _make_config()
+        config = make_config()
         clear_llm_budget()  # Ensure no budget
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -583,7 +573,7 @@ class TestLLMBudget:
     @pytest.mark.asyncio
     async def test_budget_exceeded_before_http_call(self):
         """Budget check happens before making any HTTP request."""
-        config = _make_config()
+        config = make_config()
         set_llm_budget(0)  # Zero budget — no calls allowed
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -608,7 +598,7 @@ class TestUsageTracking:
 
     @pytest.mark.asyncio
     async def test_usage_accumulates(self):
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage1 = {"prompt_tokens": 100, "completion_tokens": 50}
         usage2 = {"prompt_tokens": 200, "completion_tokens": 80}
@@ -642,7 +632,7 @@ class TestUsageTracking:
     @pytest.mark.asyncio
     async def test_get_usage_index_after_entries(self):
         """Index equals the number of accumulated entries."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage1 = {"prompt_tokens": 10, "completion_tokens": 5}
         usage2 = {"prompt_tokens": 20, "completion_tokens": 8}
@@ -659,7 +649,7 @@ class TestUsageTracking:
     @pytest.mark.asyncio
     async def test_get_usage_since_subset(self):
         """get_usage_since returns correct delta for a slice of entries."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usages = [
             {"prompt_tokens": 100, "completion_tokens": 10},
@@ -701,7 +691,7 @@ class TestUsageTracking:
     @pytest.mark.asyncio
     async def test_usage_entries_contain_messages_and_response(self):
         """Verify _llm_usage_entries now includes messages and response fields."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         messages = [{"role": "user", "content": "hi there"}]
         usage = {"prompt_tokens": 50, "completion_tokens": 25}
@@ -721,7 +711,7 @@ class TestUsageTracking:
     @pytest.mark.asyncio
     async def test_usage_entries_contain_duration_ms(self):
         """Verify _llm_usage_entries includes duration_ms field."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         messages = [{"role": "user", "content": "hi"}]
         usage = {"prompt_tokens": 10, "completion_tokens": 5}
@@ -741,7 +731,7 @@ class TestUsageTracking:
     @pytest.mark.asyncio
     async def test_get_usage_since_includes_messages_and_response(self):
         """Verify get_usage_since()['calls'] entries contain messages and response."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         messages = [{"role": "user", "content": "test prompt"}]
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
@@ -766,7 +756,7 @@ class TestSharedHttpClient:
         """When _http_client is set, call_llm uses it directly without creating a new one."""
         import kiso.llm as llm_mod
 
-        config = _make_config()
+        config = make_config()
         mock_client = AsyncMock()
         mock_client.stream = MagicMock(return_value=_ok_stream("shared client response"))
 
@@ -787,7 +777,7 @@ class TestSharedHttpClient:
         """When _http_client is None, call_llm creates a per-call AsyncClient."""
         import kiso.llm as llm_mod
 
-        config = _make_config()
+        config = make_config()
         prev = llm_mod._http_client
         try:
             llm_mod._http_client = None
@@ -844,7 +834,7 @@ class TestThinkingExtraction:
     @pytest.mark.asyncio
     async def test_reasoning_content_from_stream(self):
         """Streaming reasoning_content deltas are stored as 'thinking' in usage entry."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -863,7 +853,7 @@ class TestThinkingExtraction:
     @pytest.mark.asyncio
     async def test_think_tags_extracted_from_content(self):
         """<think> tags are extracted; clean content returned and stored."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -882,7 +872,7 @@ class TestThinkingExtraction:
     @pytest.mark.asyncio
     async def test_tags_take_precedence_over_stream_reasoning(self):
         """When both <think> tags and reasoning_content exist, tags win."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -902,7 +892,7 @@ class TestThinkingExtraction:
     @pytest.mark.asyncio
     async def test_no_thinking_present(self):
         """When neither tags nor reasoning_content exist, thinking is empty."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -918,7 +908,7 @@ class TestThinkingExtraction:
     @pytest.mark.asyncio
     async def test_thinking_field_in_usage_since(self):
         """get_usage_since includes thinking field in calls."""
-        config = _make_config()
+        config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -941,7 +931,7 @@ class TestMaxTokensParam:
     @pytest.mark.asyncio
     async def test_max_tokens_in_payload(self):
         """When max_tokens is set, it appears in the request payload."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("echo hi"))
@@ -957,7 +947,7 @@ class TestMaxTokensParam:
     async def test_max_tokens_none_uses_role_default(self):
         """M296: When max_tokens is None, the role default from MAX_TOKENS_DEFAULTS applies."""
         from kiso.config import MAX_TOKENS_DEFAULTS
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("echo hi"))
@@ -976,7 +966,7 @@ class TestInflightCallTracking:
     @pytest.mark.asyncio
     async def test_inflight_set_during_call(self):
         """Inflight entry is populated while the streaming request is in progress."""
-        config = _make_config()
+        config = make_config()
         captured_inflight = {}
 
         def _capture_stream(*args, **kwargs):
@@ -1002,7 +992,7 @@ class TestInflightCallTracking:
     @pytest.mark.asyncio
     async def test_inflight_cleared_after_success(self):
         """After a successful call, inflight entry is removed."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("done"))
@@ -1017,7 +1007,7 @@ class TestInflightCallTracking:
     @pytest.mark.asyncio
     async def test_inflight_cleared_on_timeout(self):
         """Inflight entry is cleaned up even when the call times out."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -1034,7 +1024,7 @@ class TestInflightCallTracking:
     @pytest.mark.asyncio
     async def test_inflight_cleared_on_http_error(self):
         """Inflight entry is cleaned up on HTTP errors."""
-        config = _make_config()
+        config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -1055,7 +1045,7 @@ class TestInflightCallTracking:
     @pytest.mark.asyncio
     async def test_no_inflight_without_session(self):
         """When session is empty, no inflight entry is created."""
-        config = _make_config()
+        config = make_config()
         captured_keys = []
 
         def _capture_stream(*args, **kwargs):
@@ -1091,7 +1081,7 @@ class TestJsonSchemaFallback:
     @pytest.mark.asyncio
     async def test_fallback_on_response_format_400(self):
         """400 with 'response_format' in body triggers json_object retry."""
-        config = _make_config()
+        config = make_config()
         call_count = 0
 
         def _mock_stream(*args, **kwargs):
@@ -1125,7 +1115,7 @@ class TestJsonSchemaFallback:
     @pytest.mark.asyncio
     async def test_cache_skips_json_schema_on_second_call(self):
         """After caching, subsequent calls go directly to json_object."""
-        config = _make_config()
+        config = make_config()
         _json_object_only_models.add("gpt-4")
         payloads = []
 
@@ -1149,7 +1139,7 @@ class TestJsonSchemaFallback:
     @pytest.mark.asyncio
     async def test_non_matching_400_not_retried(self):
         """400 without 'response_format' in body raises normally."""
-        config = _make_config()
+        config = make_config()
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -1168,7 +1158,7 @@ class TestJsonSchemaFallback:
     @pytest.mark.asyncio
     async def test_no_fallback_without_response_format(self):
         """400 on non-structured call doesn't trigger fallback logic."""
-        config = _make_config()
+        config = make_config()
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -1184,7 +1174,7 @@ class TestJsonSchemaFallback:
     @pytest.mark.asyncio
     async def test_json_object_format_not_downgraded(self):
         """Calls already using json_object are not affected by fallback."""
-        config = _make_config()
+        config = make_config()
         json_object_format = {"type": "json_object"}
 
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -1208,7 +1198,7 @@ class TestM271ReasoningDefaults:
     @pytest.mark.asyncio
     async def test_messenger_no_reasoning_after_m383(self):
         """M383: messenger switched to deepseek — no reasoning config sent."""
-        config = _make_config()
+        config = make_config()
         captured_payload: list[dict] = []
 
         def _capture(*args, **kwargs):
@@ -1227,7 +1217,7 @@ class TestM271ReasoningDefaults:
     @pytest.mark.asyncio
     async def test_planner_no_reasoning(self):
         """Planner role does NOT send reasoning config (not in REASONING_DEFAULTS)."""
-        config = _make_config()
+        config = make_config()
         captured_payload: list[dict] = []
 
         def _capture(*args, **kwargs):
@@ -1388,7 +1378,7 @@ class TestM300StallDetection:
     @pytest.mark.asyncio
     async def test_stall_timeout_from_config(self):
         """call_llm passes stall_timeout from config to _read_sse_stream."""
-        config = _make_config(settings={"stall_timeout": 42, "llm_timeout": 600})
+        config = make_config(settings={"stall_timeout": 42, "llm_timeout": 600})
         captured_stall: list[float] = []
         _orig_read = None
 
@@ -1424,7 +1414,7 @@ class TestM300StallDetection:
 
         stall_cm = _StreamCM(_StallingResp())
 
-        config = _make_config(settings={"stall_timeout": 0, "llm_timeout": 600})
+        config = make_config(settings={"stall_timeout": 0, "llm_timeout": 600})
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
@@ -1536,7 +1526,7 @@ class TestM303PartialContent:
     @pytest.mark.asyncio
     async def test_call_llm_populates_partial_content(self):
         """call_llm passes inflight dict to _read_sse_stream for partial tracking."""
-        config = _make_config()
+        config = make_config()
         messages = [{"role": "user", "content": "hi"}]
 
         # Multi-chunk stream to verify partial_content is set
@@ -1604,7 +1594,7 @@ class TestM305ReasoningFallback:
     @pytest.mark.asyncio
     async def test_structured_role_uses_reasoning_json_as_content(self):
         """Planner with empty content but JSON in reasoning → uses reasoning."""
-        config = _make_config()
+        config = make_config()
         plan_json = '{"goal": "test", "tasks": []}'
         stream = _reasoning_only_stream(plan_json, {"prompt_tokens": 10, "completion_tokens": 5})
         fmt = {"type": "json_object"}
@@ -1620,7 +1610,7 @@ class TestM305ReasoningFallback:
     @pytest.mark.asyncio
     async def test_structured_role_reasoning_not_json_still_raises(self):
         """Planner with reasoning that doesn't start with { → still raises."""
-        config = _make_config()
+        config = make_config()
         stream = _reasoning_only_stream("Let me think about this...")
         fmt = {"type": "json_object"}
 
@@ -1635,7 +1625,7 @@ class TestM305ReasoningFallback:
     @pytest.mark.asyncio
     async def test_non_structured_role_reasoning_still_raises(self):
         """Worker with reasoning JSON → still raises (not a structured role)."""
-        config = _make_config()
+        config = make_config()
         stream = _reasoning_only_stream('{"command": "ls"}')
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
@@ -1648,7 +1638,7 @@ class TestM305ReasoningFallback:
     @pytest.mark.asyncio
     async def test_truly_empty_response_raises(self):
         """No content and no reasoning → raises LLMError as before."""
-        config = _make_config()
+        config = make_config()
         stream = _empty_stream()
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
@@ -1661,7 +1651,7 @@ class TestM305ReasoningFallback:
     @pytest.mark.asyncio
     async def test_reviewer_reasoning_fallback(self):
         """Reviewer (structured role) with JSON reasoning → uses fallback."""
-        config = _make_config()
+        config = make_config()
         review_json = '{"status": "ok", "reason": null}'
         stream = _reasoning_only_stream(review_json, {"prompt_tokens": 5, "completion_tokens": 3})
 
@@ -1731,7 +1721,7 @@ class TestCircuitBreaker:
     async def test_call_llm_fails_fast_when_open(self):
         """When circuit is open, call_llm raises immediately without HTTP call."""
         import kiso.llm
-        config = _make_config()
+        config = make_config()
 
         # Open the circuit
         for _ in range(kiso.llm._CB_FAILURE_THRESHOLD):
@@ -1747,7 +1737,7 @@ class TestCircuitBreaker:
     async def test_transport_errors_feed_circuit_breaker(self):
         """Consecutive transport errors increment the circuit breaker counter."""
         import kiso.llm
-        config = _make_config()
+        config = make_config()
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)

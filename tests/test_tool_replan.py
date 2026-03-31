@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kiso.brain import PlanError, ReviewError, validate_plan
-from kiso.config import Config, Provider
 from kiso.store import (
     create_plan,
     create_session,
@@ -45,26 +44,7 @@ def _patch_kiso_dir(tmp_path):
         yield
 
 
-def _make_config(**overrides) -> Config:
-    from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
-    base_settings = {
-        **SETTINGS_DEFAULTS,
-        "worker_idle_timeout": 0.05,
-        "llm_timeout": 5,
-        "max_replan_depth": 2,
-    }
-    if "settings" in overrides:
-        base_settings.update(overrides.pop("settings"))
-    defaults = dict(
-        tokens={"cli": "tok"},
-        providers={"local": Provider(base_url="http://localhost:11434/v1")},
-        users={},
-        models={**MODEL_DEFAULTS, "planner": "gpt-4", "worker": "gpt-3.5", "reviewer": "gpt-4"},
-        settings=base_settings,
-        raw={},
-    )
-    defaults.update(overrides)
-    return Config(**defaults)
+from tests.conftest import make_config
 
 
 BROWSER_TOOL_INFO = {
@@ -103,7 +83,7 @@ class TestToolArgsReplanFlow:
 
     async def test_tool_null_args_triggers_replan_then_succeeds(self, db, tmp_path):
         """Full flow: null args → setup fail → replan → corrected args → success."""
-        config = _make_config()
+        config = make_config()
 
         # Initial plan: browser tool with null args (bad)
         bad_plan = {
@@ -168,7 +148,7 @@ class TestToolArgsReplanFlow:
 
     async def test_tool_setup_error_provides_context_for_replan(self, db, tmp_path):
         """The replan context includes the tool setup error for the planner to fix."""
-        config = _make_config()
+        config = make_config()
         tool_info_with_schema = {
             "name": "browser",
             "args_schema": {"action": {"type": "string", "required": True},

@@ -12,21 +12,10 @@ from kiso.brain import (
     build_searcher_messages,
     run_searcher,
 )
-from kiso.config import Config, Provider
 from kiso.llm import LLMError
 
 
-def _make_config(**overrides) -> Config:
-    defaults = dict(
-        tokens={"cli": "tok"},
-        providers={"local": Provider(base_url="http://localhost:11434/v1")},
-        users={},
-        models={"searcher": "perplexity/sonar"},
-        settings={},
-        raw={},
-    )
-    defaults.update(overrides)
-    return Config(**defaults)
+from tests.conftest import make_config
 
 
 # --- build_searcher_messages ---
@@ -73,7 +62,7 @@ class TestBuildSearcherMessages:
 class TestRunSearcher:
     async def test_run_searcher_success(self):
         """Mock call_llm -> return value passthrough."""
-        config = _make_config()
+        config = make_config()
         expected = "Here are the top 5 results for best pizza..."
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=expected):
             result = await run_searcher(config, "best pizza in Rome")
@@ -81,7 +70,7 @@ class TestRunSearcher:
 
     async def test_run_searcher_error(self):
         """Mock LLMError -> SearcherError raised."""
-        config = _make_config()
+        config = make_config()
         with patch(
             "kiso.brain.call_llm",
             new_callable=AsyncMock,
