@@ -19,34 +19,16 @@ from kiso.store import (
     save_fact,
 )
 from kiso.worker.loop import _fast_path_chat, _msg_task
-
-
-def _full_models(**overrides):
-    defaults = {
-        "planner": "gpt-4", "worker": "gpt-4", "reviewer": "gpt-4",
-        "messenger": "gpt-4", "briefer": "gpt-4", "summarizer": "gpt-4",
-        "curator": "gpt-4", "classifier": "gpt-4",
-    }
-    defaults.update(overrides)
-    return defaults
+from tests.conftest import full_settings, full_models
 
 
 def _config(**settings_overrides):
-    settings = {
-        "context_messages": "3", "summarize_threshold": "999",
-        "summarize_messages_limit": "50", "knowledge_max_facts": "200",
-        "max_replan_depth": "2", "max_llm_retries": "3",
-        "max_validation_retries": "3", "worker_idle_timeout": "0.01",
-        "classifier_timeout": "5", "llm_timeout": "30",
-        "briefer_enabled": "true", "bot_name": "Kiso",
-    }
-    settings.update(settings_overrides)
     return Config(
         tokens={"cli": "tok"},
         providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
         users={},
-        models=_full_models(),
-        settings=settings,
+        models=full_models(),
+        settings=full_settings(briefer_enabled=True, bot_name="Kiso", **settings_overrides),
         raw={},
     )
 

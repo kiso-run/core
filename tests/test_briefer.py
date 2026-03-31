@@ -29,34 +29,20 @@ from kiso.store import (
     save_fact_tags,
     save_message,
 )
+from tests.conftest import full_settings, full_models
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _full_settings(**overrides) -> dict:
-    from kiso.config import SETTINGS_DEFAULTS
-    s = dict(SETTINGS_DEFAULTS)
-    s.setdefault("classifier_timeout", 30)
-    s.update(overrides)
-    return s
-
-
-def _full_models(**overrides) -> dict:
-    from kiso.config import MODEL_DEFAULTS
-    m = dict(MODEL_DEFAULTS)
-    m.update(overrides)
-    return m
-
-
 def _config(briefer_enabled=True) -> Config:
     return Config(
         tokens={"cli": "tok"},
         providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
         users={},
-        models=_full_models(),
-        settings=_full_settings(context_messages=3, briefer_enabled=briefer_enabled),
+        models=full_models(),
+        settings=full_settings(context_messages=3, briefer_enabled=briefer_enabled),
         raw={},
     )
 
@@ -545,8 +531,8 @@ class TestM824ToolFilterThreshold:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(
+            models=full_models(),
+            settings=full_settings(
                 briefer_enabled=True,
                 briefer_tool_filter_threshold=10,
             ),
@@ -594,8 +580,8 @@ class TestM824ToolFilterThreshold:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(
+            models=full_models(),
+            settings=full_settings(
                 briefer_enabled=True,
                 briefer_tool_filter_threshold=10,
             ),
@@ -642,8 +628,8 @@ class TestM824ToolFilterThreshold:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(
+            models=full_models(),
+            settings=full_settings(
                 briefer_enabled=True,
                 briefer_tool_filter_threshold=0,
             ),

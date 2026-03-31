@@ -66,22 +66,8 @@ from kiso.brain import (
     _retry_llm_with_validation,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
-
-
-def _full_settings(**overrides) -> dict:
-    """Return a complete settings dict (all required keys) with optional overrides.
-
-    Briefer is disabled by default in tests to avoid interfering with
-    mocked call_llm. Tests that need the briefer should pass
-    ``briefer_enabled=True`` explicitly.
-    """
-    return {**SETTINGS_DEFAULTS, "briefer_enabled": False, **overrides}
-
-
-def _full_models(**overrides) -> dict:
-    """Return a complete models dict with optional overrides."""
-    return {**MODEL_DEFAULTS, **overrides}
 from kiso.llm import LLMError
+from tests.conftest import full_settings, full_models
 from kiso.store import (
     create_session,
     init_db,
@@ -864,8 +850,8 @@ class TestBuildPlannerMessages:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(context_messages=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(context_messages=3),
             raw={},
         )
 
@@ -1499,8 +1485,8 @@ class TestRunPlanner:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3, context_messages=5),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3, context_messages=5),
             raw={},
         )
 
@@ -2036,8 +2022,8 @@ class TestRunReviewer:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(reviewer="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(reviewer="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -2324,8 +2310,8 @@ class TestRunCurator:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(curator="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(curator="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -2414,8 +2400,8 @@ class TestRunSummarizer:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(summarizer="gpt-4"),
-            settings=_full_settings(),
+            models=full_models(summarizer="gpt-4"),
+            settings=full_settings(),
             raw={},
         )
 
@@ -2442,8 +2428,8 @@ class TestRunFactConsolidation:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(summarizer="gpt-4"),
-            settings=_full_settings(),
+            models=full_models(summarizer="gpt-4"),
+            settings=full_settings(),
             raw={},
         )
 
@@ -2641,8 +2627,8 @@ class TestRunParaphraser:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(paraphraser="gpt-4"),
-            settings=_full_settings(),
+            models=full_models(paraphraser="gpt-4"),
+            settings=full_settings(),
             raw={},
         )
 
@@ -2676,8 +2662,8 @@ class TestPlannerMessagesFencing:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(context_messages=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(context_messages=3),
             raw={},
         )
 
@@ -2765,10 +2751,10 @@ class TestStripFences:
 # --- Messenger ---
 
 def _make_brain_config(**overrides) -> Config:
-    base_settings = _full_settings()
+    base_settings = full_settings()
     if "settings" in overrides:
         base_settings.update(overrides.pop("settings"))
-    base_models = _full_models(messenger="gpt-4")
+    base_models = full_models(messenger="gpt-4")
     if "models" in overrides:
         base_models.update(overrides.pop("models"))
     defaults = dict(
@@ -3093,7 +3079,7 @@ class TestRunMessenger:
         roles_dir = tmp_path / "roles"
         roles_dir.mkdir()
         (roles_dir / "messenger.md").write_text("You are a helpful robot.")
-        config = _make_brain_config(settings=_full_settings(bot_name="Kiso"))
+        config = _make_brain_config(settings=full_settings(bot_name="Kiso"))
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kw):
@@ -3216,7 +3202,7 @@ class TestBuildExecTranslatorMessages:
 
 class TestRunExecTranslator:
     async def test_successful_translation(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="ls -la *.py"):
             result = await run_exec_translator(
                 config, "List all Python files", "OS: Linux",
@@ -3224,7 +3210,7 @@ class TestRunExecTranslator:
         assert result == "ls -la *.py"
 
     async def test_strips_whitespace(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  ls -la  \n"):
             result = await run_exec_translator(
                 config, "List files", "OS: Linux",
@@ -3232,26 +3218,26 @@ class TestRunExecTranslator:
         assert result == "ls -la"
 
     async def test_cannot_translate_raises(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CANNOT_TRANSLATE"):
             with pytest.raises(ExecTranslatorError, match="Cannot translate"):
                 await run_exec_translator(config, "Do something impossible", "OS: Linux")
 
     async def test_empty_result_raises(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="   "):
             with pytest.raises(ExecTranslatorError, match="Cannot translate"):
                 await run_exec_translator(config, "Do something", "OS: Linux")
 
     async def test_llm_error_raises_translator_error(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     side_effect=LLMError("API down")):
             with pytest.raises(ExecTranslatorError, match="API down"):
                 await run_exec_translator(config, "List files", "OS: Linux")
 
     async def test_uses_worker_role(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         captured = {}
 
         async def _capture(cfg, role, messages, **kw):
@@ -3268,7 +3254,7 @@ class TestExecTranslatorSyntaxCheck:
 
     async def test_short_command_skips_syntax_check(self):
         """Commands <= 120 chars skip the bash -n check entirely."""
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         # Even a syntactically invalid short command passes (bash -n not called)
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value="echo ok"):
@@ -3276,7 +3262,7 @@ class TestExecTranslatorSyntaxCheck:
         assert result == "echo ok"
 
     async def test_long_valid_command_passes(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         long_cmd = "echo " + " && echo ".join(f"step{i}" for i in range(20))
         assert len(long_cmd) > 120
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -3285,7 +3271,7 @@ class TestExecTranslatorSyntaxCheck:
         assert result == long_cmd
 
     async def test_long_invalid_command_raises(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         bad_cmd = "echo start " + "&& " * 50 + "&& echo end"
         assert len(bad_cmd) > 120
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -3513,8 +3499,8 @@ class TestM82PlannerAskThenAdd:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3, context_messages=5),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3, context_messages=5),
             raw={},
         )
 
@@ -3651,8 +3637,8 @@ def _make_config_for_classifier():
         tokens={"cli": "tok"},
         providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
         users={},
-        models=_full_models(worker="gpt-3.5"),
-        settings=_full_settings(),
+        models=full_models(worker="gpt-3.5"),
+        settings=full_settings(),
         raw={},
     )
 
@@ -4046,8 +4032,8 @@ class TestRetryHintInSchema:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(reviewer="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(reviewer="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
         review_json = json.dumps({
@@ -4094,7 +4080,7 @@ class TestExecTranslatorRetryContext:
         assert retry_pos < task_pos
 
     async def test_run_exec_translator_passes_retry_context(self):
-        config = _make_brain_config(models=_full_models(worker="gpt-4"))
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
         captured_messages = []
 
         async def _capture(cfg, role, messages, **kw):
@@ -4638,8 +4624,8 @@ class TestM347CuratorExistingFacts:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(curator="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(curator="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_CURATOR) as mock_llm:
@@ -5036,8 +5022,8 @@ class TestM186EscalatingValidationError:
         return Config(
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-            models=_full_models(),
-            settings=_full_settings(max_validation_retries="5"),
+            models=full_models(),
+            settings=full_settings(max_validation_retries="5"),
             users={},
             raw={},
         )
@@ -5183,8 +5169,8 @@ class TestM418NoSilentAutoCorrect:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3, context_messages=5),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3, context_messages=5),
             raw={},
         )
 
@@ -5466,8 +5452,8 @@ class TestRunBriefer:
             tokens={"cli": "tok"},
             providers={"deepseek": Provider(base_url="http://localhost")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(),
+            models=full_models(),
+            settings=full_settings(),
             raw={},
         )
 
@@ -5800,8 +5786,8 @@ class TestBrieferPlannerIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(
                 context_messages=3,
                 briefer_enabled=briefer_enabled,
             ),
@@ -6000,8 +5986,8 @@ class TestBrieferTagRetrieval:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(
                 context_messages=3,
                 briefer_enabled=briefer_enabled,
             ),
@@ -6176,8 +6162,8 @@ class TestM346BrieferEntityRetrieval:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(context_messages=3, briefer_enabled=True),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(context_messages=3, briefer_enabled=True),
             raw={},
         )
 
@@ -6369,8 +6355,8 @@ class TestM258SysEnvAndGapFiltering:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(
                 context_messages=3,
                 briefer_enabled=briefer_enabled,
             ),
@@ -6464,8 +6450,8 @@ class TestM266BrowserAvailability:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(
                 context_messages=3,
                 briefer_enabled=briefer_enabled,
             ),
@@ -6591,8 +6577,8 @@ class TestM954BuiltinSearchNote:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(
                 context_messages=3,
                 briefer_enabled=briefer_enabled,
             ),
@@ -6793,8 +6779,8 @@ class TestM261BrieferModuleCoverage:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(context_messages=3, briefer_enabled=True),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(context_messages=3, briefer_enabled=True),
             raw={},
         )
 
@@ -6875,8 +6861,8 @@ class TestM261MessengerContextReduction:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(context_messages=3, briefer_enabled=True),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(context_messages=3, briefer_enabled=True),
             raw={},
         )
         # Simulate 5 plan outputs, briefer selects only index 4 and 5
@@ -6931,8 +6917,8 @@ class TestM269RetryOnLLMError:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -7027,8 +7013,8 @@ class TestM308FallbackModel:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3, max_llm_retries=2),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3, max_llm_retries=2),
             raw={},
         )
 
@@ -7150,8 +7136,8 @@ class TestM630CircuitBreakerFallback:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3, max_llm_retries=2),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3, max_llm_retries=2),
             raw={},
         )
 
@@ -7217,8 +7203,8 @@ class TestM309ReplanContextDedup:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(briefer_enabled=True),
+            models=full_models(),
+            settings=full_settings(briefer_enabled=True),
             raw={},
         )
         captured_pool: list[dict] = []
@@ -7243,8 +7229,8 @@ class TestM309ReplanContextDedup:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(briefer_enabled=True),
+            models=full_models(),
+            settings=full_settings(briefer_enabled=True),
             raw={},
         )
         captured_pool: list[dict] = []
@@ -7270,8 +7256,8 @@ class TestM309ReplanContextDedup:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(briefer_enabled=False),
+            models=full_models(),
+            settings=full_settings(briefer_enabled=False),
             raw={},
         )
         plan_with_extend = json.dumps({
@@ -7514,8 +7500,8 @@ class TestM298NoTimeoutPartitioning:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -7546,8 +7532,8 @@ class TestM298NoTimeoutPartitioning:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(llm_timeout=250),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(llm_timeout=250),
             raw={},
         )
         plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"Answer in English. report results","tool":null,"args":null,"expect":null}]}'
@@ -7596,8 +7582,8 @@ class TestM296MaxTokensDefaults:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(worker="gpt-4"),
-            settings=_full_settings(),
+            models=full_models(worker="gpt-4"),
+            settings=full_settings(),
             raw={},
         )
 
@@ -7645,8 +7631,8 @@ class TestM297RetryNotification:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3),
             raw={},
         )
 
@@ -7765,8 +7751,8 @@ class TestM302StallRetryIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_llm_retries=3, max_validation_retries=3),
             raw={},
         )
         with patch("kiso.brain.call_llm", side_effect=_stall_then_ok):
@@ -7793,8 +7779,8 @@ class TestM302StallRetryIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_llm_retries=3, max_validation_retries=3),
             raw={},
         )
         with patch("kiso.brain.call_llm", side_effect=_always_stall):
@@ -7812,8 +7798,8 @@ class TestM302StallRetryIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_llm_retries=2, max_validation_retries=5),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_llm_retries=2, max_validation_retries=5),
             raw={},
         )
 
@@ -7834,8 +7820,8 @@ class TestM302StallRetryIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_llm_retries=5, max_validation_retries=2),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_llm_retries=5, max_validation_retries=2),
             raw={},
         )
 
@@ -7856,8 +7842,8 @@ class TestM302StallRetryIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_llm_retries=3, max_validation_retries=3),
             raw={},
         )
         retry_calls: list[tuple] = []
@@ -7896,8 +7882,8 @@ class TestM302StallRetryIntegration:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
             users={},
-            models=_full_models(planner="gpt-4"),
-            settings=_full_settings(max_llm_retries=3, max_validation_retries=3),
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_llm_retries=3, max_validation_retries=3),
             raw={},
         )
         captured_kwargs: list[dict] = []
@@ -7980,8 +7966,8 @@ class TestM304RunBrieferSimpleConsumers:
             tokens={"cli": "tok"},
             providers={"openrouter": Provider(base_url="http://localhost")},
             users={},
-            models=_full_models(),
-            settings=_full_settings(),
+            models=full_models(),
+            settings=full_settings(),
             raw={},
         )
 
