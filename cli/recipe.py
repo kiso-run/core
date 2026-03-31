@@ -7,8 +7,9 @@ planner instructions. They live in ~/.kiso/recipes/.
 from __future__ import annotations
 
 import shutil
-import sys
 from pathlib import Path
+
+from cli.render import die
 
 from kiso.config import KISO_DIR
 from kiso.recipe_loader import discover_recipes, invalidate_recipes_cache
@@ -42,19 +43,15 @@ def _recipe_install(args) -> None:
     require_admin()
     source = Path(args.source)
     if not source.exists():
-        print(f"error: file not found: {source}", file=sys.stderr)
-        sys.exit(1)
+        die(f"file not found: {source}")
     if not source.suffix == ".md":
-        print("error: recipe file must be a .md file", file=sys.stderr)
-        sys.exit(1)
+        die("recipe file must be a .md file")
 
     # Validate the file has proper frontmatter
     from kiso.recipe_loader import _parse_recipe_file
     parsed = _parse_recipe_file(source)
     if parsed is None:
-        print("error: invalid recipe file — must have YAML frontmatter with 'name' and 'summary'",
-              file=sys.stderr)
-        sys.exit(1)
+        die("invalid recipe file — must have YAML frontmatter with 'name' and 'summary'")
 
     RECIPES_DIR.mkdir(parents=True, exist_ok=True)
     dest = RECIPES_DIR / source.name
@@ -83,8 +80,7 @@ def _recipe_remove(args) -> None:
                 target = Path(r["path"])
                 break
     if not target.exists():
-        print(f"error: recipe '{name}' is not installed", file=sys.stderr)
-        sys.exit(1)
+        die(f"recipe '{name}' is not installed")
 
     target.unlink()
     invalidate_recipes_cache()

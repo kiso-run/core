@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cli.render import die
+
 from kiso.config import KISO_DIR
 from cli.plugin_ops import (
     OFFICIAL_ORG,
@@ -125,8 +127,7 @@ def _tool_test(args) -> None:
     _check_plugin_installed(tool_dir, "tool", name)
     test_dir = tool_dir / "tests"
     if not test_dir.exists():
-        print(f"error: tool '{name}' has no tests/ directory", file=sys.stderr)
-        sys.exit(1)
+        die(f"tool '{name}' has no tests/ directory")
     venv_python = tool_dir / ".venv" / "bin" / "python"
     cmd = [str(venv_python), "-m", "pytest", "tests/", "-v"]
     result = subprocess.run(cmd, cwd=str(tool_dir), check=False)

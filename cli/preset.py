@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import shutil
@@ -12,6 +11,7 @@ import tempfile
 
 from cli._http import cli_get
 from cli.plugin_ops import fetch_registry, render_aligned_list
+from cli.render import die
 
 
 def _clone_and_load_preset(git_url: str):
@@ -26,16 +26,13 @@ def _clone_and_load_preset(git_url: str):
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            print(f"error: git clone failed: {result.stderr.strip()}", file=sys.stderr)
-            sys.exit(1)
+            die(f"git clone failed: {result.stderr.strip()}")
         preset_path = Path(tmpdir) / "preset" / "preset.toml"
         if not preset_path.is_file():
-            print(f"error: preset.toml not found in cloned repo", file=sys.stderr)
-            sys.exit(1)
+            die("preset.toml not found in cloned repo")
         return load_preset(preset_path)
     except Exception as e:
-        print(f"error: failed to load preset: {e}", file=sys.stderr)
-        sys.exit(1)
+        die(f"failed to load preset: {e}")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -90,8 +87,7 @@ def preset_install(args: argparse.Namespace) -> None:
         if path.is_dir():
             path = path / "preset.toml"
         if not path.is_file():
-            print(f"error: preset file not found: {path}", file=sys.stderr)
-            sys.exit(1)
+            die(f"preset file not found: {path}")
         from kiso.presets import load_preset
         manifest = load_preset(path)
     elif target.startswith("https://") or target.startswith("git@"):
@@ -104,8 +100,7 @@ def preset_install(args: argparse.Namespace) -> None:
         presets = registry.get("presets", [])
         match = next((p for p in presets if p["name"] == target), None)
         if not match:
-            print(f"error: preset '{target}' not found in registry or as local path", file=sys.stderr)
-            sys.exit(1)
+            die(f"preset '{target}' not found in registry or as local path")
         git_url = f"https://github.com/kiso-run/preset-{target}.git"
         manifest = _clone_and_load_preset(git_url)
 
@@ -161,8 +156,7 @@ def preset_show(args: argparse.Namespace) -> None:
         print(f"  (Not installed — use 'kiso preset install' to install)")
         return
 
-    print(f"error: preset '{target}' not found", file=sys.stderr)
-    sys.exit(1)
+    die(f"preset '{target}' not found")
 
 
 def preset_installed(args: argparse.Namespace) -> None:

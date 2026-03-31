@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli._http import cli_delete, cli_get, cli_post
+from cli.render import die
 
 
 def rules_list(args: argparse.Namespace) -> None:
@@ -26,8 +26,7 @@ def rules_add(args: argparse.Namespace) -> None:
     require_admin()
     content = args.rule_content
     if not content.strip():
-        print("error: rule content cannot be empty", file=sys.stderr)
-        sys.exit(1)
+        die("rule content cannot be empty")
     resp = cli_post(args, "/safety-rules", json_body={"content": content})
     data = resp.json()
     print(f"Safety rule added (id={data['id']}): {data['content']}")
@@ -42,5 +41,4 @@ def rules_remove(args: argparse.Namespace) -> None:
     if data.get("deleted"):
         print(f"Safety rule {args.rule_id} removed.")
     else:
-        print(f"error: could not remove rule {args.rule_id}", file=sys.stderr)
-        sys.exit(1)
+        die(f"could not remove rule {args.rule_id}")

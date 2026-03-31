@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli._http import cli_delete, cli_get, cli_post
+from cli.render import die
 
 
 def knowledge_list(args: argparse.Namespace) -> None:
@@ -46,8 +46,7 @@ def knowledge_add(args: argparse.Namespace) -> None:
     require_admin()
     content = args.content
     if not content.strip():
-        print("error: content cannot be empty", file=sys.stderr)
-        sys.exit(1)
+        die("content cannot be empty")
     body: dict = {"content": content}
     if getattr(args, "category", None):
         body["category"] = args.category
@@ -89,8 +88,7 @@ def knowledge_remove(args: argparse.Namespace) -> None:
     if data.get("deleted"):
         print(f"Knowledge fact {args.fact_id} removed.")
     else:
-        print(f"error: could not remove fact {args.fact_id}", file=sys.stderr)
-        sys.exit(1)
+        die(f"could not remove fact {args.fact_id}")
 
 
 def knowledge_export(args: argparse.Namespace) -> None:
@@ -170,8 +168,7 @@ def knowledge_import(args: argparse.Namespace) -> None:
 
     path = Path(args.file)
     if not path.is_file():
-        print(f"error: file not found: {path}", file=sys.stderr)
-        sys.exit(1)
+        die(f"file not found: {path}")
 
     text = path.read_text(encoding="utf-8")
     default_category = getattr(args, "category", None) or "general"

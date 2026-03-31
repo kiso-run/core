@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import getpass
-import sys
 from pathlib import Path
 
 from cli.plugin_ops import require_admin
+from cli.render import die
 from kiso.config import KISO_DIR
 
 ENV_FILE = KISO_DIR / ".env"
@@ -92,8 +92,7 @@ def _env_get(args) -> None:
             print(_parse_value(line))
             return
 
-    print(f"error: '{key}' not found", file=sys.stderr)
-    sys.exit(1)
+    die(f"'{key}' not found")
 
 
 def _env_list(args) -> None:
@@ -120,8 +119,7 @@ def _env_delete(args) -> None:
     new_lines = [line for line in lines if _parse_key(line) != key]
 
     if len(new_lines) == len(lines):
-        print(f"error: '{key}' not found", file=sys.stderr)
-        sys.exit(1)
+        die(f"'{key}' not found")
 
     _write_lines(new_lines)
     print(f"{key} deleted.")

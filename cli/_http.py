@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 
+from cli.render import die
+
 
 def _handle_http_error(exc, api_url: str, *, fatal: bool = True) -> None:
     """Print an HTTP error to stderr and optionally exit.
@@ -21,9 +23,9 @@ def _handle_http_error(exc, api_url: str, *, fatal: bool = True) -> None:
     else:
         msg = str(exc)
 
-    print(f"error: {msg}", file=sys.stderr)
     if fatal:
-        sys.exit(1)
+        die(msg)
+    print(f"error: {msg}", file=sys.stderr)
 
 
 def _cli_request(
@@ -46,8 +48,7 @@ def _cli_request(
     cfg = load_config()
     token = cfg.tokens.get("cli")
     if not token:
-        print("error: no 'cli' token in config.toml", file=sys.stderr)
-        sys.exit(1)
+        die("no 'cli' token in config.toml")
 
     url = f"{args.api}{path}"
     try:
@@ -61,11 +62,9 @@ def _cli_request(
         )
         resp.raise_for_status()
     except httpx.ConnectError:
-        print(f"error: cannot connect to {args.api}", file=sys.stderr)
-        sys.exit(1)
+        die(f"cannot connect to {args.api}")
     except httpx.HTTPStatusError as exc:
-        print(f"error: {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
-        sys.exit(1)
+        die(f"{exc.response.status_code} — {exc.response.text}")
 
     return resp
 

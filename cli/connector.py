@@ -11,6 +11,8 @@ import sys
 import time
 from pathlib import Path
 
+from cli.render import die
+
 from kiso.connectors import (
     CONNECTORS_DIR,
     _connector_env_var_name,
@@ -399,8 +401,7 @@ def _connector_test(args) -> None:
     _check_plugin_installed(connector_dir, "connector", name)
     test_dir = connector_dir / "tests"
     if not test_dir.exists():
-        print(f"error: connector '{name}' has no tests/ directory", file=sys.stderr)
-        sys.exit(1)
+        die(f"connector '{name}' has no tests/ directory")
     venv_python = connector_dir / ".venv" / "bin" / "python"
     cmd = [str(venv_python), "-m", "pytest", "tests/", "-v"]
     result = subprocess.run(cmd, cwd=str(connector_dir), check=False)

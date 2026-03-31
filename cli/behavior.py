@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli._http import cli_delete, cli_get, cli_post
+from cli.render import die
 
 
 def behavior_list(args: argparse.Namespace) -> None:
@@ -25,8 +25,7 @@ def behavior_add(args: argparse.Namespace) -> None:
     require_admin()
     content = args.content
     if not content.strip():
-        print("error: content cannot be empty", file=sys.stderr)
-        sys.exit(1)
+        die("content cannot be empty")
     resp = cli_post(args, "/knowledge", json_body={
         "content": content,
         "category": "behavior",
@@ -45,5 +44,4 @@ def behavior_remove(args: argparse.Namespace) -> None:
     if data.get("deleted"):
         print(f"Behavior {args.behavior_id} removed.")
     else:
-        print(f"error: could not remove behavior {args.behavior_id}", file=sys.stderr)
-        sys.exit(1)
+        die(f"could not remove behavior {args.behavior_id}")

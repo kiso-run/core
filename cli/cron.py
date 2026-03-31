@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from cli._http import cli_delete, cli_get, cli_patch, cli_post
+from cli.render import die
 
 
 def cron_list(args: argparse.Namespace) -> None:
@@ -62,8 +63,7 @@ def cron_remove(args: argparse.Namespace) -> None:
     if data.get("deleted"):
         print(f"Cron job {args.job_id} removed.")
     else:
-        print(f"error: could not remove cron job {args.job_id}", file=sys.stderr)
-        sys.exit(1)
+        die(f"could not remove cron job {args.job_id}")
 
 
 def cron_enable(args: argparse.Namespace) -> None:

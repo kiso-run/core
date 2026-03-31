@@ -12,6 +12,7 @@ from pathlib import Path
 import tomli_w
 
 from cli.plugin_ops import require_admin
+from cli.render import die
 from kiso.config import CONFIG_PATH, NAME_RE
 
 # Module-level path used by command functions; can be patched in tests.
@@ -48,8 +49,7 @@ def _parse_skills(skills_arg: str) -> list[str]:
     """Parse a comma-separated skills string; exits on empty result."""
     skills_list = [s.strip() for s in skills_arg.split(",") if s.strip()]
     if not skills_list:
-        print("error: --skills contains no valid skill names", file=sys.stderr)
-        sys.exit(1)
+        die("--skills contains no valid skill names")
     return skills_list
 
 
@@ -131,8 +131,7 @@ def _user_add(args) -> None:
     alias_pairs = args.alias or []
 
     if not NAME_RE.match(username):
-        print(f"error: invalid user '{username}' (must match {NAME_RE.pattern})", file=sys.stderr)
-        sys.exit(1)
+        die(f"invalid user '{username}' (must match {NAME_RE.pattern})")
 
     # Check if the Linux system user exists; warn with instructions if not
     if not _system_user_exists(username):
@@ -146,22 +145,15 @@ def _user_add(args) -> None:
         )
 
     if role not in ("admin", "user"):
-        print("error: --role must be 'admin' or 'user'", file=sys.stderr)
-        sys.exit(1)
+        die("--role must be 'admin' or 'user'")
 
     if role == "user" and not skills_arg:
-        print(
-            "error: --skills required for role=user "
-            "(use '*' or a comma-separated list of skill names)",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        die("--skills required for role=user (use '*' or a comma-separated list of skill names)")
 
     aliases: dict[str, str] = {}
     for pair in alias_pairs:
         if ":" not in pair:
-            print(f"error: alias '{pair}' must be in 'connector:platform_id' format", file=sys.stderr)
-            sys.exit(1)
+            die(f"alias '{pair}' must be in 'connector:platform_id' format")
         connector, platform_id = pair.split(":", 1)
         aliases[connector] = platform_id
 
@@ -170,8 +162,7 @@ def _user_add(args) -> None:
         raw["users"] = {}
 
     if username in raw["users"]:
-        print(f"error: user '{username}' already exists", file=sys.stderr)
-        sys.exit(1)
+        die(f"user '{username}' already exists")
 
     user_entry: dict = {"role": role}
     if role == "user":
@@ -197,15 +188,13 @@ def _user_edit(args) -> None:
     skills_arg = args.skills
 
     if new_role is None and skills_arg is None:
-        print("error: at least one of --role or --skills must be provided", file=sys.stderr)
-        sys.exit(1)
+        die("at least one of --role or --skills must be provided")
 
     raw = _read_raw()
     users = raw.get("users", {})
 
     if username not in users:
-        print(f"error: user '{username}' does not exist", file=sys.stderr)
-        sys.exit(1)
+        die(f"user '{username}' does not exist")
 
     entry = users[username]
     current_role = entry.get("role")
@@ -214,8 +203,7 @@ def _user_edit(args) -> None:
     # Guard: demoting the only admin
     if current_role == "admin" and final_role == "user":
         if not _other_admins(users, username):
-            print("error: cannot demote the last admin", file=sys.stderr)
-            sys.exit(1)
+            die("cannot demote the last admin")
 
     # Skills handling
     if skills_arg is not None:
@@ -224,8 +212,7 @@ def _user_edit(args) -> None:
         new_skills = entry.get("skills")
 
     if final_role == "user" and not new_skills:
-        print("error: --skills required when role is 'user' and no existing skills are set", file=sys.stderr)
-        sys.exit(1)
+        die("--skills required when role is 'user' and no existing skills are set")
 
     entry["role"] = final_role
     if final_role == "user":
@@ -246,12 +233,10 @@ def _user_remove(args) -> None:
     users = raw.get("users", {})
 
     if username not in users:
-        print(f"error: user '{username}' does not exist", file=sys.stderr)
-        sys.exit(1)
+        die(f"user '{username}' does not exist")
 
     if users[username].get("role") == "admin" and not _other_admins(users, username):
-        print("error: cannot remove the last admin", file=sys.stderr)
-        sys.exit(1)
+        die("cannot remove the last admin")
 
     del raw["users"][username]
     _write_raw(raw)
@@ -269,24 +254,18 @@ def _user_alias(args) -> None:
     platform_id = getattr(args, "id", None)
 
     if not NAME_RE.match(connector):
-        print(f"error: invalid connector name '{connector}' (must match {NAME_RE.pattern})", file=sys.stderr)
-        sys.exit(1)
+        die(f"invalid connector name '{connector}' (must match {NAME_RE.pattern})")
 
     raw = _read_raw()
     users = raw.get("users", {})
 
     if username not in users:
-        print(f"error: user '{username}' does not exist", file=sys.stderr)
-        sys.exit(1)
+        die(f"user '{username}' does not exist")
 
     if remove:
         aliases = users[username].get("aliases", {})
         if connector not in aliases:
-            print(
-                f"error: user '{username}' has no alias for connector '{connector}'",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            die(f"user '{username}' has no alias for connector '{connector}'")
         del aliases[connector]
         if aliases:
             raw["users"][username]["aliases"] = aliases
@@ -295,8 +274,7 @@ def _user_alias(args) -> None:
         action = "removed"
     else:
         if not platform_id:
-            print("error: --id required when not using --remove", file=sys.stderr)
-            sys.exit(1)
+            die("--id required when not using --remove")
         if "aliases" not in raw["users"][username]:
             raw["users"][username]["aliases"] = {}
         raw["users"][username]["aliases"][connector] = platform_id

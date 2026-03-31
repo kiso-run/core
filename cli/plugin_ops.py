@@ -13,6 +13,7 @@ import tomllib
 from pathlib import Path
 
 from kiso.config import KISO_DIR, load_config
+from cli.render import die
 
 
 def _clean_env() -> dict[str, str]:
@@ -348,8 +349,7 @@ def _list_plugins(discover_fn, item_type: str) -> None:
 def _check_plugin_installed(plugin_dir: Path, plugin_type: str, name: str) -> None:
     """Exit with error if the plugin directory does not exist."""
     if not plugin_dir.exists():
-        print(f"error: {plugin_type} '{name}' is not installed", file=sys.stderr)
-        sys.exit(1)
+        die(f"{plugin_type} '{name}' is not installed")
 
 
 def _render_search_results(

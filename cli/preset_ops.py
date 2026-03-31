@@ -8,6 +8,7 @@ from pathlib import Path
 
 from kiso.config import KISO_DIR
 from kiso.presets import PresetManifest
+from cli.render import die
 
 PRESETS_DIR = KISO_DIR / "presets"
 
@@ -226,8 +227,7 @@ def remove_preset(args, name: str) -> None:
 
     tracking = _load_installed(name)
     if not tracking:
-        print(f"error: preset '{name}' is not installed", file=sys.stderr)
-        sys.exit(1)
+        die(f"preset '{name}' is not installed")
 
     removed_facts = 0
     removed_behaviors = 0

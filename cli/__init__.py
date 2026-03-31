@@ -16,6 +16,7 @@ from cli.render import (
     _format_resources,
     _parse_llm_calls,
     detect_caps,
+    die,
     get_last_thinking,
     render_banner,
     render_cancel_start,
@@ -94,8 +95,7 @@ def _setup_client_context(args: argparse.Namespace) -> _ClientContext:
     caps = detect_caps()
     token = cfg.tokens.get("cli")
     if not token:
-        print("error: no 'cli' token in config.toml", file=sys.stderr)
-        sys.exit(1)
+        die("no 'cli' token in config.toml")
 
     user = args.user or getpass.getuser()
     session = args.session or f"{socket.gethostname()}@{user}"
@@ -723,8 +723,7 @@ def _msg_cmd(args: argparse.Namespace) -> None:
 
         message_id = data.get("message_id")
         if message_id is None:
-            print("error: server response missing message_id", file=sys.stderr)
-            sys.exit(1)
+            die("server response missing message_id")
 
         _poll_status(ctx.client, ctx.session, message_id, 0, quiet, False, ctx.caps, ctx.bot_name, user=ctx.user)
     except KeyboardInterrupt:
