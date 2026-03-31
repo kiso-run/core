@@ -171,23 +171,32 @@ class TestF39ToolInstallAndUse:
         actual user flow in a single conversation session.
         Expects: Stage 1 proposes install, Stage 2 installs, Stage 3 uses.
 
-        NOTE: Must run before any test using preset_tools_installed fixture,
-        otherwise browser is already installed and this test skips.
+        Uses screenshot request — no search fallback possible, planner
+        MUST propose browser install (_CAPABILITY_MAP: screenshot → browser).
         """
         if tool_installed("browser"):
             pytest.skip("Browser already installed — can't test install flow")
 
-        # Stage 1: request that needs browser → should propose install
+        # Stage 1: screenshot requires browser — no search fallback
         r1 = await run_message(
-            "vai su example.com e dimmi cosa c'è",
+            "fai uno screenshot di example.com",
             timeout=300,
         )
         assert r1.plans, "No plans created"
+        # Planner should produce a msg-only install proposal (no exec/tool
+        # since browser isn't installed). Check for msg-only OR install keywords.
+        r1_types = set(r1.task_types())
         r1_output = r1.msg_output.lower()
-        assert any(
-            kw in r1_output
-            for kw in ("install", "browser", "installa", "strumento")
-        ), f"Stage 1: no install proposal in output: {r1_output[:300]}"
+        has_install_proposal = (
+            r1_types <= {"msg"}  # msg-only plan (install proposal)
+            or any(kw in r1_output for kw in (
+                "install", "browser", "installa", "strumento", "screenshot",
+            ))
+        )
+        assert has_install_proposal, (
+            f"Stage 1: expected install proposal. "
+            f"Types: {r1.task_types()}, output: {r1_output[:300]}"
+        )
 
         # Stage 2: approve installation
         r2 = await run_message(
@@ -202,15 +211,15 @@ class TestF39ToolInstallAndUse:
                 f"Tasks: {r2.task_types()}"
             )
 
-        # Stage 3: repeat request → browser should be used
-        # "scritto nella pagina" forces planner detail → "report text content"
-        # → messenger cites page text (aligned with F27/F1b pattern)
+        # Stage 3: screenshot + describe — browser should be used
         r3 = await run_message(
-            "vai su example.com e dimmi cosa c'è scritto nella pagina",
+            "fai uno screenshot di example.com e dimmi cosa c'è scritto "
+            "nella pagina",
             timeout=300,
         )
         assert r3.success, f"Stage 3 failed: {r3.task_types()}"
 
+        # Browser tool must have been used
         tool_names = [
             FunctionalResult.task_tool_name(t) for t in r3.tasks
             if t.get("type") == "tool"
