@@ -133,7 +133,7 @@ security (exec deny lists, secret sanitization), API endpoints.
 
 - **HTTP mocking:** patch `httpx.request`, not `httpx.get`/`httpx.post`
 - **Error output:** CLI errors go to stderr — assert on `capsys.readouterr().err`
-- **Briefing mocks:** must include `"recipes": [], "relevant_entities": []`
+- **Briefing mocks:** must include `"exclude_recipes": [], "relevant_entities": []`
 - **Learn strings:** must be >= 15 chars
 
 

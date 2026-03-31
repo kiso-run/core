@@ -510,12 +510,12 @@ REVIEW_SCHEMA: dict = _build_strict_schema("review", {
 BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "modules": {"type": "array", "items": {"type": "string"}},
     "tools": {"type": "array", "items": {"type": "string"}},
-    "recipes": {"type": "array", "items": {"type": "string"}},
+    "exclude_recipes": {"type": "array", "items": {"type": "string"}},
     "context": {"type": "string"},
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "tools", "recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
+}, ["modules", "tools", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1460,16 +1460,16 @@ async def build_planner_messages(
                 f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
             )
 
-    # Recipes section — briefer selects by name, fallback injects all.
-    if briefing and briefing.get("recipes") and context_pool.get("recipes"):
+    # Recipes section — exclusion model: inject all minus briefer-excluded.
+    if context_pool.get("recipes"):
         raw_recipes = context_pool.get("_raw_recipes", [])
-        selected_names = {n.lower() for n in briefing["recipes"]}
-        selected = [r for r in raw_recipes if r["name"].lower() in selected_names]
-        if selected:
-            selected_text = build_planner_recipe_list(selected)
-            context_parts.append(f"## Available Recipes\n{selected_text}")
-    elif not briefing and context_pool.get("recipes"):
-        context_parts.append(f"## Available Recipes\n{context_pool['recipes']}")
+        if briefing:
+            excluded = {n.lower() for n in briefing.get("exclude_recipes", [])}
+            kept = [r for r in raw_recipes if r["name"].lower() not in excluded]
+        else:
+            kept = raw_recipes
+        if kept:
+            context_parts.append(f"## Available Recipes\n{build_planner_recipe_list(kept)}")
 
     # Tools section — briefer selects by name, code injects full descriptions.
     # M824: skip briefer tool filtering when few tools installed — marginal
@@ -1774,8 +1774,8 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
                 errors.append(f"unknown module: {m!r}")
     if not isinstance(briefing.get("tools"), list):
         errors.append("tools must be an array")
-    if not isinstance(briefing.get("recipes"), list):
-        errors.append("recipes must be an array")
+    if not isinstance(briefing.get("exclude_recipes"), list):
+        errors.append("exclude_recipes must be an array")
     if not isinstance(briefing.get("context"), str):
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
@@ -1846,23 +1846,23 @@ async def run_briefer(
         session=session,
     )
 
-    # force modules/recipes=[] for simple consumers (defensive cleanup)
+    # force modules/exclude_recipes=[] for simple consumers (defensive cleanup)
     if _simple:
         briefing["modules"] = []
-        briefing["recipes"] = []
+        briefing["exclude_recipes"] = []
 
     # post-validation filtering — remove hallucinated names
     briefing["tools"] = _filter_briefer_names(
         briefing.get("tools", []), context_pool.get("tools"), "tool")
-    briefing["recipes"] = _filter_briefer_names(
-        briefing.get("recipes", []), context_pool.get("recipes"), "recipe")
+    briefing["exclude_recipes"] = _filter_briefer_names(
+        briefing.get("exclude_recipes", []), context_pool.get("recipes"), "recipe")
 
     log.info(
-        "Briefer for %s: %d modules, %d tools, %d recipes, %d output_indices, %d tags",
+        "Briefer for %s: %d modules, %d tools, %d exclude_recipes, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
         len(briefing["tools"]),
-        len(briefing.get("recipes", [])),
+        len(briefing.get("exclude_recipes", [])),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),
     )

@@ -1218,9 +1218,9 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Mock briefer to return empty modules (simulates aggressive filtering)
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "recipes": [], "context": "",
+                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
-                "recipes": [], "relevant_entities": [],
+                "exclude_recipes": [], "relevant_entities": [],
             }),
         ):
             msgs, *_ = await build_planner_messages(
@@ -1252,9 +1252,9 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_tools", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "recipes": [], "context": "",
+                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
-                "recipes": [], "relevant_entities": [],
+                "exclude_recipes": [], "relevant_entities": [],
             }),
             patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git, python3, uv"),
         ):
@@ -1283,7 +1283,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.run_briefer", return_value={
                 "modules": ["plugin_install"], "tools": [],
                 "context": "", "output_indices": [],
-                "relevant_tags": [], "recipes": [], "relevant_entities": [],
+                "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [],
             }),
             patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git"),
         ):
@@ -1317,7 +1317,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": ["browser — navigate"],
                 "context": "", "output_indices": [],
-                "relevant_tags": [], "recipes": [], "relevant_entities": [],
+                "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [],
             }),
             patch("kiso.brain.build_install_context", return_value="Package manager: apt"),
         ):
@@ -1351,7 +1351,7 @@ class TestBuildPlannerMessages:
                 "modules": [], "tools": ["browser — navigate"],
                 "context": "User wants a screenshot.",
                 "output_indices": [], "relevant_tags": [],
-                "recipes": [], "relevant_entities": [],
+                "exclude_recipes": [], "relevant_entities": [],
             }),
         ):
             msgs, *_ = await build_planner_messages(
@@ -5356,7 +5356,7 @@ class TestValidateBriefing:
             "context": "User wants to visit a website",
             "output_indices": [0, 2],
             "relevant_tags": ["browser"],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         assert validate_briefing(briefing) == []
 
@@ -5367,7 +5367,7 @@ class TestValidateBriefing:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         assert validate_briefing(briefing) == []
 
@@ -5378,7 +5378,7 @@ class TestValidateBriefing:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing)
         assert len(errors) == 1
@@ -5391,7 +5391,7 @@ class TestValidateBriefing:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing)
         assert any("modules" in e for e in errors)
@@ -5403,7 +5403,7 @@ class TestValidateBriefing:
             "context": None,
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing)
         assert any("context" in e for e in errors)
@@ -5415,7 +5415,7 @@ class TestValidateBriefing:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         assert validate_briefing(briefing) == []
 
@@ -5465,7 +5465,7 @@ class TestRunBriefer:
             "context": "User wants to browse",
             "output_indices": [1],
             "relevant_tags": ["browser"],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         ctx = {"tools": "Available skills:\n- browser — Navigate, click, fill"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
@@ -5507,7 +5507,7 @@ class TestRunBriefer:
             "context": "Navigate to guidance.studio and screenshot.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         ctx = {"tools": real_description}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
@@ -5527,7 +5527,7 @@ class TestRunBriefer:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "what time is it", {})
@@ -5557,7 +5557,7 @@ class TestRunBriefer:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
@@ -5575,7 +5575,7 @@ class TestRunBriefer:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         ctx = {"tools": "Available skills:\n- search — web search for queries, max_results option"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
@@ -5592,7 +5592,7 @@ class TestRunBriefer:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
@@ -5608,7 +5608,7 @@ class TestRunBriefer:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {"tools": ""})
@@ -5623,7 +5623,7 @@ class TestRunBriefer:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
@@ -5640,7 +5640,7 @@ class TestBrieferSchema:
             "context": "some context",
             "output_indices": [0, 1, 2],
             "relevant_tags": ["browser", "tech-stack"],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
@@ -5661,7 +5661,7 @@ class TestBrieferSchema:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
@@ -5674,7 +5674,7 @@ class TestBrieferSchema:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
@@ -5802,7 +5802,7 @@ class TestBrieferPlannerIntegration:
             "context": "User wants to browse a website.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -5915,7 +5915,7 @@ class TestBrieferPlannerIntegration:
             "context": "Synthesized context from briefer.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -5946,7 +5946,7 @@ class TestBrieferPlannerIntegration:
             "context": "User wants to install a skill.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6008,7 +6008,7 @@ class TestBrieferTagRetrieval:
             "context": "User asks about infrastructure.",
             "output_indices": [],
             "relevant_tags": ["infra", "cache"],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6040,7 +6040,7 @@ class TestBrieferTagRetrieval:
             "context": "User asks about Python.",
             "output_indices": [],
             "relevant_tags": ["tech-stack"],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6068,7 +6068,7 @@ class TestBrieferTagRetrieval:
             "context": "Simple question.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6098,9 +6098,9 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "recipes": [], "context": "",
+                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "{}"
 
@@ -6125,9 +6125,9 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "recipes": [], "context": "",
+                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "{}"
 
@@ -6178,7 +6178,7 @@ class TestM346BrieferEntityRetrieval:
         await save_fact(db, "Python version 3.12 deployed", "test", category="project")
 
         briefing = {
-            "modules": [], "tools": [], "recipes": [],
+            "modules": [], "tools": [], "exclude_recipes": [],
             "context": "User asks about their company.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["acmecorp"],
@@ -6208,7 +6208,7 @@ class TestM346BrieferEntityRetrieval:
         await save_fact(db, "Flask web framework version 3.0", "curator", entity_id=eid)
 
         briefing = {
-            "modules": [], "tools": [], "recipes": [], "context": "About Flask.",
+            "modules": [], "tools": [], "exclude_recipes": [], "context": "About Flask.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["flask"],
         }
@@ -6240,9 +6240,9 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "recipes": [], "context": "",
+                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "{}"
 
@@ -6269,9 +6269,9 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "recipes": [], "context": "",
+                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "{}"
 
@@ -6297,9 +6297,9 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "recipes": [], "context": "",
+                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "{}"
 
@@ -6316,9 +6316,9 @@ class TestM346BrieferEntityRetrieval:
     async def test_empty_relevant_entities_no_section(self, db):
         """M346: empty relevant_entities produces no entity-matched section."""
         briefing = {
-            "modules": [], "tools": [], "recipes": [], "context": "Simple.",
+            "modules": [], "tools": [], "exclude_recipes": [], "context": "Simple.",
             "output_indices": [], "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6371,7 +6371,7 @@ class TestM258SysEnvAndGapFiltering:
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6414,7 +6414,7 @@ class TestM258SysEnvAndGapFiltering:
                     "context": "Simple request.",
                     "output_indices": [],
                     "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "{}"
 
@@ -6466,7 +6466,7 @@ class TestM266BrowserAvailability:
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6493,7 +6493,7 @@ class TestM266BrowserAvailability:
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         fake_skill = {
@@ -6524,7 +6524,7 @@ class TestM266BrowserAvailability:
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6593,7 +6593,7 @@ class TestM954BuiltinSearchNote:
             "context": "User wants to search for programming languages.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6622,7 +6622,7 @@ class TestM954BuiltinSearchNote:
             "context": "User wants to search.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         fake_skill = {
             "name": "websearch", "summary": "web search",
@@ -6795,7 +6795,7 @@ class TestM261BrieferModuleCoverage:
             "context": "Briefer context.",
             "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6883,7 +6883,7 @@ class TestM261MessengerContextReduction:
                     "context": "User asked about weather in Rome.",
                     "output_indices": [4, 5],
                     "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             captured_messages.extend(messages)
             return "The weather in Rome is sunny."
@@ -7212,7 +7212,7 @@ class TestM309ReplanContextDedup:
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
             return {"modules": ["core"], "tools": [], "context": "ctx",
-                    "output_indices": [], "relevant_tags": [], "recipes": [], "relevant_entities": []}
+                    "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
              patch("kiso.brain.discover_tools", return_value=[]):
@@ -7238,7 +7238,7 @@ class TestM309ReplanContextDedup:
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
             return {"modules": ["core"], "tools": [], "context": "ctx",
-                    "output_indices": [], "relevant_tags": [], "recipes": [], "relevant_entities": []}
+                    "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
              patch("kiso.brain.discover_tools", return_value=[]):
@@ -7917,7 +7917,7 @@ class TestM304BrieferModuleValidationSkip:
         briefing = {
             "modules": ["nonexistent"],
             "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=True)
         assert any("nonexistent" in e for e in errors)
@@ -7927,7 +7927,7 @@ class TestM304BrieferModuleValidationSkip:
         briefing = {
             "modules": ["hallucinated_module", "another_fake"],
             "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
         assert errors == []
@@ -7937,7 +7937,7 @@ class TestM304BrieferModuleValidationSkip:
         briefing = {
             "modules": "not_a_list",
             "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
         assert any("modules must be an array" in e for e in errors)
@@ -7949,7 +7949,7 @@ class TestM304BrieferModuleValidationSkip:
             "tools": "not_a_list",  # invalid
             "context": None,  # invalid
             "output_indices": [], "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
         assert any("tools" in e for e in errors)
@@ -7977,7 +7977,7 @@ class TestM304RunBrieferSimpleConsumers:
             "modules": ["install_skill", "navigate_and_summarize"],
             "tools": [], "context": "About to install browser", "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "messenger", "tell user", {})
@@ -7991,7 +7991,7 @@ class TestM304RunBrieferSimpleConsumers:
             "modules": ["BrowserSkill"],
             "tools": [], "context": "", "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "worker", "translate cmd", {})
@@ -8003,7 +8003,7 @@ class TestM304RunBrieferSimpleConsumers:
             "modules": ["nonexistent_module"],
             "tools": [], "context": "", "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             with pytest.raises(BrieferError):
@@ -8015,7 +8015,7 @@ class TestM304RunBrieferSimpleConsumers:
             "modules": ["fake_module"],
             "tools": [], "context": "test", "output_indices": [],
             "relevant_tags": [],
-            "recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [],
         })
         mock_llm = AsyncMock(return_value=response)
         with patch("kiso.brain.call_llm", mock_llm):
@@ -8736,7 +8736,7 @@ class TestBuildStrictSchema:
         from kiso.brain import BRIEFER_SCHEMA
         schema = BRIEFER_SCHEMA["json_schema"]["schema"]
         assert set(schema["required"]) == {
-            "modules", "tools", "recipes", "context", "output_indices",
+            "modules", "tools", "exclude_recipes", "context", "output_indices",
             "relevant_tags", "relevant_entities",
         }
 

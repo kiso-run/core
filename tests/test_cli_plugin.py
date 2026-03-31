@@ -76,7 +76,7 @@ class TestPluginSearch:
     def test_search_across_types(self, capsys):
         registry = {
             "tools": [{"name": "browser", "description": "Browser automation"}],
-            "recipes": [],
+            "exclude_recipes": [],
             "connectors": [{"name": "discord", "description": "Discord bridge"}],
         }
         args = _FakeArgs(query="")
@@ -90,7 +90,7 @@ class TestPluginSearch:
         assert "discord" in out
 
     def test_search_no_results(self, capsys):
-        registry = {"tools": [], "recipes": [], "connectors": []}
+        registry = {"tools": [], "exclude_recipes": [], "connectors": []}
         args = _FakeArgs(query="nonexistent")
         with patch("cli.plugin.fetch_registry", return_value=registry):
             _plugin_search(args)

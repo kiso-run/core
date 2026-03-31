@@ -8311,7 +8311,7 @@ class TestM44gAppendCallsRobustness:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             call_order.append("messenger")
             return "Hi"
@@ -11129,7 +11129,7 @@ class TestMsgTaskBrieferIntegration:
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             # messenger
             captured_outputs_text.append(messages[1]["content"])
@@ -11205,7 +11205,7 @@ class TestMsgTaskBrieferIntegration:
                     "modules": [], "tools": [],
                     "context": "Filtered context.",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             call_roles.append(role)
             return "response"
@@ -11247,7 +11247,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "recipes": [],
+                    "modules": [], "tools": [], "exclude_recipes": [],
                     "context": "Instance info.",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": ["self"],
@@ -11275,7 +11275,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "No relevant context.",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             messenger_msgs.append(messages)
             return "I don't know"
@@ -11295,7 +11295,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "Response"
 
@@ -11324,7 +11324,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "ok"
 
@@ -11352,7 +11352,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "ok"
 
@@ -11375,7 +11375,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "ok"
 
@@ -11425,7 +11425,7 @@ class TestExecTaskBrieferIntegration:
                     "modules": [], "tools": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
                     "relevant_tags": [],
-                    "recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [],
                 })
             return "ok"
 
