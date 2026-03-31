@@ -32,9 +32,7 @@ from kiso.tools import _env_var_name, _validate_manifest, check_deps, discover_t
 TOOLS_DIR = KISO_DIR / "tools"
 OFFICIAL_PREFIX = "tool-"
 
-# Backward-compatible aliases for cli_connector and tests that import from here
-_is_url = is_url
-_is_repo_not_found = is_repo_not_found
+# Aliases used by tool.py functions and patched by tests.
 _require_admin = require_admin
 _fetch_registry = fetch_registry
 _search_entries = search_entries
