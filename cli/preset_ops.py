@@ -55,48 +55,22 @@ def _c(text: str, color: str) -> str:
     return f"{color}{text}{_RESET}" if detect_caps().color else text
 
 
-def _auto_install_tools(tool_names: list[str]) -> list[str]:
-    """Auto-install tools by name. Returns list of successfully installed names."""
-    import argparse
-    import io
-    import contextlib
-    from cli.tool import _tool_install
-
-    total = len(tool_names)
-    installed: list[str] = []
-    for i, name in enumerate(tool_names, 1):
-        fake_args = argparse.Namespace(
-            target=name, name=None, show_deps=False, no_deps=False,
-        )
-        try:
-            # Suppress individual tool install output (stdout + stderr)
-            with contextlib.redirect_stdout(io.StringIO()), \
-                 contextlib.redirect_stderr(io.StringIO()):
-                _tool_install(fake_args)
-            installed.append(name)
-            print(f"  [{i}/{total}] {name} {_c('✓', _GREEN)}")
-        except (SystemExit, Exception):
-            print(f"  [{i}/{total}] {name} {_c('✗', _RED)}")
-    return installed
-
-
-def _auto_install_connectors(connector_names: list[str]) -> list[str]:
-    """Auto-install connectors by name. Returns list of successfully installed names."""
+def _auto_install_plugins(names: list[str], install_fn) -> list[str]:
+    """Auto-install plugins by name. Returns list of successfully installed names."""
     import argparse
     import contextlib
     import io
-    from cli.connector import _connector_install
 
-    total = len(connector_names)
+    total = len(names)
     installed: list[str] = []
-    for i, name in enumerate(connector_names, 1):
+    for i, name in enumerate(names, 1):
         fake_args = argparse.Namespace(
             target=name, name=None, show_deps=False, no_deps=False,
         )
         try:
             with contextlib.redirect_stdout(io.StringIO()), \
                  contextlib.redirect_stderr(io.StringIO()):
-                _connector_install(fake_args)
+                install_fn(fake_args)
             installed.append(name)
             print(f"  [{i}/{total}] {name} {_c('✓', _GREEN)}")
         except (SystemExit, Exception):
@@ -174,10 +148,12 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     installed_connectors: list[str] = []
 
     if manifest.tools:
-        installed_tools = _auto_install_tools(manifest.tools)
+        from cli.tool import _tool_install
+        installed_tools = _auto_install_plugins(manifest.tools, _tool_install)
 
     if manifest.connectors:
-        installed_connectors = _auto_install_connectors(manifest.connectors)
+        from cli.connector import _connector_install
+        installed_connectors = _auto_install_plugins(manifest.connectors, _connector_install)
 
     # Save tracking file
     tracking = {

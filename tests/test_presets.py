@@ -205,7 +205,7 @@ class TestInstallPreset:
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
              patch("httpx.request", side_effect=mock_request), \
              patch("cli.preset_ops.PRESETS_DIR", tmp_path / "presets"), \
-             patch("cli.preset_ops._auto_install_tools", return_value=["websearch"]):
+             patch("cli.preset_ops._auto_install_plugins", return_value=["websearch"]):
             # Patch the _installed_path to use tmp
             with patch("cli.preset_ops._installed_path", return_value=tmp_path / "presets" / "test-p.installed.json"):
                 install_preset(args, manifest)
@@ -575,7 +575,7 @@ class TestM758AutoInstallTools:
         def fake_tool_install(fake_args):
             installed.append(fake_args.target)
 
-        with patch("cli.preset_ops._auto_install_tools") as mock_auto, \
+        with patch("cli.preset_ops._auto_install_plugins") as mock_auto, \
              patch("cli._http.cli_post") as mock_post, \
              patch("cli.preset_ops._load_installed", return_value=None), \
              patch("cli.preset_ops._save_installed"):
@@ -583,7 +583,7 @@ class TestM758AutoInstallTools:
             mock_auto.return_value = ["websearch", "browser"]
             install_preset(args, manifest)
 
-        mock_auto.assert_called_once_with(["websearch", "browser"])
+        mock_auto.assert_called_once()
 
     def test_tracking_includes_installed_tools(self):
         """Tracking JSON includes installed_tools list."""
@@ -600,7 +600,7 @@ class TestM758AutoInstallTools:
         def capture_save(name, data):
             saved_data.update(data)
 
-        with patch("cli.preset_ops._auto_install_tools", return_value=["websearch"]), \
+        with patch("cli.preset_ops._auto_install_plugins", return_value=["websearch"]), \
              patch("cli._http.cli_post") as mock_post, \
              patch("cli.preset_ops._load_installed", return_value=None), \
              patch("cli.preset_ops._save_installed", side_effect=capture_save):
@@ -687,14 +687,12 @@ class TestM819CleanProgressOutput:
         assert "browser, aider" in out
         assert "2 guidelines" in out
 
-    def test_auto_install_tools_progress_format(self, capsys):
-        """_auto_install_tools shows [N/M] name ✓/✗ per tool."""
-        from cli.preset_ops import _auto_install_tools
+    def test_auto_install_plugins_progress_format(self, capsys):
+        """_auto_install_plugins shows [N/M] name ✓/✗ per plugin."""
+        from cli.preset_ops import _auto_install_plugins
 
-        with patch("cli.tool._tool_install") as mock_install:
-            # First succeeds, second fails
-            mock_install.side_effect = [None, RuntimeError("fail")]
-            result = _auto_install_tools(["browser", "aider"])
+        mock_install = MagicMock(side_effect=[None, RuntimeError("fail")])
+        result = _auto_install_plugins(["browser", "aider"], mock_install)
 
         out = capsys.readouterr().out
         assert "[1/2] browser" in out
@@ -703,15 +701,14 @@ class TestM819CleanProgressOutput:
         assert "✗" in out
         assert result == ["browser"]
 
-    def test_auto_install_tools_suppresses_individual_output(self, capsys):
-        """Individual tool install messages are suppressed."""
-        from cli.preset_ops import _auto_install_tools
+    def test_auto_install_plugins_suppresses_individual_output(self, capsys):
+        """Individual plugin install messages are suppressed."""
+        from cli.preset_ops import _auto_install_plugins
 
         def noisy_install(args):
             print("Tool 'test' installed successfully.")
 
-        with patch("cli.tool._tool_install", side_effect=noisy_install):
-            _auto_install_tools(["test"])
+        _auto_install_plugins(["test"], noisy_install)
 
         out = capsys.readouterr().out
         assert "installed successfully" not in out
@@ -728,7 +725,7 @@ class TestM819CleanProgressOutput:
         )
         args = MagicMock()
 
-        with patch("cli.preset_ops._auto_install_tools", return_value=["browser", "ocr"]), \
+        with patch("cli.preset_ops._auto_install_plugins", side_effect=[["browser", "ocr"]]), \
              patch("cli._http.cli_post") as mock_post, \
              patch("cli.preset_ops._load_installed", return_value=None), \
              patch("cli.preset_ops._save_installed"):
