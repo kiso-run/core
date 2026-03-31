@@ -13,6 +13,7 @@ Rules:
 - AGGRESSIVE filtering. Default to EXCLUDING.
 - Fast-path (all empty): greetings, small talk, simple knowledge. Needs context only: info retrieval, single-tool tasks. Needs modules: multi-step plans, replan, error recovery — add only specific module(s).
 - For planner: select ONLY tools the plan will call. Most requests need ZERO modules.
+- Recipes are user instructions — select any recipe whose summary matches the current request. When in doubt, include.
 - context: 1-3 relevant facts (verbatim or compressed). Never copy entire summary/facts list. Never add opinions or information not in the input. Empty string if no relevant facts.
 - System Environment: SKIP unless installing software or needing specific binaries.
 - Preserve specifics: exact values, paths, URLs, error messages. Conflicting facts: use most recent.
