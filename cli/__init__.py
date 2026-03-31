@@ -153,330 +153,245 @@ def _save_readline_history() -> None:
         pass
 
 
+def _add_tool_subcommands(parent_parser: argparse.ArgumentParser) -> None:
+    """Add tool subcommands (shared by 'tool' and 'skill' alias)."""
+    s = parent_parser.add_subparsers(dest="tool_command")
+    s.add_parser("list", help="list installed tools")
+    sp = s.add_parser("search", help="search official tools on GitHub")
+    sp.add_argument("query", nargs="?", default="", help="search filter")
+    ip = s.add_parser("install", help="install a tool")
+    ip.add_argument("target", help="tool name or git URL")
+    ip.add_argument("--name", default=None, help="custom install name")
+    ip.add_argument("--no-deps", action="store_true", help="skip deps.sh")
+    ip.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
+    up = s.add_parser("update", help="update a tool")
+    up.add_argument("target", help="tool name or 'all'")
+    rp = s.add_parser("remove", help="remove a tool")
+    rp.add_argument("name", help="tool name")
+    tp = s.add_parser("test", help="run a tool's test suite")
+    tp.add_argument("name", help="tool name")
+
+
+def _add_connector_parser(sub) -> None:
+    s = sub.add_parser("connector", help="manage connectors").add_subparsers(dest="connector_command")
+    s.add_parser("list", help="list installed connectors")
+    p = s.add_parser("search", help="search official connectors on GitHub")
+    p.add_argument("query", nargs="?", default="", help="search filter")
+    p = s.add_parser("install", help="install a connector")
+    p.add_argument("target", help="connector name or git URL")
+    p.add_argument("--name", default=None, help="custom install name")
+    p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
+    p.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
+    p = s.add_parser("update", help="update a connector")
+    p.add_argument("target", help="connector name or 'all'")
+    p = s.add_parser("remove", help="remove a connector")
+    p.add_argument("name", help="connector name")
+    p = s.add_parser("run", help="start a connector daemon")
+    p.add_argument("name", help="connector name")
+    p = s.add_parser("stop", help="stop a connector daemon")
+    p.add_argument("name", help="connector name")
+    p = s.add_parser("status", help="check connector status")
+    p.add_argument("name", help="connector name")
+    p = s.add_parser("test", help="run a connector's test suite")
+    p.add_argument("name", help="connector name")
+
+
+def _add_user_parser(sub) -> None:
+    s = sub.add_parser("user", help="manage users").add_subparsers(dest="user_command")
+    p = s.add_parser("list", help="list all users")
+    p.add_argument("--json", action="store_true", dest="json", help="output as JSON (machine-readable)")
+    p = s.add_parser("add", help="add a user")
+    p.add_argument("username", help="user name")
+    p.add_argument("--role", required=True, choices=["admin", "user"], help="user role")
+    p.add_argument("--skills", default=None, metavar="SKILLS",
+                   help="allowed skills: '*' or comma-separated names (required for role=user)")
+    p.add_argument("--alias", action="append", metavar="CONNECTOR:ID",
+                   help="connector alias in 'connector:platform_id' format (repeatable)")
+    p.add_argument("--no-reload", action="store_true", dest="no_reload",
+                   help="skip hot-reload after writing config (useful when server is not running)")
+    p = s.add_parser("edit", help="edit role or skills of an existing user")
+    p.add_argument("username", help="user to edit")
+    p.add_argument("--role", default=None, choices=["admin", "user"], help="new role")
+    p.add_argument("--skills", default=None, metavar="SKILLS", help="new skills: '*' or comma-separated names")
+    p.add_argument("--no-reload", action="store_true", dest="no_reload", help="skip hot-reload after writing config")
+    p = s.add_parser("remove", help="remove a user")
+    p.add_argument("username", help="user to remove")
+    p.add_argument("--no-reload", action="store_true", dest="no_reload", help="skip hot-reload after writing config")
+    p = s.add_parser("alias", help="manage connector aliases for a user")
+    p.add_argument("username", help="user name")
+    p.add_argument("--connector", required=True, help="connector name")
+    p.add_argument("--id", default=None, metavar="PLATFORM_ID", help="platform user ID")
+    p.add_argument("--remove", action="store_true", help="remove the alias")
+    p.add_argument("--no-reload", action="store_true", dest="no_reload", help="skip hot-reload after writing config")
+
+
+def _add_knowledge_parser(sub) -> None:
+    s = sub.add_parser("knowledge", help="manage knowledge facts").add_subparsers(dest="knowledge_cmd")
+    p = s.add_parser("list", help="list knowledge facts")
+    p.add_argument("--category", "-c", help="filter by category")
+    p.add_argument("--entity", "-e", help="filter by entity name")
+    p.add_argument("--tag", "-t", help="filter by tag")
+    p.add_argument("--limit", "-n", type=int, default=50, help="max results")
+    p = s.add_parser("add", help="add a knowledge fact")
+    p.add_argument("content", help="fact text")
+    p.add_argument("--category", "-c", default="general", help="fact category")
+    p.add_argument("--entity", "-e", help="entity name")
+    p.add_argument("--entity-kind", help="entity kind (default: concept)")
+    p.add_argument("--tags", "-t", help="comma-separated tags")
+    p = s.add_parser("search", help="search knowledge")
+    p.add_argument("query", help="search query")
+    p = s.add_parser("remove", help="remove a knowledge fact by ID")
+    p.add_argument("fact_id", type=int, help="fact ID to remove")
+    p = s.add_parser("export", help="export knowledge facts")
+    p.add_argument("--format", "-f", choices=["json", "md"], default="json", help="output format")
+    p.add_argument("--category", "-c", help="filter by category")
+    p.add_argument("--entity", "-e", help="filter by entity name")
+    p.add_argument("--output", "-o", help="output file (default: stdout)")
+    p = s.add_parser("import", help="import knowledge from markdown file")
+    p.add_argument("file", help="markdown file path")
+    p.add_argument("--category", "-c", help="default category (default: general)")
+    p.add_argument("--dry-run", action="store_true", help="show what would be imported")
+
+
+def _add_project_parser(sub) -> None:
+    s = sub.add_parser("project", help="manage projects").add_subparsers(dest="project_cmd")
+    s.add_parser("list", help="list projects")
+    p = s.add_parser("create", help="create a project")
+    p.add_argument("name", help="project name")
+    p.add_argument("--description", "-d", help="project description")
+    p = s.add_parser("show", help="show project details")
+    p.add_argument("name", help="project name")
+    p = s.add_parser("bind", help="bind session to project")
+    p.add_argument("session", help="session ID")
+    p.add_argument("project", help="project name")
+    p = s.add_parser("unbind", help="unbind session from project")
+    p.add_argument("session", help="session ID")
+    p.add_argument("project", help="project name")
+    p = s.add_parser("add-member", help="add member to project")
+    p.add_argument("username", help="username")
+    p.add_argument("--project", "-p", required=True, help="project name")
+    p.add_argument("--role", "-r", choices=["member", "viewer"], default="member", help="role")
+    p = s.add_parser("remove-member", help="remove member from project")
+    p.add_argument("username", help="username")
+    p.add_argument("--project", "-p", required=True, help="project name")
+    p = s.add_parser("members", help="list project members")
+    p.add_argument("--project", "-p", required=True, help="project name")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kiso", description=f"Kiso agent bot v{__version__}")
     parser.add_argument("-V", "--version", action=_VersionAction)
-
-    # Chat-mode flags (top-level, not on a subcommand)
-    parser.add_argument(
-        "--session",
-        default=None,
-        help="session name (default: {hostname}@{user})",
-    )
-    parser.add_argument(
-        "--api",
-        default="http://localhost:8333",
-        help="kiso server URL (default: http://localhost:8333)",
-    )
-    parser.add_argument(
-        "--user",
-        default=None,
-        help="user to send as (default: system user)",
-    )
-    parser.add_argument(
-        "--quiet", "-q", action="store_true", help="only show msg task content"
-    )
+    parser.add_argument("--session", default=None, help="session name (default: {hostname}@{user})")
+    parser.add_argument("--api", default="http://localhost:8333", help="kiso server URL (default: http://localhost:8333)")
+    parser.add_argument("--user", default=None, help="user to send as (default: system user)")
+    parser.add_argument("--quiet", "-q", action="store_true", help="only show msg task content")
 
     sub = parser.add_subparsers(dest="command")
-    msg_parser = sub.add_parser("msg", help="send a message and print the response")
-    msg_parser.add_argument("message", help="message text")
-    def _add_tool_subcommands(parent_parser):
-        """Add tool subcommands to a parser (shared by 'tool' and 'skill' alias)."""
-        tool_sub = parent_parser.add_subparsers(dest="tool_command")
-        tool_sub.add_parser("list", help="list installed tools")
-        sp = tool_sub.add_parser("search", help="search official tools on GitHub")
-        sp.add_argument("query", nargs="?", default="", help="search filter")
-        ip = tool_sub.add_parser("install", help="install a tool")
-        ip.add_argument("target", help="tool name or git URL")
-        ip.add_argument("--name", default=None, help="custom install name")
-        ip.add_argument("--no-deps", action="store_true", help="skip deps.sh")
-        ip.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
-        up = tool_sub.add_parser("update", help="update a tool")
-        up.add_argument("target", help="tool name or 'all'")
-        rp = tool_sub.add_parser("remove", help="remove a tool")
-        rp.add_argument("name", help="tool name")
-        tp = tool_sub.add_parser("test", help="run a tool's test suite")
-        tp.add_argument("name", help="tool name")
+    sub.add_parser("msg", help="send a message and print the response").add_argument("message", help="message text")
 
-    tool_parser = sub.add_parser("tool", help="manage tools")
-    _add_tool_subcommands(tool_parser)
+    _add_tool_subcommands(sub.add_parser("tool", help="manage tools"))
 
-    # Recipe management (planner instructions)
-    recipe_parser = sub.add_parser("recipe", help="manage recipes (planner instructions)")
-    recipe_sub = recipe_parser.add_subparsers(dest="recipe_command")
-    recipe_sub.add_parser("list", help="list installed recipes")
-    ri = recipe_sub.add_parser("install", help="install a recipe from a .md file")
-    ri.add_argument("source", help="path to .md recipe file")
-    rr = recipe_sub.add_parser("remove", help="remove a recipe")
-    rr.add_argument("name", help="recipe name")
+    # Recipe
+    rs = sub.add_parser("recipe", help="manage recipes (planner instructions)").add_subparsers(dest="recipe_command")
+    rs.add_parser("list", help="list installed recipes")
+    p = rs.add_parser("install", help="install a recipe from a .md file")
+    p.add_argument("source", help="path to .md recipe file")
+    p = rs.add_parser("remove", help="remove a recipe")
+    p.add_argument("name", help="recipe name")
 
-    # Plugin umbrella command
-    plugin_parser = sub.add_parser("plugin", help="unified plugin view")
-    plugin_sub = plugin_parser.add_subparsers(dest="plugin_command")
-    plugin_sub.add_parser("list", help="list all installed plugins")
-    ps = plugin_sub.add_parser("search", help="search registry across all plugin types")
-    ps.add_argument("query", nargs="?", default="", help="search filter")
+    # Plugin umbrella
+    ps = sub.add_parser("plugin", help="unified plugin view").add_subparsers(dest="plugin_command")
+    ps.add_parser("list", help="list all installed plugins")
+    p = ps.add_parser("search", help="search registry across all plugin types")
+    p.add_argument("query", nargs="?", default="", help="search filter")
 
-    connector_parser = sub.add_parser("connector", help="manage connectors")
-    connector_sub = connector_parser.add_subparsers(dest="connector_command")
+    _add_connector_parser(sub)
+    _add_user_parser(sub)
+    _add_knowledge_parser(sub)
+    _add_project_parser(sub)
 
-    connector_sub.add_parser("list", help="list installed connectors")
+    # Sessions
+    p = sub.add_parser("sessions", help="list sessions")
+    p.add_argument("--all", "-a", action="store_true", dest="show_all", help="show all sessions (admin only)")
+    ss = sub.add_parser("session", help="manage sessions").add_subparsers(dest="session_cmd")
+    p = ss.add_parser("create", help="create a named session")
+    p.add_argument("name", help="session name")
+    p.add_argument("--description", "-d", help="session description")
 
-    csearch_p = connector_sub.add_parser("search", help="search official connectors on GitHub")
-    csearch_p.add_argument("query", nargs="?", default="", help="search filter")
+    # Env
+    es = sub.add_parser("env", help="manage deploy secrets").add_subparsers(dest="env_command")
+    p = es.add_parser("set", help="set a deploy secret")
+    p.add_argument("key", help="secret name")
+    p.add_argument("value", help="secret value")
+    p = es.add_parser("get", help="get a deploy secret")
+    p.add_argument("key", help="secret name")
+    es.add_parser("list", help="list deploy secret names")
+    p = es.add_parser("delete", help="delete a deploy secret")
+    p.add_argument("key", help="secret name")
+    es.add_parser("reload", help="hot-reload .env into the server")
 
-    cinstall_p = connector_sub.add_parser("install", help="install a connector")
-    cinstall_p.add_argument("target", help="connector name or git URL")
-    cinstall_p.add_argument("--name", default=None, help="custom install name")
-    cinstall_p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
-    cinstall_p.add_argument(
-        "--show-deps", action="store_true", help="show deps.sh without installing"
-    )
+    # Stats
+    p = sub.add_parser("stats", help="show token usage stats (admin only)")
+    p.add_argument("--since", type=int, default=30, metavar="N", help="look back N days (default: 30)")
+    p.add_argument("--session", default=None, metavar="NAME", help="filter by session name")
+    p.add_argument("--by", default="model", choices=["model", "session", "role"], help="group by dimension (default: model)")
 
-    cupdate_p = connector_sub.add_parser("update", help="update a connector")
-    cupdate_p.add_argument("target", help="connector name or 'all'")
+    sub.add_parser("completion", help="print shell completion script").add_argument("shell", choices=["bash", "zsh"], help="target shell")
+    sub.add_parser("version", help="print version and exit").add_argument("--stats", action="store_true", help="show line count breakdown")
 
-    cremove_p = connector_sub.add_parser("remove", help="remove a connector")
-    cremove_p.add_argument("name", help="connector name")
+    # Reset
+    rs = sub.add_parser("reset", help="reset/cleanup data").add_subparsers(dest="reset_command")
+    for name, help_text in [("session", "reset one session"), ("knowledge", "reset all knowledge"),
+                            ("all", "reset all data"), ("factory", "factory reset")]:
+        p = rs.add_parser(name, help=help_text)
+        p.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+        if name == "session":
+            p.add_argument("name", nargs="?", default=None, help="session name (default: current)")
 
-    crun_p = connector_sub.add_parser("run", help="start a connector daemon")
-    crun_p.add_argument("name", help="connector name")
+    # Cancel
+    p = sub.add_parser("cancel", help="cancel the active job in a session")
+    p.add_argument("cancel_session", nargs="?", default=None, help="session to cancel (default: current session)")
 
-    cstop_p = connector_sub.add_parser("stop", help="stop a connector daemon")
-    cstop_p.add_argument("name", help="connector name")
+    # Rules
+    rs = sub.add_parser("rules", help="manage safety rules").add_subparsers(dest="rules_cmd")
+    rs.add_parser("list", help="list all safety rules")
+    p = rs.add_parser("add", help="add a safety rule")
+    p.add_argument("rule_content", help="rule text")
+    p = rs.add_parser("remove", help="remove a safety rule by ID")
+    p.add_argument("rule_id", type=int, help="rule ID to remove")
 
-    cstatus_p = connector_sub.add_parser("status", help="check connector status")
-    cstatus_p.add_argument("name", help="connector name")
+    # Cron
+    cs = sub.add_parser("cron", help="manage cron jobs").add_subparsers(dest="cron_cmd")
+    cs.add_parser("list", help="list cron jobs").add_argument("--session", "-s", help="filter by session")
+    p = cs.add_parser("add", help="add a cron job")
+    p.add_argument("schedule", help="cron expression (e.g. '0 9 * * *')")
+    p.add_argument("prompt", help="message to send on each trigger")
+    p.add_argument("--session", "-s", required=True, help="target session")
+    cs.add_parser("remove", help="remove a cron job").add_argument("job_id", type=int, help="cron job ID")
+    cs.add_parser("enable", help="enable a cron job").add_argument("job_id", type=int, help="cron job ID")
+    cs.add_parser("disable", help="disable a cron job").add_argument("job_id", type=int, help="cron job ID")
 
-    ctest_p = connector_sub.add_parser("test", help="run a connector's test suite")
-    ctest_p.add_argument("name", help="connector name")
+    # Behavior
+    bs = sub.add_parser("behavior", help="manage behavioral guidelines").add_subparsers(dest="behavior_cmd")
+    bs.add_parser("list", help="list all behavioral guidelines")
+    p = bs.add_parser("add", help="add a behavioral guideline")
+    p.add_argument("content", help="guideline text")
+    p = bs.add_parser("remove", help="remove a behavioral guideline by ID")
+    p.add_argument("behavior_id", type=int, help="behavior ID to remove")
 
-    sessions_parser = sub.add_parser("sessions", help="list sessions")
-    sessions_parser.add_argument(
-        "--all", "-a", action="store_true", dest="show_all",
-        help="show all sessions (admin only)",
-    )
-
-    # session create
-    session_parser = sub.add_parser("session", help="manage sessions")
-    session_sub = session_parser.add_subparsers(dest="session_cmd")
-    sess_create_p = session_sub.add_parser("create", help="create a named session")
-    sess_create_p.add_argument("name", help="session name")
-    sess_create_p.add_argument("--description", "-d", help="session description")
-
-    env_parser = sub.add_parser("env", help="manage deploy secrets")
-    env_sub = env_parser.add_subparsers(dest="env_command")
-
-    env_set_p = env_sub.add_parser("set", help="set a deploy secret")
-    env_set_p.add_argument("key", help="secret name")
-    env_set_p.add_argument("value", help="secret value")
-
-    env_get_p = env_sub.add_parser("get", help="get a deploy secret")
-    env_get_p.add_argument("key", help="secret name")
-
-    env_sub.add_parser("list", help="list deploy secret names")
-
-    env_del_p = env_sub.add_parser("delete", help="delete a deploy secret")
-    env_del_p.add_argument("key", help="secret name")
-
-    env_sub.add_parser("reload", help="hot-reload .env into the server")
-
-    user_parser = sub.add_parser("user", help="manage users")
-    user_sub = user_parser.add_subparsers(dest="user_command")
-
-    user_list_p = user_sub.add_parser("list", help="list all users")
-    user_list_p.add_argument(
-        "--json", action="store_true", dest="json",
-        help="output as JSON (machine-readable)",
-    )
-
-    user_add_p = user_sub.add_parser("add", help="add a user")
-    user_add_p.add_argument("username", help="user name")
-    user_add_p.add_argument(
-        "--role", required=True, choices=["admin", "user"], help="user role"
-    )
-    user_add_p.add_argument(
-        "--skills",
-        default=None,
-        metavar="SKILLS",
-        help="allowed skills: '*' or comma-separated names (required for role=user)",
-    )
-    user_add_p.add_argument(
-        "--alias",
-        action="append",
-        metavar="CONNECTOR:ID",
-        help="connector alias in 'connector:platform_id' format (repeatable)",
-    )
-    user_add_p.add_argument(
-        "--no-reload", action="store_true", dest="no_reload",
-        help="skip hot-reload after writing config (useful when server is not running)",
-    )
-
-    user_edit_p = user_sub.add_parser("edit", help="edit role or skills of an existing user")
-    user_edit_p.add_argument("username", help="user to edit")
-    user_edit_p.add_argument(
-        "--role", default=None, choices=["admin", "user"], help="new role"
-    )
-    user_edit_p.add_argument(
-        "--skills", default=None, metavar="SKILLS",
-        help="new skills: '*' or comma-separated names",
-    )
-    user_edit_p.add_argument(
-        "--no-reload", action="store_true", dest="no_reload",
-        help="skip hot-reload after writing config",
-    )
-
-    user_remove_p = user_sub.add_parser("remove", help="remove a user")
-    user_remove_p.add_argument("username", help="user to remove")
-    user_remove_p.add_argument(
-        "--no-reload", action="store_true", dest="no_reload",
-        help="skip hot-reload after writing config",
-    )
-
-    user_alias_p = user_sub.add_parser("alias", help="manage connector aliases for a user")
-    user_alias_p.add_argument("username", help="user name")
-    user_alias_p.add_argument("--connector", required=True, help="connector name")
-    user_alias_p.add_argument("--id", default=None, metavar="PLATFORM_ID", help="platform user ID")
-    user_alias_p.add_argument("--remove", action="store_true", help="remove the alias")
-    user_alias_p.add_argument(
-        "--no-reload", action="store_true", dest="no_reload",
-        help="skip hot-reload after writing config",
-    )
-
-    stats_p = sub.add_parser("stats", help="show token usage stats (admin only)")
-    stats_p.add_argument("--since", type=int, default=30, metavar="N", help="look back N days (default: 30)")
-    stats_p.add_argument("--session", default=None, metavar="NAME", help="filter by session name")
-    stats_p.add_argument("--by", default="model", choices=["model", "session", "role"], help="group by dimension (default: model)")
-
-    comp_p = sub.add_parser("completion", help="print shell completion script")
-    comp_p.add_argument("shell", choices=["bash", "zsh"], help="target shell")
-
-    version_p = sub.add_parser("version", help="print version and exit")
-    version_p.add_argument("--stats", action="store_true", help="show line count breakdown")
-
-    reset_parser = sub.add_parser("reset", help="reset/cleanup data")
-    reset_sub = reset_parser.add_subparsers(dest="reset_command")
-
-    rs = reset_sub.add_parser("session", help="reset one session")
-    rs.add_argument("name", nargs="?", default=None, help="session name (default: current)")
-    rs.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
-
-    rk = reset_sub.add_parser("knowledge", help="reset all knowledge")
-    rk.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
-
-    ra = reset_sub.add_parser("all", help="reset all data")
-    ra.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
-
-    rf = reset_sub.add_parser("factory", help="factory reset")
-    rf.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
-
-    cancel_p = sub.add_parser("cancel", help="cancel the active job in a session")
-    cancel_p.add_argument(
-        "cancel_session", nargs="?", default=None,
-        help="session to cancel (default: current session)",
-    )
-
-    # --- rules subcommand ---
-    rules_parser = sub.add_parser("rules", help="manage safety rules")
-    rules_sub = rules_parser.add_subparsers(dest="rules_cmd")
-    rules_sub.add_parser("list", help="list all safety rules")
-    rules_add_p = rules_sub.add_parser("add", help="add a safety rule")
-    rules_add_p.add_argument("rule_content", help="rule text")
-    rules_rm_p = rules_sub.add_parser("remove", help="remove a safety rule by ID")
-    rules_rm_p.add_argument("rule_id", type=int, help="rule ID to remove")
-
-    # --- knowledge subcommand ---
-    know_parser = sub.add_parser("knowledge", help="manage knowledge facts")
-    know_sub = know_parser.add_subparsers(dest="knowledge_cmd")
-    know_list_p = know_sub.add_parser("list", help="list knowledge facts")
-    know_list_p.add_argument("--category", "-c", help="filter by category")
-    know_list_p.add_argument("--entity", "-e", help="filter by entity name")
-    know_list_p.add_argument("--tag", "-t", help="filter by tag")
-    know_list_p.add_argument("--limit", "-n", type=int, default=50, help="max results")
-    know_add_p = know_sub.add_parser("add", help="add a knowledge fact")
-    know_add_p.add_argument("content", help="fact text")
-    know_add_p.add_argument("--category", "-c", default="general", help="fact category")
-    know_add_p.add_argument("--entity", "-e", help="entity name")
-    know_add_p.add_argument("--entity-kind", help="entity kind (default: concept)")
-    know_add_p.add_argument("--tags", "-t", help="comma-separated tags")
-    know_search_p = know_sub.add_parser("search", help="search knowledge")
-    know_search_p.add_argument("query", help="search query")
-    know_rm_p = know_sub.add_parser("remove", help="remove a knowledge fact by ID")
-    know_rm_p.add_argument("fact_id", type=int, help="fact ID to remove")
-    know_exp_p = know_sub.add_parser("export", help="export knowledge facts")
-    know_exp_p.add_argument("--format", "-f", choices=["json", "md"], default="json", help="output format")
-    know_exp_p.add_argument("--category", "-c", help="filter by category")
-    know_exp_p.add_argument("--entity", "-e", help="filter by entity name")
-    know_exp_p.add_argument("--output", "-o", help="output file (default: stdout)")
-    know_imp_p = know_sub.add_parser("import", help="import knowledge from markdown file")
-    know_imp_p.add_argument("file", help="markdown file path")
-    know_imp_p.add_argument("--category", "-c", help="default category (default: general)")
-    know_imp_p.add_argument("--dry-run", action="store_true", help="show what would be imported")
-
-    # --- cron subcommand ---
-    cron_parser = sub.add_parser("cron", help="manage cron jobs")
-    cron_sub = cron_parser.add_subparsers(dest="cron_cmd")
-    cron_sub.add_parser("list", help="list cron jobs").add_argument(
-        "--session", "-s", help="filter by session")
-    cron_add_p = cron_sub.add_parser("add", help="add a cron job")
-    cron_add_p.add_argument("schedule", help="cron expression (e.g. '0 9 * * *')")
-    cron_add_p.add_argument("prompt", help="message to send on each trigger")
-    cron_add_p.add_argument("--session", "-s", required=True, help="target session")
-    cron_sub.add_parser("remove", help="remove a cron job").add_argument(
-        "job_id", type=int, help="cron job ID")
-    cron_sub.add_parser("enable", help="enable a cron job").add_argument(
-        "job_id", type=int, help="cron job ID")
-    cron_sub.add_parser("disable", help="disable a cron job").add_argument(
-        "job_id", type=int, help="cron job ID")
-
-    # --- project subcommand ---
-    proj_parser = sub.add_parser("project", help="manage projects")
-    proj_sub = proj_parser.add_subparsers(dest="project_cmd")
-    proj_sub.add_parser("list", help="list projects")
-    proj_create_p = proj_sub.add_parser("create", help="create a project")
-    proj_create_p.add_argument("name", help="project name")
-    proj_create_p.add_argument("--description", "-d", help="project description")
-    proj_show_p = proj_sub.add_parser("show", help="show project details")
-    proj_show_p.add_argument("name", help="project name")
-    proj_bind_p = proj_sub.add_parser("bind", help="bind session to project")
-    proj_bind_p.add_argument("session", help="session ID")
-    proj_bind_p.add_argument("project", help="project name")
-    proj_unbind_p = proj_sub.add_parser("unbind", help="unbind session from project")
-    proj_unbind_p.add_argument("session", help="session ID")
-    proj_unbind_p.add_argument("project", help="project name")
-    proj_addm_p = proj_sub.add_parser("add-member", help="add member to project")
-    proj_addm_p.add_argument("username", help="username")
-    proj_addm_p.add_argument("--project", "-p", required=True, help="project name")
-    proj_addm_p.add_argument("--role", "-r", choices=["member", "viewer"], default="member", help="role")
-    proj_rmm_p = proj_sub.add_parser("remove-member", help="remove member from project")
-    proj_rmm_p.add_argument("username", help="username")
-    proj_rmm_p.add_argument("--project", "-p", required=True, help="project name")
-    proj_mem_p = proj_sub.add_parser("members", help="list project members")
-    proj_mem_p.add_argument("--project", "-p", required=True, help="project name")
-
-    # --- behavior subcommand ---
-    beh_parser = sub.add_parser("behavior", help="manage behavioral guidelines")
-    beh_sub = beh_parser.add_subparsers(dest="behavior_cmd")
-    beh_sub.add_parser("list", help="list all behavioral guidelines")
-    beh_add_p = beh_sub.add_parser("add", help="add a behavioral guideline")
-    beh_add_p.add_argument("content", help="guideline text")
-    beh_rm_p = beh_sub.add_parser("remove", help="remove a behavioral guideline by ID")
-    beh_rm_p.add_argument("behavior_id", type=int, help="behavior ID to remove")
-
-    # --- preset subcommand ---
-    preset_parser = sub.add_parser("preset", help="manage persona presets")
-    preset_sub = preset_parser.add_subparsers(dest="preset_cmd")
-    preset_sub.add_parser("list", help="list available presets from registry")
-    preset_search_p = preset_sub.add_parser("search", help="search presets")
-    preset_search_p.add_argument("query", help="search query")
-    preset_install_p = preset_sub.add_parser("install", help="install a preset")
-    preset_install_p.add_argument("target", help="preset name or local path")
-    preset_install_p.add_argument("--dry-run", action="store_true", help="show what would be installed")
-    preset_show_p = preset_sub.add_parser("show", help="show preset details")
-    preset_show_p.add_argument("name", help="preset name or local path")
-    preset_sub.add_parser("installed", help="list installed presets")
-    preset_rm_p = preset_sub.add_parser("remove", help="remove an installed preset")
-    preset_rm_p.add_argument("name", help="preset name")
+    # Preset
+    ps = sub.add_parser("preset", help="manage persona presets").add_subparsers(dest="preset_cmd")
+    ps.add_parser("list", help="list available presets from registry")
+    p = ps.add_parser("search", help="search presets")
+    p.add_argument("query", help="search query")
+    p = ps.add_parser("install", help="install a preset")
+    p.add_argument("target", help="preset name or local path")
+    p.add_argument("--dry-run", action="store_true", help="show what would be installed")
+    p = ps.add_parser("show", help="show preset details")
+    p.add_argument("name", help="preset name or local path")
+    ps.add_parser("installed", help="list installed presets")
+    p = ps.add_parser("remove", help="remove an installed preset")
+    p.add_argument("name", help="preset name")
 
     return parser
 
