@@ -60,16 +60,7 @@ from kiso.worker.loop import (
     _spawn_knowledge_task,
 )
 
-from contextlib import contextmanager
-
-
-@contextmanager
-def _patch_kiso_dir(tmp_path):
-    """Patch KISO_DIR in both utils and loop submodules (and exec via utils)."""
-    with patch("kiso.worker.utils.KISO_DIR", tmp_path), \
-         patch("kiso.worker.loop.KISO_DIR", tmp_path), \
-         patch("kiso.worker.loop._check_disk_limit", return_value=None):
-        yield
+from tests.conftest import patch_kiso_dir as _patch_kiso_dir
 
 
 VALID_PLAN = {

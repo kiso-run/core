@@ -34,17 +34,7 @@ from kiso.worker.loop import (
     _run_planning_loop,
 )
 
-from contextlib import contextmanager
-
-
-@contextmanager
-def _patch_kiso_dir(tmp_path):
-    with patch("kiso.worker.utils.KISO_DIR", tmp_path), \
-         patch("kiso.worker.loop.KISO_DIR", tmp_path):
-        yield
-
-
-from tests.conftest import make_config
+from tests.conftest import make_config, patch_kiso_dir as _patch_kiso_dir
 
 
 BROWSER_TOOL_INFO = {

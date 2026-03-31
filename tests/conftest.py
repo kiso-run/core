@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -292,6 +293,15 @@ def full_models(**overrides) -> dict:
     """Return a complete models dict with optional overrides."""
     from kiso.config import MODEL_DEFAULTS
     return {**MODEL_DEFAULTS, **overrides}
+
+
+@contextmanager
+def patch_kiso_dir(tmp_path):
+    """Patch KISO_DIR in worker submodules and disable disk limit check."""
+    with patch("kiso.worker.utils.KISO_DIR", tmp_path), \
+         patch("kiso.worker.loop.KISO_DIR", tmp_path), \
+         patch("kiso.worker.loop._check_disk_limit", return_value=None):
+        yield
 
 
 def make_config(**overrides) -> "Config":
