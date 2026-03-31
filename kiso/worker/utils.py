@@ -915,6 +915,8 @@ def _format_replan_history(replan_history: list[dict]) -> str | None:
         entry = f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}"
         for hint in h.get("retry_hints", []):
             entry += f"\n  Reviewer hint: {hint}"
+        if h.get("no_retry_count") and not h.get("retry_hints"):
+            entry += "\n  Note: reviewer indicated no retry possible — try an alternative approach or explain to user."
         for summary in h.get("reviewer_summaries", [])[:2]:
             entry += f"\n  Reviewer summary: {summary[:300]}"
         key_outputs = h.get("key_outputs", [])

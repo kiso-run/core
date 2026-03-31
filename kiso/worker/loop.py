@@ -2252,11 +2252,16 @@ async def _run_planning_loop(
             out = (t.get("output") or "")[:500]
             if out:
                 key_outputs.append(f"[{t['type']}] {out}")
-        # Extract retry hints and reviewer summaries from plan_outputs
-        retry_hints = [
-            po["retry_hint"] for po in plan_outputs
-            if po.get("retry_hint")
-        ]
+        # Extract retry hints and reviewer summaries from plan_outputs.
+        # Also count tasks where reviewer set retry_hint=null (deterministic failures).
+        retry_hints = []
+        no_retry_count = 0
+        for po in plan_outputs:
+            hint = po.get("retry_hint")
+            if hint:
+                retry_hints.append(hint)
+            elif "retry_hint" in po and hint is None:
+                no_retry_count += 1
         reviewer_summaries = [
             po["reviewer_summary"] for po in plan_outputs
             if po.get("reviewer_summary")
@@ -2274,6 +2279,8 @@ async def _run_planning_loop(
         }
         if retry_hints:
             history_entry["retry_hints"] = retry_hints
+        if no_retry_count:
+            history_entry["no_retry_count"] = no_retry_count
         if reviewer_summaries:
             history_entry["reviewer_summaries"] = reviewer_summaries
         replan_history.append(history_entry)

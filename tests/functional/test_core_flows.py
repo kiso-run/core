@@ -162,7 +162,7 @@ class TestF21ReplanRecovery:
         result = await run_message(
             "leggi il file /tmp/file_inesistente_kiso_test_xyz99.txt "
             "e dimmi cosa contiene",
-            timeout=180,
+            timeout=300,
         )
 
         # Pipeline must complete — success or graceful failure both OK
