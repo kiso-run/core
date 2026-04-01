@@ -62,7 +62,7 @@ summarizer  = "test-summarizer"
 paraphraser = "test-paraphraser"
 messenger   = "test-messenger"
 searcher    = "test-searcher"
-dreamer     = "test-dreamer"
+consolidator = "test-consolidator"
 
 [settings]
 context_messages          = 7

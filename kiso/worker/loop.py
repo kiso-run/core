@@ -40,7 +40,7 @@ from kiso.brain import (
     build_recent_context,
     ClassifierError,
     CuratorError,
-    DreamerError,
+    ConsolidatorError,
     ExecTranslatorError,
     MessengerError,
     ParaphraserError,
@@ -48,10 +48,10 @@ from kiso.brain import (
     ReviewError,
     SummarizerError,
     classify_message,
-    apply_dream_result,
+    apply_consolidation_result,
     run_briefer,
     run_curator,
-    run_dreamer,
+    run_consolidator,
     run_exec_translator,
     run_messenger,
     run_paraphraser,
@@ -373,51 +373,51 @@ def _spawn_knowledge_task(
     return asyncio.create_task(_run())
 
 
-_LAST_DREAM_KV_KEY = "last_dream_time"
+_LAST_CONSOLIDATION_KV_KEY = "last_consolidation_time"
 
 
-async def _maybe_run_dream(
+async def _maybe_run_consolidation(
     db: aiosqlite.Connection,
     config: Config,
     session: str,
     llm_timeout: int,
 ) -> None:
-    """Run the dreamer if enough time has passed and enough facts exist."""
-    interval_hours = setting_float(config.settings, "dream_interval_hours", lo=1.0)
-    dream_min_facts = setting_int(config.settings, "dream_min_facts", lo=1)
+    """Run the consolidator if enough time has passed and enough facts exist."""
+    interval_hours = setting_float(config.settings, "consolidation_interval_hours", lo=1.0)
+    consolidation_min_facts = setting_int(config.settings, "consolidation_min_facts", lo=1)
 
-    # Gate 1: time since last dream
-    raw_ts = await get_kv(db, _LAST_DREAM_KV_KEY)
-    last_dream = float(raw_ts) if raw_ts else 0.0
-    hours_elapsed = (time.time() - last_dream) / 3600
+    # Gate 1: time since last consolidation
+    raw_ts = await get_kv(db, _LAST_CONSOLIDATION_KV_KEY)
+    last_consolidation = float(raw_ts) if raw_ts else 0.0
+    hours_elapsed = (time.time() - last_consolidation) / 3600
     if hours_elapsed < interval_hours:
         return
 
     # Gate 2: enough facts to justify a review
     all_facts = await get_facts(db, is_admin=True)
-    if len(all_facts) < dream_min_facts:
+    if len(all_facts) < consolidation_min_facts:
         return
 
-    # Run dream
+    # Run consolidation
     try:
         result = await asyncio.wait_for(
-            run_dreamer(config, db, session),
+            run_consolidator(config, db, session),
             timeout=llm_timeout,
         )
-        await apply_dream_result(db, result)
-        await set_kv(db, _LAST_DREAM_KV_KEY, str(time.time()))
-        log.info("Dream completed: delete=%d update=%d keep=%d",
+        await apply_consolidation_result(db, result)
+        await set_kv(db, _LAST_CONSOLIDATION_KV_KEY, str(time.time()))
+        log.info("Consolidation completed: delete=%d update=%d keep=%d",
                  len(result.get("delete", [])),
                  len(result.get("update", [])),
                  len(result.get("keep", [])))
     except asyncio.TimeoutError:
-        log.warning("Dream timed out after %ds", llm_timeout)
-    except DreamerError as e:
-        log.error("Dream failed: %s", e)
+        log.warning("Consolidation timed out after %ds", llm_timeout)
+    except ConsolidatorError as e:
+        log.error("Consolidation failed: %s", e)
     except asyncio.CancelledError:
         raise
     except Exception:
-        log.exception("Unexpected error in dream phase for session=%s", session)
+        log.exception("Unexpected error in consolidation phase for session=%s", session)
 
 
 async def _post_plan_knowledge(
@@ -536,10 +536,10 @@ async def _post_plan_knowledge(
 
     await asyncio.gather(_run_decay(), _run_archive())
 
-    # --- Phase 4: Dream (periodic holistic knowledge review) ------------------
+    # --- Phase 4: Consolidation (periodic holistic knowledge review) -----------
 
-    if setting_bool(config.settings, "dream_enabled"):
-        await _maybe_run_dream(db, config, session, llm_timeout)
+    if setting_bool(config.settings, "consolidation_enabled"):
+        await _maybe_run_consolidation(db, config, session, llm_timeout)
 
     # Update token usage with post-plan processing tokens
     final_usage = get_usage_summary()

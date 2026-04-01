@@ -2809,11 +2809,11 @@ async def run_exec_translator(
 # ---------------------------------------------------------------------------
 
 
-class DreamerError(Exception):
-    """Dreamer validation or generation failure."""
+class ConsolidatorError(Exception):
+    """Consolidator validation or generation failure."""
 
 
-DREAMER_SCHEMA: dict = _build_strict_schema("dreamer", {
+CONSOLIDATOR_SCHEMA: dict = _build_strict_schema("consolidator", {
     "delete": {"type": "array", "items": {"type": "integer"}},
     "update": {"type": "array", "items": {
         "type": "object",
@@ -2828,13 +2828,13 @@ DREAMER_SCHEMA: dict = _build_strict_schema("dreamer", {
 }, ["delete", "update", "keep"])
 
 
-def build_dreamer_messages(facts_by_entity: dict[str, list[dict]]) -> list[dict]:
-    """Build the message list for the dreamer LLM call.
+def build_consolidator_messages(facts_by_entity: dict[str, list[dict]]) -> list[dict]:
+    """Build the message list for the consolidator LLM call.
 
     *facts_by_entity* maps entity name (or "(no entity)") to a list of
     fact dicts, each with at least ``id`` and ``content``.
     """
-    system_prompt = _load_system_prompt("dreamer")
+    system_prompt = _load_system_prompt("consolidator")
     parts: list[str] = []
     for entity_name, facts in sorted(facts_by_entity.items()):
         lines = "\n".join(f"  [{f['id']}] {f['content']}" for f in facts)
@@ -2843,8 +2843,8 @@ def build_dreamer_messages(facts_by_entity: dict[str, list[dict]]) -> list[dict]
     return _build_messages(system_prompt, user_content)
 
 
-def validate_dreamer(result: dict, expected_ids: set[int]) -> list[str]:
-    """Validate dreamer result. Returns list of error strings (empty = valid)."""
+def validate_consolidator(result: dict, expected_ids: set[int]) -> list[str]:
+    """Validate consolidator result. Returns list of error strings (empty = valid)."""
     errors: list[str] = []
     delete_ids = set(result.get("delete", []))
     update_ids = {item["id"] for item in result.get("update", [])}
@@ -2886,13 +2886,13 @@ def _group_facts_by_entity(
     return grouped
 
 
-async def run_dreamer(
+async def run_consolidator(
     config: Config, db: aiosqlite.Connection, session: str = "",
 ) -> dict:
-    """Run the dreamer on all stored facts.
+    """Run the consolidator on all stored facts.
 
     Returns dict with keys: delete, update, keep.
-    Raises DreamerError if all retries exhausted.
+    Raises ConsolidatorError if all retries exhausted.
     """
     all_facts = await get_facts(db, is_admin=True)
     if not all_facts:
@@ -2900,24 +2900,24 @@ async def run_dreamer(
 
     entities = await get_all_entities(db)
     facts_by_entity = _group_facts_by_entity(all_facts, entities)
-    messages = build_dreamer_messages(facts_by_entity)
+    messages = build_consolidator_messages(facts_by_entity)
     expected_ids = {f["id"] for f in all_facts}
 
     result = await _retry_llm_with_validation(
-        config, "dreamer", messages, DREAMER_SCHEMA,
-        lambda r: validate_dreamer(r, expected_ids),
-        DreamerError, "Dreamer",
+        config, "consolidator", messages, CONSOLIDATOR_SCHEMA,
+        lambda r: validate_consolidator(r, expected_ids),
+        ConsolidatorError, "Consolidator",
         session=session,
     )
     log.info(
-        "Dreamer: delete=%d update=%d keep=%d",
+        "Consolidator: delete=%d update=%d keep=%d",
         len(result["delete"]), len(result["update"]), len(result["keep"]),
     )
     return result
 
 
-async def apply_dream_result(db: aiosqlite.Connection, result: dict) -> None:
-    """Apply dreamer result: delete and update facts."""
+async def apply_consolidation_result(db: aiosqlite.Connection, result: dict) -> None:
+    """Apply consolidator result: delete and update facts."""
     # Deletions
     to_delete = result.get("delete", [])
     if to_delete:

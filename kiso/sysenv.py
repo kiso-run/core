@@ -394,7 +394,7 @@ def build_user_settings_text(env: dict) -> str:
     """Configurable settings block for the planner (~100 tokens).
 
     Injected only when the ``kiso_commands`` module is loaded — the planner
-    doesn't need to see dream_enabled or context_messages for every plan.
+    doesn't need to see consolidation_enabled or context_messages for every plan.
     """
     user_settings = env.get("user_settings", {})
     if not user_settings:

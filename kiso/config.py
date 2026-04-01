@@ -27,8 +27,8 @@ USER_FACING_SETTINGS: tuple[str, ...] = (
     "summarize_threshold",
     "knowledge_max_facts",
     "max_replan_depth",
-    "dream_enabled",
-    "dream_interval_hours",
+    "consolidation_enabled",
+    "consolidation_interval_hours",
 )
 
 # Default values used to write config.toml on first run.
@@ -46,10 +46,10 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "fact_decay_rate": 0.1,
     "fact_archive_threshold": 0.3,
     "fact_consolidation_min_ratio": 0.3,
-    # dreamer (periodic knowledge consolidation)
-    "dream_enabled": True,
-    "dream_interval_hours": 24,
-    "dream_min_facts": 20,
+    # consolidator (periodic knowledge quality review)
+    "consolidation_enabled": True,
+    "consolidation_interval_hours": 24,
+    "consolidation_min_facts": 20,
     # planning
     "max_replan_depth": 5,
     "max_validation_retries": 3,
@@ -98,7 +98,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "paraphraser": "google/gemini-2.5-flash-lite",
     "messenger": "deepseek/deepseek-v3.2",
     "searcher": "perplexity/sonar",
-    "dreamer": "google/gemini-2.5-flash-lite",
+    "consolidator": "google/gemini-2.5-flash-lite",
 }
 
 # Per-role reasoning config sent to OpenRouter.  Roles not listed here
@@ -120,7 +120,7 @@ MAX_TOKENS_DEFAULTS: dict[str, int] = {
     "planner": 4000,
     "messenger": 4000,
     "searcher": 4000,
-    "dreamer": 4000,
+    "consolidator": 4000,
 }
 
 # Descriptions shown during interactive install. Keyed by role name.
@@ -135,7 +135,7 @@ MODEL_DESCRIPTIONS: dict[str, str] = {
     "paraphraser": "prompt injection defense",
     "messenger": "writes human-readable responses",
     "searcher": "web search (native search)",
-    "dreamer": "periodic knowledge consolidation",
+    "consolidator": "periodic knowledge quality review",
 }
 
 # Complete config.toml written on first run. Edit to configure your instance.
@@ -170,7 +170,7 @@ summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, ch
 paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
 messenger   = "qwen/qwen3.5-flash-02-23"            # user-facing responses (MMLU 82, natural)
 searcher    = "perplexity/sonar"               # web search (native search API)
-dreamer     = "google/gemini-2.5-flash-lite"  # periodic knowledge consolidation (async, cheap)
+consolidator = "google/gemini-2.5-flash-lite"  # periodic knowledge quality review (async, cheap)
 
 [settings]
 # --- conversation ---
@@ -186,9 +186,9 @@ fact_decay_days           = 7
 fact_decay_rate           = 0.1
 fact_archive_threshold    = 0.3
 fact_consolidation_min_ratio = 0.3  # abort consolidation if fewer than this fraction survive
-dream_enabled             = true    # periodic holistic knowledge review
-dream_interval_hours      = 24      # minimum hours between dream runs
-dream_min_facts           = 20      # minimum facts to trigger a dream
+consolidation_enabled             = true    # periodic holistic knowledge review
+consolidation_interval_hours      = 24      # minimum hours between consolidation runs
+consolidation_min_facts           = 20      # minimum facts to trigger a consolidation
 
 # --- planning ---
 max_replan_depth          = 5
@@ -408,6 +408,20 @@ def _build_config(path: Path, on_error) -> Config:
     settings_raw = raw.get("settings", {})
     settings = dict(SETTINGS_DEFAULTS)
     settings.update(settings_raw)
+
+    # Backward compat: map old dream_* keys to consolidation_*
+    _SETTINGS_COMPAT = {
+        "dream_enabled": "consolidation_enabled",
+        "dream_interval_hours": "consolidation_interval_hours",
+        "dream_min_facts": "consolidation_min_facts",
+    }
+    for old_key, new_key in _SETTINGS_COMPAT.items():
+        if old_key in settings_raw and new_key not in settings_raw:
+            settings[new_key] = settings_raw[old_key]
+
+    # Backward compat: map old dreamer model key to consolidator
+    if "dreamer" in models_raw and "consolidator" not in models_raw:
+        models["consolidator"] = models_raw["dreamer"]
 
     # Validate that overridden settings have the correct type
     type_errors: list[str] = []

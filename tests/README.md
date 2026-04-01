@@ -131,7 +131,7 @@ security (exec deny lists, secret sanitization), API endpoints.
 
 Notable test files (M1023-M1034):
 - `test_hooks.py` — Pre/post execution hook tests
-- `test_dream.py` — Dream (knowledge consolidation) tests
+- `test_consolidation.py` — Consolidation (knowledge quality review) tests
 - `test_cli_config.py` — Config CLI command tests
 
 ### Conventions
