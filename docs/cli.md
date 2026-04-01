@@ -370,6 +370,29 @@ The renderer detects terminal capabilities at startup:
 
 When stdout is not a TTY (piped), the CLI outputs plain text with no ANSI codes, no spinner, and no truncation. This makes `kiso --session dev | tee log.txt` work correctly.
 
+## Configuration Management
+
+### kiso config
+
+Manage runtime settings without editing config.toml manually.
+
+```bash
+kiso config set KEY VALUE    # Set a setting (admin, hot-reloads)
+kiso config get KEY          # Show current value
+kiso config list             # Show all settings
+```
+
+Examples:
+
+```bash
+kiso config set bot_persona "a sarcastic Neapolitan professor"
+kiso config set dream_enabled false
+kiso config get bot_name
+kiso config list
+```
+
+Changes are written to `config.toml` and hot-reloaded automatically. Admin access required for all write operations.
+
 ## Tool Management
 
 Only admins can install, update, and remove tools.

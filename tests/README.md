@@ -129,6 +129,11 @@ deterministic, runnable anywhere without credentials or Docker.
 Covers: schema validation, prompt construction, worker loop logic, CLI commands,
 security (exec deny lists, secret sanitization), API endpoints.
 
+Notable test files (M1023-M1034):
+- `test_hooks.py` — Pre/post execution hook tests
+- `test_dream.py` — Dream (knowledge consolidation) tests
+- `test_cli_config.py` — Config CLI command tests
+
 ### Conventions
 
 - **HTTP mocking:** patch `httpx.request`, not `httpx.get`/`httpx.post`
@@ -240,7 +245,7 @@ tests/
 ├── _cli_plugin_helpers.py   # Shared parametrize cases for tool/connector CLI
 ├── _cli_user_helpers.py     # Shared user CLI helpers
 │
-├── test_*.py                # Unit tests (~69 files)
+├── test_*.py                # Unit tests (~72 files)
 │
 ├── integration/             # HTTP API + mock LLM
 │   ├── conftest.py          # kiso_client, webhook_collector, mock_call_llm

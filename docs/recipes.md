@@ -96,6 +96,24 @@ kiso recipe list                           # list installed recipes
 kiso recipe remove <name>                  # remove a recipe
 ```
 
+## Recipes in Presets
+
+Presets can bundle recipes alongside tools, knowledge, and behaviors.
+In a preset's `preset.toml`:
+
+```toml
+[[kiso.preset.knowledge.recipes]]
+name = "exploration"
+summary = "Verify current state before modifying files or system"
+body = """
+Before modifying files, installing packages, or changing system config:
+plan an exec task to verify current state first (ls, cat, find, stat).
+"""
+```
+
+When the preset is installed, recipe files are created in `~/.kiso/recipes/`.
+When removed, they are deleted.
+
 ## When to Create a Recipe
 
 Create a recipe when you find yourself repeatedly telling kiso to follow a specific workflow. For example, if you always say "search first, then verify, then report", a recipe encodes that pattern so the planner follows it automatically.

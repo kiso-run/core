@@ -71,6 +71,7 @@ summarizer  = "google/gemini-2.5-flash-lite"
 paraphraser = "google/gemini-2.5-flash-lite"
 messenger   = "deepseek/deepseek-v3.2"
 searcher    = "perplexity/sonar"
+dreamer     = "google/gemini-2.5-flash-lite"
 
 [settings]
 # --- conversation ---
@@ -78,6 +79,7 @@ context_messages          = 5        # recent messages sent to planner
 summarize_threshold       = 30       # message count before summarizer runs
 summarize_messages_limit  = 100      # max messages sent to summarizer LLM per run
 bot_name                  = "Kiso"
+bot_persona               = "a friendly and knowledgeable assistant"
 
 # --- knowledge / memory ---
 knowledge_max_facts           = 50
@@ -85,6 +87,9 @@ fact_decay_days               = 7
 fact_decay_rate               = 0.1
 fact_archive_threshold        = 0.3
 fact_consolidation_min_ratio  = 0.3
+dream_enabled                 = true    # periodic knowledge consolidation
+dream_interval_hours          = 24      # hours between dream runs
+dream_min_facts               = 20      # minimum facts to trigger a dream
 
 # --- planning ---
 max_replan_depth          = 5
@@ -140,7 +145,7 @@ webhook_max_payload       = 1048576
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
 | `users.*.tools` | Required for `user` role. `"*"` for all tools, or a list of tool names. Ignored for admins (always all). |
-| `[models]` | All 10 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
+| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`, `dreamer`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
 | `[settings]` | All fields required. See table below. |
 
 ### Settings reference
@@ -152,11 +157,15 @@ webhook_max_payload       = 1048576
 | `summarize_threshold` | `30` | Summarizer triggers when raw message count reaches this value. |
 | `summarize_messages_limit` | `100` | Max messages sent to summarizer LLM per run. |
 | `bot_name` | `"Kiso"` | Name used by the messenger when referring to itself. |
+| `bot_persona` | `"a friendly and knowledgeable assistant"` | Messenger personality. Templated into messenger.md as `{bot_persona}`. Change with `kiso config set bot_persona "value"`. |
 | `knowledge_max_facts` | `50` | Max global facts before consolidation. |
 | `fact_decay_days` | `7` | Facts not used in this many days lose `fact_decay_rate` confidence per post-plan cycle. |
 | `fact_decay_rate` | `0.1` | How much confidence is subtracted per decay cycle (0.0–1.0). |
 | `fact_archive_threshold` | `0.3` | Facts with confidence below this are moved to `facts_archive` and removed from active context. |
 | `fact_consolidation_min_ratio` | `0.3` | Minimum fraction of facts that must survive consolidation. If the LLM returns fewer than this fraction, consolidation is aborted and the original facts are kept. |
+| `dream_enabled` | `true` | Enable periodic knowledge consolidation (dream). Reviews and deduplicates facts on a schedule. |
+| `dream_interval_hours` | `24` | Hours between dream runs. |
+| `dream_min_facts` | `20` | Minimum number of facts required to trigger a dream run. |
 | `max_replan_depth` | `5` | Max replan cycles per original message. |
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_llm_retries` | `3` | Max retries on LLM HTTP errors or SSE stalls per call. |
@@ -243,3 +252,17 @@ tools = ["search", "aider"]
 - **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform user.
 
 User identifiers are Linux users. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.
+
+### Hooks
+
+Pre/post execution hooks for custom validation, logging, or blocking.
+See [hooks.md](hooks.md) for details.
+
+```toml
+[[hooks.pre_exec]]
+command = "/path/to/validator.sh"
+blocking = true
+
+[[hooks.post_exec]]
+command = "/path/to/logger.sh"
+```

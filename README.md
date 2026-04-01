@@ -40,6 +40,11 @@ Each tool runs in its own venv. Files carry across plans automatically. The plan
 - **Cross-session projects.** Facts and behaviors scoped to projects. Team isolation built in.
 - **Presets.** `kiso preset install performance-marketer` bundles tools, knowledge, and behavioral rules into a persona.
 - **Ephemeral secrets.** Credentials shared in conversation stay in-memory only — never touch disk.
+- **Execution hooks.** Pre/post exec hooks for custom validation, audit logging, or blocking commands.
+- **Knowledge consolidation (dream).** Periodic fact review and deduplication — runs on a configurable schedule.
+- **kiso config command.** Change settings at runtime with hot reload — no manual config editing needed.
+- **Bot persona.** Configurable messenger personality via `bot_persona` setting.
+- **Cost display.** Per-message cost estimate shown in the CLI after each plan completes.
 
 ## Quick Start
 
@@ -168,6 +173,7 @@ Official packages: `kiso-run/tool-{name}`, `kiso-run/connector-{name}`. Unoffici
 - [database.md](docs/database.md) — Database schema
 - [docker.md](docs/docker.md) — Docker setup, volumes, pre-installing packages
 - [safety.md](docs/safety.md) — Safety rules, job cancellation, in-flight handling
+- [hooks.md](docs/hooks.md) — Execution hooks (pre/post exec validation)
 - [audit.md](docs/audit.md) — Audit trail (JSONL logs, secret masking)
 - [testing.md](docs/testing.md) — Testing strategy, fixtures, coverage
 - [logging.md](docs/logging.md) — Logs
