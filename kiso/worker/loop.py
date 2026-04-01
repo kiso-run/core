@@ -1298,6 +1298,21 @@ async def _handle_exec_task(
                 output="", stderr=error_output,
             )
 
+        # Pre-exec hooks — can block execution
+        pre_hooks = ctx.config.raw.get("hooks", {}).get("pre_exec", [])
+        if pre_hooks:
+            from kiso.hooks import run_pre_exec_hooks
+            hook_result = await run_pre_exec_hooks(
+                pre_hooks, command, detail, ctx.session, task_id,
+            )
+            if not hook_result.allowed:
+                error_output = f"Blocked by pre-exec hook: {hook_result.message}"
+                log.warning("Exec task %d blocked by hook: %s", task_id, hook_result.message)
+                return await _fail_task_and_audit(
+                    ctx, task_id, TASK_TYPE_EXEC, detail, error_output, i + 1,
+                    output="", stderr=error_output,
+                )
+
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
         stdout, stderr, success, exit_code = await _exec_task(
@@ -1315,6 +1330,15 @@ async def _handle_exec_task(
 
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
         status = "done" if success else "failed"
+
+        # Post-exec hooks (fire-and-forget)
+        post_hooks = ctx.config.raw.get("hooks", {}).get("post_exec", [])
+        if post_hooks:
+            from kiso.hooks import run_post_exec_hooks
+            asyncio.create_task(run_post_exec_hooks(
+                post_hooks, command, detail, ctx.session, task_id,
+                stdout or "", stderr or "", exit_code,
+            ))
 
         # log exec output so results are visible in test/production logs
         if not success:
