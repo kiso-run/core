@@ -33,6 +33,11 @@ _json_object_only_models: set[str] = set()
 _TRANSPORT_RETRY_BACKOFF: float = 1.0
 _MAX_TRANSPORT_RETRIES = 2
 
+# rate limit (429/529) retry settings
+_MAX_RATE_RETRIES = 4
+_RATE_INITIAL_BACKOFF: float = 1.0
+_RATE_MAX_BACKOFF: float = 60.0
+
 # circuit breaker — protects against provider-wide degradation.
 # When consecutive transport failures exceed the threshold, subsequent
 # calls fail immediately instead of wasting time on doomed retries.
@@ -387,6 +392,8 @@ async def call_llm(
     input_tokens = 0
     output_tokens = 0
     _transport_retries = 0
+    _rate_retries = 0
+    _rate_backoff = _RATE_INITIAL_BACKOFF
 
     _json_schema_retried = False  # track whether we already fell back to json_object
 
@@ -452,6 +459,24 @@ async def call_llm(
                             effective_format = {"type": _FMT_JSON_OBJECT}
                             _json_schema_retried = True
                             continue  # retry with json_object
+                        # Rate limit (429) or overloaded (529): retry with backoff
+                        if _resp_status in (429, 529) and _rate_retries < _MAX_RATE_RETRIES:
+                            _rate_retries += 1
+                            # Honor Retry-After header if present
+                            retry_after_hdr = resp.headers.get("retry-after", "")
+                            try:
+                                wait = float(retry_after_hdr)
+                            except (ValueError, TypeError):
+                                wait = _rate_backoff
+                            wait = min(wait, _RATE_MAX_BACKOFF)
+                            log.warning(
+                                "Rate limited (%d), retry %d/%d in %.1fs [model=%s]",
+                                _resp_status, _rate_retries, _MAX_RATE_RETRIES,
+                                wait, model_name,
+                            )
+                            await asyncio.sleep(wait)
+                            _rate_backoff = min(_rate_backoff * 2, _RATE_MAX_BACKOFF)
+                            continue
                         break  # non-retryable error, handle after loop
 
                     # Read SSE stream — pass inflight dict for live partial output
@@ -477,7 +502,7 @@ async def call_llm(
             _cb_record_failure()
             _transport_retries += 1
             if _transport_retries <= _MAX_TRANSPORT_RETRIES:
-                backoff = _transport_retries * _TRANSPORT_RETRY_BACKOFF
+                backoff = _TRANSPORT_RETRY_BACKOFF * (2 ** (_transport_retries - 1))
                 log.warning(
                     "LLM transport retry %d/%d (%s): %s [model=%s] — retrying in %gs",
                     _transport_retries, _MAX_TRANSPORT_RETRIES,

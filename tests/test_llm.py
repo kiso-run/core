@@ -41,10 +41,12 @@ from tests.conftest import make_config
 class _MockStreamResp:
     """Mock httpx streaming response with SSE lines."""
 
-    def __init__(self, status_code: int, sse_lines: list[str] | None = None, body: str = ""):
+    def __init__(self, status_code: int, sse_lines: list[str] | None = None, body: str = "",
+                 headers: dict[str, str] | None = None):
         self.status_code = status_code
         self._sse_lines = sse_lines or []
         self._body = body
+        self.headers = headers or {}
 
     async def aiter_lines(self):
         for line in self._sse_lines:
@@ -92,9 +94,9 @@ def _ok_stream(
     return _StreamCM(_MockStreamResp(200, lines))
 
 
-def _error_stream(status_code: int, body: str = "") -> _StreamCM:
+def _error_stream(status_code: int, body: str = "", headers: dict[str, str] | None = None) -> _StreamCM:
     """Build a mock streaming response for an error (non-200 status)."""
-    return _StreamCM(_MockStreamResp(status_code, body=body))
+    return _StreamCM(_MockStreamResp(status_code, body=body, headers=headers))
 
 
 def _setup_mock(mock_cls, stream_cm):
@@ -272,13 +274,74 @@ class TestCallLlm:
                 assert mock_client.stream.call_count == 3  # 1 initial + 2 retries
 
     @pytest.mark.asyncio
-    async def test_non_200_raises(self):
+    async def test_non_200_non_retryable_raises(self):
+        """Non-retryable status (e.g. 400) raises immediately."""
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _error_stream(400, "bad request"))
+                with pytest.raises(LLMError, match="400"):
+                    await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert mock_client.stream.call_count == 1  # no retries for 400
+
+    @pytest.mark.asyncio
+    async def test_429_retried_then_raises(self):
+        """429 is retried up to _MAX_RATE_RETRIES, then raises."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(429, "rate limited"))
                 with pytest.raises(LLMError, match="429.*rate limited"):
                     await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+
+    @pytest.mark.asyncio
+    async def test_429_recovers_on_retry(self):
+        """429 on first attempt, success on second → returns content."""
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream = MagicMock(side_effect=[
+                    _error_stream(429, "rate limited"),
+                    _ok_stream(),
+                ])
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert "hello" in result
+                assert mock_client.stream.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_529_retried(self):
+        """529 (overloaded) is retried same as 429."""
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream = MagicMock(side_effect=[
+                    _error_stream(529, "overloaded"),
+                    _ok_stream(),
+                ])
+                result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                assert "hello" in result
+                assert mock_client.stream.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_429_retry_after_header_honored(self):
+        """Retry-After header is read and used as wait time."""
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream = MagicMock(side_effect=[
+                    _error_stream(429, "rate limited", headers={"retry-after": "2"}),
+                    _ok_stream(),
+                ])
+                with patch("kiso.llm.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                    result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
+                    assert "hello" in result
+                    # Should have slept for 2 seconds (from header)
+                    mock_sleep.assert_called()
+                    slept = mock_sleep.call_args[0][0]
+                    assert slept == pytest.approx(2.0)
 
     @pytest.mark.asyncio
     async def test_400_error_hint(self):
