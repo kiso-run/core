@@ -2777,6 +2777,21 @@ class TestDefaultMessengerPrompt:
         assert "TestBot" in system_prompt
         assert "{bot_name}" not in system_prompt
 
+    def test_messenger_prompt_replaces_bot_persona(self):
+        """M1032: {bot_persona} replaced in messenger prompt."""
+        config = _make_brain_config(settings={"bot_name": "TestBot", "bot_persona": "a sarcastic professor"})
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        system = msgs[0]["content"]
+        assert "a sarcastic professor" in system
+        assert "{bot_persona}" not in system
+
+    def test_messenger_prompt_default_persona(self):
+        """Default bot_persona used when not in config."""
+        config = _make_brain_config()
+        msgs = build_messenger_messages(config, "", [], "say hi")
+        system = msgs[0]["content"]
+        assert "friendly and knowledgeable" in system
+
 
 class TestBuildMessengerMessages:
     def test_basic_structure(self):

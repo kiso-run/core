@@ -707,6 +707,37 @@ class TestBuildPlannerToolList:
         assert "playwright, chromium" in result
 
 
+# --- build_planner_tool_list selected_names ---
+
+
+class TestBuildPlannerToolListSelectedNames:
+    def test_selected_gets_full_guide(self):
+        tools = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide here", "healthy": True, "consumes": []}]
+        result = build_planner_tool_list(tools, selected_names={"browser"})
+        assert "Full guide here" in result
+
+    def test_non_selected_omits_guide(self):
+        tools = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide here", "healthy": True, "consumes": []}]
+        result = build_planner_tool_list(tools, selected_names={"other"})
+        assert "Full guide here" not in result
+        assert "browser" in result  # still listed
+
+    def test_none_selected_includes_all_guides(self):
+        tools = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide", "healthy": True, "consumes": []}]
+        result = build_planner_tool_list(tools, selected_names=None)
+        assert "Full guide" in result
+
+    def test_mixed_selection(self):
+        tools = [
+            {"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Browser guide", "healthy": True, "consumes": []},
+            {"name": "aider", "summary": "Code", "args_schema": {}, "usage_guide": "Aider guide", "healthy": True, "consumes": []},
+        ]
+        result = build_planner_tool_list(tools, selected_names={"browser"})
+        assert "Browser guide" in result
+        assert "Aider guide" not in result
+        assert "aider" in result  # name still listed
+
+
 # --- validate_tool_args ---
 
 class TestValidateToolArgs:

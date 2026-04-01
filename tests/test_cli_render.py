@@ -14,6 +14,7 @@ from cli.render import (
     render_planner_spinner,
     render_step_usage,
     render_task_header,
+    render_usage,
 )
 
 # Strip ANSI escape codes for plain-text assertions
@@ -328,3 +329,34 @@ class TestElapsedTime:
         # No duration_ms key — should not crash
         result = _plain(render_llm_calls_verbose(calls, _PLAIN_CAPS))
         assert "reviewer" in result
+
+
+# ── render_usage with cost ──────────────────────────────────
+
+
+class TestRenderUsageCost:
+    def test_includes_cost_known_model(self):
+        plan = {"total_input_tokens": 10000, "total_output_tokens": 5000, "model": "deepseek/deepseek-v3.2"}
+        caps = TermCaps(color=False, unicode=True, width=80, height=24, tty=False)
+        result = render_usage(plan, caps)
+        assert "$" in result  # cost displayed
+        assert "10,000" in result  # tokens formatted
+
+    def test_no_cost_unknown_model(self):
+        plan = {"total_input_tokens": 100, "total_output_tokens": 50, "model": "unknown/model-xyz"}
+        caps = TermCaps(color=False, unicode=True, width=80, height=24, tty=False)
+        result = render_usage(plan, caps)
+        assert "$" not in result  # no cost for unknown model
+        assert "100" in result  # tokens still shown
+
+    def test_empty_on_zero_tokens(self):
+        plan = {"total_input_tokens": 0, "total_output_tokens": 0, "model": "deepseek/deepseek-v3.2"}
+        caps = TermCaps(color=False, unicode=True, width=80, height=24, tty=False)
+        assert render_usage(plan, caps) == ""
+
+    def test_plain_separators_no_unicode(self):
+        plan = {"total_input_tokens": 100, "total_output_tokens": 50, "model": "deepseek/deepseek-v3.2"}
+        caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
+        result = render_usage(plan, caps)
+        assert "|" in result  # plain separator
+        assert "│" not in result  # no unicode

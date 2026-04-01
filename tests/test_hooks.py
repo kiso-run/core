@@ -74,6 +74,42 @@ class TestPreExecHooks:
         result = await run_pre_exec_hooks(hooks, "ls", "list", "s1", 1)
         assert result.allowed is True
 
+    async def test_multiple_pre_hooks_first_blocks(self, tmp_path):
+        """First blocking hook denies, second never runs."""
+        marker = tmp_path / "ran"
+        script1 = tmp_path / "block.sh"
+        script1.write_text("#!/bin/sh\nexit 1\n")
+        script1.chmod(0o755)
+        script2 = tmp_path / "mark.sh"
+        script2.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        script2.chmod(0o755)
+        hooks = [
+            {"command": str(script1), "blocking": True},
+            {"command": str(script2), "blocking": True},
+        ]
+        result = await run_pre_exec_hooks(hooks, "ls", "list", "s1", 1)
+        assert result.allowed is False
+        assert not marker.exists()  # second hook never ran
+
+    async def test_invalid_command_path(self):
+        """Non-existent command returns non-zero → blocking hook denies."""
+        hooks = [{"command": "/nonexistent/path/hook.sh", "blocking": True}]
+        result = await run_pre_exec_hooks(hooks, "ls", "list", "s1", 1)
+        assert result.allowed is False  # non-zero exit → deny
+        assert "not found" in result.message
+
+    async def test_multiple_pre_hooks_all_pass(self, tmp_path):
+        """Multiple passing hooks all execute."""
+        script = tmp_path / "pass.sh"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        script.chmod(0o755)
+        hooks = [
+            {"command": str(script), "blocking": True},
+            {"command": str(script), "blocking": True},
+        ]
+        result = await run_pre_exec_hooks(hooks, "ls", "list", "s1", 1)
+        assert result.allowed is True
+
 
 @pytest.mark.asyncio
 class TestPostExecHooks:

@@ -979,3 +979,39 @@ class TestM888LoadRegistryHints:
         with patch("kiso.registry.fetch_registry", return_value={}):
             result = _load_registry_hints()
         assert result == ""
+
+
+# --- Config settings in sysenv ---
+
+
+class TestSysenvConfigSettings:
+    _BASE_SETTINGS = {
+        "max_output_size": 1_048_576,
+        "max_plan_tasks": 20,
+        "max_replan_depth": 3,
+    }
+
+    def _make_cfg(self, **extra_settings):
+        settings = {**self._BASE_SETTINGS, **extra_settings}
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models={"planner": "gpt-4"},
+            settings=settings,
+            raw={},
+        )
+
+    def test_user_settings_in_env(self):
+        cfg = self._make_cfg(bot_persona="a test persona", bot_name="TestBot")
+        env = collect_system_env(cfg)
+        assert "user_settings" in env
+        assert "bot_name" in env["user_settings"]
+        assert env["user_settings"]["bot_name"] == "TestBot"
+
+    def test_configurable_settings_in_essential(self):
+        cfg = self._make_cfg(bot_persona="a test persona")
+        env = collect_system_env(cfg)
+        text = build_system_env_essential(env, session="test")
+        assert "kiso config set" in text
+        assert "bot_persona" in text

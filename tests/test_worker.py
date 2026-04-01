@@ -5183,6 +5183,35 @@ class TestTruncateOutputUnit:
         assert _truncate_output(text, 0) == text
 
 
+# --- _smart_truncate edge cases ---
+
+
+class TestSmartTruncateEdgeCases:
+    def test_smart_truncate_empty_text(self):
+        """Empty text returns empty."""
+        from kiso.worker.utils import _smart_truncate
+        assert _smart_truncate("", 100) == ""
+
+    def test_smart_truncate_under_limit(self):
+        """Text under limit returned unchanged."""
+        from kiso.worker.utils import _smart_truncate
+        assert _smart_truncate("short", 100) == "short"
+
+    def test_smart_truncate_exact_limit(self):
+        """Text exactly at limit not truncated."""
+        from kiso.worker.utils import _smart_truncate
+        text = "x" * 100
+        assert _smart_truncate(text, 100) == text
+
+    def test_smart_truncate_small_limit(self):
+        """Very small limit still produces valid output."""
+        from kiso.worker.utils import _smart_truncate
+        text = "a" * 1000
+        result = _smart_truncate(text, 80)
+        assert len(result) <= 150  # some tolerance for marker
+        assert "truncated" in result
+
+
 # --- Curator/summarizer timeout ---
 
 
