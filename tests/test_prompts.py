@@ -230,17 +230,21 @@ class TestMessengerPublishedFilesRule:
         assert "Never construct" in text or "never construct" in text
 
 
-class TestM934PlannerMsgOrdering:
-    """M934: planning_rules must forbid msg as first task."""
+class TestPlannerMsgAnnounce:
+    """M1037: planning_rules allows announce msgs, forbids hallucination."""
 
-    def test_no_msg_first_rule(self):
+    def test_announce_anti_hallucination_rule(self):
         raw = _ROLES_DIR.joinpath("planner.md").read_text()
         # Extract planning_rules module content
         start = raw.index("<!-- MODULE: planning_rules -->")
         end = raw.index("<!-- MODULE:", start + 1)
         planning_rules = raw[start:end]
-        assert "first task must be exec, tool, search, or replan" in planning_rules
-        assert "never describe upcoming steps" in planning_rules.lower()
+        # Must allow announce msg as first task
+        assert "announcement" in planning_rules.lower()
+        # Must forbid fabrication in announcements
+        assert "never fabricate" in planning_rules.lower()
+        # Must still forbid describing plan structure
+        assert "never describe the plan structure" in planning_rules.lower()
 
 
 class TestM935DetailExpectConsistency:

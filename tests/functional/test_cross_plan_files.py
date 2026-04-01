@@ -1,7 +1,7 @@
 """F36: Cross-plan file handoff — screenshot → OCR in same session.
 
-Validates M933 (session_files/last_plan in planner prompt), M934
-(no msg-first plans), and M935 (detail/expect consistency).
+Validates M933 (session_files/last_plan in planner prompt), M1037
+(announce msgs allowed, no hallucination), and M935 (detail/expect consistency).
 
 Two messages in the same session:
 1. Take a screenshot of example.com
@@ -62,8 +62,8 @@ class TestF36CrossPlanFileHandoff:
         """Two-plan pipeline: screenshot → OCR with correct file routing.
 
         Verifies that the planner knows where files are (M933), doesn't
-        announce plans before executing (M934), and generates consistent
-        detail/expect pairs (M935).
+        hallucinate results in announce msgs (M1037), and generates
+        consistent detail/expect pairs (M935).
         """
         # --- Plan 1: screenshot ---
         r1 = await _ensure_tool(
@@ -74,17 +74,6 @@ class TestF36CrossPlanFileHandoff:
         assert r1.has_published_file("*.png"), (
             f"No .png published. Pub files: {r1.pub_files}"
         )
-
-        # M934: first task of action plans must NOT be msg (no announce).
-        # Skip msg-only plans (post-completion summaries from _ensure_tool replay).
-        _ACTION_TYPES = {"exec", "tool", "search"}
-        for p in reversed(r1.plans):
-            tasks = [t for t in r1.tasks if t.get("plan_id") == p["id"]]
-            if any(t.get("type") in _ACTION_TYPES for t in tasks):
-                assert tasks[0].get("type") != "msg", (
-                    f"First task is msg (announce): {tasks[0].get('detail', '')[:100]}"
-                )
-                break
 
         # No hallucination in messenger output
         for marker in _HALLUCINATION_MARKERS:
@@ -116,15 +105,6 @@ class TestF36CrossPlanFileHandoff:
             assert "download" not in detail, (
                 f"Download task created (file should be local): {detail[:200]}"
             )
-
-        # M934: first task of action plans must NOT be msg
-        for p in reversed(r2.plans):
-            tasks = [t for t in r2.tasks if t.get("plan_id") == p["id"]]
-            if any(t.get("type") in _ACTION_TYPES for t in tasks):
-                assert tasks[0].get("type") != "msg", (
-                    f"First task is msg (announce): {tasks[0].get('detail', '')[:100]}"
-                )
-                break
 
         # OCR tool task should have correct path with pub/ prefix
         ocr_tasks = [

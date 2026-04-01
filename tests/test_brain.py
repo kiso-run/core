@@ -1360,7 +1360,8 @@ class TestBuildPlannerMessages:
             )
         system = msgs[0]["content"]
         # planning_rules must be present even when briefer returns modules=[]
-        assert "first task must be" in system.lower() or "never msg" in system.lower(), (
+        # M1037: planning_rules must be present
+        assert "never fabricate" in system.lower(), (
             "planning_rules module missing from planner prompt"
         )
 
@@ -3177,11 +3178,13 @@ class TestM369MessengerSanitizer:
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "no JSON, XML" in prompt or "Never emit XML" in prompt
 
-    def test_m714_messenger_prompt_no_plan_description(self):
-        """M714: messenger must not describe future actions or explain the plan."""
+    def test_m1037_messenger_prompt_announce_and_anti_hallucination(self):
+        """M1037: messenger allows announce, forbids fabrication."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
-        assert "WILL do" in prompt or "will do" in prompt.lower()
-        assert "only report" in prompt.lower()
+        # Must allow announcement when no outputs available
+        assert "announcement" in prompt.lower()
+        # Must forbid fabrication
+        assert "never fabricate" in prompt.lower()
 
 
 # --- Exec Translator ---
