@@ -41,7 +41,7 @@ Each tool runs in its own venv. Files carry across plans automatically. The plan
 - **Presets.** `kiso preset install performance-marketer` bundles tools, knowledge, and behavioral rules into a persona.
 - **Ephemeral secrets.** Credentials shared in conversation stay in-memory only — never touch disk.
 - **Execution hooks.** Pre/post exec hooks for custom validation, audit logging, or blocking commands.
-- **Knowledge consolidation (dream).** Periodic fact review and deduplication — runs on a configurable schedule.
+- **Knowledge consolidation.** Periodic fact review and deduplication — runs on a configurable schedule.
 - **kiso config command.** Change settings at runtime with hot reload — no manual config editing needed.
 - **Bot persona.** Configurable messenger personality via `bot_persona` setting.
 - **Cost display.** Per-message cost estimate shown in the CLI after each plan completes.
