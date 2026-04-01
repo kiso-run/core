@@ -1506,7 +1506,9 @@ async def build_planner_messages(
             "it requires no tool and works immediately. "
             "The browser tool is only needed for interactive browsing (navigate to a specific URL, "
             "click, fill forms, take screenshots). "
-            "If interactive browsing is required: single msg asking to install, end plan."
+            "If interactive browsing is required: single msg asking to install, end plan.\n"
+            "Note: if the user also asks to create/write a file, an exec task is still "
+            "required — search alone cannot create files."
         )
 
     # always-inject available registry tools (not gated by briefer) so the
@@ -1521,7 +1523,8 @@ async def build_planner_messages(
     if registry_text and "websearch" in registry_text:
         context_parts.append(
             "**Note:** The built-in `search` task type handles all web research "
-            "queries without any tool installation. Use `type: search` directly."
+            "queries without any tool installation. Use `type: search` directly. "
+            "For file creation requests, combine search with exec tasks."
         )
 
     # always-inject safety facts (not gated by briefer)

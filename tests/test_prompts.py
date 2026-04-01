@@ -259,6 +259,18 @@ class TestM935DetailExpectConsistency:
         assert "ONLY criterion the reviewer checks" in planning_rules
 
 
+class TestM1039FileCriticalRule:
+    """M1039: planning_rules must emphasize file creation requires exec."""
+
+    def test_file_creation_critical(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: planning_rules -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        planning_rules = raw[start:end]
+        assert "CRITICAL" in planning_rules and "file creation" in planning_rules.lower()
+        assert "NEVER [search, msg]" in planning_rules
+
+
 class TestM1038ToolsRulesNeedsInstall:
     """M1038: tools_rules must mention needs_install for consistency."""
 
