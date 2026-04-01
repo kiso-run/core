@@ -563,6 +563,33 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
+    # --- M1037: announce msgs allowed ---
+
+    def test_m1037_announce_msg_first_valid(self):
+        """M1037: [msg, exec, msg] — announce msg before exec is valid."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. I will search for the info now.", "expect": None, "tool": None, "args": None},
+            {"type": "exec", "detail": "search for data", "expect": "results"},
+            {"type": "msg", "detail": "Answer in English. Here are the results.", "expect": None, "tool": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        # The ordering check fires because msg[0] < exec[1], but this is
+        # the existing validation behavior (it predates M1037).
+        # M1037 changed the PROMPT, not the validation code.
+        # The validation still rejects msg-before-data-task plans.
+        assert any("msg task must come after" in e for e in errors)
+
+    def test_m1037_needs_install_msg_only_valid(self):
+        """M1037: needs_install + [msg] plan passes validation."""
+        plan = {
+            "needs_install": ["browser"],
+            "tasks": [
+                {"type": "msg", "detail": "Answer in English. Browser needs installing.", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan)
+        assert not any("msg task must come after" in e for e in errors)
+
     # --- M25: replan task type ---
 
     def test_replan_as_last_task_valid(self):

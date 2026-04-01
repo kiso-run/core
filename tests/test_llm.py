@@ -309,6 +309,11 @@ class TestCallLlm:
                 assert "hello" in result
                 assert mock_client.stream.call_count == 2
 
+    def test_m1041_rate_backoff_zeroed_by_fixture(self):
+        """M1041: _no_retry_backoff fixture zeroes rate limit backoff."""
+        import kiso.llm
+        assert kiso.llm._RATE_INITIAL_BACKOFF == 0.0
+
     @pytest.mark.asyncio
     async def test_529_retried(self):
         """529 (overloaded) is retried same as 429."""

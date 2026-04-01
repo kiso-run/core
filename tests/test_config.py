@@ -477,6 +477,25 @@ def test_m84e_setting_wrong_type_bool_exits(tmp_path: Path, capsys):
     assert "fast_path_enabled" in _die_msg(capsys)
 
 
+def test_m1043_dream_backward_compat(tmp_path: Path):
+    """M1043: old dream_* setting keys map to consolidation_*."""
+    text = VALID + '\ndream_enabled = true\ndream_interval_hours = 12\ndream_min_facts = 10\n'
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.settings["consolidation_enabled"] is True
+    assert cfg.settings["consolidation_interval_hours"] == 12
+    assert cfg.settings["consolidation_min_facts"] == 10
+
+
+def test_m1043_dreamer_model_backward_compat(tmp_path: Path):
+    """M1043: old dreamer model key maps to consolidator."""
+    text = VALID.replace(
+        'consolidator = "google/gemini-2.5-flash-lite"',
+        'dreamer = "test-dreamer-model"',
+    )
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.models["consolidator"] == "test-dreamer-model"
+
+
 def test_m84e_unknown_setting_key_ignored(tmp_path: Path):
     """M84e: unknown settings keys are allowed (forward-compatible)."""
     text = VALID + 'unknown_future_key = "hello"\n'
