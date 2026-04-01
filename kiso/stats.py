@@ -10,6 +10,11 @@ from pathlib import Path
 # More specific keys must appear before less specific ones (first match wins).
 # Prices are approximate and based on OpenRouter/provider pricing (early 2026).
 MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "deepseek-v3": (0.30, 0.88),
+    "deepseek-r1": (0.55, 2.19),
+    "deepseek-chat": (0.14, 0.28),
+    "deepseek": (0.14, 0.28),
+    "gemini-2.5-flash-lite": (0.075, 0.30),
     "gemini-2.5-flash": (0.15, 0.60),
     "gemini-2.0-flash": (0.10, 0.40),
     "gemini-flash": (0.075, 0.30),
@@ -26,6 +31,7 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     "llama-3": (0.10, 0.30),
     "mistral": (0.20, 0.60),
     "qwen": (0.10, 0.30),
+    "sonar": (1.00, 1.00),
 }
 
 
@@ -115,6 +121,18 @@ def aggregate(entries: list[dict], by: str) -> list[dict]:
         key=lambda r: r["input_tokens"] + r["output_tokens"],
         reverse=True,
     )
+
+
+def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
+    """Compute USD cost for a single model+token pair.
+
+    Returns None if model is not in the price table.
+    """
+    prices = _find_price(model)
+    if prices is None:
+        return None
+    in_price, out_price = prices
+    return (input_tokens * in_price + output_tokens * out_price) / 1_000_000
 
 
 def estimate_cost(row: dict) -> float | None:

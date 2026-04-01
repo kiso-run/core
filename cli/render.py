@@ -289,9 +289,9 @@ def render_command(command: str, caps: TermCaps) -> str:
 
 
 def render_usage(plan: dict, caps: TermCaps) -> str:
-    """Render token usage summary.
+    """Render token usage summary with cost estimate.
 
-    Example: ⟨ 1,234 in → 567 out │ deepseek/deepseek-v3.2 ⟩
+    Example: ⟨ 1,234 in → 567 out │ $0.003 │ deepseek/deepseek-v3.2 ⟩
     """
     input_tokens = plan.get("total_input_tokens", 0) or 0
     output_tokens = plan.get("total_output_tokens", 0) or 0
@@ -304,8 +304,13 @@ def render_usage(plan: dict, caps: TermCaps) -> str:
         text = f"⟨ {in_str} in → {out_str} out"
     else:
         text = f"< {in_str} in -> {out_str} out"
+    # Cost estimate
     if model:
+        from kiso.stats import compute_cost
+        cost = compute_cost(model, input_tokens, output_tokens)
         sep = "│" if caps.unicode else "|"
+        if cost is not None:
+            text += f" {sep} ${cost:.4f}"
         text += f" {sep} {model}"
     text += " ⟩" if caps.unicode else " >"
     return _style(text, _DIM, caps=caps)

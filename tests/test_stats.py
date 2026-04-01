@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.stats import MODEL_PRICES, _find_price, aggregate, estimate_cost, read_audit_entries
+from kiso.stats import MODEL_PRICES, _find_price, aggregate, compute_cost, estimate_cost, read_audit_entries
 from cli.stats import print_stats, _fmt_k, _fmt_cost
 
 # ---------------------------------------------------------------------------
@@ -406,3 +406,24 @@ class TestFindPriceOrdering:
         assert keys.index("gpt-4o") < keys.index("gpt-4")
         # llama-3.3 must appear before llama-3
         assert keys.index("llama-3.3") < keys.index("llama-3")
+        # deepseek-v3 must appear before generic deepseek
+        assert keys.index("deepseek-v3") < keys.index("deepseek")
+        # gemini-2.5-flash-lite before gemini-2.5-flash
+        assert keys.index("gemini-2.5-flash-lite") < keys.index("gemini-2.5-flash")
+
+    def test_compute_cost_known_model(self) -> None:
+        """compute_cost returns USD for known model."""
+        cost = compute_cost("deepseek/deepseek-v3.2", 1_000_000, 500_000)
+        assert cost is not None
+        assert cost > 0
+        # deepseek-v3: $0.30/MTk in + $0.88/MTk out
+        expected = 1_000_000 * 0.30 / 1_000_000 + 500_000 * 0.88 / 1_000_000
+        assert cost == pytest.approx(expected)
+
+    def test_compute_cost_unknown_model(self) -> None:
+        """compute_cost returns None for unknown model."""
+        assert compute_cost("unknown-model-xyz", 1000, 500) is None
+
+    def test_compute_cost_zero_tokens(self) -> None:
+        """compute_cost returns 0 for known model with zero tokens."""
+        assert compute_cost("deepseek/deepseek-v3.2", 0, 0) == 0.0
