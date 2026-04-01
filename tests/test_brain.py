@@ -440,16 +440,6 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("'msg' is a task TYPE" in e for e in errors)
 
-    def test_tool_name_is_prompt_module_code_execution(self):
-        """M833: tool='code_execution' is a prompt module, not a tool."""
-        plan = {"tasks": [
-            {"type": "tool", "detail": "run echo", "expect": "ok", "tool": "code_execution", "args": "{}"},
-            {"type": "msg", "detail": "Answer in English. done", "expect": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("prompt module" in e for e in errors)
-        assert any("type='exec'" in e for e in errors)
-
     def test_tool_name_is_prompt_module_web(self):
         """M833: tool='web' is a prompt module, not a tool."""
         plan = {"tasks": [
@@ -5570,9 +5560,8 @@ class TestLoadModularPrompt:
 
     # M600: parametrized module loading tests
     _MODULE_CASES = [
-        ("web", ["web interaction"], ["code_execution"]),
+        ("web", ["web interaction"], []),
         ("replan", ["extend_replan"], ["web interaction"]),
-        ("code_execution", ["python -c"], ["web interaction"]),
         ("tool_recovery", ["broken tool deps"], []),
         ("data_flow", ["save to file"], []),
         ("planning_rules", ["expect", "invent"], ["tools efficiency"]),
@@ -5622,9 +5611,8 @@ class TestLoadModularPrompt:
 
     def test_multiple_modules_combined(self):
         """Loading multiple modules concatenates them with core."""
-        result = _load_modular_prompt("planner", ["web", "code_execution", "data_flow"])
+        result = _load_modular_prompt("planner", ["web", "data_flow"])
         assert "Web interaction:" in result
-        assert "One-liner execution" in result or "One-liners" in result
         assert "save to file" in result
         assert "extend_replan" not in result
         assert "Broken tool deps" not in result

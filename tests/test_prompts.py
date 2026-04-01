@@ -124,7 +124,7 @@ class TestPlannerModules:
 
     _ALL_MODULES = [
         "core", "kiso_native", "planning_rules", "tools_rules",
-        "tool_recovery", "data_flow", "web", "code_execution", "replan",
+        "tool_recovery", "data_flow", "web", "replan",
         "kiso_commands", "user_mgmt", "plugin_install",
     ]
 
@@ -230,20 +230,30 @@ class TestMessengerPublishedFilesRule:
 
 
 class TestPlannerMsgAnnounce:
-    """M1037: planning_rules allows announce msgs, forbids hallucination."""
+    """M1046: planning_rules allows announce msgs, constrains msg-only plans."""
 
     def test_announce_anti_hallucination_rule(self):
         raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        # Extract planning_rules module content
         start = raw.index("<!-- MODULE: planning_rules -->")
         end = raw.index("<!-- MODULE:", start + 1)
         planning_rules = raw[start:end]
-        # Must allow announce msg as first task
+        # Must allow announce msg before action tasks
         assert "announcement" in planning_rules.lower()
         # Must forbid fabrication in announcements
         assert "never fabricate" in planning_rules.lower()
-        # Must still forbid describing plan structure
-        assert "never describe the plan structure" in planning_rules.lower()
+        # Must constrain msg-only plans to specific cases
+        assert "valid only for" in planning_rules.lower()
+        # Must require action tasks for action requests
+        assert "include at least one exec/tool/search" in planning_rules.lower()
+
+    def test_one_liner_rule_in_planning_rules(self):
+        """M1046: one-liner blocking rule moved from code_execution to planning_rules."""
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: planning_rules -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        planning_rules = raw[start:end]
+        assert "python -c" in planning_rules
+        assert "write a script file" in planning_rules.lower()
 
 
 class TestM935DetailExpectConsistency:

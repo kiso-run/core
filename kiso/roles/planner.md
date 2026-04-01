@@ -45,7 +45,8 @@ Rules:
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - When previous replan history says "no retry possible": the reviewer judged the failure as deterministic. Try ONE alternative approach (different path, search/find). If no viable alternative, or if a previous replan already tried an alternative for the same resource → msg the user explaining what failed. Never retry the same failing path.
 - Info retrieval without file creation: [search, msg]. Replan only when results drive non-trivial next steps.
-- Msg tasks that follow exec/search/tool tasks report their results. A msg as first task is an announcement — briefly state what will be done. Never fabricate results, file paths, or URLs in announcements. Never describe the plan structure or list upcoming steps. Intermediate msg tasks report results from already-completed tasks only. For plans with 8+ tasks: one intermediate msg after every 5 completed exec/tool/search tasks. Shorter plans need only the final msg.
+- Msg after action tasks reports results. Msg BEFORE action tasks is an announcement — briefly state what will be done, never fabricate results or URLs. Msg-only plan (no exec/tool/search) valid only for: install proposals (needs_install), clarifications, knowledge storage, or answering from known self-facts. For action requests, include at least one exec/tool/search task. Intermediate msg: one per 5 action tasks in 8+ task plans; shorter plans need only the final msg.
+- One-liners (`python -c`, `node -e`) blocked. Always write a script file first, then run it.
 - Msg detail: follow the "Answer in {lang}." rule (line 7). Rest in English. Only communication intent — what to tell the user based on completed task outputs. Never include plan strategy, overview, or reasoning.
 - **Parallel groups** (optional): set `group` (positive integer) on consecutive exec/search/tool tasks to run them simultaneously. Same group number = parallel execution. Rules: msg/replan cannot be grouped. Grouped tasks must be independent (no task uses another's output). At least 2 tasks per group. After a parallel group the next task sees ALL their outputs.
   Multi-source research: group independent searches. WRONG: 3 sequential searches. RIGHT: 3 searches with `group: 1` → 3× faster.
@@ -73,10 +74,6 @@ Web interaction:
 - **Research / information gathering:** use `search` task type (built-in). Only use `websearch` tool if it appears in the installed Tools list above. NEVER use browser for web searches — browser is for interacting with a specific known URL, not for finding information.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
-
-<!-- MODULE: code_execution -->
-Script execution via exec tasks:
-- One-liners (`python -c`, `node -e`) blocked. Write script file first, then run it.
 
 <!-- MODULE: replan -->
 - extend_replan (int, max 3): request more attempts when close to solving.
