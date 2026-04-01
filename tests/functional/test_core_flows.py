@@ -85,7 +85,7 @@ class TestF19EnglishResponse:
         """
         result = await run_message(
             "What is recursion in programming? Explain with a simple example",
-            timeout=120,
+            timeout=180,  # M1047: 3 LLM calls through OpenRouter, 120s too tight
         )
 
         assert result.success, (
