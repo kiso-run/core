@@ -876,6 +876,11 @@ if [[ "$NEED_CONFIG" == true ]]; then
     bot_name="$BOT_NAME"
     echo "  bot name: $bot_name"
 
+    local bot_persona
+    safe_read -rp "  Bot persona [a friendly and knowledgeable assistant]: " bot_persona
+    bot_persona="${bot_persona:-a friendly and knowledgeable assistant}"
+    echo "  persona: $bot_persona"
+
     ask_provider_name
     echo "  provider: $PROVIDER_NAME"
 
@@ -900,6 +905,7 @@ role = "admin"
 
 [settings]
 bot_name                     = "$bot_name"
+bot_persona                  = "$bot_persona"
 
 # Conversation
 context_messages             = 7      # messages kept in context window

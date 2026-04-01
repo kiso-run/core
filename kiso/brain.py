@@ -2547,7 +2547,12 @@ def build_messenger_messages(
             raw summary/facts when provided).
     """
     bot_name = config.settings["bot_name"]
-    system_prompt = _load_system_prompt("messenger").replace("{bot_name}", bot_name)
+    bot_persona = config.settings.get("bot_persona", "a friendly and knowledgeable assistant")
+    system_prompt = _load_system_prompt("messenger").replace(
+        "{bot_name}", bot_name,
+    ).replace(
+        "{bot_persona}", bot_persona,
+    )
 
     context_parts: list[str] = []
     # extract language from "Answer in {lang}." prefix and inject as

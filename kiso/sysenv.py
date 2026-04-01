@@ -293,6 +293,7 @@ def collect_system_env(config: Config) -> dict:
         "registry_hints": registry_hints,
         "reference_docs_path": str(KISO_DIR / "reference"),
         "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
+        "bot_persona": config.settings.get("bot_persona", ""),
     }
 
 
@@ -382,6 +383,9 @@ def build_system_env_essential(env: dict, session: str = "") -> str:
         f"Plan limits: max {env['max_plan_tasks']} tasks per plan, "
         f"max {env['max_replan_depth']} replans (extendable by planner up to +3)"
     )
+    bot_persona = env.get("bot_persona", "")
+    if bot_persona:
+        lines.append(f"Bot persona: {bot_persona}")
     return "\n".join(lines)
 
 

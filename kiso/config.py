@@ -26,6 +26,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "summarize_threshold": 30,
     "summarize_messages_limit": 100,
     "bot_name": "Kiso",
+    "bot_persona": "a friendly and knowledgeable assistant",
     # knowledge / memory
     "knowledge_max_facts": 50,
     "fact_decay_days": 7,
@@ -164,6 +165,7 @@ context_messages          = 5        # recent messages sent to planner
 summarize_threshold       = 30       # message count before summarizer runs
 summarize_messages_limit  = 100      # max messages sent to summarizer LLM per run
 bot_name                  = "Kiso"
+bot_persona               = "a friendly and knowledgeable assistant"
 
 # --- knowledge / memory ---
 knowledge_max_facts       = 50
