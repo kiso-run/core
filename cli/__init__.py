@@ -379,6 +379,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = bs.add_parser("remove", help="remove a behavioral guideline by ID")
     p.add_argument("behavior_id", type=int, help="behavior ID to remove")
 
+    # Config
+    cfg_sub = sub.add_parser("config", help="manage settings").add_subparsers(dest="config_cmd")
+    p = cfg_sub.add_parser("set", help="set a config value")
+    p.add_argument("key", help="setting name")
+    p.add_argument("value", help="new value")
+    p = cfg_sub.add_parser("get", help="get a config value")
+    p.add_argument("key", help="setting name")
+    cfg_sub.add_parser("list", help="list all settings")
+
     # Preset
     ps = sub.add_parser("preset", help="manage persona presets").add_subparsers(dest="preset_cmd")
     ps.add_parser("list", help="list available presets from registry")
@@ -540,6 +549,9 @@ def main() -> None:
             preset_installed(args)
         elif args.preset_cmd == "remove":
             preset_remove(args)
+    elif args.command == "config":
+        from cli.config_cmd import run_config_command
+        run_config_command(args)
     elif args.command == "version":
         if getattr(args, "stats", False):
             _print_version_stats()

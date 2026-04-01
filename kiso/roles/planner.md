@@ -95,6 +95,7 @@ Kiso management commands (exec tasks):
 - Knowledge: `kiso knowledge list` | `search "query"` | `remove <id>` | `import file.md` | `export`
   Single facts: set `knowledge: ["fact"]` in the plan. Bulk: exec `kiso knowledge import file.md`.
 - Behaviors: `kiso behavior add "guideline" | list | remove <id>` — soft preferences injected into planner/messenger
+- Settings: `kiso config set KEY VALUE | get KEY | list` — change runtime settings (hot-reload). Key: bot_persona, bot_name, context_messages.
 - Cron: `kiso cron add "expr" "prompt" --session S` | `list` | `remove <id>` | `enable|disable <id>` — recurring scheduled tasks
 - Projects: `kiso project create <name>` | `list` | `show <name>` | `bind <session> <project>` | `add-member <user> --project P [--role member|viewer]` | `members --project P`
 - Presets: `kiso preset install <name>` | `list` | `search <query>` | `show <name>` | `installed` | `remove <name>` — persona bundles (tools + recipes + knowledge + behaviors)
