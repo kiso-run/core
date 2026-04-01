@@ -1009,9 +1009,20 @@ class TestSysenvConfigSettings:
         assert "bot_name" in env["user_settings"]
         assert env["user_settings"]["bot_name"] == "TestBot"
 
-    def test_configurable_settings_in_essential(self):
+    def test_configurable_settings_not_in_essential(self):
+        """M1040: settings moved out of essential sysenv."""
         cfg = self._make_cfg(bot_persona="a test persona")
         env = collect_system_env(cfg)
         text = build_system_env_essential(env, session="test")
+        assert "kiso config set" not in text
+        assert "bot_persona" not in text
+
+    def test_build_user_settings_text(self):
+        """M1040: settings available via dedicated helper."""
+        from kiso.sysenv import build_user_settings_text
+        cfg = self._make_cfg(bot_persona="a test persona")
+        env = collect_system_env(cfg)
+        text = build_user_settings_text(env)
         assert "kiso config set" in text
         assert "bot_persona" in text
+        assert "a test persona" in text

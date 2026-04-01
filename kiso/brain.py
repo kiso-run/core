@@ -25,7 +25,7 @@ from kiso.store import (
     search_facts_by_entity, search_facts_by_tags, search_facts_scored,
     set_kv, update_fact_content,
 )
-from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section, build_install_context
+from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section, build_install_context, build_user_settings_text
 
 log = logging.getLogger(__name__)
 
@@ -1409,6 +1409,10 @@ async def build_planner_messages(
             # fields so the planner can route install commands correctly.
             if "kiso_native" in modules and install_ctx:
                 _add_section(context_parts, "Install Context", install_ctx)
+        # M1040: inject user-facing settings only when kiso_commands loaded.
+        if "kiso_commands" in modules:
+            _settings_text = build_user_settings_text(get_system_env(config))
+            _add_section(context_parts, "User Settings", _settings_text)
         # Session workspace files + previous plan results — operational data
         # that must reach the planner verbatim (not gated by briefer synthesis).
         _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))

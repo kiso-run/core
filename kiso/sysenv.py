@@ -387,11 +387,20 @@ def build_system_env_essential(env: dict, session: str = "") -> str:
         f"Plan limits: max {env['max_plan_tasks']} tasks per plan, "
         f"max {env['max_replan_depth']} replans (extendable by planner up to +3)"
     )
-    user_settings = env.get("user_settings", {})
-    if user_settings:
-        settings_lines = [f"  {k} = {v}" for k, v in user_settings.items()]
-        lines.append("Configurable settings (kiso config set KEY VALUE):\n" + "\n".join(settings_lines))
     return "\n".join(lines)
+
+
+def build_user_settings_text(env: dict) -> str:
+    """Configurable settings block for the planner (~100 tokens).
+
+    Injected only when the ``kiso_commands`` module is loaded — the planner
+    doesn't need to see dream_enabled or context_messages for every plan.
+    """
+    user_settings = env.get("user_settings", {})
+    if not user_settings:
+        return ""
+    settings_lines = [f"  {k} = {v}" for k, v in user_settings.items()]
+    return "Configurable settings (kiso config set KEY VALUE):\n" + "\n".join(settings_lines)
 
 
 def build_install_context(env: dict) -> str:
