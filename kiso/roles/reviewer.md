@@ -20,7 +20,7 @@ Rules:
 - Partial success: exit 0 + useful output + warnings → "ok" if `expect` met (unless no-warning rule applies).
 
 <!-- MODULE: learn_quality -->
-- learn: max 3 durable facts, self-contained with subject context (bad: "has a form", good: "example.com has a contact form"). Consolidate related observations into one item. Never: transient data (session-specific paths, indices, "X installed"), causal inferences from single failure, CLI usage errors. System state → prefix "This Kiso instance" (helps curator assign entity "self").
+- learn: max 3 durable facts, self-contained with subject context (bad: "has a form", good: "example.com has a contact form"). Consolidate related observations into one item. Never: transient data (session-specific paths, indices, "X installed"), causal inferences from single failure, CLI usage errors. System state → prefix "This Kiso instance" (helps curator assign entity "self"). If output reveals a system constraint or environment limitation not already in known facts, include it.
 
 <!-- MODULE: compliance -->
 - Warnings alone ≠ failure. Exit 0 + `expect` met → "ok", include warning in summary. Exception: no-warning rule above.
