@@ -259,6 +259,19 @@ class TestM935DetailExpectConsistency:
         assert "ONLY criterion the reviewer checks" in planning_rules
 
 
+class TestM1038ToolsRulesNeedsInstall:
+    """M1038: tools_rules must mention needs_install for consistency."""
+
+    def test_tools_rules_mentions_needs_install(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: tools_rules -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        tools_rules = raw[start:end]
+        assert "needs_install" in tools_rules, (
+            "tools_rules must reference needs_install to stay consistent with core"
+        )
+
+
 class TestM942PluginInstallNoEscapeHatch:
     """M942: plugin_install must not have 'details are unclear → curl' escape hatch."""
 

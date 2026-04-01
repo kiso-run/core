@@ -53,7 +53,7 @@ Rules:
 <!-- MODULE: tools_rules -->
 Tools efficiency:
 - Listed tools are confirmed installed — use directly, no verification needed.
-- Uninstalled tools cannot be used. Never tool-task an uninstalled tool. To use: (1) msg asking user to install + alternatives, end plan. After approval: (2) exec install, (3) replan.
+- Uninstalled tools cannot be used. Never tool-task an uninstalled tool. To request installation: set `needs_install` with the tool name, add a msg for approval, end plan (see core install rule). After approval: exec install, replan.
 - Install commands are atomic — never decompose.
 - Only ask for env vars declared in a tool's [kiso.env]. If absent, proceed without asking.
 - Task ordering: msg tasks must come after exec/search/tool tasks whose results they report.
