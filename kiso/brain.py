@@ -69,7 +69,6 @@ WORKER_PHASES: frozenset[str] = frozenset({
 })
 
 # Fact constants
-_MAX_CONSOLIDATION_ITEMS = 200
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _MESSENGER_RETRY_BACKOFF: float = 1.0  # seconds between retries (0 in tests)
 _MAX_MESSENGER_RETRIES = 2  # max retries on transient LLM errors
@@ -2803,75 +2802,6 @@ async def run_exec_translator(
         except FileNotFoundError:
             pass  # bash not available — skip check
     return command
-
-
-# ---------------------------------------------------------------------------
-# Fact consolidation
-# ---------------------------------------------------------------------------
-
-async def run_fact_consolidation(
-    config: Config, facts: list[dict], session: str = "",
-) -> list[dict]:
-    """Consolidate/deduplicate facts via LLM. Returns list of consolidated fact dicts.
-
-    Each dict has keys: content (str), category (str), confidence (float).
-    Plain strings from non-structured LLM responses are wrapped into dicts.
-
-    Raises SummarizerError on failure.
-    """
-    system_prompt = _load_system_prompt("summarizer-facts")
-    facts_text = _join_or_empty(facts, lambda f: f"- {f['content']}")
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"## Facts\n{facts_text}"},
-    ]
-    try:
-        raw = await call_llm(config, "summarizer", messages, session=session)
-    except LLMError as e:
-        raise SummarizerError(f"LLM call failed: {e}")
-    try:
-        result = json.loads(_strip_fences(raw))
-    except json.JSONDecodeError as e:
-        raise SummarizerError(f"Consolidation returned invalid JSON: {e}")
-    if not isinstance(result, list):
-        raise SummarizerError("Consolidation must return a JSON array")
-
-    if len(result) > _MAX_CONSOLIDATION_ITEMS:
-        log.warning(
-            "Consolidation returned %d items (cap %d), truncating",
-            len(result), _MAX_CONSOLIDATION_ITEMS,
-        )
-        result = result[:_MAX_CONSOLIDATION_ITEMS]
-
-    # Normalize items: dicts with content key, or plain strings (LLM output fallback)
-    normalized: list[dict] = []
-    for item in result:
-        if isinstance(item, dict) and isinstance(item.get("content"), str):
-            content = item["content"].strip()
-            if len(content) < 3:
-                continue
-            try:
-                confidence = max(0.0, min(1.0, float(item.get("confidence", 1.0))))
-            except (ValueError, TypeError):
-                confidence = 1.0
-            raw_category = item.get("category") or "general"
-            category = raw_category if raw_category in _VALID_FACT_CATEGORIES else "general"
-            normalized.append({
-                "content": content,
-                "category": category,
-                "confidence": confidence,
-            })
-        elif isinstance(item, str):
-            content = item.strip()
-            if len(content) < 3:
-                continue
-            normalized.append({
-                "content": content,
-                "category": "general",
-                "confidence": 1.0,
-            })
-        # Skip invalid items
-    return normalized
 
 
 # ---------------------------------------------------------------------------

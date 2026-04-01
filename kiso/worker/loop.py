@@ -53,7 +53,6 @@ from kiso.brain import (
     run_curator,
     run_dreamer,
     run_exec_translator,
-    run_fact_consolidation,
     run_messenger,
     run_paraphraser,
     run_planner,
@@ -509,51 +508,7 @@ async def _post_plan_knowledge(
 
     await asyncio.gather(_run_curator(), _run_summarizer())
 
-    # --- Phase 2: Fact consolidation (after Curator — sees promoted facts) ------
-
-    max_facts = setting_int(config.settings, "knowledge_max_facts", lo=1)
-    all_facts = await get_facts(db, is_admin=True)
-    if len(all_facts) > max_facts:
-        try:
-            consolidated = await asyncio.wait_for(
-                run_fact_consolidation(config, all_facts, session=session),
-                timeout=llm_timeout,
-            )
-            if consolidated:
-                min_ratio = setting_float(config.settings, "fact_consolidation_min_ratio", lo=0.0, hi=1.0)
-                if len(consolidated) < len(all_facts) * min_ratio:
-                    log.warning("Fact consolidation shrank %d → %d (< %.0f%%), skipping",
-                                len(all_facts), len(consolidated), min_ratio * 100)
-                else:
-                    consolidated = [
-                        f for f in consolidated
-                        if isinstance(f, dict) and isinstance(f.get("content"), str)
-                        and len(f["content"].strip()) >= 3
-                    ]
-                    if consolidated:
-                        await delete_facts(db, [f["id"] for f in all_facts])
-                        # Preserve session scoping: user facts belong to the
-                        # session that triggered consolidation; all other
-                        # categories are global (session=None).
-                        fact_rows = []
-                        for f in consolidated:
-                            category = f.get("category", "general")
-                            fact_rows.append({
-                                "content": f["content"],
-                                "source": "consolidation",
-                                "category": category,
-                                "confidence": f.get("confidence", 1.0),
-                                "session": session if category == "user" else None,
-                            })
-                        await save_facts_batch(db, fact_rows)
-                    else:
-                        log.warning("All consolidated facts filtered out, preserving originals")
-        except asyncio.TimeoutError:
-            log.warning("Fact consolidation timed out after %ds", llm_timeout)
-        except SummarizerError as e:
-            log.error("Fact consolidation failed: %s", e)
-
-    # --- Phase 3: Decay + Archive (pure SQL, run concurrently) ------------------
+    # --- Phase 2: Decay + Archive (pure SQL, run concurrently) ------------------
 
     decay_days = setting_int(config.settings, "fact_decay_days", lo=1)
     decay_rate = setting_float(config.settings, "fact_decay_rate", lo=0.0, hi=1.0)

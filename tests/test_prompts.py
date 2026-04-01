@@ -18,7 +18,7 @@ _ROLES_DIR = Path(__file__).resolve().parent.parent / "kiso" / "roles"
 _EXPECTED_ROLES = [
     "planner.md", "reviewer.md", "messenger.md", "worker.md",
     "classifier.md", "briefer.md", "curator.md", "searcher.md",
-    "summarizer-session.md", "summarizer-facts.md", "paraphraser.md",
+    "summarizer-session.md", "paraphraser.md",
     "inflight-classifier.md",
 ]
 
@@ -34,7 +34,6 @@ _ROLE_CORE_TERMS: list[tuple[str, list[str]]] = [
     ("curator.md", ["promote", "discard", "entity"]),
     ("searcher.md", ["query"]),
     ("summarizer-session.md", ["english"]),
-    ("summarizer-facts.md", ["consolidat"]),
     ("paraphraser.md", ["paraphras"]),
     ("inflight-classifier.md", ["stop", "update", "independent", "conflict"]),
 ]
