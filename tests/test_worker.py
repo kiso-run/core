@@ -1581,10 +1581,10 @@ class TestBuildReplanContext:
         long_output = "x" * 5000
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
         ctx = _build_replan_context(completed, [], "broke", [])
-        # Output should be truncated with "... (truncated)" marker
-        assert "... (truncated)" in ctx
-        # Should NOT contain more than _REPLAN_OUTPUT_LIMIT (1000) chars
-        assert "x" * 1001 not in ctx
+        # Head+tail truncation: should contain marker
+        assert "chars truncated" in ctx
+        # Both head and tail should be present (x's from start and end)
+        assert ctx.count("x") < 5000  # not the full output
 
     def test_output_under_limit_not_truncated(self):
         output = "short output"
@@ -1593,19 +1593,16 @@ class TestBuildReplanContext:
         assert "short output" in ctx
         assert "truncated" not in ctx
 
-    def test_smart_truncate_at_newline(self):
-        # 3 lines — the 3rd line pushes past _REPLAN_OUTPUT_LIMIT (1000 chars)
-        line1 = "a" * 400 + "\n"
-        line2 = "b" * 400 + "\n"
-        line3 = "c" * 400
-        long_output = line1 + line2 + line3
+    def test_smart_truncate_keeps_head_and_tail(self):
+        """Head+tail truncation preserves errors at end of output."""
+        head = "=== START ===\n" + "info line\n" * 50
+        tail = "ERROR: file not found\nTraceback: ...\n"
+        long_output = head + "x" * 3000 + tail
         completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
         ctx = _build_replan_context(completed, [], "broke", [])
-        # Should include line1 + line2 but truncate at newline before line3
-        assert "a" * 400 in ctx
-        assert "b" * 400 in ctx
-        assert "c" * 400 not in ctx
-        assert "... (truncated)" in ctx
+        assert "START" in ctx       # head preserved
+        assert "file not found" in ctx  # tail preserved (error at end)
+        assert "chars truncated" in ctx
 
     def test_msg_tasks_stripped_from_completed(self):
         """M309: msg-type tasks are excluded from completed tasks in replan context."""
@@ -1657,7 +1654,7 @@ class TestBuildReplanContext:
         ]
         ctx = _build_replan_context([], [], "fail", history)
         # Output should be truncated
-        assert "... (truncated)" in ctx or len(long_output) > ctx.count("x")
+        assert "chars truncated" in ctx or len(long_output) > ctx.count("x")
 
     def test_confirmed_facts_from_registry_json(self):
         """M131: extract skill name from registry JSON output."""
@@ -7083,8 +7080,7 @@ class TestBuildReplanContextSearchLimit:
             {"type": "search", "detail": "find info", "status": "done", "output": long_output},
         ]
         context = _build_replan_context(completed, [], "replan reason", [])
-        assert "... (truncated)" in context
-        assert "x" * 2001 not in context
+        assert "chars truncated" in context
 
     def test_exec_output_truncated_at_limit(self):
         """Exec task output uses _REPLAN_OUTPUT_LIMIT (1000) char limit in replan context."""
@@ -7093,8 +7089,7 @@ class TestBuildReplanContextSearchLimit:
             {"type": "exec", "detail": "run command", "status": "done", "output": long_output},
         ]
         context = _build_replan_context(completed, [], "replan reason", [])
-        assert "... (truncated)" in context
-        assert "x" * 1001 not in context
+        assert "chars truncated" in context
 
     def test_budget_overflow_summarizes(self):
         """Tasks exceeding char budget are summarized as one-liners."""

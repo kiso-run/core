@@ -716,14 +716,19 @@ def _format_task_list(tasks: list[dict], label: str) -> str:
 
 
 def _smart_truncate(text: str, limit: int) -> str:
-    """Truncate *text* to *limit* chars, cutting at a newline boundary."""
+    """Truncate *text* to *limit* chars, keeping head and tail.
+
+    Errors and results typically appear at the END of output, so keeping
+    the tail is critical for replan context quality.
+    """
     if len(text) <= limit:
         return text
-    # Find last newline within limit
-    cut = text.rfind("\n", 0, limit)
-    if cut <= 0:
-        cut = limit
-    return text[:cut] + "\n... (truncated)"
+    marker = "\n[... {} chars truncated ...]\n"
+    # Reserve space for the marker (estimate ~30 chars)
+    usable = limit - 30
+    half = max(usable // 2, 50)
+    skipped = len(text) - half * 2
+    return f"{text[:half]}{marker.format(skipped)}{text[-half:]}"
 
 
 _FACT_LINE_LIMIT = 20       # max lines scanned for install/error keywords
