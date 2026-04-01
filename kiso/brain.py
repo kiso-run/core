@@ -1480,11 +1480,13 @@ async def build_planner_messages(
     )
     if briefing and briefing["tools"]:
         if len(installed) <= tool_filter_threshold:
-            # Few tools — inject all, skip briefer's selection
+            # Few tools — inject all but with guides only for selected tools
             log.debug("Skipping briefer tool filter: %d tools <= threshold %d",
                       len(installed), tool_filter_threshold)
-            if full_tool_list:
-                context_parts.append(f"## Tools\n{full_tool_list}")
+            _selected = set(briefing["tools"])
+            tiered_list = build_planner_tool_list(installed, user_role, user_tools, selected_names=_selected)
+            if tiered_list:
+                context_parts.append(f"## Tools\n{tiered_list}")
         else:
             selected_names = set(briefing["tools"])
             selected_tools = [t for t in installed if t["name"] in selected_names]

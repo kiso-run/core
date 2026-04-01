@@ -222,6 +222,7 @@ def build_planner_tool_list(
     tools: list[dict],
     user_role: str = "admin",
     user_tools: str | list[str] | None = None,
+    selected_names: set[str] | None = None,
 ) -> str:
     """Build the tool list text for the planner context.
 
@@ -229,6 +230,10 @@ def build_planner_tool_list(
     - admin: sees all tools
     - user with tools="*": sees all tools
     - user with tools=["a","b"]: sees only listed tools
+
+    When *selected_names* is provided, only those tools get the full
+    usage_guide.  Other tools still appear (name + summary + args) so
+    the planner knows they exist, but without the guide to save tokens.
     """
     if not tools:
         return ""
@@ -271,9 +276,11 @@ def build_planner_tool_list(
         if omitted > 0:
             lines.append(f"  ({omitted} more optional args)")
 
-        guide = t.get("usage_guide", "")
-        if guide:
-            lines.append(f"  guide: {guide}")
+        # Full guide only for selected tools (or all if no selection)
+        if selected_names is None or t["name"] in selected_names:
+            guide = t.get("usage_guide", "")
+            if guide:
+                lines.append(f"  guide: {guide}")
 
     # File processing section — auto-generated from consumes declarations
     type_tools: dict[str, list[str]] = {}
