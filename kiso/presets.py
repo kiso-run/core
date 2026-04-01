@@ -19,6 +19,7 @@ class PresetManifest:
     connectors: list[str] = field(default_factory=list)
     knowledge_facts: list[dict] = field(default_factory=list)
     behaviors: list[str] = field(default_factory=list)
+    recipes: list[dict] = field(default_factory=list)
     env_vars: dict[str, dict] = field(default_factory=dict)
 
 
@@ -92,6 +93,21 @@ def validate_preset_manifest(manifest: dict) -> list[str]:
                 "kiso.preset.knowledge.behaviors must contain non-empty strings"
             )
 
+        recipes = knowledge.get("recipes", [])
+        if not isinstance(recipes, list):
+            errors.append("kiso.preset.knowledge.recipes must be a list")
+        else:
+            for i, recipe in enumerate(recipes):
+                if not isinstance(recipe, dict):
+                    errors.append(f"knowledge.recipes[{i}]: must be a table")
+                    continue
+                for req_key in ("name", "summary", "body"):
+                    val = recipe.get(req_key)
+                    if not val or not isinstance(val, str) or not val.strip():
+                        errors.append(
+                            f"knowledge.recipes[{i}]: {req_key} is required"
+                        )
+
     # Validate env section
     env = preset.get("env", {})
     if not isinstance(env, dict):
@@ -117,6 +133,7 @@ def _manifest_from_dict(kiso: dict) -> PresetManifest:
         connectors=preset.get("connectors", []),
         knowledge_facts=knowledge.get("facts", []),
         behaviors=knowledge.get("behaviors", []),
+        recipes=knowledge.get("recipes", []),
         env_vars=preset.get("env", {}),
     )
 

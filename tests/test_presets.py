@@ -744,3 +744,245 @@ class TestM819CleanProgressOutput:
         source = inspect.getsource(_plugin_install)
         assert "deps.sh" in source
         assert 'bash' in source
+
+
+# ---------------------------------------------------------------------------
+# M1030 — Recipes in preset system
+# ---------------------------------------------------------------------------
+
+
+class TestPresetRecipesManifest:
+    """M1030: recipes field in PresetManifest and validation."""
+
+    def test_manifest_has_recipes_field(self):
+        m = PresetManifest(
+            name="t", version="1", description="d",
+            recipes=[{"name": "r1", "summary": "s1", "body": "b1"}],
+        )
+        assert len(m.recipes) == 1
+        assert m.recipes[0]["name"] == "r1"
+
+    def test_manifest_recipes_default_empty(self):
+        m = PresetManifest(name="t", version="1", description="d")
+        assert m.recipes == []
+
+    def test_validate_valid_recipes(self):
+        manifest = {
+            "kiso": {
+                "type": "preset", "name": "x", "version": "1", "description": "d",
+                "preset": {
+                    "knowledge": {
+                        "recipes": [
+                            {"name": "r1", "summary": "Do stuff", "body": "Instructions here"},
+                        ],
+                    },
+                },
+            },
+        }
+        errors = validate_preset_manifest(manifest)
+        assert errors == []
+
+    def test_validate_recipe_missing_name(self):
+        manifest = {
+            "kiso": {
+                "type": "preset", "name": "x", "version": "1", "description": "d",
+                "preset": {
+                    "knowledge": {
+                        "recipes": [{"summary": "s", "body": "b"}],
+                    },
+                },
+            },
+        }
+        errors = validate_preset_manifest(manifest)
+        assert any("recipes[0]" in e and "name" in e for e in errors)
+
+    def test_validate_recipe_missing_body(self):
+        manifest = {
+            "kiso": {
+                "type": "preset", "name": "x", "version": "1", "description": "d",
+                "preset": {
+                    "knowledge": {
+                        "recipes": [{"name": "r", "summary": "s"}],
+                    },
+                },
+            },
+        }
+        errors = validate_preset_manifest(manifest)
+        assert any("body" in e for e in errors)
+
+    def test_validate_recipe_not_a_table(self):
+        manifest = {
+            "kiso": {
+                "type": "preset", "name": "x", "version": "1", "description": "d",
+                "preset": {
+                    "knowledge": {
+                        "recipes": ["not a table"],
+                    },
+                },
+            },
+        }
+        errors = validate_preset_manifest(manifest)
+        assert any("must be a table" in e for e in errors)
+
+    def test_validate_recipes_not_a_list(self):
+        manifest = {
+            "kiso": {
+                "type": "preset", "name": "x", "version": "1", "description": "d",
+                "preset": {
+                    "knowledge": {
+                        "recipes": "bad",
+                    },
+                },
+            },
+        }
+        errors = validate_preset_manifest(manifest)
+        assert any("recipes must be a list" in e for e in errors)
+
+    def test_load_preset_with_recipes(self, tmp_path):
+        toml = textwrap.dedent("""\
+            [kiso]
+            type = "preset"
+            name = "recipe-test"
+            version = "1.0.0"
+            description = "Preset with recipes"
+
+            [kiso.preset]
+
+            [kiso.preset.knowledge]
+            [[kiso.preset.knowledge.recipes]]
+            name = "exploration"
+            summary = "Verify before modifying"
+            body = "Check files before editing them."
+        """)
+        path = tmp_path / "preset.toml"
+        path.write_text(toml, encoding="utf-8")
+        m = load_preset(path)
+        assert len(m.recipes) == 1
+        assert m.recipes[0]["name"] == "exploration"
+        assert m.recipes[0]["summary"] == "Verify before modifying"
+        assert "Check files" in m.recipes[0]["body"]
+
+
+class TestPresetRecipeInstall:
+    """M1030: recipe installation writes .md files and tracks them."""
+
+    def test_install_writes_recipe_files(self, tmp_path, capsys):
+        from cli.preset_ops import install_preset
+
+        recipes_dir = tmp_path / "recipes"
+        manifest = PresetManifest(
+            name="recipe-preset", version="1.0.0", description="Test",
+            recipes=[
+                {"name": "exploration", "summary": "Verify state", "body": "Check first."},
+                {"name": "error-diagnosis", "summary": "Diagnose errors", "body": "Run diagnostics."},
+            ],
+        )
+        args = MagicMock()
+        saved_data = {}
+
+        def capture_save(name, data):
+            saved_data.update(data)
+
+        with patch("cli.preset_ops.KISO_DIR", tmp_path), \
+             patch("cli.preset_ops._load_installed", return_value=None), \
+             patch("cli.preset_ops._save_installed", side_effect=capture_save), \
+             patch("cli._http.cli_post") as mock_post:
+            mock_post.return_value = MagicMock(json=lambda: {"id": 1})
+            install_preset(args, manifest)
+
+        # Verify .md files were written
+        assert (recipes_dir / "exploration.md").is_file()
+        assert (recipes_dir / "error-diagnosis.md").is_file()
+
+        content = (recipes_dir / "exploration.md").read_text(encoding="utf-8")
+        assert "name: exploration" in content
+        assert "summary: Verify state" in content
+        assert "Check first." in content
+
+        # Verify tracking includes recipe_files
+        assert saved_data["recipe_files"] == ["exploration.md", "error-diagnosis.md"]
+
+        # Verify summary output
+        out = capsys.readouterr().out
+        assert "2 recipes" in out
+
+    def test_install_dry_run_shows_recipes(self, capsys):
+        from cli.preset_ops import install_preset
+
+        manifest = PresetManifest(
+            name="dry-recipe", version="1.0.0", description="Dry",
+            recipes=[{"name": "r1", "summary": "Test recipe", "body": "Do stuff."}],
+        )
+        args = MagicMock()
+        with patch("cli.preset_ops._load_installed", return_value=None):
+            install_preset(args, manifest, dry_run=True)
+        out = capsys.readouterr().out
+        assert "Recipes to install: 1" in out
+        assert "r1: Test recipe" in out
+
+
+class TestPresetRecipeRemove:
+    """M1030: recipe removal deletes installed .md files."""
+
+    def test_remove_deletes_recipe_files(self, tmp_path, capsys):
+        from cli.preset_ops import remove_preset
+
+        # Create recipe files
+        recipes_dir = tmp_path / "recipes"
+        recipes_dir.mkdir()
+        (recipes_dir / "exploration.md").write_text("---\nname: exploration\n---\nBody.", encoding="utf-8")
+        (recipes_dir / "error-diagnosis.md").write_text("---\nname: error-diagnosis\n---\nBody.", encoding="utf-8")
+
+        tracking_file = tmp_path / "presets" / "rm-recipe.installed.json"
+        tracking_data = {
+            "name": "rm-recipe", "version": "1.0.0", "description": "test",
+            "fact_ids": [], "behavior_ids": [],
+            "tools": [], "skills": [], "connectors": [],
+            "recipe_files": ["exploration.md", "error-diagnosis.md"],
+        }
+
+        def mock_request(method, url, **kw):
+            resp = MagicMock()
+            resp.json.return_value = {"deleted": True}
+            resp.raise_for_status = MagicMock()
+            return resp
+
+        args = MagicMock()
+        with patch("kiso.config.load_config", return_value=mock_cli_config()), \
+             patch("httpx.request", side_effect=mock_request), \
+             patch("cli.preset_ops.KISO_DIR", tmp_path), \
+             patch("cli.preset_ops._installed_path", return_value=tracking_file), \
+             patch("cli.preset_ops._load_installed", return_value=tracking_data):
+            remove_preset(args, "rm-recipe")
+
+        assert not (recipes_dir / "exploration.md").exists()
+        assert not (recipes_dir / "error-diagnosis.md").exists()
+
+        out = capsys.readouterr().out
+        assert "removed" in out.lower()
+        assert "2 recipes" in out
+
+    def test_remove_handles_missing_recipe_files(self, tmp_path, capsys):
+        """Removal should not fail if recipe files are already gone."""
+        from cli.preset_ops import remove_preset
+
+        tracking_data = {
+            "name": "rm-gone", "version": "1.0.0", "description": "test",
+            "fact_ids": [], "behavior_ids": [],
+            "tools": [], "skills": [], "connectors": [],
+            "recipe_files": ["gone.md"],
+        }
+        tracking_file = tmp_path / "presets" / "rm-gone.installed.json"
+
+        args = MagicMock()
+        with patch("kiso.config.load_config", return_value=mock_cli_config()), \
+             patch("httpx.request"), \
+             patch("cli.preset_ops.KISO_DIR", tmp_path), \
+             patch("cli.preset_ops._installed_path", return_value=tracking_file), \
+             patch("cli.preset_ops._load_installed", return_value=tracking_data):
+            remove_preset(args, "rm-gone")
+
+        out = capsys.readouterr().out
+        assert "removed" in out.lower()
+        # No recipe removal line since file didn't exist
+        assert "recipes" not in out

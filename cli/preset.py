@@ -48,6 +48,8 @@ def _show_preset_summary(manifest) -> None:
         print(f"  Connectors: {', '.join(manifest.connectors)}")
     if manifest.behaviors:
         print(f"  Behaviors: {len(manifest.behaviors)} guidelines")
+    if manifest.recipes:
+        print(f"  Recipes:   {len(manifest.recipes)}")
     print()
 
 

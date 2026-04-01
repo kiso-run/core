@@ -110,6 +110,10 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
             print(f"  Behaviors to seed: {len(manifest.behaviors)}")
             for b in manifest.behaviors:
                 print(f"    - {b}")
+        if manifest.recipes:
+            print(f"  Recipes to install: {len(manifest.recipes)}")
+            for r in manifest.recipes:
+                print(f"    - {r['name']}: {r['summary']}")
         if manifest.env_vars:
             print(f"  Env vars: {', '.join(manifest.env_vars.keys())}")
         return
@@ -155,6 +159,22 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         from cli.connector import _connector_install
         installed_connectors = _auto_install_plugins(manifest.connectors, _connector_install)
 
+    # Install recipes
+    recipe_files: list[str] = []
+    if manifest.recipes:
+        recipes_dir = KISO_DIR / "recipes"
+        recipes_dir.mkdir(parents=True, exist_ok=True)
+        for recipe in manifest.recipes:
+            filename = f"{recipe['name']}.md"
+            recipe_path = recipes_dir / filename
+            content = (
+                f"---\nname: {recipe['name']}\n"
+                f"summary: {recipe['summary']}\n---\n"
+                f"{recipe['body']}\n"
+            )
+            recipe_path.write_text(content, encoding="utf-8")
+            recipe_files.append(filename)
+
     # Save tracking file
     tracking = {
         "name": manifest.name,
@@ -167,6 +187,7 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         "connectors": manifest.connectors,
         "installed_tools": installed_tools,
         "installed_connectors": installed_connectors,
+        "recipe_files": recipe_files,
     }
     _save_installed(manifest.name, tracking)
 
@@ -183,6 +204,8 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         parts.append(f"{len(behavior_ids)} behaviors")
     if fact_ids:
         parts.append(f"{len(fact_ids)} facts")
+    if recipe_files:
+        parts.append(f"{len(recipe_files)} recipes")
     summary = ", ".join(parts) if parts else "no components"
     print(f"\n  {_c('✓', _GREEN)} Preset installed — {summary}")
     if skipped_tools:
@@ -224,6 +247,15 @@ def remove_preset(args, name: str) -> None:
         except SystemExit:
             pass
 
+    # Remove recipe files
+    removed_recipes = 0
+    recipes_dir = KISO_DIR / "recipes"
+    for filename in tracking.get("recipe_files", []):
+        recipe_path = recipes_dir / filename
+        if recipe_path.is_file():
+            recipe_path.unlink()
+            removed_recipes += 1
+
     # Remove tracking file
     path = _installed_path(name)
     if path.exists():
@@ -234,3 +266,5 @@ def remove_preset(args, name: str) -> None:
         print(f"  Removed {removed_facts} knowledge facts.")
     if removed_behaviors:
         print(f"  Removed {removed_behaviors} behaviors.")
+    if removed_recipes:
+        print(f"  Removed {removed_recipes} recipes.")
