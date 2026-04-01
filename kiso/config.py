@@ -18,6 +18,19 @@ LLM_API_KEY_ENV = "KISO_LLM_API_KEY"
 
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
+# Settings shown to the planner in system environment.
+# Only user-facing settings that the planner might need to change.
+USER_FACING_SETTINGS: tuple[str, ...] = (
+    "bot_name",
+    "bot_persona",
+    "context_messages",
+    "summarize_threshold",
+    "knowledge_max_facts",
+    "max_replan_depth",
+    "dream_enabled",
+    "dream_interval_hours",
+)
+
 # Default values used to write config.toml on first run.
 # NOT used as runtime fallbacks — all settings must be explicitly present.
 SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {

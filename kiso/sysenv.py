@@ -15,7 +15,7 @@ import shutil
 import time
 from pathlib import Path
 
-from kiso.config import Config, KISO_DIR
+from kiso.config import Config, KISO_DIR, SETTINGS_DEFAULTS, USER_FACING_SETTINGS as _USER_FACING_SETTINGS
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +294,10 @@ def collect_system_env(config: Config) -> dict:
         "reference_docs_path": str(KISO_DIR / "reference"),
         "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         "bot_persona": config.settings.get("bot_persona", ""),
+        "user_settings": {
+            k: config.settings.get(k, SETTINGS_DEFAULTS.get(k))
+            for k in _USER_FACING_SETTINGS
+        },
     }
 
 
@@ -383,9 +387,10 @@ def build_system_env_essential(env: dict, session: str = "") -> str:
         f"Plan limits: max {env['max_plan_tasks']} tasks per plan, "
         f"max {env['max_replan_depth']} replans (extendable by planner up to +3)"
     )
-    bot_persona = env.get("bot_persona", "")
-    if bot_persona:
-        lines.append(f"Bot persona: {bot_persona}")
+    user_settings = env.get("user_settings", {})
+    if user_settings:
+        settings_lines = [f"  {k} = {v}" for k, v in user_settings.items()]
+        lines.append("Configurable settings (kiso config set KEY VALUE):\n" + "\n".join(settings_lines))
     return "\n".join(lines)
 
 
