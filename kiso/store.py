@@ -270,6 +270,11 @@ CREATE TABLE IF NOT EXISTS project_members (
     PRIMARY KEY (project_id, username)
 );
 
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 """
 
 
@@ -1841,5 +1846,31 @@ async def get_user_project_role(
     )
     row = await cur.fetchone()
     return row["role"] if row else None
+
+
+# ---------------------------------------------------------------------------
+# Key-Value helpers (used for dream timestamp, etc.)
+# ---------------------------------------------------------------------------
+
+
+async def get_kv(db: aiosqlite.Connection, key: str) -> str | None:
+    """Return value for *key* from the kv table, or None."""
+    cur = await db.execute("SELECT value FROM kv WHERE key = ?", (key,))
+    row = await cur.fetchone()
+    return row["value"] if row else None
+
+
+async def set_kv(db: aiosqlite.Connection, key: str, value: str) -> None:
+    """Insert or replace a key-value pair."""
+    await db.execute(
+        "INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", (key, value),
+    )
+    await db.commit()
+
+
+async def update_fact_content(db: aiosqlite.Connection, fact_id: int, content: str) -> None:
+    """Update a fact's content text in place."""
+    await db.execute("UPDATE facts SET content = ? WHERE id = ?", (content, fact_id))
+    await db.commit()
 
 

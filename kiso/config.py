@@ -32,6 +32,10 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
     "fact_decay_rate": 0.1,
     "fact_archive_threshold": 0.3,
     "fact_consolidation_min_ratio": 0.3,
+    # dreamer (periodic knowledge consolidation)
+    "dream_enabled": True,
+    "dream_interval_hours": 24,
+    "dream_min_facts": 20,
     # planning
     "max_replan_depth": 5,
     "max_validation_retries": 3,
@@ -80,6 +84,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "paraphraser": "google/gemini-2.5-flash-lite",
     "messenger": "deepseek/deepseek-v3.2",
     "searcher": "perplexity/sonar",
+    "dreamer": "google/gemini-2.5-flash-lite",
 }
 
 # Per-role reasoning config sent to OpenRouter.  Roles not listed here
@@ -101,6 +106,7 @@ MAX_TOKENS_DEFAULTS: dict[str, int] = {
     "planner": 4000,
     "messenger": 4000,
     "searcher": 4000,
+    "dreamer": 4000,
 }
 
 # Descriptions shown during interactive install. Keyed by role name.
@@ -115,6 +121,7 @@ MODEL_DESCRIPTIONS: dict[str, str] = {
     "paraphraser": "prompt injection defense",
     "messenger": "writes human-readable responses",
     "searcher": "web search (native search)",
+    "dreamer": "periodic knowledge consolidation",
 }
 
 # Complete config.toml written on first run. Edit to configure your instance.
@@ -149,6 +156,7 @@ summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, ch
 paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
 messenger   = "qwen/qwen3.5-flash-02-23"            # user-facing responses (MMLU 82, natural)
 searcher    = "perplexity/sonar"               # web search (native search API)
+dreamer     = "google/gemini-2.5-flash-lite"  # periodic knowledge consolidation (async, cheap)
 
 [settings]
 # --- conversation ---
@@ -163,6 +171,9 @@ fact_decay_days           = 7
 fact_decay_rate           = 0.1
 fact_archive_threshold    = 0.3
 fact_consolidation_min_ratio = 0.3  # abort consolidation if fewer than this fraction survive
+dream_enabled             = true    # periodic holistic knowledge review
+dream_interval_hours      = 24      # minimum hours between dream runs
+dream_min_facts           = 20      # minimum facts to trigger a dream
 
 # --- planning ---
 max_replan_depth          = 5

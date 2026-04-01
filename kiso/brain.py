@@ -20,9 +20,10 @@ from kiso.recipe_loader import discover_recipes, build_planner_recipe_list
 from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
 from kiso.store import (
     _normalize_entity_name,
-    get_all_entities, get_all_tags, get_facts, get_pending_items,
+    delete_facts, get_all_entities, get_all_tags, get_facts, get_kv, get_pending_items,
     get_behavior_facts, get_recent_messages, get_safety_facts, get_session, search_facts,
     search_facts_by_entity, search_facts_by_tags, search_facts_scored,
+    set_kv, update_fact_content,
 )
 from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section, build_install_context
 
@@ -2857,3 +2858,129 @@ async def run_fact_consolidation(
             })
         # Skip invalid items
     return normalized
+
+
+# ---------------------------------------------------------------------------
+# Dreamer (periodic knowledge consolidation)
+# ---------------------------------------------------------------------------
+
+
+class DreamerError(Exception):
+    """Dreamer validation or generation failure."""
+
+
+DREAMER_SCHEMA: dict = _build_strict_schema("dreamer", {
+    "delete": {"type": "array", "items": {"type": "integer"}},
+    "update": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+            "id": {"type": "integer"},
+            "content": {"type": "string"},
+        },
+        "required": ["id", "content"],
+        "additionalProperties": False,
+    }},
+    "keep": {"type": "array", "items": {"type": "integer"}},
+}, ["delete", "update", "keep"])
+
+
+def build_dreamer_messages(facts_by_entity: dict[str, list[dict]]) -> list[dict]:
+    """Build the message list for the dreamer LLM call.
+
+    *facts_by_entity* maps entity name (or "(no entity)") to a list of
+    fact dicts, each with at least ``id`` and ``content``.
+    """
+    system_prompt = _load_system_prompt("dreamer")
+    parts: list[str] = []
+    for entity_name, facts in sorted(facts_by_entity.items()):
+        lines = "\n".join(f"  [{f['id']}] {f['content']}" for f in facts)
+        parts.append(f"### {entity_name}\n{lines}")
+    user_content = "## Stored Facts\n\n" + "\n\n".join(parts)
+    return _build_messages(system_prompt, user_content)
+
+
+def validate_dreamer(result: dict, expected_ids: set[int]) -> list[str]:
+    """Validate dreamer result. Returns list of error strings (empty = valid)."""
+    errors: list[str] = []
+    delete_ids = set(result.get("delete", []))
+    update_ids = {item["id"] for item in result.get("update", [])}
+    keep_ids = set(result.get("keep", []))
+
+    all_mentioned = delete_ids | update_ids | keep_ids
+    # Check for overlap between categories
+    if delete_ids & update_ids:
+        errors.append(f"IDs in both delete and update: {sorted(delete_ids & update_ids)}")
+    if delete_ids & keep_ids:
+        errors.append(f"IDs in both delete and keep: {sorted(delete_ids & keep_ids)}")
+    if update_ids & keep_ids:
+        errors.append(f"IDs in both update and keep: {sorted(update_ids & keep_ids)}")
+
+    missing = expected_ids - all_mentioned
+    if missing:
+        errors.append(f"Missing fact IDs: {sorted(missing)}")
+    extra = all_mentioned - expected_ids
+    if extra:
+        errors.append(f"Unknown fact IDs: {sorted(extra)}")
+
+    # Check update items have non-empty content
+    for item in result.get("update", []):
+        if not item.get("content", "").strip():
+            errors.append(f"Update for fact {item['id']} has empty content")
+
+    return errors
+
+
+def _group_facts_by_entity(
+    facts: list[dict], entities: list[dict],
+) -> dict[str, list[dict]]:
+    """Group facts by entity name. Facts without entity go under '(no entity)'."""
+    entity_map = {e["id"]: e["name"] for e in entities}
+    grouped: dict[str, list[dict]] = {}
+    for f in facts:
+        name = entity_map.get(f.get("entity_id")) or "(no entity)"
+        grouped.setdefault(name, []).append(f)
+    return grouped
+
+
+async def run_dreamer(
+    config: Config, db: aiosqlite.Connection, session: str = "",
+) -> dict:
+    """Run the dreamer on all stored facts.
+
+    Returns dict with keys: delete, update, keep.
+    Raises DreamerError if all retries exhausted.
+    """
+    all_facts = await get_facts(db, is_admin=True)
+    if not all_facts:
+        return {"delete": [], "update": [], "keep": []}
+
+    entities = await get_all_entities(db)
+    facts_by_entity = _group_facts_by_entity(all_facts, entities)
+    messages = build_dreamer_messages(facts_by_entity)
+    expected_ids = {f["id"] for f in all_facts}
+
+    result = await _retry_llm_with_validation(
+        config, "dreamer", messages, DREAMER_SCHEMA,
+        lambda r: validate_dreamer(r, expected_ids),
+        DreamerError, "Dreamer",
+        session=session,
+    )
+    log.info(
+        "Dreamer: delete=%d update=%d keep=%d",
+        len(result["delete"]), len(result["update"]), len(result["keep"]),
+    )
+    return result
+
+
+async def apply_dream_result(db: aiosqlite.Connection, result: dict) -> None:
+    """Apply dreamer result: delete and update facts."""
+    # Deletions
+    to_delete = result.get("delete", [])
+    if to_delete:
+        await delete_facts(db, to_delete)
+
+    # Updates
+    for item in result.get("update", []):
+        content = item.get("content", "").strip()
+        if content:
+            await update_fact_content(db, item["id"], content)

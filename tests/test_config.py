@@ -41,6 +41,7 @@ summarizer  = "deepseek/deepseek-v3.2"
 paraphraser = "deepseek/deepseek-v3.2"
 messenger   = "deepseek/deepseek-v3.2"
 searcher    = "perplexity/sonar"
+dreamer     = "google/gemini-2.5-flash-lite"
 
 [settings]
 context_messages          = 7
