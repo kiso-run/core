@@ -256,6 +256,18 @@ class TestPlannerMsgAnnounce:
         assert "write a script file" in planning_rules.lower()
 
 
+class TestM1046CodeExecutionRemoved:
+    """M1046: code_execution module absorbed into planning_rules."""
+
+    def test_code_execution_module_not_in_planner(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        assert "<!-- MODULE: code_execution -->" not in raw
+
+    def test_code_execution_not_in_briefer_modules(self):
+        from kiso.brain import BRIEFER_MODULES
+        assert "code_execution" not in BRIEFER_MODULES
+
+
 class TestM935DetailExpectConsistency:
     """M935: planning_rules must require detail/expect consistency."""
 
