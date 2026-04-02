@@ -3142,12 +3142,11 @@ class TestRunExecTranslator:
 
 
 class TestExecTranslatorSyntaxCheck:
-    """M504: bash -n syntax validation for long translated commands."""
+    """M504/M1058: bash -n syntax validation for all translated commands."""
 
-    async def test_short_command_skips_syntax_check(self):
-        """Commands <= 120 chars skip the bash -n check entirely."""
+    async def test_valid_short_command_passes(self):
+        """M1058: bash -n now runs on all commands, not just >120 chars."""
         config = _make_brain_config(models=full_models(worker="gpt-4"))
-        # Even a syntactically invalid short command passes (bash -n not called)
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value="echo ok"):
             result = await run_exec_translator(config, "Say ok", "OS: Linux")
@@ -3162,14 +3161,31 @@ class TestExecTranslatorSyntaxCheck:
             result = await run_exec_translator(config, "Run steps", "OS: Linux")
         assert result == long_cmd
 
-    async def test_long_invalid_command_raises(self):
+    async def test_invalid_command_raises(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         bad_cmd = "echo start " + "&& " * 50 + "&& echo end"
-        assert len(bad_cmd) > 120
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value=bad_cmd):
             with pytest.raises(ExecTranslatorError, match="(?i)syntax error"):
                 await run_exec_translator(config, "Run steps", "OS: Linux")
+
+    async def test_m1058_prompt_echo_back_rejected(self):
+        """M1058: command containing prompt fragments is rejected."""
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
+        garbage = "ls /tmp\nPublic files: write to pub/"
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=garbage):
+            with pytest.raises(ExecTranslatorError, match="echo-back"):
+                await run_exec_translator(config, "List files", "OS: Linux")
+
+    async def test_m1058_natural_language_rejected(self):
+        """M1058: command starting with natural language is rejected."""
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
+        explanation = "I will run the ls command to list files in /tmp"
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    return_value=explanation):
+            with pytest.raises(ExecTranslatorError, match="Natural language"):
+                await run_exec_translator(config, "List files", "OS: Linux")
 
 
 class TestPlannerPromptContent:

@@ -2793,23 +2793,48 @@ async def run_exec_translator(
         raise ExecTranslatorError(
             f"Cannot translate task to shell command: {detail}"
         )
-    # syntax-check long commands before execution
-    if len(command) > 120:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "bash", "-n",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+
+    # M1058: detect prompt echo-back — the model regurgitated fragments
+    # of its system/user prompt instead of generating a command.
+    _ECHO_MARKERS = (
+        "Public files:", "Blocked commands:", "Plan limits:",
+        "Exec CWD:", "System Environment", "Preceding Task Outputs",
+        "## Task", "Available binaries:",
+    )
+    for marker in _ECHO_MARKERS:
+        if marker in command:
+            raise ExecTranslatorError(
+                f"Prompt echo-back detected ('{marker}' in output)"
             )
-            _, stderr = await proc.communicate(input=command.encode())
-            if proc.returncode != 0:
-                hint = stderr.decode(errors="replace").strip()
-                raise ExecTranslatorError(
-                    f"Bash syntax error in generated command: {hint}"
-                )
-        except FileNotFoundError:
-            pass  # bash not available — skip check
+
+    # M1058: detect natural language — the model produced an explanation
+    # instead of a shell command.
+    _NL_PREFIXES = (
+        "I ", "The ", "Here ", "To ", "Let me", "This ", "Sure",
+        "Based on", "First,", "Note:", "Unfortunately",
+    )
+    first_line = command.split("\n", 1)[0]
+    if any(first_line.startswith(p) for p in _NL_PREFIXES):
+        raise ExecTranslatorError(
+            f"Natural language in command output: {first_line[:80]}"
+        )
+
+    # M1058: always run bash -n syntax check (was >120 chars only)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bash", "-n",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate(input=command.encode())
+        if proc.returncode != 0:
+            hint = stderr.decode(errors="replace").strip()
+            raise ExecTranslatorError(
+                f"Bash syntax error in generated command: {hint}"
+            )
+    except FileNotFoundError:
+        pass  # bash not available — skip check
     return command
 
 
