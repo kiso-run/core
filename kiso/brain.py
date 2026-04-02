@@ -1338,9 +1338,11 @@ async def build_planner_messages(
         # expect rules that must always be present (matches fallback path).
         if "planning_rules" not in modules:
             modules.append("planning_rules")
-        # M1049: tools_rules needed when briefer selects tools — contains
-        # "use directly" rule and args/guide validation.
-        if briefing["tools"] and "tools_rules" not in modules:
+        # M1054: tools_rules needed when any tools are installed — contains
+        # "use directly" rule and args/guide validation.  Broader than M1049
+        # (which checked briefing["tools"]) because the briefer sometimes
+        # skips tool selection even when tools are relevant.
+        if installed and "tools_rules" not in modules:
             modules.append("tools_rules")
         system_prompt = _load_modular_prompt("planner", modules)
     else:
