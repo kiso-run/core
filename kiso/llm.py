@@ -13,7 +13,7 @@ import time
 import httpx
 
 from kiso import audit
-from kiso.config import Config, LLM_API_KEY_ENV, MAX_TOKENS_DEFAULTS, Provider, REASONING_DEFAULTS
+from kiso.config import Config, CLASSIFIER_MAX_TOKENS, LLM_API_KEY_ENV, Provider, REASONING_DEFAULTS
 from kiso.text import extract_thinking
 
 log = logging.getLogger(__name__)
@@ -263,19 +263,20 @@ async def _read_sse_stream(
     response: httpx.Response,
     stall_timeout: float = 60,
     inflight_dict: dict | None = None,
-) -> tuple[str, str, int, int]:
+) -> tuple[str, str, int, int, str]:
     """Read an OpenAI-compatible SSE stream with stall detection.
 
     If no line arrives within *stall_timeout* seconds, raises LLMStallError.
     When *inflight_dict* is provided, updates its ``partial_content`` key on
     each content chunk so the CLI can display live streaming output.
 
-    Returns (content, reasoning_content, prompt_tokens, completion_tokens).
+    Returns (content, reasoning_content, prompt_tokens, completion_tokens, finish_reason).
     """
     content_parts: list[str] = []
     reasoning_parts: list[str] = []
     prompt_tokens = 0
     completion_tokens = 0
+    last_finish_reason = ""
 
     line_iter = response.aiter_lines().__aiter__()
     while True:
@@ -310,13 +311,16 @@ async def _read_sse_stream(
             r = delta.get("reasoning_content")
             if r:
                 reasoning_parts.append(r)
+            fr = choice.get("finish_reason")
+            if fr:
+                last_finish_reason = fr
 
         usage = chunk.get("usage")
         if usage:
             prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
             completion_tokens = usage.get("completion_tokens", completion_tokens)
 
-    return "".join(content_parts), "".join(reasoning_parts), prompt_tokens, completion_tokens
+    return "".join(content_parts), "".join(reasoning_parts), prompt_tokens, completion_tokens, last_finish_reason
 
 
 async def call_llm(
@@ -413,8 +417,10 @@ async def call_llm(
         }
         if effective_format:
             payload["response_format"] = effective_format
-        # apply per-role max_tokens default when not explicitly set.
-        effective_max_tokens = max_tokens if max_tokens is not None else MAX_TOKENS_DEFAULTS.get(role)
+        # Only set max_tokens for classifier (needs single-word response).
+        effective_max_tokens = max_tokens if max_tokens is not None else (
+            CLASSIFIER_MAX_TOKENS if role == "classifier" else None
+        )
         if effective_max_tokens is not None:
             payload["max_tokens"] = effective_max_tokens
         # per-role reasoning config (limits thinking tokens for simple roles)
@@ -481,11 +487,16 @@ async def call_llm(
 
                     # Read SSE stream — pass inflight dict for live partial output
                     _inflight = _inflight_calls.get(session) if session else None
-                    content, reasoning_api, input_tokens, output_tokens = await _read_sse_stream(
+                    content, reasoning_api, input_tokens, output_tokens, finish_reason = await _read_sse_stream(
                         resp, stall_timeout=stall_timeout, inflight_dict=_inflight,
                     )
 
             _cb_record_success()
+            if finish_reason == "length":
+                log.warning(
+                    "LLM response truncated (max_tokens hit) [role=%s, model=%s]",
+                    role, model_name,
+                )
             break  # success
         except LLMStallError:
             duration_ms = _ms_since(t0)

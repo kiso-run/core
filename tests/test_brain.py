@@ -2417,10 +2417,11 @@ class TestRunCurator:
             with pytest.raises(CuratorError, match="(?i)invalid JSON"):
                 await run_curator(config, learnings)
 
-    def test_curator_max_tokens_sufficient(self):
-        """M503: curator max_tokens must be >= 2000 to avoid JSON truncation."""
-        from kiso.config import MAX_TOKENS_DEFAULTS
-        assert MAX_TOKENS_DEFAULTS["curator"] >= 2000
+    def test_curator_no_artificial_max_tokens(self):
+        """M1057: curator has no artificial max_tokens cap (removed)."""
+        # MAX_TOKENS_DEFAULTS removed — only classifier gets a cap.
+        from kiso.config import CLASSIFIER_MAX_TOKENS
+        assert CLASSIFIER_MAX_TOKENS == 10  # sanity: classifier still capped
 
 
 # --- M9: build_summarizer_messages ---
@@ -4756,16 +4757,16 @@ class TestValidatePlanPluginDiscovery:
 
 
 class TestExecTranslatorMaxTokens:
-    """M105b/M296: worker role gets max_tokens from MAX_TOKENS_DEFAULTS."""
+    """M105b/M1057: worker role has no artificial max_tokens cap."""
 
     @pytest.mark.asyncio
-    async def test_exec_translator_uses_default_max_tokens(self):
+    async def test_exec_translator_no_max_tokens(self):
         config = _make_brain_config()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="echo hi") as mock_llm:
             await run_exec_translator(config, "print hi", "Linux x86_64", session="s1")
             mock_llm.assert_called_once()
             _, kwargs = mock_llm.call_args
-            # M296: max_tokens no longer hardcoded — applied by call_llm from defaults
+            # M1057: no max_tokens passed — call_llm won't set one for worker
             assert "max_tokens" not in kwargs or kwargs.get("max_tokens") is None
 
 
@@ -7487,11 +7488,11 @@ class TestM298NoTimeoutPartitioning:
         assert call_count[0] == 2
 
 
-# --- M296: Per-role max_tokens defaults ---
+# --- M1057: max_tokens removed for non-classifier roles ---
 
 
-class TestM296MaxTokensDefaults:
-    """M296: call_llm applies per-role max_tokens defaults."""
+class TestM1057MaxTokensRemoved:
+    """M1057: only classifier gets max_tokens; other roles have no cap."""
 
     def _config(self):
         return Config(
@@ -7503,19 +7504,18 @@ class TestM296MaxTokensDefaults:
             raw={},
         )
 
-    async def test_default_max_tokens_applied(self):
-        """Worker role gets max_tokens=500 from MAX_TOKENS_DEFAULTS."""
+    async def test_non_classifier_no_max_tokens(self):
+        """M1057: worker role gets no max_tokens in payload."""
         from kiso.llm import call_llm
-        from kiso.config import MAX_TOKENS_DEFAULTS
         config = self._config()
         with patch("kiso.llm._http_client") as mock_client:
             mock_client.stream = MagicMock(return_value=_brain_stream_cm("ls"))
             await call_llm(config, "worker", [{"role": "user", "content": "test"}])
             payload = mock_client.stream.call_args[1]["json"]
-            assert payload["max_tokens"] == MAX_TOKENS_DEFAULTS["worker"]
+            assert "max_tokens" not in payload
 
-    async def test_explicit_max_tokens_overrides_default(self):
-        """Explicit max_tokens parameter overrides the role default."""
+    async def test_explicit_max_tokens_still_honored(self):
+        """Explicit max_tokens parameter is still sent in payload."""
         from kiso.llm import call_llm
         config = self._config()
         with patch("kiso.llm._http_client") as mock_client:
@@ -7528,11 +7528,13 @@ class TestM296MaxTokensDefaults:
             payload = mock_client.stream.call_args[1]["json"]
             assert payload["max_tokens"] == 999
 
-    def test_all_roles_have_max_tokens_default(self):
-        """Every role in MODEL_DEFAULTS has a corresponding MAX_TOKENS_DEFAULTS entry."""
-        from kiso.config import MAX_TOKENS_DEFAULTS, MODEL_DEFAULTS
-        for role in MODEL_DEFAULTS:
-            assert role in MAX_TOKENS_DEFAULTS, f"Missing max_tokens default for role: {role}"
+    def test_only_classifier_has_default_max_tokens(self):
+        """M1057: CLASSIFIER_MAX_TOKENS exists; MAX_TOKENS_DEFAULTS is gone."""
+        from kiso.config import CLASSIFIER_MAX_TOKENS
+        assert CLASSIFIER_MAX_TOKENS == 10
+        # Verify MAX_TOKENS_DEFAULTS no longer exists
+        import kiso.config as cfg_mod
+        assert not hasattr(cfg_mod, "MAX_TOKENS_DEFAULTS")
 
 
 # --- M297: Retry status notification ---

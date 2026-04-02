@@ -1012,9 +1012,23 @@ class TestMaxTokensParam:
                 assert payload["max_tokens"] == 500
 
     @pytest.mark.asyncio
-    async def test_max_tokens_none_uses_role_default(self):
-        """M296: When max_tokens is None, the role default from MAX_TOKENS_DEFAULTS applies."""
-        from kiso.config import MAX_TOKENS_DEFAULTS
+    async def test_max_tokens_none_classifier_gets_default(self):
+        """M1057: classifier role gets CLASSIFIER_MAX_TOKENS when max_tokens is None."""
+        from kiso.config import CLASSIFIER_MAX_TOKENS
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream("plan"))
+                await call_llm(
+                    config, "classifier",
+                    [{"role": "user", "content": "hi"}],
+                )
+                payload = mock_client.stream.call_args[1]["json"]
+                assert payload["max_tokens"] == CLASSIFIER_MAX_TOKENS
+
+    @pytest.mark.asyncio
+    async def test_max_tokens_none_non_classifier_no_limit(self):
+        """M1057: non-classifier roles get no max_tokens when None is passed."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -1024,7 +1038,7 @@ class TestMaxTokensParam:
                     [{"role": "user", "content": "hi"}],
                 )
                 payload = mock_client.stream.call_args[1]["json"]
-                assert payload["max_tokens"] == MAX_TOKENS_DEFAULTS["worker"]
+                assert "max_tokens" not in payload
 
 
 # --- Inflight call tracking (M109c) ---
@@ -1332,11 +1346,12 @@ class TestM299SSEStreamParsing:
         ]
         from kiso.llm import _read_sse_stream
         resp = _MockStreamResp(200, lines)
-        content, reasoning, pt, ct = await _read_sse_stream(resp)
+        content, reasoning, pt, ct, fr = await _read_sse_stream(resp)
         assert content == "Hello world"
         assert reasoning == ""
         assert pt == 10
         assert ct == 5
+        assert fr == "stop"
 
     @pytest.mark.asyncio
     async def test_reasoning_chunks(self):
@@ -1350,9 +1365,10 @@ class TestM299SSEStreamParsing:
         ]
         from kiso.llm import _read_sse_stream
         resp = _MockStreamResp(200, lines)
-        content, reasoning, pt, ct = await _read_sse_stream(resp)
+        content, reasoning, pt, ct, fr = await _read_sse_stream(resp)
         assert content == "answer"
         assert reasoning == "step 1 step 2"
+        assert fr == "stop"
 
     @pytest.mark.asyncio
     async def test_comment_and_empty_lines_ignored(self):
@@ -1367,7 +1383,7 @@ class TestM299SSEStreamParsing:
         ]
         from kiso.llm import _read_sse_stream
         resp = _MockStreamResp(200, lines)
-        content, _, _, _ = await _read_sse_stream(resp)
+        content, _, _, _, _ = await _read_sse_stream(resp)
         assert content == "ok"
 
     @pytest.mark.asyncio
@@ -1381,7 +1397,7 @@ class TestM299SSEStreamParsing:
         ]
         from kiso.llm import _read_sse_stream
         resp = _MockStreamResp(200, lines)
-        content, _, _, _ = await _read_sse_stream(resp)
+        content, _, _, _, _ = await _read_sse_stream(resp)
         assert content == "ok"
 
     @pytest.mark.asyncio
@@ -1394,7 +1410,7 @@ class TestM299SSEStreamParsing:
         ]
         from kiso.llm import _read_sse_stream
         resp = _MockStreamResp(200, lines)
-        _, _, pt, ct = await _read_sse_stream(resp)
+        _, _, pt, ct, _ = await _read_sse_stream(resp)
         assert pt == 42
         assert ct == 7
 
@@ -1434,7 +1450,7 @@ class TestM300StallDetection:
             "data: [DONE]",
         ]
         resp = _MockStreamResp(200, lines)
-        content, _, _, _ = await _read_sse_stream(resp, stall_timeout=0.1)
+        content, _, _, _, _ = await _read_sse_stream(resp, stall_timeout=0.1)
         assert content == "ok"
 
     @pytest.mark.asyncio
@@ -1532,7 +1548,7 @@ class TestM303PartialContent:
         ]
         inflight = {"role": "worker", "model": "test"}
         resp = _MockStreamResp(200, lines)
-        content, _, _, _ = await _read_sse_stream(resp, inflight_dict=inflight)
+        content, _, _, _, _ = await _read_sse_stream(resp, inflight_dict=inflight)
         assert content == "Hello world"
         assert inflight["partial_content"] == "Hello world"
 
@@ -1570,7 +1586,7 @@ class TestM303PartialContent:
             "data: [DONE]",
         ]
         resp = _MockStreamResp(200, lines)
-        content, _, _, _ = await _read_sse_stream(resp, inflight_dict=None)
+        content, _, _, _, _ = await _read_sse_stream(resp, inflight_dict=None)
         assert content == "ok"
 
     @pytest.mark.asyncio
@@ -1585,7 +1601,7 @@ class TestM303PartialContent:
         ]
         inflight: dict = {}
         resp = _MockStreamResp(200, lines)
-        content, reasoning, _, _ = await _read_sse_stream(resp, inflight_dict=inflight)
+        content, reasoning, _, _, _ = await _read_sse_stream(resp, inflight_dict=inflight)
         assert content == "answer"
         assert reasoning == "think"
         # partial_content should only have the content, not reasoning

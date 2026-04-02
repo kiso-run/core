@@ -106,22 +106,10 @@ MODEL_DEFAULTS: dict[str, str] = {
 # Valid effort levels: "minimal", "low", "medium", "high".
 REASONING_DEFAULTS: dict[str, dict | None] = {}
 
-# Per-role max_tokens defaults.  Applied when call_llm receives
-# max_tokens=None.  Prevents runaway generation and reduces cost.
-# Override per-role via config [max_tokens] section.
-MAX_TOKENS_DEFAULTS: dict[str, int] = {
-    "classifier": 10,
-    "briefer": 2048,
-    "reviewer": 2048,
-    "curator": 4000,
-    "paraphraser": 500,
-    "summarizer": 2000,
-    "worker": 500,
-    "planner": 4000,
-    "messenger": 4000,
-    "searcher": 4000,
-    "consolidator": 4000,
-}
+# Only the classifier needs a max_tokens cap (single-word response).
+# All other roles rely on the model's native limit — removing artificial
+# caps prevents silent truncation of complex outputs.
+CLASSIFIER_MAX_TOKENS = 10
 
 # Descriptions shown during interactive install. Keyed by role name.
 MODEL_DESCRIPTIONS: dict[str, str] = {
