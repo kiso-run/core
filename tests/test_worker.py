@@ -10845,6 +10845,33 @@ class TestMsgTaskBrieferIntegration:
         # Briefer was called and failed, then messenger was called
         assert call_count[0] >= 2  # at least briefer + messenger
 
+    async def test_m1053_briefer_timeout_falls_back(self, db):
+        """M1053: briefer exceeding _BRIEFER_MSG_TIMEOUT triggers fallback."""
+        import kiso.worker.loop as _loop
+        config = make_config(settings={"briefer_enabled": True})
+
+        call_count = [0]
+
+        async def _slow_briefer(cfg, role, messages, **kw):
+            call_count[0] += 1
+            if role == "briefer":
+                await asyncio.sleep(999)  # will be cancelled by timeout
+            return "response"
+
+        old_timeout = _loop._BRIEFER_MSG_TIMEOUT
+        _loop._BRIEFER_MSG_TIMEOUT = 0.01  # trigger quickly in test
+        try:
+            with patch("kiso.brain.call_llm", side_effect=_slow_briefer):
+                await _msg_task(
+                    config, db, "sess1", "Tell the user",
+                    plan_outputs=self._plan_outputs(),
+                )
+        finally:
+            _loop._BRIEFER_MSG_TIMEOUT = old_timeout
+
+        # Briefer was called (and timed out), then messenger was called
+        assert call_count[0] >= 2
+
     async def test_no_plan_outputs_still_calls_briefer(self, db):
         """M260: briefer is called even without plan_outputs to filter context."""
         config = make_config(settings={"briefer_enabled": True})

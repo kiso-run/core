@@ -158,6 +158,7 @@ log = logging.getLogger(__name__)
 
 _MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
 _POST_INSTALL_RESCAN_DELAY: float = 3.0  # seconds to wait before rescan after tool install
+_BRIEFER_MSG_TIMEOUT: float = 30.0  # M1053: cap briefer in msg/exec tasks so it can't steal messenger budget
 
 # Task substatus labels written to the DB during execution
 _SUBSTATUS_TRANSLATING = "translating"
@@ -300,8 +301,9 @@ async def _msg_task(
                     f"{e['name']} ({e['kind']})" for e in all_entities
                 )
 
-            briefing = await run_briefer(
-                config, "messenger", detail, context_pool, session=session,
+            briefing = await asyncio.wait_for(
+                run_briefer(config, "messenger", detail, context_pool, session=session),
+                timeout=_BRIEFER_MSG_TIMEOUT,
             )
             # Filter plan_outputs by selected indices
             if plan_outputs:
@@ -1243,8 +1245,9 @@ async def _handle_exec_task(
     if _exec_briefer_ok:
         try:
             pool = {"plan_outputs": _format_plan_outputs_for_msg(ctx.plan_outputs)}
-            briefing = await run_briefer(
-                ctx.config, "worker", detail, pool, session=ctx.session,
+            briefing = await asyncio.wait_for(
+                run_briefer(ctx.config, "worker", detail, pool, session=ctx.session),
+                timeout=_BRIEFER_MSG_TIMEOUT,
             )
             indices = set(briefing.get("output_indices", []))
             if indices:
