@@ -124,6 +124,17 @@ class TestReplanFlowE2E:
         assert replan_reason is not None
         assert len(replan_reason) > 0
 
+        # M1055: use the real replan context builder so the planner gets
+        # "Previous Replan Attempts", "Suggested Fixes", "Completed Tasks"
+        from kiso.worker.utils import _build_replan_context
+        replan_ctx = _build_replan_context(
+            completed=completed,
+            remaining=remaining,
+            replan_reason=replan_reason,
+            replan_history=[],
+        )
+        enriched_msg = f"save report to the project\n\n{replan_ctx}"
+
         # Verify a new plan from the replan context is valid
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
@@ -132,11 +143,11 @@ class TestReplanFlowE2E:
             new_plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
-                    f"save report to the project\n\n## Failure Reason\n{replan_reason}",
+                    enriched_msg, is_replan=True,
                 ),
                 timeout=TIMEOUT,
             )
-        assert validate_plan(new_plan) == []
+        assert validate_plan(new_plan, is_replan=True) == []
 
 
 class TestKnowledgeFlowE2E:
