@@ -237,17 +237,15 @@ class TestPlannerMsgAnnounce:
         start = raw.index("<!-- MODULE: planning_rules -->")
         end = raw.index("<!-- MODULE:", start + 1)
         planning_rules = raw[start:end]
-        # Must allow announce msg before action tasks
-        assert "announcement" in planning_rules.lower()
+        # M1052: default plan shape with announce pattern
+        assert "default plan shape" in planning_rules.lower()
+        assert "msg announce" in planning_rules.lower()
         # Must forbid fabrication in announcements
         assert "never fabricate" in planning_rules.lower()
-        # Must constrain msg-only plans to specific cases
-        assert "valid only for" in planning_rules.lower()
+        # Must state msg-only plans are rejected by validator
+        assert "rejected by the validator" in planning_rules.lower()
         # Must require action tasks for action requests
-        assert "include at least one exec/tool/search" in planning_rules.lower()
-        # Must explicitly require exec for system/Python installs
-        assert "system packages" in planning_rules.lower()
-        assert "always requires exec" in planning_rules.lower()
+        assert "at least one exec/tool/search task" in planning_rules.lower()
 
     def test_one_liner_rule_in_planning_rules(self):
         """M1046: one-liner blocking rule moved from code_execution to planning_rules."""

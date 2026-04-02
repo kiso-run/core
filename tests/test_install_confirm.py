@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kiso.brain import (
+    PlanError,
     _load_modular_prompt,
     _retry_llm_with_validation,
     run_planner,
@@ -450,17 +451,17 @@ class TestM670MsgOnlyFreshInstanceProposal:
             plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
         assert plan["install_proposal"] is True
 
-    async def test_msg_only_with_tools_installed_no_forced_proposal(self, db):
-        """msg-only plan + tools installed → follows needs_install (False)."""
+    async def test_msg_only_with_tools_installed_rejected(self, db):
+        """M1052: msg-only + tools installed + no needs_install → rejected."""
         config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=None)),
             patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            pytest.raises(PlanError, match="only msg tasks"),
         ):
-            plan = await run_planner(db, config, "sess1", "admin", "ciao")
-        assert plan["install_proposal"] is False
+            await run_planner(db, config, "sess1", "admin", "ciao")
 
     async def test_msg_only_needs_install_explicit(self, db):
         """msg-only + needs_install=["browser"] → True regardless of tools."""

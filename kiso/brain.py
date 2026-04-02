@@ -849,20 +849,25 @@ _ARTIFACT_NOUNS = frozenset({
 def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
     has_needs_install: bool = False,
+    has_knowledge: bool = False,
+    has_installed_skills: bool = True,
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
 
-    # msg tasks must not appear before all data-gathering tasks.
+    # M1052: msg-only plans (no exec/tool/search at all) are rejected unless
+    # an exemption applies.  Announce msgs BEFORE action tasks are fine.
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL}
-    first_msg_idx = next((i for i, t in enumerate(tasks) if t.get("type") == TASK_TYPE_MSG), None)
-    last_data_idx = next((i for i, t in reversed(list(enumerate(tasks))) if t.get("type") in _DATA_TYPES), None)
-    if first_msg_idx is not None and last_data_idx is not None and first_msg_idx < last_data_idx:
-        errors.append(
-            f"Task {first_msg_idx + 1}: msg task must come after all "
-            f"exec/search/tool tasks (task {last_data_idx + 1} is later). "
-            f"Msg tasks communicate results — place them after investigation."
-        )
+    has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
+    if not has_action and not is_replan:
+        # Exemptions: install proposals, knowledge storage, fresh instance
+        if not has_needs_install and not has_knowledge and has_installed_skills:
+            errors.append(
+                "Plan has only msg tasks — include at least one "
+                "exec/tool/search task for action requests. "
+                "Msg-only is valid only for kiso tool install proposals "
+                "(set needs_install), knowledge storage, or clarifications."
+            )
 
     # install execs allowed in replans, when user approved in prior msg cycle,
     # or when user directly requested install (needs_install is empty — no proposal).
@@ -991,6 +996,8 @@ def validate_plan(
     errors.extend(_validate_plan_ordering(
         tasks, is_replan, install_approved,
         has_needs_install=bool(plan.get("needs_install")),
+        has_knowledge=bool(plan.get("knowledge")),
+        has_installed_skills=bool(installed_skills),
     ))
     errors.extend(_validate_plan_groups(tasks))
 

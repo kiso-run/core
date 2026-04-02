@@ -506,25 +506,25 @@ class TestValidatePlan:
 
     # --- M137: msg must come after data-gathering tasks ---
 
-    def test_msg_before_exec_rejected(self):
-        """M137: msg task before exec tasks must fail validation."""
+    def test_msg_before_exec_allowed(self):
+        """M1052: [msg, exec, msg] announce pattern is now valid."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian. describe results", "expect": None, "tool": None, "args": None},
             {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("msg task must come after" in e for e in errors)
+        assert not any("msg task must come after" in e for e in errors)
 
-    def test_msg_before_search_rejected(self):
-        """M137: msg before search is also rejected."""
+    def test_msg_before_search_allowed(self):
+        """M1052: [msg, search, msg] announce pattern is now valid."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. let me check", "expect": None, "tool": None, "args": None},
             {"type": "search", "detail": "query", "expect": "results"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("msg task must come after" in e for e in errors)
+        assert not any("msg task must come after" in e for e in errors)
 
     def test_msg_after_all_exec_valid(self):
         """M137: msg after all exec/search tasks is valid."""
@@ -556,18 +556,14 @@ class TestValidatePlan:
     # --- M1037: announce msgs allowed ---
 
     def test_m1037_announce_msg_first_valid(self):
-        """M1037: [msg, exec, msg] — announce msg before exec is valid."""
+        """M1037/M1052: [msg, exec, msg] — announce msg before exec is valid."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. I will search for the info now.", "expect": None, "tool": None, "args": None},
             {"type": "exec", "detail": "search for data", "expect": "results"},
             {"type": "msg", "detail": "Answer in English. Here are the results.", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        # The ordering check fires because msg[0] < exec[1], but this is
-        # the existing validation behavior (it predates M1037).
-        # M1037 changed the PROMPT, not the validation code.
-        # The validation still rejects msg-before-data-task plans.
-        assert any("msg task must come after" in e for e in errors)
+        assert not any("msg task must come after" in e for e in errors)
 
     def test_m1037_needs_install_msg_only_valid(self):
         """M1037: needs_install + [msg] plan passes validation."""
@@ -8075,14 +8071,15 @@ class TestValidatePlanStructure:
 class TestValidatePlanOrdering:
     """Focused tests for _validate_plan_ordering."""
 
-    def test_msg_before_exec_rejected(self):
+    def test_msg_before_exec_allowed(self):
+        """M1052: msg before exec is now valid (announce pattern)."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "msg", "detail": "Answer in English. hi"},
             {"type": "exec", "detail": "do something", "expect": "done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
-        assert any("msg task must come after" in e for e in errors)
+        assert not any("msg task must come after" in e for e in errors)
 
     def test_install_with_needs_install_blocked(self):
         """M979: install exec + needs_install set → blocked (mixed propose+install)."""
@@ -8158,6 +8155,91 @@ class TestValidatePlanOrdering:
         ]
         errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=True)
         assert any("replan" in e for e in errors)
+
+
+class TestM1052MsgOnlyValidation:
+    """M1052: msg-only plans rejected unless exemption applies."""
+
+    def test_msg_only_rejected_with_tools(self):
+        """M1052: [msg] with installed skills → rejected."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. hello"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_installed_skills=True,
+        )
+        assert any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_allowed_needs_install(self):
+        """M1052: [msg] with needs_install → passes (install proposal)."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. install browser?"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_needs_install=True, has_installed_skills=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_allowed_knowledge(self):
+        """M1052: [msg] with knowledge → passes."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. noted"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_knowledge=True, has_installed_skills=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_allowed_no_tools(self):
+        """M1052: [msg] with no installed skills (fresh instance) → passes."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. hello"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_installed_skills=False,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_allowed_replan(self):
+        """M1052: [msg] in replan → passes."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. done"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=True, install_approved=False,
+            has_installed_skills=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_announce_pattern_valid(self):
+        """M1052: [msg, exec, msg] announce pattern passes."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "msg", "detail": "Answer in English. I will check now"},
+            {"type": "exec", "detail": "do something", "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. results"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_installed_skills=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+        assert not any("msg task must come after" in e for e in errors)
+
+    def test_msg_only_via_validate_plan_no_skills(self):
+        """M1052: validate_plan with installed_skills=None → fresh instance exempt."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. hello", "expect": None, "tool": None, "args": None},
+        ]}
+        errors = validate_plan(plan)
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_via_validate_plan_with_skills(self):
+        """M1052: validate_plan with installed_skills=["browser"] → rejected."""
+        plan = {"tasks": [
+            {"type": "msg", "detail": "Answer in English. hello", "expect": None, "tool": None, "args": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["browser"])
+        assert any("Plan has only msg tasks" in e for e in errors)
 
 
 class TestValidatePlanGroups:
