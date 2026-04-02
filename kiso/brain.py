@@ -1554,9 +1554,11 @@ async def build_planner_messages(
         context_parts.append(
             "## Install Status\n"
             "A prior plan proposed tool installation and the user approved. "
-            "For tools NOT yet installed: plan an exec task to install them "
-            "via the kiso CLI, then replan as last task. Do NOT add tool tasks "
-            "for uninstalled tools — they become available after the replan. "
+            "Do NOT set needs_install — the user has already approved. "
+            "Plan exec tasks to install directly via the kiso CLI "
+            "(e.g., exec 'kiso tool install browser'), then replan as last task. "
+            "Do NOT add tool tasks for uninstalled tools — they become "
+            "available after the replan. "
             "For tools already installed: use them directly."
         )
 
