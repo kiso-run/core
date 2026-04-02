@@ -850,23 +850,21 @@ def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
     has_needs_install: bool = False,
     has_knowledge: bool = False,
-    has_installed_skills: bool = True,
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
 
-    # M1052: msg-only plans (no exec/tool/search at all) are rejected unless
-    # an exemption applies.  Announce msgs BEFORE action tasks are fine.
-    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL}
+    # M1056: msg-only plans are rejected unless needs_install or knowledge is set.
+    # Announce msgs BEFORE action tasks are fine — only pure msg-only is blocked.
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL, TASK_TYPE_REPLAN}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
-        # Exemptions: install proposals, knowledge storage, fresh instance
-        if not has_needs_install and not has_knowledge and has_installed_skills:
+        if not has_needs_install and not has_knowledge:
             errors.append(
                 "Plan has only msg tasks — include at least one "
                 "exec/tool/search task for action requests. "
                 "Msg-only is valid only for kiso tool install proposals "
-                "(set needs_install), knowledge storage, or clarifications."
+                "(set needs_install) or knowledge storage."
             )
 
     # install execs allowed in replans, when user approved in prior msg cycle,
@@ -997,7 +995,6 @@ def validate_plan(
         tasks, is_replan, install_approved,
         has_needs_install=bool(plan.get("needs_install")),
         has_knowledge=bool(plan.get("knowledge")),
-        has_installed_skills=bool(installed_skills),
     ))
     errors.extend(_validate_plan_groups(tasks))
 

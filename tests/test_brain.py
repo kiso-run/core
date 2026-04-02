@@ -276,6 +276,7 @@ class TestValidatePlan:
     def test_knowledge_null_accepted(self):
         """M968: knowledge=null passes validation."""
         plan = {"tasks": [
+            {"type": "exec", "detail": "echo hello", "expect": "hello", "tool": None, "args": None},
             {"type": "msg", "detail": "Answer in English. noted", "expect": None, "tool": None, "args": None},
         ], "knowledge": None}
         errors = validate_plan(plan)
@@ -305,11 +306,13 @@ class TestValidatePlan:
         # Two exec-without-expect + last-not-msg
         assert len(errors) >= 3
 
-    def test_single_msg_task_valid(self):
+    def test_single_msg_task_rejected(self):
+        """M1056: single msg task without exemption flags is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Hello!", "expect": None},
         ]}
-        assert validate_plan(plan) == []
+        errors = validate_plan(plan)
+        assert any("only msg tasks" in e for e in errors)
 
     def test_exec_with_expect_valid(self):
         plan = {"tasks": [
@@ -536,12 +539,13 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
-    def test_msg_only_plan_valid(self):
-        """M137: plan with only a msg (no data tasks) is valid."""
+    def test_msg_only_plan_rejected_without_flags(self):
+        """M1056: plan with only a msg (no data tasks) is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Hello!", "expect": None, "tool": None, "args": None},
         ]}
-        assert validate_plan(plan) == []
+        errors = validate_plan(plan)
+        assert any("only msg tasks" in e for e in errors)
 
     def test_msg_between_exec_and_replan_valid(self):
         """M137: [exec, msg, replan] — msg after exec, before replan — valid."""
@@ -640,6 +644,7 @@ class TestValidatePlan:
         plan = {
             "extend_replan": 2,
             "tasks": [
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "tool": None, "args": None},
                 {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
             ],
         }
@@ -1508,7 +1513,10 @@ class TestBuildPlannerMessages:
 VALID_PLAN = json.dumps({
     "goal": "Say hello",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "Answer in English. Hello!", "tool": None, "args": None, "expect": None}],
+    "tasks": [
+        {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "hello"},
+        {"type": "msg", "detail": "Answer in English. Hello!", "tool": None, "args": None, "expect": None},
+    ],
 })
 
 INVALID_PLAN = json.dumps({
@@ -1541,7 +1549,7 @@ class TestRunPlanner:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_PLAN):
             plan = await run_planner(db, config, "sess1", "admin", "hello")
         assert plan["goal"] == "Say hello"
-        assert len(plan["tasks"]) == 1
+        assert len(plan["tasks"]) == 2
 
     async def test_retry_on_invalid_then_valid(self, db, config):
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -3313,6 +3321,7 @@ class TestM171StripExtendReplan:
         plan = {
             "extend_replan": 3,
             "tasks": [
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "tool": None, "args": None},
                 {"type": "msg", "detail": "Answer in English. hello", "expect": None, "tool": None, "args": None},
             ],
         }
@@ -3324,6 +3333,7 @@ class TestM171StripExtendReplan:
         plan = {
             "extend_replan": 2,
             "tasks": [
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "tool": None, "args": None},
                 {"type": "msg", "detail": "Answer in English. hello", "expect": None, "tool": None, "args": None},
             ],
         }
@@ -3334,6 +3344,7 @@ class TestM171StripExtendReplan:
     def test_no_extend_replan_no_error(self):
         plan = {
             "tasks": [
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "tool": None, "args": None},
                 {"type": "msg", "detail": "Answer in English. hello", "expect": None, "tool": None, "args": None},
             ],
         }
@@ -3348,13 +3359,22 @@ _MSG_PLAN_FOR_USER = json.dumps({
     "goal": "Relay user management request to admin",
     "secrets": None,
     "extend_replan": None,
-    "tasks": [{
-        "type": "msg",
-        "detail": "Answer in English. I cannot add users directly. Please ask your admin to run: kiso user add bob --role user",
-        "tool": None,
-        "args": None,
-        "expect": None,
-    }],
+    "tasks": [
+        {
+            "type": "exec",
+            "detail": "List current users with kiso user list",
+            "tool": None,
+            "args": None,
+            "expect": "User list output",
+        },
+        {
+            "type": "msg",
+            "detail": "Answer in English. I cannot add users directly. Please ask your admin to run: kiso user add bob --role user",
+            "tool": None,
+            "args": None,
+            "expect": None,
+        },
+    ],
 })
 
 
@@ -3396,8 +3416,8 @@ class TestM82PlannerAskThenAdd:
         """run_planner with user_role='user' returns the msg plan without errors."""
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=_MSG_PLAN_FOR_USER):
             plan = await run_planner(db, config, "sess1", "user", "add user bob to kiso")
-        assert plan["tasks"][0]["type"] == "msg"
-        assert len(plan["tasks"]) == 1
+        assert plan["tasks"][-1]["type"] == "msg"
+        assert len(plan["tasks"]) == 2
 
     async def test_llm_sees_caller_role_and_request_together(self, db, config):
         """LLM receives both '## Caller Role\\nuser' and the kiso user add request."""
@@ -4783,7 +4803,10 @@ class TestRetryJsonErrorPosition:
         config = _make_brain_config()
         valid_plan = json.dumps({
             "goal": "test", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None}],
+            "tasks": [
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "tool": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
+            ],
         })
         mock_messages = [
             {"role": "system", "content": "sys"},
@@ -5691,8 +5714,11 @@ class TestBrieferPlannerIntegration:
                 return json.dumps(briefing)
             return json.dumps({
                 "goal": "browse", "secrets": None,
-                "tasks": [{"type": "msg", "detail": "Answer in English. report results",
-                           "tool": None, "args": None, "expect": None}],
+                "tasks": [
+                    {"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"},
+                    {"type": "msg", "detail": "Answer in English. report results",
+                     "tool": None, "args": None, "expect": None},
+                ],
             })
 
         # M387: provide browser skill so briefer skill selection isn't cleared
@@ -5770,8 +5796,11 @@ class TestBrieferPlannerIntegration:
                 raise LLMError("briefer down")
             return json.dumps({
                 "goal": "test", "secrets": None,
-                "tasks": [{"type": "msg", "detail": "Answer in English. hello there",
-                           "tool": None, "args": None, "expect": None}],
+                "tasks": [
+                    {"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"},
+                    {"type": "msg", "detail": "Answer in English. hello there",
+                     "tool": None, "args": None, "expect": None},
+                ],
             })
 
         with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
@@ -6809,7 +6838,10 @@ class TestM269RetryOnLLMError:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "test", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. hello there", "tool": None, "args": None, "expect": None}],
+            "tasks": [
+                {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "hello"},
+                {"type": "msg", "detail": "Answer in English. hello there", "tool": None, "args": None, "expect": None},
+            ],
         })
 
         async def _flaky(cfg, role, messages, **kw):
@@ -6848,7 +6880,7 @@ class TestM269RetryOnLLMError:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
         captured_messages: list[list[dict]] = []
 
@@ -6905,7 +6937,7 @@ class TestM308FallbackModel:
         models_seen: list[str | None] = []
         valid_plan = json.dumps({
             "goal": "test", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. hello there", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. hello there", "tool": None, "args": None, "expect": None}],
         })
 
         async def _mock_llm(cfg, role, messages, model_override=None, **kw):
@@ -6961,7 +6993,7 @@ class TestM308FallbackModel:
         models_seen: list[str | None] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _ok(cfg, role, messages, model_override=None, **kw):
@@ -6984,7 +7016,7 @@ class TestM308FallbackModel:
         retry_reasons: list[str] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _mock_llm(cfg, role, messages, **kw):
@@ -7028,8 +7060,11 @@ class TestM630CircuitBreakerFallback:
         models_seen: list[str | None] = []
         valid_plan = json.dumps({
             "goal": "test", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. Report the results to the user",
-                        "tool": None, "args": None, "expect": None}],
+            "tasks": [
+                {"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "Answer in English. Report the results to the user",
+                 "tool": None, "args": None, "expect": None},
+            ],
         })
 
         async def _mock_llm(cfg, role, messages, model_override=None, **kw):
@@ -7143,7 +7178,7 @@ class TestM309ReplanContextDedup:
         )
         plan_with_extend = json.dumps({
             "goal": "test", "secrets": None, "extend_replan": 2,
-            "tasks": [{"type": "msg", "detail": "Answer in English. hello there", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. hello there", "tool": None, "args": None, "expect": None}],
         })
 
         async def _mock_llm(cfg, role, messages, **kw):
@@ -7391,7 +7426,7 @@ class TestM298NoTimeoutPartitioning:
         captured_kwargs: list[dict] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _capture(cfg, role, messages, **kw):
@@ -7433,7 +7468,7 @@ class TestM298NoTimeoutPartitioning:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _timeout_then_ok(cfg, role, messages, **kw):
@@ -7522,7 +7557,7 @@ class TestM297RetryNotification:
         retry_calls: list[tuple] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
         call_count = [0]
 
@@ -7552,7 +7587,7 @@ class TestM297RetryNotification:
         retry_calls: list[tuple] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _ok(cfg, role, messages, **kw):
@@ -7575,7 +7610,7 @@ class TestM297RetryNotification:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _flaky(cfg, role, messages, **kw):
@@ -7619,7 +7654,7 @@ class TestM302StallRetryIntegration:
         calls = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _stall_then_ok(cfg, role, messages, **kw):
@@ -7731,7 +7766,7 @@ class TestM302StallRetryIntegration:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _mixed_failures(cfg, role, messages, **kw):
@@ -7770,7 +7805,7 @@ class TestM302StallRetryIntegration:
         captured_kwargs: list[dict] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "tool": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None}],
         })
 
         async def _capture(cfg, role, messages, **kw):
@@ -8160,13 +8195,12 @@ class TestValidatePlanOrdering:
 class TestM1052MsgOnlyValidation:
     """M1052: msg-only plans rejected unless exemption applies."""
 
-    def test_msg_only_rejected_with_tools(self):
-        """M1052: [msg] with installed skills → rejected."""
+    def test_msg_only_rejected(self):
+        """M1056: [msg] without exemption flags → rejected."""
         from kiso.brain import _validate_plan_ordering
         tasks = [{"type": "msg", "detail": "Answer in English. hello"}]
         errors = _validate_plan_ordering(
             tasks, is_replan=False, install_approved=False,
-            has_installed_skills=True,
         )
         assert any("Plan has only msg tasks" in e for e in errors)
 
@@ -8176,7 +8210,7 @@ class TestM1052MsgOnlyValidation:
         tasks = [{"type": "msg", "detail": "Answer in English. install browser?"}]
         errors = _validate_plan_ordering(
             tasks, is_replan=False, install_approved=False,
-            has_needs_install=True, has_installed_skills=True,
+            has_needs_install=True,
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
 
@@ -8186,17 +8220,7 @@ class TestM1052MsgOnlyValidation:
         tasks = [{"type": "msg", "detail": "Answer in English. noted"}]
         errors = _validate_plan_ordering(
             tasks, is_replan=False, install_approved=False,
-            has_knowledge=True, has_installed_skills=True,
-        )
-        assert not any("Plan has only msg tasks" in e for e in errors)
-
-    def test_msg_only_allowed_no_tools(self):
-        """M1052: [msg] with no installed skills (fresh instance) → passes."""
-        from kiso.brain import _validate_plan_ordering
-        tasks = [{"type": "msg", "detail": "Answer in English. hello"}]
-        errors = _validate_plan_ordering(
-            tasks, is_replan=False, install_approved=False,
-            has_installed_skills=False,
+            has_knowledge=True,
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
 
@@ -8206,7 +8230,6 @@ class TestM1052MsgOnlyValidation:
         tasks = [{"type": "msg", "detail": "Answer in English. done"}]
         errors = _validate_plan_ordering(
             tasks, is_replan=True, install_approved=False,
-            has_installed_skills=True,
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
 
@@ -8220,18 +8243,9 @@ class TestM1052MsgOnlyValidation:
         ]
         errors = _validate_plan_ordering(
             tasks, is_replan=False, install_approved=False,
-            has_installed_skills=True,
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
         assert not any("msg task must come after" in e for e in errors)
-
-    def test_msg_only_via_validate_plan_no_skills(self):
-        """M1052: validate_plan with installed_skills=None → fresh instance exempt."""
-        plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. hello", "expect": None, "tool": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert not any("Plan has only msg tasks" in e for e in errors)
 
     def test_msg_only_via_validate_plan_with_skills(self):
         """M1052: validate_plan with installed_skills=["browser"] → rejected."""

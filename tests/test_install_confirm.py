@@ -440,16 +440,16 @@ class TestM670MsgOnlyFreshInstanceProposal:
         yield conn
         await conn.close()
 
-    async def test_msg_only_no_tools_sets_install_proposal(self, db):
-        """msg-only plan + no installed tools + needs_install=null → True."""
+    async def test_msg_only_no_tools_rejected(self, db):
+        """M1056: msg-only plan + no installed tools + needs_install=null → rejected."""
         config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=None)),
             patch("kiso.brain.discover_tools", return_value=[]),
+            pytest.raises(PlanError, match="only msg tasks"),
         ):
-            plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
-        assert plan["install_proposal"] is True
+            await run_planner(db, config, "sess1", "admin", "vai su google.com")
 
     async def test_msg_only_with_tools_installed_rejected(self, db):
         """M1052: msg-only + tools installed + no needs_install → rejected."""
