@@ -360,10 +360,8 @@ class TestF42AiderAddFeature:
         result = await run_message(
             "il file /tmp/kiso_test_f42.py contiene una classe Calculator "
             "con solo il metodo add. usa aider per aggiungere un metodo "
-            "multiply(self, a, b) che ritorna a * b, poi esegui "
-            "python3 -c \"import sys; sys.path.insert(0, '/tmp'); "
-            "from kiso_test_f42 import Calculator; c = Calculator(); "
-            "print(c.multiply(5, 6))\" e dimmi il risultato",
+            "multiply(self, a, b) che ritorna a * b, poi testa "
+            "Calculator().multiply(5, 6) e dimmi il risultato",
             timeout=600,
         )
         assert result.success, f"Plan failed: {result.task_types()}"
@@ -374,7 +372,7 @@ class TestF42AiderAddFeature:
             t.get("output") or "" for t in result.tasks
         )
         assert re.search(r"\b30\b", all_output), (
-            f"Expected '30' in output (5*6 after add), got: {all_output[:500]}"
+            f"Expected '30' in output (5*6 via multiply), got: {all_output[:500]}"
         )
         assert_no_failure_language(result.last_plan_msg_output)
 

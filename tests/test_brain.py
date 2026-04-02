@@ -1254,6 +1254,39 @@ class TestBuildPlannerMessages:
         user_content = msgs[1]["content"]
         assert "System Environment" in user_content
 
+    async def test_m1049_tools_rules_forced_when_briefer_selects_tools(self, db, config):
+        """M1049: tools_rules forced when briefer selects tools."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        fake_tool = {
+            "name": "aider", "summary": "Code editing", "args_schema": {},
+            "env": {}, "session_secrets": [], "path": "/fake",
+            "version": "0.1", "description": "",
+        }
+        with (
+            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            # Briefer selects 1 tool but 0 modules
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": ["aider"], "exclude_recipes": [],
+                "context": "", "output_indices": [], "relevant_tags": [],
+                "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "use aider to add a method",
+            )
+        system = msgs[0]["content"]
+        # tools_rules must be force-added when briefer selects tools
+        assert "Listed tools are confirmed installed" in system
+
     async def test_install_context_injected_with_kiso_native(self, db, config):
         """M963: Install Context section injected when kiso_native is force-added."""
         await create_session(db, "sess1")
