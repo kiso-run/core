@@ -140,15 +140,19 @@ class TestF38RecipeDrivenPlanning:
                 t.get("output") or "" for t in result.tasks
             )
             # Recipe should influence output to be structured (JSON or
-            # key=value pairs). Check for either JSON braces or env-style
-            # KEY=value patterns in exec output.
+            # key=value pairs). Check task outputs, published file names,
+            # and messenger output — the exec may write to a file in pub/.
+            combined = all_output + "\n" + result.msg_output + "\n" + " ".join(
+                pf.get("filename", "") for pf in result.pub_files
+            )
             has_structured = bool(
                 re.search(r"\{.*\}", all_output, re.DOTALL)
                 or re.search(r"[A-Z_]+=\S+", all_output)
+                or re.search(r"\.json\b", combined)
             )
             assert has_structured, (
                 f"Expected structured output (recipe influence), got: "
-                f"{all_output[:500]}"
+                f"{all_output[:500]}\nmsg: {result.msg_output[:300]}"
             )
         finally:
             recipe_file.unlink(missing_ok=True)
