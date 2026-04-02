@@ -245,6 +245,9 @@ class TestPlannerMsgAnnounce:
         assert "valid only for" in planning_rules.lower()
         # Must require action tasks for action requests
         assert "include at least one exec/tool/search" in planning_rules.lower()
+        # Must explicitly require exec for system/Python installs
+        assert "system packages" in planning_rules.lower()
+        assert "always requires exec" in planning_rules.lower()
 
     def test_one_liner_rule_in_planning_rules(self):
         """M1046: one-liner blocking rule moved from code_execution to planning_rules."""
