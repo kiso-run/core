@@ -409,10 +409,16 @@ def build_install_context(env: dict) -> str:
     Injected alongside ``sys_env_essential`` when the planner loads
     kiso_native install-decision rules but the full system environment
     is not warranted.  Contains only what the planner needs to route
-    install commands correctly: package manager and available binaries.
+    install commands correctly: distro, package manager, and available
+    binaries.
     """
     lines: list[str] = []
-    pkg_manager = env.get("os", {}).get("pkg_manager")
+    os_info = env.get("os", {})
+    distro = os_info.get("distro")
+    if distro:
+        distro_id = os_info.get("distro_id", "")
+        lines.append(f"Distro: {distro}" + (f" ({distro_id})" if distro_id else ""))
+    pkg_manager = os_info.get("pkg_manager")
     if pkg_manager:
         lines.append(f"Package manager: {pkg_manager}")
     if env.get("available_binaries"):

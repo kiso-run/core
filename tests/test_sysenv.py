@@ -612,7 +612,7 @@ class TestBuildSystemEnvEssential:
 
 
 class TestBuildInstallContext:
-    """M963: install context contains only pkg_manager and available_binaries."""
+    """M963/M1065: install context contains distro, pkg_manager, available_binaries."""
 
     def test_both_present(self):
         env = {
@@ -639,6 +639,25 @@ class TestBuildInstallContext:
         ctx = build_install_context(env)
         assert "Package manager" not in ctx
         assert "Available binaries: curl, wget" in ctx
+
+    def test_distro_with_id(self):
+        env = {
+            "os": {"distro": "Debian GNU/Linux 12 (bookworm)", "distro_id": "debian",
+                   "pkg_manager": "apt"},
+            "available_binaries": ["git"],
+        }
+        ctx = build_install_context(env)
+        assert "Distro: Debian GNU/Linux 12 (bookworm) (debian)" in ctx
+        assert "Package manager: apt" in ctx
+
+    def test_distro_without_id(self):
+        env = {
+            "os": {"distro": "Alpine Linux v3.18"},
+            "available_binaries": [],
+        }
+        ctx = build_install_context(env)
+        assert "Distro: Alpine Linux v3.18" in ctx
+        assert "()" not in ctx
 
 
 # --- _collect_binaries with sys/bin ---
