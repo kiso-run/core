@@ -876,7 +876,6 @@ if [[ "$NEED_CONFIG" == true ]]; then
     bot_name="$BOT_NAME"
     echo "  bot name: $bot_name"
 
-    local bot_persona
     safe_read -rp "  Bot persona [a friendly and knowledgeable assistant]: " bot_persona
     bot_persona="${bot_persona:-a friendly and knowledgeable assistant}"
     echo "  persona: $bot_persona"
