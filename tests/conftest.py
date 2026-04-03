@@ -240,8 +240,11 @@ AUTH_HEADER = {"Authorization": "Bearer test-secret-token"}
 DISCORD_AUTH_HEADER = {"Authorization": "Bearer discord-bot-token"}
 
 # Centralized test timeouts (seconds). Override per-test if needed.
-LLM_TEST_TIMEOUT = 120       # single plan cycle (~6 LLM calls)
-LLM_REPLAN_TIMEOUT = 300     # replan cycle (~12+ LLM calls)
+# M1062: actual pipeline is ~8+ LLM calls (classifier, briefer-planner,
+# planner, exec-translator, reviewer, briefer-messenger, messenger,
+# optional briefer-worker).
+LLM_TEST_TIMEOUT = 180       # single plan cycle (~8 LLM calls)
+LLM_REPLAN_TIMEOUT = 300     # replan cycle (~16+ LLM calls)
 LLM_INSTALL_TIMEOUT = 900    # tool install (network download + LLM)
 
 

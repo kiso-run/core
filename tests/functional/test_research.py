@@ -103,7 +103,7 @@ class TestF8ScriptExecution:
         result = await run_message(
             "scrivi uno script python che calcola i primi 20 numeri di "
             "fibonacci, eseguilo e dimmi il risultato",
-            timeout=180,
+            timeout=300,  # M1062: 8+ LLM calls with potential replan
         )
 
         assert result.success, (
