@@ -2168,6 +2168,37 @@ _ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 
+def _sanitize_for_reviewer(text: str) -> str:
+    """Strip binary/non-printable content from exec output before sending to reviewer.
+
+    Removes individual non-printable characters (all except printable chars and
+    normal whitespace \\t \\n \\r).  Appends a marker if any chars were removed,
+    so the reviewer knows output was sanitized.  Normal text and valid Unicode
+    are kept unchanged.
+    """
+    if not text:
+        return text
+    # Fast path: no suspicious chars
+    if "\x00" not in text and "\ufffd" not in text and all(
+        c.isprintable() or c in "\t\n\r" for c in text
+    ):
+        return text
+
+    clean: list[str] = []
+    removed = 0
+    for c in text:
+        # \ufffd is the Unicode replacement char — appears when binary is
+        # force-decoded as UTF-8; treat it as non-printable for our purposes.
+        if (c.isprintable() or c in "\t\n\r") and c != "\ufffd":
+            clean.append(c)
+        else:
+            removed += 1
+
+    result = "".join(clean)
+    if removed:
+        result += f"\n[binary content suppressed — {removed} bytes]"
+    return result
+
 
 def prepare_reviewer_output(
     stdout: str, stderr: str, limit: int = _REVIEWER_OUTPUT_LIMIT,
@@ -2178,6 +2209,8 @@ def prepare_reviewer_output(
     For large outputs, builds: error section (stderr + error grep) +
     main output (head + truncation marker + tail), all within *limit*.
     """
+    stdout = _sanitize_for_reviewer(stdout)
+    stderr = _sanitize_for_reviewer(stderr)
     combined = stdout
     if stderr:
         combined += f"\n--- stderr ---\n{stderr}"

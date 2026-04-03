@@ -119,9 +119,11 @@ class TestF38RecipeDrivenPlanning:
             "summary: Format system environment reports as structured data\n"
             "---\n"
             "\n"
-            "CRITICAL RULE: When the user asks for environment or system\n"
-            "reports, the exec task MUST produce output as valid JSON\n"
-            "(a JSON object with curly braces containing key-value pairs).\n"
+            "## Instructions\n"
+            "\n"
+            "When the user asks for environment or system reports, the exec\n"
+            "task should produce output as valid JSON (a JSON object with\n"
+            "curly braces containing key-value pairs).\n"
             "The msg task should reference the structured format.\n"
         )
         invalidate_recipes_cache()

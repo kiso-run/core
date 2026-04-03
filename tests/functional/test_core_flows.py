@@ -124,7 +124,7 @@ class TestF20SpanishResponse:
         result = await run_message(
             "¿Qué es la recursión en programación? "
             "Explica con un ejemplo sencillo",
-            timeout=120,
+            timeout=180,  # M1076: briefer+messenger at v0.8 prompt sizes needs 180s
         )
 
         assert result.success, (

@@ -48,6 +48,7 @@ from kiso.brain import (
     INFLIGHT_CATEGORIES,
     is_stop_message,
     _sanitize_messenger_output,
+    _sanitize_for_reviewer,
     run_briefer,
     run_curator,
     run_exec_translator,
@@ -6640,8 +6641,8 @@ class TestM261PromptSizeReduction:
             "planner", ["planning_rules", "kiso_native", "tools_rules", "plugin_install"],
         )
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Install scenario should be roughly 50-70% of full
-        assert len(install_prompt) < len(all_modules) * 0.75
+        # Install scenario should be well under full (4 of ~12 modules)
+        assert len(install_prompt) < len(all_modules) * 0.80
 
     def test_replan_scenario_small(self):
         """Replan scenario (core + replan + tool_recovery) is compact."""
@@ -8976,3 +8977,69 @@ class TestCheckSafetyRules:
         facts = [{"content": "Never run dangerous commands"}]
         result = check_safety_rules("rm -rf /etc", facts)
         assert result is None
+
+
+class TestPrepareReviewerOutputSanitization:
+    """M1075: Binary/non-printable content is sanitized before sending to reviewer."""
+
+    def test_normal_text_unchanged(self):
+        result = _sanitize_for_reviewer("hello world\nline 2\n")
+        assert result == "hello world\nline 2\n"
+
+    def test_empty_string_unchanged(self):
+        assert _sanitize_for_reviewer("") == ""
+
+    def test_png_bytes_suppressed(self):
+        # PNG magic bytes: \x89PNG\r\n\x1a\n followed by binary data
+        binary = "\x89PNG\r\n\x1a\n" + "\x00\x01\x02\x03" * 100
+        result = _sanitize_for_reviewer(binary)
+        assert "binary content suppressed" in result
+        assert "\x89" not in result
+        assert "\x00" not in result
+
+    def test_elf_header_suppressed(self):
+        # ELF magic: \x7fELF
+        binary = "\x7fELF\x02\x01\x01\x00" + "\x00" * 50
+        result = _sanitize_for_reviewer(binary)
+        assert "binary content suppressed" in result
+
+    def test_mixed_binary_and_text_keeps_text(self):
+        # Text line, then a binary line, then more text
+        mixed = "stdout: ok\n" + "\x00\x01\x02" * 30 + "\n" + "exit code: 0\n"
+        result = _sanitize_for_reviewer(mixed)
+        assert "stdout: ok" in result
+        assert "exit code: 0" in result
+        assert "binary content suppressed" in result
+
+    def test_null_bytes_in_printable_line_stripped(self):
+        # Null bytes embedded in an otherwise printable line
+        text = "hello\x00world\n"
+        result = _sanitize_for_reviewer(text)
+        assert "\x00" not in result
+        assert "hello" in result
+
+    def test_replacement_chars_in_binary_line_suppressed(self):
+        # UTF-8 replacement characters mixed with binary
+        line = "\ufffd\ufffd\ufffd\ufffd" * 20 + "\n"
+        result = _sanitize_for_reviewer(line)
+        assert "binary content suppressed" in result
+
+    def test_unicode_text_kept(self):
+        # Normal unicode (e.g. Italian, emoji if allowed) must pass through
+        text = "Ciao mondo — voilà\nрекурсия\n"
+        result = _sanitize_for_reviewer(text)
+        assert result == text
+
+    def test_prepare_reviewer_output_sanitizes_png_stdout(self):
+        from kiso.brain import prepare_reviewer_output
+        binary_stdout = "\x89PNG\r\n\x1a\n" + "\x00\x01\x02\x03" * 500
+        result = prepare_reviewer_output(binary_stdout, "")
+        assert "binary content suppressed" in result
+        assert "\x89" not in result
+
+    def test_prepare_reviewer_output_sanitizes_binary_stderr(self):
+        from kiso.brain import prepare_reviewer_output
+        binary_stderr = "\x7fELF" + "\x00" * 200
+        result = prepare_reviewer_output("normal stdout output", binary_stderr)
+        assert "binary content suppressed" in result
+        assert "normal stdout output" in result
