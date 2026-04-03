@@ -821,15 +821,18 @@ def _validate_plan_tasks(
                     schema = installed_skills_info[tool_name].get("args_schema", {})
                     arg_errors = validate_tool_args(args, schema)
                     if arg_errors:
-                        example_args = {
+                        # M1067: show only required args in example so the
+                        # model focuses on what it MUST provide.
+                        required_args = {
                             aname: _TYPE_EXAMPLES.get(adef.get("type", "string"), "value")
                             for aname, adef in schema.items()
+                            if adef.get("required", False)
                         }
-                        example_json = json.dumps(example_args)
+                        example_json = json.dumps(required_args)
                         errors.append(
                             f"Task {i}: tool '{tool_name}' args invalid: "
                             + "; ".join(arg_errors)
-                            + f". Set args to a JSON string like: '{example_json}'"
+                            + f". Required args: '{example_json}'"
                         )
 
     if replan_count > 1:

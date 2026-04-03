@@ -150,5 +150,5 @@ class TestToolInstallHealthSmoke:
         errors = validate_plan(plan, installed_skills=["browser"],
                                installed_skills_info=info)
         assert len(errors) == 1
-        assert "Set args to a JSON string like:" in errors[0]
+        assert "Required args:" in errors[0]
         assert '"action": "value"' in errors[0]

@@ -3310,11 +3310,11 @@ class TestM166ValidatePlanSkillArgs:
         errors = validate_plan(plan, installed_skills=["browser"],
                                installed_skills_info=info)
         assert len(errors) == 1
-        assert 'Set args to a JSON string like:' in errors[0]
+        assert 'Required args:' in errors[0]
         assert '"action": "value"' in errors[0]
 
-    def test_m184_args_example_multiple_params(self):
-        """M184: example includes all params from schema."""
+    def test_m184_args_example_required_only(self):
+        """M184/M1067: example includes only required params from schema."""
         plan = {"tasks": [
             {"type": "tool", "detail": "do stuff", "tool": "browser",
              "args": "{}", "expect": "done"},
@@ -3328,7 +3328,7 @@ class TestM166ValidatePlanSkillArgs:
                                installed_skills_info=info)
         assert len(errors) == 1
         assert '"action": "value"' in errors[0]
-        assert '"count": 1' in errors[0]
+        assert '"count"' not in errors[0]
 
 
 class TestM171StripExtendReplan:
