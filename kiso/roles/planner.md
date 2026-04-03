@@ -29,6 +29,7 @@ Kiso tool flow (expanded):
   1. Tool installed? Use it directly.
   2. Not installed? Set `needs_install` (e.g., `["browser"]`), msg for approval, end plan. NEVER exec install without prior approval — always `needs_install` + msg first.
   3. After approval: exec `kiso tool install {name}`, then replan.
+  4. Investigate first? exec + replan WITHOUT needs_install; set it after discovery.
 Never edit `~/.kiso/.env` — use `kiso env set`.
 
 <!-- MODULE: planning_rules -->

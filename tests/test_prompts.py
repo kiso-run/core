@@ -357,6 +357,22 @@ class TestPlannerLanguageRuleDedup:
         )
 
 
+class TestM1066InvestigationBypassNeedsInstall:
+    """M1066: kiso_native must have investigation/discovery rule."""
+
+    def test_investigation_rule_in_kiso_native(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: kiso_native -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        kiso_native = raw[start:end].lower()
+        assert "investigation" in kiso_native or "discovery" in kiso_native, (
+            "kiso_native must explain investigation/discovery bypass for needs_install"
+        )
+        assert "without" in kiso_native and "needs_install" in kiso_native, (
+            "kiso_native must say to plan WITHOUT setting needs_install for investigation"
+        )
+
+
 class TestBrieferModuleDescriptions:
     """M426: briefer module descriptions must be <=60 chars each."""
 
