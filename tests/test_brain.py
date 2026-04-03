@@ -64,6 +64,7 @@ from kiso.brain import (
     REVIEW_STATUSES,
     REVIEW_STATUS_STUCK,
     _retry_llm_with_validation,
+    check_safety_rules,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 from kiso.llm import LLMError
@@ -8922,3 +8923,56 @@ class TestFormatPendingItems:
     def test_empty_list(self):
         from kiso.brain import _format_pending_items
         assert _format_pending_items([]) == ""
+
+
+class TestCheckSafetyRules:
+    def test_blocks_matching_path(self):
+        facts = [{"content": "Never delete files in /etc"}]
+        result = check_safety_rules("rm -rf /etc/test_kiso_xyz.txt", facts)
+        assert result is not None
+        assert "/etc" in result
+
+    def test_blocks_child_path(self):
+        facts = [{"content": "Do not modify /var/log"}]
+        result = check_safety_rules("echo test > /var/log/app.log", facts)
+        assert result is not None
+        assert "/var/log" in result
+
+    def test_allows_unrelated_path(self):
+        facts = [{"content": "Never delete files in /etc"}]
+        result = check_safety_rules("ls /home/user/docs", facts)
+        assert result is None
+
+    def test_allows_empty_facts(self):
+        assert check_safety_rules("rm -rf /etc", []) is None
+
+    def test_allows_empty_detail(self):
+        facts = [{"content": "Never delete /etc"}]
+        assert check_safety_rules("", facts) is None
+
+    def test_allows_none_facts(self):
+        assert check_safety_rules("rm /etc/file", None) is None
+
+    def test_multiple_facts_first_match_wins(self):
+        facts = [
+            {"content": "Protect /home/secret"},
+            {"content": "Never touch /etc"},
+        ]
+        result = check_safety_rules("cat /etc/passwd", facts)
+        assert result is not None
+        assert "/etc" in result
+
+    def test_case_insensitive_path_match(self):
+        facts = [{"content": "Never delete files in /ETC"}]
+        result = check_safety_rules("rm /etc/hosts", facts)
+        assert result is not None
+
+    def test_substring_match_on_partial_path(self):
+        facts = [{"content": "Protect /home/user"}]
+        result = check_safety_rules("ls /home/username", facts)
+        assert result is not None
+
+    def test_fact_without_path_no_match(self):
+        facts = [{"content": "Never run dangerous commands"}]
+        result = check_safety_rules("rm -rf /etc", facts)
+        assert result is None

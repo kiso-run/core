@@ -12574,3 +12574,45 @@ class TestLoadLastPlanSummary:
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             result = _load_last_plan_summary("s-nofile")
             assert result is None
+
+
+class TestSafetyRulePreExecCheck:
+    """M1069: _handle_exec_task blocks exec when safety rule matches."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    @pytest.fixture()
+    async def plan_id(self, db):
+        return await create_plan(db, "sess1", 0, "test goal")
+
+    async def test_safety_rule_blocks_exec(self, db, plan_id, tmp_path):
+        """Pre-exec safety check blocks task referencing protected path."""
+        await save_fact(db, "Never delete files in /etc", "admin", category="safety")
+        task_row = await _make_task_row(db, plan_id, "exec", "rm /etc/test_kiso_xyz.txt")
+        ctx = _make_ctx(db)
+        with _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is True
+        assert result.stop_success is False
+        assert result.stop_stuck is not None
+        assert "/etc" in result.stop_stuck
+        assert result.plan_output is not None
+
+    async def test_no_safety_rule_allows_exec(self, db, plan_id, tmp_path):
+        """Without safety rules, exec proceeds normally."""
+        task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
+        ctx = _make_ctx(db)
+        with _patch_translator(), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                   return_value=REVIEW_OK), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is False
+        assert result.completed_row is not None

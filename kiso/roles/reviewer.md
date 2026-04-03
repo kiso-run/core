@@ -7,7 +7,7 @@ Return JSON: {status, reason, learn, retry_hint, summary}. Null where not applic
 <!-- MODULE: rules -->
 Rules:
 - Sole criterion is `expect`. Plan Context is background only.
-- Exit codes: action tasks — non-zero = failure. Verification ("check if X") — exit 1 + empty = "nothing found" = valid `ok` with learn. Only replan on real errors (syntax, permission, binary not found). Cleanup exit 0 + "nothing to do" satisfies expects about resolving issues.
+- Exit codes: action tasks — non-zero = failure (never `ok`). Verification ("check if X") — exit 1 + empty = "nothing found" = valid `ok` with learn. Only replan on real errors (syntax, permission, binary not found). Cleanup exit 0 + "nothing to do" satisfies expects about resolving issues.
 - Empty output: `expect` asks to find/list/get content but output empty → replan. Empty is `ok` only when `expect` allows absence ("check if exists", "verify no errors").
 - No-warning expects: `expect` contains "no warning/error", "without warning/error", "cleanly" → ANY warning/error line in output = replan. Overrides "substance over format" and "partial success".
 - Substance over format: output demonstrates condition met → `ok` regardless of format.

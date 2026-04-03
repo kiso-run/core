@@ -265,6 +265,34 @@ _UV_PIP_RE = re.compile(r"\buv\s+pip\b", re.IGNORECASE)
 _TOOL_NOT_INSTALLED_MARKER = "is not installed"
 _TOOL_UNAVAILABLE_MARKER = "not available — not installed and not in the registry"
 
+_ABS_PATH_RE = re.compile(r"(/[a-zA-Z0-9_./-]+)")
+
+
+def check_safety_rules(detail: str, safety_facts: list[dict]) -> str | None:
+    """Check exec task detail against safety rules.
+
+    Returns a rejection reason if the detail references a protected
+    resource mentioned in a safety fact, or None if safe.
+
+    Conservative matching: only triggers when a safety fact contains an
+    absolute path AND the detail references the same path (substring match).
+    """
+    if not safety_facts or not detail:
+        return None
+    detail_lower = detail.lower()
+    for fact in safety_facts:
+        content = fact.get("content", "")
+        paths = _ABS_PATH_RE.findall(content)
+        for path in paths:
+            path_lower = path.lower()
+            if path_lower in detail_lower:
+                return (
+                    f"Blocked by safety rule: \"{content}\" "
+                    f"(detail references protected path {path})"
+                )
+    return None
+
+
 _PLUGIN_DISCOVERY_RE = re.compile(
     r"(?:tool|skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
     r"|(?:registr|kiso).*(?:tool|skill|connector|plugin)",

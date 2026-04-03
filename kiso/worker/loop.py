@@ -59,6 +59,7 @@ from kiso.brain import (
     run_reviewer,
     run_summarizer,
     prepare_reviewer_output,
+    check_safety_rules,
     clean_learn_items,
     _INSTALL_CMD_RE,
 )
@@ -828,12 +829,14 @@ async def _fail_task_and_audit(
     ctx: _PlanCtx, task_id: int, task_type: str, detail: str,
     error: str, task_idx: int, *,
     replan_reason: str | None = None,
+    stuck_reason: str | None = None,
     output: str | None = None, stderr: str | None = None,
 ) -> _TaskHandlerResult:
     """Handle a task failure: update status, audit, build plan output, return stop result.
 
     *output* defaults to *error*, *stderr* defaults to None.
-    *replan_reason* defaults to *error*.
+    *replan_reason* defaults to *error* (unless *stuck_reason* is set).
+    When *stuck_reason* is provided, the result uses stop_stuck instead of stop_replan.
     """
     log.error("Task %d %s failed: %s", task_id, task_type, error)
     await update_task(
@@ -845,6 +848,12 @@ async def _fail_task_and_audit(
     plan_output = _make_plan_output(
         task_idx, task_type, detail, error, "failed", session=ctx.session,
     )
+    if stuck_reason:
+        return _TaskHandlerResult(
+            stop=True, stop_success=False,
+            stop_stuck=stuck_reason,
+            plan_output=plan_output,
+        )
     return _TaskHandlerResult(
         stop=True, stop_success=False,
         stop_replan=replan_reason or error,
@@ -1237,6 +1246,15 @@ async def _handle_exec_task(
     disk_err = _check_disk_limit(ctx.config)
     if disk_err:
         return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_EXEC, detail, disk_err, i + 1)
+
+    # Deterministic safety rule pre-exec check
+    safety_facts = await get_safety_facts(ctx.db)
+    safety_rejection = check_safety_rules(detail, safety_facts)
+    if safety_rejection:
+        return await _fail_task_and_audit(
+            ctx, task_id, TASK_TYPE_EXEC, detail, safety_rejection, i + 1,
+            stuck_reason=safety_rejection,
+        )
 
     # Briefer: select relevant plan_outputs for this exec task
     idx_exec = get_usage_index()
