@@ -300,15 +300,16 @@ class TestF41AiderEditFile:
     """F41: Aider fixes a bug in an existing file."""
 
     @pytest.mark.extended
-    async def test_aider_fixes_bug(self, preset_tools_installed, run_message):
+    async def test_aider_fixes_bug(self, preset_tools_installed, run_message, _func_kiso_dir):
         """What: Pre-create buggy file → aider fixes → exec verifies.
 
         Why: All existing aider tests create files from scratch. This tests
         aider's primary use case: editing existing code.
         Expects: aider tool task present, exec output contains '7' (3+4).
         """
-        # Pre-create file with deterministic content (no LLM involved)
-        target = Path("/tmp/kiso_test_f41.py")
+        # M1064: write file in kiso_dir (accessible to aider's git workspace)
+        # Using kiso_dir root so the path is stable across sessions.
+        target = _func_kiso_dir / "kiso_test_f41.py"
         target.write_text(
             "def add(a, b):\n"
             "    return a - b\n"
@@ -317,9 +318,9 @@ class TestF41AiderEditFile:
         )
 
         result = await run_message(
-            "il file /tmp/kiso_test_f41.py ha un bug: la funzione add "
+            f"il file {target} ha un bug: la funzione add "
             "sottrae invece di sommare. usa aider per fixarlo, poi "
-            "esegui python3 /tmp/kiso_test_f41.py e dimmi il risultato",
+            f"esegui python3 {target} e dimmi il risultato",
             timeout=600,
         )
         assert result.success, f"Plan failed: {result.task_types()}"
@@ -346,15 +347,15 @@ class TestF42AiderAddFeature:
     """F42: Aider adds a method to an existing class."""
 
     @pytest.mark.extended
-    async def test_aider_adds_method(self, preset_tools_installed, run_message):
+    async def test_aider_adds_method(self, preset_tools_installed, run_message, _func_kiso_dir):
         """What: Pre-create Calculator class → aider adds multiply → exec verifies.
 
         Why: Tests aider's ability to understand existing code structure and
         extend it — the most common real-world aider use case.
         Expects: aider tool task present, exec output contains '30' (5*6).
         """
-        # Pre-create file with deterministic content (no LLM involved)
-        target = Path("/tmp/kiso_test_f42.py")
+        # M1064: write file in kiso_dir (accessible to aider's git workspace)
+        target = _func_kiso_dir / "kiso_test_f42.py"
         target.write_text(
             "class Calculator:\n"
             "    def add(self, a, b):\n"
@@ -362,7 +363,7 @@ class TestF42AiderAddFeature:
         )
 
         result = await run_message(
-            "il file /tmp/kiso_test_f42.py contiene una classe Calculator "
+            f"il file {target} contiene una classe Calculator "
             "con solo il metodo add. usa aider per aggiungere un metodo "
             "multiply(self, a, b) che ritorna a * b, poi testa "
             "Calculator().multiply(5, 6) e dimmi il risultato",
