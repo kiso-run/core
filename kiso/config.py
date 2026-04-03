@@ -390,12 +390,11 @@ def _build_config(path: Path, on_error) -> Config:
     if "dreamer" in models_raw and "consolidator" not in models_raw:
         models_raw["consolidator"] = models_raw.pop("dreamer")
 
-    missing_models = sorted(set(MODEL_DEFAULTS) - set(models_raw))
-    if missing_models:
-        on_error(
-            f"[models] missing required fields: {', '.join(missing_models)}\n"
-            f"  Add them to [models] in {path}"
-        )
+    # Fill any missing model roles from defaults (so old configs automatically
+    # gain new roles like 'consolidator' without manual edits).
+    for role, default_model in MODEL_DEFAULTS.items():
+        if role not in models_raw:
+            models_raw[role] = default_model
     models = dict(models_raw)
 
     # --- settings: start from defaults, override with config values ---

@@ -181,12 +181,11 @@ def test_all_settings_loaded(tmp_path: Path):
         assert key in cfg.models, f"Missing model: {key}"
 
 
-def test_missing_model_role(tmp_path: Path, capsys):
-    """Config missing a model role fails loudly."""
+def test_missing_model_role_uses_default(tmp_path: Path):
+    """Config missing a model role fills from MODEL_DEFAULTS silently."""
     text = VALID.replace('planner     = "deepseek/deepseek-v3.2"\n', "")
-    with pytest.raises(SystemExit):
-        load_config(_write(tmp_path, text))
-    assert "planner" in _die_msg(capsys)
+    cfg = load_config(_write(tmp_path, text))
+    assert cfg.models["planner"] == MODEL_DEFAULTS["planner"]
 
 
 def test_missing_setting_uses_default(tmp_path: Path):
