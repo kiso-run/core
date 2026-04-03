@@ -269,6 +269,19 @@ class TestM1046CodeExecutionRemoved:
         assert "code_execution" not in BRIEFER_MODULES
 
 
+class TestM1063ClassifierKnowledgeQuestions:
+    """M1063: classifier must route knowledge questions to chat, not plan."""
+
+    def test_concept_explanation_is_not_plan(self):
+        raw = _ROLES_DIR.joinpath("classifier.md").read_text()
+        # Must clarify that explaining concepts ≠ action request
+        assert "explaining concepts" in raw.lower() or "answering questions" in raw.lower()
+        # Must specify that code examples don't make it plan
+        assert "code examples" in raw.lower()
+        # Must clarify "plan" is only for actual actions
+        assert "wants something done" in raw.lower() or "file written" in raw.lower()
+
+
 class TestM935DetailExpectConsistency:
     """M935: planning_rules must require detail/expect consistency."""
 
