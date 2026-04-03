@@ -277,7 +277,7 @@ class TestF15EntityDedupTagReuse:
         # Teach new fact about Flask
         r1 = await run_message(
             "ricordati che Flask usa Jinja2 come template engine",
-            timeout=120,
+            timeout=300,  # M1068: 8+ LLM calls, 120 too tight
         )
         assert r1.success
 
