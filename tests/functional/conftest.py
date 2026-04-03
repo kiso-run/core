@@ -539,6 +539,7 @@ async def run_message(func_config, func_db, func_session):
                 cancel_event,
                 llm_timeout=func_config.settings["llm_timeout"],
                 max_replan_depth=func_config.settings["max_replan_depth"],
+                messenger_timeout=func_config.settings["llm_timeout"],
             ),
             timeout=timeout,
         )
