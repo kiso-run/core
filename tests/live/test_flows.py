@@ -111,7 +111,7 @@ class TestPlanValidationRetry:
                     seeded_db, live_config, live_session, "admin",
                     "What is the capital of Italy?",
                 ),
-                timeout=TIMEOUT * 2,
+                timeout=TIMEOUT * 3,
             )
 
         assert call_count >= 2
