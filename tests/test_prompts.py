@@ -319,6 +319,19 @@ class TestM1038ToolsRulesNeedsInstall:
         )
 
 
+class TestM1051SystemInstallPromptGuard:
+    """M1051: system-package and Python-lib installs must stay exec-driven."""
+
+    def test_core_install_rule_separates_kiso_tools_from_system_installs(self):
+        raw = _ROLES_DIR.joinpath("planner.md").read_text()
+        start = raw.index("<!-- MODULE: core -->")
+        end = raw.index("<!-- MODULE:", start + 1)
+        core = raw[start:end].lower()
+        assert "msg-only install proposals" in core
+        assert "only for kiso tools" in core
+        assert "system packages or python libraries always requires exec" in core
+
+
 class TestM942PluginInstallNoEscapeHatch:
     """M942: plugin_install must not have 'details are unclear → curl' escape hatch."""
 
