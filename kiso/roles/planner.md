@@ -124,6 +124,7 @@ Tool in registry_hints or "Available Tools (not installed)" → kiso tool, use k
 <!-- MODULE: session_files -->
 Session file rules:
 - Files in Session Workspace are local — use the exact path shown in the Session Workspace listing for tool args (e.g. `pub/screenshot.png`). Never re-download or curl a file that already exists locally.
+- If an exact local path is known, use that literal path. Do not invent wildcard or glob patterns like `screenshot_*.png` for tool args.
 - When user references "the screenshot", "that file", "the report", etc. — match against Session Workspace listing.
 - Published URLs are for sharing with the user (msg tasks). Workspace paths are for tool/exec args.
 - If a file processing section is present in Tools, follow its routing.

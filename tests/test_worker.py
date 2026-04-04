@@ -58,6 +58,8 @@ from kiso.worker.loop import (
     _handle_search_task,
     _handle_tool_task,
     _make_plan_output,
+    _repair_tool_workspace_args,
+    _resolve_workspace_file_reference,
     _run_planning_loop,
     _spawn_knowledge_task,
 )
@@ -8572,6 +8574,37 @@ class TestTaskHandlers:
         assert result.plan_output["output"] == "skill output"
         assert result.plan_output["status"] == "done"
 
+    async def test_handle_tool_task_repairs_unique_workspace_file_arg(self, db, plan_id, tmp_path):
+        """M1025: tool handler rewrites invented file pattern to exact local path."""
+        tool_info = {
+            "name": "ocr",
+            "summary": "OCR",
+            "args_schema": {
+                "file_path": {"type": "string", "required": True, "description": "path to image file in workspace"},
+            },
+            "env": {},
+            "session_secrets": [],
+            "path": "/fake/path",
+            "consumes": ["image"],
+        }
+        task_row = await _make_task_row(
+            db, plan_id, "tool", "extract text",
+            skill="ocr", args='{"file_path":"screenshot_*.png"}', expect="ocr text",
+        )
+        ctx = _make_ctx(db, installed_tools=[tool_info])
+        with _patch_kiso_dir(tmp_path):
+            ws = _session_workspace("sess1")
+            (ws / "screenshot.png").write_bytes(b"img")
+            with patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
+                       return_value=("ocr output", "", True, 0)) as mock_tool, \
+                 patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                       return_value=REVIEW_OK):
+                result = await _handle_tool_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is False
+        passed_args = mock_tool.await_args.args[2]
+        assert passed_args["file_path"] == "screenshot.png"
+
 
 # --- M112c: tool cache invalidation after exec/tool tasks ---
 
@@ -12652,6 +12685,48 @@ class TestLoadLastPlanSummary:
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             result = _load_last_plan_summary("s-nofile")
             assert result is None
+
+
+class TestWorkspaceFileRouting:
+    """M1025: tool file args prefer exact existing workspace files."""
+
+    def test_resolve_workspace_file_reference_prefers_unique_existing_file(self, tmp_path):
+        with _patch_kiso_dir(tmp_path):
+            ws = _session_workspace("sess1")
+            (ws / "screenshot.png").write_bytes(b"img")
+
+            resolved = _resolve_workspace_file_reference("sess1", "screenshot_*.png")
+
+        assert resolved == "screenshot.png"
+
+    def test_resolve_workspace_file_reference_stays_none_when_ambiguous(self, tmp_path):
+        with _patch_kiso_dir(tmp_path):
+            ws = _session_workspace("sess1")
+            (ws / "screenshot.png").write_bytes(b"img1")
+            (ws / "subdir").mkdir()
+            (ws / "subdir" / "screenshot-copy.png").write_bytes(b"img2")
+
+            resolved = _resolve_workspace_file_reference("sess1", "screenshot*.png")
+
+        assert resolved is None
+
+    def test_repair_tool_workspace_args_only_updates_file_like_args(self, tmp_path):
+        tool_info = {
+            "name": "ocr",
+            "args_schema": {
+                "file_path": {"type": "string", "required": True, "description": "path to image file in workspace"},
+                "action": {"type": "string", "required": False, "description": "one of extract/info"},
+            },
+            "consumes": ["image"],
+        }
+        args = {"file_path": "screenshot_*.png", "action": "extract"}
+
+        with _patch_kiso_dir(tmp_path):
+            ws = _session_workspace("sess1")
+            (ws / "screenshot.png").write_bytes(b"img")
+            repaired = _repair_tool_workspace_args(tool_info, args, "sess1")
+
+        assert repaired == {"file_path": "screenshot.png", "action": "extract"}
 
 
 class TestSafetyRulePreExecCheck:

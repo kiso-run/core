@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
 import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import aiosqlite
 
@@ -134,6 +136,7 @@ from kiso.store import (
 )
 
 from kiso.worker.utils import (
+    _PUB_IGNORE_DIRS,
     _auto_publish_skill_files,
     _build_cancel_summary,
     _build_failure_summary,
@@ -167,6 +170,125 @@ _SUBSTATUS_EXECUTING = "executing"
 _SUBSTATUS_REVIEWING = "reviewing"
 _SUBSTATUS_COMPOSING = "composing"
 _SUBSTATUS_SEARCHING = "searching"
+
+_FILE_ARG_NAME_HINTS = (
+    "path", "file", "image", "document", "audio", "video", "input",
+)
+_GLOB_CHARS = frozenset("*?[]")
+
+
+def _workspace_visible_files(session: str) -> list[str]:
+    """Return visible workspace file paths relative to the session root."""
+    workspace = _session_workspace(session)
+    files: list[str] = []
+    for path in workspace.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(workspace)
+        parts = rel.parts
+        if not parts:
+            continue
+        if parts[0] == ".kiso" or parts[0] in _PUB_IGNORE_DIRS:
+            continue
+        if any(part.startswith(".") for part in parts):
+            continue
+        files.append(rel.as_posix())
+    return files
+
+
+def _looks_like_workspace_file_arg(arg_name: str, arg_schema: dict, value: object) -> bool:
+    """Heuristic: True when a tool arg likely references a workspace file."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    if text.startswith(("http://", "https://")):
+        return False
+    name_lower = (arg_name or "").lower()
+    desc_lower = str((arg_schema or {}).get("description", "")).lower()
+    if any(hint in name_lower for hint in _FILE_ARG_NAME_HINTS):
+        return True
+    if "workspace" in desc_lower or "file" in desc_lower or "path" in desc_lower:
+        return True
+    if any(ch in text for ch in _GLOB_CHARS):
+        return True
+    return "/" in text or "." in Path(text).name
+
+
+def _normalize_stem_tokens(path_text: str) -> tuple[str, str]:
+    """Return (normalized stem, suffix) for fuzzy file matching."""
+    name = Path(path_text).name
+    stem = Path(name).stem.lower()
+    suffix = Path(name).suffix.lower()
+    normalized = re.sub(r"[^a-z0-9]+", "", stem)
+    return normalized, suffix
+
+
+def _resolve_workspace_file_reference(session: str, value: str) -> str | None:
+    """Resolve a missing workspace file reference to a unique existing file.
+
+    This prefers exact local files already present in the session workspace.
+    It is intentionally conservative: only return a replacement when there is
+    a single clear match.
+    """
+    raw = (value or "").strip()
+    if not raw or raw.startswith(("http://", "https://")):
+        return None
+    if raw.startswith("/"):
+        return None
+
+    workspace = _session_workspace(session)
+    if (workspace / raw).is_file():
+        return raw
+
+    visible_files = _workspace_visible_files(session)
+    if not visible_files:
+        return None
+
+    basename = Path(raw).name
+    glob_like = any(ch in raw for ch in _GLOB_CHARS)
+
+    if glob_like:
+        matches = [
+            rel for rel in visible_files
+            if fnmatch.fnmatchcase(rel, raw) or fnmatch.fnmatchcase(Path(rel).name, basename)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+
+    exact_name_matches = [rel for rel in visible_files if Path(rel).name == basename]
+    if len(exact_name_matches) == 1:
+        return exact_name_matches[0]
+
+    wanted_norm, wanted_suffix = _normalize_stem_tokens(raw)
+    if not wanted_norm and not wanted_suffix:
+        return None
+
+    fuzzy_matches: list[str] = []
+    for rel in visible_files:
+        rel_norm, rel_suffix = _normalize_stem_tokens(rel)
+        if wanted_suffix and rel_suffix and rel_suffix != wanted_suffix:
+            continue
+        if wanted_norm and rel_norm and (wanted_norm in rel_norm or rel_norm in wanted_norm):
+            fuzzy_matches.append(rel)
+    if len(fuzzy_matches) == 1:
+        return fuzzy_matches[0]
+    return None
+
+
+def _repair_tool_workspace_args(tool_info: dict, args: dict, session: str) -> dict:
+    """Repair missing local-file tool args when a unique workspace match exists."""
+    corrected = dict(args)
+    args_schema = tool_info.get("args_schema", {}) or {}
+    for arg_name, value in list(corrected.items()):
+        schema = args_schema.get(arg_name, {})
+        if not _looks_like_workspace_file_arg(arg_name, schema, value):
+            continue
+        resolved = _resolve_workspace_file_reference(session, value)
+        if resolved and resolved != value:
+            corrected[arg_name] = resolved
+    return corrected
 
 
 async def _append_calls(
@@ -1154,6 +1276,13 @@ async def _handle_tool_task(
             if corrected != args:
                 log.warning("Auto-corrected tool args for task %d: %s → %s", task_id, args, corrected)
                 args = corrected
+            workspace_corrected = _repair_tool_workspace_args(tool_info, args, ctx.session)
+            if workspace_corrected != args:
+                log.warning(
+                    "Resolved workspace file args for task %d: %s → %s",
+                    task_id, args, workspace_corrected,
+                )
+                args = workspace_corrected
             validation_errors = validate_tool_args(args, tool_info["args_schema"])
             if validation_errors:
                 setup_error = "Tool args validation failed: " + "; ".join(validation_errors)
