@@ -45,6 +45,29 @@ Each level answers a different question:
 | **Extended** | Do multi-plan orchestrations work? | Docker + API key | ~15min |
 | **Interactive** | Do human-gated flows (CAPTCHA, OAuth) work? | Docker + human | manual |
 
+## Confidence tiers
+
+Test level alone is not enough. Some suites are realistic but still weak if the
+oracle is only "non-empty output" or "assistant said it worked". Treat tests by
+confidence tier as well as by execution level:
+
+| Tier | Meaning | Typical suites |
+|------|---------|----------------|
+| **Blocking semantic** | Deterministic or near-deterministic tests with concrete state/behavior assertions | Unit, Bash, Integration, Docker, most semantic Live tests |
+| **Optional smoke** | Real network/LLM/service checks that validate reachability or broad workflow health but may depend on external drift | Some Live network tests, plugin fetch checks, third-party smoke tests |
+| **Manual acceptance** | Human-gated or externally fragile workflows where operator judgment is part of the oracle | Interactive tests, CAPTCHA/OAuth/social signups |
+
+When adding or editing tests:
+
+- Prefer semantic assertions over prompt wording or exact prose.
+- Prefer observable effects over generic success flags:
+  plan/task shape, DB state, created files, published artifacts, exit status,
+  persisted knowledge, reachable URLs, or concrete command output.
+- Use language-quality heuristics only when language selection is itself the
+  product requirement.
+- Avoid adding blocking tests whose only oracle is a substring in a prompt file
+  or a success-like word in the assistant message.
+
 
 ## Running tests
 
@@ -191,6 +214,10 @@ Organized by scope: `test_roles.py` (each role in isolation), `test_flows.py`
 (acceptance scenarios), `test_cli_live.py` (CLI with real network),
 `test_plugins.py` (clone + test official plugins).
 
+Use live tests for semantic LLM-compliance questions. Real-network tests with
+only weak stdout-based oracles belong in optional smoke, not as the primary
+coverage for a feature.
+
 
 ## Functional tests (`tests/functional/`)
 
@@ -202,6 +229,17 @@ installation, real file I/O. The most expensive and most realistic level.
 Each test sends a natural-language message through `_process_message()` and
 asserts on the response and side effects. Grouped by capability: browser,
 system, services, research, knowledge, core flows.
+
+Prefer assertions on side effects and workflow structure:
+
+- task types and plan shapes
+- created/reused workspace files
+- published artifacts and URLs
+- persisted DB/session/project state
+- concrete exec/search/tool outputs
+
+Assistant wording checks should be secondary unless the user-facing wording is
+the feature being tested.
 
 **Extended tests** (`@pytest.mark.extended`) include multi-plan tests and
 post-preset workflow tests (tools pre-installed via session fixture).
@@ -220,6 +258,10 @@ external services. Gated by `--destructive`, never run in CI.
 
 Flows requiring a real human: CAPTCHA solving, OAuth authorization, SSH key
 deploy. Uses a `HumanRelay` fixture that pauses for operator action.
+
+Interactive tests are manual acceptance checks, not blocking CI coverage. Keep
+their scope narrow and do not rely on them as the only proof of a feature that
+can be exercised semantically in unit/live/functional suites.
 
 
 ## Pytest markers
