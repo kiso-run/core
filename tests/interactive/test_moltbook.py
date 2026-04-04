@@ -6,13 +6,20 @@ Requires:
 - ``--interactive --functional`` flags
 
 Run: uv run pytest tests/interactive/test_moltbook.py -v --interactive --functional
+
+This file is manual acceptance coverage only. It is not intended to be part of
+blocking automated confidence for browser/service workflows.
 """
 
 from __future__ import annotations
 
 import pytest
 
-pytestmark = [pytest.mark.interactive, pytest.mark.functional]
+pytestmark = [
+    pytest.mark.interactive,
+    pytest.mark.functional,
+    pytest.mark.extended,
+]
 
 
 async def test_moltbook_signup(human_relay):

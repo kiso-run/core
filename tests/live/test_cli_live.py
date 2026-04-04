@@ -2,6 +2,10 @@
 
 Real network calls (GitHub API, git clone), no LLM.
 Gated behind ``--live-network`` flag.
+
+These are optional smoke tests, not the primary semantic coverage for CLI
+search/install behavior. Stronger deterministic coverage lives in the unit
+tests for `cli.tool`, `cli.connector`, and `cli.plugin_ops`.
 """
 
 from __future__ import annotations
@@ -16,12 +20,34 @@ import pytest
 pytestmark = pytest.mark.live_network
 
 
+def _assert_search_smoke_output(out: str, *, kind: str, query: str) -> None:
+    """Validate that live-network search returned structured, non-empty output.
+
+    This is intentionally a smoke oracle: the registry is externally controlled,
+    so the test should verify basic health without pinning exact entries.
+    """
+    lower = out.lower()
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    assert lines, "search produced no visible output"
+    assert f"no {kind}s found" not in lower
+    # Search results render as aligned list rows ("name  — description").
+    assert any("—" in line or " - " in line for line in lines), (
+        f"search output did not look like result rows: {out[:300]}"
+    )
+    if query:
+        assert query.lower() in lower or kind in lower, (
+            f"search output did not mention query '{query}' or {kind}: {out[:300]}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # L5.1 — Skill search
 # ---------------------------------------------------------------------------
 
 
 class TestSkillSearch:
+    """Optional smoke tests for remote registry-backed tool search."""
+
     def test_search_returns_results(self, capsys):
         """What: Runs 'kiso skill search' with an empty query string.
 
@@ -35,7 +61,7 @@ class TestSkillSearch:
         except SystemExit:
             pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
-        assert out.strip()
+        _assert_search_smoke_output(out, kind="tool", query="")
 
     def test_search_with_query(self, capsys):
         """What: Runs 'kiso skill search' with query 'search' to filter results.
@@ -50,7 +76,7 @@ class TestSkillSearch:
         except SystemExit:
             pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
-        assert out.strip()
+        _assert_search_smoke_output(out, kind="tool", query="search")
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +85,8 @@ class TestSkillSearch:
 
 
 class TestConnectorSearch:
+    """Optional smoke tests for remote registry-backed connector search."""
+
     def test_search_returns_results(self, capsys):
         """What: Runs 'kiso connector search' with an empty query string.
 
@@ -72,7 +100,7 @@ class TestConnectorSearch:
         except SystemExit:
             pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
-        assert out.strip()
+        _assert_search_smoke_output(out, kind="connector", query="")
 
 
 # ---------------------------------------------------------------------------

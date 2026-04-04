@@ -6,6 +6,10 @@ F6: Write a post on moltbook.
 Both tests are destructive (real side effects on external services).
 F6 depends on F5 — they share a session so F6 has conversation context
 from the signup.
+
+These are best-effort external smoke tests, not blocking semantic coverage.
+The remote site controls the final oracle, so they run only with
+`--functional --destructive --extended`.
 """
 
 from __future__ import annotations
@@ -19,7 +23,11 @@ from tests.functional.conftest import (
     assert_url_reachable,
 )
 
-pytestmark = [pytest.mark.functional, pytest.mark.destructive]
+pytestmark = [
+    pytest.mark.functional,
+    pytest.mark.destructive,
+    pytest.mark.extended,
+]
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +36,7 @@ pytestmark = [pytest.mark.functional, pytest.mark.destructive]
 
 
 class TestF5MoltbookSignup:
-    """Sign up for moltbook via browser skill."""
+    """Best-effort smoke test for moltbook signup via browser skill."""
 
     async def test_service_signup(self, run_message):
         """What: External service signup test via browser tool on moltbook.
@@ -75,7 +83,7 @@ class TestF5MoltbookSignup:
 
 
 class TestF6MoltbookPost:
-    """Write a post on moltbook (requires prior signup in same session)."""
+    """Best-effort smoke test for posting after signup in the same session."""
 
     async def test_service_post(self, run_message, func_app_client):
         """What: Multi-step service interaction test: signup then post on moltbook.

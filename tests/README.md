@@ -251,6 +251,10 @@ once, then test real workflows without install flow fragility (F27-F30).
 **Destructive tests** (`@pytest.mark.destructive`) create real accounts on
 external services. Gated by `--destructive`, never run in CI.
 
+Third-party service tests with externally controlled state should usually also
+be `@pytest.mark.extended` and treated as smoke coverage unless they assert a
+concrete remote effect that is stable enough to act as a semantic oracle.
+
 
 ## Interactive tests (`tests/interactive/`)
 
