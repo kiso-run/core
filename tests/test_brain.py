@@ -65,6 +65,8 @@ from kiso.brain import (
     REVIEW_STATUSES,
     REVIEW_STATUS_STUCK,
     _retry_llm_with_validation,
+    _classify_install_mode,
+    _build_install_mode_context,
     check_safety_rules,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
@@ -1346,6 +1348,138 @@ class TestBuildPlannerMessages:
         user_content = msgs[1]["content"]
         # Full sysenv already has binaries, Install Context should not be duplicated
         assert "Install Context" not in user_content
+
+    async def test_m1083_install_routing_injected_for_python_lib(self, db, config):
+        """M1083: deterministic Python-lib routing is injected into planner context."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git", "python3", "uv"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+            "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+        }
+        with (
+            patch("kiso.brain.get_system_env", return_value=fake_env),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(db, cfg, "sess1", "admin", "install flask")
+        user_content = msgs[1]["content"]
+        assert "## Install Routing" in user_content
+        assert "Mode: python_lib" in user_content
+        assert "uv pip install flask" in user_content
+
+    async def test_m1083_install_routing_injected_for_system_package(self, db, config):
+        """M1083: deterministic system-package routing is injected into planner context."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git", "python3", "apt-get"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+            "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+        }
+        with (
+            patch("kiso.brain.get_system_env", return_value=fake_env),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(db, cfg, "sess1", "admin", "install timg")
+        user_content = msgs[1]["content"]
+        assert "## Install Routing" in user_content
+        assert "Mode: system_pkg" in user_content
+        assert "Route: system package" in user_content
+
+    async def test_m1083_install_routing_injected_for_kiso_tool(self, db, config):
+        """M1083: deterministic kiso-tool routing is injected into planner context."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        fake_env = {
+            "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
+                   "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
+            "user_info": {"user": "root", "is_root": True, "has_sudo": False},
+            "shell": "/bin/sh",
+            "exec_cwd": str(KISO_DIR / "sessions"),
+            "exec_env": "PATH",
+            "max_output_size": 1_048_576,
+            "available_binaries": ["git", "python3", "apt-get"],
+            "missing_binaries": [],
+            "connectors": [],
+            "max_plan_tasks": 20,
+            "max_replan_depth": 3,
+            "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+            "reference_docs_path": str(KISO_DIR / "reference"),
+            "registry_url": "https://example.com/registry.json",
+            "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
+        }
+        with (
+            patch("kiso.brain.get_system_env", return_value=fake_env),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_connectors", return_value=[]),
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(db, cfg, "sess1", "admin", "install browser")
+        user_content = msgs[1]["content"]
+        assert "## Install Routing" in user_content
+        assert "Mode: kiso_tool" in user_content
+        assert "set needs_install + approval msg only" in user_content
 
     async def test_install_context_not_injected_when_tools_installed(self, db, config):
         """M963: Install Context skipped when tools are installed and no registry."""
@@ -6691,6 +6825,46 @@ class TestM261PromptSizeReduction:
         assert "kiso tool install" in all_modules  # kiso_commands
         assert "never generate" in all_modules  # user_mgmt
         assert "Plugin installation" in all_modules  # plugin_install
+
+
+class TestM1083InstallRoutingHelper:
+    def test_kiso_tool_mode(self):
+        route = _classify_install_mode(
+            "install browser",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "kiso_tool"
+        assert route["target"] == "browser"
+
+    def test_python_lib_mode(self):
+        route = _classify_install_mode(
+            "install flask",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "uv", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "python_lib"
+        assert route["target"] == "flask"
+
+    def test_system_pkg_mode(self):
+        route = _classify_install_mode(
+            "install timg",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "system_pkg"
+        assert route["target"] == "timg"
+
+    def test_context_formats_python_route(self):
+        text = _build_install_mode_context(
+            {"mode": "python_lib", "target": "flask", "reason": "target matches common Python package catalog"},
+            {"os": {"pkg_manager": "apt"}},
+        )
+        assert "Mode: python_lib" in text
+        assert "uv pip install flask" in text
 
 
 class TestM261BrieferModuleCoverage:

@@ -117,6 +117,32 @@ _APPROVAL_KEYWORDS = frozenset({
     "sì", "si", "yes", "ok", "vai", "do it", "proceed", "confirma",
     "installa", "install",
 })
+_INSTALL_MODE_NONE = "none"
+_INSTALL_MODE_KISO_TOOL = "kiso_tool"
+_INSTALL_MODE_PYTHON_LIB = "python_lib"
+_INSTALL_MODE_SYSTEM_PKG = "system_pkg"
+_INSTALL_TARGET_RE = re.compile(
+    r"\b(?:install|installa|installare|installer)\b"
+    r"(?:\s+(?:the|a|an|il|lo|la|i|gli|le|un|una))?"
+    r"(?:\s+(?:kiso\s+tool|tool|plugin|package|pkg|pacchetto|libreria|library|module|modulo|python\s+package|python\s+library|python\s+module|system\s+package|pacchetto\s+di\s+sistema))?"
+    r"\s+([a-z0-9][a-z0-9._+-]{0,63})\b",
+    re.IGNORECASE,
+)
+_SYSTEM_INSTALL_HINT_RE = re.compile(
+    r"\b(?:apt(?:-get)?|dnf|yum|apk|pacman|zypper|brew|pkg manager|package manager|system package|pacchetto di sistema)\b",
+    re.IGNORECASE,
+)
+_PYTHON_INSTALL_HINT_RE = re.compile(
+    r"\b(?:uv\s+pip|pip|pypi|python\s+package|python\s+library|python\s+module|pacchetto python|libreria python|modulo python)\b",
+    re.IGNORECASE,
+)
+_COMMON_PYTHON_PACKAGES = frozenset({
+    "aiohttp", "aiosqlite", "anthropic", "beautifulsoup4", "black", "bs4",
+    "celery", "click", "django", "fastapi", "flask", "httpx", "jinja2",
+    "langchain", "lxml", "matplotlib", "numpy", "openai", "pandas",
+    "playwright", "pydantic", "pytest", "requests", "rich", "scipy",
+    "seaborn", "sqlalchemy", "streamlit", "tenacity", "tomli", "uvicorn",
+})
 
 
 def _compress_install_turns(lines: list[str]) -> list[str]:
@@ -159,6 +185,111 @@ def _compress_install_turns(lines: list[str]) -> list[str]:
         i += 1
 
     return result
+
+
+def _parse_registry_hint_names(registry_hints: str) -> frozenset[str]:
+    """Extract tool names from sysenv registry_hints text."""
+    if not registry_hints:
+        return frozenset()
+    return frozenset(
+        part.split("(")[0].strip().lower()
+        for part in registry_hints.split(";")
+        if part.strip()
+    )
+
+
+def _extract_install_target(message: str) -> str | None:
+    """Best-effort package/tool target extraction from install requests."""
+    match = _INSTALL_TARGET_RE.search(message)
+    if not match:
+        return None
+    return match.group(1).lower()
+
+
+def _classify_install_mode(
+    message: str,
+    sys_env: dict,
+    *,
+    installed_tool_names: "list[str] | set[str] | None" = None,
+    registry_hint_names: "set[str] | frozenset[str] | None" = None,
+) -> dict[str, str]:
+    """Deterministically route install-family requests before planning."""
+    msg_lower = message.lower()
+    if not any(kw in msg_lower for kw in _INSTALL_KEYWORDS):
+        return {"mode": _INSTALL_MODE_NONE}
+
+    target = _extract_install_target(message)
+    if not target:
+        return {"mode": _INSTALL_MODE_NONE}
+
+    hint_names = {n.lower() for n in (registry_hint_names or set())}
+    installed_names = {n.lower() for n in (installed_tool_names or set())}
+    if target in hint_names or target in installed_names:
+        return {
+            "mode": _INSTALL_MODE_KISO_TOOL,
+            "target": target,
+            "reason": "target matches kiso tool context",
+        }
+
+    if _SYSTEM_INSTALL_HINT_RE.search(msg_lower):
+        return {
+            "mode": _INSTALL_MODE_SYSTEM_PKG,
+            "target": target,
+            "reason": "user explicitly requested a system package manager flow",
+        }
+
+    if _PYTHON_INSTALL_HINT_RE.search(msg_lower):
+        return {
+            "mode": _INSTALL_MODE_PYTHON_LIB,
+            "target": target,
+            "reason": "user explicitly referenced Python package installation",
+        }
+
+    if target in _COMMON_PYTHON_PACKAGES:
+        return {
+            "mode": _INSTALL_MODE_PYTHON_LIB,
+            "target": target,
+            "reason": "target matches common Python package catalog",
+        }
+
+    pkg_manager = (sys_env.get("os") or {}).get("pkg_manager")
+    available = {b.lower() for b in sys_env.get("available_binaries") or []}
+    if pkg_manager:
+        return {
+            "mode": _INSTALL_MODE_SYSTEM_PKG,
+            "target": target,
+            "reason": f"no kiso/Python signal; fallback to system package manager ({pkg_manager})",
+        }
+    if "uv" in available or "python3" in available or "python" in available:
+        return {
+            "mode": _INSTALL_MODE_PYTHON_LIB,
+            "target": target,
+            "reason": "no system package manager available; fallback to Python package flow",
+        }
+    return {"mode": _INSTALL_MODE_NONE}
+
+
+def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
+    """Format deterministic install routing for planner context."""
+    mode = route.get("mode", _INSTALL_MODE_NONE)
+    if mode == _INSTALL_MODE_NONE:
+        return ""
+    target = route.get("target", "unknown")
+    pkg_manager = (sys_env.get("os") or {}).get("pkg_manager") or "package manager"
+    lines = [f"Target: {target}", f"Mode: {mode}"]
+    if mode == _INSTALL_MODE_KISO_TOOL:
+        lines.append("Route: kiso tool proposal — set needs_install + approval msg only.")
+        lines.append("Do not use apt-get or uv pip install for this target.")
+    elif mode == _INSTALL_MODE_PYTHON_LIB:
+        lines.append(f"Route: Python library — exec `uv pip install {target}`.")
+        lines.append("Do not set needs_install and do not use the system package manager.")
+    elif mode == _INSTALL_MODE_SYSTEM_PKG:
+        lines.append(f"Route: system package — exec the {pkg_manager} install flow.")
+        lines.append("Do not set needs_install and do not use uv pip install.")
+    reason = route.get("reason")
+    if reason:
+        lines.append(f"Reason: {reason}.")
+    return "\n".join(lines)
 
 
 def build_recent_context(
@@ -1322,6 +1453,10 @@ async def build_planner_messages(
             "Use exec tasks (cat, head, python) to read them from the uploads/ directory."
         )
 
+    _sysenv_registry_hint_names = _parse_registry_hint_names(
+        (get_system_env(config) or {}).get("registry_hints", "")
+    )
+
     # --- Registry: show available-but-not-installed tools ---
     # Show uninstalled registry tools so the planner knows what's available
     # for install.  Filtered by installed_names, so returns empty when all
@@ -1331,6 +1466,13 @@ async def build_planner_messages(
         registry_text = await asyncio.to_thread(
             get_registry_tools, set(installed_names),
         )
+    install_route = _classify_install_mode(
+        new_message,
+        get_system_env(config),
+        installed_tool_names=installed_names,
+        registry_hint_names=_sysenv_registry_hint_names,
+    )
+    install_mode_ctx = _build_install_mode_context(install_route, get_system_env(config))
 
     # --- Briefer path ---
     briefing = None
@@ -1448,6 +1590,7 @@ async def build_planner_messages(
             # fields so the planner can route install commands correctly.
             if "kiso_native" in modules and install_ctx:
                 _add_section(context_parts, "Install Context", install_ctx)
+        _add_section(context_parts, "Install Routing", install_mode_ctx)
         # M1040: inject user-facing settings only when kiso_commands loaded.
         if "kiso_commands" in modules:
             _settings_text = build_user_settings_text(get_system_env(config))
@@ -1487,6 +1630,7 @@ async def build_planner_messages(
         # System env in original position (after facts, before pending)
         # Fallback path: inject full system env (conservative, no briefer).
         context_parts.append(f"## System Environment\n{sys_env_full}")
+        _add_section(context_parts, "Install Routing", install_mode_ctx)
         # Session workspace files + previous plan results (same as briefer path)
         _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
         _add_section(context_parts, "Previous Plan", context_pool.get("last_plan", ""))
@@ -1643,14 +1787,7 @@ async def run_planner(
 
     # Extract registry hint names for install validation (M862).
     _sysenv = get_system_env(config)
-    _hints_raw = _sysenv.get("registry_hints", "")
-    _reg_hint_names: frozenset[str] | None = None
-    if _hints_raw:
-        # "websearch (Web search); aider (Code editing)" → {"websearch", "aider"}
-        _reg_hint_names = frozenset(
-            part.split("(")[0].strip().lower()
-            for part in _hints_raw.split(";") if part.strip()
-        )
+    _reg_hint_names = _parse_registry_hint_names(_sysenv.get("registry_hints", ""))
 
     # inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
