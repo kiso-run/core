@@ -55,6 +55,7 @@ Rules:
 <!-- MODULE: tools_rules -->
 Tools efficiency:
 - Listed tools are confirmed installed — use directly, no verification needed.
+- If an installed kiso tool should perform the work, use `type="tool"` with that tool name and JSON args. Do not route installed tools through `type="exec"` using wording like "use aider to ..." or "run browser on ...".
 - Uninstalled tools cannot be used. Never tool-task an uninstalled tool. To request installation: set `needs_install` with the tool name, add a msg for approval, end plan (see core install rule). After approval: exec install, replan.
 - Install commands are atomic — never decompose.
 - Only ask for env vars declared in a tool's [kiso.env]. If absent, proceed without asking.

@@ -8691,6 +8691,52 @@ class TestNonActionableExecDetail:
         assert not any("analytical" in e for e in errors)
 
 
+class TestInstalledToolExecRouting:
+    """M1023: installed kiso tools must be routed via tool tasks, not exec."""
+
+    def _plan(self, detail):
+        return {"goal": "test", "tasks": [
+            {"type": "exec", "detail": detail, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+
+    def test_use_installed_aider_via_exec_rejected(self):
+        errors = validate_plan(
+            self._plan("Use aider to write hello.py"),
+            installed_skills=["aider"],
+        )
+        assert any("routes installed tool 'aider'" in e for e in errors)
+
+    def test_run_installed_browser_via_exec_rejected(self):
+        errors = validate_plan(
+            self._plan("Run browser on https://example.com and take a screenshot"),
+            installed_skills=["browser"],
+        )
+        assert any("routes installed tool 'browser'" in e for e in errors)
+
+    def test_valid_tool_task_still_accepted(self):
+        plan = {"goal": "test", "tasks": [
+            {"type": "tool", "detail": "Write hello.py", "tool": "aider",
+             "args": "{}", "expect": "hello.py created"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+        assert not validate_plan(plan, installed_skills=["aider"])
+
+    def test_kiso_tool_install_exec_still_accepted(self):
+        errors = validate_plan(
+            self._plan("Run kiso tool install aider"),
+            installed_skills=["aider"],
+        )
+        assert not any("routes installed tool" in e for e in errors)
+
+    def test_unrelated_exec_wording_not_blocked(self):
+        errors = validate_plan(
+            self._plan("Run browser tests with playwright"),
+            installed_skills=["browser"],
+        )
+        assert not any("routes installed tool" in e for e in errors)
+
+
 class TestPipToUvValidation:
     """M640: exec tasks must use uv pip install, not pip install."""
 

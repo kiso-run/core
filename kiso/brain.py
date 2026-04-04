@@ -826,6 +826,8 @@ _NON_ACTIONABLE_PREFIXES = (
     "validate the ", "verify the content", "inspect the content",
     "review the ", "understand ", "evaluate ",
 )
+_DIRECT_TOOL_EXEC_VERB_RE = r"(?:use|run|invoke|launch|ask|have)"
+_DIRECT_TOOL_EXEC_SUFFIX_RE = r"(?:to|for|on|with|against)\b"
 
 
 def _is_non_actionable_exec(detail: str) -> bool:
@@ -837,6 +839,34 @@ def _is_non_actionable_exec(detail: str) -> bool:
     if "/" in detail:
         return False
     return True
+
+
+def _find_direct_tool_exec(
+    detail: str, installed_skills: list[str] | None,
+) -> str | None:
+    """Return tool name if exec detail tries to use an installed kiso tool.
+
+    This is intentionally narrow: it catches routing mistakes like
+    "Use aider to write ..." or "Run browser on https://...".
+    Normal shell tasks mentioning unrelated words must keep passing.
+    """
+    if not installed_skills:
+        return None
+
+    lower = (detail or "").lower()
+    if "kiso tool " in lower or "kiso connector " in lower:
+        return None
+    if _INSTALL_CMD_RE.search(lower):
+        return None
+
+    for name in sorted(installed_skills, key=len, reverse=True):
+        pattern = (
+            rf"\b{_DIRECT_TOOL_EXEC_VERB_RE}\s+{re.escape(name.lower())}\s+"
+            rf"{_DIRECT_TOOL_EXEC_SUFFIX_RE}"
+        )
+        if re.search(pattern, lower):
+            return name
+    return None
 
 
 def _validate_plan_tasks(
@@ -871,6 +901,13 @@ def _validate_plan_tasks(
                 f"Task {i}: exec detail is analytical, not actionable — "
                 f"rewrite as a concrete shell command description "
                 f"(e.g., 'Run kiso tool install browser')"
+            )
+        direct_tool_exec = _find_direct_tool_exec(detail, installed_skills)
+        if t == TASK_TYPE_EXEC and direct_tool_exec:
+            errors.append(
+                f"Task {i}: exec detail directly routes installed tool '{direct_tool_exec}'. "
+                f"Installed kiso tools must use type='tool' with tool='{direct_tool_exec}', "
+                f"not type='exec'."
             )
         if t == TASK_TYPE_EXEC and _PIP_INSTALL_RE.search(detail) and not _UV_PIP_RE.search(detail):
             errors.append(
