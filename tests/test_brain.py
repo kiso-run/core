@@ -67,6 +67,8 @@ from kiso.brain import (
     _retry_llm_with_validation,
     _classify_install_mode,
     _build_install_mode_context,
+    _build_exec_translator_repair_context,
+    _is_simple_shell_intent,
     check_safety_rules,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
@@ -3322,6 +3324,82 @@ class TestExecTranslatorSyntaxCheck:
                     return_value=explanation):
             with pytest.raises(ExecTranslatorError, match="Natural language"):
                 await run_exec_translator(config, "List files", "OS: Linux")
+
+    async def test_m1084_syntax_error_gets_one_targeted_retry(self):
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
+        calls = []
+
+        async def _capture(cfg, role, messages, **kw):
+            calls.append(messages[1]["content"])
+            return ["if then echo ok fi", "echo ok"][len(calls) - 1]
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            result = await run_exec_translator(config, "Print ok", "OS: Linux")
+
+        assert result == "echo ok"
+        assert len(calls) == 2
+        assert "Targeted repair" in calls[1]
+        assert "bash syntax error" in calls[1].lower()
+
+    async def test_m1084_markdown_fences_get_one_targeted_retry(self):
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
+        calls = []
+
+        async def _capture(cfg, role, messages, **kw):
+            calls.append(messages[1]["content"])
+            return ["```bash\npwd\n```", "pwd"][len(calls) - 1]
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            result = await run_exec_translator(
+                config, "Show the current working directory", "OS: Linux",
+            )
+
+        assert result == "pwd"
+        assert len(calls) == 2
+        assert "markdown fences" in calls[1].lower()
+        assert "single direct command" in calls[1]
+
+    async def test_m1084_natural_language_gets_one_targeted_retry(self):
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
+        calls = []
+
+        async def _capture(cfg, role, messages, **kw):
+            calls.append(messages[1]["content"])
+            return ["I will run pwd", "pwd"][len(calls) - 1]
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            result = await run_exec_translator(
+                config, "Show the current working directory", "OS: Linux",
+            )
+
+        assert result == "pwd"
+        assert len(calls) == 2
+        assert "natural-language explanation" in calls[1].lower()
+
+    async def test_m1084_retry_still_fails_after_second_invalid_output(self):
+        config = _make_brain_config(models=full_models(worker="gpt-4"))
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                    side_effect=["```bash\npwd\n```", "```bash\npwd\n```"]):
+            with pytest.raises(ExecTranslatorError, match="Markdown fences"):
+                await run_exec_translator(
+                    config, "Show the current working directory", "OS: Linux",
+                )
+
+
+class TestM1084SimpleShellIntent:
+    def test_detects_simple_intent(self):
+        assert _is_simple_shell_intent("Show the current working directory")
+        assert _is_simple_shell_intent("List all files in the current directory")
+
+    def test_repair_context_pushes_shortest_command_for_simple_task(self):
+        text = _build_exec_translator_repair_context(
+            "Show the current working directory",
+            error_text="Markdown fences in command output",
+            repair_kind="fences",
+            previous_command="```bash\npwd\n```",
+        )
+        assert "single direct command" in text
+        assert "Never repeat the invalid format." in text
 
 
 class TestPlannerPromptContent:

@@ -2734,6 +2734,14 @@ class ExecTranslatorError(Exception):
     """Exec-to-shell translation failure."""
 
 
+class _ExecTranslatorValidationError(Exception):
+    """Internal translator validation error with optional targeted-repair metadata."""
+
+    def __init__(self, message: str, *, repair_kind: str | None = None):
+        super().__init__(message)
+        self.repair_kind = repair_kind
+
+
 class MessengerError(Exception):
     """Messenger generation failure."""
 
@@ -2968,6 +2976,83 @@ def build_exec_translator_messages(
     return _build_messages(system_prompt, "\n\n".join(context_parts))
 
 
+def _is_simple_shell_intent(detail: str) -> bool:
+    """True for obvious one-step shell intents where scripts are overkill."""
+    detail_l = detail.lower().strip()
+    simple_markers = (
+        "current working directory", "working directory",
+        "list all files", "list files", "list directories",
+        "print the text", "print text", "echo ",
+        "show the contents", "show contents", "cat ",
+        "check if", "is installed", "command -v",
+    )
+    return any(marker in detail_l for marker in simple_markers)
+
+
+def _build_exec_translator_repair_context(
+    detail: str,
+    *,
+    error_text: str,
+    repair_kind: str,
+    previous_command: str,
+    retry_context: str = "",
+) -> str:
+    """Build a bounded targeted retry hint for structural translator failures."""
+    parts: list[str] = []
+    if retry_context.strip():
+        parts.append(retry_context.strip())
+    parts.append(
+        "Targeted repair: the previous translator output was structurally invalid. "
+        "Return ONLY the corrected shell command."
+    )
+    parts.append(f"Previous invalid output:\n{previous_command}")
+    parts.append(f"Validation error: {error_text}")
+    if repair_kind == "syntax":
+        parts.append("Fix the bash syntax error and return the shortest equivalent valid shell command.")
+    elif repair_kind == "fences":
+        parts.append("Remove markdown fences/comments and return raw shell commands only.")
+    elif repair_kind == "natural_language":
+        parts.append("Replace the natural-language explanation with the actual shell command only.")
+    if _is_simple_shell_intent(detail):
+        parts.append("This is a simple one-step task. Prefer a single direct command, not a script or heredoc.")
+    parts.append("Never repeat the invalid format.")
+    return "\n\n".join(parts)
+
+
+def _validate_exec_translator_command(command: str) -> None:
+    """Validate translator output and raise targeted repair errors when possible."""
+    if not command or command == "CANNOT_TRANSLATE":
+        raise ExecTranslatorError("Cannot translate task to shell command")
+
+    if "```" in command:
+        raise _ExecTranslatorValidationError(
+            "Markdown fences in command output",
+            repair_kind="fences",
+        )
+
+    _ECHO_MARKERS = (
+        "Public files:", "Blocked commands:", "Plan limits:",
+        "Exec CWD:", "System Environment", "Preceding Task Outputs",
+        "## Task", "Available binaries:",
+    )
+    for marker in _ECHO_MARKERS:
+        if marker in command:
+            raise ExecTranslatorError(
+                f"Prompt echo-back detected ('{marker}' in output)"
+            )
+
+    _NL_PREFIXES = (
+        "I ", "The ", "Here ", "To ", "Let me", "This ", "Sure",
+        "Based on", "First,", "Note:", "Unfortunately",
+    )
+    first_line = command.split("\n", 1)[0]
+    if any(first_line.startswith(p) for p in _NL_PREFIXES):
+        raise _ExecTranslatorValidationError(
+            f"Natural language in command output: {first_line[:80]}",
+            repair_kind="natural_language",
+        )
+
+
 async def run_exec_translator(
     config: Config,
     detail: str,
@@ -2982,63 +3067,59 @@ async def run_exec_translator(
     Returns the shell command string.
     Raises ExecTranslatorError on failure.
     """
-    messages = build_exec_translator_messages(
-        config, detail, sys_env_text, plan_outputs_text,
-        retry_context=retry_context,
-        workspace_files=workspace_files,
-    )
     _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
-    raw = await _call_role(config, "worker", messages, ExecTranslatorError, session,
-                           fallback_model=_fallback)
-
-    command = raw.strip()
-    if not command or command == "CANNOT_TRANSLATE":
-        raise ExecTranslatorError(
-            f"Cannot translate task to shell command: {detail}"
+    current_retry_context = retry_context
+    for attempt in range(2):
+        messages = build_exec_translator_messages(
+            config, detail, sys_env_text, plan_outputs_text,
+            retry_context=current_retry_context,
+            workspace_files=workspace_files,
         )
-
-    # M1058: detect prompt echo-back — the model regurgitated fragments
-    # of its system/user prompt instead of generating a command.
-    _ECHO_MARKERS = (
-        "Public files:", "Blocked commands:", "Plan limits:",
-        "Exec CWD:", "System Environment", "Preceding Task Outputs",
-        "## Task", "Available binaries:",
-    )
-    for marker in _ECHO_MARKERS:
-        if marker in command:
-            raise ExecTranslatorError(
-                f"Prompt echo-back detected ('{marker}' in output)"
-            )
-
-    # M1058: detect natural language — the model produced an explanation
-    # instead of a shell command.
-    _NL_PREFIXES = (
-        "I ", "The ", "Here ", "To ", "Let me", "This ", "Sure",
-        "Based on", "First,", "Note:", "Unfortunately",
-    )
-    first_line = command.split("\n", 1)[0]
-    if any(first_line.startswith(p) for p in _NL_PREFIXES):
-        raise ExecTranslatorError(
-            f"Natural language in command output: {first_line[:80]}"
+        raw = await _call_role(
+            config, "worker", messages, ExecTranslatorError, session,
+            fallback_model=_fallback,
         )
+        command = raw.strip()
+        try:
+            _validate_exec_translator_command(command)
 
-    # M1058: always run bash -n syntax check (was >120 chars only)
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "bash", "-n",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate(input=command.encode())
-        if proc.returncode != 0:
-            hint = stderr.decode(errors="replace").strip()
-            raise ExecTranslatorError(
-                f"Bash syntax error in generated command: {hint}"
-            )
-    except FileNotFoundError:
-        pass  # bash not available — skip check
-    return command
+            # M1058: always run bash -n syntax check (was >120 chars only)
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "bash", "-n",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await proc.communicate(input=command.encode())
+                if proc.returncode != 0:
+                    hint = stderr.decode(errors="replace").strip()
+                    raise _ExecTranslatorValidationError(
+                        f"Bash syntax error in generated command: {hint}",
+                        repair_kind="syntax",
+                    )
+            except FileNotFoundError:
+                pass  # bash not available — skip check
+            return command
+        except _ExecTranslatorValidationError as e:
+            if attempt == 0 and e.repair_kind in {"syntax", "fences", "natural_language"}:
+                current_retry_context = _build_exec_translator_repair_context(
+                    detail,
+                    error_text=str(e),
+                    repair_kind=e.repair_kind,
+                    previous_command=command,
+                    retry_context=retry_context,
+                )
+                continue
+            raise ExecTranslatorError(str(e)) from e
+        except ExecTranslatorError as e:
+            if "Cannot translate task to shell command" in str(e):
+                raise ExecTranslatorError(
+                    f"Cannot translate task to shell command: {detail}"
+                ) from e
+            raise
+
+    raise ExecTranslatorError(f"Cannot translate task to shell command: {detail}")
 
 
 # ---------------------------------------------------------------------------
