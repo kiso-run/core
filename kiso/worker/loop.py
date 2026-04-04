@@ -825,6 +825,19 @@ def _make_plan_output(
     return {"index": index, "type": task_type, "detail": detail, "output": output, "status": status}
 
 
+def _is_unresolved_failed_output(plan_output: dict) -> bool:
+    """True when a failed plan output still requires replanning."""
+    return (
+        plan_output.get("status") == "failed"
+        and not plan_output.get("reviewer_ok")
+    )
+
+
+def _get_unresolved_failed_outputs(plan_outputs: list[dict]) -> list[dict]:
+    """Return failed outputs that were not explicitly accepted by the reviewer."""
+    return [po for po in plan_outputs if _is_unresolved_failed_output(po)]
+
+
 async def _fail_task_and_audit(
     ctx: _PlanCtx, task_id: int, task_type: str, detail: str,
     error: str, task_idx: int, *,
@@ -2252,15 +2265,10 @@ async def _run_planning_loop(
 
         if replan_reason is None:
             # Auto-replan safety net: if there are failed outputs and
-            # replan budget remains, generate a reason from the last failure.
-            # M1078: exclude outputs where reviewer explicitly said ok (reviewer_ok=True)
-            # despite a non-zero exit code — those failures are intentional/acceptable.
-            failed_outputs = [
-                po for po in plan_outputs
-                if po.get("status") == "failed" and not po.get("reviewer_ok")
-            ]
-            if failed_outputs and replan_depth < max_replan_depth:
-                last_fail = failed_outputs[-1]
+            # replan budget remains, generate a reason from the last unresolved failure.
+            unresolved_failed_outputs = _get_unresolved_failed_outputs(plan_outputs)
+            if unresolved_failed_outputs and replan_depth < max_replan_depth:
+                last_fail = unresolved_failed_outputs[-1]
                 replan_reason = f"Task failed: {(last_fail.get('output') or 'unknown error')[:200]}"
                 log.info("Auto-generating replan reason: %s", replan_reason)
             else:

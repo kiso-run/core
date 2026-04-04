@@ -42,6 +42,8 @@ from kiso.worker import (
     run_worker,
 )
 from kiso.worker.loop import (
+    _get_unresolved_failed_outputs,
+    _is_unresolved_failed_output,
     _PlanCtx,
     _TASK_HANDLERS,
     _TaskHandlerResult,
@@ -8404,6 +8406,37 @@ class TestTaskHandlers:
         assert result.plan_output["index"] == 1
         assert result.plan_output["detail"] == "echo hello"
 
+    async def test_handle_exec_task_failed_but_reviewer_ok_marks_output_resolved(self, db, plan_id, tmp_path):
+        """M1082: reviewer-ok exec failures carry reviewer_ok and stop without replan."""
+        task_row = await _make_task_row(db, plan_id, "exec", "exit 1")
+        ctx = _make_ctx(db)
+        review_ok_failed = {
+            "status": "ok",
+            "reason": None,
+            "learn": None,
+            "retry_hint": None,
+            "summary": "The failure is already informative and acceptable.",
+        }
+        with patch(
+            "kiso.worker.loop.run_exec_translator",
+            new_callable=AsyncMock,
+            return_value="exit 1",
+        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
+                 return_value=review_ok_failed), \
+             _patch_kiso_dir(tmp_path):
+            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+
+        assert result.stop is True
+        assert result.stop_replan is None
+        assert result.stop_success is False
+        assert result.completed_row is None
+        assert result.plan_output is not None
+        assert result.plan_output["status"] == "failed"
+        assert result.plan_output["reviewer_ok"] is True
+        assert result.plan_output["reviewer_summary"] == review_ok_failed["summary"]
+        assert _is_unresolved_failed_output(result.plan_output) is False
+        assert _get_unresolved_failed_outputs([result.plan_output]) == []
+
     async def test_handle_exec_install_blocked_with_needs_install(self, db, plan_id, tmp_path):
         """M965/M979: install blocked when plan has needs_install (mixed propose+install)."""
         task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
@@ -9199,6 +9232,43 @@ class TestRunPlanningLoop:
         # No replan should have happened — execute_plan called only once
         assert call_count[0] == 1
         assert returned_id == plan_id
+
+    async def test_reviewer_ok_failure_stops_with_user_facing_msg(self, db, tmp_path):
+        """M1082: real exec failure accepted by reviewer ends with failure msg, no replan."""
+        plan = EXEC_THEN_MSG_PLAN
+        plan_id = await create_plan(db, "sess1", 0, plan["goal"])
+        await _persist_plan_tasks(db, plan_id, "sess1", plan["tasks"])
+        config = make_config()
+
+        review_ok_failed = {
+            "status": "ok",
+            "reason": None,
+            "learn": None,
+            "retry_hint": None,
+            "summary": "The failure already explains what happened.",
+        }
+        run_planner_mock = AsyncMock(side_effect=AssertionError("run_planner should not be called"))
+
+        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock, return_value="exit 1"), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_ok_failed), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Failure explained to user"), \
+             patch("kiso.worker.loop.run_planner", run_planner_mock), \
+             _patch_kiso_dir(tmp_path):
+            returned_id = await _run_planning_loop(
+                db, config, "sess1", 0, "hello",
+                plan_id, plan, "admin", None, 30,
+                {}, None, 3, None, None,
+            )
+
+        assert returned_id == plan_id
+        assert run_planner_mock.await_count == 0
+        plan_row = await get_plan_for_session(db, "sess1")
+        assert plan_row["status"] == "failed"
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert any(
+            t["type"] == "msg" and t["status"] == "done" and t["output"] == "Failure explained to user"
+            for t in tasks
+        )
 
     async def test_old_plan_stays_replanning_until_new_plan_persisted(self, db, tmp_path):
         """M103a: old plan stays 'replanning' until the new plan + tasks are persisted.
