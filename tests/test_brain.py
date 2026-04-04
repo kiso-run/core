@@ -8767,6 +8767,53 @@ class TestRegistryInstallValidation:
         assert not any("not in the kiso plugin registry" in e for e in errors)
 
 
+class TestSystemPackageInstallSemantics:
+    """Semantic install coverage replacing prompt-only 'pkg manager' assertions."""
+
+    def _plan(self, detail):
+        return {"goal": "install package", "needs_install": None, "tasks": [
+            {"type": "exec", "detail": detail, "expect": "package installed successfully"},
+            {"type": "msg", "detail": "Answer in English. result"},
+        ]}
+
+    def test_system_package_exec_accepted(self):
+        errors = validate_plan(
+            self._plan("Use the system package manager to install timg"),
+            registry_hint_names=frozenset({"browser", "aider", "websearch"}),
+        )
+        assert not any("not in the kiso plugin registry" in e for e in errors)
+        assert not any("needs_install" in e for e in errors)
+
+    def test_system_package_exec_not_treated_as_kiso_tool_install(self):
+        errors = validate_plan(
+            self._plan("Install timg with apt-get"),
+            registry_hint_names=frozenset({"browser", "aider", "websearch"}),
+        )
+        assert not any("msg task asking whether to install" in e for e in errors)
+        assert not any("not in the kiso plugin registry" in e for e in errors)
+
+
+class TestSelfInspectionPlanSemantics:
+    """Semantic self-inspection coverage replacing prompt-only planner checks."""
+
+    def test_self_inspection_exec_plan_accepted(self):
+        plan = {"goal": "Show SSH key", "tasks": [
+            {"type": "exec", "detail": "Show the SSH public key from ~/.kiso/sys/ssh/",
+             "expect": "SSH public key printed"},
+            {"type": "msg", "detail": "Answer in English. report results"},
+        ]}
+        assert validate_plan(plan) == []
+
+    def test_self_inspection_kiso_tool_plan_rejected(self):
+        plan = {"goal": "Show SSH key", "tasks": [
+            {"type": "tool", "detail": "inspect the local instance",
+             "tool": "kiso", "args": "{}", "expect": "SSH public key shown"},
+            {"type": "msg", "detail": "Answer in English. report results"},
+        ]}
+        errors = validate_plan(plan, installed_skills=["browser"])
+        assert any("not available" in e for e in errors)
+
+
 class TestM950ForceMsgOnly:
     """M950: force_msg_only rejects non-msg tasks after tool-not-in-registry."""
 
