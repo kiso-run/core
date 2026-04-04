@@ -1,131 +1,54 @@
-"""Integration test — verify skill → tool rename completeness.
+"""Runtime-focused guards for the historical skill -> tool rename.
 
-Checks structural invariants: new files exist, imports point to new modules,
-registry uses new keys, and no stale imports of old module names remain.
+These tests intentionally avoid source-tree string scans and doc/file-name
+policing. The goal is to protect runtime invariants that still matter:
+the new modules import, the legacy shim files are gone, and the registry uses
+the runtime key the CLI/runtime expects.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
-
-import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "kiso"
 CLI = ROOT / "cli"
-TESTS = ROOT / "tests"
 
 
-def _source_files() -> list[Path]:
-    """Collect all .py files in kiso/, cli/, tests/ (excluding __pycache__)."""
-    files = []
-    for d in (SRC, CLI, TESTS):
-        for f in d.rglob("*.py"):
-            if "__pycache__" in str(f):
-                continue
-            files.append(f)
-    return files
+class TestRenameRuntimeInvariants:
+    """Verify that runtime entry points use the post-rename module layout."""
 
+    def test_current_tool_modules_import(self):
+        modules = {
+            "kiso.tools": "discover_tools",
+            "kiso.tool_repair": "repair_unhealthy_tools",
+            "kiso.worker.tool": "_tool_task",
+            "cli.tool": "run_tool_command",
+            "kiso.recipe_loader": "discover_recipes",
+            "cli.recipe": "run_recipe_command",
+        }
+        for module_name, attr in modules.items():
+            module = importlib.import_module(module_name)
+            assert hasattr(module, attr), f"{module_name} missing {attr}"
 
-class TestRenameCompleteness:
-    """Verify the skill → tool rename is structurally sound."""
-
-    def test_new_files_exist(self):
-        """New tool-named files must exist."""
-        assert (SRC / "tools.py").exists(), "kiso/tools.py missing"
-        assert (SRC / "tool_repair.py").exists(), "kiso/tool_repair.py missing"
-        assert (SRC / "worker" / "tool.py").exists(), "kiso/worker/tool.py missing"
-        assert (CLI / "tool.py").exists(), "cli/tool.py missing"
-
-    def test_shim_files_removed(self):
-        """Old backward compat shim files must not exist."""
-        assert not (SRC / "skills.py").exists(), "kiso/skills.py still exists"
-        assert not (SRC / "skill_repair.py").exists(), "kiso/skill_repair.py still exists"
-        assert not (SRC / "worker" / "skill.py").exists(), "kiso/worker/skill.py still exists"
-
-    def test_no_direct_import_of_old_modules_in_source(self):
-        """Non-shim source files must not import from old module names."""
-        old_imports = [
-            "from kiso.skills ",
-            "import kiso.skills",
-            "from kiso.skill_repair ",
-            "import kiso.skill_repair",
-            "from kiso.worker.skill ",
-            "import kiso.worker.skill",
-            "from kiso.skill_loader ",
-            "import kiso.skill_loader",
-            "from cli.skill ",
-            "import cli.skill",
+    def test_legacy_shim_files_removed(self):
+        legacy_paths = [
+            SRC / "skills.py",
+            SRC / "skill_repair.py",
+            SRC / "skill_loader.py",
+            SRC / "worker" / "skill.py",
+            CLI / "skill.py",
         ]
-        violations = []
-        for f in _source_files():
-            # Skip this test file
-            if f.name == "test_rename_completeness.py":
-                continue
-            content = f.read_text()
-            for old in old_imports:
-                if old in content:
-                    violations.append(f"{f.relative_to(ROOT)}: {old}")
-        assert not violations, (
-            f"Found {len(violations)} stale import(s):\n" + "\n".join(violations)
-        )
+        for path in legacy_paths:
+            assert not path.exists(), f"legacy shim still present: {path.relative_to(ROOT)}"
 
-    def test_no_patch_of_old_module_names(self):
-        """Test patches must reference new module names."""
-        old_patches = [
-            '"kiso.brain.discover_skills"',
-            '"kiso.worker.loop.discover_skills"',
-            '"kiso.worker.loop._skill_task"',
-            '"kiso.worker.discover_skills"',
-            '"kiso.brain.discover_md_skills"',
-            '"cli.plugin.discover_md_skills"',
-            '"cli.plugin.invalidate_md_skills_cache"',
-        ]
-        violations = []
-        for f in _source_files():
-            if f.name == "test_rename_completeness.py":
-                continue
-            content = f.read_text()
-            for old in old_patches:
-                if old in content:
-                    violations.append(f"{f.relative_to(ROOT)}: {old}")
-        assert not violations, (
-            f"Found {len(violations)} stale patch target(s):\n" + "\n".join(violations)
-        )
-
-    def test_registry_has_tools_key(self):
-        """registry.json must have 'tools' key."""
+    def test_registry_uses_tools_key(self):
         registry = json.loads((ROOT / "registry.json").read_text())
         assert "tools" in registry, "registry.json missing 'tools' key"
 
-    def test_new_test_files_exist(self):
-        """Renamed test files must exist."""
-        expected = [
-            TESTS / "test_tools.py",
-            TESTS / "test_tool_lifecycle.py",
-            TESTS / "test_tool_replan.py",
-            TESTS / "test_tool_install_health.py",
-            TESTS / "test_tool_repair.py",
-            TESTS / "docker" / "test_tool_venv.py",
-        ]
-        for f in expected:
-            assert f.exists(), f"{f.relative_to(ROOT)} missing"
-
-    def test_recipe_files_exist(self):
-        """Recipe-renamed files must exist."""
-        assert (SRC / "recipe_loader.py").exists(), "kiso/recipe_loader.py missing"
-        assert (CLI / "recipe.py").exists(), "cli/recipe.py missing"
-        assert (ROOT / "docs" / "recipes.md").exists(), "docs/recipes.md missing"
-
-    def test_old_skill_loader_removed(self):
-        """Old skill_loader.py and cli/skill.py must not exist."""
-        assert not (SRC / "skill_loader.py").exists(), "kiso/skill_loader.py still exists"
-        assert not (CLI / "skill.py").exists(), "cli/skill.py still exists"
-
-    def test_new_doc_files_exist(self):
-        """Renamed doc files must exist."""
-        docs = ROOT / "docs"
-        assert (docs / "tools.md").exists(), "docs/tools.md missing"
-        assert (docs / "tool-development.md").exists(), "docs/tool-development.md missing"
+    def test_registry_uses_connectors_key(self):
+        registry = json.loads((ROOT / "registry.json").read_text())
+        assert "connectors" in registry, "registry.json missing 'connectors' key"
