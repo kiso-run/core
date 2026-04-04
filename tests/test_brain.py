@@ -6876,11 +6876,13 @@ class TestM261PromptSizeReduction:
         Both rules must coexist in the full prompt without contradiction."""
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Core: system packages allowed (M849 — in core now)
-        assert "pkg manager" in all_modules.lower()
+        assert "System package requests" in all_modules
+        assert "Python package/library requests" in all_modules
+        assert "needs_install" in all_modules
         # tool_recovery: apt-get blocked for broken deps
         assert "Never apt-get/pip install to fix" in all_modules
         # Core pkg rule comes before tool_recovery
-        pkg_pos = all_modules.lower().index("pkg manager")
+        pkg_pos = all_modules.index("System package requests")
         tool_rec_pos = all_modules.index("Never apt-get/pip install to fix")
         assert pkg_pos < tool_rec_pos
 
@@ -6888,8 +6890,9 @@ class TestM261PromptSizeReduction:
         """M849: core prompt (no modules) contains install decision rules."""
         core_only = _load_modular_prompt("planner", [])
         assert "uv pip install" in core_only
-        assert "pkg manager" in core_only.lower()
+        assert "System package requests" in core_only
         assert "needs_install" in core_only
+        assert "Install Routing" in core_only
 
     def test_m743_tool_recovery_module_still_blocks_apt(self):
         """M743: tool_recovery module still blocks apt-get for broken tool deps."""

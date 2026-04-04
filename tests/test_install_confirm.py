@@ -49,7 +49,9 @@ class TestPlannerPromptInstallRules:
     def test_m733_core_allows_system_packages(self):
         """M733/M849: core prompt allows system pkg manager for non-kiso packages."""
         core = _load_modular_prompt("planner", [])
-        assert "pkg manager" in core.lower()
+        assert "System package requests" in core
+        assert "uv pip install" in core
+        assert "needs_install" in core
 
     def test_m733_tool_recovery_still_blocks_apt_for_deps(self):
         """M733: tool_recovery module still blocks apt-get for broken tool deps."""
