@@ -83,6 +83,9 @@ class TestMultiTurnLearning:
         )
         assert r2.success
         assert_italian(r2.msg_output)
+        types = r2.task_types()
+        assert "exec" not in types, f"Knowledge recall should not need exec: {types}"
+        assert "tool" not in types, f"Knowledge recall should not need tools: {types}"
         # Should mention Flask
         assert "flask" in r2.msg_output.lower()
 
@@ -119,6 +122,9 @@ class TestEntityTagEnrichment:
         )
         assert result.success
         assert_italian(result.last_plan_msg_output)
+        types = result.task_types()
+        assert "exec" not in types, f"Pre-seeded fact recall should not need exec: {types}"
+        assert "tool" not in types, f"Pre-seeded fact recall should not need tools: {types}"
         # Should mention onboarding or SaaS from the pre-seeded fact
         output_lower = result.msg_output.lower()
         assert "onboarding" in output_lower or "saas" in output_lower
@@ -367,6 +373,9 @@ class TestF16ScoredFactRetrieval:
         assert result.success
         assert_italian(result.last_plan_msg_output)
         output_lower = result.msg_output.lower()
+        types = result.task_types()
+        assert "exec" not in types, f"Scored fact retrieval should not need exec: {types}"
+        assert "tool" not in types, f"Scored fact retrieval should not need tools: {types}"
         # Should mention Flask and/or Django
         assert "flask" in output_lower or "django" in output_lower, (
             f"Expected Flask/Django in response: {result.msg_output[:300]}"

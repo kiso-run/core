@@ -99,7 +99,9 @@ class TestF19EnglishResponse:
         output = result.last_plan_msg_output
         assert_english(output)
         assert_no_failure_language(output)
-        assert len(output) > 100, f"Response too short ({len(output)} chars)"
+        types = result.task_types()
+        assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["recursion", "recursive", "function", "base case", "call",
@@ -137,7 +139,9 @@ class TestF20SpanishResponse:
         )
         output = result.last_plan_msg_output
         assert_spanish(output)
-        assert len(output) > 100, f"Response too short ({len(output)} chars)"
+        types = result.task_types()
+        assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["recursión", "recursiva", "recursivo", "función", "caso base",
@@ -174,6 +178,9 @@ class TestF21ReplanRecovery:
         assert result.plans, "No plans were created"
         assert result.last_plan_msg_output, (
             "No msg output — user got no response"
+        )
+        assert "exec" in result.task_types(), (
+            f"Expected failing exec before replan/recovery, got: {result.task_types()}"
         )
 
         # Output should mention the problem
@@ -443,7 +450,9 @@ class TestF31RussianResponse:
         )
         output = result.last_plan_msg_output
         assert_russian(output)
-        assert len(output) > 100, f"Response too short ({len(output)} chars)"
+        types = result.task_types()
+        assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["рекурси", "функци", "базов", "вызов", "факториал",
@@ -480,7 +489,9 @@ class TestF32ChineseResponse:
         )
         output = result.last_plan_msg_output
         assert_chinese(output)
-        assert len(output) > 50, f"Response too short ({len(output)} chars)"
+        types = result.task_types()
+        assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["递归", "函数", "基", "调用", "阶乘",

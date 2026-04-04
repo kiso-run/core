@@ -43,6 +43,9 @@ class TestF7ResearchAndPublish:
         assert result.success, (
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
+        types = result.task_types()
+        assert "search" in types, f"Expected search task in pipeline: {types}"
+        assert "exec" in types, f"Expected exec task to create markdown artifact: {types}"
 
         # Response should not contain failure language (check last plan only —
         # intermediate replan status messages may contain "failed to")
@@ -109,6 +112,9 @@ class TestF8ScriptExecution:
 
         assert result.success, (
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
+        )
+        assert "exec" in result.task_types(), (
+            f"Expected exec task for script creation/execution, got: {result.task_types()}"
         )
 
         # Response is in Italian (use last_plan_msg_output to exclude

@@ -45,6 +45,11 @@ class TestF27BrowseAndDescribe:
         # Don't assert_italian — response may contain quoted English web content.
         # Language compliance is tested by F12 (messenger quality).
         assert_no_failure_language(result.last_plan_msg_output)
+        tool_names = [
+            FunctionalResult.task_tool_name(t) for t in result.tasks
+            if t.get("type") == "tool"
+        ]
+        assert "browser" in tool_names, f"Browser not used: {tool_names}"
 
         output = result.last_plan_msg_output.lower()
         assert any(w in output for w in (
@@ -81,6 +86,9 @@ class TestF28ScreenshotOCR:
             if t.get("type") == "tool"
         ]
         assert "browser" in tool_names, f"Browser not used: {tool_names}"
+        assert result.has_published_file("*.png"), (
+            f"Expected published screenshot artifact, got: {result.pub_files}"
+        )
 
         all_output = "\n".join(
             t.get("output") or "" for t in result.tasks
@@ -122,6 +130,13 @@ class TestF29AiderWriteCode:
         assert aider_tasks, (
             f"Expected aider tool task, got types: {result.task_types()}"
         )
+        task_blob = "\n".join(
+            (t.get("detail") or "") + "\n" + (t.get("command") or "")
+            for t in result.tasks
+        ).lower()
+        assert "hello.py" in task_blob, (
+            f"Expected workflow to reference hello.py, got: {task_blob[:400]}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +163,12 @@ class TestF30FullPipeline:
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r1.success, f"Plan 1 failed: {r1.task_types()}"
+        r1_tool_names = [
+            FunctionalResult.task_tool_name(t) for t in r1.tasks
+            if t.get("type") == "tool"
+        ]
+        assert "browser" in r1_tool_names, f"Plan 1 missing browser tool: {r1_tool_names}"
+        assert "ocr" in r1_tool_names, f"Plan 1 missing ocr tool: {r1_tool_names}"
 
         # Plan 2: write script + execute
         r2 = await run_message(
@@ -157,7 +178,12 @@ class TestF30FullPipeline:
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r2.success, f"Plan 2 failed: {r2.task_types()}"
+        r2_tool_names = [
+            FunctionalResult.task_tool_name(t) for t in r2.tasks
+            if t.get("type") == "tool"
+        ]
+        assert "aider" in r2_tool_names, f"Plan 2 missing aider tool: {r2_tool_names}"
+        assert "exec" in r2.task_types(), f"Plan 2 missing exec task: {r2.task_types()}"
 
         output = r2.last_plan_msg_output
-        assert len(output) > 20, f"Output too short: {output}"
         assert_no_failure_language(output)

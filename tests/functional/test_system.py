@@ -53,6 +53,9 @@ class TestF3SSHKey:
         # Response is in Italian (use last_plan to exclude English replan notifications)
         assert_italian(result.last_plan_msg_output)
         assert_no_failure_language(result.last_plan_msg_output)
+        assert "exec" in result.task_types(), (
+            f"Expected an exec task for SSH self-inspection, got: {result.task_types()}"
+        )
 
         # SSH key is present somewhere in task outputs (msg or exec)
         all_output = "\n".join(
@@ -104,6 +107,13 @@ class TestF4GitAiderPush:
         push_indicators = ("push", "remote", "->", "branch", "test")
         assert any(kw in all_output for kw in push_indicators), (
             f"No git push indicators in output: {all_output[:500]}"
+        )
+        task_blob = "\n".join(
+            (t.get("detail") or "") + "\n" + (t.get("command") or "")
+            for t in result.tasks
+        ).lower()
+        assert "docs/testing.md" in task_blob, (
+            f"Expected git workflow to target docs/testing.md, got: {task_blob[:500]}"
         )
 
         # Check that aider skill was used (preferred) or exec editing was done
