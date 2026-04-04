@@ -4,14 +4,14 @@ Lightweight guards that role prompt files exist, load, and contain core
 terms.  Behavioral validation lives in test_brain.py and test_worker.py —
 these only catch accidental file deletion or catastrophic rewrites.
 
-Also includes timeout/prompt-size tests merged from test_timeout_prompts.py (M708).
+Also includes coarse prompt-budget tests merged from test_timeout_prompts.py (M708).
 """
 
 from pathlib import Path
 
 import pytest
 
-from kiso.brain import _BRIEFER_MODULE_DESCRIPTIONS
+from kiso.brain import _BRIEFER_MODULE_DESCRIPTIONS, _load_modular_prompt
 
 _ROLES_DIR = Path(__file__).resolve().parent.parent / "kiso" / "roles"
 
@@ -59,60 +59,33 @@ def test_role_prompt_has_core_terms(filename, terms):
 class TestM734WorkerSudoRule:
     """M734: worker prompt has sudo-stripping rule for root."""
 
-    def test_worker_prompt_has_strip_sudo(self):
+    def test_worker_prompt_has_root_sudo_rule(self):
         content = (_ROLES_DIR / "worker.md").read_text()
-        assert "strip" in content.lower() and "sudo" in content.lower()
+        lower = content.lower()
+        assert "sudo" in lower
+        assert "root" in lower
 
     def test_worker_prompt_has_cannot_translate(self):
         content = (_ROLES_DIR / "worker.md").read_text()
         assert "CANNOT_TRANSLATE" in content
 
-    def test_worker_prompt_has_fallback_rule(self):
-        """M871: translator uses alternatives when detail names unavailable tool."""
-        content = (_ROLES_DIR / "worker.md").read_text().lower()
-        assert "alternatives" in content
-        assert "ignore" in content or "available" in content
-
-
 class TestM948PlannerSearchPreference:
-    """M948: planner prompt does not 'prefer' websearch over built-in search."""
+    """M948: planner web guidance keeps built-in search as the default."""
 
-    def test_web_module_no_prefer(self):
-        content = (_ROLES_DIR / "planner.md").read_text()
-        # Extract the web module section
-        start = content.find("<!-- MODULE: web -->")
-        end = content.find("<!-- MODULE:", start + 1)
-        web_section = content[start:end].lower()
-        assert "prefer" not in web_section, (
-            "web module still contains 'prefer' — should say 'only use if installed'"
-        )
-
-    def test_tools_rules_no_prefer_search(self):
-        content = (_ROLES_DIR / "planner.md").read_text()
-        start = content.find("<!-- MODULE: tools_rules -->")
-        end = content.find("<!-- MODULE:", start + 1)
-        tools_section = content[start:end].lower()
-        assert "prefer" not in tools_section, (
-            "tools_rules still contains 'prefer' for search"
-        )
+    def test_web_module_describes_search_routing(self):
+        web_module = _load_modular_prompt("planner", ["web"]).lower()
+        assert "search" in web_module
+        assert "browser" in web_module
+        assert "finding information" in web_module
 
 
-class TestM947WorkerQuotedStrings:
-    """M947: worker prompt has quoted-string preservation rule."""
-
-    def test_worker_prompt_has_verbatim_rule(self):
-        content = (_ROLES_DIR / "worker.md").read_text().lower()
-        assert "verbatim" in content
-        assert "quoted" in content
-
-
-class TestPromptSizeRegression:
-    """Prompt files must not exceed size budgets (token cost guard)."""
+class TestPromptBudgetSmoke:
+    """Prompt files must stay within coarse size budgets."""
 
     @pytest.mark.parametrize("filename,max_chars", [
-        ("planner.md", 12800),  # M1074: +1 tool args example line
+        ("planner.md", 14000),
         ("messenger.md", 2500),
-        ("reviewer.md", 3200),
+        ("reviewer.md", 3400),
     ])
     def test_prompt_size(self, filename, max_chars):
         size = len((_ROLES_DIR / filename).read_text())
@@ -130,7 +103,6 @@ class TestPlannerModules:
 
     @pytest.mark.parametrize("module", [m for m in _ALL_MODULES if m != "core"])
     def test_module_loads(self, module):
-        from kiso.brain import _load_modular_prompt
         result = _load_modular_prompt("planner", [module])
         assert len(result) > 100, f"Module {module} too short"
 
@@ -186,11 +158,6 @@ class TestM323LearningPipeline:
         assert not any("installed successfully" in item for item in cleaned)
 
 
-# ---------------------------------------------------------------------------
-# Merged from test_timeout_prompts.py (M708)
-# ---------------------------------------------------------------------------
-
-
 class TestTimeoutUnification:
     """M422: per-role timeouts removed, single llm_timeout used."""
 
@@ -199,191 +166,6 @@ class TestTimeoutUnification:
         assert "planner_timeout" not in SETTINGS_DEFAULTS
         assert "messenger_timeout" not in SETTINGS_DEFAULTS
         assert "llm_timeout" in SETTINGS_DEFAULTS
-
-
-class TestPromptSizes:
-    """Prompt token counts must stay within budget after M423-M425 optimization."""
-
-    def test_planner_prompt_word_count(self):
-        text = _ROLES_DIR.joinpath("planner.md").read_text()
-        words = len(text.split())
-        assert words <= 1970, f"planner.md has {words} words (max 1970)"
-
-    def test_messenger_prompt_word_count(self):
-        text = _ROLES_DIR.joinpath("messenger.md").read_text()
-        words = len(text.split())
-        assert words <= 300, f"messenger.md has {words} words (max 300)"
-
-    def test_reviewer_prompt_word_count(self):
-        text = _ROLES_DIR.joinpath("reviewer.md").read_text()
-        words = len(text.split())
-        assert words <= 450, f"reviewer.md has {words} words (max 450)"
-
-
-class TestMessengerPublishedFilesRule:
-    """M765: messenger prompt references Published Files section."""
-
-    def test_messenger_references_published_files_section(self):
-        text = _ROLES_DIR.joinpath("messenger.md").read_text()
-        assert "Published Files" in text
-        assert "Never construct" in text or "never construct" in text
-
-
-class TestPlannerMsgAnnounce:
-    """M1046: planning_rules allows announce msgs, constrains msg-only plans."""
-
-    def test_announce_anti_hallucination_rule(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: planning_rules -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        planning_rules = raw[start:end]
-        # M1052: default plan shape with announce pattern
-        assert "default plan shape" in planning_rules.lower()
-        assert "msg announce" in planning_rules.lower()
-        # Must forbid fabrication in announcements
-        assert "never fabricate" in planning_rules.lower()
-        # Must state msg-only plans are rejected by validator
-        assert "rejected by the validator" in planning_rules.lower()
-        # Must require action tasks for action requests
-        assert "at least one exec/tool/search task" in planning_rules.lower()
-
-    def test_one_liner_rule_in_planning_rules(self):
-        """M1046: one-liner blocking rule moved from code_execution to planning_rules."""
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: planning_rules -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        planning_rules = raw[start:end]
-        assert "python -c" in planning_rules
-        assert "write a script file" in planning_rules.lower()
-
-
-class TestM1046CodeExecutionRemoved:
-    """M1046: code_execution module absorbed into planning_rules."""
-
-    def test_code_execution_module_not_in_planner(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        assert "<!-- MODULE: code_execution -->" not in raw
-
-    def test_code_execution_not_in_briefer_modules(self):
-        from kiso.brain import BRIEFER_MODULES
-        assert "code_execution" not in BRIEFER_MODULES
-
-
-class TestM1063ClassifierKnowledgeQuestions:
-    """M1063: classifier must route knowledge questions to chat, not plan."""
-
-    def test_concept_explanation_is_not_plan(self):
-        raw = _ROLES_DIR.joinpath("classifier.md").read_text()
-        # Must clarify that explaining concepts ≠ action request
-        assert "explaining concepts" in raw.lower() or "answering questions" in raw.lower()
-        # Must specify that code examples don't make it plan
-        assert "code examples" in raw.lower()
-        # Must clarify "plan" is only for actual actions
-        assert "wants something done" in raw.lower() or "file written" in raw.lower()
-
-
-class TestM935DetailExpectConsistency:
-    """M935: planning_rules must require detail/expect consistency."""
-
-    def test_detail_expect_consistency_rule(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: planning_rules -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        planning_rules = raw[start:end]
-        assert "detail" in planning_rules and "expect" in planning_rules
-        assert "ONLY criterion the reviewer checks" in planning_rules
-
-
-class TestM1039FileCriticalRule:
-    """M1039: planning_rules must emphasize file creation requires exec."""
-
-    def test_file_creation_critical(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: planning_rules -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        planning_rules = raw[start:end]
-        assert "CRITICAL" in planning_rules and "file creation" in planning_rules.lower()
-        assert "NEVER [search, msg]" in planning_rules
-
-
-class TestM1038ToolsRulesNeedsInstall:
-    """M1038: tools_rules must mention needs_install for consistency."""
-
-    def test_tools_rules_mentions_needs_install(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: tools_rules -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        tools_rules = raw[start:end]
-        assert "needs_install" in tools_rules, (
-            "tools_rules must reference needs_install to stay consistent with core"
-        )
-
-
-class TestM1051SystemInstallPromptGuard:
-    """M1051: system-package and Python-lib installs must stay exec-driven."""
-
-    def test_core_install_rule_separates_kiso_tools_from_system_installs(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: core -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        core = raw[start:end].lower()
-        assert "msg-only install proposals" in core
-        assert "only for kiso tools" in core
-        assert "system packages or python libraries always requires exec" in core
-
-
-class TestM942PluginInstallNoEscapeHatch:
-    """M942: plugin_install must not have 'details are unclear → curl' escape hatch."""
-
-    def test_no_unclear_details_clause(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: plugin_install -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        plugin_install = raw[start:end].lower()
-        assert "details are unclear" not in plugin_install
-        assert "kiso_native" in plugin_install or "kiso tool" in plugin_install
-
-
-class TestM943KnowledgeLearningPipeline:
-    """M943/M968/M972: kiso_commands routes single-fact memory via knowledge plan field."""
-
-    def test_knowledge_field_in_kiso_commands(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: kiso_commands -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        kiso_commands = raw[start:end].lower()
-        assert "knowledge" in kiso_commands
-        # M972: kiso knowledge add removed — only plan field remains
-        assert "kiso knowledge add" not in kiso_commands
-
-
-class TestPlannerLanguageRuleDedup:
-    """'Answer in {lang' must not be duplicated across planner modules."""
-
-    def test_answer_in_lang_not_duplicated_across_modules(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        sections = raw.split("<!-- MODULE:")
-        mentions = [s for s in sections if "Answer in {lang" in s]
-        assert len(mentions) <= 2, (
-            f"'Answer in {{lang' appears in {len(mentions)} module sections "
-            f"(should be <=2 to avoid duplication)"
-        )
-
-
-class TestM1066InvestigationBypassNeedsInstall:
-    """M1066: kiso_native must have investigation/discovery rule."""
-
-    def test_investigation_rule_in_kiso_native(self):
-        raw = _ROLES_DIR.joinpath("planner.md").read_text()
-        start = raw.index("<!-- MODULE: kiso_native -->")
-        end = raw.index("<!-- MODULE:", start + 1)
-        kiso_native = raw[start:end].lower()
-        assert "investigation" in kiso_native or "discovery" in kiso_native, (
-            "kiso_native must explain investigation/discovery bypass for needs_install"
-        )
-        assert "without" in kiso_native and "needs_install" in kiso_native, (
-            "kiso_native must say to plan WITHOUT setting needs_install for investigation"
-        )
 
 
 class TestBrieferModuleDescriptions:

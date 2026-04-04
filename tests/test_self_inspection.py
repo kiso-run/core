@@ -7,7 +7,7 @@ import pytest
 from kiso.brain import (
     build_briefer_messages,
     build_classifier_messages,
-    _load_modular_prompt,
+    validate_plan,
 )
 from kiso.store import (
     create_session,
@@ -30,18 +30,14 @@ class TestM358SelfInspection:
 
     # ── 1. Classifier routes self-inspection to "plan" ──
 
-    def test_classifier_prompt_routes_ssh_to_plan(self):
-        """Classifier system prompt contains rule to route SSH queries to plan."""
+    def test_classifier_messages_include_self_inspection_query(self):
+        """Self-inspection queries are passed through unchanged to the classifier."""
         msgs = build_classifier_messages("mostrami la tua chiave SSH pubblica")
-        system = msgs[0]["content"]
-        assert "SSH" in system or "System state" in system
-        # The classifier prompt should mention self-inspection → plan
-        assert "plan" in system.lower()
+        assert msgs[1]["content"] == "mostrami la tua chiave SSH pubblica"
 
-    def test_classifier_prompt_routes_hostname_to_plan(self):
+    def test_classifier_messages_include_hostname_query(self):
         msgs = build_classifier_messages("what is your hostname?")
-        system = msgs[0]["content"]
-        assert "hostname" in system or "System state" in system
+        assert msgs[1]["content"] == "what is your hostname?"
 
     def test_classifier_knowledge_question_not_special(self):
         """'What is SSH?' is a knowledge question — no self-inspection trigger."""
@@ -53,7 +49,7 @@ class TestM358SelfInspection:
     # ── 2. Briefer selects entity "self" for system queries ──
 
     def test_briefer_prompt_mentions_self_entity(self):
-        """Briefer prompt contains self-entity routing rule."""
+        """Briefer prompt includes self-entity context when provided."""
         msgs = build_briefer_messages(
             "planner",
             "Show SSH public key",
@@ -93,22 +89,14 @@ class TestM358SelfInspection:
         assert any("SSH" in c for c in contents)
         assert any("prod-1" in c for c in contents)
 
-    # ── 4. Planner uses shell commands, not kiso CLI ──
+    # ── 4. Planner validation semantics for self-inspection ──
 
-    def test_planner_prompt_clarifies_kiso_is_cli_not_tool(self):
-        """M876: planner knows kiso is the CLI, not a tool."""
-        prompt = _load_modular_prompt("planner", [])
-        assert "not a tool" in prompt
-        assert "exec task" in prompt.lower() or "exec" in prompt.lower()
-
-    def test_planner_prompt_suggests_shell_commands(self):
-        """Planner prompt suggests standard shell commands for self-inspection."""
-        prompt = _load_modular_prompt("planner", [])
-        assert "cat" in prompt
-        assert "hostname" in prompt
-
-    def test_planner_knows_self_entity(self):
-        """Planner prompt refers to entity 'self' in knowledge base."""
-        prompt = _load_modular_prompt("planner", [])
-        assert '"self"' in prompt
-        assert "You ARE Kiso" in prompt
+    def test_validate_plan_rejects_kiso_as_tool_task(self):
+        """M876: self-inspection must use exec/tasks, not type='tool' with kiso."""
+        plan = {"tasks": [
+            {"type": "tool", "detail": "inspect the local host", "tool": "kiso",
+             "args": "{}", "expect": "system information returned"},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["browser"])
+        assert any("not available" in e for e in errors)

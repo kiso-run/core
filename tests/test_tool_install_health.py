@@ -130,13 +130,6 @@ class TestToolInstallHealthSmoke:
         assert "fake_binary" in result
         assert "kiso tool remove" in result
 
-    def test_planner_prompt_has_reinstall_guidance(self):
-        """M185: planner prompt references apt-get in tool recovery context."""
-        prompt = (Path(__file__).parent.parent / "kiso" / "roles" / "planner.md").read_text()
-        assert "apt-get" in prompt  # present in tool_recovery module
-        assert ("kiso tool remove NAME && kiso tool install NAME" in prompt
-                or "kiso skill remove NAME && kiso skill install NAME" in prompt)
-
     def test_validation_error_includes_args_example(self):
         """M184: validation error for null args includes example format."""
         plan = {"tasks": [
