@@ -87,7 +87,7 @@ class TestF17FullPipeline:
         Why: End-to-end validation that the planner discovers files from
         prior plans, routes them to the correct tool (via consumes metadata),
         and uses aider for code generation (not exec).
-        Expects: Final message contains word frequency data from example.com.
+        Expects: Final message contains deterministic text stats from OCR text.
         """
         # --- Plan 1: screenshot (installs browser if needed) ---
         r1 = await _run_with_tool_install(
@@ -123,12 +123,12 @@ class TestF17FullPipeline:
             f"OCR output missing 'python': {ocr_output[:500]}"
         )
 
-        # --- Plan 3: write word count script with aider (installs aider if needed) ---
+        # --- Plan 3: write text stats script with aider (installs aider if needed) ---
         r3 = await _run_with_tool_install(
             run_message, "aider",
-            "Use aider to write a Python script word_count.py that reads "
-            "text from stdin and prints each word with its count, sorted "
-            "by frequency descending. Format: 'word: N' one per line.",
+            "Use aider to create a Python script text_stats.py that reads "
+            "text from stdin and prints exactly two lines: 'chars: N' and "
+            "'lines: N'. Create only the file. Do not run it and do not add tests.",
         )
         assert r3.success, f"Plan 3 (aider) failed: {r3.task_types()}"
 
@@ -141,11 +141,18 @@ class TestF17FullPipeline:
         assert aider_tasks, (
             f"Expected aider tool task, got types: {r3.task_types()}"
         )
+        last_plan_id = r3.plans[-1]["id"]
+        last_plan_task_types = [
+            t.get("type") for t in r3.tasks if t.get("plan_id") == last_plan_id
+        ]
+        assert "exec" not in last_plan_task_types, (
+            f"Plan 3 should stay codegen-only, got: {last_plan_task_types}"
+        )
 
         # --- Plan 4: run script + deliver results ---
         r4 = await run_message(
-            "Run word_count.py with the OCR text as input and "
-            "send me the top 10 most frequent words",
+            "Run text_stats.py with the OCR text as input and "
+            "send me the result",
             timeout=TOOL_TIMEOUT,
         )
         assert r4.success, f"Plan 4 (exec+msg) failed: {r4.task_types()}"
@@ -155,7 +162,7 @@ class TestF17FullPipeline:
             ((t.get("detail") or "") + "\n" + (t.get("command") or ""))
             for t in last_plan_tasks
         ).lower()
-        assert "word_count.py" in task_blob, (
+        assert "text_stats.py" in task_blob, (
             f"Expected plan 4 to reuse generated script path, got: {task_blob[:500]}"
         )
         assert "curl" not in task_blob and "wget" not in task_blob, (
@@ -166,8 +173,7 @@ class TestF17FullPipeline:
         assert len(output) > 20, f"Output too short: {output}"
         assert_no_failure_language(output)
 
-        # Should contain word frequency data (word: count format)
+        # Should contain deterministic text stats
         import re
-        assert re.search(r"\w+:?\s*\d+", output), (
-            f"Expected word frequency format (word: N) in output: {output[:500]}"
-        )
+        assert re.search(r"chars:\s*\d+", output.lower()), f"Missing chars count: {output[:500]}"
+        assert re.search(r"lines:\s*\d+", output.lower()), f"Missing lines count: {output[:500]}"

@@ -107,13 +107,15 @@ class TestF29AiderWriteCode:
     """Write a Python script using aider tool."""
 
     async def test_aider_write_script(self, preset_tools_installed, run_message):
-        """What: Asks aider to write a hello.py script.
+        """What: Asks aider to create a tiny hello.py script only.
 
-        Why: Validates aider tool works for code generation.
-        Expects: Success, aider tool task used.
+        Why: Validates aider tool works for direct code generation without
+        planner drift into invented exec/self-test steps.
+        Expects: Success, aider tool task used, no exec task in the same plan.
         """
         result = await run_message(
-            "usa aider per scrivere uno script hello.py che stampa 'ciao mondo'",
+            "usa aider per creare hello.py con una sola print('ciao mondo'). "
+            "Crea solo il file, non eseguirlo e non aggiungere test.",
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
 
@@ -129,6 +131,13 @@ class TestF29AiderWriteCode:
         ]
         assert aider_tasks, (
             f"Expected aider tool task, got types: {result.task_types()}"
+        )
+        last_plan_id = result.plans[-1]["id"]
+        last_plan_task_types = [
+            t.get("type") for t in result.tasks if t.get("plan_id") == last_plan_id
+        ]
+        assert "exec" not in last_plan_task_types, (
+            f"Simple aider flow should not invent exec/self-test steps: {last_plan_task_types}"
         )
         task_blob = "\n".join(
             (t.get("detail") or "") + "\n" + (t.get("command") or "")
@@ -148,13 +157,13 @@ class TestF30FullPipeline:
     """Full multi-tool pipeline without install flow fragility."""
 
     async def test_browse_ocr_aider_exec(self, preset_tools_installed, run_message):
-        """What: Screenshot + OCR, then write + run word count script.
+        """What: Screenshot + OCR, then write + run a deterministic text-stats script.
 
         Why: Replaces F17 — same coverage but tools pre-installed, no install
         flow fragility. Tests cross-plan file awareness and tool orchestration.
 
-        Plan 1: screenshot example.com + OCR text extraction
-        Plan 2: aider writes word_count script + exec runs it
+        Plan 1: screenshot + OCR text extraction
+        Plan 2: aider writes text_stats script + exec runs it
         """
         # Plan 1: screenshot + OCR
         r1 = await run_message(
@@ -172,9 +181,9 @@ class TestF30FullPipeline:
 
         # Plan 2: write script + execute
         r2 = await run_message(
-            "usa aider per scrivere uno script word_count.py che legge "
-            "il testo estratto e conta le parole, poi eseguilo e dimmi "
-            "il risultato",
+            "usa aider per scrivere uno script text_stats.py che legge testo da stdin "
+            "e stampa esattamente due righe nel formato 'chars: N' e 'lines: N', "
+            "poi eseguilo sul testo estratto e dimmi il risultato",
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r2.success, f"Plan 2 failed: {r2.task_types()}"
@@ -185,5 +194,8 @@ class TestF30FullPipeline:
         assert "aider" in r2_tool_names, f"Plan 2 missing aider tool: {r2_tool_names}"
         assert "exec" in r2.task_types(), f"Plan 2 missing exec task: {r2.task_types()}"
 
-        output = r2.last_plan_msg_output
+        output = r2.last_plan_msg_output.lower()
         assert_no_failure_language(output)
+        import re
+        assert re.search(r"chars:\s*\d+", output), f"Missing chars count: {output[:500]}"
+        assert re.search(r"lines:\s*\d+", output), f"Missing lines count: {output[:500]}"
