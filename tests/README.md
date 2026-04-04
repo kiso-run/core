@@ -68,6 +68,21 @@ When adding or editing tests:
 - Avoid adding blocking tests whose only oracle is a substring in a prompt file
   or a success-like word in the assistant message.
 
+### Prompt-test guardrails
+
+Prompt-file assertions are allowed in blocking suites only for lightweight smoke
+coverage:
+
+- role file exists and loads
+- modular prompt section loads
+- coarse prompt budget checks
+- stable, structural tokens that define a schema or hard contract
+
+Prompt-file assertions are **not** the primary place to test planner/worker/
+reviewer behavior. If the behavior is observable through plan validation,
+message builders, worker execution, live role calls, or functional flows, write
+the test there instead.
+
 
 ## Running tests
 

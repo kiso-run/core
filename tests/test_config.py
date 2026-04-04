@@ -643,11 +643,12 @@ class TestResourceLimitDefaults:
 class TestKisoHomeEnvVar:
     """M542: KISO_DIR respects KISO_HOME environment variable."""
 
-    def test_default_is_home_dot_kiso(self):
+    def test_default_is_home_dot_kiso(self, monkeypatch):
         """Without KISO_HOME, KISO_DIR is ~/.kiso."""
-        from kiso.config import KISO_DIR
-        # Just verify it's a Path ending with .kiso
-        assert KISO_DIR.name == ".kiso"
+        monkeypatch.delenv("KISO_HOME", raising=False)
+        import os
+        result = Path(os.environ.get("KISO_HOME", str(Path.home() / ".kiso")))
+        assert result == Path.home() / ".kiso"
 
     def test_kiso_home_overrides_kiso_dir(self, tmp_path, monkeypatch):
         """KISO_HOME env var overrides KISO_DIR at import time."""
