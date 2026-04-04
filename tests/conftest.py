@@ -243,7 +243,7 @@ DISCORD_AUTH_HEADER = {"Authorization": "Bearer discord-bot-token"}
 # M1062: actual pipeline is ~8+ LLM calls (classifier, briefer-planner,
 # planner, exec-translator, reviewer, briefer-messenger, messenger,
 # optional briefer-worker).
-LLM_TEST_TIMEOUT = 180       # single plan cycle (~8 LLM calls)
+LLM_TEST_TIMEOUT = 240       # single plan cycle; +60s for classifier added in v0.8 (M1057, M1081)
 LLM_REPLAN_TIMEOUT = 300     # replan cycle (~16+ LLM calls)
 LLM_INSTALL_TIMEOUT = 900    # tool install (network download + LLM)
 

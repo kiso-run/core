@@ -2253,8 +2253,11 @@ async def _run_planning_loop(
         if replan_reason is None:
             # Auto-replan safety net: if there are failed outputs and
             # replan budget remains, generate a reason from the last failure.
+            # M1078: exclude outputs where reviewer explicitly said ok (reviewer_ok=True)
+            # despite a non-zero exit code — those failures are intentional/acceptable.
             failed_outputs = [
-                po for po in plan_outputs if po.get("status") == "failed"
+                po for po in plan_outputs
+                if po.get("status") == "failed" and not po.get("reviewer_ok")
             ]
             if failed_outputs and replan_depth < max_replan_depth:
                 last_fail = failed_outputs[-1]
