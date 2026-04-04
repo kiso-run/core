@@ -474,7 +474,10 @@ def _list_session_files(session: str) -> str:
         age = _human_age(now - stat.st_mtime)
         ext = f.suffix.lower()
         category = _FILE_TYPE_MAP.get(ext, "other")
-        entries.append((stat.st_mtime, f"- {rel} ({size}, {category}, {age})"))
+        entries.append((
+            stat.st_mtime,
+            f"- {rel} | abs: {f} ({size}, {category}, {age})",
+        ))
 
     if not entries:
         return ""
@@ -522,6 +525,7 @@ def _write_last_plan_summary(
         category = _FILE_TYPE_MAP.get(ext, "other")
         produced_files.append({
             "path": str(rel),
+            "abs_path": str(f),
             "tool": source_tool,
             "type": category,
         })
@@ -576,7 +580,10 @@ def _load_last_plan_summary(session: str) -> str | None:
 
     files = data.get("produced_files", [])
     if files:
-        file_strs = [f"{f['path']} ({f.get('type', 'other')})" for f in files]
+        file_strs = [
+            f"{f['path']} | abs: {f.get('abs_path', f['path'])} ({f.get('type', 'other')})"
+            for f in files
+        ]
         parts.append(f"Produced: {', '.join(file_strs)}")
 
     results = data.get("key_results", [])

@@ -1616,24 +1616,33 @@ class TestBuildPlannerMessages:
     async def test_session_files_in_planner_context(self, db, config):
         """M933: Session workspace file listing appears as dedicated section."""
         await create_session(db, "sess1")
-        fake_listing = "- pub/screenshot.png (298 KB, image, just now)\n- session.log (5 KB, other, 2m ago)"
+        fake_listing = (
+            "- pub/screenshot.png | abs: /tmp/ws/pub/screenshot.png (298 KB, image, just now)\n"
+            "- session.log | abs: /tmp/ws/session.log (5 KB, other, 2m ago)"
+        )
         with patch("kiso.worker.utils._list_session_files", return_value=fake_listing), \
              patch("kiso.worker.utils._load_last_plan_summary", return_value=None):
             msgs, *_ = await build_planner_messages(db, config, "sess1", "admin", "read the file")
         content = msgs[1]["content"]
         assert "## Session Workspace" in content
         assert "pub/screenshot.png" in content
+        assert "/tmp/ws/pub/screenshot.png" in content
 
     async def test_last_plan_in_planner_context(self, db, config):
         """M933: Previous plan summary appears as dedicated section."""
         await create_session(db, "sess1")
-        fake_plan = "Goal: Take screenshot of example.com\nProduced: pub/screenshot.png (image)\nResult: Screenshot taken successfully"
+        fake_plan = (
+            "Goal: Take screenshot of example.com\n"
+            "Produced: pub/screenshot.png | abs: /tmp/ws/pub/screenshot.png (image)\n"
+            "Result: Screenshot taken successfully"
+        )
         with patch("kiso.worker.utils._list_session_files", return_value=""), \
              patch("kiso.worker.utils._load_last_plan_summary", return_value=fake_plan):
             msgs, *_ = await build_planner_messages(db, config, "sess1", "admin", "OCR the screenshot")
         content = msgs[1]["content"]
         assert "## Previous Plan" in content
         assert "pub/screenshot.png" in content
+        assert "/tmp/ws/pub/screenshot.png" in content
 
     async def test_no_session_files_when_empty(self, db, config):
         """M933: No Session Workspace section when workspace is empty."""

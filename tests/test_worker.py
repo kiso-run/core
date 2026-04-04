@@ -12480,6 +12480,7 @@ class TestListSessionFiles:
 
         assert "Session workspace files:" in result
         assert "screenshot.png" in result
+        assert "abs:" in result
         assert "image" in result
         assert "report.pdf" in result
         assert "document" in result
@@ -12581,6 +12582,7 @@ class TestWriteLastPlanSummary:
             assert data["goal"] == "Take a screenshot"
             assert len(data["produced_files"]) >= 1
             assert data["produced_files"][0]["path"] == "screenshot.png"
+            assert data["produced_files"][0]["abs_path"].endswith("/screenshot.png")
             assert data["produced_files"][0]["type"] == "image"
             assert data["key_results"] == ["Screenshot taken successfully"]
             assert "ts" in data
@@ -12611,7 +12613,12 @@ class TestLoadLastPlanSummary:
             kiso_dir.mkdir(exist_ok=True)
             data = {
                 "goal": "Take a screenshot",
-                "produced_files": [{"path": "shot.png", "tool": "browser", "type": "image"}],
+                "produced_files": [{
+                    "path": "shot.png",
+                    "abs_path": str(ws / "shot.png"),
+                    "tool": "browser",
+                    "type": "image",
+                }],
                 "key_results": ["Screenshot saved"],
                 "ts": "2026-03-20T10:00:00Z",
             }
@@ -12621,6 +12628,7 @@ class TestLoadLastPlanSummary:
             assert result is not None
             assert "Take a screenshot" in result
             assert "shot.png" in result
+            assert "abs:" in result
             assert "Screenshot saved" in result
 
     def test_skips_stale_summary(self, tmp_path):

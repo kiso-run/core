@@ -149,6 +149,18 @@ class TestF17FullPipeline:
             timeout=TOOL_TIMEOUT,
         )
         assert r4.success, f"Plan 4 (exec+msg) failed: {r4.task_types()}"
+        last_plan_id = r4.plans[-1]["id"]
+        last_plan_tasks = [t for t in r4.tasks if t.get("plan_id") == last_plan_id]
+        task_blob = "\n".join(
+            ((t.get("detail") or "") + "\n" + (t.get("command") or ""))
+            for t in last_plan_tasks
+        ).lower()
+        assert "word_count.py" in task_blob, (
+            f"Expected plan 4 to reuse generated script path, got: {task_blob[:500]}"
+        )
+        assert "curl" not in task_blob and "wget" not in task_blob, (
+            f"Unexpected re-download instead of local path reuse: {task_blob[:500]}"
+        )
 
         output = r4.last_plan_msg_output
         assert len(output) > 20, f"Output too short: {output}"

@@ -324,6 +324,15 @@ class TestF24CreateThenReference:
         assert r2.success, (
             f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
         )
+        last_plan_id = r2.plans[-1]["id"]
+        last_plan_tasks = [t for t in r2.tasks if t.get("plan_id") == last_plan_id]
+        task_blob = "\n".join(
+            ((t.get("detail") or "") + "\n" + (t.get("command") or ""))
+            for t in last_plan_tasks
+        ).lower()
+        assert "hello.txt" in task_blob, (
+            f"Expected plan 2 to reuse hello.txt path, got: {task_blob[:500]}"
+        )
         output = r2.last_plan_msg_output.lower()
         assert any(w in output for w in ("2", "due", "ciao", "mondo")), (
             f"Plan 2 didn't reference file content: {r2.last_plan_msg_output[:300]}"
