@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import LLM_REPLAN_TIMEOUT
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
@@ -19,8 +20,6 @@ from tests.functional.conftest import (
 )
 
 pytestmark = [pytest.mark.functional, pytest.mark.destructive]
-
-SERVICE_TIMEOUT = 300  # browser navigation + form filling
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +41,7 @@ class TestF5MoltbookSignup:
         """
         result = await run_message(
             "iscriviti a moltbook",
-            timeout=SERVICE_TIMEOUT,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -90,7 +89,7 @@ class TestF6MoltbookPost:
         # First ensure signup happened (sends in same session)
         signup_result = await run_message(
             "iscriviti a moltbook",
-            timeout=SERVICE_TIMEOUT,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
         assert signup_result.success, (
             f"Signup failed — cannot test posting. "
@@ -101,7 +100,7 @@ class TestF6MoltbookPost:
         result = await run_message(
             "scrivi un post su moltbook sul fatto che stai facendo il tuo "
             "primo post di test sulla piattaforma",
-            timeout=SERVICE_TIMEOUT,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
 
         assert result.success, (

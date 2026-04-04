@@ -36,7 +36,9 @@ from kiso.worker import _msg_task
 
 pytestmark = pytest.mark.llm_live
 
-from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
+from tests.conftest import LLM_ROLE_ONLY_TIMEOUT
+
+TIMEOUT = LLM_ROLE_ONLY_TIMEOUT
 
 
 # ---------------------------------------------------------------------------
@@ -447,8 +449,9 @@ class TestPlannerSystemPackageLive:
     """M746: planner uses apt-get for system packages, uv pip for Python libs,
     and kiso tool install for kiso tools."""
 
-    # M864: validation retries + SSE stalls can exceed 120s.
-    _TIMEOUT = 180
+    # M864: validation retries + SSE stalls make planner-only live tests slower
+    # than reviewer/worker calls, but they still belong to the role-only class.
+    _TIMEOUT = LLM_ROLE_ONLY_TIMEOUT
 
     def _fake_sysenv_text(self) -> str:
         """Sysenv showing Debian root, apt available, no kiso tools."""

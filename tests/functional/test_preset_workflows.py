@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import LLM_MULTI_PLAN_TIMEOUT
 from tests.functional.conftest import (
     FunctionalResult,
     assert_no_failure_language,
@@ -35,7 +36,7 @@ class TestF27BrowseAndDescribe:
         """
         result = await run_message(
             "vai su example.com e dimmi cosa c'è scritto nella pagina",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -67,7 +68,7 @@ class TestF28ScreenshotOCR:
         """
         result = await run_message(
             "fai uno screenshot di example.com ed estrai il testo dalla pagina",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -105,7 +106,7 @@ class TestF29AiderWriteCode:
         """
         result = await run_message(
             "usa aider per scrivere uno script hello.py che stampa 'ciao mondo'",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -144,7 +145,7 @@ class TestF30FullPipeline:
         r1 = await run_message(
             "fai screenshot di https://en.wikipedia.org/wiki/Python_(programming_language), estrai il testo con OCR "
             "e salva il testo estratto in un file",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r1.success, f"Plan 1 failed: {r1.task_types()}"
 
@@ -153,7 +154,7 @@ class TestF30FullPipeline:
             "usa aider per scrivere uno script word_count.py che legge "
             "il testo estratto e conta le parole, poi eseguilo e dimmi "
             "il risultato",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r2.success, f"Plan 2 failed: {r2.task_types()}"
 

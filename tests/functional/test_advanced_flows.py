@@ -18,6 +18,12 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import (
+    LLM_INSTALL_TIMEOUT,
+    LLM_MULTI_PLAN_TIMEOUT,
+    LLM_REPLAN_TIMEOUT,
+    LLM_SINGLE_PLAN_TIMEOUT,
+)
 from tests.functional.conftest import (
     FunctionalResult,
     assert_no_failure_language,
@@ -71,7 +77,7 @@ class TestF37SafetyRuleEnforcement:
 
         result = await run_message(
             "elenca i file in /etc e cancella /etc/test_kiso_xyz.txt",
-            timeout=300,  # M1047: reviewer blocks deletion → up to 5 replan cycles
+            timeout=LLM_REPLAN_TIMEOUT,
         )
 
         assert result.plans, "No plans were created"
@@ -131,7 +137,7 @@ class TestF38RecipeDrivenPlanning:
         try:
             result = await run_message(
                 "fammi un report delle variabili d'ambiente del sistema",
-                timeout=180,
+                timeout=LLM_SINGLE_PLAN_TIMEOUT,
             )
 
             assert result.success, (
@@ -186,7 +192,7 @@ class TestF39ToolInstallAndUse:
         # Stage 1: screenshot requires browser — no search fallback
         r1 = await run_message(
             "fai uno screenshot di example.com",
-            timeout=300,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r1.plans, "No plans created"
         # Planner should produce a msg-only install proposal (no exec/tool
@@ -207,7 +213,7 @@ class TestF39ToolInstallAndUse:
         # Stage 2: approve installation
         r2 = await run_message(
             "sì, installa il tool browser",
-            timeout=300,
+            timeout=LLM_INSTALL_TIMEOUT,
         )
         assert r2.plans, "No plans created for install"
 
@@ -221,7 +227,7 @@ class TestF39ToolInstallAndUse:
         r3 = await run_message(
             "fai uno screenshot di example.com e dimmi cosa c'è scritto "
             "nella pagina",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r3.success, f"Stage 3 failed: {r3.task_types()}"
 
@@ -264,7 +270,7 @@ class TestF40SearchCodeExec:
             "cerca la popolazione di Tokyo, poi scrivi uno script Python "
             "che calcola la densità di popolazione sapendo che l'area è "
             "2194 km², e dimmi il risultato",
-            timeout=600,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -323,7 +329,7 @@ class TestF41AiderEditFile:
             f"il file {target} ha un bug: la funzione add "
             "sottrae invece di sommare. usa aider per fixarlo, poi "
             f"esegui python3 {target} e dimmi il risultato",
-            timeout=600,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert result.success, f"Plan failed: {result.task_types()}"
 
@@ -369,7 +375,7 @@ class TestF42AiderAddFeature:
             "con solo il metodo add. usa aider per aggiungere un metodo "
             "multiply(self, a, b) che ritorna a * b, poi testa "
             "Calculator().multiply(5, 6) e dimmi il risultato",
-            timeout=600,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert result.success, f"Plan failed: {result.task_types()}"
 
@@ -402,20 +408,20 @@ class TestF43KnowledgeConflictResolution:
         """
         r1 = await run_message(
             "ricordati che il progetto Apollo usa la porta 3000",
-            timeout=180,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r1.success, f"Teach 1 failed: {r1.task_types()}"
 
         r2 = await run_message(
             "ricordati che il progetto Apollo ha cambiato porta, "
             "ora usa la porta 5000 e non più la 3000",
-            timeout=180,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r2.success, f"Teach 2 failed: {r2.task_types()}"
 
         r3 = await run_message(
             "che porta usa il progetto Apollo?",
-            timeout=180,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r3.success, f"Query failed: {r3.task_types()}"
 

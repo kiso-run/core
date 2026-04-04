@@ -239,13 +239,22 @@ webhook_max_payload       = 1048576
 AUTH_HEADER = {"Authorization": "Bearer test-secret-token"}
 DISCORD_AUTH_HEADER = {"Authorization": "Bearer discord-bot-token"}
 
-# Centralized test timeouts (seconds). Override per-test if needed.
-# M1062: actual pipeline is ~8+ LLM calls (classifier, briefer-planner,
-# planner, exec-translator, reviewer, briefer-messenger, messenger,
-# optional briefer-worker).
-LLM_TEST_TIMEOUT = 240       # single plan cycle; +60s for classifier added in v0.8 (M1057, M1081)
-LLM_REPLAN_TIMEOUT = 300     # replan cycle (~16+ LLM calls)
-LLM_INSTALL_TIMEOUT = 900    # tool install (network download + LLM)
+# Centralized workflow-class timeouts (seconds).
+# Keep these coarse and stable: per-test hardcoded numbers made it hard to tell
+# whether a timeout change reflected a real workflow-class shift or just local
+# drift. Pick the smallest class that matches the behavior under test so
+# deterministic infinite-loop regressions still fail promptly.
+LLM_ROLE_ONLY_TIMEOUT = 180   # direct role calls: planner/reviewer/worker/etc.
+# M1062/M1057/M1081: a single plan cycle is ~8+ LLM calls once classifier and
+# briefers are included.
+LLM_SINGLE_PLAN_TIMEOUT = 240
+LLM_REPLAN_TIMEOUT = 300      # single request expected to hit reviewer/planner recovery
+LLM_MULTI_PLAN_TIMEOUT = 600  # multi-tool or multi-plan request chains
+LLM_INSTALL_TIMEOUT = 900     # tool install/download + LLM
+
+# Backward-compatible alias for older tests that haven't been migrated to the
+# more specific workflow classes yet.
+LLM_TEST_TIMEOUT = LLM_SINGLE_PLAN_TIMEOUT
 
 
 @pytest.fixture(autouse=True)

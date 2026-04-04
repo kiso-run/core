@@ -10,6 +10,10 @@ import re
 
 import pytest
 
+from tests.conftest import (
+    LLM_INSTALL_TIMEOUT,
+    LLM_SINGLE_PLAN_TIMEOUT,
+)
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
@@ -39,7 +43,7 @@ class TestF3SSHKey:
         """
         result = await run_message(
             "dammi la tua chiave ssh",
-            timeout=180,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -82,7 +86,7 @@ class TestF4GitAiderPush:
         result = await run_message(
             "clona git@github.com:kiso-run/core.git e sul branch test "
             "aggiorna il timestamp in docs/testing.md e pushalo online",
-            timeout=600,  # aider install + git operations
+            timeout=LLM_INSTALL_TIMEOUT,
         )
 
         assert result.success, (

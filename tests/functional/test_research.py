@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import LLM_MULTI_PLAN_TIMEOUT, LLM_REPLAN_TIMEOUT
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
@@ -36,7 +37,7 @@ class TestF7ResearchAndPublish:
         result = await run_message(
             "cerca i 5 linguaggi di programmazione più usati nel 2025, "
             "crea un file markdown con una tabella comparativa e mandamelo",
-            timeout=600,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -103,7 +104,7 @@ class TestF8ScriptExecution:
         result = await run_message(
             "scrivi uno script python che calcola i primi 20 numeri di "
             "fibonacci, eseguilo e dimmi il risultato",
-            timeout=300,  # M1062: 8+ LLM calls with potential replan
+            timeout=LLM_REPLAN_TIMEOUT,
         )
 
         assert result.success, (

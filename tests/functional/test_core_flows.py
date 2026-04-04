@@ -23,6 +23,11 @@ import pytest_asyncio
 from kiso.store import create_session, save_message
 from kiso.worker import _process_message
 
+from tests.conftest import (
+    LLM_MULTI_PLAN_TIMEOUT,
+    LLM_REPLAN_TIMEOUT,
+    LLM_SINGLE_PLAN_TIMEOUT,
+)
 from tests.functional.conftest import (
     assert_chinese,
     assert_english,
@@ -51,7 +56,7 @@ class TestF18SimpleQA:
         """
         result = await run_message(
             "What is the capital of Japan?",
-            timeout=120,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -85,7 +90,7 @@ class TestF19EnglishResponse:
         """
         result = await run_message(
             "What is recursion in programming? Explain with a simple example",
-            timeout=180,  # M1047: 3 LLM calls through OpenRouter, 120s too tight
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -124,7 +129,7 @@ class TestF20SpanishResponse:
         result = await run_message(
             "¿Qué es la recursión en programación? "
             "Explica con un ejemplo sencillo",
-            timeout=180,  # M1076: briefer+messenger at v0.8 prompt sizes needs 180s
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -162,7 +167,7 @@ class TestF21ReplanRecovery:
         result = await run_message(
             "leggi il file /tmp/file_inesistente_kiso_test_xyz99.txt "
             "e dimmi cosa contiene",
-            timeout=300,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
 
         # Pipeline must complete — success or graceful failure both OK
@@ -200,7 +205,7 @@ class TestF22NonexistentTool:
         """
         result = await run_message(
             "installa e usa il tool 'zzz_test_notreal' per analizzare il sistema",
-            timeout=300,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
 
         # Either success (explained unavailability) or planning failure are
@@ -239,7 +244,7 @@ class TestF23CrossSessionKnowledge:
         result_a = await run_message(
             "ricordati che il progetto Artemis usa PostgreSQL 16 "
             "come database principale",
-            timeout=180,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert result_a.success, (
             f"Session A teach failed: {[p.get('status') for p in result_a.plans]}"
@@ -270,7 +275,7 @@ class TestF23CrossSessionKnowledge:
                 llm_timeout=func_config.settings["llm_timeout"],
                 max_replan_depth=func_config.settings["max_replan_depth"],
             ),
-            timeout=180,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         if bg is not None and not bg.done():
             try:
@@ -311,7 +316,7 @@ class TestF24CreateThenReference:
         """
         r1 = await run_message(
             "crea un file hello.txt con scritto 'ciao mondo'",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r1.success, (
             f"Plan 1 failed: {[p.get('status') for p in r1.plans]}"
@@ -319,7 +324,7 @@ class TestF24CreateThenReference:
 
         r2 = await run_message(
             "quante parole ci sono nel file che hai appena creato?",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r2.success, (
             f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
@@ -355,7 +360,7 @@ class TestF25ExecFailsUserCorrects:
         """
         r1 = await run_message(
             "esegui python3 myscript.py",
-            timeout=300,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
         # Plan 1 may succeed (explains error) or fail — both OK
         assert r1.plans, "No plans created"
@@ -363,7 +368,7 @@ class TestF25ExecFailsUserCorrects:
         r2 = await run_message(
             "scrivi prima lo script myscript.py che stampa 'hello world', "
             "poi eseguilo",
-            timeout=300,
+            timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r2.success, (
             f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
@@ -393,7 +398,7 @@ class TestF26TeachFactThenRecall:
         """
         r1 = await run_message(
             "ricordati che il progetto Zeus usa la porta 9090",
-            timeout=300,
+            timeout=LLM_REPLAN_TIMEOUT,
         )
         assert r1.success, (
             f"Teach failed: {[p.get('status') for p in r1.plans]}"
@@ -401,7 +406,7 @@ class TestF26TeachFactThenRecall:
 
         r2 = await run_message(
             "che porta usa il progetto Zeus?",
-            timeout=300,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r2.success, (
             f"Plan 2 failed: {[p.get('status') for p in r2.plans]}"
@@ -430,7 +435,7 @@ class TestF31RussianResponse:
         result = await run_message(
             "Что такое рекурсия в программировании? "
             "Объясни на простом примере",
-            timeout=180,  # M956: safety net — classifier may still route via plan path
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
 
         assert result.success, (
@@ -467,7 +472,7 @@ class TestF32ChineseResponse:
         """
         result = await run_message(
             "什么是编程中的递归？用一个简单的例子来解释",
-            timeout=120,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
 
         assert result.success, (

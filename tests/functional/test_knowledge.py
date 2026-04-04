@@ -15,6 +15,7 @@ import re
 
 import pytest
 
+from tests.conftest import LLM_REPLAN_TIMEOUT, LLM_SINGLE_PLAN_TIMEOUT
 from tests.functional.conftest import assert_italian, assert_no_failure_language
 
 pytestmark = pytest.mark.functional
@@ -36,7 +37,10 @@ class TestChatKBSelfInspection:
         system queries would wastefully invoke the full planner pipeline.
         Expects: Success, Italian response, no exec/tool tasks, hostname info in output.
         """
-        result = await run_message("qual è il tuo hostname?", timeout=120)
+        result = await run_message(
+            "qual è il tuo hostname?",
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
+        )
         assert result.success
         # M977: classifier may route as plan (system state → plan per rules)
         # or chat_kb (boot fact available). Both paths produce correct output.
@@ -68,14 +72,14 @@ class TestMultiTurnLearning:
         # Message 1: teach a fact
         r1 = await run_message(
             "ricordati che il progetto corrente usa Flask 3.0 con SQLAlchemy",
-            timeout=120,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r1.success
 
         # Message 2: query the fact
         r2 = await run_message(
             "che framework usa il progetto corrente?",
-            timeout=120,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r2.success
         assert_italian(r2.msg_output)
@@ -111,7 +115,7 @@ class TestEntityTagEnrichment:
         )
         result = await run_message(
             "cosa sai su guidance.studio?",
-            timeout=120,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert result.success
         assert_italian(result.last_plan_msg_output)
@@ -150,7 +154,10 @@ class TestF13ChatKBClassification:
             source="curator", category="general",
             tags=["website", "saas", "onboarding"], entity_id=eid,
         )
-        result = await run_message("cosa sai di guidance.studio?", timeout=120)
+        result = await run_message(
+            "cosa sai di guidance.studio?",
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
+        )
         assert result.success
         assert_italian(result.last_plan_msg_output)
         # Response should contain pre-seeded fact content
@@ -236,7 +243,10 @@ class TestF14CuratorEntityCreation:
             )
 
         # Turn 2: ask back → should recall learned information
-        r2 = await run_message("cosa sai di python?", timeout=120)
+        r2 = await run_message(
+            "cosa sai di python?",
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
+        )
         assert r2.success
         assert_italian(r2.msg_output)
         assert "python" in r2.msg_output.lower()
@@ -277,7 +287,7 @@ class TestF15EntityDedupTagReuse:
         # Teach new fact about Flask
         r1 = await run_message(
             "ricordati che Flask usa Jinja2 come template engine",
-            timeout=300,  # M1068: 8+ LLM calls, 120 too tight
+            timeout=LLM_REPLAN_TIMEOUT,
         )
         assert r1.success
 
@@ -352,7 +362,7 @@ class TestF16ScoredFactRetrieval:
         # Query targets Python frameworks specifically
         result = await run_message(
             "quali framework Python conosci?",
-            timeout=120,
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert result.success
         assert_italian(result.last_plan_msg_output)
@@ -391,7 +401,10 @@ class TestMessengerQuality:
         Without this, users receive unprofessional or misleading responses.
         Expects: Italian response with no emoji characters and no false action verbs.
         """
-        result = await run_message("dimmi cosa sai fare", timeout=120)
+        result = await run_message(
+            "dimmi cosa sai fare",
+            timeout=LLM_SINGLE_PLAN_TIMEOUT,
+        )
         assert result.success
         assert_italian(result.last_plan_msg_output)
         # No emoji
