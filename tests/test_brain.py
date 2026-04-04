@@ -8737,6 +8737,60 @@ class TestInstalledToolExecRouting:
         assert not any("routes installed tool" in e for e in errors)
 
 
+class TestActionTaskUserDeliveryRouting:
+    """M1024: action tasks must not absorb final user-facing delivery."""
+
+    def test_exec_with_user_delivery_wording_rejected(self):
+        plan = {"goal": "test", "tasks": [
+            {"type": "exec", "detail": "Run word_count.py and send me the top 10 words",
+             "tool": None, "args": None, "expect": "top words computed"},
+            {"type": "msg", "detail": "Answer in English. report results",
+             "tool": None, "args": None, "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("user-delivery wording" in e for e in errors)
+
+    def test_tool_with_user_delivery_wording_rejected(self):
+        plan = {"goal": "test", "tasks": [
+            {"type": "tool", "detail": "Extract text from screenshot.png and tell me the result",
+             "tool": "ocr", "args": "{}", "expect": "ocr text extracted"},
+            {"type": "msg", "detail": "Answer in English. report results",
+             "tool": None, "args": None, "expect": None},
+        ]}
+        errors = validate_plan(plan, installed_skills=["ocr"])
+        assert any("user-delivery wording" in e for e in errors)
+
+    def test_search_with_user_delivery_wording_rejected(self):
+        plan = {"goal": "test", "tasks": [
+            {"type": "search", "detail": "Find Tokyo population and show me the answer",
+             "tool": None, "args": None, "expect": "population found"},
+            {"type": "msg", "detail": "Answer in English. report results",
+             "tool": None, "args": None, "expect": None},
+        ]}
+        errors = validate_plan(plan)
+        assert any("user-delivery wording" in e for e in errors)
+
+    def test_action_detail_about_file_output_still_accepted(self):
+        plan = {"goal": "test", "tasks": [
+            {"type": "exec", "detail": "Run word_count.py using ocr.txt and save the top 10 words to results.txt",
+             "tool": None, "args": None, "expect": "results.txt created"},
+            {"type": "msg", "detail": "Answer in English. report results",
+             "tool": None, "args": None, "expect": None},
+        ]}
+        assert not validate_plan(plan)
+
+    def test_normal_multi_step_plan_with_final_msg_still_accepted(self):
+        plan = {"goal": "test", "tasks": [
+            {"type": "tool", "detail": "Extract text from screenshot.png",
+             "tool": "ocr", "args": "{}", "expect": "ocr text extracted"},
+            {"type": "exec", "detail": "Run word_count.py using the extracted text and save top words to results.txt",
+             "tool": None, "args": None, "expect": "results.txt created"},
+            {"type": "msg", "detail": "Answer in English. report the top words",
+             "tool": None, "args": None, "expect": None},
+        ]}
+        assert not validate_plan(plan, installed_skills=["ocr"])
+
+
 class TestPipToUvValidation:
     """M640: exec tasks must use uv pip install, not pip install."""
 

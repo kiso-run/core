@@ -828,6 +828,15 @@ _NON_ACTIONABLE_PREFIXES = (
 )
 _DIRECT_TOOL_EXEC_VERB_RE = r"(?:use|run|invoke|launch|ask|have)"
 _DIRECT_TOOL_EXEC_SUFFIX_RE = r"(?:to|for|on|with|against)\b"
+_ACTION_TO_USER_RE = re.compile(
+    r"\b("
+    r"tell me|send me|show me|report back|reply with|let me know|"
+    r"tell the user|send the user|show the user|report to the user|"
+    r"dimmi|mandami|mostrami|fammi sapere|inviami|dillo all'utente|"
+    r"manda all'utente|mostra all'utente|riporta all'utente"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _is_non_actionable_exec(detail: str) -> bool:
@@ -867,6 +876,11 @@ def _find_direct_tool_exec(
         if re.search(pattern, lower):
             return name
     return None
+
+
+def _mentions_user_delivery(detail: str) -> bool:
+    """Return True when an action-task detail includes user-delivery wording."""
+    return bool(_ACTION_TO_USER_RE.search(detail or ""))
 
 
 def _validate_plan_tasks(
@@ -913,6 +927,12 @@ def _validate_plan_tasks(
             errors.append(
                 f"Task {i}: use 'uv pip install' instead of bare 'pip install'. "
                 f"Direct pip can corrupt the system environment."
+            )
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_TOOL, TASK_TYPE_SEARCH) and _mentions_user_delivery(detail):
+            errors.append(
+                f"Task {i}: action task detail includes user-delivery wording. "
+                f"Action tasks should do the work only; use a final msg task "
+                f"to tell/send results to the user."
             )
         # M862: kiso plugin install for names not in registry (without git URL)
         if t == TASK_TYPE_EXEC and registry_hint_names is not None:
