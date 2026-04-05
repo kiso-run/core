@@ -896,6 +896,25 @@ class TestToolSemanticValidationHooks:
         assert validate_tool_args_semantic(tool, {"text": "hi"}) == []
         assert repair_tool_args(tool, {"text": "hi"}) == {"text": "hi"}
 
+    def test_different_tools_keep_distinct_validator_behavior(self, tmp_path):
+        first_dir = _create_tool(tmp_path, "first", MINIMAL_TOML.replace('name = "echo"', 'name = "first"'))
+        second_dir = _create_tool(tmp_path, "second", MINIMAL_TOML.replace('name = "echo"', 'name = "second"'))
+        _write_validator(
+            first_dir,
+            "def validate_args(args, context):\n"
+            "    return ['first validator']\n",
+        )
+        _write_validator(
+            second_dir,
+            "def validate_args(args, context):\n"
+            "    return ['second validator']\n",
+        )
+        invalidate_tools_cache()
+        tools = {tool["name"]: tool for tool in discover_tools(tmp_path)}
+
+        assert validate_tool_args_semantic(tools["first"], {"text": "hi"}) == ["first validator"]
+        assert validate_tool_args_semantic(tools["second"], {"text": "hi"}) == ["second validator"]
+
 
 # --- auto_correct_tool_args ---
 
