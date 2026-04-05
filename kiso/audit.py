@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.security import sanitize_output
+from kiso.security import sanitize_value
 
 log = logging.getLogger(__name__)
 
@@ -50,9 +50,10 @@ def _write_entry(
         if deploy_secrets or session_secrets:
             ds = deploy_secrets or {}
             ss = session_secrets or {}
-            for key, value in entry.items():
-                if isinstance(value, str) and key not in _MASK_EXEMPT:
-                    entry[key] = sanitize_output(value, ds, ss)
+            entry = {
+                key: value if key in _MASK_EXEMPT else sanitize_value(value, ds, ss)
+                for key, value in entry.items()
+            }
 
         audit_dir = KISO_DIR / "audit"
         _ensure_audit_dir(audit_dir)

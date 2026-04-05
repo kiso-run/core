@@ -7434,6 +7434,43 @@ class TestFastPathIntegration:
         mock_classifier.assert_called_once()
         mock_planner.assert_called_once()
 
+    async def test_plan_message_accepts_structured_tool_args(self, db, tmp_path):
+        """Planner output with dict args should persist without crashing the worker."""
+        conn, msg_id = db
+        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
+        msg = self._make_msg(msg_id)
+        plan = {
+            "goal": "Browse example.com",
+            "secrets": None,
+            "tasks": [
+                {
+                    "type": "tool",
+                    "detail": "Open the page",
+                    "tool": "browser",
+                    "args": {"action": "navigate", "url": "https://example.com"},
+                    "expect": "Page loaded",
+                },
+                {"type": "msg", "detail": "Answer in English. Done.", "tool": None, "args": None, "expect": None},
+            ],
+        }
+        mock_planner = AsyncMock(return_value=plan)
+        mock_classifier = AsyncMock(return_value=("plan", "en"))
+        mock_loop = AsyncMock(return_value=1)
+        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+             patch("kiso.worker.loop.run_planner", mock_planner), \
+             patch("kiso.worker.loop._run_planning_loop", mock_loop), \
+             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
+             _patch_kiso_dir(tmp_path):
+            from kiso.worker import _process_message
+            await _process_message(
+                conn, config, "sess1", msg, None, 5, 60, 3,
+            )
+
+        plan_row = await get_plan_for_session(conn, "sess1")
+        tasks = await get_tasks_for_plan(conn, plan_row["id"])
+        assert tasks[0]["args"] == '{"action": "navigate", "url": "https://example.com"}'
+        mock_loop.assert_called_once()
+
     async def test_fast_path_disabled_skips_classifier(self, db, tmp_path):
         """When fast_path_enabled=False, classifier is not called."""
         conn, msg_id = db

@@ -18,6 +18,7 @@ from kiso.security import (
     fence_content,
     revalidate_permissions,
     sanitize_output,
+    sanitize_value,
 )
 
 
@@ -249,6 +250,36 @@ class TestSanitizeOutput:
         old_pattern = sec._sanitize_cache[1]
         sanitize_output("call 2", {"A": "secret-two-val"}, {})
         assert sec._sanitize_cache[1] is not old_pattern
+
+
+class TestSanitizeValue:
+    def test_sanitizes_nested_dict_and_list(self):
+        result = sanitize_value(
+            {
+                "cmd": "echo sk-abc123xyz",
+                "nested": [
+                    "tok_12345",
+                    {"url": "https://x.test/?token=tok_12345"},
+                ],
+            },
+            {"KEY": "sk-abc123xyz"},
+            {"TEMP": "tok_12345"},
+        )
+        assert result == {
+            "cmd": "echo [REDACTED]",
+            "nested": [
+                "[REDACTED]",
+                {"url": "https://x.test/?token=[REDACTED]"},
+            ],
+        }
+
+    def test_preserves_non_string_values(self):
+        result = sanitize_value(
+            {"count": 3, "ok": True, "items": [1, None, False]},
+            {"KEY": "secret"},
+            {},
+        )
+        assert result == {"count": 3, "ok": True, "items": [1, None, False]}
 
 
 class TestCollectDeploySecrets:

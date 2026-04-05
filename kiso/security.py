@@ -158,6 +158,37 @@ def sanitize_output(
     return pattern.sub("[REDACTED]", output)
 
 
+def sanitize_value(
+    value: object,
+    deploy_secrets: dict[str, str],
+    ephemeral_secrets: dict[str, str],
+) -> object:
+    """Recursively sanitize strings inside structured values.
+
+    Preserves the input container shape for common JSON-compatible values so
+    runtime code can keep structured args/results in memory without first
+    coercing them back into prompt-era strings.
+    """
+    if isinstance(value, str):
+        return sanitize_output(value, deploy_secrets, ephemeral_secrets)
+    if isinstance(value, dict):
+        return {
+            key: sanitize_value(item, deploy_secrets, ephemeral_secrets)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            sanitize_value(item, deploy_secrets, ephemeral_secrets)
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            sanitize_value(item, deploy_secrets, ephemeral_secrets)
+            for item in value
+        )
+    return value
+
+
 def collect_deploy_secrets() -> dict[str, str]:
     """Collect KISO_TOOL_*, KISO_CONNECTOR_* env vars + LLM API key."""
     secrets: dict[str, str] = {}

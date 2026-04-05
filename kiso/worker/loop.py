@@ -21,6 +21,7 @@ from kiso.security import (
     collect_deploy_secrets,
     revalidate_permissions,
     sanitize_output,
+    sanitize_value,
 )
 from kiso.brain import (
     CURATOR_VERDICT_ASK,
@@ -1521,7 +1522,7 @@ async def _handle_tool_task(
     _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
     tool_name = task_row.get("skill")  # DB field still "skill" until schema migration
-    args_raw = task_row.get("args") or "{}"
+    args_raw = task_row.get("args")
     tool_info = ctx.installed_tools_by_name.get(tool_name)
     t0 = time.perf_counter()
     dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
@@ -1535,11 +1536,24 @@ async def _handle_tool_task(
     if tool_info is None:
         setup_error = f"Tool '{tool_name}' not installed"
     else:
-        try:
-            args = json.loads(args_raw)
-        except json.JSONDecodeError as e:
-            setup_error = f"Invalid tool args JSON: {e}"
+        if args_raw is None:
+            args = {}
+        elif isinstance(args_raw, dict):
+            args = dict(args_raw)
+        elif isinstance(args_raw, str):
+            try:
+                parsed_args = json.loads(args_raw or "{}")
+            except json.JSONDecodeError as e:
+                setup_error = f"Invalid tool args JSON: {e}"
+            else:
+                if not isinstance(parsed_args, dict):
+                    setup_error = "Invalid tool args JSON: expected object"
+                else:
+                    args = parsed_args
         else:
+            setup_error = "Invalid tool args JSON: expected object"
+
+        if setup_error is None and args is not None:
             corrected = auto_correct_tool_args(args, tool_info["args_schema"])
             if corrected != args:
                 log.warning("Auto-corrected tool args for task %d: %s → %s", task_id, args, corrected)
@@ -3195,7 +3209,7 @@ async def _process_message(
     for t in plan["tasks"]:
         t["detail"] = sanitize_output(t["detail"], deploy_secrets, session_secrets)
         if t.get("args"):
-            t["args"] = sanitize_output(t["args"], deploy_secrets, session_secrets)
+            t["args"] = sanitize_value(t["args"], deploy_secrets, session_secrets)
 
     # Update plan with real goal and persist tasks
     await update_plan_goal(db, plan_id, plan["goal"])

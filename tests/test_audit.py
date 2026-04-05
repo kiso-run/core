@@ -124,6 +124,26 @@ class TestWriteEntry:
         assert entry["count"] == 42
         assert entry["active"] is True
 
+    def test_nested_structures_are_sanitized(self, tmp_path):
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry(
+                {
+                    "type": "task",
+                    "payload": {
+                        "args": {"token": "tok_abc123", "path": "safe.txt"},
+                        "items": ["tok_abc123", 7],
+                    },
+                },
+                session_secrets={"api_token": "tok_abc123"},
+            )
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        entry = json.loads(files[0].read_text().strip())
+        assert entry["payload"] == {
+            "args": {"token": "[REDACTED]", "path": "safe.txt"},
+            "items": ["[REDACTED]", 7],
+        }
+
     def test_caller_dict_not_mutated(self, tmp_path):
         """_write_entry must not mutate the caller's dict."""
         original = {"type": "test", "detail": "echo sk-secret-key-123"}
