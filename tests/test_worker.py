@@ -55,6 +55,7 @@ from kiso.worker.loop import (
     _handle_msg_task,
     _handle_plan_error,
     _handle_replan_task,
+    _run_review_step,
     _handle_search_task,
     _handle_tool_task,
     _make_plan_output,
@@ -12688,6 +12689,79 @@ class TestPlannerTaskPersistence:
         )
         tasks = await get_tasks_for_plan(db, plan_id)
         assert json.loads(tasks[0]["args"]) == {"text": "hello"}
+
+
+class TestTaskContract:
+    def test_normalize_task_contract_for_tool_task(self):
+        from kiso.worker.utils import _normalize_task_contract
+
+        contract = _normalize_task_contract(
+            {
+                "type": "tool",
+                "detail": "Extract OCR text",
+                "tool": "ocr",
+                "args": {"file_path": "shot.png"},
+                "expect": "ocr text extracted",
+            },
+            task_index=2,
+            task_id=11,
+        )
+
+        assert contract.task_type == "tool"
+        assert contract.delivery_mode == "action"
+        assert contract.verification_mode == "review"
+        assert contract.allowed_repair_scope == "task"
+        assert contract.declared_inputs == ["tool:ocr", "file_path=shot.png"]
+        assert contract.expected_outputs == ["ocr text extracted"]
+        assert contract.task_index == 2
+        assert contract.task_id == 11
+
+    def test_build_replan_context_excludes_user_facing_contract_tasks(self):
+        from kiso.worker.utils import _build_replan_context
+
+        completed = [
+            {
+                "type": "exec",
+                "detail": "write file",
+                "status": "done",
+                "contract": {"delivery_mode": "action"},
+            },
+            {
+                "type": "msg",
+                "detail": "tell the user",
+                "status": "done",
+                "contract": {"delivery_mode": "user-facing"},
+            },
+        ]
+
+        context = _build_replan_context(
+            completed,
+            [],
+            "Need a better verification step",
+            [],
+        )
+
+        assert "write file" in context
+        assert "tell the user" not in context
+
+    @pytest.mark.asyncio
+    async def test_run_review_step_skips_non_review_contract(self):
+        task_row = {
+            "id": 1,
+            "contract": {"verification_mode": "none"},
+        }
+        ctx = MagicMock()
+        with patch("kiso.worker.loop._review_task", new_callable=AsyncMock) as mock_review:
+            review, error = await _run_review_step(ctx, task_row)
+        assert error is None
+        assert review == {
+            "status": "ok",
+            "reason": None,
+            "learn": None,
+            "retry_hint": None,
+            "summary": None,
+        }
+        mock_review.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

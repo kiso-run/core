@@ -140,8 +140,10 @@ from kiso.store import (
 )
 
 from kiso.worker.utils import (
+    _coerce_task_args,
     _build_execution_state,
     _make_file_ref,
+    _normalize_task_contract,
     _PUB_IGNORE_DIRS,
     _auto_publish_skill_files,
     _build_cancel_summary,
@@ -909,11 +911,15 @@ async def _persist_plan_tasks(
 ) -> list[int]:
     """Persist a list of task dicts to the DB. Returns list of task ids."""
     task_ids: list[int] = []
-    for t in tasks:
+    for index, t in enumerate(tasks, 1):
+        contract = _normalize_task_contract(t, task_index=index)
         tid = await create_task(
             db, plan_id, session,
-            type=t["type"], detail=t["detail"],
-            skill=t.get("tool"), args=t.get("args"), expect=t.get("expect"),
+            type=contract.task_type,
+            detail=contract.intent,
+            skill=contract.tool_name,
+            args=contract.args,
+            expect=contract.expect,
             parallel_group=t.get("group"),
         )
         task_ids.append(tid)
@@ -1011,6 +1017,7 @@ class _PlanCtx:
     plan_has_needs_install: bool = False
     cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
+    task_contracts: dict[int, dict] = field(default_factory=dict)
     # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
     installed_tools_by_name: dict[str, dict] = field(init=False)
 
@@ -1040,6 +1047,7 @@ def _make_plan_output(
     index: int, task_type: str, detail: str, output: str, status: str,
     session: str = "",
     *,
+    contract: dict | None = None,
     file_refs: list[dict] | None = None,
     artifact_refs: list[dict] | None = None,
     failure_class: str | None = None,
@@ -1052,6 +1060,8 @@ def _make_plan_output(
     if session:
         output = _save_large_output(session, index, output)
     entry = {"index": index, "type": task_type, "detail": detail, "output": output, "status": status}
+    if contract:
+        entry["contract"] = contract
     if file_refs:
         entry["file_refs"] = file_refs
     if artifact_refs:
@@ -1096,6 +1106,7 @@ async def _fail_task_and_audit(
     _audit_task(ctx, task_id, task_type, detail, "failed", 0)
     plan_output = _make_plan_output(
         task_idx, task_type, detail, error, "failed", session=ctx.session,
+        contract=ctx.task_contracts.get(task_id),
         failure_class=classify_failure_class(replan_reason or stuck_reason or error),
     )
     if stuck_reason:
@@ -1178,6 +1189,15 @@ async def _run_review_step(
     Returns (review_dict, error_str). On ReviewError, review_dict is None and
     error_str is the error message; on success, error_str is None.
     """
+    contract = task_row.get("contract") or {}
+    if contract.get("verification_mode") != "review":
+        return {
+            "status": "ok",
+            "reason": None,
+            "learn": None,
+            "retry_hint": None,
+            "summary": None,
+        }, None
     task_id = task_row["id"]
     await update_task_substatus(ctx.db, task_id, _SUBSTATUS_REVIEWING)
     idx = get_usage_index()
@@ -1282,7 +1302,15 @@ async def _handle_msg_task(
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     return _TaskHandlerResult(
         completed_row=task_row,
-        plan_output=_make_plan_output(i + 1, TASK_TYPE_MSG, detail, text, "done", session=ctx.session),
+        plan_output=_make_plan_output(
+            i + 1,
+            TASK_TYPE_MSG,
+            detail,
+            text,
+            "done",
+            session=ctx.session,
+            contract=task_row.get("contract"),
+        ),
     )
 
 
@@ -1512,6 +1540,7 @@ async def _handle_tool_task(
         plan_output_entry = _make_plan_output(
             i + 1, "tool", detail, task_row.get("output") or "", task_row["status"],
             session=ctx.session,
+            contract=task_row.get("contract"),
             file_refs=input_file_refs,
             artifact_refs=_build_new_artifact_refs(
                 ctx.session,
@@ -1719,6 +1748,7 @@ async def _handle_exec_task(
             stdout,
             status,
             session=ctx.session,
+            contract=task_row.get("contract"),
             artifact_refs=_build_new_artifact_refs(
                 ctx.session,
                 pre_snapshot,
@@ -1789,6 +1819,7 @@ async def _handle_search_task(
             _audit_task(ctx, task_id, "search", detail, "failed", task_duration_ms)
             plan_output = _make_plan_output(
                 i + 1, "search", detail, error_output, "failed", session=ctx.session,
+                contract=task_row.get("contract"),
             )
             return _TaskHandlerResult(
                 stop=True, stop_success=False,
@@ -1798,7 +1829,15 @@ async def _handle_search_task(
 
         # Keep local state updated; DB write deferred until reviewer approves
         task_row = {**task_row, "output": search_result, "status": "done"}
-        local_plan_output = _make_plan_output(i + 1, "search", detail, search_result, "done", session=ctx.session)
+        local_plan_output = _make_plan_output(
+            i + 1,
+            "search",
+            detail,
+            search_result,
+            "done",
+            session=ctx.session,
+            contract=task_row.get("contract"),
+        )
 
         await _append_calls(ctx.db, task_id, idx_search)
 
@@ -1896,6 +1935,14 @@ async def _execute_plan(
     - plan_outputs: list of plan output dicts (may contain retry_hint)
     """
     tasks = await get_tasks_for_plan(db, plan_id)
+    for idx, task in enumerate(tasks, 1):
+        contract = _normalize_task_contract(
+            task,
+            task_index=idx,
+            task_id=task.get("id"),
+        ).to_dict()
+        task["contract"] = contract
+        task["args_dict"] = _coerce_task_args(task.get("args"))
     completed: list[dict] = []
     deploy_secrets = collect_deploy_secrets()
     max_output_size = setting_int(config.settings, "max_output_size", lo=0)
@@ -1922,7 +1969,10 @@ async def _execute_plan(
         response_lang=response_lang,
         cancel_event=cancel_event,
         sandbox_uid=None,
+        task_contracts={},
     )
+    for task in tasks:
+        ctx.task_contracts[task["id"]] = task["contract"]
 
     # Snapshot workspace for cross-plan summary (M823)
     pre_snapshot = _snapshot_workspace(session)

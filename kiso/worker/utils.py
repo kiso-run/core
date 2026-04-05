@@ -99,6 +99,103 @@ class ArtifactRef:
         return data
 
 
+@dataclass(slots=True)
+class TaskContract:
+    """Normalized execution contract derived from a planner task or DB row."""
+
+    task_type: str
+    intent: str
+    tool_name: str | None
+    args: dict | None
+    expect: str | None
+    delivery_mode: str
+    verification_mode: str
+    allowed_repair_scope: str
+    declared_inputs: list[str] = field(default_factory=list)
+    expected_outputs: list[str] = field(default_factory=list)
+    task_index: int | None = None
+    task_id: int | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "task_type": self.task_type,
+            "intent": self.intent,
+            "tool_name": self.tool_name,
+            "args": self.args,
+            "expect": self.expect,
+            "delivery_mode": self.delivery_mode,
+            "verification_mode": self.verification_mode,
+            "allowed_repair_scope": self.allowed_repair_scope,
+            "declared_inputs": list(self.declared_inputs),
+            "expected_outputs": list(self.expected_outputs),
+            "task_index": self.task_index,
+            "task_id": self.task_id,
+        }
+
+
+def _coerce_task_args(args: object) -> dict | None:
+    """Normalize planner/DB task args into a dict when possible."""
+    if args is None:
+        return None
+    if isinstance(args, dict):
+        return dict(args)
+    if isinstance(args, str):
+        text = args.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def _normalize_task_contract(
+    task: dict,
+    *,
+    task_index: int | None = None,
+    task_id: int | None = None,
+) -> TaskContract:
+    """Derive a declarative contract from an existing planner task shape."""
+    task_type = str(task.get("type") or "")
+    intent = str(task.get("detail") or "")
+    tool_name = task.get("tool") or task.get("skill")
+    args = _coerce_task_args(task.get("args"))
+    expect = task.get("expect")
+
+    delivery_mode = "user-facing" if task_type == "msg" else "action"
+    verification_mode = "none" if task_type in {"msg", "replan"} else "review"
+    allowed_repair_scope = "plan" if task_type in {"msg", "replan"} else "task"
+
+    declared_inputs: list[str] = []
+    if tool_name:
+        declared_inputs.append(f"tool:{tool_name}")
+    if args:
+        declared_inputs.extend(
+            f"{name}={value}"
+            for name, value in sorted(args.items())
+            if value not in (None, "", [], {})
+        )
+
+    expected_outputs = [str(expect)] if expect else []
+
+    return TaskContract(
+        task_type=task_type,
+        intent=intent,
+        tool_name=tool_name,
+        args=args,
+        expect=expect,
+        delivery_mode=delivery_mode,
+        verification_mode=verification_mode,
+        allowed_repair_scope=allowed_repair_scope,
+        declared_inputs=declared_inputs,
+        expected_outputs=expected_outputs,
+        task_index=task_index if task_index is not None else task.get("index"),
+        task_id=task_id if task_id is not None else task.get("id"),
+    )
+
+
 async def _run_sync(fn, *args):
     """Run a sync function in the default executor."""
     return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
@@ -1178,8 +1275,12 @@ def _build_replan_context(
     update_hints: list[str] | None = None,
 ) -> str:
     """Build extra context for replanning."""
-    # strip msg-type tasks — intent messages are noise for replanning
-    completed = [t for t in completed if t.get("type") != "msg"]
+    # Strip user-facing delivery tasks — replans should focus on action work.
+    completed = [
+        t for t in completed
+        if (t.get("contract") or {}).get("delivery_mode") != "user-facing"
+        and t.get("type") != "msg"
+    ]
     parts: list[str] = []
     parts.extend(_format_replan_hints(update_hints, replan_history))
     facts_section = _format_replan_facts(completed, replan_history)
