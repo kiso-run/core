@@ -16,6 +16,7 @@ The briefer decides which recipes are relevant for each request.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -31,7 +32,13 @@ _cache: dict[Path, tuple[float, list[dict]]] = {}
 def discover_recipes(recipes_dir: Path | None = None) -> list[dict]:
     """Discover .md recipe files and parse their frontmatter.
 
-    Returns list of {"name", "summary", "instructions", "path"} dicts.
+    Returns list of recipe dicts with required keys:
+    {"name", "summary", "instructions", "path"}.
+
+    Optional static applicability metadata is preserved when present:
+    - applies_to: list[str]
+    - excludes: list[str]
+
     Results are cached with a TTL to avoid repeated filesystem scans.
     """
     d = recipes_dir or (KISO_DIR / "recipes")
@@ -64,7 +71,7 @@ def invalidate_recipes_cache() -> None:
 def _parse_recipe_file(path: Path) -> dict | None:
     """Parse a .md recipe file with YAML frontmatter.
 
-    Returns {"name", "summary", "instructions", "path"} or None on error.
+    Returns the parsed recipe dict or None on error.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -107,12 +114,70 @@ def _parse_recipe_file(path: Path) -> dict | None:
         log.warning("Recipe file missing 'summary' in frontmatter: %s", path)
         return None
 
-    return {
+    recipe = {
         "name": name,
         "summary": summary,
         "instructions": body,
         "path": str(path),
     }
+    applies_to = _parse_selector_list(meta.get("applies_to", ""))
+    excludes = _parse_selector_list(meta.get("excludes", ""))
+    if applies_to:
+        recipe["applies_to"] = applies_to
+    if excludes:
+        recipe["excludes"] = excludes
+    return recipe
+
+
+def _parse_selector_list(raw: str) -> list[str]:
+    """Parse a frontmatter selector list from comma-separated or [a, b] syntax."""
+    raw = raw.strip()
+    if not raw:
+        return []
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    items = []
+    for piece in raw.split(","):
+        selector = piece.strip().strip("'\"").strip()
+        if selector:
+            items.append(selector)
+    return items
+
+
+def filter_recipes_for_message(recipes: list[dict], message: str) -> list[dict]:
+    """Apply optional static applicability metadata to a recipe list.
+
+    Recipes without metadata remain eligible by default.
+    - applies_to: at least one selector must match the user request
+    - excludes: any selector match excludes the recipe
+    """
+    if not recipes or not message:
+        return recipes
+
+    filtered: list[dict] = []
+    for recipe in recipes:
+        applies_to = recipe.get("applies_to") or []
+        excludes = recipe.get("excludes") or []
+        if applies_to and not any(_selector_matches_message(message, s) for s in applies_to):
+            continue
+        if any(_selector_matches_message(message, s) for s in excludes):
+            continue
+        filtered.append(recipe)
+    return filtered
+
+
+def _selector_matches_message(message: str, selector: str) -> bool:
+    """Match selector against a message with word-aware single-token handling."""
+    selector = selector.strip().lower()
+    if not selector:
+        return False
+    message_norm = " ".join(message.lower().split())
+    selector_norm = " ".join(selector.split())
+    if not selector_norm:
+        return False
+    if " " in selector_norm:
+        return selector_norm in message_norm
+    return re.search(rf"\b{re.escape(selector_norm)}\b", message_norm) is not None
 
 
 def build_planner_recipe_list(recipes: list[dict]) -> str:

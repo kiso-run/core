@@ -9,6 +9,7 @@ import pytest
 from kiso.recipe_loader import (
     build_planner_recipe_list,
     discover_recipes,
+    filter_recipes_for_message,
     invalidate_recipes_cache,
     _parse_recipe_file,
 )
@@ -52,6 +53,17 @@ summary: Minimal recipe with no instructions
 ---
 """
 
+_WITH_METADATA = """\
+---
+name: env-report
+summary: Format environment reports
+applies_to: [environment, env, report]
+excludes: marketing, sales
+---
+
+Use structured key-value output.
+"""
+
 
 class TestParseRecipeFile:
     def test_valid_recipe(self, tmp_path):
@@ -86,6 +98,14 @@ class TestParseRecipeFile:
         assert result is not None
         assert result["name"] == "minimal"
         assert result["instructions"] == ""
+
+    def test_optional_metadata_lists(self, tmp_path):
+        f = tmp_path / "env-report.md"
+        f.write_text(_WITH_METADATA)
+        result = _parse_recipe_file(f)
+        assert result is not None
+        assert result["applies_to"] == ["environment", "env", "report"]
+        assert result["excludes"] == ["marketing", "sales"]
 
     def test_nonexistent_file(self, tmp_path):
         f = tmp_path / "nonexistent.md"
@@ -183,3 +203,32 @@ class TestBuildPlannerRecipeList:
         recipes = [{"name": "minimal", "summary": "Minimal", "instructions": ""}]
         result = build_planner_recipe_list(recipes)
         assert result == "- minimal — Minimal"
+
+
+class TestFilterRecipesForMessage:
+    def test_recipes_without_metadata_stay_in_scope(self):
+        recipes = [{"name": "general", "summary": "Any task", "instructions": ""}]
+        assert filter_recipes_for_message(recipes, "hello there") == recipes
+
+    def test_applies_to_requires_match(self):
+        recipes = [
+            {"name": "env-report", "summary": "Env", "instructions": "", "applies_to": ["environment", "env"]},
+            {"name": "general", "summary": "General", "instructions": ""},
+        ]
+        result = filter_recipes_for_message(recipes, "fammi un report delle variabili d'ambiente")
+        assert [r["name"] for r in result] == ["general"]
+
+    def test_excludes_removes_recipe_on_match(self):
+        recipes = [
+            {"name": "ops-report", "summary": "Ops", "instructions": "", "excludes": ["marketing"]},
+            {"name": "general", "summary": "General", "instructions": ""},
+        ]
+        result = filter_recipes_for_message(recipes, "write a marketing report")
+        assert [r["name"] for r in result] == ["general"]
+
+    def test_multiword_selector_matches_phrase(self):
+        recipes = [
+            {"name": "env-report", "summary": "Env", "instructions": "", "applies_to": ["environment report"]},
+        ]
+        result = filter_recipes_for_message(recipes, "Please produce an environment report today")
+        assert [r["name"] for r in result] == ["env-report"]

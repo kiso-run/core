@@ -31,11 +31,23 @@ _RECIPE_CODE_REVIEW = """\
 ---
 name: code-reviewer
 summary: Code review best practices
+applies_to: code, review
 ---
 
 When reviewing code:
 - Check for error handling
 - Verify test coverage
+"""
+
+_RECIPE_ENV_REPORT = """\
+---
+name: env-report
+summary: Format environment reports as structured data
+applies_to: environment, env, report
+excludes: marketing
+---
+
+Return key-value output.
 """
 
 
@@ -95,3 +107,30 @@ class TestRecipeEndToEnd:
         # In fallback path, all context pool items are included directly
         user_content = msgs[1]["content"]
         assert "data-analyst" in user_content
+
+    async def test_metadata_prefilters_recipes_before_briefer(self, db, tmp_path):
+        """Static metadata should remove clearly irrelevant recipes before briefer selection."""
+        (tmp_path / "env-report.md").write_text(_RECIPE_ENV_REPORT)
+        (tmp_path / "code-reviewer.md").write_text(_RECIPE_CODE_REVIEW)
+        invalidate_recipes_cache()
+
+        captured_messages = []
+
+        async def _capturing_llm(cfg, role, messages, **kw):
+            if role == "briefer":
+                captured_messages.extend(messages)
+                return '{"modules":[],"tools":[],"exclude_recipes":[],"context":"","output_indices":[],"relevant_tags":[],"relevant_entities":[]}'
+            return "{}"
+
+        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
+             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_recipes",
+                   side_effect=lambda *a, **k: discover_recipes(tmp_path)):
+            await build_planner_messages(
+                db, _config(briefer_enabled=True), "sess1", "user",
+                "fammi un report delle variabili d'ambiente del sistema",
+            )
+
+        briefer_input = captured_messages[1]["content"]
+        assert "env-report" in briefer_input
+        assert "code-reviewer" not in briefer_input

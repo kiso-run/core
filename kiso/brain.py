@@ -16,7 +16,11 @@ from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_tools
 from kiso.security import fence_content
 from kiso.connectors import discover_connectors
-from kiso.recipe_loader import discover_recipes, build_planner_recipe_list
+from kiso.recipe_loader import (
+    discover_recipes,
+    build_planner_recipe_list,
+    filter_recipes_for_message,
+)
 from kiso.tools import (
     discover_tools,
     build_planner_tool_list,
@@ -1513,7 +1517,7 @@ async def _gather_planner_context(
     context_pool["system_env"] = sys_env_full
 
     # inject recipes into context pool
-    recipes = discover_recipes()
+    recipes = filter_recipes_for_message(discover_recipes(), new_message)
     recipes_text = build_planner_recipe_list(recipes)
     if recipes_text:
         context_pool["recipes"] = recipes_text
