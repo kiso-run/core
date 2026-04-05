@@ -84,7 +84,19 @@ Uses structured output (`response_format` with strict JSON schema — see [llm-r
 Returns JSON with:
 - `goal`: high-level objective for the entire process. Stored for the reviewer and potential replan cycles.
 - `secrets`: `{key, value}` pairs or `null`. If present, stored in **worker memory** (ephemeral, never in DB). See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
-- `tasks`: `exec`, `tool`, and `search` tasks must include an `expect` field with semantic success criteria (they are always reviewed).
+- `tasks`: `exec`, `tool`, and `search` tasks must include an `expect` field with semantic success criteria (they are always reviewed). Tool/search `args` are now structured objects in the planner contract, not JSON-in-string payloads.
+
+Before execution, Kiso normalizes each raw planner task into an internal
+`TaskContract`. The contract carries:
+- normalized task identity (`type`, intent, tool name, parsed args)
+- delivery mode (`action` vs `user-facing`)
+- verification mode (`review` vs `none`)
+- allowed repair scope
+- declared inputs / expected outputs
+- inferred dependencies on prior files or artifacts
+
+The planner still communicates through natural-language `detail`, but the worker
+no longer treats free-form text as the only execution boundary.
 
 ### d) Validates and Persists the Plan
 
@@ -98,12 +110,12 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 
 | Type | Execution |
 |---|---|
-| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context (available binaries, OS, CWD) and preceding plan outputs. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=/root/.kiso/sessions/{session}` (container-internal path), timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
+| `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context, structured preceding task results, and authoritative dependency links when prior files/artifacts are relevant. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=/root/.kiso/sessions/{session}` (container-internal path), timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `messenger` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
 | `search` | Calls LLM with `searcher` role (`google/gemini-2.5-flash-lite:online`). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
 | `tool` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python /root/.kiso/tools/{name}/run.py` (container-internal path). Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
-**Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
+**Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The runtime also normalizes those outputs into canonical `TaskResult` objects and carries `file_refs`, `artifact_refs`, failure classes, reviewer summaries, and dependency links forward. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
 
 Output is sanitized (known secret values stripped — plaintext, base64, URL-encoded) before any further use. Task output is fenced with random boundary tokens before inclusion in any LLM prompt (reviewer, replan planner, worker) — see [security.md — Random Boundary Fencing](security.md#layer-2-random-boundary-fencing). Task status and output are persisted to `store.tasks` (`done` or `failed`).
 
@@ -138,10 +150,10 @@ When the reviewer determines that the task failed and the plan needs revision, o
 
 2. **Call the planner** with enriched context:
    - Everything the planner normally receives (facts, pending, summary, messages, tools, role, original message)
-   - **completed**: tasks already executed, with their outputs (from `store.tasks`)
+   - **completed**: tasks already executed, normalized into structured task results
    - **remaining**: tasks that were planned but not yet executed
    - **failure**: the failed task, its output, and the reviewer's `reason`
-   - **replan_history**: previous replan attempts for this message (goal, failure, what was tried) — so the planner doesn't repeat the same mistakes
+   - **replan_history**: previous replan attempts for this message (goal, failure, what was tried, task results, retry hints, failure classes) — so the planner doesn't repeat the same mistakes
 
 3. The planner produces a new `goal` and `tasks` list. A new plan is created with `parent_id` pointing to the previous plan and its tasks are persisted **before** the old plan is finalized (marked `failed` for reviewer-triggered replans, `done` for self-directed replans). This ordering prevents a race where the CLI sees the old plan as terminal with no successor. Remaining tasks from the old plan are marked `failed`. New tasks go through validation (step d) again.
 
@@ -153,7 +165,7 @@ When the reviewer determines that the task failed and the plan needs revision, o
 
 ### Task Output Chaining
 
-The worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The structure is an array of entries:
+The worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The transport format is still an array of entries:
 
 ```json
 [
@@ -175,6 +187,17 @@ The worker accumulates outputs from completed tasks in the current plan and pass
 ```
 
 Fields: `index` (1-based position in the plan), `type`, `detail` (what was requested), `output` (stdout for exec/tool, generated text for msg), `status` (`done` or `failed` — so the consumer knows if the output is a result or an error).
+
+Internally, Kiso reconstructs a canonical `TaskResult` from this transport plus
+the task row. That runtime result is what replans, dependency inference, and
+message composition should reason over. Additional structured fields may be
+present on the transport entries as the runtime evolves, including:
+- `contract`
+- `reviewer_summary`
+- `retry_hint`
+- `failure_class`
+- `file_refs`
+- `artifact_refs`
 
 How each task type receives preceding outputs:
 

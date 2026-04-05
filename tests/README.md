@@ -63,10 +63,26 @@ When adding or editing tests:
 - Prefer observable effects over generic success flags:
   plan/task shape, DB state, created files, published artifacts, exit status,
   persisted knowledge, reachable URLs, or concrete command output.
+- Prefer structured runtime contracts over incidental text:
+  `TaskContract`, `TaskResult`, `file_refs`, `artifact_refs`, dependency links,
+  and classified failure modes are stronger oracles than prompt snippets.
 - Use language-quality heuristics only when language selection is itself the
   product requirement.
 - Avoid adding blocking tests whose only oracle is a substring in a prompt file
   or a success-like word in the assistant message.
+
+### Preferred oracles after the structured-runtime redesign
+
+When a feature touches planner, worker, replans, or memory, prefer asserting:
+
+- normalized task contracts instead of the raw planner prose alone
+- canonical task results instead of ad-hoc `output` strings alone
+- file/artifact identity and dependency links instead of guessed filenames
+- failure classes and retry hints instead of generic "replan happened"
+- operational vs semantic memory slices instead of one merged context blob
+
+If an old test only checks that some prompt section contains a phrase, that is
+now usually the wrong level unless the phrase itself is the product contract.
 
 ### Prompt-test guardrails
 

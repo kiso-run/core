@@ -1011,12 +1011,13 @@ async def _persist_plan_tasks(
     task_ids: list[int] = []
     for index, t in enumerate(tasks, 1):
         contract = _normalize_task_contract(t, task_index=index)
+        args_payload = t.get("args") if isinstance(t.get("args"), str) else contract.args
         tid = await create_task(
             db, plan_id, session,
             type=contract.task_type,
             detail=contract.intent,
             skill=contract.tool_name,
-            args=contract.args,
+            args=args_payload,
             expect=contract.expect,
             parallel_group=t.get("group"),
         )
@@ -1169,6 +1170,22 @@ def _make_plan_output(
     return entry
 
 
+def _ensure_task_contract(ctx: _PlanCtx, task_row: dict, task_index: int) -> dict:
+    """Ensure direct handler callers also get a normalized task contract."""
+    contract = task_row.get("contract")
+    if isinstance(contract, dict):
+        return contract
+    contract = _normalize_task_contract(
+        task_row,
+        task_index=task_index,
+        task_id=task_row.get("id"),
+    ).to_dict()
+    task_row["contract"] = contract
+    if isinstance(getattr(ctx, "task_contracts", None), dict) and task_row.get("id") is not None:
+        ctx.task_contracts[task_row["id"]] = contract
+    return contract
+
+
 def _is_unresolved_failed_output(plan_output: dict) -> bool:
     """True when a failed plan output still requires replanning."""
     return (
@@ -1204,7 +1221,7 @@ async def _fail_task_and_audit(
     _audit_task(ctx, task_id, task_type, detail, "failed", 0)
     plan_output = _make_plan_output(
         task_idx, task_type, detail, error, "failed", session=ctx.session,
-        contract=ctx.task_contracts.get(task_id),
+        contract=getattr(ctx, "task_contracts", {}).get(task_id),
         failure_class=classify_failure_class(replan_reason or stuck_reason or error),
     )
     if stuck_reason:
@@ -1337,6 +1354,7 @@ async def _handle_msg_task(
 ) -> _TaskHandlerResult:
     """Handle a msg task (messenger LLM → user-facing text)."""
     task_id = task_row["id"]
+    _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
     t0 = time.perf_counter()
     idx_msg = get_usage_index()
@@ -1500,6 +1518,7 @@ async def _handle_tool_task(
 ) -> _TaskHandlerResult:
     """Handle a tool task (external subprocess via tool plugin)."""
     task_id = task_row["id"]
+    _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
     tool_name = task_row.get("skill")  # DB field still "skill" until schema migration
     args_raw = task_row.get("args") or "{}"
@@ -1676,6 +1695,7 @@ async def _handle_exec_task(
 ) -> _TaskHandlerResult:
     """Handle an exec task (shell command via translator + executor + reviewer)."""
     task_id = task_row["id"]
+    _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
 
@@ -1898,6 +1918,7 @@ async def _handle_search_task(
 ) -> _TaskHandlerResult:
     """Handle a search task (searcher LLM + reviewer)."""
     task_id = task_row["id"]
+    _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
     search_retries = 0
     search_extra_context = ""
@@ -2618,6 +2639,7 @@ def _detect_circular_replan(
     curr_words = set(curr["failure"].lower().split())
     curr_fp = curr.get("strategy_fingerprint", frozenset())
 
+    fp_repeat_count = 0
     for prev in replan_history[:-1]:
         # Word overlap check
         prev_words = set(prev["failure"].lower().split())
@@ -2633,9 +2655,14 @@ def _detect_circular_replan(
             union = prev_fp | curr_fp
             jaccard = len(prev_fp & curr_fp) / len(union) if union else 0
             if jaccard > 0.5:
-                log.warning("Circular replan detected (%.0f%% strategy overlap): %s",
-                            jaccard * 100, replan_reason)
-                return True
+                fp_repeat_count += 1
+
+    if fp_repeat_count >= 2:
+        log.warning(
+            "Circular replan detected (%d repeated strategy overlaps): %s",
+            fp_repeat_count, replan_reason,
+        )
+        return True
 
     # Install→use→fail loop — check both goal and failure for install keywords
     # (reviewer reasons often omit install verbs, but goals almost always have them)
@@ -2811,7 +2838,8 @@ async def _run_planning_loop(
         ]
         # Strategy fingerprint: sorted set of "type:detail_prefix" for each task
         strategy_fp = frozenset(
-            f"{t.task_type}:{t.detail[:30]}" for t in task_results
+            [f"goal:{current_goal[:40]}"] +
+            [f"{t.task_type}:{t.detail[:30]}" for t in task_results]
         )
         history_entry: dict = {
             "goal": current_goal,

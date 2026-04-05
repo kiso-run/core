@@ -187,6 +187,21 @@ All fixtures use `tmp_path` — tests never touch `~/.kiso/`.
 - No sleeps, no network calls in unit tests, no flaky tests
 - Live test assertions are intentionally loose — never exact text matching
 
+### Preferred test oracles
+
+For planner/worker/runtime changes, prefer asserting structured runtime state
+over prompt wording:
+
+- `TaskContract` normalization
+- `TaskResult` reconstruction
+- `file_refs` / `artifact_refs`
+- dependency links between tasks
+- classified failure modes and retry hints
+- separated operational vs semantic memory slices
+
+Prompt wording checks should stay secondary unless the wording itself is the
+user-facing product contract.
+
 ## Sandbox Tests (Docker-only)
 
 `tests/test_sandbox_docker.py` tests real per-session sandbox isolation: creating Linux users, `chown`/`chmod` on workspaces, and verifying that a sandboxed user cannot escape their workspace. Requires root.

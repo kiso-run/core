@@ -87,7 +87,7 @@ CREATE TABLE tasks (
     type            TEXT NOT NULL,      -- exec | msg | tool | search | replan
     detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg)
     tool            TEXT,               -- tool name (if type=tool)
-    args            TEXT,               -- JSON string of tool args (parsed before execution)
+    args            TEXT,               -- serialized structured args (planner emits objects; DB stores JSON)
     expect          TEXT,               -- success criteria (required for exec and tool tasks)
     command         TEXT,               -- translated shell command (exec only, set after LLM translation)
     status          TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
@@ -112,6 +112,10 @@ CREATE INDEX idx_tasks_status ON tasks(session, status);
 
 - `plan_id` replaces the old `message_id` + `goal` — the plan owns the goal, tasks reference the plan.
 - `exec` and `tool` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
+- The DB row is no longer treated as the only execution contract. Before
+  execution, the worker normalizes each row into a `TaskContract` carrying
+  delivery mode, verification mode, expected outputs, declared inputs, and
+  inferred dependencies on prior file/artifact refs.
 - `command`: for `exec` tasks, the planner writes a natural-language `detail`; the exec translator LLM converts it to a shell command stored here before execution.
 - `llm_calls`: appended atomically via SQLite `json_insert` — no read-modify-write race condition between concurrent coroutines.
 - Status lifecycle: `pending` → `running` → `done` | `failed` | `cancelled`.
@@ -119,6 +123,20 @@ CREATE INDEX idx_tasks_status ON tasks(session, status);
 - On cancel, remaining `pending` tasks are marked `cancelled`.
 - The `/status/{session}` endpoint reads from this table.
 - Only `msg` tasks are delivered to the user. See [flow.md — Delivers msg Tasks](flow.md#f-reviews-and-delivers).
+
+### Runtime contracts and results
+
+Kiso now uses two internal runtime objects above the raw tables:
+
+- `TaskContract`: derived from planner output / task rows before execution.
+  This is the declarative contract the worker actually executes.
+- `TaskResult`: derived from the task row plus runtime plan-output metadata.
+  This is the canonical object used for replans, delivery formatting, and
+  dependency-aware recovery.
+
+These are not stored in first-class tables yet. They are reconstructed from the
+existing persisted fields and from structured runtime artifacts such as
+`plan_outputs.json`, then carried forward in replan history.
 
 ### facts
 

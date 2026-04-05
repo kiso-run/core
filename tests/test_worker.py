@@ -9435,6 +9435,8 @@ class TestDetectCircularReplanUnit:
              "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
             {"failure": "reason B unrelated text here", "goal": "g",
              "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
+            {"failure": "reason C still different", "goal": "g",
+             "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is True
 
