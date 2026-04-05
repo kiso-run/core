@@ -8,11 +8,20 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
+import kiso.brain_prompting as _prompting
+from kiso.brain_prompting import (
+    _ANSWER_IN_LANG_RE,
+    _ROLES_DIR,
+    _add_context_section,
+    _add_section,
+    _build_messages,
+    _build_messages_from_sections,
+    _prompt_cache,
+)
 from kiso.config import Config, KISO_DIR, setting_bool, setting_int
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_tools
@@ -1070,92 +1079,20 @@ class PlanError(Exception):
     """Plan validation or generation failure."""
 
 
-_ROLES_DIR = Path(__file__).parent / "roles"
-_prompt_cache: dict[str, str] = {}
-
-
 def _load_system_prompt(role: str) -> str:
-    """Load system prompt: user override first, then package default.
-
-    Results are cached in-process. Call :func:`invalidate_prompt_cache` to
-    force a reload (e.g. after the user edits a role file).
-    """
-    if role in _prompt_cache:
-        return _prompt_cache[role]
-    # User override
-    user_path = KISO_DIR / "roles" / f"{role}.md"
-    if user_path.exists():
-        text = user_path.read_text()
-        _prompt_cache[role] = text
-        return text
-    # Package default
-    pkg_path = _ROLES_DIR / f"{role}.md"
-    if pkg_path.exists():
-        text = pkg_path.read_text()
-        _prompt_cache[role] = text
-        return text
-    raise FileNotFoundError(f"No prompt found for role '{role}'")
+    """Compatibility wrapper over the extracted prompt loader."""
+    _prompting.KISO_DIR = KISO_DIR
+    return _prompting._load_system_prompt(role)
 
 
 def invalidate_prompt_cache() -> None:
-    """Clear the in-process system-prompt cache."""
-    _prompt_cache.clear()
-
-
-_MODULE_MARKER_RE = re.compile(r"<!--\s*MODULE:\s*(\w+)\s*-->")
-_ANSWER_IN_LANG_RE = re.compile(r"^Answer in (\w[\w\s]*)\.")
+    """Compatibility wrapper over the extracted prompt cache reset."""
+    _prompting.invalidate_prompt_cache()
 
 
 def _load_modular_prompt(role: str, modules: list[str]) -> str:
-    """Load a role prompt, returning only core + selected modules.
-
-    The prompt file must use ``<!-- MODULE: name -->`` markers to delimit
-    sections.  The ``core`` module is always included.  If no markers are
-    found the full prompt is returned unchanged (backward compat).
-    """
-    full_text = _load_system_prompt(role)
-    parts = _MODULE_MARKER_RE.split(full_text)
-    # If no markers found, return full prompt
-    if len(parts) <= 1:
-        return full_text
-
-    # parts alternates: [preamble, name1, text1, name2, text2, ...]
-    # preamble (parts[0]) is discarded — prompt files must start with a marker.
-    wanted = {"core"} | set(modules)
-    sections: list[str] = []
-    for i in range(1, len(parts), 2):
-        name = parts[i]
-        body = parts[i + 1] if i + 1 < len(parts) else ""
-        if name in wanted:
-            sections.append(body)
-    stripped = [s.strip() for s in sections]
-    return "\n".join(s for s in stripped if s)
-
-
-def _build_messages(system_prompt: str, user_content: str) -> list[dict]:
-    """Assemble the canonical [system, user] message pair used by all LLM roles."""
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-
-
-def _build_messages_from_sections(system_prompt: str, parts: list[str]) -> list[dict]:
-    """Assemble the canonical message pair from pre-rendered context sections."""
-    return _build_messages(system_prompt, "\n\n".join(parts))
-
-
-def _add_section(parts: list[str], name: str, content: str) -> None:
-    """Append a ``## {name}`` section to *parts* if *content* is non-empty."""
-    if content:
-        parts.append(f"## {name}\n{content}")
-
-
-def _add_context_section(
-    parts: list[str], context_sections: dict[str, str], key: str, title: str,
-) -> None:
-    """Render a named prompt section directly from structured context state."""
-    _add_section(parts, title, context_sections.get(key, ""))
+    """Compatibility wrapper preserving brain-level patch points in tests."""
+    return _prompting._render_modular_prompt_text(_load_system_prompt(role), modules)
 
 
 def _validate_plan_structure(
