@@ -283,6 +283,12 @@ async def _rows_to_dicts(cur: aiosqlite.Cursor) -> list[dict]:
     return [dict(r) for r in await cur.fetchall()]
 
 
+async def _row_to_dict(cur: aiosqlite.Cursor) -> dict | None:
+    """Fetch one row from a cursor and return it as a dict."""
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 def _json_text_or_none(value: object, *, sort_keys: bool = False) -> str | None:
     """Serialize a JSON payload or return ``None`` for empty values."""
     if value in (None, [], {}):
@@ -426,8 +432,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
 async def get_session(db: aiosqlite.Connection, session: str) -> SessionDict | None:
     """Return session row as dict, or None."""
     cur = await db.execute("SELECT * FROM sessions WHERE session = ?", (session,))
-    row = await cur.fetchone()
-    return dict(row) if row else None
+    return await _row_to_dict(cur)
 
 
 async def create_session(
@@ -1142,7 +1147,7 @@ async def search_facts_by_tags(
         f"GROUP BY f.id ORDER BY tag_overlap DESC, f.use_count DESC"
     )
     cur = await db.execute(query, list(tags) + filt_params)
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 def _normalize_entity_name(name: str) -> str:
@@ -1181,7 +1186,7 @@ async def find_or_create_entity(
 async def get_all_entities(db: aiosqlite.Connection) -> list[dict]:
     """Return all entities as [{id, name, kind}, ...]."""
     cur = await db.execute("SELECT id, name, kind FROM entities ORDER BY name")
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def search_facts_by_entity(
@@ -1192,7 +1197,7 @@ async def search_facts_by_entity(
         "SELECT * FROM facts WHERE entity_id = ? ORDER BY last_used DESC, id DESC",
         (entity_id,),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def _search_facts_by_entity_tags(
@@ -1256,7 +1261,7 @@ async def _search_facts_by_entity_tags(
     )
     params.append(fetch_limit)
     cur = await db.execute(query, params)
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def _search_facts_by_keywords(
@@ -1285,7 +1290,7 @@ async def _search_facts_by_keywords(
     params: list = [fts_q] + session_params + [fetch_limit]
     try:
         cur = await db.execute(query, params)
-        return [dict(r) for r in await cur.fetchall()]
+        return await _rows_to_dicts(cur)
     except Exception:
         return []
 
@@ -1509,7 +1514,7 @@ async def get_safety_facts(db: aiosqlite.Connection) -> list[dict]:
         "SELECT id, content FROM facts WHERE category = 'safety' "
         "ORDER BY created_at",
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def get_behavior_facts(db: aiosqlite.Connection) -> list[dict]:
@@ -1518,7 +1523,7 @@ async def get_behavior_facts(db: aiosqlite.Connection) -> list[dict]:
         "SELECT id, content FROM facts WHERE category = 'behavior' "
         "ORDER BY created_at",
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def list_knowledge(
@@ -1548,7 +1553,7 @@ async def list_knowledge(
                     "ORDER BY rank LIMIT ?",
                     (fts_q, limit),
                 )
-                rows = [dict(r) for r in await cur.fetchall()]
+                rows = await _rows_to_dicts(cur)
             except Exception:
                 rows = []
             if rows:
@@ -1575,7 +1580,7 @@ async def list_knowledge(
         f"WHERE 1=1{where} ORDER BY f.id DESC LIMIT ?",
         params + [limit],
     )
-    rows = [dict(r) for r in await cur.fetchall()]
+    rows = await _rows_to_dicts(cur)
     return await _attach_tags(db, rows)
 
 
@@ -1695,7 +1700,7 @@ async def list_cron_jobs(
         )
     else:
         cur = await db.execute("SELECT * FROM cron_jobs ORDER BY id")
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def delete_cron_job(db: aiosqlite.Connection, job_id: int) -> bool:
@@ -1725,7 +1730,7 @@ async def get_due_cron_jobs(db: aiosqlite.Connection, now_iso: str) -> list[dict
         "ORDER BY next_run",
         (now_iso,),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def update_cron_last_run(
@@ -1763,8 +1768,7 @@ async def create_project(
 async def get_project(db: aiosqlite.Connection, name: str) -> dict | None:
     """Get a project by name."""
     cur = await db.execute("SELECT * FROM projects WHERE name = ?", (name,))
-    row = await cur.fetchone()
-    return dict(row) if row else None
+    return await _row_to_dict(cur)
 
 
 async def list_projects(
@@ -1780,7 +1784,7 @@ async def list_projects(
         )
     else:
         cur = await db.execute("SELECT * FROM projects ORDER BY id")
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def delete_project(db: aiosqlite.Connection, project_id: int) -> bool:
@@ -1820,7 +1824,7 @@ async def list_project_members(db: aiosqlite.Connection, project_id: int) -> lis
         "SELECT username, role FROM project_members WHERE project_id = ? ORDER BY username",
         (project_id,),
     )
-    return [dict(r) for r in await cur.fetchall()]
+    return await _rows_to_dicts(cur)
 
 
 async def bind_session_to_project(

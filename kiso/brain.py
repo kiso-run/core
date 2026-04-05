@@ -1140,6 +1140,11 @@ def _build_messages(system_prompt: str, user_content: str) -> list[dict]:
     ]
 
 
+def _build_messages_from_sections(system_prompt: str, parts: list[str]) -> list[dict]:
+    """Assemble the canonical message pair from pre-rendered context sections."""
+    return _build_messages(system_prompt, "\n\n".join(parts))
+
+
 def _add_section(parts: list[str], name: str, content: str) -> None:
     """Append a ``## {name}`` section to *parts* if *content* is non-empty."""
     if content:
@@ -2375,7 +2380,7 @@ def build_briefer_messages(
         if val := pool.get(key):
             parts.append(f"## {heading}\n{val}")
 
-    return _build_messages(system_prompt, "\n\n".join(parts))
+    return _build_messages_from_sections(system_prompt, parts)
 
 
 def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str]:
@@ -3056,7 +3061,7 @@ def build_curator_messages(
             f"[entity: {f.get('entity_name', '?')}] {f['content']}" for f in existing_facts
         )
         parts.append(f"## Existing Facts (already in knowledge base)\n{fact_lines}")
-    return _build_messages(system_prompt, "\n\n".join(parts))
+    return _build_messages_from_sections(system_prompt, parts)
 
 
 async def run_curator(
@@ -3317,7 +3322,7 @@ def build_messenger_messages(
                      "\n".join(f"- {r}" for r in behavior_rules))
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
     context_parts.append(f"## Task\n{detail}")
-    return _build_messages(system_prompt, "\n\n".join(context_parts))
+    return _build_messages_from_sections(system_prompt, context_parts)
 
 
 async def run_messenger(
@@ -3427,7 +3432,7 @@ def build_searcher_messages(
     if params:
         parts.append("## Search Parameters\n" + "\n".join(params))
     _add_section(parts, "Context", context)
-    return _build_messages(system_prompt, "\n\n".join(parts))
+    return _build_messages_from_sections(system_prompt, parts)
 
 
 async def run_searcher(
@@ -3471,7 +3476,7 @@ def build_exec_translator_messages(
     _add_section(context_parts, "Recipe Contracts", recipe_contracts_text)
     _add_section(context_parts, "Retry Context", retry_context)
     context_parts.append(f"## Task\n{detail}")
-    return _build_messages(system_prompt, "\n\n".join(context_parts))
+    return _build_messages_from_sections(system_prompt, context_parts)
 
 
 def _is_simple_shell_intent(detail: str) -> bool:
