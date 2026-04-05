@@ -133,6 +133,46 @@ class TaskContract:
         }
 
 
+@dataclass(slots=True)
+class TaskResult:
+    """Canonical runtime result for a task across execution, replan, and delivery."""
+
+    task_id: int | None
+    task_index: int
+    task_type: str
+    detail: str
+    status: str
+    output: str
+    stderr: str | None = None
+    reviewer_summary: str | None = None
+    retry_hint: str | None = None
+    failure_class: str | None = None
+    exit_code: int | None = None
+    tool_name: str | None = None
+    contract: dict | None = None
+    file_refs: list[dict] = field(default_factory=list)
+    artifact_refs: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "index": self.task_index,
+            "type": self.task_type,
+            "detail": self.detail,
+            "status": self.status,
+            "output": self.output,
+            "stderr": self.stderr,
+            "reviewer_summary": self.reviewer_summary,
+            "retry_hint": self.retry_hint,
+            "failure_class": self.failure_class,
+            "exit_code": self.exit_code,
+            "tool": self.tool_name,
+            "contract": self.contract,
+            "file_refs": list(self.file_refs),
+            "artifact_refs": list(self.artifact_refs),
+        }
+
+
 def _coerce_task_args(args: object) -> dict | None:
     """Normalize planner/DB task args into a dict when possible."""
     if args is None:
@@ -194,6 +234,64 @@ def _normalize_task_contract(
         task_index=task_index if task_index is not None else task.get("index"),
         task_id=task_id if task_id is not None else task.get("id"),
     )
+
+
+def _task_result_from_source(entry: dict) -> TaskResult:
+    """Normalize a task row or plan-output entry into a canonical TaskResult."""
+    return TaskResult(
+        task_id=entry.get("task_id", entry.get("id")),
+        task_index=int(entry.get("index") or 0),
+        task_type=str(entry.get("type") or ""),
+        detail=str(entry.get("detail") or ""),
+        status=str(entry.get("status") or ""),
+        output=str(entry.get("output") or ""),
+        stderr=entry.get("stderr"),
+        reviewer_summary=entry.get("reviewer_summary"),
+        retry_hint=entry.get("retry_hint"),
+        failure_class=entry.get("failure_class"),
+        exit_code=entry.get("exit_code"),
+        tool_name=entry.get("tool") or entry.get("skill"),
+        contract=entry.get("contract"),
+        file_refs=list(entry.get("file_refs") or []),
+        artifact_refs=list(entry.get("artifact_refs") or []),
+    )
+
+
+def _collect_task_results(
+    completed: list[dict] | None = None,
+    plan_outputs: list[dict] | None = None,
+) -> list[TaskResult]:
+    """Build canonical task results from completed rows and/or plan outputs."""
+    results_by_index: dict[int, TaskResult] = {}
+
+    for fallback_index, entry in enumerate(completed or [], 1):
+        merged_entry = dict(entry)
+        index = merged_entry.get("index")
+        if not isinstance(index, int):
+            merged_entry["index"] = fallback_index
+            index = fallback_index
+        results_by_index[index] = _task_result_from_source(merged_entry)
+
+    for entry in plan_outputs or []:
+        result = _task_result_from_source(entry)
+        existing = results_by_index.get(result.task_index)
+        if existing is None:
+            results_by_index[result.task_index] = result
+            continue
+        if result.reviewer_summary and not existing.reviewer_summary:
+            existing.reviewer_summary = result.reviewer_summary
+        if result.retry_hint is not None and existing.retry_hint is None:
+            existing.retry_hint = result.retry_hint
+        if result.failure_class and not existing.failure_class:
+            existing.failure_class = result.failure_class
+        if result.file_refs and not existing.file_refs:
+            existing.file_refs = result.file_refs
+        if result.artifact_refs and not existing.artifact_refs:
+            existing.artifact_refs = result.artifact_refs
+        if result.contract and not existing.contract:
+            existing.contract = result.contract
+
+    return [results_by_index[idx] for idx in sorted(results_by_index)]
 
 
 async def _run_sync(fn, *args):
@@ -932,8 +1030,8 @@ def _extract_published_urls(plan_outputs: list[dict]) -> list[str]:
     marker = _PUB_FILES_MARKER
     marker_len = len(marker)
     lines: list[str] = []
-    for entry in plan_outputs:
-        raw = entry.get("output") or ""
+    for result in _collect_task_results(plan_outputs=plan_outputs):
+        raw = result.output or ""
         pos = raw.find(marker)
         if pos < 0:
             continue
@@ -970,23 +1068,22 @@ def _format_plan_outputs_for_msg(
     summary_parts: list[tuple[int, str]] = []
     budget_used = 0
 
-    for entry in reversed(plan_outputs):
-        idx = entry["index"]
-        header = f"[{idx}] {entry['type']}: {entry['detail']}"
-        status = entry["status"]
+    for result in reversed(_collect_task_results(plan_outputs=plan_outputs)):
+        idx = result.task_index
+        header = f"[{idx}] {result.task_type}: {result.detail}"
+        status = result.status
         # Prefer reviewer summary over raw output when available
-        reviewer_summary = entry.get("reviewer_summary")
-        if reviewer_summary:
-            output = f"Summary: {reviewer_summary}"
+        if result.reviewer_summary:
+            output = f"Summary: {result.reviewer_summary}"
         else:
-            output = entry.get("output") or "(no output)"
+            output = result.output or "(no output)"
         full_text = f"{header}\nStatus: {status}\n{fence_content(output, 'TASK_OUTPUT')}"
 
         if budget_used + len(full_text) <= budget:
             full_parts.append((idx, full_text))
             budget_used += len(full_text)
         else:
-            summary_parts.append((idx, f"[{idx}] {entry['type']}: {entry['detail']} -> {status}"))
+            summary_parts.append((idx, f"[{idx}] {result.task_type}: {result.detail} -> {status}"))
 
     # Re-sort by original index (ascending)
     full_parts.sort(key=lambda x: x[0])
@@ -1026,9 +1123,10 @@ def _save_large_output(session: str, task_index: int, output: str) -> str:
 
 def _task_type_label(t: dict) -> str:
     """Format task type, including tool name when present (e.g. 'tool/ocr')."""
-    label = t["type"]
-    if t.get("tool"):
-        label += f"/{t['tool']}"
+    result = _task_result_from_source(t)
+    label = result.task_type
+    if result.tool_name:
+        label += f"/{result.tool_name}"
     return label
 
 
@@ -1125,9 +1223,10 @@ def _extract_confirmed_facts(completed: list[dict]) -> list[str]:
     4. First line of short outputs
     """
     seen: set[str] = set()
-    facts: list[str] = _facts_from_summaries(completed, seen)
+    normalized = [r.to_dict() for r in _collect_task_results(completed=completed)]
+    facts: list[str] = _facts_from_summaries(normalized, seen)
 
-    for t in completed:
+    for t in normalized:
         out = (t.get("output") or "").strip()
         if not out:
             continue
@@ -1184,8 +1283,11 @@ def _format_replan_facts(
     replan_history: list[dict],
 ) -> str | None:
     """Build Confirmed Facts section from completed tasks + history."""
-    all_completed = list(completed)
+    all_completed = [r.to_dict() for r in _collect_task_results(completed=completed)]
     for h in replan_history:
+        for task_result in h.get("task_results", []):
+            if isinstance(task_result, dict):
+                all_completed.append(task_result)
         for ko in h.get("key_outputs", []):
             if ko.startswith("[") and "] " in ko:
                 out_text = ko[ko.index("] ") + 2:]
@@ -1209,19 +1311,24 @@ def _format_replan_tasks(
     if completed:
         items = []
         total_chars = 0
-        for t in completed:
-            limit = _REPLAN_SEARCH_OUTPUT_LIMIT if t.get("type") == "search" else _REPLAN_OUTPUT_LIMIT
+        for result in _collect_task_results(completed=completed):
+            result_dict = result.to_dict()
+            limit = _REPLAN_SEARCH_OUTPUT_LIMIT if result.task_type == "search" else _REPLAN_OUTPUT_LIMIT
             if total_chars >= _REPLAN_CONTEXT_CHAR_BUDGET:
-                items.append(f"- [{_task_type_label(t)}] {t['detail']}: {t['status']}")
+                items.append(
+                    f"- [{_task_type_label(result_dict)}] {result.detail}: {result.status}",
+                )
                 continue
-            reviewer_summary = t.get("reviewer_summary")
-            if reviewer_summary:
-                out_fenced = f"Summary: {reviewer_summary}"
+            if result.reviewer_summary:
+                out_fenced = f"Summary: {result.reviewer_summary}"
             else:
-                raw_out = t.get("output") or ""
+                raw_out = result.output or ""
                 out = _smart_truncate(raw_out, limit)
                 out_fenced = fence_content(out, "TASK_OUTPUT") if out else "(no output)"
-            item = f"- [{_task_type_label(t)}] {t['detail']}: {t['status']} →\n{out_fenced}"
+            item = (
+                f"- [{_task_type_label(result_dict)}] {result.detail}: {result.status} →\n"
+                f"{out_fenced}"
+            )
             items.append(item)
             total_chars += len(item)
         parts.append("## Completed Tasks\n" + "\n".join(items))
@@ -1251,6 +1358,17 @@ def _format_replan_history(replan_history: list[dict]) -> str | None:
             entry += "\n  Note: reviewer indicated no retry possible — try an alternative approach or explain to user."
         for summary in h.get("reviewer_summaries", [])[:2]:
             entry += f"\n  Reviewer summary: {summary[:300]}"
+        if h.get("task_results"):
+            summary_results = []
+            for task_result in h["task_results"][:3]:
+                if not isinstance(task_result, dict):
+                    continue
+                result = _task_result_from_source(task_result)
+                summary_results.append(
+                    f"[{result.task_index}] {result.task_type}:{result.status}",
+                )
+            if summary_results:
+                entry += f"\n  Task results: {', '.join(summary_results)}"
         key_outputs = h.get("key_outputs", [])
         if key_outputs and output_chars < _HISTORY_OUTPUT_BUDGET:
             for ko in key_outputs:
@@ -1277,9 +1395,10 @@ def _build_replan_context(
     """Build extra context for replanning."""
     # Strip user-facing delivery tasks — replans should focus on action work.
     completed = [
-        t for t in completed
-        if (t.get("contract") or {}).get("delivery_mode") != "user-facing"
-        and t.get("type") != "msg"
+        r.to_dict()
+        for r in _collect_task_results(completed=completed)
+        if (r.contract or {}).get("delivery_mode") != "user-facing"
+        and r.task_type != "msg"
     ]
     parts: list[str] = []
     parts.extend(_format_replan_hints(update_hints, replan_history))

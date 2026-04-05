@@ -10420,6 +10420,29 @@ class TestRetryHintInReplanContext:
         ctx = _build_replan_context([], [], "still failing", history)
         assert "Failure classes: workspace_file_routing" in ctx
 
+    def test_task_results_in_replan_history(self):
+        """Replayable task_results are surfaced in replan context."""
+        history = [{
+            "goal": "fetch page",
+            "failure": "captcha",
+            "what_was_tried": ["[exec] curl example.com"],
+            "key_outputs": [],
+            "task_results": [
+                {
+                    "index": 1,
+                    "type": "exec",
+                    "detail": "curl example.com",
+                    "status": "done",
+                    "output": "<html>captcha</html>",
+                    "reviewer_summary": "Site returned a CAPTCHA page",
+                    "contract": {"delivery_mode": "action"},
+                },
+            ],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "Task results: [1] exec:done" in ctx
+        assert "Site returned a CAPTCHA page" in ctx
+
 
 # --- M147: Suggested Fixes section in replan context ---
 
@@ -12762,6 +12785,40 @@ class TestTaskContract:
             "summary": None,
         }
         mock_review.assert_not_called()
+
+    def test_collect_task_results_merges_completed_and_plan_outputs(self):
+        from kiso.worker.utils import _collect_task_results
+
+        completed = [{
+            "id": 7,
+            "index": 1,
+            "type": "exec",
+            "detail": "run test",
+            "status": "done",
+            "output": "raw output",
+            "contract": {"delivery_mode": "action"},
+        }]
+        plan_outputs = [{
+            "index": 1,
+            "type": "exec",
+            "detail": "run test",
+            "status": "done",
+            "output": "raw output",
+            "reviewer_summary": "Tests passed",
+            "retry_hint": "none",
+            "failure_class": "external_dependency",
+        }]
+
+        results = _collect_task_results(completed, plan_outputs)
+
+        assert len(results) == 1
+        result = results[0]
+        assert result.task_id == 7
+        assert result.task_index == 1
+        assert result.reviewer_summary == "Tests passed"
+        assert result.retry_hint == "none"
+        assert result.failure_class == "external_dependency"
+        assert result.contract == {"delivery_mode": "action"}
 
 
 # ---------------------------------------------------------------------------

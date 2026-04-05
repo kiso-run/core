@@ -140,6 +140,7 @@ from kiso.store import (
 )
 
 from kiso.worker.utils import (
+    _collect_task_results,
     _coerce_task_args,
     _build_execution_state,
     _make_file_ref,
@@ -2671,39 +2672,41 @@ async def _run_planning_loop(
                 await update_task(db, t["id"], "skipped", output="skipped — superseded by replan")
 
         # Build replan history
-        tried = [f"[{t['type']}] {t['detail']}" for t in completed]
+        task_results = _collect_task_results(completed, plan_outputs)
+        tried = [f"[{t.task_type}] {t.detail}" for t in task_results]
         key_outputs = []
-        for t in completed:
-            out = (t.get("output") or "")[:500]
+        for t in task_results:
+            out = (t.output or "")[:500]
             if out:
-                key_outputs.append(f"[{t['type']}] {out}")
+                key_outputs.append(f"[{t.task_type}] {out}")
         # Extract retry hints and reviewer summaries from plan_outputs.
         # Also count tasks where reviewer set retry_hint=null (deterministic failures).
         retry_hints = []
         no_retry_count = 0
         failure_classes = []
-        for po in plan_outputs:
-            hint = po.get("retry_hint")
+        for result in task_results:
+            hint = result.retry_hint
             if hint:
                 retry_hints.append(hint)
-            elif "retry_hint" in po and hint is None:
+            elif result.to_dict().get("retry_hint") is None and result.failure_class:
                 no_retry_count += 1
-            failure_class = po.get("failure_class")
+            failure_class = result.failure_class
             if failure_class and failure_class not in failure_classes:
                 failure_classes.append(failure_class)
         reviewer_summaries = [
-            po["reviewer_summary"] for po in plan_outputs
-            if po.get("reviewer_summary")
+            result.reviewer_summary for result in task_results
+            if result.reviewer_summary
         ]
         # Strategy fingerprint: sorted set of "type:detail_prefix" for each task
         strategy_fp = frozenset(
-            f"{t['type']}:{t['detail'][:30]}" for t in completed
+            f"{t.task_type}:{t.detail[:30]}" for t in task_results
         )
         history_entry: dict = {
             "goal": current_goal,
             "failure": replan_reason,
             "what_was_tried": tried,
             "key_outputs": key_outputs,
+            "task_results": [result.to_dict() for result in task_results],
             "strategy_fingerprint": strategy_fp,
         }
         if retry_hints:
