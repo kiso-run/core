@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from kiso.recipe_loader import (
+    build_recipe_runtime_contracts_text,
     build_planner_recipe_list,
     discover_recipes,
     filter_recipes_for_message,
@@ -106,6 +107,20 @@ class TestParseRecipeFile:
         assert result is not None
         assert result["applies_to"] == ["environment", "env", "report"]
         assert result["excludes"] == ["marketing", "sales"]
+        assert result["runtime_contract"] == {"output_format": "key_value"}
+
+    def test_infers_json_runtime_contract(self, tmp_path):
+        f = tmp_path / "json-report.md"
+        f.write_text(
+            "---\n"
+            "name: json-report\n"
+            "summary: Return valid JSON for reports\n"
+            "---\n\n"
+            "Use a valid JSON object for structured output.\n"
+        )
+        result = _parse_recipe_file(f)
+        assert result is not None
+        assert result["runtime_contract"] == {"output_format": "json_object"}
 
     def test_nonexistent_file(self, tmp_path):
         f = tmp_path / "nonexistent.md"
@@ -203,6 +218,21 @@ class TestBuildPlannerRecipeList:
         recipes = [{"name": "minimal", "summary": "Minimal", "instructions": ""}]
         result = build_planner_recipe_list(recipes)
         assert result == "- minimal — Minimal"
+
+
+class TestBuildRecipeRuntimeContractsText:
+    def test_empty_list(self):
+        assert build_recipe_runtime_contracts_text([]) == ""
+
+    def test_formats_known_output_shapes(self):
+        result = build_recipe_runtime_contracts_text([
+            {"name": "json-report", "runtime_contract": {"output_format": "json_object"}},
+            {"name": "env-report", "runtime_contract": {"output_format": "key_value"}},
+        ])
+        assert "json-report" in result
+        assert "valid JSON object" in result
+        assert "env-report" in result
+        assert "key=value lines" in result
 
 
 class TestFilterRecipesForMessage:

@@ -126,6 +126,9 @@ def _parse_recipe_file(path: Path) -> dict | None:
         recipe["applies_to"] = applies_to
     if excludes:
         recipe["excludes"] = excludes
+    runtime_contract = _infer_runtime_contract(recipe)
+    if runtime_contract:
+        recipe["runtime_contract"] = runtime_contract
     return recipe
 
 
@@ -198,3 +201,42 @@ def build_planner_recipe_list(recipes: list[dict]) -> str:
             entry += f"\n{indented}"
         parts.append(entry)
     return "\n".join(parts)
+
+
+def build_recipe_runtime_contracts_text(recipes: list[dict]) -> str:
+    """Format runtime-relevant recipe contracts for non-planner consumers."""
+    if not recipes:
+        return ""
+    lines: list[str] = []
+    for recipe in recipes:
+        contract = recipe.get("runtime_contract") or {}
+        output_format = contract.get("output_format")
+        if output_format == "json_object":
+            lines.append(
+                f"- {recipe['name']}: when producing structured output, prefer a valid JSON object"
+            )
+        elif output_format == "key_value":
+            lines.append(
+                f"- {recipe['name']}: when producing structured output, prefer key=value lines"
+            )
+    return "\n".join(lines)
+
+
+def _infer_runtime_contract(recipe: dict) -> dict | None:
+    """Infer lightweight runtime hints from recipe instructions.
+
+    This keeps recipes general-purpose while allowing execution/review layers to
+    carry a small amount of structured intent beyond planner prose.
+    """
+    text = " ".join([
+        str(recipe.get("summary") or ""),
+        str(recipe.get("instructions") or ""),
+    ]).lower()
+    if not text.strip():
+        return None
+
+    if any(token in text for token in ("valid json", "json object", "json format")):
+        return {"output_format": "json_object"}
+    if any(token in text for token in ("key-value", "key value", "key=value")):
+        return {"output_format": "key_value"}
+    return None

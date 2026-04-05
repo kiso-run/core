@@ -19,6 +19,7 @@ from kiso.registry import get_registry_tools
 from kiso.security import fence_content
 from kiso.connectors import discover_connectors
 from kiso.recipe_loader import (
+    build_recipe_runtime_contracts_text,
     discover_recipes,
     build_planner_recipe_list,
     filter_recipes_for_message,
@@ -3421,12 +3422,14 @@ def build_exec_translator_messages(
     plan_outputs_text: str = "",
     retry_context: str = "",
     workspace_files: str = "",
+    recipe_contracts_text: str = "",
 ) -> list[dict]:
     """Build the message list for the exec translator LLM call."""
     system_prompt = _load_system_prompt("worker")
     context_parts: list[str] = [f"## System Environment\n{sys_env_text}"]
     _add_section(context_parts, "Workspace Files", workspace_files)
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
+    _add_section(context_parts, "Recipe Contracts", recipe_contracts_text)
     _add_section(context_parts, "Retry Context", retry_context)
     context_parts.append(f"## Task\n{detail}")
     return _build_messages(system_prompt, "\n\n".join(context_parts))
@@ -3517,6 +3520,7 @@ async def run_exec_translator(
     session: str = "",
     retry_context: str = "",
     workspace_files: str = "",
+    recipe_contracts_text: str = "",
 ) -> str:
     """Translate a natural-language exec task detail into a shell command.
 
@@ -3530,6 +3534,7 @@ async def run_exec_translator(
             config, detail, sys_env_text, plan_outputs_text,
             retry_context=current_retry_context,
             workspace_files=workspace_files,
+            recipe_contracts_text=recipe_contracts_text,
         )
         raw = await _call_role(
             config, "worker", messages, ExecTranslatorError, session,

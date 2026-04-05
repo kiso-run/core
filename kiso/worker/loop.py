@@ -23,6 +23,11 @@ from kiso.security import (
     sanitize_output,
     sanitize_value,
 )
+from kiso.recipe_loader import (
+    build_recipe_runtime_contracts_text,
+    discover_recipes,
+    filter_recipes_for_message,
+)
 from kiso.brain import (
     CURATOR_VERDICT_ASK,
     CURATOR_VERDICT_DISCARD,
@@ -1115,6 +1120,8 @@ class _PlanCtx:
     response_lang: str = "en"
     install_approved: bool = False
     plan_has_needs_install: bool = False
+    recipe_contracts_text: str = ""
+    recipe_runtime_contracts: list[dict] = field(default_factory=list)
     cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     task_contracts: dict[int, dict] = field(default_factory=dict)
@@ -1175,16 +1182,36 @@ def _ensure_task_contract(ctx: _PlanCtx, task_row: dict, task_index: int) -> dic
     """Ensure direct handler callers also get a normalized task contract."""
     contract = task_row.get("contract")
     if isinstance(contract, dict):
+        if ctx.recipe_runtime_contracts:
+            contract.setdefault("recipe_hints", list(ctx.recipe_runtime_contracts))
+            _merge_recipe_expected_outputs(contract, ctx.recipe_runtime_contracts)
         return contract
     contract = _normalize_task_contract(
         task_row,
         task_index=task_index,
         task_id=task_row.get("id"),
     ).to_dict()
+    if ctx.recipe_runtime_contracts:
+        contract["recipe_hints"] = list(ctx.recipe_runtime_contracts)
+        _merge_recipe_expected_outputs(contract, ctx.recipe_runtime_contracts)
     task_row["contract"] = contract
     if isinstance(getattr(ctx, "task_contracts", None), dict) and task_row.get("id") is not None:
         ctx.task_contracts[task_row["id"]] = contract
     return contract
+
+
+def _merge_recipe_expected_outputs(contract: dict, recipe_runtime_contracts: list[dict]) -> None:
+    """Project lightweight recipe hints into the contract for replans/review."""
+    expected = contract.setdefault("expected_outputs", [])
+    seen = set(expected)
+    for hint in recipe_runtime_contracts:
+        output_format = hint.get("output_format")
+        if not output_format:
+            continue
+        marker = f"structured_output:{output_format}"
+        if marker not in seen:
+            expected.append(marker)
+            seen.add(marker)
 
 
 def _is_unresolved_failed_output(plan_output: dict) -> bool:
@@ -1782,6 +1809,7 @@ async def _handle_exec_task(
                 plan_outputs_text=outputs_text, session=ctx.session,
                 retry_context=retry_context,
                 workspace_files=_ws_files,
+                recipe_contracts_text=ctx.recipe_contracts_text,
             )
         except ExecTranslatorError as e:
             error_output = f"Translation failed: {e}"
@@ -2073,6 +2101,8 @@ async def _execute_plan(
     response_lang: str = "en",
     install_approved: bool = False,
     plan_has_needs_install: bool = False,
+    recipe_contracts_text: str = "",
+    recipe_runtime_contracts: list[dict] | None = None,
 ) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
@@ -2118,6 +2148,8 @@ async def _execute_plan(
         cancel_event=cancel_event,
         sandbox_uid=None,
         task_contracts={},
+        recipe_contracts_text=recipe_contracts_text,
+        recipe_runtime_contracts=list(recipe_runtime_contracts or []),
     )
     for task in tasks:
         ctx.task_contracts[task["id"]] = task["contract"]
@@ -2718,6 +2750,8 @@ async def _run_planning_loop(
     update_hints: "list | None" = None,
     response_lang: str = "en",
     install_approved: bool = False,
+    recipe_contracts_text: str = "",
+    recipe_runtime_contracts: "list[dict] | None" = None,
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
 
@@ -2744,6 +2778,8 @@ async def _run_planning_loop(
             response_lang=response_lang,
             install_approved=install_approved,
             plan_has_needs_install=_current_needs_install,
+            recipe_contracts_text=recipe_contracts_text,
+            recipe_runtime_contracts=recipe_runtime_contracts,
         )
 
         if success:
@@ -3211,6 +3247,16 @@ async def _process_message(
         if t.get("args"):
             t["args"] = sanitize_value(t["args"], deploy_secrets, session_secrets)
 
+    selected_recipes = filter_recipes_for_message(discover_recipes(), content)
+    recipe_contracts_text = build_recipe_runtime_contracts_text(selected_recipes)
+    recipe_runtime_contracts = [
+        contract
+        for recipe in selected_recipes
+        if isinstance(recipe, dict)
+        for contract in [recipe.get("runtime_contract")]
+        if isinstance(contract, dict) and contract
+    ]
+
     # Update plan with real goal and persist tasks
     await update_plan_goal(db, plan_id, plan["goal"])
 
@@ -3244,6 +3290,8 @@ async def _process_message(
         username, slog, set_phase=set_phase, base_url=base_url,
         update_hints=update_hints, response_lang=user_lang,
         install_approved=_install_approved,
+        recipe_contracts_text=recipe_contracts_text,
+        recipe_runtime_contracts=recipe_runtime_contracts,
     )
 
     # --- Store token usage on the final plan ---

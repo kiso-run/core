@@ -12813,6 +12813,68 @@ class TestTaskContract:
         assert contract.task_index == 2
         assert contract.task_id == 11
 
+    def test_ensure_task_contract_merges_recipe_runtime_hints(self):
+        from kiso.worker.loop import _PlanCtx, _ensure_task_contract
+
+        task_row = {
+            "id": 11,
+            "type": "exec",
+            "detail": "Produce the report",
+            "expect": "report generated",
+        }
+        ctx = _PlanCtx(
+            db=MagicMock(),
+            config=MagicMock(),
+            session="sess1",
+            goal="Produce a report",
+            user_message="Generate the report",
+            deploy_secrets={},
+            session_secrets={},
+            max_output_size=10000,
+            max_worker_retries=1,
+            messenger_timeout=10,
+            installed_tools=[],
+            slog=None,
+            sandbox_uid=None,
+            recipe_runtime_contracts=[{"output_format": "json_object"}],
+        )
+
+        contract = _ensure_task_contract(ctx, task_row, task_index=1)
+
+        assert contract["recipe_hints"] == [{"output_format": "json_object"}]
+        assert "structured_output:json_object" in contract["expected_outputs"]
+        assert ctx.task_contracts[11]["recipe_hints"] == [{"output_format": "json_object"}]
+
+    def test_ensure_task_contract_dedupes_recipe_expected_outputs(self):
+        from kiso.worker.loop import _PlanCtx, _ensure_task_contract
+
+        task_row = {
+            "id": 12,
+            "contract": {
+                "expected_outputs": ["structured_output:json_object", "report generated"],
+            },
+        }
+        ctx = _PlanCtx(
+            db=MagicMock(),
+            config=MagicMock(),
+            session="sess1",
+            goal="Produce a report",
+            user_message="Generate the report",
+            deploy_secrets={},
+            session_secrets={},
+            max_output_size=10000,
+            max_worker_retries=1,
+            messenger_timeout=10,
+            installed_tools=[],
+            slog=None,
+            sandbox_uid=None,
+            recipe_runtime_contracts=[{"output_format": "json_object"}],
+        )
+
+        contract = _ensure_task_contract(ctx, task_row, task_index=1)
+
+        assert contract["expected_outputs"].count("structured_output:json_object") == 1
+
     def test_build_replan_context_excludes_user_facing_contract_tasks(self):
         from kiso.worker.utils import _build_replan_context
 
