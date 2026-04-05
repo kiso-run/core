@@ -693,9 +693,9 @@ class TestValidatePlan:
         assert validate_plan(plan) == []
 
     def test_search_task_with_args(self):
-        """search + args JSON string → valid."""
+        """search + structured args object → valid."""
         plan = {"tasks": [
-            {"type": "search", "detail": "best SEO agencies", "expect": "list of agencies", "tool": None, "args": '{"max_results": 10, "lang": "it", "country": "IT"}'},
+            {"type": "search", "detail": "best SEO agencies", "expect": "list of agencies", "tool": None, "args": {"max_results": 10, "lang": "it", "country": "IT"}},
             {"type": "msg", "detail": "Answer in English. present results", "expect": None, "tool": None, "args": None},
         ]}
         assert validate_plan(plan) == []
@@ -3515,7 +3515,7 @@ class TestM166ValidatePlanSkillArgs:
     def test_valid_args_accepted(self):
         plan = {"tasks": [
             {"type": "tool", "detail": "screenshot", "tool": "browser",
-             "args": '{"action": "screenshot"}', "expect": "done"},
+             "args": {"action": "screenshot"}, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
@@ -3532,7 +3532,18 @@ class TestM166ValidatePlanSkillArgs:
         info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
         errors = validate_plan(plan, installed_skills=["browser"],
                                installed_skills_info=info)
-        assert any("not valid JSON" in e for e in errors)
+        assert any("must be a JSON object" in e for e in errors)
+
+    def test_non_object_args_rejected(self):
+        plan = {"tasks": [
+            {"type": "tool", "detail": "screenshot", "tool": "browser",
+             "args": '["wrong"]', "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
+        ]}
+        info = {"browser": {"args_schema": {"action": {"type": "string", "required": True}}}}
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info=info)
+        assert any("must be a JSON object" in e for e in errors)
 
     def test_null_args_checked_against_schema(self):
         plan = {"tasks": [
@@ -3567,7 +3578,7 @@ class TestM166ValidatePlanSkillArgs:
         errors = validate_plan(plan, installed_skills=["browser"],
                                installed_skills_info=info)
         assert len(errors) == 1
-        assert 'Required args:' in errors[0]
+        assert 'Required args object:' in errors[0]
         assert '"action": "value"' in errors[0]
 
     def test_m184_args_example_required_only(self):
@@ -3586,6 +3597,12 @@ class TestM166ValidatePlanSkillArgs:
         assert len(errors) == 1
         assert '"action": "value"' in errors[0]
         assert '"count"' not in errors[0]
+
+    def test_planner_tools_rules_describe_args_as_objects(self):
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["tools_rules"])
+        assert "json object" in prompt.lower()
+        assert "json string" not in prompt.lower()
 
 
 class TestM171StripExtendReplan:

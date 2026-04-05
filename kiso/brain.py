@@ -471,6 +471,7 @@ _APPROACH_RESET_ERROR_PATTERNS = (
 _TASK_REPAIR_ERROR_PATTERNS = (
     "tool args invalid",
     "tool args is not valid json",
+    "tool args must be a json object",
     "missing required arg:",
     "must have expect = null",
     "must have tool = null",
@@ -511,6 +512,7 @@ def classify_failure_class(errors_or_reason: list[str] | str | None) -> str:
         "tool args validation failed" in text
         or "tool args invalid" in text
         or "tool args is not valid json" in text
+        or "tool args must be a json object" in text
         or "missing required arg:" in text
         or "files must contain file paths only" in text
     ):
@@ -1382,8 +1384,15 @@ def _validate_plan_tasks(
                 try:
                     args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
                 except (json.JSONDecodeError, TypeError):
-                    errors.append(f"Task {i}: tool args is not valid JSON")
+                    errors.append(
+                        f"Task {i}: tool args must be a JSON object with named fields"
+                    )
                 else:
+                    if not isinstance(args, dict):
+                        errors.append(
+                            f"Task {i}: tool args must be a JSON object with named fields"
+                        )
+                        continue
                     schema = installed_skills_info[tool_name].get("args_schema", {})
                     arg_errors = validate_tool_args(args, schema)
                     semantic_errors = validate_tool_args_semantic(
@@ -1410,7 +1419,7 @@ def _validate_plan_tasks(
                         errors.append(
                             f"Task {i}: tool '{tool_name}' args invalid: "
                             + "; ".join(arg_errors)
-                            + f". Required args: '{example_json}'"
+                            + f". Required args object: '{example_json}'"
                         )
 
     if replan_count > 1:
