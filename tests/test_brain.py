@@ -5350,6 +5350,13 @@ class TestMemoryPack:
             paraphrased_context="paraphrased-a",
         )
         assert pack.role == "planner"
+        assert pack.operational_sections == {
+            "summary": "summary",
+            "pending": "pending-a",
+            "recent_messages": "recent-a",
+            "paraphrased": "paraphrased-a",
+        }
+        assert pack.semantic_sections == {"facts": "fact-a"}
         assert pack.context_sections["summary"] == "summary"
         assert pack.context_sections["facts"] == "fact-a"
         assert pack.context_sections["pending"] == "pending-a"
@@ -5366,6 +5373,8 @@ class TestMemoryPack:
             behavior_rules=["Be concise"],
         )
         assert pack.role == "messenger"
+        assert pack.operational_sections == {"summary": "summary"}
+        assert pack.semantic_sections == {}
         assert pack.context_sections == {"summary": "summary"}
         assert pack.facts == facts
         assert pack.recent_messages == recent
@@ -5382,6 +5391,12 @@ class TestMemoryPack:
             available_entities=[{"name": "Apollo", "kind": "project"}],
         )
         assert pack.role == "worker"
+        assert pack.operational_sections["plan_outputs"] == "task output"
+        assert pack.operational_sections["goal"] == "goal text"
+        assert pack.operational_sections["recent_messages"] == "latest user msg"
+        assert pack.semantic_sections["facts"] == "- Known fact"
+        assert pack.semantic_sections["available_tags"] == "tag-a, tag-b"
+        assert "Apollo (project)" in pack.semantic_sections["available_entities"]
         assert pack.context_sections["plan_outputs"] == "task output"
         assert pack.context_sections["goal"] == "goal text"
         assert pack.context_sections["recent_messages"] == "latest user msg"

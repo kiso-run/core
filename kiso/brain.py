@@ -898,11 +898,21 @@ class MemoryPack:
 
     role: str
     context_sections: dict[str, str] = field(default_factory=dict)
+    operational_sections: dict[str, str] = field(default_factory=dict)
+    semantic_sections: dict[str, str] = field(default_factory=dict)
     facts: list[dict] = field(default_factory=list)
     recent_messages: list[dict] = field(default_factory=list)
     behavior_rules: list[str] = field(default_factory=list)
     available_tags: list[str] = field(default_factory=list)
     available_entities: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.context_sections:
+            self.context_sections = _merge_context_sections(
+                self.semantic_sections,
+                self.operational_sections,
+                owner=f"{self.role}-memory",
+            )
 
 
 @dataclass(slots=True)
@@ -954,18 +964,23 @@ def _build_planner_memory_pack(
     paraphrased_context: str | None = None,
 ) -> MemoryPack:
     """Assemble planner-specific memory from the current store fetches."""
-    sections: dict[str, str] = {}
+    operational_sections: dict[str, str] = {}
+    semantic_sections: dict[str, str] = {}
     if summary:
-        sections["summary"] = summary
+        operational_sections["summary"] = summary
     if facts_text:
-        sections["facts"] = facts_text
+        semantic_sections["facts"] = facts_text
     if pending_text:
-        sections["pending"] = pending_text
+        operational_sections["pending"] = pending_text
     if recent_text:
-        sections["recent_messages"] = recent_text
+        operational_sections["recent_messages"] = recent_text
     if paraphrased_context:
-        sections["paraphrased"] = paraphrased_context
-    return MemoryPack(role="planner", context_sections=sections)
+        operational_sections["paraphrased"] = paraphrased_context
+    return MemoryPack(
+        role="planner",
+        operational_sections=operational_sections,
+        semantic_sections=semantic_sections,
+    )
 
 
 def _build_messenger_memory_pack(
@@ -976,12 +991,12 @@ def _build_messenger_memory_pack(
     behavior_rules: list[str] | None,
 ) -> MemoryPack:
     """Assemble messenger-specific memory."""
-    sections: dict[str, str] = {}
+    operational_sections: dict[str, str] = {}
     if summary:
-        sections["summary"] = summary
+        operational_sections["summary"] = summary
     return MemoryPack(
         role="messenger",
-        context_sections=sections,
+        operational_sections=operational_sections,
         facts=list(facts),
         recent_messages=list(recent_messages or []),
         behavior_rules=list(behavior_rules or []),
@@ -1012,26 +1027,28 @@ def _build_worker_memory_pack(
     available_entities: list[dict] | None = None,
 ) -> MemoryPack:
     """Assemble worker-side memory used by messenger briefing."""
-    sections: dict[str, str] = {}
+    operational_sections: dict[str, str] = {}
+    semantic_sections: dict[str, str] = {}
     if plan_outputs_text:
-        sections["plan_outputs"] = plan_outputs_text
+        operational_sections["plan_outputs"] = plan_outputs_text
     if goal:
-        sections["goal"] = goal
+        operational_sections["goal"] = goal
     if recent_message:
-        sections["recent_messages"] = recent_message
+        operational_sections["recent_messages"] = recent_message
     if summary:
-        sections["summary"] = summary
+        operational_sections["summary"] = summary
     if facts:
-        sections["facts"] = "\n".join(f"- {f['content']}" for f in facts)
+        semantic_sections["facts"] = "\n".join(f"- {f['content']}" for f in facts)
     if available_tags:
-        sections["available_tags"] = ", ".join(available_tags)
+        semantic_sections["available_tags"] = ", ".join(available_tags)
     if available_entities:
-        sections["available_entities"] = "\n".join(
+        semantic_sections["available_entities"] = "\n".join(
             f"{e['name']} ({e['kind']})" for e in available_entities
         )
     return MemoryPack(
         role="worker",
-        context_sections=sections,
+        operational_sections=operational_sections,
+        semantic_sections=semantic_sections,
         facts=list(facts or []),
         available_tags=list(available_tags or []),
         available_entities=list(available_entities or []),
