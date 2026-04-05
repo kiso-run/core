@@ -58,6 +58,7 @@ from kiso.worker.loop import (
     _handle_search_task,
     _handle_tool_task,
     _make_plan_output,
+    _repair_exec_pythonpath,
     _repair_tool_workspace_args,
     _resolve_workspace_file_reference,
     _run_planning_loop,
@@ -12623,6 +12624,8 @@ class TestExecutionState:
         assert state.last_plan_goal == "Write artifact"
         assert state.last_plan_key_results == ["artifact written"]
         assert state.last_plan_produced_files[0]["path"] == "artifact.txt"
+        assert state.last_plan_produced_files[0]["file_id"].endswith("artifact.txt")
+        assert state.last_plan_produced_files[0]["artifact_id"].endswith("artifact.txt")
 
     def test_execution_state_context_sections_render_existing_formats(self, tmp_path):
         from kiso.worker.utils import _build_execution_state, _session_workspace
@@ -12676,8 +12679,11 @@ class TestWriteLastPlanSummary:
             assert data["goal"] == "Take a screenshot"
             assert len(data["produced_files"]) >= 1
             assert data["produced_files"][0]["path"] == "screenshot.png"
+            assert data["produced_files"][0]["workspace_path"] == "screenshot.png"
             assert data["produced_files"][0]["abs_path"].endswith("/screenshot.png")
             assert data["produced_files"][0]["type"] == "image"
+            assert data["produced_files"][0]["file_id"].endswith("screenshot.png")
+            assert data["produced_files"][0]["artifact_id"].endswith("screenshot.png")
             assert data["key_results"] == ["Screenshot taken successfully"]
             assert "ts" in data
 
@@ -12759,6 +12765,50 @@ class TestWorkspaceFileRouting:
             resolved = _resolve_workspace_file_reference("sess1", "screenshot_*.png")
 
         assert resolved == "screenshot.png"
+
+    def test_repair_exec_pythonpath_for_known_external_module(self):
+        plan_outputs = [{
+            "index": 1,
+            "type": "tool",
+            "file_refs": [{
+                "file_id": "file:/tmp/kiso_test_f42.py",
+                "path": "/tmp/kiso_test_f42.py",
+                "workspace_path": None,
+                "abs_path": "/tmp/kiso_test_f42.py",
+                "type": "code",
+                "exists": True,
+                "module_name": "kiso_test_f42",
+            }],
+        }]
+        command = (
+            "python3 -c 'from kiso_test_f42 import Calculator; "
+            "print(Calculator().multiply(5, 6))'"
+        )
+
+        repaired = _repair_exec_pythonpath(command, plan_outputs)
+
+        assert repaired.startswith("PYTHONPATH='/tmp'")
+        assert command in repaired
+
+    def test_repair_exec_pythonpath_ignores_workspace_module(self):
+        plan_outputs = [{
+            "index": 1,
+            "type": "tool",
+            "file_refs": [{
+                "file_id": "file:kiso_test_f42.py",
+                "path": "kiso_test_f42.py",
+                "workspace_path": "kiso_test_f42.py",
+                "abs_path": "/tmp/ws/kiso_test_f42.py",
+                "type": "code",
+                "exists": True,
+                "module_name": "kiso_test_f42",
+            }],
+        }]
+        command = "python3 -c 'from kiso_test_f42 import Calculator'"
+
+        repaired = _repair_exec_pythonpath(command, plan_outputs)
+
+        assert repaired == command
 
     def test_resolve_workspace_file_reference_stays_none_when_ambiguous(self, tmp_path):
         with _patch_kiso_dir(tmp_path):

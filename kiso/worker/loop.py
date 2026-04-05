@@ -138,6 +138,8 @@ from kiso.store import (
 )
 
 from kiso.worker.utils import (
+    _build_execution_state,
+    _make_file_ref,
     _PUB_IGNORE_DIRS,
     _auto_publish_skill_files,
     _build_cancel_summary,
@@ -181,21 +183,125 @@ _GLOB_CHARS = frozenset("*?[]")
 
 def _workspace_visible_files(session: str) -> list[str]:
     """Return visible workspace file paths relative to the session root."""
-    workspace = _session_workspace(session)
+    state = _build_execution_state(session)
     files: list[str] = []
-    for path in workspace.rglob("*"):
+    for entry in state.workspace_files:
+        workspace_path = entry.get("workspace_path") or entry.get("path")
+        if workspace_path:
+            files.append(workspace_path)
+    return files
+
+
+def _extract_known_file_refs(plan_outputs: list[dict]) -> list[dict]:
+    """Collect canonical file refs carried by prior plan outputs."""
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for entry in plan_outputs:
+        for file_ref in entry.get("file_refs", []) or []:
+            if not isinstance(file_ref, dict):
+                continue
+            key = file_ref.get("file_id") or file_ref.get("abs_path") or file_ref.get("path")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            refs.append(file_ref)
+    return refs
+
+
+def _build_tool_file_refs(
+    session: str,
+    args: dict,
+    *,
+    task_index: int,
+    tool_name: str | None,
+) -> list[dict]:
+    """Build canonical file refs for tool args that point at real files."""
+    workspace = _session_workspace(session)
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for value in args.values():
+        if not isinstance(value, str):
+            continue
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = workspace / value
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        file_ref = _make_file_ref(
+            candidate,
+            workspace=workspace,
+            origin_task_index=task_index,
+            origin_tool=tool_name,
+        ).to_dict()
+        if file_ref["file_id"] in seen:
+            continue
+        seen.add(file_ref["file_id"])
+        refs.append(file_ref)
+    return refs
+
+
+def _build_new_artifact_refs(
+    session: str,
+    pre_snapshot: set[Path],
+    *,
+    task_index: int,
+    tool_name: str | None,
+) -> list[dict]:
+    """Build artifact refs for newly created visible files since *pre_snapshot*."""
+    workspace = _session_workspace(session)
+    refs: list[dict] = []
+    for path in sorted(set(workspace.rglob("*")) - pre_snapshot):
         if not path.is_file():
             continue
-        rel = path.relative_to(workspace)
-        parts = rel.parts
-        if not parts:
+        try:
+            rel = path.relative_to(workspace)
+        except ValueError:
             continue
-        if parts[0] == ".kiso" or parts[0] in _PUB_IGNORE_DIRS:
+        parts = rel.parts
+        if not parts or parts[0] == ".kiso" or parts[0] in _PUB_IGNORE_DIRS:
             continue
         if any(part.startswith(".") for part in parts):
             continue
-        files.append(rel.as_posix())
-    return files
+        artifact = {
+            **_make_file_ref(
+                path,
+                workspace=workspace,
+                origin_task_index=task_index,
+                origin_tool=tool_name,
+            ).to_dict(),
+            "artifact_id": f"artifact:{rel.as_posix()}",
+            "artifact_kind": "file",
+            "tool": tool_name,
+        }
+        refs.append(artifact)
+    return refs
+
+
+_PY_IMPORT_RE = re.compile(r"\b(?:from|import)\s+([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _repair_exec_pythonpath(command: str, plan_outputs: list[dict]) -> str:
+    """Inject PYTHONPATH for known imported modules outside the session workspace."""
+    if "python" not in command:
+        return command
+    module_names = {m.group(1) for m in _PY_IMPORT_RE.finditer(command)}
+    if not module_names:
+        return command
+    extra_dirs: list[str] = []
+    for file_ref in _extract_known_file_refs(plan_outputs):
+        module_name = file_ref.get("module_name")
+        abs_path = file_ref.get("abs_path")
+        if not module_name or module_name not in module_names or not abs_path:
+            continue
+        if file_ref.get("workspace_path"):
+            continue
+        parent = str(Path(abs_path).parent)
+        if parent not in extra_dirs:
+            extra_dirs.append(parent)
+    if not extra_dirs:
+        return command
+    py_path = ":".join(extra_dirs)
+    return f"PYTHONPATH='{py_path}':\"${{PYTHONPATH:-}}\" {command}"
 
 
 def _looks_like_workspace_file_arg(arg_name: str, arg_schema: dict, value: object) -> bool:
@@ -938,6 +1044,9 @@ class _TaskHandlerResult:
 def _make_plan_output(
     index: int, task_type: str, detail: str, output: str, status: str,
     session: str = "",
+    *,
+    file_refs: list[dict] | None = None,
+    artifact_refs: list[dict] | None = None,
 ) -> dict:
     """Build a plan-output entry dict (shared by all task handlers).
 
@@ -946,7 +1055,12 @@ def _make_plan_output(
     """
     if session:
         output = _save_large_output(session, index, output)
-    return {"index": index, "type": task_type, "detail": detail, "output": output, "status": status}
+    entry = {"index": index, "type": task_type, "detail": detail, "output": output, "status": status}
+    if file_refs:
+        entry["file_refs"] = file_refs
+    if artifact_refs:
+        entry["artifact_refs"] = artifact_refs
+    return entry
 
 
 def _is_unresolved_failed_output(plan_output: dict) -> bool:
@@ -1336,6 +1450,12 @@ async def _handle_tool_task(
 
     # Snapshot workspace before execution to detect new files
     pre_snapshot = _snapshot_workspace(ctx.session)
+    input_file_refs = _build_tool_file_refs(
+        ctx.session,
+        args,
+        task_index=i + 1,
+        tool_name=tool_name,
+    )
 
     tool_retries = 0
     plan_output_entry: "dict | None" = None
@@ -1389,6 +1509,13 @@ async def _handle_tool_task(
         plan_output_entry = _make_plan_output(
             i + 1, "tool", detail, task_row.get("output") or "", task_row["status"],
             session=ctx.session,
+            file_refs=input_file_refs,
+            artifact_refs=_build_new_artifact_refs(
+                ctx.session,
+                pre_snapshot,
+                task_index=i + 1,
+                tool_name=tool_name,
+            ),
         )
 
         review, review_error = await _run_review_step(ctx, task_row)
@@ -1489,6 +1616,7 @@ async def _handle_exec_task(
             )
 
         await _append_calls(ctx.db, task_id, idx_translate)
+        command = _repair_exec_pythonpath(command, ctx.plan_outputs)
         await update_task_command(ctx.db, task_id, command)
         if ctx.slog:
             ctx.slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
@@ -1581,7 +1709,20 @@ async def _handle_exec_task(
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
 
-        local_plan_output = _make_plan_output(i + 1, "exec", detail, stdout, status, session=ctx.session)
+        local_plan_output = _make_plan_output(
+            i + 1,
+            "exec",
+            detail,
+            stdout,
+            status,
+            session=ctx.session,
+            artifact_refs=_build_new_artifact_refs(
+                ctx.session,
+                pre_snapshot,
+                task_index=i + 1,
+                tool_name="exec",
+            ),
+        )
         await _write_plan_outputs(ctx.session, ctx.plan_outputs + [local_plan_output])
 
         review, review_error = await _run_review_step(ctx, task_row)

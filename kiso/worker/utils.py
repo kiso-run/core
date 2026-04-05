@@ -57,6 +57,48 @@ class ExecutionState:
         return sections
 
 
+@dataclass(slots=True)
+class FileRef:
+    """Canonical file identity shared across worker, planner, and replans."""
+
+    file_id: str
+    abs_path: str
+    workspace_path: str | None
+    type: str
+    exists: bool
+    module_name: str | None = None
+    origin_task_index: int | None = None
+    origin_tool: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "file_id": self.file_id,
+            "path": self.workspace_path or self.abs_path,
+            "workspace_path": self.workspace_path,
+            "abs_path": self.abs_path,
+            "type": self.type,
+            "exists": self.exists,
+            "module_name": self.module_name,
+            "origin_task_index": self.origin_task_index,
+            "origin_tool": self.origin_tool,
+        }
+
+
+@dataclass(slots=True)
+class ArtifactRef:
+    """Canonical artifact identity. First pass is file-backed only."""
+
+    artifact_id: str
+    kind: str
+    file_ref: FileRef
+
+    def to_dict(self) -> dict:
+        data = self.file_ref.to_dict()
+        data["artifact_id"] = self.artifact_id
+        data["artifact_kind"] = self.kind
+        return data
+
+
 async def _run_sync(fn, *args):
     """Run a sync function in the default executor."""
     return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
@@ -480,6 +522,73 @@ def _human_age(seconds: float) -> str:
     return f"{d} d ago"
 
 
+def _path_type(path: Path) -> str:
+    """Return the canonical file category for a path."""
+    return _FILE_TYPE_MAP.get(path.suffix.lower(), "other")
+
+
+def _module_name_for_path(path: Path) -> str | None:
+    """Return importable module name for a plain Python file, if any."""
+    if path.suffix.lower() != ".py":
+        return None
+    stem = path.stem
+    return stem if stem.isidentifier() else None
+
+
+def _make_file_ref(
+    path: Path | str,
+    *,
+    workspace: Path | None = None,
+    origin_task_index: int | None = None,
+    origin_tool: str | None = None,
+) -> FileRef:
+    """Create a canonical FileRef from an absolute or relative path."""
+    file_path = Path(path)
+    if not file_path.is_absolute():
+        if workspace is None:
+            raise ValueError("workspace is required for relative file refs")
+        file_path = (workspace / file_path).resolve()
+    workspace_path: str | None = None
+    if workspace is not None:
+        try:
+            workspace_path = str(file_path.relative_to(workspace))
+        except ValueError:
+            workspace_path = None
+    ref_key = workspace_path or str(file_path)
+    return FileRef(
+        file_id=f"file:{ref_key}",
+        abs_path=str(file_path),
+        workspace_path=workspace_path,
+        type=_path_type(file_path),
+        exists=file_path.exists(),
+        module_name=_module_name_for_path(file_path),
+        origin_task_index=origin_task_index,
+        origin_tool=origin_tool,
+    )
+
+
+def _make_artifact_ref(
+    path: Path | str,
+    *,
+    workspace: Path,
+    origin_task_index: int | None = None,
+    origin_tool: str | None = None,
+) -> ArtifactRef:
+    """Create a file-backed ArtifactRef."""
+    file_ref = _make_file_ref(
+        path,
+        workspace=workspace,
+        origin_task_index=origin_task_index,
+        origin_tool=origin_tool,
+    )
+    artifact_key = file_ref.workspace_path or file_ref.abs_path
+    return ArtifactRef(
+        artifact_id=f"artifact:{artifact_key}",
+        kind="file",
+        file_ref=file_ref,
+    )
+
+
 def _collect_workspace_files(session: str) -> list[dict]:
     """Collect visible workspace files as structured records."""
     import time
@@ -509,13 +618,17 @@ def _collect_workspace_files(session: str) -> list[dict]:
         entries.append((
             stat.st_mtime,
             {
+                "file_id": _make_file_ref(f, workspace=workspace).file_id,
                 "path": str(rel),
+                "workspace_path": str(rel),
                 "abs_path": str(f),
                 "size_bytes": stat.st_size,
                 "size_human": _human_size(stat.st_size),
                 "age_human": _human_age(now - stat.st_mtime),
                 "mtime": stat.st_mtime,
                 "type": category,
+                "exists": True,
+                "module_name": _module_name_for_path(f),
             },
         ))
 
@@ -563,17 +676,20 @@ def _build_last_plan_summary_data(
             continue
         # Find source tool from completed tasks
         source_tool = None
+        origin_task_index = None
         for t in completed_tasks:
             if t.get("skill") or t.get("tool"):
                 source_tool = t.get("skill") or t.get("tool")
-        ext = f.suffix.lower()
-        category = _FILE_TYPE_MAP.get(ext, "other")
-        produced_files.append({
-            "path": str(rel),
-            "abs_path": str(f),
-            "tool": source_tool,
-            "type": category,
-        })
+            if origin_task_index is None and isinstance(t.get("index"), int):
+                origin_task_index = t["index"]
+        artifact = _make_artifact_ref(
+            f,
+            workspace=workspace,
+            origin_task_index=origin_task_index,
+            origin_tool=source_tool,
+        ).to_dict()
+        artifact["tool"] = source_tool
+        produced_files.append(artifact)
 
     # Key results — reviewer summaries from completed tasks
     key_results: list[str] = []
@@ -668,12 +784,26 @@ def _build_execution_state(session: str) -> ExecutionState:
     """Build canonical runtime state for a session from persisted artifacts."""
     workspace = _session_workspace(session)
     summary_data = _load_last_plan_summary_data(session) or {}
+    normalized_produced_files: list[dict] = []
+    for item in summary_data.get("produced_files", []):
+        if not isinstance(item, dict):
+            continue
+        if item.get("file_id") and item.get("artifact_id"):
+            normalized_produced_files.append(item)
+            continue
+        raw_path = item.get("abs_path") or item.get("workspace_path") or item.get("path")
+        if not raw_path:
+            normalized_produced_files.append(item)
+            continue
+        artifact = _make_artifact_ref(raw_path, workspace=workspace).to_dict()
+        artifact["tool"] = item.get("tool")
+        normalized_produced_files.append(artifact)
     return ExecutionState(
         session=session,
         workspace_root=str(workspace),
         workspace_files=_collect_workspace_files(session),
         last_plan_goal=summary_data.get("goal"),
-        last_plan_produced_files=summary_data.get("produced_files", []),
+        last_plan_produced_files=normalized_produced_files,
         last_plan_key_results=summary_data.get("key_results", []),
         last_plan_ts=summary_data.get("ts"),
     )

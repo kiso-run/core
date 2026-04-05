@@ -5,7 +5,9 @@ backward compatibility with existing imports and test code.
 """
 
 from kiso.worker.utils import (
+    ArtifactRef,
     ExecutionState,
+    FileRef,
     _auto_publish_skill_files,
     _build_execution_state,
     _build_cancel_summary,
@@ -54,7 +56,9 @@ from kiso.worker.loop import (
 
 __all__ = [
     # utils
+    "ArtifactRef",
     "ExecutionState",
+    "FileRef",
     "_auto_publish_skill_files",
     "_build_execution_state",
     "_build_cancel_summary",
