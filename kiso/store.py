@@ -1635,11 +1635,13 @@ async def create_task(
     type: str,
     detail: str,
     skill: str | None = None,
-    args: str | None = None,
+    args: str | dict | None = None,
     expect: str | None = None,
     parallel_group: int | None = None,
 ) -> int:
     """Insert a task row. Returns task id."""
+    if isinstance(args, dict):
+        args = json.dumps(args, sort_keys=True)
     cur = await db.execute(
         "INSERT INTO tasks (plan_id, session, type, detail, skill, args, expect, parallel_group) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1872,5 +1874,4 @@ async def update_fact_content(db: aiosqlite.Connection, fact_id: int, content: s
     """Update a fact's content text in place."""
     await db.execute("UPDATE facts SET content = ? WHERE id = ?", (content, fact_id))
     await db.commit()
-
 

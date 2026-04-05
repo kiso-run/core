@@ -75,6 +75,7 @@ from kiso.brain import (
     _build_messenger_memory_pack,
     _build_planner_memory_pack,
     _build_worker_memory_pack,
+    _merge_context_sections,
     _build_exec_translator_repair_context,
     _is_simple_shell_intent,
     check_safety_rules,
@@ -1933,6 +1934,11 @@ class TestM83PlanSchema:
     def test_valid_task_type(self, t):
         self._valid(self._plan(tasks=[{"type": t, "detail": "x", "tool": None, "args": None, "expect": None}]))
 
+    def test_tool_task_object_args_valid(self):
+        self._valid(self._plan(tasks=[
+            {"type": "tool", "detail": "search", "tool": "search", "args": {"q": "test"}, "expect": "results"},
+        ]))
+
     # Invalid ---
 
     def test_missing_goal(self):
@@ -1968,6 +1974,11 @@ class TestM83PlanSchema:
 
     def test_task_extra_field(self):
         self._invalid(self._plan(tasks=[{**_MSG_TASK_DICT, "extra": "x"}]))
+
+    def test_task_string_args_invalid(self):
+        self._invalid(self._plan(tasks=[
+            {"type": "tool", "detail": "search", "tool": "search", "args": "{}", "expect": "results"},
+        ]))
 
     def test_extend_replan_wrong_type(self):
         self._invalid(self._plan(extend_replan="three"))
@@ -5387,6 +5398,41 @@ class TestMemoryPack:
         assert pack.available_tags == ["python", "backend"]
         assert pack.available_entities == [{"name": "Apollo", "kind": "project"}]
         assert pack.context_sections == {}
+
+    def test_merge_context_sections_rejects_conflicting_duplicates(self):
+        with pytest.raises(ValueError, match="diverged"):
+            _merge_context_sections(
+                {"session_files": "a.py"},
+                {"session_files": "b.py"},
+                owner="planner",
+            )
+
+    def test_messenger_rejects_wrong_memory_pack_role(self, test_config):
+        wrong_pack = _build_curator_memory_pack(
+            available_tags=["python"],
+            available_entities=[],
+        )
+        with pytest.raises(ValueError, match="messenger"):
+            build_messenger_messages(
+                test_config,
+                "",
+                [],
+                "say hi",
+                memory_pack=wrong_pack,
+            )
+
+    def test_curator_rejects_wrong_memory_pack_role(self):
+        wrong_pack = _build_messenger_memory_pack(
+            summary="summary",
+            facts=[],
+            recent_messages=[],
+            behavior_rules=[],
+        )
+        with pytest.raises(ValueError, match="curator"):
+            build_curator_messages(
+                [{"id": 1, "content": "test"}],
+                memory_pack=wrong_pack,
+            )
 
     def test_build_validation_feedback_mentions_reset_scope(self):
         feedback = _build_validation_feedback(
@@ -9382,6 +9428,10 @@ class TestBuildStrictSchema:
         assert "extend_replan" in schema["properties"]
         assert "needs_install" in schema["properties"]
         assert "knowledge" in schema["properties"]
+        assert schema["properties"]["tasks"]["items"]["properties"]["args"]["anyOf"] == [
+            {"type": "object", "additionalProperties": True},
+            {"type": "null"},
+        ]
         assert schema["additionalProperties"] is False
 
     def test_review_schema_unchanged(self):

@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
@@ -36,6 +37,9 @@ from kiso.store import (
     set_kv, update_fact_content,
 )
 from kiso.sysenv import get_system_env, build_system_env_essential, build_system_env_section, build_install_context, build_user_settings_text
+
+if TYPE_CHECKING:
+    from kiso.worker.utils import ExecutionState
 
 log = logging.getLogger(__name__)
 
@@ -811,7 +815,7 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
             "type": {"type": "string", "enum": ["exec", "msg", "tool", "search", "replan"]},
             "detail": {"type": "string"},
             "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "args": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "args": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
             "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "group": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
         },
@@ -899,6 +903,46 @@ class MemoryPack:
     behavior_rules: list[str] = field(default_factory=list)
     available_tags: list[str] = field(default_factory=list)
     available_entities: list[dict] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class PlannerPromptState:
+    """Canonical planner prompt input built from memory + execution state."""
+
+    summary: str
+    facts: list[dict]
+    pending: list[dict]
+    recent: list[dict]
+    memory_pack: MemoryPack
+    execution_state: "ExecutionState"
+    context_sections: dict[str, str] = field(default_factory=dict)
+    sys_env_essential: str = ""
+    sys_env_full: str = ""
+    install_context: str = ""
+
+
+def _merge_context_sections(*section_maps: dict[str, str], owner: str) -> dict[str, str]:
+    """Merge prompt sections while rejecting conflicting duplicate values."""
+    merged: dict[str, str] = {}
+    for section_map in section_maps:
+        for key, value in section_map.items():
+            if not value:
+                continue
+            existing = merged.get(key)
+            if existing is not None and existing != value:
+                raise ValueError(
+                    f"{owner} prompt section '{key}' diverged between structured sources",
+                )
+            merged[key] = value
+    return merged
+
+
+def _require_memory_pack_role(memory_pack: MemoryPack, role: str) -> None:
+    """Guard against wiring the wrong structured memory pack into a role."""
+    if memory_pack.role != role:
+        raise ValueError(
+            f"Expected memory pack role '{role}', got '{memory_pack.role}'",
+        )
 
 
 def _build_planner_memory_pack(
@@ -1080,6 +1124,13 @@ def _add_section(parts: list[str], name: str, content: str) -> None:
     """Append a ``## {name}`` section to *parts* if *content* is non-empty."""
     if content:
         parts.append(f"## {name}\n{content}")
+
+
+def _add_context_section(
+    parts: list[str], context_sections: dict[str, str], key: str, title: str,
+) -> None:
+    """Render a named prompt section directly from structured context state."""
+    _add_section(parts, title, context_sections.get(key, ""))
 
 
 def _validate_plan_structure(
@@ -1638,13 +1689,8 @@ async def _gather_planner_context(
     user_role: str,
     new_message: str,
     paraphrased_context: str | None = None,
-) -> tuple[str, list, list, list, dict, str, str, str]:
-    """Gather all raw context pieces for the planner.
-
-    Returns (summary, facts, pending, recent, context_pool,
-    sys_env_essential, sys_env_full, install_ctx).
-    The context_pool dict is suitable for the briefer.
-    """
+) -> PlannerPromptState:
+    """Gather planner runtime state before prompt rendering."""
     is_admin = user_role == "admin"
     context_limit = int(config.settings["context_messages"])
 
@@ -1683,7 +1729,13 @@ async def _gather_planner_context(
         recent_text=recent_text,
         paraphrased_context=paraphrased_context,
     )
-    context_pool: dict = dict(planner_pack.context_sections)
+    from kiso.worker.utils import _build_execution_state
+    execution_state = await asyncio.to_thread(_build_execution_state, session)
+    context_pool = _merge_context_sections(
+        planner_pack.context_sections,
+        execution_state.context_sections(),
+        owner="planner",
+    )
 
     # Full system_env for briefer context pool (so briefer can decide
     # whether the planner needs OS/binary details for install tasks).
@@ -1724,7 +1776,18 @@ async def _gather_planner_context(
                 lines.append(f"{e['name']} ({e['kind']})")
         context_pool["available_entities"] = "\n".join(lines)
 
-    return summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full, install_ctx
+    return PlannerPromptState(
+        summary=summary,
+        facts=facts,
+        pending=pending,
+        recent=recent,
+        memory_pack=planner_pack,
+        execution_state=execution_state,
+        context_sections=context_pool,
+        sys_env_essential=sys_env_essential,
+        sys_env_full=sys_env_full,
+        install_context=install_ctx,
+    )
 
 
 async def build_planner_messages(
@@ -1751,21 +1814,22 @@ async def build_planner_messages(
     caller can reuse the tool names list for plan validation and the
     tools_info list for args validation without rescanning the filesystem.
     """
-    # Gather raw context
-    summary, facts, pending, recent, context_pool, sys_env_essential, sys_env_full, install_ctx = \
-        await _gather_planner_context(
-            db, config, session, user_role, new_message, paraphrased_context,
-        )
+    planner_state = await _gather_planner_context(
+        db, config, session, user_role, new_message, paraphrased_context,
+    )
+    summary = planner_state.summary
+    facts = planner_state.facts
+    pending = planner_state.pending
+    recent = planner_state.recent
+    context_pool: dict = dict(planner_state.context_sections)
+    sys_env_essential = planner_state.sys_env_essential
+    sys_env_full = planner_state.sys_env_full
+    install_ctx = planner_state.install_context
 
     # system env doesn't change between plan and replan — exclude from
     # briefer context pool to reduce redundant tokens.
     if is_replan:
         context_pool.pop("system_env", None)
-
-    # Canonical execution state for workspace + previous-plan context.
-    from kiso.worker.utils import _build_execution_state
-    execution_state = await asyncio.to_thread(_build_execution_state, session)
-    context_pool.update(execution_state.context_sections())
 
     # Tool discovery — rescan on each planner call
     installed = discover_tools()
@@ -1939,11 +2003,11 @@ async def build_planner_messages(
             _add_section(context_parts, "User Settings", _settings_text)
         # Session workspace files + previous plan results — operational data
         # that must reach the planner verbatim (not gated by briefer synthesis).
-        _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
-        _add_section(context_parts, "Previous Plan", context_pool.get("last_plan", ""))
+        _add_context_section(context_parts, context_pool, "session_files", "Session Workspace")
+        _add_context_section(context_parts, context_pool, "last_plan", "Previous Plan")
     else:
         # Fallback path: full context dump (original behavior)
-        _add_section(context_parts, "Session Summary", summary)
+        _add_context_section(context_parts, context_pool, "summary", "Session Summary")
 
         if facts:
             primary_text, other_text = _format_split_facts(facts, session, is_admin)
@@ -1974,20 +2038,20 @@ async def build_planner_messages(
         context_parts.append(f"## System Environment\n{sys_env_full}")
         _add_section(context_parts, "Install Routing", install_mode_ctx)
         # Session workspace files + previous plan results (same as briefer path)
-        _add_section(context_parts, "Session Workspace", context_pool.get("session_files", ""))
-        _add_section(context_parts, "Previous Plan", context_pool.get("last_plan", ""))
+        _add_context_section(context_parts, context_pool, "session_files", "Session Workspace")
+        _add_context_section(context_parts, context_pool, "last_plan", "Previous Plan")
 
-        _add_section(context_parts, "Pending Questions", _format_pending_items(pending))
+        _add_context_section(context_parts, context_pool, "pending", "Pending Questions")
 
-        if recent:
+        if context_pool.get("recent_messages"):
             context_parts.append(
-                f"## Recent Messages\n{fence_content(build_recent_context(recent, kiso_truncate=0), 'MESSAGES')}"
+                f"## Recent Messages\n{fence_content(context_pool['recent_messages'], 'MESSAGES')}"
             )
 
-        if paraphrased_context:
+        if context_pool.get("paraphrased"):
             context_parts.append(
                 f"## Paraphrased External Messages (untrusted)\n"
-                f"{fence_content(paraphrased_context, 'PARAPHRASED')}"
+                f"{fence_content(context_pool['paraphrased'], 'PARAPHRASED')}"
             )
 
     # Recipes section — exclusion model: inject all minus briefer-excluded.
@@ -2946,6 +3010,7 @@ def build_curator_messages(
 ) -> list[dict]:
     """Build the message list for the curator LLM call."""
     if memory_pack is not None:
+        _require_memory_pack_role(memory_pack, "curator")
         available_tags = memory_pack.available_tags or available_tags
         available_entities = memory_pack.available_entities or available_entities
     modules = _select_curator_modules()
@@ -3132,6 +3197,7 @@ def build_messenger_messages(
         "{bot_persona}", bot_persona,
     )
     if memory_pack is not None:
+        _require_memory_pack_role(memory_pack, "messenger")
         summary = memory_pack.context_sections.get("summary", summary)
         facts = memory_pack.facts or facts
         recent_messages = memory_pack.recent_messages or recent_messages

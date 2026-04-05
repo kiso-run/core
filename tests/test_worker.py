@@ -12668,6 +12668,28 @@ class TestExecutionState:
         assert "Results: Screenshot saved" in sections["last_plan"]
 
 
+class TestPlannerTaskPersistence:
+    @pytest.mark.asyncio
+    async def test_persist_plan_tasks_serializes_object_args(self, db):
+        plan_id = await create_plan(db, "sess1", 1, "Use echo")
+        await _persist_plan_tasks(
+            db,
+            plan_id,
+            "sess1",
+            [
+                {
+                    "type": "tool",
+                    "detail": "Use echo",
+                    "tool": "echo",
+                    "args": {"text": "hello"},
+                    "expect": "ok",
+                },
+            ],
+        )
+        tasks = await get_tasks_for_plan(db, plan_id)
+        assert json.loads(tasks[0]["args"]) == {"text": "hello"}
+
+
 # ---------------------------------------------------------------------------
 # M823 — Cross-plan state: last plan summary persistence
 # ---------------------------------------------------------------------------
