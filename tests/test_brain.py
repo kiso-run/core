@@ -78,6 +78,7 @@ from kiso.brain import (
     _merge_context_sections,
     _build_exec_translator_repair_context,
     _is_simple_shell_intent,
+    _call_role,
     check_safety_rules,
     VALIDATION_RETRY_TASK_REPAIR,
     VALIDATION_RETRY_PLAN_REWRITE,
@@ -90,7 +91,7 @@ from kiso.brain import (
     FAILURE_CLASS_WORKSPACE_ROUTING,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
-from kiso.llm import LLMError
+from kiso.llm import LLMError, LLMStallError
 from tests.conftest import full_settings, full_models
 from kiso.store import (
     create_session,
@@ -2655,6 +2656,27 @@ class TestRunSummarizer:
             with pytest.raises(SummarizerError, match="LLM call failed"):
                 await run_summarizer(config, "", messages)
 
+    async def test_stall_uses_fallback_model(self, config):
+        messages = [{"role": "user", "user": "alice", "content": "Hello"}]
+        captured_overrides = []
+
+        async def _stall_then_fallback(cfg, role, payload, **kw):
+            captured_overrides.append(kw.get("model_override"))
+            if len(captured_overrides) == 1:
+                raise LLMStallError("stalled")
+            return "Fallback summary"
+
+        with patch("kiso.brain.call_llm", side_effect=_stall_then_fallback):
+            result = await _call_role(
+                config,
+                "summarizer",
+                build_summarizer_messages("", messages),
+                SummarizerError,
+                fallback_model="fallback/model",
+            )
+        assert result == "Fallback summary"
+        assert captured_overrides == [None, "fallback/model"]
+
 # --- M10: Paraphraser ---
 
 class TestBuildParaphraserMessages:
@@ -3126,6 +3148,22 @@ class TestRunMessenger:
                 await run_messenger(db, config, "sess1", "say hi")
         # 3 total calls: 1 initial + 2 retries
         assert call_count == 3
+
+    async def test_messenger_stall_switches_to_fallback(self, db):
+        config = _make_brain_config(settings={"planner_fallback_model": "fallback/model"})
+        captured_overrides = []
+
+        async def _stall_then_fallback(cfg, role, messages, **kw):
+            captured_overrides.append(kw.get("model_override"))
+            if len(captured_overrides) == 1:
+                raise LLMStallError("stalled")
+            return "Recovered response"
+
+        with patch("kiso.brain.call_llm", side_effect=_stall_then_fallback):
+            result = await run_messenger(db, config, "sess1", "say hi")
+
+        assert result == "Recovered response"
+        assert captured_overrides == [None, "fallback/model"]
 
     async def test_loads_custom_role_file(self, db, tmp_path):
         roles_dir = tmp_path / "roles"

@@ -3108,6 +3108,68 @@ def build_summarizer_messages(
     return _build_messages(system_prompt, "\n\n".join(parts))
 
 
+@dataclass(frozen=True)
+class _TextRoleRetryPolicy:
+    """Shared retry/fallback policy for non-structured role calls."""
+
+    fallback_model: str | None = None
+    max_retries: int = 0
+    retry_backoff: float = 0.0
+
+
+async def _run_text_role(
+    config: Config,
+    role: str,
+    messages: list[dict],
+    error_class: type[Exception],
+    session: str = "",
+    *,
+    policy: _TextRoleRetryPolicy | None = None,
+    sanitize_fn: Callable[[str], str] | None = None,
+) -> str:
+    """Run a text-producing role with shared retry/fallback behavior."""
+    policy = policy or _TextRoleRetryPolicy()
+    total_attempts = policy.max_retries + 1
+    using_fallback = False
+    last_err: Exception | None = None
+
+    attempt = 0
+    while attempt < total_attempts:
+        attempt += 1
+        model_override = policy.fallback_model if using_fallback else None
+        try:
+            text = await call_llm(
+                config, role, messages, session=session,
+                model_override=model_override,
+            )
+            return sanitize_fn(text) if sanitize_fn else text
+        except LLMBudgetExceeded:
+            raise
+        except LLMStallError as e:
+            last_err = e
+            if policy.fallback_model and not using_fallback:
+                log.warning("SSE stall on %s, switching to fallback %s", role, policy.fallback_model)
+                using_fallback = True
+                if attempt >= total_attempts:
+                    total_attempts += 1
+                continue
+            break
+        except LLMError as e:
+            last_err = e
+            if attempt < total_attempts:
+                log.warning("%s retry %d/%d: %s", role.capitalize(), attempt + 1, policy.max_retries, e)
+                if policy.retry_backoff > 0:
+                    await asyncio.sleep(policy.retry_backoff)
+                continue
+            break
+
+    if isinstance(last_err, LLMStallError) and not policy.fallback_model:
+        raise error_class("LLM stall with no fallback model")
+    if using_fallback and last_err is not None:
+        raise error_class(f"Fallback LLM call failed: {last_err}")
+    raise error_class(f"LLM call failed after {total_attempts} attempts: {last_err}")
+
+
 async def _call_role(
     config: Config, role: str, messages: list[dict],
     error_class: type[Exception], session: str = "",
@@ -3117,21 +3179,14 @@ async def _call_role(
 
     On ``LLMStallError``, retries once with *fallback_model* if provided.
     """
-    try:
-        return await call_llm(config, role, messages, session=session)
-    except LLMStallError:
-        if fallback_model:
-            log.warning("SSE stall on %s, trying fallback %s", role, fallback_model)
-            try:
-                return await call_llm(
-                    config, role, messages, session=session,
-                    model_override=fallback_model,
-                )
-            except LLMError as e2:
-                raise error_class(f"Fallback LLM call failed: {e2}")
-        raise error_class("LLM stall with no fallback model")
-    except LLMError as e:
-        raise error_class(f"LLM call failed: {e}")
+    return await _run_text_role(
+        config,
+        role,
+        messages,
+        error_class,
+        session=session,
+        policy=_TextRoleRetryPolicy(fallback_model=fallback_model),
+    )
 
 
 async def run_summarizer(
@@ -3313,36 +3368,20 @@ async def run_messenger(
         briefing_context=briefing_context, behavior_rules=behavior_rules,
         memory_pack=memory_pack,
     )
-    # retry messenger LLM call up to 2 times on transient errors.
-    # on SSE stall, switch to fallback model immediately (don't waste retries).
     _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
-    _using_fallback = False
-    _last_err: LLMError | None = None
-    for _attempt in range(_MAX_MESSENGER_RETRIES + 1):
-        try:
-            model_override = _fallback if _using_fallback else None
-            text = await call_llm(
-                config, "messenger", messages, session=session,
-                model_override=model_override,
-            )
-            return _sanitize_messenger_output(text)
-        except LLMBudgetExceeded:
-            raise  # non-retryable — budget is exhausted
-        except LLMStallError as e:
-            if not _using_fallback and _fallback:
-                log.warning("Messenger SSE stall, switching to fallback %s", _fallback)
-                _using_fallback = True
-                continue  # retry immediately with fallback
-            _last_err = e
-            break  # already on fallback or no fallback — give up
-        except LLMError as e:
-            _last_err = e
-            if _attempt < _MAX_MESSENGER_RETRIES:
-                log.warning("Messenger retry %d/%d: %s", _attempt + 1, _MAX_MESSENGER_RETRIES, e)
-                if _MESSENGER_RETRY_BACKOFF > 0:
-                    await asyncio.sleep(_MESSENGER_RETRY_BACKOFF)
-                continue
-    raise MessengerError(f"LLM call failed after {_MAX_MESSENGER_RETRIES + 1} attempts: {_last_err}")
+    return await _run_text_role(
+        config,
+        "messenger",
+        messages,
+        MessengerError,
+        session=session,
+        policy=_TextRoleRetryPolicy(
+            fallback_model=_fallback,
+            max_retries=_MAX_MESSENGER_RETRIES,
+            retry_backoff=_MESSENGER_RETRY_BACKOFF,
+        ),
+        sanitize_fn=_sanitize_messenger_output,
+    )
 
 
 # strip hallucinated XML/tool markup from messenger output
