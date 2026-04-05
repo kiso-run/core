@@ -613,14 +613,6 @@ async def run_message(func_config, func_db, func_session):
 # ---------------------------------------------------------------------------
 
 
-def tool_installed(name: str) -> bool:
-    """Check if a specific tool is installed (cache-busting)."""
-    from kiso.tools import discover_tools, invalidate_tools_cache
-
-    invalidate_tools_cache()
-    return any(t["name"] == name for t in discover_tools())
-
-
 _PRESET_TOOLS = ["browser", "ocr", "aider"]
 
 

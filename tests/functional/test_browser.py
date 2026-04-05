@@ -86,7 +86,7 @@ class TestF1BrowserInstall:
             timeout=BROWSER_TIMEOUT,
         )
 
-        if _browser_installed():
+        if tool_installed("browser"):
             return  # installed on first turn (fast path)
 
         # Turn 2: confirm installation
@@ -95,7 +95,7 @@ class TestF1BrowserInstall:
             timeout=BROWSER_TIMEOUT,
         )
 
-        assert _browser_installed(), "Browser tool not installed after approval flow"
+        assert tool_installed("browser"), "Browser tool not installed after approval flow"
 
 
 class TestF1BrowserNavigate:
@@ -109,7 +109,7 @@ class TestF1BrowserNavigate:
         example.com is IANA-maintained, no CAPTCHA, always available.
         Expects: Italian response >50 chars mentioning example/dominio/IANA.
         """
-        if not _browser_installed():
+        if not tool_installed("browser"):
             pytest.skip("Browser tool not installed — run F1a first or install manually")
 
         result = await run_message(
@@ -144,7 +144,7 @@ class TestF1BrowserScreenshot:
         Why: Validates screenshot capture and the pub file delivery pipeline.
         Expects: .png file published with a reachable URL (>10KB).
         """
-        if not _browser_installed():
+        if not tool_installed("browser"):
             pytest.skip("Browser tool not installed — run F1a first or install manually")
 
         result = await run_message(
