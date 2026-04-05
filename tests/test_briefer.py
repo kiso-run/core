@@ -29,6 +29,7 @@ from kiso.store import (
     save_fact_tags,
     save_message,
 )
+from kiso.worker.utils import ExecutionState
 from tests.conftest import full_settings, full_models
 
 
@@ -670,7 +671,21 @@ class TestM825SessionFilesModule:
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
              patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.worker.utils._list_session_files", return_value="Session workspace files:\n- test.png (1 KB, image, just now)"):
+             patch(
+                 "kiso.worker.utils._build_execution_state",
+                 return_value=ExecutionState(
+                     session="sess1",
+                     workspace_root="/tmp/sess1",
+                     workspace_files=[{
+                         "path": "test.png",
+                         "abs_path": "/tmp/sess1/test.png",
+                         "size": 1024,
+                         "size_human": "1 KB",
+                         "type": "image",
+                         "age_human": "just now",
+                     }],
+                 ),
+             ):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "admin", "read the screenshot",
             )
@@ -697,7 +712,14 @@ class TestM825SessionFilesModule:
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
              patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.worker.utils._list_session_files", return_value=""):
+             patch(
+                 "kiso.worker.utils._build_execution_state",
+                 return_value=ExecutionState(
+                     session="sess1",
+                     workspace_root="/tmp/sess1",
+                     workspace_files=[],
+                 ),
+             ):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "admin", "hello",
             )

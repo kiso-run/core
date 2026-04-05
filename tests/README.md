@@ -84,6 +84,11 @@ When a feature touches planner, worker, replans, or memory, prefer asserting:
 If an old test only checks that some prompt section contains a phrase, that is
 now usually the wrong level unless the phrase itself is the product contract.
 
+For planner workspace-context tests, patch the current runtime seam
+(`ExecutionState` / `_build_execution_state`) rather than legacy helpers like
+`_list_session_files()`. The planner no longer assembles session files through
+that older helper path.
+
 ### Prompt-test guardrails
 
 Prompt-file assertions are allowed in blocking suites only for lightweight smoke
