@@ -114,6 +114,67 @@ recoverable than a single-turn coding agent loop.
 - Cron scheduling and recurring automation
 - Execution hooks, audit logs, and operational introspection
 
+## Example Workflows
+
+### Engineering and repo automation
+
+```text
+"Inspect this repo, find the slowest test module, propose a fix, patch it,
+run the targeted tests, and summarize the tradeoffs."
+```
+
+Kiso can inspect the workspace, run shell commands, edit files through tools,
+execute verification steps, and report exactly what changed.
+
+### Research and artifact production
+
+```text
+"Search for the latest EU AI Act implementation guidance, compare three
+sources, write a short internal brief, and publish it as a markdown file."
+```
+
+Kiso can search, collect evidence, structure outputs, and deliver both a user
+message and a file artifact.
+
+### Ops and recurring checks
+
+```text
+"Every weekday at 9:00, check competitor pricing, flag meaningful changes,
+and send the summary to the marketing session."
+```
+
+Kiso can schedule recurring work, keep session-scoped context, and reuse the
+same runtime for operational automation instead of one-off chats.
+
+### Multi-step investigation before action
+
+```text
+"Figure out why the staging deploy is failing, inspect logs, check config
+differences, and only then propose or apply the smallest safe fix."
+```
+
+Kiso can investigate first, replan with the evidence it found, and avoid
+pretending that the first guessed strategy was correct.
+
+## When To Use Kiso
+
+Use Kiso when you need an agent that must:
+
+- carry work across multiple execution and review steps
+- touch real files, commands, tools, or connectors
+- recover from partial failure without losing the thread
+- keep durable knowledge and session/project context
+- stay general-purpose instead of being locked to one workflow template
+
+## When Not To Use Kiso
+
+Do not use Kiso when you only need:
+
+- a simple chat assistant with no execution
+- a single hard-coded workflow with no open-ended planning
+- a tiny embedded helper where Docker, sessions, and runtime state would be overkill
+- deterministic business logic that should just be plain application code
+
 ## Quick Start
 
 ```bash

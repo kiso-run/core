@@ -36,6 +36,56 @@ Kiso runs a message through a sequence of explicit roles and runtime layers:
 The crucial detail is that these phases do not communicate only through free
 text. The runtime carries structured state between them.
 
+## Architecture At A Glance
+
+```text
+user / connector / CLI
+        |
+        v
+   message intake
+        |
+        v
+  context assembly
+  - recent conversation
+  - workspace state
+  - operational memory
+  - semantic memory
+  - tools / policies
+        |
+        v
+      planner
+        |
+        v
+   TaskContract[]
+        |
+        v
+      worker
+  - exec / tool / search / msg
+  - file refs / artifact refs
+  - dependency-aware handoff
+        |
+        +--------------------+
+        |                    |
+        v                    v
+    reviewer              delivery
+        |              CLI / webhook / API
+        v
+   replan or continue
+        |
+        v
+  TaskResult history
+        |
+        v
+ memory + audit updates
+```
+
+The shortest useful reading of Kiso is:
+
+- planner decides what to try
+- worker turns it into real execution
+- reviewer decides whether the result is trustworthy enough to continue
+- memory and runtime state make the next step smarter than the previous one
+
 ## Why This Matters
 
 Most agent failures are handoff failures, not "the model had a bad sentence".
@@ -220,6 +270,22 @@ In simplified form:
 8. memory and audit state are updated
 
 For the full mechanics, see [flow.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/flow.md).
+
+## When Kiso Is The Right Shape
+
+Kiso is a strong fit when you need:
+
+- open-ended planning with real execution
+- multi-step recovery and replanning
+- durable context across sessions or projects
+- plugin-based extension through tools and connectors
+- a runtime that remains general-purpose while still enforcing structure
+
+Kiso is a weak fit when the problem is already:
+
+- fully deterministic and better expressed as ordinary code
+- a tiny single-purpose automation script
+- pure chat with no execution or stateful workflow
 
 ## Design Principles
 
