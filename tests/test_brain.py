@@ -71,6 +71,10 @@ from kiso.brain import (
     _build_validation_feedback,
     _classify_install_mode,
     _build_install_mode_context,
+    _build_curator_memory_pack,
+    _build_messenger_memory_pack,
+    _build_planner_memory_pack,
+    _build_worker_memory_pack,
     _build_exec_translator_repair_context,
     _is_simple_shell_intent,
     check_safety_rules,
@@ -5323,6 +5327,66 @@ class TestValidationRetryClassification:
             1,
         )
         assert "rewrite the plan structure" in feedback
+
+
+class TestMemoryPack:
+    def test_planner_memory_pack_includes_operational_sections(self):
+        pack = _build_planner_memory_pack(
+            summary="summary",
+            facts_text="fact-a",
+            pending_text="pending-a",
+            recent_text="recent-a",
+            paraphrased_context="paraphrased-a",
+        )
+        assert pack.role == "planner"
+        assert pack.context_sections["summary"] == "summary"
+        assert pack.context_sections["facts"] == "fact-a"
+        assert pack.context_sections["pending"] == "pending-a"
+        assert pack.context_sections["recent_messages"] == "recent-a"
+        assert pack.context_sections["paraphrased"] == "paraphrased-a"
+
+    def test_messenger_memory_pack_excludes_worker_only_metadata(self):
+        facts = [{"content": "Apollo uses port 5000"}]
+        recent = [{"role": "user", "content": "what port?"}]
+        pack = _build_messenger_memory_pack(
+            summary="summary",
+            facts=facts,
+            recent_messages=recent,
+            behavior_rules=["Be concise"],
+        )
+        assert pack.role == "messenger"
+        assert pack.context_sections == {"summary": "summary"}
+        assert pack.facts == facts
+        assert pack.recent_messages == recent
+        assert pack.behavior_rules == ["Be concise"]
+
+    def test_worker_memory_pack_formats_briefer_context(self):
+        pack = _build_worker_memory_pack(
+            summary="session summary",
+            facts=[{"content": "Known fact"}],
+            recent_message="latest user msg",
+            plan_outputs_text="task output",
+            goal="goal text",
+            available_tags=["tag-a", "tag-b"],
+            available_entities=[{"name": "Apollo", "kind": "project"}],
+        )
+        assert pack.role == "worker"
+        assert pack.context_sections["plan_outputs"] == "task output"
+        assert pack.context_sections["goal"] == "goal text"
+        assert pack.context_sections["recent_messages"] == "latest user msg"
+        assert pack.context_sections["facts"] == "- Known fact"
+        assert pack.context_sections["available_tags"] == "tag-a, tag-b"
+        assert "Apollo (project)" in pack.context_sections["available_entities"]
+
+    def test_curator_memory_pack_keeps_only_tag_and_entity_memory(self):
+        pack = _build_curator_memory_pack(
+            available_tags=["python", "backend"],
+            available_entities=[{"name": "Apollo", "kind": "project"}],
+        )
+        assert pack.role == "curator"
+        assert pack.available_tags == ["python", "backend"]
+        assert pack.available_entities == [{"name": "Apollo", "kind": "project"}]
+        assert pack.context_sections == {}
 
     def test_build_validation_feedback_mentions_reset_scope(self):
         feedback = _build_validation_feedback(

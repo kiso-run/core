@@ -60,6 +60,7 @@ from kiso.brain import (
     run_planner,
     run_reviewer,
     run_summarizer,
+    _build_worker_memory_pack,
     classify_failure_class,
     prepare_reviewer_output,
     check_safety_rules,
@@ -508,30 +509,23 @@ async def _msg_task(
     if _briefer_ok:
         try:
             # Build full context pool for the briefer
-            context_pool: dict = {}
-            if plan_outputs:
-                context_pool["plan_outputs"] = _format_plan_outputs_for_msg(plan_outputs)
-            if goal:
-                context_pool["goal"] = goal
-            if user_message:
-                context_pool["recent_messages"] = user_message
             # Fetch summary/facts for the briefer to filter
             sess = await get_session(db, session)
-            if sess and sess["summary"]:
-                context_pool["summary"] = sess["summary"]
             facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
-            if facts:
-                context_pool["facts"] = "\n".join(f"- {f['content']}" for f in facts)
             # inject available tags for briefer relevant_tags selection
             all_tags = await get_all_tags(db)
-            if all_tags:
-                context_pool["available_tags"] = ", ".join(all_tags)
             # inject available entities so briefer can select relevant ones
             all_entities = await get_all_entities(db)
-            if all_entities:
-                context_pool["available_entities"] = "\n".join(
-                    f"{e['name']} ({e['kind']})" for e in all_entities
-                )
+            memory_pack = _build_worker_memory_pack(
+                summary=sess["summary"] if sess and sess["summary"] else "",
+                facts=facts,
+                recent_message=user_message,
+                plan_outputs_text=_format_plan_outputs_for_msg(plan_outputs) if plan_outputs else "",
+                goal=goal,
+                available_tags=all_tags,
+                available_entities=all_entities,
+            )
+            context_pool: dict = dict(memory_pack.context_sections)
 
             briefing = await asyncio.wait_for(
                 run_briefer(config, "messenger", detail, context_pool, session=session),

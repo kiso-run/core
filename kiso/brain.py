@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import aiosqlite
@@ -887,6 +888,112 @@ _BRIEFER_MODULES_STR = "\n".join(
 )
 
 
+@dataclass(slots=True)
+class MemoryPack:
+    """Role-specific memory payload assembled before prompt rendering."""
+
+    role: str
+    context_sections: dict[str, str] = field(default_factory=dict)
+    facts: list[dict] = field(default_factory=list)
+    recent_messages: list[dict] = field(default_factory=list)
+    behavior_rules: list[str] = field(default_factory=list)
+    available_tags: list[str] = field(default_factory=list)
+    available_entities: list[dict] = field(default_factory=list)
+
+
+def _build_planner_memory_pack(
+    *,
+    summary: str,
+    facts_text: str,
+    pending_text: str,
+    recent_text: str,
+    paraphrased_context: str | None = None,
+) -> MemoryPack:
+    """Assemble planner-specific memory from the current store fetches."""
+    sections: dict[str, str] = {}
+    if summary:
+        sections["summary"] = summary
+    if facts_text:
+        sections["facts"] = facts_text
+    if pending_text:
+        sections["pending"] = pending_text
+    if recent_text:
+        sections["recent_messages"] = recent_text
+    if paraphrased_context:
+        sections["paraphrased"] = paraphrased_context
+    return MemoryPack(role="planner", context_sections=sections)
+
+
+def _build_messenger_memory_pack(
+    *,
+    summary: str,
+    facts: list[dict],
+    recent_messages: list[dict] | None,
+    behavior_rules: list[str] | None,
+) -> MemoryPack:
+    """Assemble messenger-specific memory."""
+    sections: dict[str, str] = {}
+    if summary:
+        sections["summary"] = summary
+    return MemoryPack(
+        role="messenger",
+        context_sections=sections,
+        facts=list(facts),
+        recent_messages=list(recent_messages or []),
+        behavior_rules=list(behavior_rules or []),
+    )
+
+
+def _build_curator_memory_pack(
+    *,
+    available_tags: list[str] | None,
+    available_entities: list[dict] | None,
+) -> MemoryPack:
+    """Assemble curator-specific memory."""
+    return MemoryPack(
+        role="curator",
+        available_tags=list(available_tags or []),
+        available_entities=list(available_entities or []),
+    )
+
+
+def _build_worker_memory_pack(
+    *,
+    summary: str = "",
+    facts: list[dict] | None = None,
+    recent_message: str = "",
+    plan_outputs_text: str = "",
+    goal: str = "",
+    available_tags: list[str] | None = None,
+    available_entities: list[dict] | None = None,
+) -> MemoryPack:
+    """Assemble worker-side memory used by messenger briefing."""
+    sections: dict[str, str] = {}
+    if plan_outputs_text:
+        sections["plan_outputs"] = plan_outputs_text
+    if goal:
+        sections["goal"] = goal
+    if recent_message:
+        sections["recent_messages"] = recent_message
+    if summary:
+        sections["summary"] = summary
+    if facts:
+        sections["facts"] = "\n".join(f"- {f['content']}" for f in facts)
+    if available_tags:
+        sections["available_tags"] = ", ".join(available_tags)
+    if available_entities:
+        sections["available_entities"] = "\n".join(
+            f"{e['name']} ({e['kind']})" for e in available_entities
+        )
+    return MemoryPack(
+        role="worker",
+        context_sections=sections,
+        facts=list(facts or []),
+        available_tags=list(available_tags or []),
+        available_entities=list(available_entities or []),
+    )
+
+
 class BrieferError(Exception):
     """Briefer generation failure."""
 
@@ -1569,17 +1676,14 @@ async def _gather_planner_context(
     sys_env_full = build_system_env_section(sys_env, session=session)
     install_ctx = build_install_context(sys_env)
 
-    context_pool: dict = {}
-    if summary:
-        context_pool["summary"] = summary
-    if facts_text:
-        context_pool["facts"] = facts_text
-    if pending_text:
-        context_pool["pending"] = pending_text
-    if recent_text:
-        context_pool["recent_messages"] = recent_text
-    if paraphrased_context:
-        context_pool["paraphrased"] = paraphrased_context
+    planner_pack = _build_planner_memory_pack(
+        summary=summary,
+        facts_text=facts_text,
+        pending_text=pending_text,
+        recent_text=recent_text,
+        paraphrased_context=paraphrased_context,
+    )
+    context_pool: dict = dict(planner_pack.context_sections)
 
     # Full system_env for briefer context pool (so briefer can decide
     # whether the planner needs OS/binary details for install tasks).
@@ -2838,8 +2942,12 @@ def build_curator_messages(
     available_tags: list[str] | None = None,
     available_entities: list[dict] | None = None,
     existing_facts: list[dict] | None = None,
+    memory_pack: MemoryPack | None = None,
 ) -> list[dict]:
     """Build the message list for the curator LLM call."""
+    if memory_pack is not None:
+        available_tags = memory_pack.available_tags or available_tags
+        available_entities = memory_pack.available_entities or available_entities
     modules = _select_curator_modules()
     system_prompt = _load_modular_prompt("curator", modules)
     items = "\n".join(
@@ -2872,10 +2980,15 @@ async def run_curator(
     Returns dict with key "evaluations".
     Raises CuratorError if all retries exhausted.
     """
+    memory_pack = _build_curator_memory_pack(
+        available_tags=available_tags,
+        available_entities=available_entities,
+    )
     messages = build_curator_messages(
         learnings, available_tags=available_tags,
         available_entities=available_entities,
         existing_facts=existing_facts,
+        memory_pack=memory_pack,
     )
     expected = len(learnings)
     result = await _retry_llm_with_validation(
@@ -2995,6 +3108,7 @@ def build_messenger_messages(
     user_message: str = "",
     briefing_context: str | None = None,
     behavior_rules: list[str] | None = None,
+    memory_pack: MemoryPack | None = None,
 ) -> list[dict]:
     """Build the message list for the messenger LLM call.
 
@@ -3017,6 +3131,11 @@ def build_messenger_messages(
     ).replace(
         "{bot_persona}", bot_persona,
     )
+    if memory_pack is not None:
+        summary = memory_pack.context_sections.get("summary", summary)
+        facts = memory_pack.facts or facts
+        recent_messages = memory_pack.recent_messages or recent_messages
+        behavior_rules = memory_pack.behavior_rules or behavior_rules
 
     context_parts: list[str] = []
     # extract language from "Answer in {lang}." prefix and inject as
@@ -3089,10 +3208,17 @@ async def run_messenger(
     # fetch behavior guidelines for messenger
     behavior_facts = await get_behavior_facts(db)
     behavior_rules = [f["content"] for f in behavior_facts] if behavior_facts else None
+    memory_pack = _build_messenger_memory_pack(
+        summary=summary,
+        facts=facts,
+        recent_messages=recent,
+        behavior_rules=behavior_rules,
+    )
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
         recent_messages=recent or None, user_message=user_message,
         briefing_context=briefing_context, behavior_rules=behavior_rules,
+        memory_pack=memory_pack,
     )
     # retry messenger LLM call up to 2 times on transient errors.
     # on SSE stall, switch to fallback model immediately (don't waste retries).
