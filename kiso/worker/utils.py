@@ -113,6 +113,7 @@ class TaskContract:
     allowed_repair_scope: str
     declared_inputs: list[str] = field(default_factory=list)
     expected_outputs: list[str] = field(default_factory=list)
+    dependencies: list[dict] = field(default_factory=list)
     task_index: int | None = None
     task_id: int | None = None
 
@@ -128,6 +129,7 @@ class TaskContract:
             "allowed_repair_scope": self.allowed_repair_scope,
             "declared_inputs": list(self.declared_inputs),
             "expected_outputs": list(self.expected_outputs),
+            "dependencies": list(self.dependencies),
             "task_index": self.task_index,
             "task_id": self.task_id,
         }

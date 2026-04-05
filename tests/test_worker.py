@@ -52,6 +52,7 @@ from kiso.worker.loop import (
     _handle_loop_cancel,
     _handle_loop_failure,
     _msg_task_with_fallback,
+    _infer_task_dependencies,
     _handle_msg_task,
     _handle_plan_error,
     _handle_replan_task,
@@ -11268,6 +11269,40 @@ class TestExecTaskBrieferIntegration:
         second_outputs = translator_calls[1]["plan_outputs_text"]
         assert "echo first" in second_outputs or second_outputs == ""
 
+    async def test_translator_receives_authoritative_dependencies(self, db, tmp_path):
+        """Exec translator receives inferred dependency guidance from prior file refs."""
+        config = make_config(settings={"briefer_enabled": False})
+        plan_id = await create_plan(db, "sess1", 1, "Test")
+        await create_task(db, plan_id, "sess1", type="exec", detail="write calculator file", expect="file written")
+        await create_task(
+            db, plan_id, "sess1",
+            type="exec",
+            detail="Import Calculator from kiso_test_f42.py and run it",
+            expect="calculator runs",
+        )
+        await create_task(db, plan_id, "sess1", type="msg", detail="done")
+
+        translator_calls = []
+
+        async def _capturing_translator(cfg, detail, sys_env, **kw):
+            translator_calls.append(kw.get("plan_outputs_text", ""))
+            if "write calculator file" in detail:
+                return "python - <<'PY'\nfrom pathlib import Path\nPath('kiso_test_f42.py').write_text('class Calculator:\\n    pass\\n')\nPY"
+            return f"echo {detail}"
+
+        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock, side_effect=_capturing_translator), \
+             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
+             _patch_kiso_dir(tmp_path):
+            success, _, _, _, _, _ = await _execute_plan(
+                db, config, "sess1", plan_id, "Test", "msg", 5,
+            )
+
+        assert success is True
+        assert len(translator_calls) == 2
+        assert "## Authoritative Dependencies" in translator_calls[1]
+        assert "kiso_test_f42.py" in translator_calls[1]
+
     async def test_briefer_disabled_passes_all_outputs(self, db, tmp_path):
         """When briefer disabled, all preceding outputs reach translator."""
         config = make_config(settings={"briefer_enabled": False})
@@ -12819,6 +12854,38 @@ class TestTaskContract:
         assert result.retry_hint == "none"
         assert result.failure_class == "external_dependency"
         assert result.contract == {"delivery_mode": "action"}
+
+    def test_infer_task_dependencies_matches_known_file_ref(self):
+        task_row = {
+            "detail": "Import Calculator from kiso_test_f42.py and run it",
+            "expect": "calculator works",
+            "args_dict": None,
+        }
+        plan_outputs = [{
+            "index": 1,
+            "type": "tool",
+            "detail": "edit calculator",
+            "output": "ok",
+            "status": "done",
+            "file_refs": [{
+                "file_id": "file:kiso_test_f42.py",
+                "path": "kiso_test_f42.py",
+                "workspace_path": "kiso_test_f42.py",
+                "abs_path": "/tmp/kiso_test_f42.py",
+                "type": "source",
+                "exists": True,
+                "module_name": "kiso_test_f42",
+                "origin_task_index": 1,
+                "origin_tool": "aider",
+            }],
+        }]
+
+        dependencies = _infer_task_dependencies(task_row, plan_outputs)
+
+        assert len(dependencies) == 1
+        assert dependencies[0]["dependency_type"] == "file"
+        assert dependencies[0]["module_name"] == "kiso_test_f42"
+        assert dependencies[0]["task_index"] == 1
 
 
 # ---------------------------------------------------------------------------

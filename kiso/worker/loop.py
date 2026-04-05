@@ -213,6 +213,103 @@ def _extract_known_file_refs(plan_outputs: list[dict]) -> list[dict]:
     return refs
 
 
+def _extract_known_artifact_refs(plan_outputs: list[dict]) -> list[dict]:
+    """Collect canonical artifact refs carried by prior plan outputs."""
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for entry in plan_outputs:
+        for artifact_ref in entry.get("artifact_refs", []) or []:
+            if not isinstance(artifact_ref, dict):
+                continue
+            key = artifact_ref.get("artifact_id")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            refs.append(artifact_ref)
+    return refs
+
+
+def _infer_task_dependencies(task_row: dict, plan_outputs: list[dict]) -> list[dict]:
+    """Infer authoritative file/artifact dependencies for the current task."""
+    haystack_parts = [
+        str(task_row.get("detail") or ""),
+        str(task_row.get("expect") or ""),
+    ]
+    args_dict = task_row.get("args_dict")
+    if isinstance(args_dict, dict):
+        haystack_parts.extend(str(v) for v in args_dict.values() if v not in (None, ""))
+    haystack = " ".join(haystack_parts).lower()
+
+    dependencies: list[dict] = []
+    seen: set[str] = set()
+
+    for file_ref in _extract_known_file_refs(plan_outputs):
+        candidates = [
+            file_ref.get("workspace_path"),
+            Path(file_ref.get("path") or "").name,
+            file_ref.get("module_name"),
+        ]
+        if not any(candidate and str(candidate).lower() in haystack for candidate in candidates):
+            continue
+        dep_id = file_ref.get("file_id") or file_ref.get("abs_path")
+        if not dep_id or dep_id in seen:
+            continue
+        seen.add(dep_id)
+        dependencies.append({
+            "dependency_type": "file",
+            "file_id": file_ref.get("file_id"),
+            "artifact_id": None,
+            "task_index": file_ref.get("origin_task_index"),
+            "path": file_ref.get("workspace_path") or file_ref.get("abs_path"),
+            "module_name": file_ref.get("module_name"),
+        })
+
+    for artifact_ref in _extract_known_artifact_refs(plan_outputs):
+        file_ref = artifact_ref.get("file_ref") if isinstance(artifact_ref.get("file_ref"), dict) else artifact_ref
+        candidates = [
+            artifact_ref.get("artifact_id"),
+            file_ref.get("workspace_path") if isinstance(file_ref, dict) else None,
+            Path(file_ref.get("path") or "").name if isinstance(file_ref, dict) and file_ref.get("path") else None,
+        ]
+        if not any(candidate and str(candidate).lower() in haystack for candidate in candidates):
+            continue
+        dep_id = artifact_ref.get("artifact_id")
+        if not dep_id or dep_id in seen:
+            continue
+        seen.add(dep_id)
+        dependencies.append({
+            "dependency_type": "artifact",
+            "file_id": file_ref.get("file_id") if isinstance(file_ref, dict) else None,
+            "artifact_id": artifact_ref.get("artifact_id"),
+            "task_index": file_ref.get("origin_task_index") if isinstance(file_ref, dict) else None,
+            "path": file_ref.get("workspace_path") or file_ref.get("abs_path") if isinstance(file_ref, dict) else None,
+            "module_name": file_ref.get("module_name") if isinstance(file_ref, dict) else None,
+        })
+
+    return dependencies
+
+
+def _format_dependency_context(dependencies: list[dict]) -> str:
+    """Render dependency links for translator/replan guidance."""
+    if not dependencies:
+        return ""
+    lines = []
+    for dep in dependencies:
+        ref = dep.get("artifact_id") or dep.get("file_id") or dep.get("path")
+        path = dep.get("path")
+        module_name = dep.get("module_name")
+        task_index = dep.get("task_index")
+        bits = [str(ref)]
+        if path and path != ref:
+            bits.append(f"path={path}")
+        if module_name:
+            bits.append(f"module={module_name}")
+        if task_index is not None:
+            bits.append(f"from_task={task_index}")
+        lines.append("- " + ", ".join(bits))
+    return "## Authoritative Dependencies\n" + "\n".join(lines)
+
+
 def _build_tool_file_refs(
     session: str,
     args: dict,
@@ -1408,6 +1505,10 @@ async def _handle_tool_task(
     args_raw = task_row.get("args") or "{}"
     tool_info = ctx.installed_tools_by_name.get(tool_name)
     t0 = time.perf_counter()
+    dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
+    if dependencies:
+        task_row["contract"]["dependencies"] = dependencies
+        ctx.task_contracts[task_id] = task_row["contract"]
 
     # Pre-flight: tool installed, args valid
     setup_error: str | None = None
@@ -1591,6 +1692,10 @@ async def _handle_exec_task(
             ctx, task_id, TASK_TYPE_EXEC, detail, safety_rejection, i + 1,
             stuck_reason=safety_rejection,
         )
+    dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
+    if dependencies:
+        task_row["contract"]["dependencies"] = dependencies
+        ctx.task_contracts[task_id] = task_row["contract"]
 
     # Briefer: select relevant plan_outputs for this exec task
     idx_exec = get_usage_index()
@@ -1632,6 +1737,9 @@ async def _handle_exec_task(
 
         _exec_outputs = briefed_outputs + ([local_plan_output] if local_plan_output else [])
         outputs_text = _format_plan_outputs_for_msg(_exec_outputs)
+        dependency_context = _format_dependency_context(dependencies)
+        if dependency_context:
+            outputs_text = (outputs_text + "\n\n" + dependency_context).strip()
         _ws_files = _list_session_files(ctx.session)
         idx_translate = get_usage_index()
         try:
@@ -1795,6 +1903,10 @@ async def _handle_search_task(
     search_extra_context = ""
     local_plan_output: "dict | None" = None
     t0_total = time.perf_counter()
+    dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
+    if dependencies:
+        task_row["contract"]["dependencies"] = dependencies
+        ctx.task_contracts[task_id] = task_row["contract"]
 
     while True:
         t0 = time.perf_counter()
