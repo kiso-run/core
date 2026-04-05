@@ -66,11 +66,16 @@ from kiso.brain import (
     REVIEW_STATUSES,
     REVIEW_STATUS_STUCK,
     _retry_llm_with_validation,
+    _classify_validation_errors,
+    _build_validation_feedback,
     _classify_install_mode,
     _build_install_mode_context,
     _build_exec_translator_repair_context,
     _is_simple_shell_intent,
     check_safety_rules,
+    VALIDATION_RETRY_TASK_REPAIR,
+    VALIDATION_RETRY_PLAN_REWRITE,
+    VALIDATION_RETRY_APPROACH_RESET,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 from kiso.llm import LLMError
@@ -5239,6 +5244,51 @@ class TestM186EscalatingValidationError:
             for m in msgs:
                 if m["role"] == "user" and "errors" in m.get("content", ""):
                     assert "IMPORTANT" not in m["content"]
+
+
+class TestValidationRetryClassification:
+    def test_classifies_task_repair_for_single_task_field_error(self):
+        classification = _classify_validation_errors(
+            ["Task 2: msg task must have expect = null"]
+        )
+        assert classification == VALIDATION_RETRY_TASK_REPAIR
+
+    def test_classifies_plan_rewrite_for_msg_only_plan(self):
+        classification = _classify_validation_errors(
+            ["Plan has only msg tasks — include at least one exec/tool/search task for action requests."]
+        )
+        assert classification == VALIDATION_RETRY_PLAN_REWRITE
+
+    def test_classifies_approach_reset_for_missing_registry_tool(self):
+        classification = _classify_validation_errors(
+            ["The requested tool does not exist in any registry. Plan ONLY msg tasks explaining the situation to the user."]
+        )
+        assert classification == VALIDATION_RETRY_APPROACH_RESET
+
+    def test_build_validation_feedback_mentions_fix_scope(self):
+        feedback = _build_validation_feedback(
+            "Plan",
+            ["Task 2: msg task must have expect = null"],
+            1,
+        )
+        assert "Fix only the specific task-level issues" in feedback
+
+    def test_build_validation_feedback_mentions_rewrite_scope(self):
+        feedback = _build_validation_feedback(
+            "Plan",
+            ["Plan has only msg tasks — include at least one exec/tool/search task for action requests."],
+            1,
+        )
+        assert "rewrite the plan structure" in feedback
+
+    def test_build_validation_feedback_mentions_reset_scope(self):
+        feedback = _build_validation_feedback(
+            "Plan",
+            ["The requested tool does not exist in any registry. Plan ONLY msg tasks explaining the situation to the user."],
+            2,
+        )
+        assert "Discard it and regenerate the plan from the original user request." in feedback
+        assert "wrong approach" in feedback
 
 
 class TestM194ReviewerDomainCheck:

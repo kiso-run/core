@@ -435,10 +435,117 @@ _PLUGIN_DISCOVERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+VALIDATION_RETRY_TASK_REPAIR = "task_repair"
+VALIDATION_RETRY_PLAN_REWRITE = "plan_rewrite"
+VALIDATION_RETRY_APPROACH_RESET = "approach_reset"
+VALIDATION_RETRY_CLASSES: frozenset[str] = frozenset({
+    VALIDATION_RETRY_TASK_REPAIR,
+    VALIDATION_RETRY_PLAN_REWRITE,
+    VALIDATION_RETRY_APPROACH_RESET,
+})
+
+_PLAN_REWRITE_ERROR_PATTERNS = (
+    "plan has only msg tasks",
+    "last task must be type",
+    "goal mentions creating a file/document but plan has no exec or tool task",
+    "needs_install is set",
+    "a plan can have at most one replan task",
+    "group ",
+    "installs a tool/connector in the first plan",
+    "plan installs a tool after user approval but ends with msg",
+)
+_APPROACH_RESET_ERROR_PATTERNS = (
+    "the requested tool does not exist in any registry",
+    "plan only msg tasks explaining the situation to the user",
+    "cannot be found in the public registry",
+)
+_TASK_REPAIR_ERROR_PATTERNS = (
+    "tool args invalid",
+    "tool args is not valid json",
+    "missing required arg:",
+    "must have expect = null",
+    "must have tool = null",
+    "must have args = null",
+)
+
 
 def _is_plugin_discovery_search(detail: str) -> bool:
     """Return True if detail looks like a plugin discovery search query."""
     return bool(_PLUGIN_DISCOVERY_RE.search(detail))
+
+
+def _classify_validation_errors(errors: list[str]) -> str:
+    """Classify planner validation failures by recovery scope."""
+    joined = " ".join(errors).lower()
+    if any(pattern in joined for pattern in _APPROACH_RESET_ERROR_PATTERNS):
+        return VALIDATION_RETRY_APPROACH_RESET
+    if any(pattern in joined for pattern in _TASK_REPAIR_ERROR_PATTERNS):
+        return VALIDATION_RETRY_TASK_REPAIR
+    if any(pattern in joined for pattern in _PLAN_REWRITE_ERROR_PATTERNS):
+        return VALIDATION_RETRY_PLAN_REWRITE
+
+    task_nums = {
+        match.group(1)
+        for error in errors
+        for match in re.finditer(r"task\s+(\d+):", error, re.IGNORECASE)
+    }
+    if len(task_nums) == 1:
+        return VALIDATION_RETRY_TASK_REPAIR
+    if len(task_nums) > 1:
+        return VALIDATION_RETRY_PLAN_REWRITE
+    return VALIDATION_RETRY_PLAN_REWRITE
+
+
+def _build_validation_feedback(
+    error_noun: str,
+    errors: list[str],
+    repeat_count: int,
+) -> str:
+    """Build class-specific feedback for validation retries."""
+    classification = _classify_validation_errors(errors)
+    error_lines = [f"- {e}" for e in errors]
+
+    if classification == VALIDATION_RETRY_TASK_REPAIR:
+        guidance = (
+            f"Keep the same goal and overall {error_noun.lower()}. "
+            "Fix only the specific task-level issues below."
+        )
+    elif classification == VALIDATION_RETRY_APPROACH_RESET:
+        guidance = (
+            "The previous approach is invalid for this user goal. "
+            f"Discard it and regenerate the {error_noun.lower()} from the original user request."
+        )
+    else:
+        guidance = (
+            f"Keep the same goal, but rewrite the {error_noun.lower()} structure so it is valid. "
+            "Do not patch only one field if the task sequence itself is wrong."
+        )
+
+    if repeat_count >= 2:
+        if classification == VALIDATION_RETRY_TASK_REPAIR:
+            escalation = (
+                f"IMPORTANT: You have repeated this same error {repeat_count} times. "
+                "Apply the exact field/task fix described above."
+            )
+        elif classification == VALIDATION_RETRY_APPROACH_RESET:
+            escalation = (
+                f"IMPORTANT: You have repeated this same error {repeat_count} times. "
+                "This indicates the same wrong approach. Discard the prior approach "
+                "and start again from the original user goal."
+            )
+        else:
+            escalation = (
+                f"IMPORTANT: You have repeated this same error {repeat_count} times. "
+                "Regenerate the task sequence instead of making a tiny patch."
+            )
+        error_lines.append("")
+        error_lines.append(escalation)
+
+    return (
+        f"Your {error_noun.lower()} has errors:\n"
+        + "\n".join(error_lines)
+        + f"\n{guidance}\nReturn only the corrected {error_noun.lower()}."
+    )
 
 async def _retry_llm_with_validation(
     config: Config,
@@ -493,18 +600,8 @@ async def _retry_llm_with_validation(
         attempt += 1
 
         if last_errors:
-            error_lines = [f"- {e}" for e in last_errors]
-            # escalate after 2+ identical error patterns
-            if repeat_count >= 2:
-                error_lines.append(
-                    "\nIMPORTANT: You have made this same error "
-                    f"{repeat_count} times. Read the error message above "
-                    "carefully and apply the exact fix described."
-                )
-            error_feedback = (
-                f"Your {error_noun.lower()} has errors:\n"
-                + "\n".join(error_lines)
-                + f"\nFix these and return the corrected {error_noun.lower()}."
+            error_feedback = _build_validation_feedback(
+                error_noun, last_errors, repeat_count
             )
             messages.append({"role": "user", "content": error_feedback})
 
