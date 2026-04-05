@@ -386,7 +386,7 @@ Examples:
 
 ```bash
 kiso config set bot_persona "a sarcastic Neapolitan professor"
-kiso config set dream_enabled false
+kiso config set consolidation_enabled false
 kiso config get bot_name
 kiso config list
 ```

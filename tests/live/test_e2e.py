@@ -16,7 +16,7 @@ from kiso.store import (
     create_task,
     save_message,
 )
-from kiso.worker import _execute_plan, _review_task
+from kiso.worker.loop import _execute_plan, _review_task
 
 pytestmark = pytest.mark.llm_live
 

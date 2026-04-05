@@ -25,7 +25,7 @@ from kiso.store import (
     save_learning,
     save_message,
 )
-from kiso.worker import _apply_curator_result, _execute_plan, _process_message
+from kiso.worker.loop import _apply_curator_result, _execute_plan, _process_message
 
 pytestmark = pytest.mark.llm_live
 

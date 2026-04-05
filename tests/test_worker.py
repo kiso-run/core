@@ -31,17 +31,12 @@ from kiso.store import (
     save_message,
     update_task_retry_count,
 )
-from kiso.worker import (
-    _apply_curator_result,
-    _build_cancel_summary, _build_exec_env, _build_failure_summary,
-    _exec_task, _fast_path_chat, _msg_task, _post_plan_knowledge,
-    _report_pub_files, _run_subprocess, _tool_task, _session_workspace,
-    _ensure_sandbox_user, _truncate_output, _save_large_output,
-    _review_task, _execute_plan, _build_replan_context, _persist_plan_tasks,
-    _write_plan_outputs, _cleanup_plan_outputs, _extract_published_urls, _format_plan_outputs_for_msg,
-    run_worker,
-)
+from kiso.worker import run_worker
+from kiso.worker.exec import _exec_task
 from kiso.worker.loop import (
+    _apply_curator_result,
+    _execute_plan,
+    _fast_path_chat,
     _get_unresolved_failed_outputs,
     _is_unresolved_failed_output,
     _PlanCtx,
@@ -60,11 +55,35 @@ from kiso.worker.loop import (
     _handle_search_task,
     _handle_tool_task,
     _make_plan_output,
+    _msg_task,
+    _persist_plan_tasks,
     _repair_exec_pythonpath,
     _repair_tool_workspace_args,
     _resolve_workspace_file_reference,
+    _review_task,
     _run_planning_loop,
     _spawn_knowledge_task,
+    _post_plan_knowledge,
+    _process_message,
+)
+from kiso.worker.tool import _tool_task
+from kiso.worker.utils import (
+    _auto_publish_skill_files,
+    _build_cancel_summary,
+    _build_exec_env,
+    _build_failure_summary,
+    _build_replan_context,
+    _cleanup_plan_outputs,
+    _ensure_sandbox_user,
+    _extract_published_urls,
+    _format_plan_outputs_for_msg,
+    _report_pub_files,
+    _run_subprocess,
+    _save_large_output,
+    _session_workspace,
+    _snapshot_workspace,
+    _truncate_output,
+    _write_plan_outputs,
 )
 
 from tests.conftest import patch_kiso_dir as _patch_kiso_dir
@@ -6644,7 +6663,7 @@ class TestAutoPublishToolFiles:
 
     def test_snapshot_and_publish(self, tmp_path):
         """New files in workspace are copied to pub/."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -6660,7 +6679,7 @@ class TestAutoPublishToolFiles:
 
     def test_no_new_files(self, tmp_path):
         """No new files → nothing published."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             _session_workspace("test-session")
@@ -6671,7 +6690,7 @@ class TestAutoPublishToolFiles:
 
     def test_skips_files_already_in_pub(self, tmp_path):
         """Files created inside pub/ are not re-published."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -6686,7 +6705,7 @@ class TestAutoPublishToolFiles:
 
     def test_nested_files_preserve_structure(self, tmp_path):
         """Files in subdirs preserve directory structure in pub/."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -6703,7 +6722,7 @@ class TestAutoPublishToolFiles:
 
     def test_ignores_browser_cache(self, tmp_path):
         """M233: files under .browser/ should NOT be auto-published."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -6721,7 +6740,7 @@ class TestAutoPublishToolFiles:
 
     def test_ignores_pycache(self, tmp_path):
         """M233: __pycache__ files should NOT be auto-published."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -6737,7 +6756,7 @@ class TestAutoPublishToolFiles:
 
     def test_ignores_hidden_dotfiles(self, tmp_path):
         """M233: hidden files/dirs (starting with .) should NOT be auto-published."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -6756,7 +6775,7 @@ class TestAutoPublishToolFiles:
 
     def test_ignores_node_modules(self, tmp_path):
         """M233: node_modules should NOT be auto-published."""
-        from kiso.worker import _auto_publish_skill_files, _snapshot_workspace
+        from kiso.worker.utils import _auto_publish_skill_files, _snapshot_workspace
 
         with _patch_kiso_dir(tmp_path):
             workspace = _session_workspace("test-session")
@@ -7404,7 +7423,7 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
@@ -7426,7 +7445,7 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
@@ -7461,7 +7480,7 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop._run_planning_loop", mock_loop), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
@@ -7484,7 +7503,7 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
@@ -7504,7 +7523,7 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             bg_task = await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
@@ -7526,7 +7545,7 @@ class TestFastPathIntegration:
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.run_paraphraser", mock_paraphraser), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
             )
@@ -10290,7 +10309,7 @@ class TestProcessMessagePhaseCallback:
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             bg_task = await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
                 set_phase=lambda p: phases.append(p),
@@ -10346,7 +10365,7 @@ class TestProcessMessagePhaseCallback:
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
-            from kiso.worker import _process_message
+            from kiso.worker.loop import _process_message
             bg_task = await _process_message(
                 conn, config, "sess1", msg, None, 5, 60, 3,
                 set_phase=lambda p: phases.append(p),
@@ -10848,7 +10867,7 @@ class TestKisoDirBytes:
 class TestCheckDiskLimit:
     def test_under_limit_returns_none(self):
         """When KISO_DIR size is under the limit, returns None."""
-        from kiso.worker import _check_disk_limit
+        from kiso.worker.utils import _check_disk_limit
 
         config = MagicMock()
         config.settings = {"max_disk_gb": 32}
@@ -10858,7 +10877,7 @@ class TestCheckDiskLimit:
 
     def test_over_limit_returns_error(self):
         """When KISO_DIR size exceeds the limit, returns error message."""
-        from kiso.worker import _check_disk_limit
+        from kiso.worker.utils import _check_disk_limit
 
         config = MagicMock()
         config.settings = {"max_disk_gb": 32}
@@ -10871,7 +10890,7 @@ class TestCheckDiskLimit:
 
     def test_error_returns_none(self):
         """When _kiso_dir_bytes returns None, returns None (graceful degradation)."""
-        from kiso.worker import _check_disk_limit
+        from kiso.worker.utils import _check_disk_limit
 
         config = MagicMock()
         config.settings = {"max_disk_gb": 32}

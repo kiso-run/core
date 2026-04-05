@@ -32,7 +32,7 @@ from kiso.brain import (
 )
 from kiso.store import save_message
 from kiso.sysenv import build_system_env_section
-from kiso.worker import _msg_task
+from kiso.worker.loop import _msg_task
 
 pytestmark = pytest.mark.llm_live
 

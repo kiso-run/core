@@ -385,11 +385,6 @@ def _build_config(path: Path, on_error) -> Config:
     # --- models: all roles required ---
     models_raw = raw.get("models", {})
 
-    # Backward compat: map old dreamer model key to consolidator (before
-    # missing-models check so old configs don't fail validation).
-    if "dreamer" in models_raw and "consolidator" not in models_raw:
-        models_raw["consolidator"] = models_raw.pop("dreamer")
-
     # Fill any missing model roles from defaults (so old configs automatically
     # gain new roles like 'consolidator' without manual edits).
     for role, default_model in MODEL_DEFAULTS.items():
@@ -401,16 +396,6 @@ def _build_config(path: Path, on_error) -> Config:
     settings_raw = raw.get("settings", {})
     settings = dict(SETTINGS_DEFAULTS)
     settings.update(settings_raw)
-
-    # Backward compat: map old dream_* keys to consolidation_*
-    _SETTINGS_COMPAT = {
-        "dream_enabled": "consolidation_enabled",
-        "dream_interval_hours": "consolidation_interval_hours",
-        "dream_min_facts": "consolidation_min_facts",
-    }
-    for old_key, new_key in _SETTINGS_COMPAT.items():
-        if old_key in settings_raw and new_key not in settings_raw:
-            settings[new_key] = settings_raw[old_key]
 
     # Validate that overridden settings have the correct type
     type_errors: list[str] = []

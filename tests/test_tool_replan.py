@@ -24,7 +24,8 @@ from kiso.store import (
     init_db,
     save_message,
 )
-from kiso.worker import _execute_plan, run_worker
+from kiso.worker import run_worker
+from kiso.worker.loop import _execute_plan
 from kiso.worker.loop import (
     _PlanCtx,
     _TaskHandlerResult,

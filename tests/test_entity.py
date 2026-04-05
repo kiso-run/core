@@ -25,7 +25,7 @@ from kiso.store import (
     save_learning,
     search_facts_by_entity,
 )
-from kiso.worker import _apply_curator_result
+from kiso.worker.loop import _apply_curator_result
 
 
 class TestM348EntityLifecycle:

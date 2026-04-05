@@ -21,7 +21,7 @@ import pytest
 import pytest_asyncio
 
 from kiso.store import create_session, save_message
-from kiso.worker import _process_message
+from kiso.worker.loop import _process_message
 
 from tests.conftest import (
     LLM_MULTI_PLAN_TIMEOUT,

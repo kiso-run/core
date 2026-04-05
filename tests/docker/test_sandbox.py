@@ -13,8 +13,8 @@ import subprocess
 
 import pytest
 
-from kiso.worker import _exec_task, _session_workspace
-from kiso.worker.utils import _ensure_sandbox_user_sync
+from kiso.worker.exec import _exec_task
+from kiso.worker.utils import _ensure_sandbox_user_sync, _session_workspace
 
 pytestmark = pytest.mark.skipif(
     os.getuid() != 0, reason="requires root",

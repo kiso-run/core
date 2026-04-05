@@ -25,7 +25,8 @@ from kiso.store import (
     save_message,
 )
 from kiso.sysenv import collect_system_env, build_system_env_section
-from kiso.worker import _build_replan_context, _msg_task
+from kiso.worker.loop import _msg_task
+from kiso.worker.utils import _build_replan_context
 
 pytestmark = pytest.mark.llm_live
 

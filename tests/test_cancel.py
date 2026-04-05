@@ -211,7 +211,7 @@ def test_cancel_cli_no_active_job(capsys):
 
 async def test_exec_task_cancel_kills_subprocess(tmp_path):
     """M767: _exec_task with cancel_event kills the subprocess."""
-    from kiso.worker import _exec_task
+    from kiso.worker.exec import _exec_task
     from unittest.mock import patch as _patch
 
     cancel = asyncio.Event()
@@ -229,7 +229,7 @@ async def test_exec_task_cancel_kills_subprocess(tmp_path):
 
 async def test_exec_task_normal_with_cancel_event(tmp_path):
     """M767: _exec_task with cancel_event not set → normal completion."""
-    from kiso.worker import _exec_task
+    from kiso.worker.exec import _exec_task
     from unittest.mock import patch as _patch
 
     cancel = asyncio.Event()  # never set
@@ -250,7 +250,7 @@ async def test_exec_task_normal_with_cancel_event(tmp_path):
 
 async def test_cancel_after_task_cancels_remaining(tmp_path):
     """M768: cancel_event set during first task → remaining tasks cancelled."""
-    from kiso.worker import _exec_task
+    from kiso.worker.exec import _exec_task
     from unittest.mock import patch as _patch
 
     cancel = asyncio.Event()

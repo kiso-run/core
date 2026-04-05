@@ -167,7 +167,6 @@ webhook_max_payload       = 1048576
 | `consolidation_interval_hours` | `24` | Hours between consolidation runs. |
 | `consolidation_min_facts` | `20` | Minimum number of facts required to trigger a consolidation run. |
 
-**Backward Compatibility:** The old `dream_enabled`, `dream_interval_hours`, and `dream_min_facts` config keys are automatically mapped to their `consolidation_*` equivalents at load time. Old configs continue to work without changes, but new installations use the `consolidation_*` names.
 | `max_replan_depth` | `5` | Max replan cycles per original message. |
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_llm_retries` | `3` | Max retries on LLM HTTP errors or SSE stalls per call. |

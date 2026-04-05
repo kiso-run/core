@@ -40,7 +40,7 @@ from kiso.config import (
 )
 from kiso.main import _collect_boot_facts, _init_ssh_keys
 from kiso.store import create_session, init_db, save_message
-from kiso.worker import _process_message
+from kiso.worker.loop import _process_message
 
 
 # NOTE: individual test files that need the ``functional`` marker should set
