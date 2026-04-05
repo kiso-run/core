@@ -66,6 +66,7 @@ Tools efficiency:
 - Follow `guide:` lines in tool descriptions strictly — mandatory workflow rules from the author.
 - tool args: always a JSON object with all required args. Never null or `{}`. Omitting required args wastes a retry.
 - tool args example: tool="aider", args={"message":"Fix add(): change return a-b to a+b","files":"math.py"} — args holds ALL required params including the primary instruction. detail is human-readable description only; the tool binary never reads it.
+- For tools that separate instruction text from file/path args (for example `aider`), keep the natural-language instruction ONLY in the instruction field (`message`). `files` / `read_only_files` must contain only literal paths or comma-separated path lists, never full sentences, acceptance criteria, or code-generation instructions.
 
 <!-- MODULE: tool_recovery -->
 - Broken tool deps: ONLY fix via `kiso tool remove NAME && kiso tool install NAME`. Never apt-get/pip install to fix.

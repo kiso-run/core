@@ -13177,6 +13177,18 @@ class TestWorkspaceFileRouting:
 
         assert resolved is None
 
+    def test_resolve_workspace_file_reference_rejects_instruction_like_blob(self, tmp_path):
+        with _patch_kiso_dir(tmp_path):
+            ws = _session_workspace("sess1")
+            (ws / "text_stats.py").write_text("print('ok')\n")
+
+            resolved = _resolve_workspace_file_reference(
+                "sess1",
+                "Write a Python script named text_stats.py that reads all text from stdin and prints counts.",
+            )
+
+        assert resolved is None
+
     def test_repair_tool_workspace_args_only_updates_file_like_args(self, tmp_path):
         tool_info = {
             "name": "ocr",
@@ -13194,6 +13206,57 @@ class TestWorkspaceFileRouting:
             repaired = _repair_tool_workspace_args(tool_info, args, "sess1")
 
         assert repaired == {"file_path": "screenshot.png", "action": "extract"}
+
+    @pytest.mark.asyncio
+    async def test_handle_tool_task_blocks_instruction_like_aider_files_before_tool_run(
+        self, tmp_path
+    ):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        plan_id = await create_plan(conn, "sess1", 0, "Test plan")
+        task_row = await _make_task_row(
+            conn,
+            plan_id,
+            "tool",
+            detail="Use aider",
+            skill="aider",
+            args=json.dumps({
+                "message": "Create text_stats.py",
+                "files": "Write a Python script named text_stats.py that reads stdin and prints counts.",
+            }),
+            expect="file created",
+        )
+        tool_info = {
+            "name": "aider",
+            "summary": "aider",
+            "args_schema": {
+                "message": {"type": "string", "required": True},
+                "files": {"type": "string", "required": False},
+                "read_only_files": {"type": "string", "required": False},
+            },
+            "env": {},
+            "session_secrets": [],
+            "path": str(
+                Path(__file__).resolve().parents[2]
+                / "plugins"
+                / "tool-aider"
+            ),
+            "version": "0.1.0",
+            "description": "",
+            "usage_guide": "aider",
+        }
+        ctx = _make_ctx(conn, installed_tools=[tool_info])
+
+        with (
+            patch("kiso.worker.loop._tool_task", side_effect=AssertionError("tool task should not run")),
+            _patch_kiso_dir(tmp_path),
+        ):
+            result = await _handle_tool_task(ctx, task_row, 0, True, 0)
+
+        await conn.close()
+        assert result.stop is True
+        assert result.stop_success is False
+        assert "Tool args validation failed" in (result.stop_replan or "")
 
     @pytest.mark.asyncio
     async def test_handle_tool_task_runs_plugin_repair_before_semantic_validation(

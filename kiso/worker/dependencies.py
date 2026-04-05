@@ -18,6 +18,18 @@ _FILE_ARG_NAME_HINTS = (
 )
 _GLOB_CHARS = frozenset("*?[]")
 _PY_IMPORT_RE = re.compile(r"\b(?:from|import)\s+([A-Za-z_][A-Za-z0-9_]*)")
+_INSTRUCTION_HINTS = (
+    "create ",
+    "write ",
+    "fix ",
+    "refactor ",
+    "update ",
+    "ensure ",
+    "use aider",
+    "reads from",
+    "prints ",
+    "should ",
+)
 
 
 def _workspace_visible_files(session: str) -> list[str]:
@@ -266,12 +278,32 @@ def _normalize_stem_tokens(path_text: str) -> tuple[str, str]:
     return normalized, suffix
 
 
+def _looks_implausible_file_reference(value: str) -> bool:
+    """Reject instruction-like blobs before treating them as workspace paths."""
+    raw = (value or "").strip()
+    if not raw:
+        return True
+    if len(raw) > 180 or "\n" in raw:
+        return True
+    lower = raw.lower()
+    words = re.findall(r"[a-z0-9_]+", lower)
+    if len(raw.split()) > 6 and any(hint in lower for hint in _INSTRUCTION_HINTS):
+        return True
+    if len(raw.split()) > 8 and lower.endswith("."):
+        return True
+    if len(raw.split()) > 8 and len(words) > 10:
+        return True
+    return False
+
+
 def _resolve_workspace_file_reference(session: str, value: str) -> str | None:
     """Resolve a missing workspace file reference to a unique existing file."""
     raw = (value or "").strip()
     if not raw or raw.startswith(("http://", "https://")):
         return None
     if raw.startswith("/"):
+        return None
+    if _looks_implausible_file_reference(raw):
         return None
 
     workspace = _session_workspace(session)

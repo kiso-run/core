@@ -5648,6 +5648,100 @@ class TestPlannerSemanticToolValidation:
 
         assert any("move the instruction text into `message`" in error for error in errors)
 
+    def test_validate_plan_blocks_long_instruction_class_in_aider_files(self):
+        tool_dir = (
+            Path(__file__).resolve().parents[2]
+            / "plugins"
+            / "tool-aider"
+        )
+        tool_info = {
+            "name": "aider",
+            "path": str(tool_dir),
+            "args_schema": {
+                "message": {"type": "string", "required": True},
+                "files": {"type": "string", "required": False},
+                "mode": {"type": "string", "required": False},
+                "read_only_files": {"type": "string", "required": False},
+            },
+            "summary": "aider",
+            "usage_guide": "aider",
+        }
+        plan = {
+            "goal": "Create a script with aider",
+            "tasks": [
+                {
+                    "type": "tool",
+                    "detail": "Use aider",
+                    "tool": "aider",
+                    "args": json.dumps(
+                        {
+                            "message": "Create text_stats.py",
+                            "files": (
+                                "Write a Python script named text_stats.py that reads all text "
+                                "from standard input and prints exactly two lines with chars and lines counts."
+                            ),
+                        }
+                    ),
+                    "expect": "file created",
+                },
+                {"type": "msg", "detail": "Report the result", "tool": None, "args": None, "expect": None},
+            ],
+        }
+
+        errors = validate_plan(
+            plan,
+            installed_skills=["aider"],
+            installed_skills_info={"aider": tool_info},
+        )
+
+        assert any("file paths only" in error for error in errors)
+
+    def test_validate_plan_allows_legitimate_aider_multi_file_paths(self):
+        tool_dir = (
+            Path(__file__).resolve().parents[2]
+            / "plugins"
+            / "tool-aider"
+        )
+        tool_info = {
+            "name": "aider",
+            "path": str(tool_dir),
+            "args_schema": {
+                "message": {"type": "string", "required": True},
+                "files": {"type": "string", "required": False},
+                "mode": {"type": "string", "required": False},
+                "read_only_files": {"type": "string", "required": False},
+            },
+            "summary": "aider",
+            "usage_guide": "aider",
+        }
+        plan = {
+            "goal": "Update script with aider",
+            "tasks": [
+                {
+                    "type": "tool",
+                    "detail": "Use aider",
+                    "tool": "aider",
+                    "args": json.dumps(
+                        {
+                            "message": "Update the implementation",
+                            "files": "text_stats.py, tests/test_text_stats.py",
+                            "read_only_files": "README.md, docs/spec.md",
+                        }
+                    ),
+                    "expect": "files updated",
+                },
+                {"type": "msg", "detail": "Report the result", "tool": None, "args": None, "expect": None},
+            ],
+        }
+
+        errors = validate_plan(
+            plan,
+            installed_skills=["aider"],
+            installed_skills_info={"aider": tool_info},
+        )
+
+        assert not any("file paths only" in error for error in errors)
+
 
 class TestM283SearcherPrompt:
     """M283: searcher prompt quality and language rules."""

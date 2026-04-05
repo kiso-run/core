@@ -915,6 +915,65 @@ class TestToolSemanticValidationHooks:
         assert validate_tool_args_semantic(tools["first"], {"text": "hi"}) == ["first validator"]
         assert validate_tool_args_semantic(tools["second"], {"text": "hi"}) == ["second validator"]
 
+    def test_aider_validator_rejects_mixed_instruction_like_file_entries(self):
+        tool_dir = (
+            Path(__file__).resolve().parents[2]
+            / "plugins"
+            / "tool-aider"
+        )
+        tool = {
+            "name": "aider",
+            "path": str(tool_dir),
+            "args_schema": {
+                "message": {"type": "string", "required": True},
+                "files": {"type": "string", "required": False},
+                "read_only_files": {"type": "string", "required": False},
+            },
+            "summary": "aider",
+            "usage_guide": "aider",
+        }
+
+        errors = validate_tool_args_semantic(
+            tool,
+            {
+                "message": "Create the script",
+                "files": "text_stats.py, Write a Python script that reads stdin and prints counts.",
+            },
+            {"phase": "planner"},
+        )
+
+        assert any("file paths only" in error for error in errors)
+
+    def test_aider_validator_allows_legitimate_multi_file_paths(self):
+        tool_dir = (
+            Path(__file__).resolve().parents[2]
+            / "plugins"
+            / "tool-aider"
+        )
+        tool = {
+            "name": "aider",
+            "path": str(tool_dir),
+            "args_schema": {
+                "message": {"type": "string", "required": True},
+                "files": {"type": "string", "required": False},
+                "read_only_files": {"type": "string", "required": False},
+            },
+            "summary": "aider",
+            "usage_guide": "aider",
+        }
+
+        errors = validate_tool_args_semantic(
+            tool,
+            {
+                "message": "Update the implementation",
+                "files": "text_stats.py, tests/test_text_stats.py",
+                "read_only_files": "README.md, docs/spec.md",
+            },
+            {"phase": "planner"},
+        )
+
+        assert errors == []
+
 
 # --- auto_correct_tool_args ---
 
