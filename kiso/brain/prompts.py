@@ -1,4 +1,4 @@
-"""Prompt loading and prompt-section rendering helpers for kiso.brain."""
+"""Prompt loading and prompt-section rendering helpers for `kiso.brain`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kiso.config import KISO_DIR
 
-_ROLES_DIR = Path(__file__).parent / "roles"
+_ROLES_DIR = Path(__file__).resolve().parent.parent / "roles"
 _prompt_cache: dict[str, str] = {}
 _MODULE_MARKER_RE = re.compile(r"<!--\s*MODULE:\s*(\w+)\s*-->")
 _ANSWER_IN_LANG_RE = re.compile(r"^Answer in (\w[\w\s]*)\.")
@@ -82,3 +82,17 @@ def _add_context_section(
 ) -> None:
     """Render a named prompt section directly from structured context state."""
     _add_section(parts, title, context_sections.get(key, ""))
+
+
+__brain_exports__ = [
+    "_ANSWER_IN_LANG_RE",
+    "_ROLES_DIR",
+    "_add_context_section",
+    "_add_section",
+    "_build_messages",
+    "_build_messages_from_sections",
+    "_load_modular_prompt",
+    "_load_system_prompt",
+    "_prompt_cache",
+    "invalidate_prompt_cache",
+]
