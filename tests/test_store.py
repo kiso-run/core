@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pytest
 import aiosqlite
 
@@ -498,6 +499,17 @@ async def test_create_task_all_fields(db: aiosqlite.Connection):
     assert t["args"] == '{"query": "test"}'
     assert t["expect"] == "results found"
     assert t["status"] == "pending"
+
+
+async def test_create_task_serializes_dict_args(db: aiosqlite.Connection):
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    await create_task(
+        db, plan_id, "sess1", type="tool", detail="search web",
+        skill="search", args={"query": "test", "page": 1}, expect="results found",
+    )
+    tasks = await get_tasks_for_plan(db, plan_id)
+    assert json.loads(tasks[0]["args"]) == {"page": 1, "query": "test"}
 
 
 async def test_create_task_parallel_group_persists(db: aiosqlite.Connection):

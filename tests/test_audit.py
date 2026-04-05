@@ -9,7 +9,16 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.audit import _audit_dir_ready, _ensure_audit_dir, _write_entry, log_llm_call, log_task, log_review, log_webhook
+from kiso.audit import (
+    _audit_dir_ready,
+    _ensure_audit_dir,
+    _write_entry,
+    TaskAuditEntry,
+    log_llm_call,
+    log_task,
+    log_review,
+    log_webhook,
+)
 
 
 # --- _write_entry ---
@@ -151,6 +160,24 @@ class TestWriteEntry:
         with patch("kiso.audit.KISO_DIR", tmp_path):
             _write_entry(original, deploy_secrets={"KEY": "sk-secret-key-123"})
         assert original == snapshot  # no timestamp, no redaction
+
+    def test_accepts_typed_audit_entry(self, tmp_path):
+        with patch("kiso.audit.KISO_DIR", tmp_path):
+            _write_entry(TaskAuditEntry(
+                type="task",
+                session="sess1",
+                task_id=7,
+                task_type="exec",
+                detail="echo ok",
+                status="done",
+                duration_ms=5,
+                output_length=2,
+            ))
+
+        files = list((tmp_path / "audit").glob("*.jsonl"))
+        entry = json.loads(files[0].read_text().strip())
+        assert entry["type"] == "task"
+        assert entry["task_id"] == 7
 
     def test_type_field_not_masked(self, tmp_path):
         """The 'type' field must never be masked even if it matches a secret."""

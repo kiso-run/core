@@ -135,6 +135,29 @@ class TaskContract:
         }
 
 
+def _coerce_task_contract(contract: object) -> TaskContract | None:
+    """Normalize a stored/raw contract payload into ``TaskContract``."""
+    if isinstance(contract, TaskContract):
+        return contract
+    if not isinstance(contract, dict):
+        return None
+    return TaskContract(
+        task_type=str(contract.get("task_type") or ""),
+        intent=str(contract.get("intent") or ""),
+        tool_name=contract.get("tool_name"),
+        args=_coerce_task_args(contract.get("args")),
+        expect=contract.get("expect"),
+        delivery_mode=str(contract.get("delivery_mode") or ""),
+        verification_mode=str(contract.get("verification_mode") or ""),
+        allowed_repair_scope=str(contract.get("allowed_repair_scope") or ""),
+        declared_inputs=list(contract.get("declared_inputs") or []),
+        expected_outputs=list(contract.get("expected_outputs") or []),
+        dependencies=list(contract.get("dependencies") or []),
+        task_index=contract.get("task_index"),
+        task_id=contract.get("task_id"),
+    )
+
+
 @dataclass(slots=True)
 class TaskResult:
     """Canonical runtime result for a task across execution, replan, and delivery."""
@@ -151,7 +174,7 @@ class TaskResult:
     failure_class: str | None = None
     exit_code: int | None = None
     tool_name: str | None = None
-    contract: dict | None = None
+    contract: TaskContract | None = None
     file_refs: list[dict] = field(default_factory=list)
     artifact_refs: list[dict] = field(default_factory=list)
 
@@ -169,7 +192,7 @@ class TaskResult:
             "failure_class": self.failure_class,
             "exit_code": self.exit_code,
             "tool": self.tool_name,
-            "contract": self.contract,
+            "contract": self.contract.to_dict() if self.contract else None,
             "file_refs": list(self.file_refs),
             "artifact_refs": list(self.artifact_refs),
         }
@@ -253,7 +276,7 @@ def _task_result_from_source(entry: dict) -> TaskResult:
         failure_class=entry.get("failure_class"),
         exit_code=entry.get("exit_code"),
         tool_name=entry.get("tool") or entry.get("skill"),
-        contract=entry.get("contract"),
+        contract=_coerce_task_contract(entry.get("contract")),
         file_refs=list(entry.get("file_refs") or []),
         artifact_refs=list(entry.get("artifact_refs") or []),
     )
@@ -1399,7 +1422,7 @@ def _build_replan_context(
     completed = [
         r.to_dict()
         for r in _collect_task_results(completed=completed)
-        if (r.contract or {}).get("delivery_mode") != "user-facing"
+        if (r.contract.delivery_mode if r.contract else None) != "user-facing"
         and r.task_type != "msg"
     ]
     parts: list[str] = []

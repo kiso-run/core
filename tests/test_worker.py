@@ -12954,7 +12954,8 @@ class TestTaskContract:
         assert result.reviewer_summary == "Tests passed"
         assert result.retry_hint == "none"
         assert result.failure_class == "external_dependency"
-        assert result.contract == {"delivery_mode": "action"}
+        assert result.contract is not None
+        assert result.contract.delivery_mode == "action"
 
     def test_infer_task_dependencies_matches_known_file_ref(self):
         task_row = {

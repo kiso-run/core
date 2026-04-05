@@ -283,6 +283,20 @@ async def _rows_to_dicts(cur: aiosqlite.Cursor) -> list[dict]:
     return [dict(r) for r in await cur.fetchall()]
 
 
+def _json_text_or_none(value: object, *, sort_keys: bool = False) -> str | None:
+    """Serialize a JSON payload or return ``None`` for empty values."""
+    if value in (None, [], {}):
+        return None
+    return json.dumps(value, sort_keys=sort_keys)
+
+
+def _serialize_task_args(args: str | dict | None) -> str | None:
+    """Normalize task args at the DB boundary."""
+    if isinstance(args, dict):
+        return _json_text_or_none(args, sort_keys=True)
+    return args
+
+
 async def _update_field(
     db: aiosqlite.Connection,
     table: str,
@@ -810,7 +824,7 @@ def _serialize_llm_calls(
     """
     if llm_calls is _KEEP_LLM_CALLS:
         return False, None
-    return True, json.dumps(llm_calls) if llm_calls else None
+    return True, _json_text_or_none(llm_calls)
 
 
 async def update_task_usage(
@@ -1640,8 +1654,7 @@ async def create_task(
     parallel_group: int | None = None,
 ) -> int:
     """Insert a task row. Returns task id."""
-    if isinstance(args, dict):
-        args = json.dumps(args, sort_keys=True)
+    args = _serialize_task_args(args)
     cur = await db.execute(
         "INSERT INTO tasks (plan_id, session, type, detail, skill, args, expect, parallel_group) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1874,4 +1887,3 @@ async def update_fact_content(db: aiosqlite.Connection, fact_id: int, content: s
     """Update a fact's content text in place."""
     await db.execute("UPDATE facts SET content = ? WHERE id = ?", (content, fact_id))
     await db.commit()
-
