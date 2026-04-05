@@ -104,6 +104,18 @@ reviewer behavior. If the behavior is observable through plan validation,
 message builders, worker execution, live role calls, or functional flows, write
 the test there instead.
 
+### Live and functional rerun limits
+
+When `KISO_LLM_API_KEY` is unavailable locally, use `--collect-only` only as a
+suite-wiring check:
+
+- collection proves the tests still import, parse, and register correctly
+- collection does **not** validate prompt quality, provider behavior, timing, or
+  full end-to-end semantics
+- classify missing-credential runs separately from true product regressions
+- treat provider/network timeouts as external fragility unless the same behavior
+  is reproducible in unit/integration coverage or in a credentialed rerun
+
 
 ## Running tests
 

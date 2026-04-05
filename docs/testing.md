@@ -154,6 +154,12 @@ uv run pytest tests/live/test_cli_live.py --live-network -v
 uv run pytest tests/live/test_plugins.py --live-network -v
 ```
 
+If `KISO_LLM_API_KEY` is not set, `--collect-only` is still useful to catch
+import/registration breakage in `tests/live/` and `tests/functional/`, but it
+is only a wiring check. Do not treat a successful collection run as evidence
+that provider timing, prompt behavior, or end-to-end runtime semantics are
+green.
+
 ### Unit tests — Docker
 
 ```bash
