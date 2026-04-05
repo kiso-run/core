@@ -89,6 +89,31 @@ For planner workspace-context tests, patch the current runtime seam
 like `_list_session_files()`. The planner no longer assembles session files
 through that older helper path.
 
+### Public import surfaces
+
+Complexity-reduction refactors are allowed to move internal code aggressively,
+so tests should distinguish between intentional import boundaries and
+implementation details.
+
+Protected import surfaces:
+
+- `kiso.worker` exposes only `run_worker`
+- `kiso.main` keeps the runtime app/startup seam (`app`, `_init_app_state`)
+- `kiso.brain` keeps the high-level orchestration surface:
+  role runners, validators, message builders, classifier helpers, and the
+  stable runtime exceptions/constants consumed by `kiso.main`, `kiso.worker`,
+  and live/integration tests
+
+Not protected as public API:
+
+- underscore helpers in `kiso.brain`
+- concrete modules under `kiso.worker.*`
+- route/helper internals in `kiso.main`
+
+When a test is not specifically about a public boundary, import the concrete
+implementation module instead of relying on package-level re-exports or a large
+monolithic module shape.
+
 ### Prompt-test guardrails
 
 Prompt-file assertions are allowed in blocking suites only for lightweight smoke
