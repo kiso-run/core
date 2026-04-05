@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import jsonschema as _jsonschema
@@ -5308,6 +5309,51 @@ class TestPlannerSemanticToolValidation:
         )
 
         assert any("semantically invalid" in error for error in errors)
+
+    def test_validate_plan_blocks_aider_instruction_in_files(self):
+        tool_dir = (
+            Path(__file__).resolve().parents[2]
+            / "plugins"
+            / "tool-aider"
+        )
+        tool_info = {
+            "name": "aider",
+            "path": str(tool_dir),
+            "args_schema": {
+                "message": {"type": "string", "required": True},
+                "files": {"type": "string", "required": False},
+                "mode": {"type": "string", "required": False},
+                "read_only_files": {"type": "string", "required": False},
+            },
+            "summary": "aider",
+            "usage_guide": "aider",
+        }
+        plan = {
+            "goal": "Create a script with aider",
+            "tasks": [
+                {
+                    "type": "tool",
+                    "detail": "Use aider",
+                    "tool": "aider",
+                    "args": json.dumps(
+                        {
+                            "message": "Use aider",
+                            "files": "Create a Python script named text_stats.py that reads from stdin and prints counts.",
+                        }
+                    ),
+                    "expect": "file created",
+                },
+                {"type": "msg", "detail": "Report the result", "tool": None, "args": None, "expect": None},
+            ],
+        }
+
+        errors = validate_plan(
+            plan,
+            installed_skills=["aider"],
+            installed_skills_info={"aider": tool_info},
+        )
+
+        assert any("move the instruction text into `message`" in error for error in errors)
 
 
 class TestM283SearcherPrompt:
