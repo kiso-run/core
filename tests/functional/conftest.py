@@ -38,6 +38,7 @@ from kiso.config import (
     SETTINGS_DEFAULTS,
     User,
 )
+from kiso.tools import discover_tools, invalidate_tools_cache
 from kiso.main import _collect_boot_facts, _init_ssh_keys
 from kiso.store import create_session, init_db, save_message
 from kiso.worker.loop import _process_message
@@ -77,6 +78,12 @@ _RU_WORDS = frozenset(
     "и в не на я что он с это как но из к за то по она мы они был бы"
     " все так же от его до бы ее мне ему нет да".split()
 )
+
+
+def tool_installed(name: str) -> bool:
+    """Return True when a named tool is currently installed."""
+    invalidate_tools_cache()
+    return any(t["name"] == name for t in discover_tools())
 
 _LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS, "ru": _RU_WORDS}
 _LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish", "ru": "Russian",

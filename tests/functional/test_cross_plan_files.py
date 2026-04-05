@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from kiso.tools import discover_tools, invalidate_tools_cache
 from tests.functional.conftest import (
     assert_no_failure_language,
+    tool_installed,
 )
 
 pytestmark = [pytest.mark.functional, pytest.mark.extended]
@@ -36,20 +36,14 @@ _HALLUCINATION_MARKERS = [
     "github.com/guidance-ai",
 ]
 
-
-def _tool_installed(name: str) -> bool:
-    invalidate_tools_cache()
-    return any(t["name"] == name for t in discover_tools())
-
-
 async def _ensure_tool(run_message, tool_name: str, prompt: str, *, timeout: float = TOOL_TIMEOUT):
     """Run prompt, handling tool install flow if needed."""
     result = await run_message(prompt, timeout=timeout)
-    if _tool_installed(tool_name):
+    if tool_installed(tool_name):
         return result
     # Install the tool
     await run_message(f"yes, install {tool_name}", timeout=timeout)
-    if not _tool_installed(tool_name):
+    if not tool_installed(tool_name):
         pytest.skip(f"Could not install {tool_name}")
     # Retry with tool available
     return await run_message(prompt, timeout=timeout)

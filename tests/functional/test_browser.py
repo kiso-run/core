@@ -14,23 +14,16 @@ from __future__ import annotations
 
 import pytest
 
-from kiso.tools import discover_tools, invalidate_tools_cache
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
+    tool_installed,
     assert_url_reachable,
 )
 
 pytestmark = pytest.mark.functional
 
 from tests.conftest import LLM_INSTALL_TIMEOUT as BROWSER_TIMEOUT
-
-
-def _browser_installed() -> bool:
-    """Check if the browser tool is installed (cache-busting)."""
-    invalidate_tools_cache()
-    return any(t["name"] == "browser" for t in discover_tools())
-
 
 async def _run_with_install_flow(
     run_message,
@@ -51,7 +44,7 @@ async def _run_with_install_flow(
     """
     result = await run_message(prompt, timeout=timeout)
 
-    if _browser_installed():
+    if tool_installed("browser"):
         return result
 
     # Turn 2: confirm installation
@@ -59,7 +52,7 @@ async def _run_with_install_flow(
         "sì, installa il tool browser", timeout=timeout,
     )
 
-    if not _browser_installed():
+    if not tool_installed("browser"):
         # Install may have failed or the LLM didn't execute the install.
         # Return the install result so the assertion shows what went wrong.
         return install_result
@@ -84,7 +77,7 @@ class TestF1BrowserInstall:
         for the browser tool specifically. Isolates install issues from navigation.
         Expects: After the flow, the browser tool is installed and discoverable.
         """
-        if _browser_installed():
+        if tool_installed("browser"):
             pytest.skip("Browser already installed — nothing to test")
 
         # Turn 1: request that needs browser

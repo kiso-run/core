@@ -15,21 +15,14 @@ from __future__ import annotations
 
 import pytest
 
-from kiso.tools import discover_tools, invalidate_tools_cache
 from tests.functional.conftest import (
     assert_no_failure_language,
+    tool_installed,
 )
 
 pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
 from tests.conftest import LLM_INSTALL_TIMEOUT as TOOL_TIMEOUT
-
-
-def _tool_installed(name: str) -> bool:
-    """Check if a specific tool is installed (cache-busting)."""
-    invalidate_tools_cache()
-    return any(t["name"] == name for t in discover_tools())
-
 
 async def _run_with_tool_install(
     run_message,
@@ -40,8 +33,7 @@ async def _run_with_tool_install(
 ):
     """Send *prompt* and handle the install-proposal flow if tool is missing.
 
-    Same pattern as test_browser.py's _run_with_install_flow, generalized
-    for any tool name.
+    Uses the shared conversational install flow, generalized for any tool.
 
     Three-turn flow when tool is not pre-installed:
       1. Original prompt → planner proposes install (msg-only plan)
@@ -52,7 +44,7 @@ async def _run_with_tool_install(
     """
     result = await run_message(prompt, timeout=timeout)
 
-    if _tool_installed(tool_name):
+    if tool_installed(tool_name):
         return result
 
     # Turn 2: confirm installation
@@ -61,7 +53,7 @@ async def _run_with_tool_install(
         timeout=timeout,
     )
 
-    if not _tool_installed(tool_name):
+    if not tool_installed(tool_name):
         return install_result
 
     # Turn 3: repeat original request with tool now available
