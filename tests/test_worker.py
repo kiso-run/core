@@ -12590,6 +12590,67 @@ class TestListSessionFiles:
 
 
 # ---------------------------------------------------------------------------
+# M1104 — ExecutionState assembly
+# ---------------------------------------------------------------------------
+
+
+class TestExecutionState:
+    def test_build_execution_state_collects_workspace_and_last_plan(self, tmp_path):
+        from kiso.worker.utils import _build_execution_state, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-state")
+            (ws / "artifact.txt").write_text("hello")
+            kiso_dir = ws / ".kiso"
+            kiso_dir.mkdir(exist_ok=True)
+            (kiso_dir / "last_plan_summary.json").write_text(json.dumps({
+                "goal": "Write artifact",
+                "produced_files": [{
+                    "path": "artifact.txt",
+                    "abs_path": str(ws / "artifact.txt"),
+                    "type": "document",
+                    "tool": "exec",
+                }],
+                "key_results": ["artifact written"],
+                "ts": "2026-04-05T10:00:00+00:00",
+            }))
+
+            state = _build_execution_state("s-state")
+
+        assert state.session == "s-state"
+        assert state.workspace_root.endswith("/sessions/s-state")
+        assert len(state.workspace_files) == 1
+        assert state.workspace_files[0]["path"] == "artifact.txt"
+        assert state.last_plan_goal == "Write artifact"
+        assert state.last_plan_key_results == ["artifact written"]
+        assert state.last_plan_produced_files[0]["path"] == "artifact.txt"
+
+    def test_execution_state_context_sections_render_existing_formats(self, tmp_path):
+        from kiso.worker.utils import _build_execution_state, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-render")
+            (ws / "shot.png").write_bytes(b"x" * 10)
+            kiso_dir = ws / ".kiso"
+            kiso_dir.mkdir(exist_ok=True)
+            (kiso_dir / "last_plan_summary.json").write_text(json.dumps({
+                "goal": "Take screenshot",
+                "produced_files": [{
+                    "path": "shot.png",
+                    "abs_path": str(ws / "shot.png"),
+                    "type": "image",
+                }],
+                "key_results": ["Screenshot saved"],
+            }))
+
+            state = _build_execution_state("s-render")
+            sections = state.context_sections()
+
+        assert "Session workspace files:" in sections["session_files"]
+        assert "shot.png" in sections["session_files"]
+        assert "Last plan: Take screenshot" in sections["last_plan"]
+        assert "Results: Screenshot saved" in sections["last_plan"]
+
+
+# ---------------------------------------------------------------------------
 # M823 — Cross-plan state: last plan summary persistence
 # ---------------------------------------------------------------------------
 

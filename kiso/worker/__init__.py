@@ -5,7 +5,9 @@ backward compatibility with existing imports and test code.
 """
 
 from kiso.worker.utils import (
+    ExecutionState,
     _auto_publish_skill_files,
+    _build_execution_state,
     _build_cancel_summary,
     _check_disk_limit,
     _build_exec_env,
@@ -52,7 +54,9 @@ from kiso.worker.loop import (
 
 __all__ = [
     # utils
+    "ExecutionState",
     "_auto_publish_skill_files",
+    "_build_execution_state",
     "_build_cancel_summary",
     "_check_disk_limit",
     "_build_exec_env",

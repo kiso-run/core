@@ -10,6 +10,8 @@ import pwd
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass, field
+import datetime
 from pathlib import Path
 
 from kiso.config import KISO_DIR, Config
@@ -17,6 +19,42 @@ from kiso.pub import pub_token
 from kiso.security import fence_content
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class ExecutionState:
+    """Canonical minimal runtime state for a session workspace.
+
+    This is intentionally small and built from the runtime artifacts Kiso
+    already persists today. Prompt-facing text sections are rendered from
+    this state rather than assembled independently in multiple places.
+    """
+
+    session: str
+    workspace_root: str
+    workspace_files: list[dict] = field(default_factory=list)
+    last_plan_goal: str | None = None
+    last_plan_produced_files: list[dict] = field(default_factory=list)
+    last_plan_key_results: list[str] = field(default_factory=list)
+    last_plan_ts: str | None = None
+
+    def context_sections(self) -> dict[str, str]:
+        """Render prompt-facing sections from the canonical state."""
+        sections: dict[str, str] = {}
+        session_files_text = _format_workspace_files(self.workspace_files)
+        if session_files_text:
+            sections["session_files"] = session_files_text
+        last_plan_text = _format_last_plan_summary_data(
+            {
+                "goal": self.last_plan_goal,
+                "produced_files": self.last_plan_produced_files,
+                "key_results": self.last_plan_key_results,
+                "ts": self.last_plan_ts,
+            },
+        )
+        if last_plan_text:
+            sections["last_plan"] = last_plan_text
+        return sections
 
 
 async def _run_sync(fn, *args):
@@ -442,17 +480,13 @@ def _human_age(seconds: float) -> str:
     return f"{d} d ago"
 
 
-def _list_session_files(session: str) -> str:
-    """List files in the session workspace for planner context.
-
-    Scans the workspace, excludes .kiso/, _PUB_IGNORE_DIRS, and hidden
-    dotfiles. Returns a formatted string or empty string if no files.
-    """
+def _collect_workspace_files(session: str) -> list[dict]:
+    """Collect visible workspace files as structured records."""
     import time
 
     workspace = _session_workspace(session)
     now = time.time()
-    entries: list[tuple[float, str]] = []  # (mtime, formatted_line)
+    entries: list[tuple[float, dict]] = []
 
     for f in workspace.rglob("*"):
         if not f.is_file():
@@ -470,37 +504,48 @@ def _list_session_files(session: str) -> str:
             continue
 
         stat = f.stat()
-        size = _human_size(stat.st_size)
-        age = _human_age(now - stat.st_mtime)
         ext = f.suffix.lower()
         category = _FILE_TYPE_MAP.get(ext, "other")
         entries.append((
             stat.st_mtime,
-            f"- {rel} | abs: {f} ({size}, {category}, {age})",
+            {
+                "path": str(rel),
+                "abs_path": str(f),
+                "size_bytes": stat.st_size,
+                "size_human": _human_size(stat.st_size),
+                "age_human": _human_age(now - stat.st_mtime),
+                "mtime": stat.st_mtime,
+                "type": category,
+            },
         ))
 
     if not entries:
-        return ""
+        return []
 
     # Sort by mtime descending, cap at 20
     entries.sort(key=lambda e: e[0], reverse=True)
-    lines = [e[1] for e in entries[:_SESSION_FILES_CAP]]
+    return [e[1] for e in entries[:_SESSION_FILES_CAP]]
+
+
+def _format_workspace_files(files: list[dict]) -> str:
+    """Render workspace files for planner context."""
+    if not files:
+        return ""
+    lines = [
+        f"- {entry['path']} | abs: {entry['abs_path']} "
+        f"({entry['size_human']}, {entry['type']}, {entry['age_human']})"
+        for entry in files
+    ]
     return "Session workspace files:\n" + "\n".join(lines)
 
 
-_LAST_PLAN_SUMMARY = ".kiso/last_plan_summary.json"
-_PLAN_SUMMARY_MAX_AGE = 30 * 60  # 30 minutes
-
-
-def _write_last_plan_summary(
+def _build_last_plan_summary_data(
     session: str,
     goal: str,
     completed_tasks: list[dict],
     pre_snapshot: set[Path],
-) -> None:
-    """Persist a compact summary of the completed plan for cross-plan context."""
-    import datetime
-
+) -> dict:
+    """Build the persisted last-plan summary payload."""
     workspace = _session_workspace(session)
     post_snapshot = set(workspace.rglob("*"))
     new_files = post_snapshot - pre_snapshot
@@ -551,6 +596,22 @@ def _write_last_plan_summary(
     if len(raw) > 2000:
         data["key_results"] = [r[:100] for r in key_results[:2]]
         data["produced_files"] = produced_files[:5]
+    return data
+
+
+_LAST_PLAN_SUMMARY = ".kiso/last_plan_summary.json"
+_PLAN_SUMMARY_MAX_AGE = 30 * 60  # 30 minutes
+
+
+def _write_last_plan_summary(
+    session: str,
+    goal: str,
+    completed_tasks: list[dict],
+    pre_snapshot: set[Path],
+) -> None:
+    """Persist a compact summary of the completed plan for cross-plan context."""
+    workspace = _session_workspace(session)
+    data = _build_last_plan_summary_data(session, goal, completed_tasks, pre_snapshot)
 
     kiso_dir = workspace / ".kiso"
     kiso_dir.mkdir(exist_ok=True)
@@ -558,8 +619,8 @@ def _write_last_plan_summary(
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _load_last_plan_summary(session: str) -> str | None:
-    """Load the last plan summary if fresh (< 30 min). Returns formatted text or None."""
+def _load_last_plan_summary_data(session: str) -> dict | None:
+    """Load the last plan summary payload if it is still fresh."""
     import time
 
     workspace = _session_workspace(session)
@@ -571,10 +632,15 @@ def _load_last_plan_summary(session: str) -> str | None:
         stat = path.stat()
         if time.time() - stat.st_mtime > _PLAN_SUMMARY_MAX_AGE:
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 
+
+def _format_last_plan_summary_data(data: dict | None) -> str | None:
+    """Render a persisted last-plan summary payload for prompt context."""
+    if not data:
+        return None
     goal = data.get("goal", "unknown")
     parts = [f"Last plan: {goal}"]
 
@@ -591,6 +657,31 @@ def _load_last_plan_summary(session: str) -> str | None:
         parts.append("Results: " + "; ".join(results))
 
     return "\n".join(parts)
+
+
+def _load_last_plan_summary(session: str) -> str | None:
+    """Load the last plan summary if fresh (< 30 min). Returns formatted text or None."""
+    return _format_last_plan_summary_data(_load_last_plan_summary_data(session))
+
+
+def _build_execution_state(session: str) -> ExecutionState:
+    """Build canonical runtime state for a session from persisted artifacts."""
+    workspace = _session_workspace(session)
+    summary_data = _load_last_plan_summary_data(session) or {}
+    return ExecutionState(
+        session=session,
+        workspace_root=str(workspace),
+        workspace_files=_collect_workspace_files(session),
+        last_plan_goal=summary_data.get("goal"),
+        last_plan_produced_files=summary_data.get("produced_files", []),
+        last_plan_key_results=summary_data.get("key_results", []),
+        last_plan_ts=summary_data.get("ts"),
+    )
+
+
+def _list_session_files(session: str) -> str:
+    """List files in the session workspace for planner context."""
+    return _format_workspace_files(_collect_workspace_files(session))
 
 
 # output budget constants

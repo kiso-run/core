@@ -1589,16 +1589,10 @@ async def build_planner_messages(
     if is_replan:
         context_pool.pop("system_env", None)
 
-    # Session workspace file listing — lets planner see what files exist
-    from kiso.worker.utils import _list_session_files, _load_last_plan_summary
-    session_files = await asyncio.to_thread(_list_session_files, session)
-    if session_files:
-        context_pool["session_files"] = session_files
-
-    # Cross-plan state — what the previous plan did (M823)
-    last_plan = await asyncio.to_thread(_load_last_plan_summary, session)
-    if last_plan:
-        context_pool["last_plan"] = last_plan
+    # Canonical execution state for workspace + previous-plan context.
+    from kiso.worker.utils import _build_execution_state
+    execution_state = await asyncio.to_thread(_build_execution_state, session)
+    context_pool.update(execution_state.context_sections())
 
     # Tool discovery — rescan on each planner call
     installed = discover_tools()
