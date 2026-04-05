@@ -17,7 +17,12 @@ from kiso.registry import get_registry_tools
 from kiso.security import fence_content
 from kiso.connectors import discover_connectors
 from kiso.recipe_loader import discover_recipes, build_planner_recipe_list
-from kiso.tools import discover_tools, build_planner_tool_list, validate_tool_args
+from kiso.tools import (
+    discover_tools,
+    build_planner_tool_list,
+    validate_tool_args,
+    validate_tool_args_semantic,
+)
 from kiso.store import (
     _normalize_entity_name,
     delete_facts, get_all_entities, get_all_tags, get_facts, get_kv, get_pending_items,
@@ -1036,6 +1041,18 @@ def _validate_plan_tasks(
                 else:
                     schema = installed_skills_info[tool_name].get("args_schema", {})
                     arg_errors = validate_tool_args(args, schema)
+                    semantic_errors = validate_tool_args_semantic(
+                        installed_skills_info[tool_name],
+                        args,
+                        {
+                            "phase": "planner",
+                            "task_index": i,
+                            "detail": task.get("detail"),
+                            "expect": task.get("expect"),
+                            "goal": task.get("goal"),
+                        },
+                    )
+                    arg_errors.extend(semantic_errors)
                     if arg_errors:
                         # M1067: show only required args in example so the
                         # model focuses on what it MUST provide.

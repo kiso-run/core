@@ -12728,6 +12728,66 @@ class TestWorkspaceFileRouting:
 
         assert repaired == {"file_path": "screenshot.png", "action": "extract"}
 
+    @pytest.mark.asyncio
+    async def test_handle_tool_task_runs_plugin_repair_before_semantic_validation(
+        self, tmp_path
+    ):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        plan_id = await create_plan(conn, "sess1", 0, "Test plan")
+        task_row = await _make_task_row(
+            conn,
+            plan_id,
+            "tool",
+            detail="Use echo",
+            skill="echo",
+            args=json.dumps({"text": " raw "}),
+            expect="echo output",
+        )
+        tool_dir = tmp_path / "tools" / "echo"
+        tool_dir.mkdir(parents=True)
+        (tool_dir / "run.py").write_text("print('ok')\n")
+        (tool_dir / "pyproject.toml").write_text("[project]\nname='echo'\nversion='0.1.0'\n")
+        tool_info = {
+            "name": "echo",
+            "summary": "echo",
+            "args_schema": {"text": {"type": "string", "required": True}},
+            "env": {},
+            "session_secrets": [],
+            "path": str(tool_dir),
+            "version": "0.1.0",
+            "description": "",
+            "usage_guide": "echo",
+        }
+        ctx = _make_ctx(conn, installed_tools=[tool_info])
+        call_order: list[str] = []
+
+        def _repair(tool, args, context):
+            call_order.append("repair")
+            repaired = dict(args)
+            repaired["text"] = repaired["text"].strip()
+            return repaired
+
+        def _semantic(tool, args, context):
+            call_order.append(f"semantic:{args['text']}")
+            return []
+
+        async def _fake_tool_task(*_args, **_kwargs):
+            return ("echo output", "", True, 0)
+
+        with (
+            patch("kiso.worker.loop.repair_tool_args", side_effect=_repair),
+            patch("kiso.worker.loop.validate_tool_args_semantic", side_effect=_semantic),
+            patch("kiso.worker.loop._tool_task", side_effect=_fake_tool_task),
+            patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK),
+            _patch_kiso_dir(tmp_path),
+        ):
+            result = await _handle_tool_task(ctx, task_row, 0, True, 0)
+
+        await conn.close()
+        assert result.stop is False
+        assert call_order == ["repair", "semantic:raw"]
+
 
 class TestSafetyRulePreExecCheck:
     """M1069: _handle_exec_task blocks exec when safety rule matches."""

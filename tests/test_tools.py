@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ from kiso.tools import (
     _check_args_depth,
     _coerce_value,
     _env_var_name,
+    _load_tool_validator,
     _validate_manifest,
     build_planner_tool_list,
     build_tool_env,
@@ -23,7 +25,9 @@ from kiso.tools import (
     discover_tools,
     invalidate_tools_cache,
     auto_correct_tool_args,
+    repair_tool_args,
     validate_tool_args,
+    validate_tool_args_semantic,
 )
 from kiso.plugins import _validate_plugin_manifest_base
 
@@ -78,6 +82,11 @@ def _create_tool(tmp_path: Path, name: str, toml_content: str) -> Path:
     (tool_dir / "run.py").write_text("import json, sys\ndata = json.load(sys.stdin)\nprint(data['args'].get('text', 'ok'))")
     (tool_dir / "pyproject.toml").write_text("[project]\nname = \"test\"\nversion = \"0.1.0\"")
     return tool_dir
+
+
+def _write_validator(tool_dir: Path, body: str) -> None:
+    """Write a validator.py file for a fake tool."""
+    (tool_dir / "validator.py").write_text(body)
 
 
 # --- _validate_plugin_manifest_base ---
@@ -809,6 +818,83 @@ class TestValidateToolArgs:
     def test_empty_args_empty_schema(self):
         errors = validate_tool_args({}, {})
         assert errors == []
+
+
+class TestToolSemanticValidationHooks:
+    def test_no_validator_fallback(self, tmp_path):
+        _create_tool(tmp_path, "echo", MINIMAL_TOML)
+        tool = discover_tools(tmp_path)[0]
+
+        assert _load_tool_validator(tool) is None
+        assert validate_tool_args_semantic(tool, {"text": "hi"}) == []
+        assert repair_tool_args(tool, {"text": "hi"}) == {"text": "hi"}
+
+    def test_validator_errors_are_returned(self, tmp_path):
+        tool_dir = _create_tool(tmp_path, "echo", MINIMAL_TOML)
+        _write_validator(
+            tool_dir,
+            "def validate_args(args, context):\n"
+            "    if args.get('text') == 'bad':\n"
+            "        return ['text is semantically invalid']\n"
+            "    return []\n",
+        )
+        invalidate_tools_cache()
+        tool = discover_tools(tmp_path)[0]
+
+        errors = validate_tool_args_semantic(tool, {"text": "bad"}, {"phase": "planner"})
+
+        assert errors == ["text is semantically invalid"]
+
+    def test_validator_repair_is_applied_conservatively(self, tmp_path):
+        tool_dir = _create_tool(tmp_path, "echo", MINIMAL_TOML)
+        _write_validator(
+            tool_dir,
+            "def repair_args(args, context):\n"
+            "    repaired = dict(args)\n"
+            "    if isinstance(repaired.get('text'), str):\n"
+            "        repaired['text'] = repaired['text'].strip()\n"
+            "    return repaired\n",
+        )
+        invalidate_tools_cache()
+        tool = discover_tools(tmp_path)[0]
+
+        repaired = repair_tool_args(tool, {"text": "  hi  "}, {"phase": "worker"})
+
+        assert repaired == {"text": "hi"}
+
+    def test_validator_load_is_cached(self, tmp_path):
+        tool_dir = _create_tool(tmp_path, "echo", MINIMAL_TOML)
+        _write_validator(
+            tool_dir,
+            "def validate_args(args, context):\n"
+            "    return []\n",
+        )
+        invalidate_tools_cache()
+        tool = discover_tools(tmp_path)[0]
+
+        with patch(
+            "kiso.tools.importlib.util.spec_from_file_location",
+            wraps=importlib.util.spec_from_file_location,
+        ) as mock_spec:
+            assert _load_tool_validator(tool) is not None
+            assert _load_tool_validator(tool) is not None
+
+        assert mock_spec.call_count == 1
+
+    def test_invalid_validator_result_degrades_gracefully(self, tmp_path):
+        tool_dir = _create_tool(tmp_path, "echo", MINIMAL_TOML)
+        _write_validator(
+            tool_dir,
+            "def validate_args(args, context):\n"
+            "    return 'not-a-list'\n"
+            "def repair_args(args, context):\n"
+            "    return 'not-a-dict'\n",
+        )
+        invalidate_tools_cache()
+        tool = discover_tools(tmp_path)[0]
+
+        assert validate_tool_args_semantic(tool, {"text": "hi"}) == []
+        assert repair_tool_args(tool, {"text": "hi"}) == {"text": "hi"}
 
 
 # --- auto_correct_tool_args ---

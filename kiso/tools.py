@@ -7,6 +7,8 @@ import logging
 import os
 import shutil
 import time
+import importlib.util
+from types import ModuleType
 from pathlib import Path
 
 from kiso.config import KISO_DIR, LLM_API_KEY_ENV
@@ -25,6 +27,7 @@ _CONSUMES_VOCAB = frozenset({"image", "document", "audio", "video", "code", "web
 # Cleared by invalidate_tools_cache() after install/remove.
 _TOOLS_TTL: float = 30.0
 _tools_cache: dict[Path, tuple[float, list[dict]]] = {}
+_validator_cache: dict[Path, ModuleType | None] = {}
 
 
 def invalidate_tools_cache() -> None:
@@ -34,6 +37,7 @@ def invalidate_tools_cache() -> None:
     discover_tools() call rescans the directory.
     """
     _tools_cache.clear()
+    _validator_cache.clear()
 
 
 MAX_ARGS_SIZE = 64 * 1024  # 64 KB
@@ -394,6 +398,110 @@ def validate_tool_args(args: dict, args_schema: dict) -> list[str]:
             errors.append(f"arg '{arg_name}': {e}")
 
     return errors
+
+
+def _validator_module_name(validator_path: Path) -> str:
+    """Return a stable synthetic module name for a tool validator."""
+    sanitized = "_".join(validator_path.parts[-3:]).replace("-", "_").replace(".", "_")
+    return f"kiso_tool_validator_{sanitized}"
+
+
+def _load_tool_validator(tool: dict) -> ModuleType | None:
+    """Load an optional lightweight validator.py from a tool directory."""
+    tool_path = tool.get("path")
+    if not tool_path:
+        return None
+
+    validator_path = Path(tool_path) / "validator.py"
+    if validator_path in _validator_cache:
+        return _validator_cache[validator_path]
+
+    if not validator_path.is_file():
+        _validator_cache[validator_path] = None
+        return None
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            _validator_module_name(validator_path), validator_path
+        )
+        if spec is None or spec.loader is None:
+            raise ToolError(f"validator.py could not be loaded from {validator_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to load tool validator %s: %s", validator_path, exc)
+        _validator_cache[validator_path] = None
+        return None
+
+    if not callable(getattr(module, "validate_args", None)) and not callable(
+        getattr(module, "repair_args", None)
+    ):
+        log.debug("Validator %s has no validate_args/repair_args hooks", validator_path)
+        _validator_cache[validator_path] = None
+        return None
+
+    _validator_cache[validator_path] = module
+    return module
+
+
+def validate_tool_args_semantic(
+    tool: dict,
+    args: dict,
+    context: dict | None = None,
+) -> list[str]:
+    """Run optional plugin-side semantic validation for tool args."""
+    module = _load_tool_validator(tool)
+    if module is None:
+        return []
+
+    validate_fn = getattr(module, "validate_args", None)
+    if not callable(validate_fn):
+        return []
+
+    try:
+        result = validate_fn(dict(args), dict(context or {}))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Tool validator validate_args failed for %s: %s", tool.get("name"), exc)
+        return []
+
+    if result is None:
+        return []
+    if not isinstance(result, list) or not all(isinstance(item, str) for item in result):
+        log.warning(
+            "Tool validator validate_args returned invalid result for %s: %r",
+            tool.get("name"), result,
+        )
+        return []
+    return result
+
+
+def repair_tool_args(
+    tool: dict,
+    args: dict,
+    context: dict | None = None,
+) -> dict:
+    """Run optional plugin-side conservative arg repair for a tool."""
+    module = _load_tool_validator(tool)
+    if module is None:
+        return dict(args)
+
+    repair_fn = getattr(module, "repair_args", None)
+    if not callable(repair_fn):
+        return dict(args)
+
+    try:
+        result = repair_fn(dict(args), dict(context or {}))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Tool validator repair_args failed for %s: %s", tool.get("name"), exc)
+        return dict(args)
+
+    if not isinstance(result, dict):
+        log.warning(
+            "Tool validator repair_args returned invalid result for %s: %r",
+            tool.get("name"), result,
+        )
+        return dict(args)
+    return result
 
 
 def build_tool_input(

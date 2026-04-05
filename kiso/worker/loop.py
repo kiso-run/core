@@ -81,7 +81,9 @@ from kiso.tools import (
     discover_tools,
     invalidate_tools_cache,
     auto_correct_tool_args,
+    repair_tool_args,
     validate_tool_args,
+    validate_tool_args_semantic,
 )
 from kiso.sysenv import get_system_env, build_system_env_section, invalidate_cache
 from kiso.webhook import deliver_webhook
@@ -1283,7 +1285,39 @@ async def _handle_tool_task(
                     task_id, args, workspace_corrected,
                 )
                 args = workspace_corrected
+            plugin_repaired = repair_tool_args(
+                tool_info,
+                args,
+                {
+                    "phase": "worker",
+                    "session": ctx.session,
+                    "task_id": task_id,
+                    "detail": detail,
+                    "expect": task_row.get("expect"),
+                    "workspace_files": _workspace_visible_files(ctx.session),
+                },
+            )
+            if plugin_repaired != args:
+                log.warning(
+                    "Validator repaired tool args for task %d: %s → %s",
+                    task_id, args, plugin_repaired,
+                )
+                args = plugin_repaired
             validation_errors = validate_tool_args(args, tool_info["args_schema"])
+            validation_errors.extend(
+                validate_tool_args_semantic(
+                    tool_info,
+                    args,
+                    {
+                        "phase": "worker",
+                        "session": ctx.session,
+                        "task_id": task_id,
+                        "detail": detail,
+                        "expect": task_row.get("expect"),
+                        "workspace_files": _workspace_visible_files(ctx.session),
+                    },
+                )
+            )
             if validation_errors:
                 setup_error = "Tool args validation failed: " + "; ".join(validation_errors)
 

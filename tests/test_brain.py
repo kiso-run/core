@@ -5268,6 +5268,48 @@ class TestM194ReviewerDomainCheck:
         assert "warnings" in prompt.lower()
 
 
+class TestPlannerSemanticToolValidation:
+    def test_validate_plan_rejects_semantically_invalid_tool_args(self, tmp_path):
+        tool_dir = tmp_path / "tools" / "echo"
+        tool_dir.mkdir(parents=True)
+        (tool_dir / "run.py").write_text("print('ok')\n")
+        (tool_dir / "pyproject.toml").write_text("[project]\nname='echo'\nversion='0.1.0'\n")
+        (tool_dir / "validator.py").write_text(
+            "def validate_args(args, context):\n"
+            "    if args.get('text') == 'bad':\n"
+            "        return ['text is semantically invalid']\n"
+            "    return []\n"
+        )
+        tool_info = {
+            "name": "echo",
+            "path": str(tool_dir),
+            "args_schema": {"text": {"type": "string", "required": True}},
+            "summary": "echo",
+            "usage_guide": "echo",
+        }
+        plan = {
+            "goal": "Use echo",
+            "tasks": [
+                {
+                    "type": "tool",
+                    "detail": "Use echo",
+                    "tool": "echo",
+                    "args": "{\"text\": \"bad\"}",
+                    "expect": "echo output",
+                },
+                {"type": "msg", "detail": "Report the result", "tool": None, "args": None, "expect": None},
+            ],
+        }
+
+        errors = validate_plan(
+            plan,
+            installed_skills=["echo"],
+            installed_skills_info={"echo": tool_info},
+        )
+
+        assert any("semantically invalid" in error for error in errors)
+
+
 class TestM283SearcherPrompt:
     """M283: searcher prompt quality and language rules."""
 
