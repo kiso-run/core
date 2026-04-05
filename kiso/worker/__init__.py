@@ -1,15 +1,13 @@
 """kiso.worker — per-session asyncio worker package.
 
 Public API is :func:`run_worker`. All other names are re-exported for
-backward compatibility with existing imports and test code.
+internal tests/live helpers that still import through this package.
+Keep this surface narrow: remove exports once nothing inside the repo
+imports them from `kiso.worker`.
 """
 
 from kiso.worker.utils import (
-    ArtifactRef,
-    ExecutionState,
-    FileRef,
     _auto_publish_skill_files,
-    _build_execution_state,
     _build_cancel_summary,
     _check_disk_limit,
     _build_exec_env,
@@ -28,39 +26,21 @@ from kiso.worker.utils import (
     _write_plan_outputs,
 )
 from kiso.worker.exec import _exec_task
-from kiso.worker.search import _parse_search_args, _search_task
 from kiso.worker.tool import _tool_task
 from kiso.worker.loop import (
     _apply_curator_result,
-    _deliver_webhook_if_configured,
     _execute_plan,
     _fast_path_chat,
-    _handle_exec_task,
-    _handle_msg_task,
-    _handle_replan_task,
-    _handle_search_task,
-    _handle_tool_task,
     _msg_task,
     _persist_plan_tasks,
-    _PlanCtx,
     _post_plan_knowledge,
     _process_message,
     _review_task,
-    _run_planning_loop,
-    _run_review_step,
-    _store_step_usage,
-    _TASK_HANDLERS,
-    _TaskHandlerResult,
     run_worker,
 )
 
 __all__ = [
-    # utils
-    "ArtifactRef",
-    "ExecutionState",
-    "FileRef",
     "_auto_publish_skill_files",
-    "_build_execution_state",
     "_build_cancel_summary",
     "_check_disk_limit",
     "_build_exec_env",
@@ -77,33 +57,15 @@ __all__ = [
     "_snapshot_workspace",
     "_truncate_output",
     "_write_plan_outputs",
-    # exec
     "_exec_task",
-    # search
-    "_parse_search_args",
-    "_search_task",
-    # tool
     "_tool_task",
-    # loop
     "_apply_curator_result",
-    "_deliver_webhook_if_configured",
     "_execute_plan",
     "_fast_path_chat",
-    "_handle_exec_task",
-    "_handle_msg_task",
-    "_handle_replan_task",
-    "_handle_search_task",
-    "_handle_tool_task",
     "_msg_task",
     "_persist_plan_tasks",
-    "_PlanCtx",
     "_post_plan_knowledge",
     "_process_message",
     "_review_task",
-    "_run_planning_loop",
-    "_run_review_step",
-    "_store_step_usage",
-    "_TASK_HANDLERS",
-    "_TaskHandlerResult",
     "run_worker",
 ]
