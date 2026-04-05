@@ -472,10 +472,78 @@ _TASK_REPAIR_ERROR_PATTERNS = (
     "must have args = null",
 )
 
+FAILURE_CLASS_TASK_SHAPE = "task_shape_validation"
+FAILURE_CLASS_SEMANTIC_TOOL = "semantic_tool_validation"
+FAILURE_CLASS_WORKSPACE_ROUTING = "workspace_file_routing"
+FAILURE_CLASS_BLOCKED_POLICY = "blocked_command_policy"
+FAILURE_CLASS_EXTERNAL_DEP = "external_dependency"
+FAILURE_CLASS_PLAN_SHAPE = "plan_shape_error"
+FAILURE_CLASS_DELIVERY_SPLIT = "final_delivery_split"
+FAILURE_CLASSES: frozenset[str] = frozenset({
+    FAILURE_CLASS_TASK_SHAPE,
+    FAILURE_CLASS_SEMANTIC_TOOL,
+    FAILURE_CLASS_WORKSPACE_ROUTING,
+    FAILURE_CLASS_BLOCKED_POLICY,
+    FAILURE_CLASS_EXTERNAL_DEP,
+    FAILURE_CLASS_PLAN_SHAPE,
+    FAILURE_CLASS_DELIVERY_SPLIT,
+})
+
 
 def _is_plugin_discovery_search(detail: str) -> bool:
     """Return True if detail looks like a plugin discovery search query."""
     return bool(_PLUGIN_DISCOVERY_RE.search(detail))
+
+
+def classify_failure_class(errors_or_reason: list[str] | str | None) -> str:
+    """Map validation/review/runtime failures onto a shared internal class."""
+    if isinstance(errors_or_reason, list):
+        text = " ".join(errors_or_reason).lower()
+    else:
+        text = str(errors_or_reason or "").lower()
+
+    if (
+        "tool args validation failed" in text
+        or "tool args invalid" in text
+        or "tool args is not valid json" in text
+        or "missing required arg:" in text
+        or "files must contain file paths only" in text
+    ):
+        return FAILURE_CLASS_SEMANTIC_TOOL
+    if (
+        "workspace file" in text
+        or "module not found" in text
+        or "no module named" in text
+        or "no such file" in text
+        or "cannot find" in text and "file" in text
+    ):
+        return FAILURE_CLASS_WORKSPACE_ROUTING
+    if (
+        "blocked by safety rule" in text
+        or "tool installation blocked" in text
+        or "blocked by pre-exec hook" in text
+        or "command blocked" in text
+    ):
+        return FAILURE_CLASS_BLOCKED_POLICY
+    if (
+        "timed out" in text
+        or "rate limit" in text
+        or "api down" in text
+        or "executable not found" in text
+        or "cannot translate task to shell command" in text
+        or "search failed:" in text
+        or "review failed" in text
+    ):
+        return FAILURE_CLASS_EXTERNAL_DEP
+    if _mentions_user_delivery(text):
+        return FAILURE_CLASS_DELIVERY_SPLIT
+    if any(pattern in text for pattern in _PLAN_REWRITE_ERROR_PATTERNS):
+        return FAILURE_CLASS_PLAN_SHAPE
+    if any(pattern in text for pattern in _TASK_REPAIR_ERROR_PATTERNS):
+        return FAILURE_CLASS_TASK_SHAPE
+    if "task " in text and ("must have" in text or "unknown type" in text):
+        return FAILURE_CLASS_TASK_SHAPE
+    return FAILURE_CLASS_PLAN_SHAPE
 
 
 def _classify_validation_errors(errors: list[str]) -> str:
@@ -483,9 +551,10 @@ def _classify_validation_errors(errors: list[str]) -> str:
     joined = " ".join(errors).lower()
     if any(pattern in joined for pattern in _APPROACH_RESET_ERROR_PATTERNS):
         return VALIDATION_RETRY_APPROACH_RESET
-    if any(pattern in joined for pattern in _TASK_REPAIR_ERROR_PATTERNS):
+    failure_class = classify_failure_class(errors)
+    if failure_class in {FAILURE_CLASS_TASK_SHAPE, FAILURE_CLASS_SEMANTIC_TOOL}:
         return VALIDATION_RETRY_TASK_REPAIR
-    if any(pattern in joined for pattern in _PLAN_REWRITE_ERROR_PATTERNS):
+    if failure_class in {FAILURE_CLASS_PLAN_SHAPE, FAILURE_CLASS_DELIVERY_SPLIT}:
         return VALIDATION_RETRY_PLAN_REWRITE
 
     task_nums = {

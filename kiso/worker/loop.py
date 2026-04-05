@@ -60,6 +60,7 @@ from kiso.brain import (
     run_planner,
     run_reviewer,
     run_summarizer,
+    classify_failure_class,
     prepare_reviewer_output,
     check_safety_rules,
     clean_learn_items,
@@ -1047,6 +1048,7 @@ def _make_plan_output(
     *,
     file_refs: list[dict] | None = None,
     artifact_refs: list[dict] | None = None,
+    failure_class: str | None = None,
 ) -> dict:
     """Build a plan-output entry dict (shared by all task handlers).
 
@@ -1060,6 +1062,8 @@ def _make_plan_output(
         entry["file_refs"] = file_refs
     if artifact_refs:
         entry["artifact_refs"] = artifact_refs
+    if failure_class:
+        entry["failure_class"] = failure_class
     return entry
 
 
@@ -1098,6 +1102,7 @@ async def _fail_task_and_audit(
     _audit_task(ctx, task_id, task_type, detail, "failed", 0)
     plan_output = _make_plan_output(
         task_idx, task_type, detail, error, "failed", session=ctx.session,
+        failure_class=classify_failure_class(replan_reason or stuck_reason or error),
     )
     if stuck_reason:
         return _TaskHandlerResult(
@@ -1319,6 +1324,8 @@ async def _review_stop_stuck(
     if ctx.slog:
         ctx.slog.info("Review → stuck: %s", stuck_reason)
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if plan_output is not None:
+        plan_output["failure_class"] = classify_failure_class(stuck_reason)
     return _TaskHandlerResult(
         stop=True, stop_success=False, stop_stuck=stuck_reason,
         plan_output=plan_output,
@@ -1339,6 +1346,8 @@ async def _review_stop_replan(
         else:
             ctx.slog.info("Review → replan: %s", replan_reason)
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
+    if plan_output is not None:
+        plan_output["failure_class"] = classify_failure_class(replan_reason)
     if plan_output is not None and retry_hint:
         plan_output["retry_hint"] = retry_hint
     return _TaskHandlerResult(
@@ -2628,12 +2637,16 @@ async def _run_planning_loop(
         # Also count tasks where reviewer set retry_hint=null (deterministic failures).
         retry_hints = []
         no_retry_count = 0
+        failure_classes = []
         for po in plan_outputs:
             hint = po.get("retry_hint")
             if hint:
                 retry_hints.append(hint)
             elif "retry_hint" in po and hint is None:
                 no_retry_count += 1
+            failure_class = po.get("failure_class")
+            if failure_class and failure_class not in failure_classes:
+                failure_classes.append(failure_class)
         reviewer_summaries = [
             po["reviewer_summary"] for po in plan_outputs
             if po.get("reviewer_summary")
@@ -2653,6 +2666,8 @@ async def _run_planning_loop(
             history_entry["retry_hints"] = retry_hints
         if no_retry_count:
             history_entry["no_retry_count"] = no_retry_count
+        if failure_classes:
+            history_entry["failure_classes"] = failure_classes
         if reviewer_summaries:
             history_entry["reviewer_summaries"] = reviewer_summaries
         replan_history.append(history_entry)

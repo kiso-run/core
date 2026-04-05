@@ -67,6 +67,7 @@ from kiso.brain import (
     REVIEW_STATUS_STUCK,
     _retry_llm_with_validation,
     _classify_validation_errors,
+    classify_failure_class,
     _build_validation_feedback,
     _classify_install_mode,
     _build_install_mode_context,
@@ -76,6 +77,12 @@ from kiso.brain import (
     VALIDATION_RETRY_TASK_REPAIR,
     VALIDATION_RETRY_PLAN_REWRITE,
     VALIDATION_RETRY_APPROACH_RESET,
+    FAILURE_CLASS_BLOCKED_POLICY,
+    FAILURE_CLASS_DELIVERY_SPLIT,
+    FAILURE_CLASS_PLAN_SHAPE,
+    FAILURE_CLASS_SEMANTIC_TOOL,
+    FAILURE_CLASS_TASK_SHAPE,
+    FAILURE_CLASS_WORKSPACE_ROUTING,
 )
 from kiso.config import Config, Provider, KISO_DIR, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 from kiso.llm import LLMError
@@ -5253,6 +5260,36 @@ class TestM186EscalatingValidationError:
 
 
 class TestValidationRetryClassification:
+    def test_failure_classifies_task_shape_validation(self):
+        assert classify_failure_class(
+            ["Task 2: msg task must have expect = null"]
+        ) == FAILURE_CLASS_TASK_SHAPE
+
+    def test_failure_classifies_semantic_tool_validation(self):
+        assert classify_failure_class(
+            ["Tool args validation failed: files must contain file paths only"]
+        ) == FAILURE_CLASS_SEMANTIC_TOOL
+
+    def test_failure_classifies_workspace_routing(self):
+        assert classify_failure_class(
+            "ModuleNotFoundError: No module named 'kiso_test_f42'"
+        ) == FAILURE_CLASS_WORKSPACE_ROUTING
+
+    def test_failure_classifies_blocked_policy(self):
+        assert classify_failure_class(
+            "Blocked by safety rule: Never delete files in /etc"
+        ) == FAILURE_CLASS_BLOCKED_POLICY
+
+    def test_failure_classifies_delivery_split(self):
+        assert classify_failure_class(
+            "Task 2: action task contains tell me / dimmi style delivery wording"
+        ) == FAILURE_CLASS_DELIVERY_SPLIT
+
+    def test_failure_classifies_plan_shape(self):
+        assert classify_failure_class(
+            ["Plan has only msg tasks — include at least one exec/tool/search task for action requests."]
+        ) == FAILURE_CLASS_PLAN_SHAPE
+
     def test_classifies_task_repair_for_single_task_field_error(self):
         classification = _classify_validation_errors(
             ["Task 2: msg task must have expect = null"]

@@ -10407,6 +10407,18 @@ class TestRetryHintInReplanContext:
         assert "Reviewer hint" not in ctx
         assert "page not found" in ctx
 
+    def test_failure_classes_in_replan_history(self):
+        """Failure classes are surfaced in replan context for tighter recovery."""
+        history = [{
+            "goal": "test python module",
+            "failure": "ModuleNotFoundError: No module named 'kiso_test_f42'",
+            "what_was_tried": ["[exec] python3 -c ..."],
+            "key_outputs": [],
+            "failure_classes": ["workspace_file_routing"],
+        }]
+        ctx = _build_replan_context([], [], "still failing", history)
+        assert "Failure classes: workspace_file_routing" in ctx
+
 
 # --- M147: Suggested Fixes section in replan context ---
 
@@ -12207,6 +12219,7 @@ class TestFailTaskAndAudit:
         assert result.stop_replan == "broken"
         assert result.plan_output["status"] == "failed"
         assert result.plan_output["output"] == "broken"
+        assert result.plan_output["failure_class"] == "plan_shape_error"
         mock_update.assert_awaited_once()
         mock_audit.log_task.assert_called_once()
 
@@ -12217,9 +12230,11 @@ class TestFailTaskAndAudit:
              patch("kiso.worker.loop.audit"), \
              patch("kiso.worker.loop._save_large_output", side_effect=lambda s, i, o: o):
             result = await _fail_task_and_audit(
-                ctx, 42, "tool", "d", "err", 1, replan_reason="custom reason",
+                ctx, 42, "tool", "d", "Tool args validation failed: missing required arg: url", 1,
+                replan_reason="Tool args validation failed: missing required arg: url",
             )
-        assert result.stop_replan == "custom reason"
+        assert result.stop_replan == "Tool args validation failed: missing required arg: url"
+        assert result.plan_output["failure_class"] == "semantic_tool_validation"
 
     @pytest.mark.asyncio
     async def test_custom_output_and_stderr(self, ctx):

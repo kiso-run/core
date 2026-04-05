@@ -1146,6 +1146,8 @@ def _format_replan_history(replan_history: list[dict]) -> str | None:
     for h in replan_history:
         tried = ", ".join(h.get("what_was_tried", [])) or "nothing"
         entry = f"- Goal: {h['goal']}, Tried: {tried}, Failure: {h['failure']}"
+        if h.get("failure_classes"):
+            entry += f"\n  Failure classes: {', '.join(h['failure_classes'])}"
         for hint in h.get("retry_hints", []):
             entry += f"\n  Reviewer hint: {hint}"
         if h.get("no_retry_count") and not h.get("retry_hints"):
