@@ -143,13 +143,20 @@ _APPROVAL_KEYWORDS = frozenset({
 })
 _INSTALL_MODE_NONE = "none"
 _INSTALL_MODE_KISO_TOOL = "kiso_tool"
+_INSTALL_MODE_UNKNOWN_KISO_TOOL = "unknown_kiso_tool"
 _INSTALL_MODE_PYTHON_LIB = "python_lib"
 _INSTALL_MODE_SYSTEM_PKG = "system_pkg"
 _INSTALL_TARGET_RE = re.compile(
     r"\b(?:install|installa|installare|installer)\b"
     r"(?:\s+(?:the|a|an|il|lo|la|i|gli|le|un|una))?"
     r"(?:\s+(?:kiso\s+tool|tool|plugin|package|pkg|pacchetto|libreria|library|module|modulo|python\s+package|python\s+library|python\s+module|system\s+package|pacchetto\s+di\s+sistema))?"
-    r"\s+([a-z0-9][a-z0-9._+-]{0,63})\b",
+    r"\s+['\"`]?"
+    r"([a-z0-9][a-z0-9._+-]{0,63})"
+    r"['\"`]?\b",
+    re.IGNORECASE,
+)
+_NAMED_TOOL_TARGET_RE = re.compile(
+    r"\b(?:kiso\s+tool|tool|plugin|connector|skill)\b\s+['\"`]([a-z0-9][a-z0-9._+-]{0,63})['\"`]",
     re.IGNORECASE,
 )
 _SYSTEM_INSTALL_HINT_RE = re.compile(
@@ -158,6 +165,10 @@ _SYSTEM_INSTALL_HINT_RE = re.compile(
 )
 _PYTHON_INSTALL_HINT_RE = re.compile(
     r"\b(?:uv\s+pip|pip|pypi|python\s+package|python\s+library|python\s+module|pacchetto python|libreria python|modulo python)\b",
+    re.IGNORECASE,
+)
+_KISO_TOOL_SIGNAL_RE = re.compile(
+    r"\b(?:kiso\s+tool|kiso\s+plugin|plugin|connector|skill|registry)\b",
     re.IGNORECASE,
 )
 _COMMON_PYTHON_PACKAGES = frozenset({
@@ -224,10 +235,23 @@ def _parse_registry_hint_names(registry_hints: str) -> frozenset[str]:
 
 def _extract_install_target(message: str) -> str | None:
     """Best-effort package/tool target extraction from install requests."""
+    named_match = _NAMED_TOOL_TARGET_RE.search(message)
+    if named_match and any(kw in message.lower() for kw in _INSTALL_KEYWORDS):
+        return named_match.group(1).lower()
     match = _INSTALL_TARGET_RE.search(message)
     if not match:
         return None
     return match.group(1).lower()
+
+
+def _is_explicit_named_tool_request(message: str, target: str) -> bool:
+    """Return True when the user explicitly frames *target* as a named tool/plugin."""
+    if not target:
+        return False
+    if _KISO_TOOL_SIGNAL_RE.search(message):
+        return True
+    escaped = re.escape(target)
+    return bool(re.search(rf"\btool\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))
 
 
 def _classify_install_mode(
@@ -252,7 +276,15 @@ def _classify_install_mode(
         return {
             "mode": _INSTALL_MODE_KISO_TOOL,
             "target": target,
+            "target_installed": target in installed_names,
             "reason": "target matches kiso tool context",
+        }
+
+    if _is_explicit_named_tool_request(message, target):
+        return {
+            "mode": _INSTALL_MODE_UNKNOWN_KISO_TOOL,
+            "target": target,
+            "reason": "user explicitly requested a named tool/plugin not present in current kiso tool context",
         }
 
     if _SYSTEM_INSTALL_HINT_RE.search(msg_lower):
@@ -304,6 +336,10 @@ def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
     if mode == _INSTALL_MODE_KISO_TOOL:
         lines.append("Route: kiso tool proposal — set needs_install + approval msg only.")
         lines.append("Do not use apt-get or uv pip install for this target.")
+    elif mode == _INSTALL_MODE_UNKNOWN_KISO_TOOL:
+        lines.append("Route: unknown named tool/plugin request — msg only.")
+        lines.append("Do not set needs_install and do not use apt-get, uv pip install, or kiso tool install.")
+        lines.append("Explain that the named tool is not available in the current registry/tool context and ask for a git URL or installation instructions if it is private.")
     elif mode == _INSTALL_MODE_PYTHON_LIB:
         lines.append(f"Route: Python library — exec `uv pip install {target}`.")
         lines.append("Do not set needs_install and do not use the system package manager.")
@@ -1440,6 +1476,88 @@ def _validate_plan_ordering(
     return errors
 
 
+def _validate_install_route_consistency(
+    plan: dict,
+    tasks: list[dict],
+    install_route: dict[str, str] | None,
+    *,
+    install_approved: bool,
+) -> list[str]:
+    """Validate that the plan stays consistent with the deterministic install route."""
+    if not install_route:
+        return []
+
+    mode = install_route.get("mode", _INSTALL_MODE_NONE)
+    target = (install_route.get("target") or "").lower()
+    if mode == _INSTALL_MODE_NONE or not target:
+        return []
+
+    errors: list[str] = []
+    exec_details = [
+        (i, (t.get("detail") or ""))
+        for i, t in enumerate(tasks, 1)
+        if t.get("type") == TASK_TYPE_EXEC
+    ]
+    non_msg_types = [t.get("type") for t in tasks if t.get("type") != TASK_TYPE_MSG]
+
+    if mode == _INSTALL_MODE_UNKNOWN_KISO_TOOL:
+        if plan.get("needs_install"):
+            errors.append(
+                f"Unknown named tool '{target}' is not in the installed/registry context. "
+                f"Do NOT set needs_install."
+            )
+        if non_msg_types:
+            errors.append(
+                f"Unknown named tool '{target}' is not available in the current kiso tool context. "
+                f"Plan ONLY msg tasks explaining that it cannot be installed from the current registry/tool set, "
+                f"and suggest a git URL or private installation instructions if applicable."
+            )
+        return errors
+
+    if mode != _INSTALL_MODE_KISO_TOOL or install_route.get("target_installed"):
+        return errors
+
+    matching_kiso_install = False
+    for i, detail in exec_details:
+        lower = detail.lower()
+        name_match = _INSTALL_NAME_RE.search(detail)
+        if name_match:
+            install_name = name_match.group(1).lower()
+            if install_name == target:
+                matching_kiso_install = True
+                continue
+            errors.append(
+                f"Task {i}: install routing target is '{target}', but this plan installs '{install_name}'. "
+                f"Use `kiso tool install {target}` for the approved registry tool."
+            )
+            continue
+        if _SYSTEM_INSTALL_HINT_RE.search(lower) or _PIP_INSTALL_RE.search(lower):
+            errors.append(
+                f"Task {i}: install routing target '{target}' is a kiso tool. "
+                f"Do not use system package managers or pip/uv pip here; use `kiso tool install {target}`."
+            )
+            continue
+        if install_approved and ("install" in lower or target in lower):
+            errors.append(
+                f"Task {i}: approved kiso tool install for '{target}' must be explicit. "
+                f"Use `kiso tool install {target}`, then replan."
+            )
+
+    if install_approved and not matching_kiso_install:
+        errors.append(
+            f"Approved install for kiso tool '{target}' requires an exec task that runs "
+            f"`kiso tool install {target}`, then a final replan task."
+        )
+
+    if not install_approved and not plan.get("needs_install") and non_msg_types:
+        errors.append(
+            f"Known registry tool '{target}' is not installed yet. "
+            f"Before approval, propose installation with needs_install + msg only."
+        )
+
+    return errors
+
+
 # Types that can participate in parallel groups.
 _GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL})
 
@@ -1492,6 +1610,7 @@ def validate_plan(
     install_approved: bool = False,
     registry_hint_names: frozenset[str] | None = None,
     force_msg_only: bool = False,
+    install_route: dict[str, str] | None = None,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
@@ -1528,6 +1647,9 @@ def validate_plan(
         tasks, is_replan, install_approved,
         has_needs_install=bool(plan.get("needs_install")),
         has_knowledge=bool(plan.get("knowledge")),
+    ))
+    errors.extend(_validate_install_route_consistency(
+        plan, tasks, install_route, install_approved=install_approved,
     ))
     errors.extend(_validate_plan_groups(tasks))
 
@@ -2163,6 +2285,12 @@ async def run_planner(
     # Extract registry hint names for install validation (M862).
     _sysenv = get_system_env(config)
     _reg_hint_names = _parse_registry_hint_names(_sysenv.get("registry_hints", ""))
+    install_route = _classify_install_mode(
+        new_message,
+        _sysenv,
+        installed_tool_names=installed_names,
+        registry_hint_names=_reg_hint_names,
+    )
 
     # inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
@@ -2186,6 +2314,7 @@ async def run_planner(
             install_approved=install_approved,
             registry_hint_names=_reg_hint_names,
             force_msg_only=_force_msg,
+            install_route=install_route,
         )
         if any(_TOOL_UNAVAILABLE_MARKER in e for e in errs):
             _force_msg = True

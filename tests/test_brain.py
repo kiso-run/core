@@ -3840,17 +3840,11 @@ class TestM82PlannerAskThenAdd:
 
     async def test_m712_install_status_injected_when_approved(self, db, config):
         """M712: Install Status section appears when install_approved=True."""
-        captured: list[dict] = []
-
-        async def _capture(cfg, role, messages, **kw):
-            captured.extend(messages)
-            return _MSG_PLAN_FOR_USER
-
-        with patch("kiso.brain.call_llm", side_effect=_capture):
-            await run_planner(db, config, "sess1", "admin", "install browser",
-                              install_approved=True)
-
-        user_msg = next((m for m in captured if m["role"] == "user"), None)
+        messages, _, _ = await build_planner_messages(
+            db, config, "sess1", "admin", "install browser",
+            install_approved=True,
+        )
+        user_msg = next((m for m in messages if m["role"] == "user"), None)
         assert user_msg is not None
         assert "Install Status" in user_msg["content"]
         assert "user approved" in user_msg["content"]
@@ -3858,17 +3852,11 @@ class TestM82PlannerAskThenAdd:
 
     async def test_m712_install_status_absent_when_not_approved(self, db, config):
         """M712: Install Status section absent when install_approved=False."""
-        captured: list[dict] = []
-
-        async def _capture(cfg, role, messages, **kw):
-            captured.extend(messages)
-            return _MSG_PLAN_FOR_USER
-
-        with patch("kiso.brain.call_llm", side_effect=_capture):
-            await run_planner(db, config, "sess1", "admin", "hello",
-                              install_approved=False)
-
-        user_msg = next((m for m in captured if m["role"] == "user"), None)
+        messages, _, _ = await build_planner_messages(
+            db, config, "sess1", "admin", "hello",
+            install_approved=False,
+        )
+        user_msg = next((m for m in messages if m["role"] == "user"), None)
         assert user_msg is not None
         assert "Install Status" not in user_msg["content"]
 
@@ -7341,6 +7329,16 @@ class TestM1083InstallRoutingHelper:
         assert route["mode"] == "system_pkg"
         assert route["target"] == "timg"
 
+    def test_unknown_named_tool_mode(self):
+        route = _classify_install_mode(
+            "installa e usa il tool 'zzz_test_notreal' per analizzare il sistema",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "unknown_kiso_tool"
+        assert route["target"] == "zzz_test_notreal"
+
     def test_context_formats_python_route(self):
         text = _build_install_mode_context(
             {"mode": "python_lib", "target": "flask", "reason": "target matches common Python package catalog"},
@@ -7348,6 +7346,28 @@ class TestM1083InstallRoutingHelper:
         )
         assert "Mode: python_lib" in text
         assert "uv pip install flask" in text
+
+    def test_context_formats_unknown_named_tool_route(self):
+        text = _build_install_mode_context(
+            {
+                "mode": "unknown_kiso_tool",
+                "target": "zzz_test_notreal",
+                "reason": "user explicitly requested a named tool/plugin not present in current kiso tool context",
+            },
+            {"os": {"pkg_manager": "apt"}},
+        )
+        assert "unknown named tool/plugin request" in text
+        assert "Do not set needs_install" in text
+
+    def test_generic_install_without_tool_signal_stays_system_pkg(self):
+        route = _classify_install_mode(
+            "install jq",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "system_pkg"
+        assert route["target"] == "jq"
 
 
 class TestM261BrieferModuleCoverage:
@@ -9362,6 +9382,67 @@ class TestM950ForceMsgOnly:
         errors = validate_plan(plan, installed_skills=[],
                                registry_hint_names=frozenset({"websearch"}))
         assert not any(_TOOL_UNAVAILABLE_MARKER in e for e in errors)
+
+
+class TestM1198InstallRouteValidation:
+    def _exec_msg_plan(self, detail: str) -> dict:
+        return {"goal": "test", "needs_install": None, "tasks": [
+            {"type": "exec", "detail": detail, "expect": "installed"},
+            {"type": "msg", "detail": "Answer in English. result", "expect": None, "tool": None, "args": None},
+        ]}
+
+    def _msg_only_plan(self, detail: str = "Answer in English. unavailable") -> dict:
+        return {"goal": "test", "needs_install": None, "tasks": [
+            {"type": "msg", "detail": detail, "expect": None, "tool": None, "args": None},
+        ]}
+
+    def test_unknown_named_tool_route_requires_msg_only(self):
+        errors = validate_plan(
+            self._exec_msg_plan("Install zzz_test_notreal with apt-get"),
+            install_route={"mode": "unknown_kiso_tool", "target": "zzz_test_notreal"},
+        )
+        assert any("ONLY msg tasks" in e or "not available in the current kiso tool context" in e for e in errors)
+
+    def test_unknown_named_tool_route_rejects_needs_install(self):
+        plan = self._msg_only_plan()
+        plan["needs_install"] = ["zzz_test_notreal"]
+        errors = validate_plan(
+            plan,
+            install_route={"mode": "unknown_kiso_tool", "target": "zzz_test_notreal"},
+        )
+        assert any("Do NOT set needs_install" in e for e in errors)
+
+    def test_approved_kiso_tool_route_requires_explicit_kiso_install(self):
+        errors = validate_plan(
+            self._exec_msg_plan("Install browser"),
+            install_approved=True,
+            install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
+        )
+        assert any("kiso tool install browser" in e for e in errors)
+
+    def test_approved_kiso_tool_route_rejects_system_package_manager(self):
+        errors = validate_plan(
+            self._exec_msg_plan("Use apt-get to install browser"),
+            install_approved=True,
+            install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
+        )
+        assert any("Do not use system package managers" in e for e in errors)
+
+    def test_approved_kiso_tool_route_accepts_matching_kiso_install(self):
+        plan = {
+            "goal": "test",
+            "needs_install": None,
+            "tasks": [
+                {"type": "exec", "detail": "Run kiso tool install browser", "expect": "browser installed"},
+                {"type": "replan", "detail": "Continue with original request", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(
+            plan,
+            install_approved=True,
+            install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
+        )
+        assert not any("kiso tool install browser" in e for e in errors)
 
 
 class TestNeedsInstallCoherence:
