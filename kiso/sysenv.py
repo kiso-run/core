@@ -471,7 +471,12 @@ def build_system_env_section(env: dict, session: str = "") -> str:
             lines.append("Workspace files: (empty)")
         lines.append("File search: use `find` (by name/date/size), `grep`/`rg` (by content), `file` (by type) in exec tasks")
     lines.append(f"Exec env: {env['exec_env']}")
-    lines.append(f"Persistent dir: ~/.kiso/sys/ (git config, ssh keys, runtime binaries)")
+    sys_dir = KISO_DIR / "sys"
+    persistent_parts = ["git config", "ssh keys", "runtime binaries"]
+    ssh_pub = sys_dir / "ssh" / "id_ed25519.pub"
+    if ssh_pub.exists():
+        persistent_parts.append(f"ssh pub key: {ssh_pub}")
+    lines.append(f"Persistent dir: {sys_dir} ({', '.join(persistent_parts)})")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
     lines.append(f"Reference docs: {env['reference_docs_path']} (tool/connector authoring guides — cat before planning)")
     lines.append(f"Plugin registry: {env['registry_url']}")

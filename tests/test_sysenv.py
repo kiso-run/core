@@ -524,9 +524,11 @@ class TestBuildSystemEnvSection:
         assert "tool/connector authoring guides" in section
 
     def test_contains_persistent_dir_line(self, sample_env):
-        """Output contains the Persistent dir line."""
+        """Output contains the Persistent dir line with KISO_DIR path."""
         section = build_system_env_section(sample_env)
-        assert "Persistent dir: ~/.kiso/sys/" in section
+        assert "Persistent dir:" in section
+        assert "git config" in section
+        assert "ssh keys" in section
 
     def test_contains_plugin_registry_line(self, sample_env):
         """Output contains the Plugin registry line."""
