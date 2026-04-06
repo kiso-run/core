@@ -163,17 +163,27 @@ def _build_tool_file_refs(
     task_index: int,
     tool_name: str | None,
 ) -> list[dict]:
-    """Build canonical file refs for tool args that point at real files."""
+    """Build canonical file refs for tool args that point at real files.
+
+    Only inspects args that are plausible file references — free-form
+    instruction strings (e.g. aider.message) are skipped to avoid
+    ``OSError`` from impossibly long path candidates.
+    """
     workspace = _session_workspace(session)
     refs: list[dict] = []
     seen: set[str] = set()
     for value in args.values():
         if not isinstance(value, str):
             continue
-        candidate = Path(value)
-        if not candidate.is_absolute():
-            candidate = workspace / value
-        if not candidate.exists() or not candidate.is_file():
+        if _looks_implausible_file_reference(value):
+            continue
+        try:
+            candidate = Path(value)
+            if not candidate.is_absolute():
+                candidate = workspace / value
+            if not candidate.exists() or not candidate.is_file():
+                continue
+        except OSError:
             continue
         file_ref = _make_file_ref(
             candidate,

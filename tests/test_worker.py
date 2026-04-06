@@ -13359,3 +13359,59 @@ class TestSafetyRulePreExecCheck:
 
         assert result.stop is False
         assert result.completed_row is not None
+
+
+# --- M1211: Tool-arg file-reference harvesting boundary hardening ---
+
+
+class TestBuildToolFileRefs:
+    """M1211: _build_tool_file_refs skips free-form strings and handles OSError."""
+
+    def _refs(self, session, args, *, task_index=1, tool_name="test"):
+        from kiso.worker.dependencies import _build_tool_file_refs
+        return _build_tool_file_refs(session, args, task_index=task_index, tool_name=tool_name)
+
+    def test_legitimate_file_arg_produces_ref(self, tmp_path):
+        """A real file in the workspace is harvested as a file ref."""
+        test_file = tmp_path / "sessions" / "s1" / "data.txt"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("hello")
+        with patch("kiso.worker.dependencies._session_workspace", return_value=test_file.parent):
+            refs = self._refs("s1", {"file": "data.txt"}, tool_name="ocr")
+        assert len(refs) == 1
+        assert "data.txt" in refs[0]["file_id"]
+
+    def test_freeform_string_arg_skipped(self, tmp_path):
+        """Long instruction strings (like aider.message) must not produce file refs."""
+        workspace = tmp_path / "sessions" / "s1"
+        workspace.mkdir(parents=True, exist_ok=True)
+        long_message = (
+            "Create a Python script named text_stats.py that reads all text from "
+            "standard input (sys.stdin). It should count the total number of characters "
+            "and the total number of lines. Print exactly two lines."
+        )
+        with patch("kiso.worker.dependencies._session_workspace", return_value=workspace):
+            refs = self._refs("s1", {"message": long_message}, tool_name="aider")
+        assert refs == []
+
+    def test_oserror_on_impossible_path_handled(self, tmp_path):
+        """OSError from impossibly long path candidates must not crash."""
+        workspace = tmp_path / "sessions" / "s1"
+        workspace.mkdir(parents=True, exist_ok=True)
+        bad_value = "a" * 300
+        with patch("kiso.worker.dependencies._session_workspace", return_value=workspace):
+            refs = self._refs("s1", {"arg": bad_value})
+        assert refs == []
+
+    def test_mixed_args_only_file_harvested(self, tmp_path):
+        """Only the file arg produces a ref; the message arg is skipped."""
+        workspace = tmp_path / "sessions" / "s1"
+        workspace.mkdir(parents=True, exist_ok=True)
+        real_file = workspace / "screenshot.png"
+        real_file.write_bytes(b"\x89PNG")
+        long_msg = "Write a comprehensive analysis of the screenshot content and output findings."
+        args = {"file": "screenshot.png", "message": long_msg}
+        with patch("kiso.worker.dependencies._session_workspace", return_value=workspace):
+            refs = self._refs("s1", args, task_index=2, tool_name="aider")
+        assert len(refs) == 1
+        assert "screenshot.png" in refs[0]["file_id"]
