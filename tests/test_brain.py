@@ -9686,6 +9686,63 @@ class TestM1198InstallRouteValidation:
         assert not any("kiso tool install browser" in e for e in errors)
 
 
+class TestM1210ExplicitInstallRequest:
+    """M1210: explicit user install request allows direct exec without prior approval."""
+
+    _KISO_ROUTE = {"mode": "kiso_tool", "target": "browser", "target_installed": False,
+                    "explicit_install_request": True}
+    _KISO_ROUTE_NO_EXPLICIT = {"mode": "kiso_tool", "target": "browser",
+                                "target_installed": False}
+
+    def _install_replan_plan(self):
+        return {
+            "goal": "install browser", "needs_install": None, "tasks": [
+                {"type": "exec", "detail": "Run kiso tool install browser", "expect": "installed"},
+                {"type": "replan", "detail": "Continue", "expect": None, "tool": None, "args": None},
+            ],
+        }
+
+    def _install_msg_plan(self):
+        return {
+            "goal": "install browser", "needs_install": None, "tasks": [
+                {"type": "exec", "detail": "Run kiso tool install browser", "expect": "installed"},
+                {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
+            ],
+        }
+
+    def test_explicit_install_request_allows_exec(self):
+        """Direct install request + matching kiso install exec → no 'not installed' error."""
+        errors = validate_plan(self._install_replan_plan(), install_route=self._KISO_ROUTE)
+        assert not any("is not installed yet" in e for e in errors)
+
+    def test_explicit_install_request_requires_replan_not_msg(self):
+        """Direct install exec must end with replan, not msg."""
+        errors = validate_plan(self._install_msg_plan(), install_route=self._KISO_ROUTE)
+        assert any("must end with replan" in e for e in errors)
+
+    def test_capability_request_requires_proposal(self):
+        """Without explicit_install_request flag, proposal is still required."""
+        plan = self._install_replan_plan()
+        errors = validate_plan(plan, install_route=self._KISO_ROUTE_NO_EXPLICIT)
+        assert any("is not installed yet" in e for e in errors)
+
+    def test_approval_after_proposal_still_works(self):
+        """install_approved=True path remains valid."""
+        errors = validate_plan(
+            self._install_replan_plan(),
+            install_approved=True,
+            install_route=self._KISO_ROUTE_NO_EXPLICIT,
+        )
+        assert not any("is not installed yet" in e for e in errors)
+
+    def test_mixed_needs_install_plus_exec_still_rejected(self):
+        """needs_install + exec install in same plan is still blocked."""
+        plan = self._install_replan_plan()
+        plan["needs_install"] = ["browser"]
+        errors = validate_plan(plan, install_route=self._KISO_ROUTE)
+        assert any("CANNOT install in the same plan" in e for e in errors)
+
+
 class TestNeedsInstallCoherence:
     """M640: needs_install + tool task for same tool → error."""
 

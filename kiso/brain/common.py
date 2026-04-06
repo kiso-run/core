@@ -292,6 +292,7 @@ def _classify_install_mode(
             "mode": _INSTALL_MODE_KISO_TOOL,
             "target": target,
             "target_installed": target in installed_names,
+            "explicit_install_request": True,
             "reason": "target matches kiso tool context",
         }
 

@@ -524,11 +524,21 @@ def _validate_install_route_consistency(
             f"`kiso tool install {target}`, then a final replan task."
         )
 
+    explicit_request = install_route.get("explicit_install_request", False)
     if not install_approved and not plan.get("needs_install") and non_msg_types:
-        errors.append(
-            f"Known registry tool '{target}' is not installed yet. "
-            f"Before approval, propose installation with needs_install + msg only."
-        )
+        if explicit_request and matching_kiso_install:
+            # Explicit install request must end with replan so the next cycle
+            # can fulfill any pending capability request.
+            if tasks and tasks[-1].get("type") == TASK_TYPE_MSG:
+                errors.append(
+                    f"Explicit install for kiso tool '{target}' must end with replan, "
+                    f"not msg — the original request may still be pending."
+                )
+        else:
+            errors.append(
+                f"Known registry tool '{target}' is not installed yet. "
+                f"Before approval, propose installation with needs_install + msg only."
+            )
 
     return errors
 
