@@ -30,6 +30,7 @@ for _module in _MODULES:
 call_llm = _common.call_llm
 KISO_DIR = _common.KISO_DIR
 discover_tools = _planner.discover_tools
+discover_recipes = _planner.discover_recipes
 discover_connectors = _planner.discover_connectors
 get_registry_tools = _planner.get_registry_tools
 get_system_env = _planner.get_system_env
@@ -55,6 +56,7 @@ _PATCH_TARGETS: dict[str, tuple[ModuleType, ...]] = {
     "call_llm": (_common, _text_roles),
     "KISO_DIR": (_common,),
     "discover_tools": (_planner,),
+    "discover_recipes": (_planner,),
     "discover_connectors": (_planner,),
     "get_registry_tools": (_planner,),
     "get_system_env": (_planner,),
