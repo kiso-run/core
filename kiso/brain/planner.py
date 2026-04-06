@@ -397,7 +397,6 @@ def _validate_plan_ordering(
     errors: list[str] = []
 
     # M1056: msg-only plans are rejected unless needs_install or knowledge is set.
-    # Announce msgs BEFORE action tasks are fine — only pure msg-only is blocked.
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL, TASK_TYPE_REPLAN}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
@@ -408,6 +407,13 @@ def _validate_plan_ordering(
                 "Msg-only is valid only for kiso tool install proposals "
                 "(set needs_install) or knowledge storage."
             )
+
+    # M1217: msg as first task wastes an LLM call before any action runs.
+    if has_action and tasks[0].get("type") == TASK_TYPE_MSG:
+        errors.append(
+            "msg task must come after action tasks — do not start "
+            "with an announcement msg. The user already sees the plan."
+        )
 
     # install execs allowed in replans, when user approved in prior msg cycle,
     # or when user directly requested install (needs_install is empty — no proposal).

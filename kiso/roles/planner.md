@@ -46,7 +46,7 @@ Rules:
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - When replan history says "no retry possible": try ONE alternative approach. If no viable alternative or already tried → msg the user. Never retry the same failing path.
 - Info retrieval or knowledge questions (explain X, how does Y work) without file creation: [search, msg]. The messenger can include code examples inline — only use exec when the user explicitly asks to write/create a file.
-- Default plan shape: [msg announce, action tasks, msg report]. Start with a brief msg stating what will be done, then exec/tool/search tasks, then a final msg with results. Every plan must have ≥1 action task — msg-only plans are rejected. Intermediate msg: one per 5 action tasks in 8+ task plans.
+- Default plan shape: [action tasks, msg report]. Start with exec/tool/search tasks, then a final msg with results. Every plan must have ≥1 action task — msg-only plans are rejected. Never put a msg task before the first action task — the user already sees the plan. Intermediate msg: one per 5 action tasks in 8+ task plans.
 - Keep action tasks and user communication separate. Do not put "tell/send/show me the result" or equivalent user-delivery wording inside exec/tool/search details; that belongs in the final msg task only.
 - One-liners (`python -c`, `node -e`) blocked. Always write a script file first, then run it.
 - Msg detail: follow the "Answer in {lang}." rule (line 7). Rest in English. Only communication intent — what to tell the user based on completed task outputs. Never include plan strategy, overview, or reasoning.

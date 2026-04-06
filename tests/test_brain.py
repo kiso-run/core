@@ -535,25 +535,25 @@ class TestValidatePlan:
 
     # --- M137: msg must come after data-gathering tasks ---
 
-    def test_msg_before_exec_allowed(self):
-        """M1052: [msg, exec, msg] announce pattern is now valid."""
+    def test_msg_before_exec_rejected(self):
+        """M1217: [msg, exec, msg] — msg first is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian. describe results", "expect": None, "tool": None, "args": None},
             {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("msg task must come after" in e for e in errors)
+        assert any("msg task must come after" in e for e in errors)
 
-    def test_msg_before_search_allowed(self):
-        """M1052: [msg, search, msg] announce pattern is now valid."""
+    def test_msg_before_search_rejected(self):
+        """M1217: [msg, search, msg] — msg first is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. let me check", "expect": None, "tool": None, "args": None},
             {"type": "search", "detail": "query", "expect": "results"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("msg task must come after" in e for e in errors)
+        assert any("msg task must come after" in e for e in errors)
 
     def test_msg_after_all_exec_valid(self):
         """M137: msg after all exec/search tasks is valid."""
@@ -583,17 +583,17 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
-    # --- M1037: announce msgs allowed ---
+    # --- M1217: announce msgs rejected ---
 
-    def test_m1037_announce_msg_first_valid(self):
-        """M1037/M1052: [msg, exec, msg] — announce msg before exec is valid."""
+    def test_m1217_announce_msg_first_rejected(self):
+        """M1217: [msg, exec, msg] — announce msg before exec is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. I will search for the info now.", "expect": None, "tool": None, "args": None},
             {"type": "exec", "detail": "search for data", "expect": "results"},
             {"type": "msg", "detail": "Answer in English. Here are the results.", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert not any("msg task must come after" in e for e in errors)
+        assert any("msg task must come after" in e for e in errors)
 
     def test_m1037_needs_install_msg_only_valid(self):
         """M1037: needs_install + [msg] plan passes validation."""
@@ -9013,15 +9013,15 @@ class TestValidatePlanStructure:
 class TestValidatePlanOrdering:
     """Focused tests for _validate_plan_ordering."""
 
-    def test_msg_before_exec_allowed(self):
-        """M1052: msg before exec is now valid (announce pattern)."""
+    def test_msg_before_exec_rejected(self):
+        """M1217: msg before exec is rejected (no announce pattern)."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "msg", "detail": "Answer in English. hi"},
             {"type": "exec", "detail": "do something", "expect": "done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False)
-        assert not any("msg task must come after" in e for e in errors)
+        assert any("msg task must come after" in e for e in errors)
 
     def test_install_with_needs_install_blocked(self):
         """M979: install exec + needs_install set → blocked (mixed propose+install)."""
@@ -9150,8 +9150,8 @@ class TestM1052MsgOnlyValidation:
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
 
-    def test_announce_pattern_valid(self):
-        """M1052: [msg, exec, msg] announce pattern passes."""
+    def test_announce_pattern_rejected(self):
+        """M1217: [msg, exec, msg] announce pattern is rejected."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "msg", "detail": "Answer in English. I will check now"},
@@ -9162,7 +9162,7 @@ class TestM1052MsgOnlyValidation:
             tasks, is_replan=False, install_approved=False,
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
-        assert not any("msg task must come after" in e for e in errors)
+        assert any("msg task must come after" in e for e in errors)
 
     def test_msg_only_via_validate_plan_with_skills(self):
         """M1052: validate_plan with installed_skills=["browser"] → rejected."""
