@@ -32,6 +32,7 @@ from kiso.brain import (
     invalidate_prompt_cache,
     _strip_fences,
     _repair_json,
+    _extract_json_object,
     _is_plugin_discovery_search,
     build_briefer_messages,
     build_classifier_messages,
@@ -5139,6 +5140,77 @@ class TestRepairJson:
     ], ids=["nested-trailing-commas", "whitespace-before-bracket"])
     def test_repair_json_parsed(self, raw, expected_parsed):
         assert json.loads(_repair_json(raw)) == expected_parsed
+
+
+# --- M1209: _extract_json_object + reviewer structured-output recovery ---
+
+
+class TestExtractJsonObject:
+    """M1209: extract first balanced JSON object from surrounding prose."""
+
+    def test_clean_json_passthrough(self):
+        raw = '{"status": "ok", "reason": ""}'
+        assert _extract_json_object(raw) == raw
+
+    def test_prose_before_json(self):
+        raw = 'Here is my review:\n{"status": "ok", "reason": "", "learn": [], "retry_hint": "", "summary": "done"}'
+        assert json.loads(_extract_json_object(raw))["status"] == "ok"
+
+    def test_prose_after_json(self):
+        raw = '{"status": "replan", "reason": "failed"}\n\nHope this helps!'
+        assert json.loads(_extract_json_object(raw))["status"] == "replan"
+
+    def test_nested_braces_in_strings(self):
+        raw = '{"reason": "error in {file}", "status": "ok"}'
+        assert json.loads(_extract_json_object(raw))["reason"] == "error in {file}"
+
+    def test_no_json_object(self):
+        assert _extract_json_object("no json here at all") is None
+
+    def test_unbalanced_braces(self):
+        assert _extract_json_object("{ broken") is None
+
+    def test_escaped_quotes_inside_strings(self):
+        raw = '{"reason": "he said \\"hello\\"", "status": "ok"}'
+        result = _extract_json_object(raw)
+        assert result is not None
+        assert json.loads(result)["status"] == "ok"
+
+
+class TestRepairJsonProseWrapped:
+    """M1209: _repair_json extracts JSON from prose-wrapped reviewer output."""
+
+    def test_prose_wrapped_json_extracted(self):
+        raw = 'Here is my review:\n{"status": "ok", "reason": "", "learn": [], "retry_hint": "", "summary": "done"}'
+        parsed = json.loads(_repair_json(raw))
+        assert parsed["status"] == "ok"
+
+    def test_fenced_prose_still_works(self):
+        raw = '```json\n{"status": "ok", "reason": "",}\n```'
+        parsed = json.loads(_repair_json(raw))
+        assert parsed["status"] == "ok"
+
+    def test_trailing_comma_inside_prose_wrapped(self):
+        raw = 'Result:\n{"status": "replan", "reason": "failed",}'
+        parsed = json.loads(_repair_json(raw))
+        assert parsed["status"] == "replan"
+
+    def test_irreparable_output_still_fails(self):
+        raw = "This is not JSON at all, just random text with no braces"
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(_repair_json(raw))
+
+    def test_quote_heavy_summary_parses(self):
+        """Reviewer output with quote-heavy summary (the actual failure class)."""
+        raw = (
+            'Here is the JSON:\n'
+            '{"status": "replan", "reason": "exit code 1", '
+            '"learn": [], "retry_hint": "check args", '
+            '"summary": "The command printed: error on line 5"}'
+        )
+        parsed = json.loads(_repair_json(raw))
+        assert parsed["status"] == "replan"
+        assert "error on line 5" in parsed["summary"]
 
 
 # --- M105c: retry JSON error includes position ---

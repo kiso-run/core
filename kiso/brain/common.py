@@ -443,9 +443,52 @@ def _strip_fences(text: str) -> str:
 _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 
 
+def _extract_json_object(text: str) -> str | None:
+    """Extract the first top-level JSON object from *text*.
+
+    Walks the string tracking brace depth and in-string state so that
+    embedded ``{`` inside JSON strings are not mis-counted.  Returns
+    ``None`` if no balanced ``{…}`` candidate is found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            if in_string:
+                escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _repair_json(text: str) -> str:
-    """Best-effort JSON repair: strip fences, fix trailing commas."""
+    """Best-effort JSON repair: strip fences, fix trailing commas, extract object."""
     s = _strip_fences(text)
+    # LLMs sometimes wrap JSON in preamble prose; extract the object first
+    # so the trailing-comma regex runs only on the final candidate.
+    stripped = s.lstrip()
+    if stripped and stripped[0] != "{":
+        candidate = _extract_json_object(s)
+        if candidate is not None:
+            s = candidate
     return _TRAILING_COMMA_RE.sub(r"\1", s)
 
 
@@ -830,10 +873,18 @@ async def _retry_llm_with_validation(
                 )
                 exc.last_errors = last_errors
                 raise exc
-            last_errors = [
+            _json_hint = (
                 f"Invalid JSON at line {e.lineno} col {e.colno}: {e.msg} — "
                 "return ONLY the JSON object, no markdown, no trailing commas"
-            ]
+            )
+            if error_noun == "Review":
+                _json_hint += (
+                    ". Do NOT copy stderr, error text, or command output "
+                    "into JSON string values — paraphrase instead. "
+                    "Keep reason and summary as short plain strings with "
+                    "no unescaped quotes. Return a single JSON object only."
+                )
+            last_errors = [_json_hint]
             messages.append({"role": "assistant", "content": raw})
             if on_retry is not None:
                 on_retry(attempt + 1, max_total, f"JSON parse error: {e}")
@@ -1567,6 +1618,7 @@ __brain_exports__ = [
     "_compress_install_turns",
     "_CONTEXT_POOL_SECTIONS",
     "_extract_install_target",
+    "_extract_json_object",
     "_filter_briefer_names",
     "_format_message_history",
     "_format_pending_items",
