@@ -40,18 +40,13 @@ from kiso.brain import (
     WORKER_PHASE_EXECUTING,
     WORKER_PHASE_IDLE,
     WORKER_PHASE_PLANNING,
-    _MAX_MESSENGER_FACTS,
-    BrieferError,
     build_recent_context,
     ClassifierError,
-    CuratorError,
-    ConsolidatorError,
     ExecTranslatorError,
     MessengerError,
     ParaphraserError,
     PlanError,
     ReviewError,
-    SummarizerError,
     classify_message,
     apply_consolidation_result,
     run_briefer,
@@ -63,11 +58,8 @@ from kiso.brain import (
     run_planner,
     run_reviewer,
     run_summarizer,
-    _build_worker_memory_pack,
     classify_failure_class,
-    prepare_reviewer_output,
     check_safety_rules,
-    clean_learn_items,
     _INSTALL_CMD_RE,
 )
 from kiso.config import Config, setting_bool, setting_float, setting_int
@@ -102,36 +94,38 @@ from kiso.worker.dependencies import (
     _resolve_workspace_file_reference,
     _workspace_visible_files,
 )
+from kiso.worker.message_flow import (
+    _BRIEFER_MSG_TIMEOUT,
+    _LAST_CONSOLIDATION_KV_KEY,
+    _append_calls_impl,
+    _deliver_webhook_if_configured_impl,
+    _is_briefer_budget_ok_impl,
+    _maybe_run_consolidation_impl,
+    _msg_task_impl,
+    _post_plan_knowledge_impl,
+    _spawn_knowledge_task_impl,
+)
+from kiso.worker.review_flow import _review_task_impl, _store_step_usage_impl
 from kiso.worker.search import SearcherError, _search_task
 from kiso.store import (
-    append_task_llm_call,
     archive_low_confidence_facts,
-    count_messages,
     create_plan,
     create_task,
     decay_facts,
     delete_facts,
-    _normalize_entity_name,
     find_or_create_entity,
     get_all_entities,
-    get_all_tags,
-    get_session_project_id,
-    search_facts_by_entity,
-    search_facts_scored,
-    get_facts,
-    get_kv,
     get_oldest_messages,
-    get_recent_messages,
+    get_session_project_id,
     get_safety_facts,
-    get_pending_learnings,
+    search_facts_by_entity,
+    get_recent_messages,
     get_plan_for_session,
-    get_session,
     get_tasks_for_plan,
     get_untrusted_messages,
     mark_message_processed,
     save_fact,
     save_facts_batch,
-    set_kv,
     save_learning,
     save_message,
     session_has_install_proposal,
@@ -143,10 +137,8 @@ from kiso.store import (
     update_plan_install_proposal,
     update_plan_status,
     update_plan_usage,
-    update_summary,
     update_task,
     update_task_command,
-    update_task_review,
     update_task_retry_count,
     update_task_substatus,
     update_task_usage,
@@ -181,8 +173,6 @@ log = logging.getLogger(__name__)
 
 _MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
 _POST_INSTALL_RESCAN_DELAY: float = 3.0  # seconds to wait before rescan after tool install
-_BRIEFER_MSG_TIMEOUT: float = 30.0  # M1053: cap briefer in msg/exec tasks so it can't steal messenger budget
-
 # Task substatus labels written to the DB during execution
 _SUBSTATUS_TRANSLATING = "translating"
 _SUBSTATUS_EXECUTING = "executing"
@@ -194,23 +184,8 @@ _SUBSTATUS_SEARCHING = "searching"
 async def _append_calls(
     db: aiosqlite.Connection, task_id: int, idx_before: int
 ) -> None:
-    """Append individual LLM call entries (since idx_before) to the task row.
-
-    Called right after each LLM step (translator, reviewer, messenger,
-    searcher) so verbose panels appear incrementally in the CLI instead of
-    only when the task finishes.
-
-    Failures are caught and logged so a transient usage-tracking error never
-    crashes the worker or corrupts the task result.
-    """
-    try:
-        usage = get_usage_since(idx_before)
-        for call in usage.get("calls") or []:
-            await append_task_llm_call(db, task_id, call)
-    except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "_append_calls: failed to store LLM calls for task %d: %s", task_id, exc
-        )
+    """Append individual LLM call entries (since idx_before) to the task row."""
+    await _append_calls_impl(db, task_id, idx_before)
 
 
 async def _deliver_webhook_if_configured(
@@ -224,33 +199,23 @@ async def _deliver_webhook_if_configured(
     session_secrets: dict[str, str] | None = None,
 ) -> None:
     """Deliver a webhook if the session has one configured. No-op otherwise."""
-    sess = await get_session(db, session)
-    webhook_url = sess.get("webhook") if sess else None
-    if not webhook_url:
-        return
-    wh_success, wh_status, wh_attempts = await deliver_webhook(
-        webhook_url, session, task_id, content, final,
-        secret=str(config.settings["webhook_secret"]),
-        max_payload=setting_int(config.settings, "webhook_max_payload", lo=1),
-    )
-    audit.log_webhook(
-        session, task_id, webhook_url, wh_status, wh_attempts,
-        deploy_secrets=deploy_secrets or {},
-        session_secrets=session_secrets or {},
+    await _deliver_webhook_if_configured_impl(
+        db,
+        config,
+        session,
+        task_id,
+        content,
+        final,
+        deploy_secrets=deploy_secrets,
+        session_secrets=session_secrets,
+        deliver_webhook_fn=deliver_webhook,
+        audit_mod=audit,
     )
 
 
 def _is_briefer_budget_ok(config: Config) -> bool:
     """Check if the briefer should run based on config and LLM budget."""
-    if not setting_bool(config.settings, "briefer_enabled"):
-        return False
-    from kiso.llm import get_llm_call_count
-    max_calls = setting_int(config.settings, "max_llm_calls_per_message", lo=1)
-    if get_llm_call_count() >= max_calls - 2:
-        log.debug("Skipping briefer: LLM budget near limit (%d/%d)",
-                  get_llm_call_count(), max_calls)
-        return False
-    return True
+    return _is_briefer_budget_ok_impl(config)
 
 
 async def _msg_task(
@@ -265,106 +230,21 @@ async def _msg_task(
     on_briefer_done: "Callable | None" = None,
     response_lang: str = "",
 ) -> str:
-    """Generate a user-facing message via the messenger brain role.
-
-    When the briefer is enabled, it selects which plan_outputs are relevant
-    to the msg task and synthesizes context, reducing noise in the messenger.
-
-    Args:
-        on_briefer_done: Optional async callback invoked after the briefer
-            completes but before the messenger LLM call.  The caller can use
-            this to flush intermediate usage so the CLI can render briefer
-            panels while the messenger is still running.
-        response_lang: Full language name (e.g. "Italian", "Russian").
-            If set and the detail doesn't already start with "Answer in",
-            prepends "Answer in {language}." to ensure correct language.
-    """
-    # ensure correct response language prefix
-    if response_lang:
-        expected_prefix = f"Answer in {response_lang}."
-        if not detail.startswith(expected_prefix):
-            # Strip wrong-language prefix if present (e.g. planner put "Answer in English.")
-            if detail.startswith("Answer in "):
-                dot_pos = detail.find(".")
-                if dot_pos >= 0:
-                    detail = detail[dot_pos + 1:].lstrip()
-            detail = f"{expected_prefix} {detail}"
-
-    selected_outputs = plan_outputs
-    briefing_context: str | None = None
-
-    # skip briefer if LLM budget is nearly exhausted
-    _briefer_ok = _is_briefer_budget_ok(config)
-
-    if _briefer_ok:
-        try:
-            # Build full context pool for the briefer
-            # Fetch summary/facts for the briefer to filter
-            sess = await get_session(db, session)
-            facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
-            # inject available tags for briefer relevant_tags selection
-            all_tags = await get_all_tags(db)
-            # inject available entities so briefer can select relevant ones
-            all_entities = await get_all_entities(db)
-            memory_pack = _build_worker_memory_pack(
-                summary=sess["summary"] if sess and sess["summary"] else "",
-                facts=facts,
-                recent_message=user_message,
-                plan_outputs_text=_format_plan_outputs_for_msg(plan_outputs) if plan_outputs else "",
-                goal=goal,
-                available_tags=all_tags,
-                available_entities=all_entities,
-            )
-            context_pool: dict = dict(memory_pack.context_sections)
-
-            briefing = await asyncio.wait_for(
-                run_briefer(config, "messenger", detail, context_pool, session=session),
-                timeout=_BRIEFER_MSG_TIMEOUT,
-            )
-            # Filter plan_outputs by selected indices
-            if plan_outputs:
-                indices = set(briefing.get("output_indices", []))
-                if indices:
-                    selected_outputs = [o for o in plan_outputs if o["index"] in indices]
-                    if not selected_outputs:
-                        selected_outputs = plan_outputs  # safety: don't pass empty
-            # Use briefer's synthesized context instead of raw summary/facts
-            if briefing.get("context"):
-                briefing_context = briefing["context"]
-            # scored fact retrieval for messenger
-            entity_id = None
-            if briefing.get("relevant_entities") and all_entities:
-                entity_map = {_normalize_entity_name(e["name"]): e["id"] for e in all_entities}
-                for ename in briefing["relevant_entities"]:
-                    eid = entity_map.get(_normalize_entity_name(ename))
-                    if eid is not None:
-                        entity_id = eid
-                        break
-            scored_facts = await search_facts_scored(
-                db,
-                entity_id=entity_id,
-                tags=briefing.get("relevant_tags") or None,
-                keywords=detail.lower().split()[:10] if detail else None,
-            )
-            if scored_facts:
-                facts_text = "\n".join(f"- {f['content']}" for f in scored_facts)
-                if briefing_context:
-                    briefing_context += f"\n\n## Relevant Facts\n{facts_text}"
-                else:
-                    briefing_context = f"## Relevant Facts\n{facts_text}"
-        except (BrieferError, LLMError, asyncio.TimeoutError):
-            log.debug("Briefer failed for messenger, using full context")
-
-    # flush briefer usage before messenger call
-    if on_briefer_done:
-        await on_briefer_done()
-
-    log.debug("Messenger detail: %s", detail[:120])
-    outputs_text = _format_plan_outputs_for_msg(selected_outputs) if selected_outputs else ""
-    return await run_messenger(
-        db, config, session, detail, outputs_text, goal=goal,
-        include_recent=include_recent, user_message=user_message,
-        briefing_context=briefing_context,
+    """Generate a user-facing message via the messenger brain role."""
+    return await _msg_task_impl(
+        config,
+        db,
+        session,
+        detail,
+        plan_outputs=plan_outputs,
+        goal=goal,
+        include_recent=include_recent,
+        user_message=user_message,
+        on_briefer_done=on_briefer_done,
+        response_lang=response_lang,
+        briefer_timeout=_BRIEFER_MSG_TIMEOUT,
+        run_briefer_fn=run_briefer,
+        run_messenger_fn=run_messenger,
     )
 
 
@@ -376,22 +256,14 @@ def _spawn_knowledge_task(
     llm_timeout: int,
 ) -> asyncio.Task:
     """Spawn _post_plan_knowledge as a background task with its own LLM budget."""
-
-    async def _run() -> None:
-        max_calls = setting_int(config.settings, "max_llm_calls_per_message", lo=1)
-        set_llm_budget(max_calls)
-        reset_usage_tracking()
-        try:
-            await _post_plan_knowledge(db, config, session, plan_id, llm_timeout)
-        except Exception:
-            log.exception("Background post-plan knowledge failed for session=%s", session)
-        finally:
-            clear_llm_budget()
-
-    return asyncio.create_task(_run())
-
-
-_LAST_CONSOLIDATION_KV_KEY = "last_consolidation_time"
+    return _spawn_knowledge_task_impl(
+        db,
+        config,
+        session,
+        plan_id,
+        llm_timeout,
+        _post_plan_knowledge,
+    )
 
 
 async def _maybe_run_consolidation(
@@ -401,41 +273,14 @@ async def _maybe_run_consolidation(
     llm_timeout: int,
 ) -> None:
     """Run the consolidator if enough time has passed and enough facts exist."""
-    interval_hours = setting_float(config.settings, "consolidation_interval_hours", lo=1.0)
-    consolidation_min_facts = setting_int(config.settings, "consolidation_min_facts", lo=1)
-
-    # Gate 1: time since last consolidation
-    raw_ts = await get_kv(db, _LAST_CONSOLIDATION_KV_KEY)
-    last_consolidation = float(raw_ts) if raw_ts else 0.0
-    hours_elapsed = (time.time() - last_consolidation) / 3600
-    if hours_elapsed < interval_hours:
-        return
-
-    # Gate 2: enough facts to justify a review
-    all_facts = await get_facts(db, is_admin=True)
-    if len(all_facts) < consolidation_min_facts:
-        return
-
-    # Run consolidation
-    try:
-        result = await asyncio.wait_for(
-            run_consolidator(config, db, session),
-            timeout=llm_timeout,
-        )
-        await apply_consolidation_result(db, result)
-        await set_kv(db, _LAST_CONSOLIDATION_KV_KEY, str(time.time()))
-        log.info("Consolidation completed: delete=%d update=%d keep=%d",
-                 len(result.get("delete", [])),
-                 len(result.get("update", [])),
-                 len(result.get("keep", [])))
-    except asyncio.TimeoutError:
-        log.warning("Consolidation timed out after %ds", llm_timeout)
-    except ConsolidatorError as e:
-        log.error("Consolidation failed: %s", e)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        log.exception("Unexpected error in consolidation phase for session=%s", session)
+    await _maybe_run_consolidation_impl(
+        db,
+        config,
+        session,
+        llm_timeout,
+        run_consolidator_fn=run_consolidator,
+        apply_consolidation_result_fn=apply_consolidation_result,
+    )
 
 
 async def _post_plan_knowledge(
@@ -457,116 +302,21 @@ async def _post_plan_knowledge(
       Phase 3 — Decay + Archive in parallel (pure SQL, no LLM dependency).
     """
 
-    # --- Phase 1: Curator + Summarizer (independent, run concurrently) ----------
-
-    async def _run_curator() -> None:
-        learnings = await get_pending_learnings(db)
-        if not learnings:
-            return
-        try:
-            tags = await get_all_tags(db)
-            entities = await get_all_entities(db)
-            # scored fact retrieval for curator dedup
-            # Build lowercase content cache once, then dict-lookup entities
-            lower_contents = [l["content"].lower() for l in learnings]
-            matched: list[dict] = [
-                e for e in entities
-                if any(e["name"] in lc for lc in lower_contents)
-            ]
-            # Batch entity fact queries concurrently
-            if matched:
-                results = await asyncio.gather(*(
-                    search_facts_scored(db, entity_id=e["id"], limit=20)
-                    for e in matched
-                ))
-                relevant_facts: list[dict] = []
-                for entity, efacts in zip(matched, results):
-                    for f in efacts:
-                        f["entity_name"] = entity["name"]
-                    relevant_facts.extend(efacts)
-            else:
-                relevant_facts = []
-            curator_result = await asyncio.wait_for(
-                run_curator(config, learnings, session=session,
-                            available_tags=tags, available_entities=entities,
-                            existing_facts=relevant_facts or None),
-                timeout=llm_timeout,
-            )
-            await _apply_curator_result(db, session, curator_result)
-            # backfill entity_id for older facts matching newly created entities
-            from kiso.store import backfill_fact_entities
-            await backfill_fact_entities(db)
-        except asyncio.TimeoutError:
-            log.warning("Curator timed out after %ds", llm_timeout)
-        except CuratorError as e:
-            log.error("Curator failed: %s", e)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("Unexpected error in curator/apply phase for session=%s", session)
-
-    async def _run_summarizer() -> None:
-        msg_count = await count_messages(db, session)
-        if msg_count < setting_int(config.settings, "summarize_threshold", lo=1):
-            return
-        try:
-            sess = await get_session(db, session)
-            current_summary = sess["summary"] if sess else ""
-            msg_limit = setting_int(config.settings, "summarize_messages_limit", lo=1)
-            oldest = await get_oldest_messages(db, session, limit=min(msg_count, msg_limit))
-            new_summary = await asyncio.wait_for(
-                run_summarizer(config, current_summary, oldest, session=session),
-                timeout=llm_timeout,
-            )
-            await update_summary(db, session, new_summary)
-        except asyncio.TimeoutError:
-            log.warning("Summarizer timed out after %ds", llm_timeout)
-        except SummarizerError as e:
-            log.error("Summarizer failed: %s", e)
-
-    await asyncio.gather(_run_curator(), _run_summarizer())
-
-    # --- Phase 2: Decay + Archive (pure SQL, run concurrently) ------------------
-
-    decay_days = setting_int(config.settings, "fact_decay_days", lo=1)
-    decay_rate = setting_float(config.settings, "fact_decay_rate", lo=0.0, hi=1.0)
-    archive_threshold = setting_float(config.settings, "fact_archive_threshold", lo=0.0, hi=1.0)
-
-    async def _run_decay() -> None:
-        try:
-            decayed = await decay_facts(db, decay_days=decay_days, decay_rate=decay_rate)
-            if decayed:
-                log.info("Decayed %d stale facts", decayed)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            log.error("Fact decay failed: %s", e)
-
-    async def _run_archive() -> None:
-        try:
-            archived = await archive_low_confidence_facts(db, threshold=archive_threshold)
-            if archived:
-                log.info("Archived %d low-confidence facts", archived)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            log.error("Fact archiving failed: %s", e)
-
-    await asyncio.gather(_run_decay(), _run_archive())
-
-    # --- Phase 4: Consolidation (periodic holistic knowledge review) -----------
-
-    if setting_bool(config.settings, "consolidation_enabled"):
-        await _maybe_run_consolidation(db, config, session, llm_timeout)
-
-    # Update token usage with post-plan processing tokens
-    final_usage = get_usage_summary()
-    if plan_id and (final_usage["input_tokens"] or final_usage["output_tokens"]):
-        await update_plan_usage(
-            db, plan_id,
-            final_usage["input_tokens"], final_usage["output_tokens"],
-            final_usage["model"],
-        )
+    await _post_plan_knowledge_impl(
+        db,
+        config,
+        session,
+        plan_id,
+        llm_timeout,
+        _apply_curator_result,
+        run_curator_fn=run_curator,
+        run_summarizer_fn=run_summarizer,
+        get_oldest_messages_fn=get_oldest_messages,
+        decay_facts_fn=decay_facts,
+        archive_low_confidence_facts_fn=archive_low_confidence_facts,
+        run_consolidator_fn=run_consolidator,
+        apply_consolidation_result_fn=apply_consolidation_result,
+    )
 
 
 async def _fast_path_chat(
@@ -724,59 +474,16 @@ async def _review_task(
     user_message: str,
 ) -> dict:
     """Review an exec/tool task. Returns review dict. Stores learning if present."""
-    output = task_row.get("output") or ""
-    stderr = task_row.get("stderr") or ""
-    full_output = prepare_reviewer_output(output, stderr)
-
-    # fetch safety rules for compliance check
-    safety_facts = await get_safety_facts(db)
-    safety_rules = [f["content"] for f in safety_facts] if safety_facts else None
-
-    success = task_row.get("status") == "done"
-    exit_code = task_row.get("exit_code")
-    review = await run_reviewer(
+    return await _review_task_impl(
         config,
-        goal=goal,
-        detail=task_row["detail"],
-        expect=task_row["expect"] or "",
-        output=full_output,
-        user_message=user_message,
-        session=session,
-        success=success,
-        exit_code=exit_code,
-        safety_rules=safety_rules,
+        db,
+        session,
+        goal,
+        task_row,
+        user_message,
+        run_reviewer_fn=run_reviewer,
+        audit_mod=audit,
     )
-
-    learn_raw = review.get("learn")
-    if isinstance(learn_raw, list):
-        learn_items = learn_raw
-    elif isinstance(learn_raw, str):
-        log.warning("Reviewer returned learn as string, expected list; wrapping: %r", learn_raw[:100])
-        learn_items = [learn_raw]
-    else:
-        learn_items = []
-    # Discard learnings when output is empty — reviewer may hallucinate
-    if not (output.strip() or stderr.strip()):
-        if learn_items:
-            log.warning("Discarding %d learning(s) for task %d — empty output",
-                        len(learn_items), task_row.get("id", 0))
-        learn_items = []
-    # Filter low-quality items
-    learn_items = clean_learn_items(learn_items, task_output=full_output)
-    has_learning = bool(learn_items)
-    for item in learn_items:
-        await save_learning(db, item, session)
-        log.debug("Learning saved: %s", item[:100])
-
-    audit.log_review(session, task_row.get("id", 0), review["status"], has_learning)
-
-    await update_task_review(
-        db, task_row["id"], review["status"],
-        reason=review.get("reason"),
-        learning="\n".join(learn_items) if learn_items else None,
-    )
-
-    return review
 
 
 # ---------------------------------------------------------------------------
@@ -991,8 +698,7 @@ async def _store_step_usage(
     db: aiosqlite.Connection, task_id: int, usage_idx_before: int
 ) -> None:
     """Store per-step token totals on the task row."""
-    step_usage = get_usage_since(usage_idx_before)
-    await update_task_usage(db, task_id, step_usage["input_tokens"], step_usage["output_tokens"])
+    await _store_step_usage_impl(db, task_id, usage_idx_before)
 
 
 async def _handle_review_error(
