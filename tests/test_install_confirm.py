@@ -432,7 +432,7 @@ def _exec_msg_plan():
 
 @pytest.mark.asyncio
 class TestM670MsgOnlyFreshInstanceProposal:
-    """M670: msg-only plan + no tools installed → install_proposal=True."""
+    """Install proposal must reflect explicit install intent, not missing tools."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -477,7 +477,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         assert plan["install_proposal"] is True
 
     async def test_exec_msg_plan_no_tools_sets_proposal(self, db):
-        """M711: exec+msg plan + no tools → install_proposal=True (no tool tasks)."""
+        """M1205d: normal action plans on fresh instances must not imply install approval."""
         config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -485,7 +485,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
             patch("kiso.brain.discover_tools", return_value=[]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "scrivi hello world")
-        assert plan["install_proposal"] is True
+        assert plan["install_proposal"] is False
 
 
 # --- M897: install_proposal persistence on replan plans ---

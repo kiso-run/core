@@ -7473,6 +7473,16 @@ class TestM1083InstallRoutingHelper:
         )
         assert route["mode"] == "none"
 
+    def test_install_target_normalizes_trailing_punctuation(self):
+        route = _classify_install_mode(
+            "sì, installa il tool browser.",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "kiso_tool"
+        assert route["target"] == "browser"
+
 
 class TestM261BrieferModuleCoverage:
     """M261: verify briefer path covers what keyword matching used to handle."""
@@ -9577,6 +9587,22 @@ class TestM1198InstallRouteValidation:
             "needs_install": None,
             "tasks": [
                 {"type": "exec", "detail": "Run kiso tool install browser", "expect": "browser installed"},
+                {"type": "replan", "detail": "Continue with original request", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(
+            plan,
+            install_approved=True,
+            install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
+        )
+        assert not any("kiso tool install browser" in e for e in errors)
+
+    def test_approved_kiso_tool_route_accepts_trailing_punctuation_in_exec_detail(self):
+        plan = {
+            "goal": "test",
+            "needs_install": None,
+            "tasks": [
+                {"type": "exec", "detail": "Run kiso tool install browser.", "expect": "browser installed"},
                 {"type": "replan", "detail": "Continue with original request", "expect": None, "tool": None, "args": None},
             ],
         }

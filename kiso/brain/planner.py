@@ -82,6 +82,7 @@ from .common import (
     _join_or_empty,
     _load_modular_prompt,
     _merge_context_sections,
+    _normalize_install_target_token,
     _parse_registry_hint_names,
     _prefilter_context_pool,
     _retry_llm_with_validation,
@@ -238,7 +239,9 @@ def _validate_plan_tasks(
         if t == TASK_TYPE_EXEC and registry_hint_names is not None:
             name_match = _INSTALL_NAME_RE.search(detail)
             if name_match and not _GIT_URL_RE.search(detail):
-                install_name = name_match.group(1).lower()
+                install_name = _normalize_install_target_token(name_match.group(1))
+                if not install_name:
+                    continue
                 if install_name not in registry_hint_names:
                     errors.append(
                         f"Task {i}: '{install_name}' is not in the kiso plugin registry. "
@@ -492,7 +495,9 @@ def _validate_install_route_consistency(
         lower = detail.lower()
         name_match = _INSTALL_NAME_RE.search(detail)
         if name_match:
-            install_name = name_match.group(1).lower()
+            install_name = _normalize_install_target_token(name_match.group(1))
+            if not install_name:
+                continue
             if install_name == target:
                 matching_kiso_install = True
                 continue
@@ -1307,16 +1312,9 @@ async def run_planner(
         on_retry=on_retry,
         fallback_model=fallback,
     )
-    # detect install proposal from three sources:
+    # detect install proposal from two sources:
     # 1. Planner explicitly declared needs_install (preferred, direct)
     # 2. Validation saw uninstalled-tool errors (backup, indirect)
-    # 3. No tools installed AND plan has no tool tasks — on a fresh instance,
-    #    any valid plan (msg-only, search+msg, exec+msg) is implicitly an
-    #    install-proposal context. Tool tasks can't exist in valid plans on
-    #    fresh instances (validation rejects them), so this condition is True
-    #    for all valid plans when no tools are installed.
-    #    False positives are harmless: install_approved only *enables* install
-    #    execs in the next turn, it doesn't force them.
     saw_uninstalled = plan.pop("_saw_uninstalled_tool", False)
     tasks = plan.get("tasks") or []
     if (
@@ -1339,8 +1337,6 @@ async def run_planner(
     plan["install_proposal"] = (
         bool(plan.get("needs_install"))
         or saw_uninstalled
-        or (not installed_names
-            and not any(t.get("type") == TASK_TYPE_TOOL for t in tasks))
     )
 
     log.info("Plan: goal=%r, %d tasks, install_proposal=%s",

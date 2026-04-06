@@ -181,6 +181,14 @@ _GENERIC_INSTALL_TARGETS = frozenset({
 })
 
 
+def _normalize_install_target_token(token: str | None) -> str | None:
+    """Normalize install target tokens extracted from free-form text."""
+    if not token:
+        return None
+    cleaned = token.strip().strip("`'\".,;:!?)]}")
+    return cleaned.lower() or None
+
+
 def _compress_install_turns(lines: list[str]) -> list[str]:
     """Compress install proposal→approval→result sequences in recent context.
 
@@ -238,14 +246,14 @@ def _extract_install_target(message: str) -> str | None:
     """Best-effort package/tool target extraction from install requests."""
     named_match = _NAMED_TOOL_TARGET_RE.search(message)
     if named_match and any(kw in message.lower() for kw in _INSTALL_KEYWORDS):
-        target = named_match.group(1).lower()
+        target = _normalize_install_target_token(named_match.group(1))
         if target in _GENERIC_INSTALL_TARGETS:
             return None
         return target
     match = _INSTALL_TARGET_RE.search(message)
     if not match:
         return None
-    target = match.group(1).lower()
+    target = _normalize_install_target_token(match.group(1))
     if target in _GENERIC_INSTALL_TARGETS:
         return None
     return target
