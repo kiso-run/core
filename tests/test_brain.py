@@ -9163,6 +9163,32 @@ class TestM1052MsgOnlyValidation:
         assert not any("Plan has only msg tasks" in e for e in errors)
         assert any("msg task must come after" in e for e in errors)
 
+    def test_msg_first_with_needs_install_allowed(self):
+        """M1225: [msg, replan] with needs_install skips msg-first rejection."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "msg", "detail": "Answer in English. install browser?"},
+            {"type": "replan", "detail": "continue after approval"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_needs_install=True,
+        )
+        assert not any("msg task must come after" in e for e in errors)
+
+    def test_msg_first_without_needs_install_still_rejected(self):
+        """M1225: [msg, replan] without needs_install is still rejected."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "msg", "detail": "Answer in English. hi"},
+            {"type": "replan", "detail": "continue"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_needs_install=False,
+        )
+        assert any("msg task must come after" in e for e in errors)
+
     def test_msg_only_via_validate_plan_with_skills(self):
         """M1052: validate_plan with installed_skills=["browser"] → rejected."""
         plan = {"tasks": [

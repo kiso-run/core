@@ -409,7 +409,8 @@ def _validate_plan_ordering(
             )
 
     # M1217: msg as first task wastes an LLM call before any action runs.
-    if has_action and tasks[0].get("type") == TASK_TYPE_MSG:
+    # M1225: skip when needs_install — install validators give targeted feedback.
+    if has_action and tasks[0].get("type") == TASK_TYPE_MSG and not has_needs_install:
         errors.append(
             "msg task must come after action tasks — do not start "
             "with an announcement msg. The user already sees the plan."
