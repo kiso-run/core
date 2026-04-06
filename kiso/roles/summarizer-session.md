@@ -15,5 +15,7 @@ Brief narrative — user goals, current state, progress. Merge with existing, do
 - Important technical details, paths, configurations for future context.
 
 Rules:
-- Concise but comprehensive. Focus on goals, decisions, facts discovered, current state.
+- Compression first: output must be shorter than the combined input messages. Summarize, don't expand.
+- For short conversations where a single paragraph suffices, omit section headers — use flat prose.
+- Focus on goals, decisions, facts discovered, current state.
 - Return ONLY structured text, no JSON. Preserve domain-specific terms in their original language.
