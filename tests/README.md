@@ -103,11 +103,15 @@ Protected import surfaces:
   role runners, validators, message builders, classifier helpers, and the
   stable runtime exceptions/constants consumed by `kiso.main`, `kiso.worker`,
   and live/integration tests
+- `kiso.store` keeps the storage facade functions/types used by runtime modules
+  and API layers, but not its underscore helpers
 
 Not protected as public API:
 
 - underscore helpers in `kiso.brain`
+- underscore helpers in `kiso.store`
 - concrete modules under `kiso.worker.*`
+- concrete modules under `kiso.store.*`
 - route/helper internals in `kiso.main`
 
 When a test is not specifically about a public boundary, import the concrete

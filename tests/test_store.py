@@ -1706,7 +1706,7 @@ async def test_save_learning_dedup_skips_promoted(db: aiosqlite.Connection):
 
 async def test_word_overlap_stopword_normalization(db: aiosqlite.Connection):
     """M339: stopwords removed before overlap — paraphrases are caught."""
-    from kiso.store import _word_overlap_ratio
+    from kiso.store.shared import _word_overlap_ratio
 
     # Without stopword removal these share 6/9 words = 0.67 (under old 0.7 threshold).
     # With stopword removal: {guidance.studio, captcha, contact, form} vs
@@ -1720,7 +1720,7 @@ async def test_word_overlap_stopword_normalization(db: aiosqlite.Connection):
 
 async def test_word_overlap_genuinely_different(db: aiosqlite.Connection):
     """M339: genuinely different facts have low overlap even after stopword removal."""
-    from kiso.store import _word_overlap_ratio
+    from kiso.store.shared import _word_overlap_ratio
 
     ratio = _word_overlap_ratio(
         "guidance.studio has a CAPTCHA",
@@ -1731,14 +1731,14 @@ async def test_word_overlap_genuinely_different(db: aiosqlite.Connection):
 
 async def test_word_overlap_all_stopwords(db: aiosqlite.Connection):
     """M339: all-stopword strings produce 0.0 overlap."""
-    from kiso.store import _word_overlap_ratio
+    from kiso.store.shared import _word_overlap_ratio
 
     assert _word_overlap_ratio("the a is", "and or but") == 0.0
 
 
 async def test_word_overlap_punctuation_stripped(db: aiosqlite.Connection):
     """M339: punctuation doesn't break matching."""
-    from kiso.store import _word_overlap_ratio
+    from kiso.store.shared import _word_overlap_ratio
 
     ratio = _word_overlap_ratio("guidance.studio has form.", "guidance.studio has form")
     assert ratio >= 0.99, f"Punctuation should not affect matching, got {ratio}"
