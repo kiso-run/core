@@ -3548,11 +3548,10 @@ class TestPlannerPromptContent:
         assert "search" in prompt.lower() and "msg" in prompt.lower()
 
     def test_m1214_planner_no_verify_after_codegen_tool(self):
-        """M1214: tools_rules says no exec verification after codegen tool tasks."""
+        """M1214/M1224: core planning rules say no exec after codegen tool."""
         from kiso.brain import _load_modular_prompt
-        prompt = _load_modular_prompt("planner", ["tools_rules"])
-        assert "reviewer inspects tool output" in prompt.lower() or \
-               "reviewer inspects" in prompt.lower()
+        prompt = _load_modular_prompt("planner", ["planning_rules"])
+        assert "codegen plan shape" in prompt.lower()
 
     def test_planner_web_module_has_search_guidance(self):
         """Web module provides research guidance and search-over-browser routing."""
