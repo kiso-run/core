@@ -176,6 +176,9 @@ _COMMON_PYTHON_PACKAGES = frozenset({
     "playwright", "pydantic", "pytest", "requests", "rich", "scipy",
     "seaborn", "sqlalchemy", "streamlit", "tenacity", "tomli", "uvicorn",
 })
+_GENERIC_INSTALL_TARGETS = frozenset({
+    "one", "it", "this", "that", "them", "something", "anything",
+})
 
 
 def _compress_install_turns(lines: list[str]) -> list[str]:
@@ -235,11 +238,17 @@ def _extract_install_target(message: str) -> str | None:
     """Best-effort package/tool target extraction from install requests."""
     named_match = _NAMED_TOOL_TARGET_RE.search(message)
     if named_match and any(kw in message.lower() for kw in _INSTALL_KEYWORDS):
-        return named_match.group(1).lower()
+        target = named_match.group(1).lower()
+        if target in _GENERIC_INSTALL_TARGETS:
+            return None
+        return target
     match = _INSTALL_TARGET_RE.search(message)
     if not match:
         return None
-    return match.group(1).lower()
+    target = match.group(1).lower()
+    if target in _GENERIC_INSTALL_TARGETS:
+        return None
+    return target
 
 
 def _is_explicit_named_tool_request(message: str, target: str) -> bool:
@@ -657,7 +666,10 @@ def _build_validation_feedback(
     else:
         guidance = (
             f"Keep the same goal, but rewrite the {error_noun.lower()} structure so it is valid. "
-            "Do not patch only one field if the task sequence itself is wrong."
+            "Do not patch only one field if the task sequence itself is wrong. "
+            "For normal action requests, keep at least one exec/tool/search task and end with "
+            "a final msg or replan. Do not collapse to msg-only unless the validation errors "
+            "explicitly require a msg-only fallback."
         )
 
     if repeat_count >= 2:

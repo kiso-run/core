@@ -25,6 +25,7 @@ from kiso.auth import AuthInfo, ResolvedUser, require_auth, resolve_user
 from kiso.stats import aggregate, read_audit_entries
 from kiso.brain import (
     WORKER_PHASE_IDLE, invalidate_prompt_cache,
+    _VALID_FACT_CATEGORIES,
     build_recent_context, classify_inflight, is_stop_message,
 )
 from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool, setting_int

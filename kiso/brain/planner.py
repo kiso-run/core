@@ -388,6 +388,7 @@ def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
     has_needs_install: bool = False,
     has_knowledge: bool = False,
+    allow_msg_only: bool = False,
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
@@ -397,7 +398,7 @@ def _validate_plan_ordering(
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL, TASK_TYPE_REPLAN}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
-        if not has_needs_install and not has_knowledge:
+        if not has_needs_install and not has_knowledge and not allow_msg_only:
             errors.append(
                 "Plan has only msg tasks — include at least one "
                 "exec/tool/search task for action requests. "
@@ -616,6 +617,14 @@ def validate_plan(
         tasks, is_replan, install_approved,
         has_needs_install=bool(plan.get("needs_install")),
         has_knowledge=bool(plan.get("knowledge")),
+        allow_msg_only=(
+            force_msg_only
+            or plan.get("msg_only_fallback") == "unavailable_named_tool"
+            or (
+                bool(install_route)
+                and install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_TOOL
+            )
+        ),
     ))
     errors.extend(_validate_install_route_consistency(
         plan, tasks, install_route, install_approved=install_approved,
@@ -1310,6 +1319,15 @@ async def run_planner(
     #    execs in the next turn, it doesn't force them.
     saw_uninstalled = plan.pop("_saw_uninstalled_tool", False)
     tasks = plan.get("tasks") or []
+    if (
+        tasks
+        and all(t.get("type") == TASK_TYPE_MSG for t in tasks)
+        and (
+            _force_msg
+            or install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_TOOL
+        )
+    ):
+        plan["msg_only_fallback"] = "unavailable_named_tool"
 
     # Filter needs_install: remove tools that are already installed.
     # The LLM sometimes lists installed tools in needs_install by mistake.

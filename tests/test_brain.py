@@ -5413,6 +5413,7 @@ class TestValidationRetryClassification:
             1,
         )
         assert "rewrite the plan structure" in feedback
+        assert "Do not collapse to msg-only" in feedback
 
 
 class TestMemoryPack:
@@ -7463,6 +7464,15 @@ class TestM1083InstallRoutingHelper:
         assert route["mode"] == "system_pkg"
         assert route["target"] == "jq"
 
+    def test_generic_pronoun_after_install_is_not_treated_as_target(self):
+        route = _classify_install_mode(
+            "Check the plugin registry to find what skills are available, then install one that can do web search.",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            installed_tool_names=[],
+            registry_hint_names={"browser", "aider"},
+        )
+        assert route["mode"] == "none"
+
 
 class TestM261BrieferModuleCoverage:
     """M261: verify briefer path covers what keyword matching used to handle."""
@@ -9024,6 +9034,16 @@ class TestM1052MsgOnlyValidation:
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
 
+    def test_msg_only_allowed_structural_fallback(self):
+        """M1205b: structural fallback cases may legitimately end msg-only."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. tool unavailable"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            allow_msg_only=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
     def test_announce_pattern_valid(self):
         """M1052: [msg, exec, msg] announce pattern passes."""
         from kiso.brain import _validate_plan_ordering
@@ -9045,6 +9065,35 @@ class TestM1052MsgOnlyValidation:
         ]}
         errors = validate_plan(plan, installed_skills=["browser"])
         assert any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_allowed_for_unknown_tool_route(self):
+        """M1205b: unknown named-tool routes may resolve to a single msg task."""
+        plan = {
+            "goal": "Use missing tool",
+            "secrets": [],
+            "tasks": [
+                {"type": "msg", "detail": "Answer in English. missing tool", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(
+            plan,
+            installed_skills=[],
+            install_route={"mode": "unknown_kiso_tool", "target": "missing-tool"},
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_allowed_for_unavailable_named_tool_marker(self):
+        """M1205b: returned plans remain valid without the original install route context."""
+        plan = {
+            "goal": "Use missing tool",
+            "secrets": [],
+            "msg_only_fallback": "unavailable_named_tool",
+            "tasks": [
+                {"type": "msg", "detail": "Answer in English. missing tool", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert not any("Plan has only msg tasks" in e for e in errors)
 
 
 class TestValidatePlanGroups:

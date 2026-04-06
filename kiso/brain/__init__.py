@@ -75,6 +75,7 @@ _PATCH_TARGETS: dict[str, tuple[ModuleType, ...]] = {
     ),
     "_load_modular_prompt": (_common,),
     "build_planner_messages": (_planner,),
+    "validate_plan": (_planner,),
 }
 
 

@@ -7,6 +7,8 @@ to freeze every helper exported by a large module.
 
 from __future__ import annotations
 
+from unittest.mock import sentinel
+
 from fastapi import FastAPI
 
 import kiso.brain as brain
@@ -70,3 +72,15 @@ def test_brain_high_level_surface_remains_importable():
     """`kiso.brain` keeps the high-level orchestration surface stable."""
     missing = sorted(name for name in _BRAIN_PUBLIC_NAMES if not hasattr(brain, name))
     assert missing == []
+
+
+def test_brain_validate_plan_patch_propagates_to_planner_module():
+    """`patch("kiso.brain.validate_plan", ...)` must still affect run_planner internals."""
+    original = brain.validate_plan
+    try:
+        brain.validate_plan = sentinel.validate_plan
+        import kiso.brain.planner as planner
+
+        assert planner.validate_plan is sentinel.validate_plan
+    finally:
+        brain.validate_plan = original
