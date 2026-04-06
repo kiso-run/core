@@ -41,6 +41,7 @@ from kiso.brain import (
     WORKER_PHASE_IDLE,
     WORKER_PHASE_PLANNING,
     build_recent_context,
+    BrieferError,
     ClassifierError,
     ExecTranslatorError,
     MessengerError,
