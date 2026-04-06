@@ -1570,7 +1570,7 @@ class TestBuildPlannerMessages:
         system = msgs[0]["content"]
         # planning_rules must be present even when briefer returns modules=[]
         # M1037: planning_rules must be present
-        assert "never fabricate" in system.lower(), (
+        assert "default plan shape" in system.lower(), (
             "planning_rules module missing from planner prompt"
         )
 
@@ -3538,7 +3538,7 @@ class TestPlannerPromptContent:
         prompt = _load_modular_prompt("planner", ["planning_rules"])
         assert "group" in prompt.lower()
         assert "parallel" in prompt.lower()
-        assert "simultaneous" in prompt.lower() or "parallel execution" in prompt.lower()
+        assert "in parallel" in prompt.lower() or "parallel execution" in prompt.lower()
 
     def test_m1213_planner_knowledge_question_rule(self):
         """M1213: planner planning_rules has knowledge-question safety net."""
