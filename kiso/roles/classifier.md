@@ -19,4 +19,5 @@ If "## Known Entities" provided: message asks about a listed entity's properties
 User teaches, informs, or corrects the system about new facts, preferences, or project details (even if phrased as reminders) → "plan" — this is a knowledge management action, not a knowledge query.
 General knowledge questions not about stored entities → "chat".
 Explaining concepts or answering questions (even if the answer involves code examples or snippets) without requesting file creation, execution, or system changes → "chat". Only "plan" when the user wants something DONE (file written, command run, tool used, search performed).
+Examples: "What is recursion? Explain with an example" → "chat". "Write a script that calculates factorials" → "plan".
 When in doubt → "plan".

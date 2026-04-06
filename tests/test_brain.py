@@ -3540,6 +3540,13 @@ class TestPlannerPromptContent:
         assert "parallel" in prompt.lower()
         assert "simultaneous" in prompt.lower() or "parallel execution" in prompt.lower()
 
+    def test_m1213_planner_knowledge_question_rule(self):
+        """M1213: planner planning_rules has knowledge-question safety net."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["planning_rules"])
+        assert "conceptual" in prompt.lower() or "knowledge" in prompt.lower()
+        assert "search" in prompt.lower() and "msg" in prompt.lower()
+
     def test_planner_web_module_has_search_guidance(self):
         """Web module provides research guidance and search-over-browser routing."""
         from kiso.brain import _load_modular_prompt
@@ -3994,6 +4001,16 @@ class TestClassifierPromptContent:
         """Classifier prompt should handle actions in any language (M230, M956)."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
         assert "any language" in prompt
+
+    def test_classifier_prompt_has_knowledge_question_example(self):
+        """M1213: classifier anchors conceptual questions as chat."""
+        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
+        assert "what is recursion" in prompt or "explain with" in prompt
+
+    def test_classifier_model_is_not_lite(self):
+        """M1213: classifier uses gemini-2.5-flash (not lite) for nuanced classification."""
+        from kiso.config import MODEL_DEFAULTS
+        assert "lite" not in MODEL_DEFAULTS["classifier"]
 
     def test_classifier_prompt_has_recent_context_rule(self):
         """M276/M751: classifier prompt accepts Recent Conversation for follow-up detection."""

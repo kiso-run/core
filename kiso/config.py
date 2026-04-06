@@ -89,7 +89,7 @@ SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
 
 MODEL_DEFAULTS: dict[str, str] = {
     "briefer": "google/gemini-2.5-flash",
-    "classifier": "google/gemini-2.5-flash-lite",
+    "classifier": "google/gemini-2.5-flash",
     "planner": "deepseek/deepseek-v3.2",
     "reviewer": "google/gemini-2.5-flash-lite",
     "curator": "deepseek/deepseek-v3.2",
