@@ -114,6 +114,7 @@ async def _call_role(
     config: Config, role: str, messages: list[dict],
     error_class: type[Exception], session: str = "",
     fallback_model: str | None = None,
+    max_retries: int = 0,
 ) -> str:
     """Call an LLM role and wrap errors in the role-specific exception.
 
@@ -125,7 +126,10 @@ async def _call_role(
         messages,
         error_class,
         session=session,
-        policy=_TextRoleRetryPolicy(fallback_model=fallback_model),
+        policy=_TextRoleRetryPolicy(
+            fallback_model=fallback_model,
+            max_retries=max_retries,
+        ),
     )
 
 
@@ -518,6 +522,7 @@ async def run_exec_translator(
         raw = await _call_role(
             config, "worker", messages, ExecTranslatorError, session,
             fallback_model=_fallback,
+            max_retries=1,
         )
         command = raw.strip()
         try:
