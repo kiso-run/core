@@ -165,7 +165,7 @@ class TestF17FullPipeline:
         assert len(output) > 20, f"Output too short: {output}"
         assert_no_failure_language(output)
 
-        # Should contain deterministic text stats
+        # Should contain deterministic text stats (messenger may reformulate labels)
         import re
-        assert re.search(r"chars:\s*\d+", output.lower()), f"Missing chars count: {output[:500]}"
-        assert re.search(r"lines:\s*\d+", output.lower()), f"Missing lines count: {output[:500]}"
+        assert re.search(r"char(?:acter)?s?\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing chars count: {output[:500]}"
+        assert re.search(r"lines?\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing lines count: {output[:500]}"
