@@ -3547,6 +3547,13 @@ class TestPlannerPromptContent:
         assert "conceptual" in prompt.lower() or "knowledge" in prompt.lower()
         assert "search" in prompt.lower() and "msg" in prompt.lower()
 
+    def test_m1214_planner_no_verify_after_codegen_tool(self):
+        """M1214: tools_rules says no exec verification after codegen tool tasks."""
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", ["tools_rules"])
+        assert "reviewer inspects tool output" in prompt.lower() or \
+               "reviewer inspects" in prompt.lower()
+
     def test_planner_web_module_has_search_guidance(self):
         """Web module provides research guidance and search-over-browser routing."""
         from kiso.brain import _load_modular_prompt
