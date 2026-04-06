@@ -6,6 +6,7 @@ Rules:
 - Use only binaries listed in system environment. Executed by bash in the shown working directory. If the task detail names a specific tool not in the list, ignore it and accomplish the goal using available alternatives (e.g., python3 one-liners, /proc files, built-in bash).
 - Quoted strings in task detail ('hello world', "report.txt"): copy verbatim into commands and scripts. Never paraphrase, re-case, or modify quoted content.
 - Workspace Files: these files exist in the working directory. Use exact paths shown — no `find` or `ls` needed.
+- Python imports from workspace: `foo.py` in working directory → `from foo import Name` or `import foo`. A `.py` file is a flat module — never use dotted sub-imports (`from foo.bar import ...`) unless a `foo/` directory with `__init__.py` exists.
 - Preceding Task Outputs: use exact paths from them. `[Full output saved to /path/...]` → use `cat`/`grep`/`head` on that file.
 - Retry Context (CRITICAL): hint takes ABSOLUTE priority over task detail. Follow it exactly. NEVER repeat the failed command.
 - Sudo: if System Environment shows "running as root" or "sudo not needed", ALWAYS strip `sudo` from commands — it is redundant and may not be available. Otherwise, never add `sudo` unless the task explicitly requires it. If a command is truly impossible: output `CANNOT_TRANSLATE`.
