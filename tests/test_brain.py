@@ -9637,13 +9637,23 @@ class TestM1198InstallRouteValidation:
         )
         assert any("Do NOT set needs_install" in e for e in errors)
 
-    def test_approved_kiso_tool_route_requires_explicit_kiso_install(self):
+    def test_approved_kiso_tool_route_accepts_natural_language_install(self):
+        """M1212: natural-language detail mentioning target + install → accepted."""
         errors = validate_plan(
             self._exec_msg_plan("Install browser"),
             install_approved=True,
             install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
         )
-        assert any("kiso tool install browser" in e for e in errors)
+        assert not any("requires an exec task" in e for e in errors)
+
+    def test_approved_kiso_tool_route_rejects_unrelated_exec(self):
+        """Exec that doesn't mention the target tool → rejected."""
+        errors = validate_plan(
+            self._exec_msg_plan("Set up the environment"),
+            install_approved=True,
+            install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
+        )
+        assert any("requires an exec task" in e for e in errors)
 
     def test_approved_kiso_tool_route_rejects_system_package_manager(self):
         errors = validate_plan(
@@ -9687,32 +9697,42 @@ class TestM1198InstallRouteValidation:
 
 
 class TestM1210ExplicitInstallRequest:
-    """M1210: explicit user install request allows direct exec without prior approval."""
+    """M1210/M1212: explicit user install request allows direct exec without prior approval.
+
+    M1212 fix: natural-language detail (e.g. "Install the browser tool") is
+    accepted — the validation no longer requires the shell command pattern.
+    """
 
     _KISO_ROUTE = {"mode": "kiso_tool", "target": "browser", "target_installed": False,
                     "explicit_install_request": True}
     _KISO_ROUTE_NO_EXPLICIT = {"mode": "kiso_tool", "target": "browser",
                                 "target_installed": False}
 
-    def _install_replan_plan(self):
+    def _install_replan_plan(self, detail="Install the browser tool"):
         return {
             "goal": "install browser", "needs_install": None, "tasks": [
-                {"type": "exec", "detail": "Run kiso tool install browser", "expect": "installed"},
+                {"type": "exec", "detail": detail, "expect": "installed"},
                 {"type": "replan", "detail": "Continue", "expect": None, "tool": None, "args": None},
             ],
         }
 
-    def _install_msg_plan(self):
+    def _install_msg_plan(self, detail="Install the browser tool"):
         return {
             "goal": "install browser", "needs_install": None, "tasks": [
-                {"type": "exec", "detail": "Run kiso tool install browser", "expect": "installed"},
+                {"type": "exec", "detail": detail, "expect": "installed"},
                 {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
             ],
         }
 
-    def test_explicit_install_request_allows_exec(self):
-        """Direct install request + matching kiso install exec → no 'not installed' error."""
+    def test_explicit_install_natural_language_allows_exec(self):
+        """Natural-language detail mentioning target + install → accepted."""
         errors = validate_plan(self._install_replan_plan(), install_route=self._KISO_ROUTE)
+        assert not any("is not installed yet" in e for e in errors)
+
+    def test_explicit_install_shell_command_also_works(self):
+        """Shell command detail still accepted (backward compat)."""
+        plan = self._install_replan_plan(detail="Run kiso tool install browser")
+        errors = validate_plan(plan, install_route=self._KISO_ROUTE)
         assert not any("is not installed yet" in e for e in errors)
 
     def test_explicit_install_request_requires_replan_not_msg(self):
@@ -9726,21 +9746,37 @@ class TestM1210ExplicitInstallRequest:
         errors = validate_plan(plan, install_route=self._KISO_ROUTE_NO_EXPLICIT)
         assert any("is not installed yet" in e for e in errors)
 
-    def test_approval_after_proposal_still_works(self):
-        """install_approved=True path remains valid."""
+    def test_approval_natural_language_detail_accepted(self):
+        """install_approved + natural-language detail mentioning target → accepted."""
         errors = validate_plan(
-            self._install_replan_plan(),
+            self._install_replan_plan(detail="Install the browser tool"),
             install_approved=True,
             install_route=self._KISO_ROUTE_NO_EXPLICIT,
         )
         assert not any("is not installed yet" in e for e in errors)
+        assert not any("requires an exec task" in e for e in errors)
+
+    def test_approval_shell_command_detail_accepted(self):
+        """install_approved + shell command detail → still accepted."""
+        errors = validate_plan(
+            self._install_replan_plan(detail="Run kiso tool install browser"),
+            install_approved=True,
+            install_route=self._KISO_ROUTE_NO_EXPLICIT,
+        )
+        assert not any("requires an exec task" in e for e in errors)
+
+    def test_exec_without_target_mention_rejected(self):
+        """Exec detail that doesn't mention the target tool → rejected."""
+        plan = self._install_replan_plan(detail="Set up the development environment")
+        errors = validate_plan(plan, install_route=self._KISO_ROUTE)
+        assert any("is not installed yet" in e for e in errors)
 
     def test_mixed_needs_install_plus_exec_still_rejected(self):
         """needs_install + exec install in same plan is still blocked."""
         plan = self._install_replan_plan()
         plan["needs_install"] = ["browser"]
         errors = validate_plan(plan, install_route=self._KISO_ROUTE)
-        assert any("CANNOT install in the same plan" in e for e in errors)
+        assert any("needs_install is set" in e for e in errors)
 
 
 class TestNeedsInstallCoherence:

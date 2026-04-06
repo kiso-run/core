@@ -490,7 +490,7 @@ def _validate_install_route_consistency(
     if mode != _INSTALL_MODE_KISO_TOOL or install_route.get("target_installed"):
         return errors
 
-    matching_kiso_install = False
+    has_target_mention_install = False
     for i, detail in exec_details:
         lower = detail.lower()
         name_match = _INSTALL_NAME_RE.search(detail)
@@ -499,7 +499,7 @@ def _validate_install_route_consistency(
             if not install_name:
                 continue
             if install_name == target:
-                matching_kiso_install = True
+                has_target_mention_install = True
                 continue
             errors.append(
                 f"Task {i}: install routing target is '{target}', but this plan installs '{install_name}'. "
@@ -512,23 +512,20 @@ def _validate_install_route_consistency(
                 f"Do not use system package managers or pip/uv pip here; use `kiso tool install {target}`."
             )
             continue
-        if install_approved and ("install" in lower or target in lower):
-            errors.append(
-                f"Task {i}: approved kiso tool install for '{target}' must be explicit. "
-                f"Use `kiso tool install {target}`, then replan."
-            )
-
-    if install_approved and not matching_kiso_install:
-        errors.append(
-            f"Approved install for kiso tool '{target}' requires an exec task that runs "
-            f"`kiso tool install {target}`, then a final replan task."
-        )
+        # Natural-language detail mentioning the target + install intent
+        if target in lower and "install" in lower:
+            has_target_mention_install = True
 
     explicit_request = install_route.get("explicit_install_request", False)
+
+    if install_approved and not has_target_mention_install:
+        errors.append(
+            f"Approved install for kiso tool '{target}' requires an exec task that "
+            f"installs '{target}', then a final replan task."
+        )
+
     if not install_approved and not plan.get("needs_install") and non_msg_types:
-        if explicit_request and matching_kiso_install:
-            # Explicit install request must end with replan so the next cycle
-            # can fulfill any pending capability request.
+        if explicit_request and has_target_mention_install:
             if tasks and tasks[-1].get("type") == TASK_TYPE_MSG:
                 errors.append(
                     f"Explicit install for kiso tool '{target}' must end with replan, "
