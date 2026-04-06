@@ -193,9 +193,36 @@ _extract_rerun_snippet() {
         fi
     done
 
+    # Group by test type so each command gets the right runner flags
+    local -a functional=() live=() integration=() docker_tests=() other=()
+    for id in "${unique[@]}"; do
+        if [[ "$id" =~ ^tests/functional/ ]]; then
+            functional+=("$id")
+        elif [[ "$id" =~ ^tests/live/ ]]; then
+            live+=("$id")
+        elif [[ "$id" =~ ^tests/integration/ ]]; then
+            integration+=("$id")
+        elif [[ "$id" =~ ^tests/docker/ ]]; then
+            docker_tests+=("$id")
+        else
+            other+=("$id")
+        fi
+    done
+
     echo -e "${YELLOW}${BOLD}━━━ RERUN FAILED TESTS ━━━${NC}"
     echo ""
-    echo -e "./utils/run_tests.sh s \"${unique[*]}\""
+    local -a cmds=()
+    [[ ${#other[@]} -gt 0 ]]        && cmds+=("./utils/run_tests.sh s \"${other[*]}\"")
+    [[ ${#live[@]} -gt 0 ]]         && cmds+=("./utils/run_tests.sh s \"${live[*]}\"")
+    [[ ${#integration[@]} -gt 0 ]]  && cmds+=("./utils/run_tests.sh s \"${integration[*]}\"")
+    [[ ${#docker_tests[@]} -gt 0 ]] && cmds+=("./utils/run_tests.sh s \"${docker_tests[*]}\"")
+    [[ ${#functional[@]} -gt 0 ]]   && cmds+=("./utils/run_tests.sh s \"${functional[*]}\"")
+    local result="${cmds[0]}"
+    local i
+    for (( i=1; i<${#cmds[@]}; i++ )); do
+        result+=" && ${cmds[$i]}"
+    done
+    echo -e "$result"
     echo ""
 }
 
