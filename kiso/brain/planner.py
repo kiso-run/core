@@ -1114,7 +1114,10 @@ async def build_planner_messages(
             # fields so the planner can route install commands correctly.
             if "kiso_native" in modules and install_ctx:
                 _add_section(context_parts, "Install Context", install_ctx)
-        _add_section(context_parts, "Install Routing", install_mode_ctx)
+        # M1234: suppress generic routing when approved — Install Status
+        # section (added later) has the authoritative instructions.
+        if not install_approved:
+            _add_section(context_parts, "Install Routing", install_mode_ctx)
         # M1040: inject user-facing settings only when kiso_commands loaded.
         if "kiso_commands" in modules:
             _settings_text = build_user_settings_text(get_system_env(config))
@@ -1154,7 +1157,8 @@ async def build_planner_messages(
         # System env in original position (after facts, before pending)
         # Fallback path: inject full system env (conservative, no briefer).
         context_parts.append(f"## System Environment\n{sys_env_full}")
-        _add_section(context_parts, "Install Routing", install_mode_ctx)
+        if not install_approved:
+            _add_section(context_parts, "Install Routing", install_mode_ctx)
         # Session workspace files + previous plan results (same as briefer path)
         _add_context_section(context_parts, context_pool, "session_files", "Session Workspace")
         _add_context_section(context_parts, context_pool, "last_plan", "Previous Plan")

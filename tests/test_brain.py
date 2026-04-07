@@ -1563,6 +1563,43 @@ class TestBuildPlannerMessages:
         assert "Mode: kiso_tool" in user_content
         assert "set needs_install + approval msg only" in user_content
 
+    async def test_m1234_install_routing_suppressed_when_approved(self, db, config):
+        """M1234: Install Routing suppressed when install_approved=True."""
+        await create_session(db, "sess1")
+        cfg = Config(
+            tokens=config.tokens,
+            providers=config.providers,
+            users=config.users,
+            models=config.models,
+            settings={**config.settings, "briefer_enabled": True},
+            raw={},
+        )
+        with (
+            patch("kiso.brain.get_system_env", return_value={
+                "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0"},
+                "user_info": {}, "shell": "/bin/sh",
+                "exec_cwd": str(KISO_DIR / "sessions"),
+                "exec_env": "PATH", "max_output_size": 1_048_576,
+                "available_binaries": ["git"], "missing_binaries": [],
+                "connectors": [], "max_plan_tasks": 20, "max_replan_depth": 3,
+                "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
+                "reference_docs_path": str(KISO_DIR / "reference"),
+                "registry_url": "https://example.com/registry.json",
+            }),
+            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.run_briefer", return_value={
+                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [],
+            }),
+        ):
+            msgs, *_ = await build_planner_messages(
+                db, cfg, "sess1", "admin", "sì, installa browser",
+                install_approved=True,
+            )
+        user_content = msgs[1]["content"]
+        assert "## Install Routing" not in user_content
+        assert "## Install Status" in user_content
+
     async def test_install_context_not_injected_when_tools_installed(self, db, config):
         """M963: Install Context skipped when tools are installed and no registry."""
         await create_session(db, "sess1")
