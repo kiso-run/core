@@ -163,6 +163,25 @@ When the reviewer determines that the task failed and the plan needs revision, o
 
 **Max replan depth**: after `max_replan_depth` (default 5) replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on. The planner can request up to +3 additional replan attempts via the `extend_replan` field on the plan.
 
+**Circular replan detection**: the worker tracks a strategy fingerprint (goal prefix + task type/detail patterns) for each replan attempt. If the same strategy repeats twice (Jaccard overlap > 50%), or failure reasons have > 50% word overlap, the replan loop stops with a "stuck" notification. This prevents the planner from retrying the same failing approach indefinitely.
+
+### Plan Validation Guardrails
+
+Before execution, `validate_plan` runs deterministic structural checks that reject invalid plans with specific error feedback (the planner retries with the error message). Key guardrails:
+
+- **No msg-first**: plans must start with action tasks (exec/tool/search), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
+- **Codegen-only shape**: when the first task is a tool and the second is exec, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen tools — the reviewer already inspects tool output.
+- **Browser URL validation**: browser tool args with `file://` URLs are rejected. Browser is for web content (http/https); local files should be read with exec.
+- **Install routing**: plans that mix install proposals (`needs_install` set) with install exec tasks are rejected. The install flow is: propose (msg-only) → user approves → install (exec + replan).
+
+### LLM Retry and Fallback
+
+When an LLM call fails, the retry policy depends on the failure type:
+
+- **Validation error** (invalid JSON, missing fields): retry with error feedback (up to `max_validation_retries`, default 3).
+- **SSE stall** (no data for 60s) or **HTTP timeout**: switch to fallback model and retry. The fallback model is configurable (`planner_fallback_model`, default `minimax/minimax-m2.7`).
+- **Other LLM errors**: retry same model (up to `max_llm_retries`, default 3).
+
 ### Task Output Chaining
 
 The worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The transport format is still an array of entries:
