@@ -372,6 +372,16 @@ def _validate_plan_tasks(
                             + "; ".join(arg_errors)
                             + f". Required args object: '{example_json}'"
                         )
+                    # M1231: browser must use web URLs, not local file paths
+                    if tool_name == "browser":
+                        for v in args.values():
+                            if isinstance(v, str) and v.startswith("file://"):
+                                errors.append(
+                                    f"Task {i}: browser cannot open local files "
+                                    f"(file:// URL). Use exec with cat/head to "
+                                    f"read local files instead."
+                                )
+                                break
 
     if replan_count > 1:
         errors.append("A plan can have at most one replan task")

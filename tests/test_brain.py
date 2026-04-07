@@ -638,6 +638,36 @@ class TestValidatePlan:
 
     # --- M25: replan task type ---
 
+    # --- M1231: browser file:// URL rejection ---
+
+    def test_m1231_browser_file_url_rejected(self):
+        """M1231: browser tool with file:// URL is rejected."""
+        plan = {
+            "goal": "View the file",
+            "tasks": [
+                {"type": "tool", "detail": "open file", "tool": "browser",
+                 "args": {"url": "file:///tmp/test.py"}, "expect": "content"},
+                {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info={"browser": {"args_schema": {"url": {"type": "string", "required": True}}}})
+        assert any("browser cannot open local files" in e for e in errors)
+
+    def test_m1231_browser_http_url_allowed(self):
+        """M1231: browser tool with http URL passes."""
+        plan = {
+            "goal": "Visit website",
+            "tasks": [
+                {"type": "tool", "detail": "visit example.com", "tool": "browser",
+                 "args": {"url": "https://example.com"}, "expect": "page content"},
+                {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=["browser"],
+                               installed_skills_info={"browser": {"args_schema": {"url": {"type": "string", "required": True}}}})
+        assert not any("browser cannot open local files" in e for e in errors)
+
     def test_replan_as_last_task_valid(self):
         """Plan with exec + replan → valid."""
         plan = {"tasks": [
