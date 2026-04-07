@@ -45,7 +45,7 @@ Key principle: the planner must put everything the worker needs into the task `d
 
 **Purpose**: context intelligence layer. Reads the full context pool (large, cheap model with 1M context) and produces a focused briefing for each consumer. Downstream models receive only relevant information, reducing token costs and improving accuracy.
 
-**Model**: use a large-context, fast model — the briefer reads everything but produces small output. Default: `google/gemini-2.5-flash-lite`.
+**Model**: use a large-context, fast model — the briefer reads everything but produces small output. See [config.md](config.md) for the default.
 
 ### Output Schema
 
@@ -101,7 +101,7 @@ When `briefer_enabled` is false or the briefer fails, the system falls back to k
 
 **Purpose**: skip the planner for purely conversational messages (greetings, thanks, follow-up questions). If the classifier returns `"chat"`, the message goes directly to the messenger (fast path). If `"plan"`, the full planning pipeline runs.
 
-**Model**: use a fast, cheap model — the task is trivially simple (one-word classification). Default: `google/gemini-2.5-flash-lite`. Using a reasoning model here wastes time and tokens.
+**Model**: use a fast, cheap model — the task is trivially simple (one-word classification). Using a reasoning model here wastes time and tokens. See [config.md](config.md) for the default.
 
 **Fallback**: on LLM error, timeout, or ambiguous output, falls back to `"plan"` (safe — the planner handles everything).
 
@@ -392,7 +392,7 @@ If `detail` lacks context, the reviewer catches it and triggers a replan.
 
 **When**: executing `search` type tasks (web search queries).
 
-**Model**: `google/gemini-2.5-flash-lite:online` (default). The `:online` suffix enables the Exa web search plugin on OpenRouter (~$0.014/query). Users can override to `perplexity/sonar` or any search-capable model in `config.toml [models]`.
+**Model**: a search-capable model (see [config.md](config.md) for the default). Users can override in `config.toml [models]`.
 
 **Input**: see [Context per Role](#context-per-role) table. Receives the task `detail` (search query) and preceding plan outputs (fenced). Optional search parameters from `args`: `max_results`, `lang`, `country`.
 
@@ -547,7 +547,7 @@ Reuses `models.summarizer`. See [security.md — Prompt Injection Defense](secur
 
 ## Token Usage Tracking
 
-Every `call_llm` invocation accumulates token usage (input and output tokens, model name) in a `contextvars`-based per-message accumulator. The worker calls `reset_usage_tracking()` at the start of each message and `get_usage_summary()` at the end, storing the totals in `plans.total_input_tokens`, `plans.total_output_tokens`, and `plans.model`. The CLI displays this summary at the end of plan execution (e.g. `⟨ 1,234 in → 567 out │ deepseek/deepseek-v3.2 ⟩`).
+Every `call_llm` invocation accumulates token usage (input and output tokens, model name) in a `contextvars`-based per-message accumulator. The worker calls `reset_usage_tracking()` at the start of each message and `get_usage_summary()` at the end, storing the totals in `plans.total_input_tokens`, `plans.total_output_tokens`, and `plans.model`. The CLI displays this summary at the end of plan execution (e.g. `⟨ 1,234 in → 567 out │ provider/model-name ⟩`).
 
 ---
 

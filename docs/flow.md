@@ -112,7 +112,7 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 |---|---|
 | `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context, structured preceding task results, and authoritative dependency links when prior files/artifacts are relevant. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=/root/.kiso/sessions/{session}` (container-internal path), timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `messenger` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The worker does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the Worker Doesn't See the Conversation](llm-roles.md#why-the-worker-doesnt-see-the-conversation)). |
-| `search` | Calls LLM with `searcher` role (`google/gemini-2.5-flash-lite:online`). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
+| `search` | Calls LLM with `searcher` role (see [config.md](config.md) for default model). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
 | `tool` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python /root/.kiso/tools/{name}/run.py` (container-internal path). Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
 **Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The runtime also normalizes those outputs into canonical `TaskResult` objects and carries `file_refs`, `artifact_refs`, failure classes, reviewer summaries, and dependency links forward. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
@@ -179,7 +179,7 @@ Before execution, `validate_plan` runs deterministic structural checks that reje
 When an LLM call fails, the retry policy depends on the failure type:
 
 - **Validation error** (invalid JSON, missing fields): retry with error feedback (up to `max_validation_retries`, default 3).
-- **SSE stall** (no data for 60s) or **HTTP timeout**: switch to fallback model and retry. The fallback model is configurable (`planner_fallback_model`, default `minimax/minimax-m2.7`).
+- **SSE stall** (no data for 60s) or **HTTP timeout**: switch to fallback model and retry. The fallback model is configurable via `planner_fallback_model` (see [config.md](config.md)).
 - **Other LLM errors**: retry same model (up to `max_llm_retries`, default 3).
 
 ### Task Output Chaining

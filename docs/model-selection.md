@@ -21,57 +21,47 @@ All models accessed via OpenRouter. Prices in USD per million tokens.
 
 ## Default Configuration
 
-```toml
-briefer      = "google/gemini-2.5-flash"       # context selection (json_schema native)
-classifier   = "google/gemini-2.5-flash"       # message classification (fast, simple)
-planner      = "deepseek/deepseek-v3.2"        # plan generation (structured output)
-reviewer     = "google/gemini-2.5-flash-lite"  # output review (high frequency, json_schema)
-curator      = "google/gemini-2.5-flash"       # knowledge curation (needs reliable json_schema)
-worker       = "deepseek/deepseek-v3.2"        # command translation (strict output format)
-summarizer   = "google/gemini-2.5-flash-lite"  # conversation summary (async, cheap)
-paraphraser  = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
-messenger    = "deepseek/deepseek-v3.2"        # user-facing responses (natural language)
-searcher     = "perplexity/sonar"              # web search (native search API)
-consolidator = "google/gemini-2.5-flash-lite"  # periodic knowledge review (async, cheap)
-```
+Current defaults are defined in `MODEL_DEFAULTS` in `kiso/config.py` and
+documented in the `[models]` section of [config.md](config.md). This guide
+explains the selection criteria — see config.md for the actual values.
 
 ## Per-Role Rationale
 
-### Briefer — `gemini-2.5-flash`
+### Briefer
 
 **Requirement:** reliable structured output. Runs before every planner/messenger
 call to select relevant context modules, tools, and facts. Needs native
 `json_schema` support for consistent structured responses. Flash (not flash-lite)
 because briefer decisions directly affect planner quality.
 
-### Classifier — `gemini-2.5-flash`
+### Classifier
 
 **Requirement:** fast classification. Single-word response (plan/chat/chat_kb).
 Uses `json_schema` for consistent format. Flash provides reliable classification
 across languages.
 
-### Planner — `deepseek-v3.2`
+### Planner
 
 **Requirement:** strong reasoning + structured output. Understands user intent,
 selects tools, produces valid multi-step JSON plans. Runs once per message.
 DeepSeek-v3.2 produces well-structured plans with low hallucination and
 handles multilingual input well. Cost is low ($0.28/$0.42 per M tokens).
 
-### Worker — `deepseek-v3.2`
+### Worker
 
 **Requirement:** precise command translation. Translates task descriptions to
 exact shell commands. Needs to handle file paths, heredocs, and tool-specific
 syntax correctly. DeepSeek-v3.2's code understanding makes it reliable for
 this role.
 
-### Reviewer — `gemini-2.5-flash-lite`
+### Reviewer
 
 **Requirement:** fast judgment + structured output. Runs on every task (highest
 frequency role). Evaluates output against expectations with json_schema.
 Flash-lite is sufficient — the reviewer checks concrete criteria (exit code,
 expected output), not open-ended reasoning.
 
-### Curator — `gemini-2.5-flash`
+### Curator
 
 **Requirement:** reliable structured output with semantic reasoning. Must follow
 complex rules: promote/ask/discard verdicts, entity assignment, tag reuse,
@@ -79,19 +69,19 @@ poisoning resistance. Flash (not flash-lite) because curator decisions affect
 long-term knowledge quality and flash-lite doesn't follow verdict-binding
 rules reliably enough.
 
-### Messenger — `deepseek-v3.2`
+### Messenger
 
 **Requirement:** natural language quality. User-facing responses need to sound
 natural, handle multilingual output, and faithfully relay task results.
 DeepSeek-v3.2 produces fluent responses across languages.
 
-### Summarizer / Paraphraser / Consolidator — `gemini-2.5-flash-lite`
+### Summarizer / Paraphraser / Consolidator
 
 **Requirement:** fast, cheap. These run asynchronously with no latency pressure.
 Summarization, paraphrasing, and knowledge consolidation are well-handled by
 fast models.
 
-### Searcher — `perplexity/sonar`
+### Searcher
 
 **Requirement:** native web search. Sonar is a search-augmented model with
 built-in web retrieval. No alternative in the pipeline for search tasks.
@@ -100,20 +90,20 @@ built-in web retrieval. No alternative in the pipeline for search tasks.
 
 Typical request with 3 tasks:
 
-| Call | Model | Input tok | Output tok | Cost |
-|---|---|---|---|---|
-| Briefer | gemini-flash | 800 | 200 | $0.00029 |
-| Classifier | gemini-flash | 700 | 10 | $0.00021 |
-| Planner | deepseek-v3.2 | 1000 | 500 | $0.00049 |
-| Worker x3 | deepseek-v3.2 | 500 x3 | 100 x3 | $0.00055 |
-| Reviewer x3 | gemini-flash-lite | 400 x3 | 100 x3 | $0.00024 |
-| Messenger | deepseek-v3.2 | 800 | 300 | $0.00035 |
-| **Total** | | | | **~$0.002** |
+| Call | Input tok | Output tok |
+|---|---|---|
+| Briefer | 800 | 200 |
+| Classifier | 700 | 10 |
+| Planner | 1000 | 500 |
+| Worker x3 | 500 x3 | 100 x3 |
+| Reviewer x3 | 400 x3 | 100 x3 |
+| Messenger | 800 | 300 |
+
+Actual cost depends on the configured models. See [config.md](config.md)
+for current defaults and their per-token pricing.
 
 ## Fallback Models
 
-When the primary model stalls or times out, kiso switches to a fallback:
-
-- **Planner fallback:** `minimax/minimax-m2.7` (configurable via `planner_fallback_model`)
-- **All text roles:** fallback triggers on SSE stall or HTTP timeout
-- **Retry budget:** configurable via `max_llm_retries` (default 3)
+When the primary model stalls or times out, kiso switches to a fallback
+model. The fallback and retry settings are configurable — see
+[config.md](config.md) for `planner_fallback_model` and `max_llm_retries`.

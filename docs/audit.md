@@ -23,7 +23,7 @@ Every entry has a `timestamp`, `type`, `session`, and type-specific fields.
   "type": "llm",
   "session": "dev-backend",
   "role": "planner",
-  "model": "deepseek/deepseek-v3.2",
+  "model": "provider/model-name",
   "provider": "openrouter",
   "input_tokens": 1200,
   "output_tokens": 350,

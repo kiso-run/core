@@ -198,7 +198,7 @@ Bot: Deployed to fly.io. The app is live at https://dev-app.fly.dev.
      The health check is configured at /health.
 ⟨620→150⟩
 ────────────────────────────────────────────────────────────
-⟨ 4,521 in → 1,203 out │ deepseek/deepseek-v3.2 ⟩
+⟨ 4,521 in → 1,203 out │ provider/model-name ⟩
 
 You: _
 ```
@@ -299,11 +299,11 @@ For `search` tasks, the CLI shows the search query and results:
 ✓ [1/2] search: best SEO agencies in Milan
   ┊ {"results": [...], "summary": "..."}
   ✓ review: ok
-  searcher     200→800  gemini-2.5-flash-lite
-  reviewer     350→60   deepseek-v3
+  searcher     200→800  <model>
+  reviewer     350→60   <model>
 ```
 
-Search tasks use the built-in searcher role (`google/gemini-2.5-flash-lite:online` by default) for web lookups. If the `search` tool is installed, the planner prefers it for bulk queries (>10 results) since dedicated search APIs (Brave, Serper) are cheaper per result.
+Search tasks use the built-in searcher role (see [config.md](config.md) for the default model) for web lookups. If the `search` tool is installed, the planner prefers it for bulk queries (>10 results) since dedicated search APIs (Brave, Serper) are cheaper per result.
 
 #### Token Usage
 
@@ -328,7 +328,7 @@ The per-step count includes all LLM calls for that task (exec translator + revie
 **Grand total**: after plan completion, the CLI shows the full summary:
 
 ```
-⟨ 2,410 in → 545 out │ deepseek/deepseek-v3.2 ⟩
+⟨ 2,410 in → 545 out │ provider/model-name ⟩
 ```
 
 Shows total input tokens, output tokens, and the model used. Includes planner, all task steps, and post-plan processing (curator, summarizer). Hidden in quiet mode. Uses ASCII fallback (`< ... >`) on non-Unicode terminals.
