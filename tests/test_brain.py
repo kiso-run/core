@@ -606,6 +606,36 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
+    # --- M1227: exec-after-tool codegen guardrail ---
+
+    def test_m1227_codegen_exec_after_tool_rejected(self):
+        """M1227: validate_plan rejects [tool, exec, msg] when goal is codegen-only."""
+        plan = {
+            "goal": "Create a Python script text_stats.py using aider for code generation.",
+            "tasks": [
+                {"type": "tool", "detail": "create text_stats.py", "tool": "aider",
+                 "args": {"message": "create", "files": "text_stats.py"}, "expect": "file created"},
+                {"type": "exec", "detail": "verify script exists", "expect": "ok"},
+                {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan)
+        assert any("exec immediately after tool" in e for e in errors)
+
+    def test_m1227_codegen_exec_after_tool_allowed_with_run(self):
+        """M1227: validate_plan allows [tool, exec, msg] when goal says 'run'."""
+        plan = {
+            "goal": "Create text_stats.py then run it on the OCR text.",
+            "tasks": [
+                {"type": "tool", "detail": "create text_stats.py", "tool": "aider",
+                 "args": {"message": "create", "files": "text_stats.py"}, "expect": "file created"},
+                {"type": "exec", "detail": "run text_stats.py on ocr_text.txt", "expect": "chars and lines"},
+                {"type": "msg", "detail": "Answer in English. results", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan)
+        assert not any("exec immediately after tool" in e for e in errors)
+
     # --- M25: replan task type ---
 
     def test_replan_as_last_task_valid(self):
@@ -9188,6 +9218,51 @@ class TestM1052MsgOnlyValidation:
             has_needs_install=False,
         )
         assert any("msg task must come after" in e for e in errors)
+
+    def test_exec_after_tool_rejected_without_run_goal(self):
+        """M1227: [tool, exec, msg] rejected when goal doesn't mention running."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "tool", "detail": "create script", "tool": "aider",
+             "args": {"message": "create file"}, "expect": "file created"},
+            {"type": "exec", "detail": "verify script exists", "expect": "ok"},
+            {"type": "msg", "detail": "Answer in English. done"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            goal="Create a Python script using aider for code generation.",
+        )
+        assert any("exec immediately after tool" in e for e in errors)
+
+    def test_exec_after_tool_allowed_with_run_goal(self):
+        """M1227: [tool, exec, msg] allowed when goal mentions running."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "tool", "detail": "create script", "tool": "aider",
+             "args": {"message": "create file"}, "expect": "file created"},
+            {"type": "exec", "detail": "run script on data", "expect": "output"},
+            {"type": "msg", "detail": "Answer in English. results"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            goal="Create text_stats.py then run it on the OCR text.",
+        )
+        assert not any("exec immediately after tool" in e for e in errors)
+
+    def test_exec_after_tool_allowed_with_test_goal(self):
+        """M1227: [tool, exec, msg] allowed when goal mentions testing."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "tool", "detail": "add multiply method", "tool": "aider",
+             "args": {"message": "add method"}, "expect": "method added"},
+            {"type": "exec", "detail": "test Calculator().multiply(5,6)", "expect": "30"},
+            {"type": "msg", "detail": "Answer in English. result is 30"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            goal="Add multiply method to Calculator and test it.",
+        )
+        assert not any("exec immediately after tool" in e for e in errors)
 
     def test_msg_only_via_validate_plan_with_skills(self):
         """M1052: validate_plan with installed_skills=["browser"] → rejected."""
