@@ -1,6 +1,6 @@
 # Model Selection Guide
 
-kiso uses 10 LLM roles in its pipeline. Each role has different requirements
+kiso uses 11 LLM roles in its pipeline. Each role has different requirements
 for intelligence, speed, and cost. This guide documents the default choices,
 the data behind them, and alternative configurations.
 
@@ -11,17 +11,10 @@ All models accessed via OpenRouter. Prices in USD per million tokens.
 | Model | t/s | Input $/M | Output $/M | Context | MMLU | LiveCodeBench |
 |---|---|---|---|---|---|---|
 | google/gemini-2.5-flash-lite | ~150 | 0.10 | 0.40 | 1M | 70 | 59 |
-| z-ai/glm-4.7 | ~130 | 0.38 | 1.98 | 200K | 83 | 85 |
-| moonshotai/kimi-k2.5 | ~100 | 0.45 | 2.20 | 262K | 85 | 84 |
-| qwen/qwen3.5-flash-02-23 | ~90 | ~0.20 | ~0.60 | 1M | 82 | 82 |
-| stepfun/step-3.5-flash | ~85 | 0.10 | 0.30 | 256K | 80 | 86 |
 | google/gemini-2.5-flash | ~70 | 0.30 | 2.50 | 1M | 81 | 80 |
-| google/gemini-3-flash-preview | ~65 | 0.50 | 3.00 | 1M | 86 | 91 |
-| llama-3.1-70b-instruct | ~45 | ~0.90 | ~2.40 | 128K | 79 | 73 |
-| qwen/qwen-3-235b-thinking | ~35 | ~0.80 | ~3.00 | 262K | 88 | 88 |
 | deepseek/deepseek-v3.2 | ~25 | 0.28 | 0.42 | 163K | 79 | 60 |
-| deepseek/deepseek-r1 | ~20 | 0.70 | 2.50 | 64K | 90 | 92 |
-| llama-3.1-8b-instruct | ~200 | ~0.05 | ~0.10 | 128K | 66 | 35 |
+| perplexity/sonar | — | 1.00 | 1.00 | 128K | — | — |
+| minimax/minimax-m2.7 | ~40 | 0.20 | 0.80 | 1M | 78 | 70 |
 
 **MMLU** = Massive Multitask Language Understanding (general intelligence).
 **LiveCodeBench** = code generation benchmark (coding ability).
@@ -29,224 +22,98 @@ All models accessed via OpenRouter. Prices in USD per million tokens.
 ## Default Configuration
 
 ```toml
-briefer     = "google/gemini-2.5-flash-lite"
-classifier  = "google/gemini-2.5-flash-lite"
-planner     = "z-ai/glm-4.7"
-reviewer    = "google/gemini-2.5-flash-lite"
-curator     = "google/gemini-2.5-flash-lite"
-worker      = "google/gemini-2.5-flash-lite"
-summarizer  = "google/gemini-2.5-flash-lite"
-paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "qwen/qwen3.5-flash-02-23"
-searcher    = "perplexity/sonar"
+briefer      = "google/gemini-2.5-flash"       # context selection (json_schema native)
+classifier   = "google/gemini-2.5-flash"       # message classification (fast, simple)
+planner      = "deepseek/deepseek-v3.2"        # plan generation (structured output)
+reviewer     = "google/gemini-2.5-flash-lite"  # output review (high frequency, json_schema)
+curator      = "google/gemini-2.5-flash"       # knowledge curation (needs reliable json_schema)
+worker       = "deepseek/deepseek-v3.2"        # command translation (strict output format)
+summarizer   = "google/gemini-2.5-flash-lite"  # conversation summary (async, cheap)
+paraphraser  = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
+messenger    = "deepseek/deepseek-v3.2"        # user-facing responses (natural language)
+searcher     = "perplexity/sonar"              # web search (native search API)
+consolidator = "google/gemini-2.5-flash-lite"  # periodic knowledge review (async, cheap)
 ```
 
 ## Per-Role Rationale
 
-### Briefer — `gemini-2.5-flash-lite`
+### Briefer — `gemini-2.5-flash`
 
-**Requirement:** speed + low cost. Runs before every planner/messenger/worker call.
-Does context selection (classification), not generation. The cheapest, fastest model
-is ideal — 150 t/s, $0.10 input. MMLU 70 is sufficient for "which modules and
-tools are relevant to this request?".
+**Requirement:** reliable structured output. Runs before every planner/messenger
+call to select relevant context modules, tools, and facts. Needs native
+`json_schema` support for consistent structured responses. Flash (not flash-lite)
+because briefer decisions directly affect planner quality.
 
-### Classifier — `gemini-2.5-flash-lite`
+### Classifier — `gemini-2.5-flash`
 
-**Requirement:** speed. Binary classification (plan vs chat). Even simpler than
-the briefer — any model works, so pick the fastest and cheapest.
+**Requirement:** fast classification. Single-word response (plan/chat/chat_kb).
+Uses `json_schema` for consistent format. Flash provides reliable classification
+across languages.
 
-### Planner — `glm-4.7`
+### Planner — `deepseek-v3.2`
 
-**Requirement:** strong reasoning + structured output. This is the hardest task —
-understand user intent, select tools, produce valid multi-step JSON plans. Runs
-once per message, so cost per call matters less than quality.
+**Requirement:** strong reasoning + structured output. Understands user intent,
+selects tools, produces valid multi-step JSON plans. Runs once per message.
+DeepSeek-v3.2 produces well-structured plans with low hallucination and
+handles multilingual input well. Cost is low ($0.28/$0.42 per M tokens).
 
-GLM-4.7 has MMLU 83 (strongest non-reasoning model in the cheap tier), LCB 85,
-and is fast at 130 t/s. The $0.38/$1.98 cost is higher than flash models but
-the planner runs once per message, so the absolute cost is small (~$0.0004/call).
+### Worker — `deepseek-v3.2`
 
-**Why not step-3.5-flash?** LCB 86 vs 85 (negligible), but MMLU 80 vs 83. Planning
-needs understanding more than raw coding, so MMLU matters more here.
-
-**Why not deepseek-v3.2?** Dominated by step-3.5-flash: MMLU 80>79, LCB 86>60,
-speed 85>25 t/s, input cost $0.10<$0.28. No advantage in any dimension.
-
-### Worker — `gemini-2.5-flash-lite`
-
-**Requirement:** fast command translation. Translates task descriptions to shell
-commands. Runs 3+ times per plan, so speed and cost matter most. Measured 1.3s
-latency and $0.000006/call — 6x cheaper and 50% faster than step-3.5-flash.
-
-**Why not step-3.5-flash?** It's a reasoning model that spends ~900 tokens of
-chain-of-thought for trivial translations ("echo hello" → "echo hello"), adding
-latency and cost with no quality benefit. Also does not support `json_schema`
-response format (returns 400 on StepFun/OpenRouter).
+**Requirement:** precise command translation. Translates task descriptions to
+exact shell commands. Needs to handle file paths, heredocs, and tool-specific
+syntax correctly. DeepSeek-v3.2's code understanding makes it reliable for
+this role.
 
 ### Reviewer — `gemini-2.5-flash-lite`
 
-**Requirement:** judgment + structured output (`json_schema`). Evaluates if task
-output matches expectations, decides ok/replan. Measured 1.8s latency and
-$0.00004/call — 4x faster and 7x cheaper than step-3.5-flash. Supports
-`json_schema` natively (step-3.5-flash rejects it with HTTP 400).
+**Requirement:** fast judgment + structured output. Runs on every task (highest
+frequency role). Evaluates output against expectations with json_schema.
+Flash-lite is sufficient — the reviewer checks concrete criteria (exit code,
+expected output), not open-ended reasoning.
 
-### Curator — `gemini-2.5-flash-lite`
+### Curator — `gemini-2.5-flash`
 
-**Requirement:** fast classification. Evaluates learnings as promote/ask/discard —
-a straightforward classification task. Runs asynchronously, so speed and cost
-matter more than intelligence.
+**Requirement:** reliable structured output with semantic reasoning. Must follow
+complex rules: promote/ask/discard verdicts, entity assignment, tag reuse,
+poisoning resistance. Flash (not flash-lite) because curator decisions affect
+long-term knowledge quality and flash-lite doesn't follow verdict-binding
+rules reliably enough.
 
-### Summarizer — `gemini-2.5-flash-lite`
-
-**Requirement:** fast, cheap. Compresses conversation history periodically. Runs
-asynchronously with no latency pressure. Summarization is well-handled by fast
-models — no need for high MMLU.
-
-### Paraphraser — `gemini-2.5-flash-lite`
-
-**Requirement:** speed. On the critical path for untrusted messages (prompt
-injection defense). Must be fast. The rewriting task is simple — restructure
-input without interpreting instructions.
-
-### Messenger — `qwen-3.5-flash`
+### Messenger — `deepseek-v3.2`
 
 **Requirement:** natural language quality. User-facing responses need to sound
-natural and handle multilingual output well. Qwen-3.5-flash has MMLU 82 (better
-language understanding) at 90 t/s and reasonable cost. The slight cost increase
-over gemini-flash-lite is worth it for UX quality.
+natural, handle multilingual output, and faithfully relay task results.
+DeepSeek-v3.2 produces fluent responses across languages.
+
+### Summarizer / Paraphraser / Consolidator — `gemini-2.5-flash-lite`
+
+**Requirement:** fast, cheap. These run asynchronously with no latency pressure.
+Summarization, paraphrasing, and knowledge consolidation are well-handled by
+fast models.
 
 ### Searcher — `perplexity/sonar`
 
-**Requirement:** native web search. Sonar is a search-augmented model — no
-alternative in the pipeline for web search tasks.
+**Requirement:** native web search. Sonar is a search-augmented model with
+built-in web retrieval. No alternative in the pipeline for search tasks.
 
 ## Cost Estimation
 
-Typical request with 3 tasks (with briefer-enabled deep context filtering):
+Typical request with 3 tasks:
 
 | Call | Model | Input tok | Output tok | Cost |
 |---|---|---|---|---|
-| Briefer | gemini-flash-lite | 800 | 200 | $0.00016 |
-| Planner | glm-4.7 | 800–1500 | 500 | $0.00065–0.00156 |
-| Worker x3 | gemini-flash-lite | 500 x3 | 100 x3 | $0.00012 |
-| Reviewer x3 | gemini-flash-lite | 400 x3 | 100 x3 | $0.00010 |
-| Messenger | qwen-3.5-flash | 600–1000 | 300 | $0.00024–0.00038 |
-| **Total** | | | | **~$0.0013–0.0024** |
+| Briefer | gemini-flash | 800 | 200 | $0.00029 |
+| Classifier | gemini-flash | 700 | 10 | $0.00021 |
+| Planner | deepseek-v3.2 | 1000 | 500 | $0.00049 |
+| Worker x3 | deepseek-v3.2 | 500 x3 | 100 x3 | $0.00055 |
+| Reviewer x3 | gemini-flash-lite | 400 x3 | 100 x3 | $0.00024 |
+| Messenger | deepseek-v3.2 | 800 | 300 | $0.00035 |
+| **Total** | | | | **~$0.002** |
 
-The briefer reduces planner input by selecting only relevant prompt modules
-(core-only: ~300 tok vs all modules: ~2800 tok) and filtering context
-(sys_env, facts, summary). Simple requests ("what time is it?") get the
-smallest prompt; complex requests ("install a tool and configure it") get
-more modules. Messenger context is also filtered — the briefer synthesizes
-only relevant facts and plan outputs.
+## Fallback Models
 
-Comparison: all-deepseek-v3.2 baseline costs ~$0.003 per request with
-significantly worse quality (MMLU 79, LCB 60) and 6x slower planner.
+When the primary model stalls or times out, kiso switches to a fallback:
 
-## Alternative Configurations
-
-### Budget — minimize cost
-
-Use gemini-flash-lite everywhere except planner (step for cheapest reasonable
-quality) and searcher.
-
-```toml
-briefer     = "google/gemini-2.5-flash-lite"
-classifier  = "google/gemini-2.5-flash-lite"
-planner     = "stepfun/step-3.5-flash"            # LCB 86, $0.10/$0.30
-reviewer    = "google/gemini-2.5-flash-lite"
-curator     = "google/gemini-2.5-flash-lite"
-worker      = "google/gemini-2.5-flash-lite"
-summarizer  = "google/gemini-2.5-flash-lite"
-paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "google/gemini-2.5-flash-lite"
-searcher    = "perplexity/sonar"
-```
-
-~$0.0008/request. Now identical to the default for worker/reviewer. Trade-off:
-planner uses step-3.5-flash (LCB 86 but only 80 MMLU) instead of glm-4.7.
-
-### Quality — maximize intelligence
-
-Strongest models for critical roles. Higher cost, better results for complex tasks.
-
-```toml
-briefer     = "stepfun/step-3.5-flash"
-classifier  = "google/gemini-2.5-flash-lite"
-planner     = "moonshotai/kimi-k2.5"                 # MMLU 85, LCB 84
-reviewer    = "z-ai/glm-4.7"                    # MMLU 83 for better judgment
-curator     = "stepfun/step-3.5-flash"
-worker      = "stepfun/step-3.5-flash"
-summarizer  = "google/gemini-2.5-flash-lite"
-paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "moonshotai/kimi-k2.5"                 # MMLU 85 for best language
-searcher    = "perplexity/sonar"
-```
-
-~$0.005/request. Worth it for tasks requiring complex planning and nuanced review.
-
-### Max quality — reasoning models
-
-For the most demanding tasks. Use reasoning models for planner. Very slow but
-highest accuracy.
-
-```toml
-briefer     = "stepfun/step-3.5-flash"
-classifier  = "google/gemini-2.5-flash-lite"
-planner     = "deepseek/deepseek-r1"            # MMLU 90, LCB 92 (slow: 20 t/s)
-reviewer    = "z-ai/glm-4.7"
-curator     = "stepfun/step-3.5-flash"
-worker      = "stepfun/step-3.5-flash"
-summarizer  = "google/gemini-2.5-flash-lite"
-paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "moonshotai/kimi-k2.5"
-searcher    = "perplexity/sonar"
-```
-
-~$0.008/request. Planner will be slow (20 t/s) but produces the best plans.
-
-### All-deepseek — legacy / compatibility
-
-The previous default. Works but is dominated by faster, cheaper models.
-
-```toml
-briefer     = "deepseek/deepseek-v3.2"
-classifier  = "deepseek/deepseek-v3.2"
-planner     = "deepseek/deepseek-v3.2"
-reviewer    = "deepseek/deepseek-v3.2"
-curator     = "deepseek/deepseek-v3.2"
-worker      = "deepseek/deepseek-v3.2"
-summarizer  = "deepseek/deepseek-v3.2"
-paraphraser = "deepseek/deepseek-v3.2"
-messenger   = "deepseek/deepseek-v3.2"
-searcher    = "perplexity/sonar"
-```
-
-~$0.003/request. Slow (25 t/s), MMLU 79, LCB 60. Not recommended — step-3.5-flash
-is better in every dimension at lower cost.
-
-## How to Override
-
-Edit `~/.kiso/config.toml`:
-
-```toml
-[models]
-planner = "deepseek/deepseek-r1"   # override just the planner
-```
-
-All models route through your configured provider (typically OpenRouter).
-The model string is sent as-is to the API — use whatever identifiers your
-provider supports.
-
-To use a different provider for a specific model, use `provider:model`:
-
-```toml
-[providers.openrouter]
-base_url = "https://openrouter.ai/api/v1"
-
-[providers.ollama]
-base_url = "http://localhost:11434/v1"
-
-[models]
-worker = "ollama:codellama"   # route worker through local Ollama
-planner = "z-ai/glm-4.7"      # route through first provider (OpenRouter)
-```
+- **Planner fallback:** `minimax/minimax-m2.7` (configurable via `planner_fallback_model`)
+- **All text roles:** fallback triggers on SSE stall or HTTP timeout
+- **Retry budget:** configurable via `max_llm_retries` (default 3)
