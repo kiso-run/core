@@ -85,24 +85,27 @@ async def _run_text_role(
             return sanitize_fn(text) if sanitize_fn else text
         except LLMBudgetExceeded:
             raise
-        except LLMStallError as e:
-            last_err = e
-            if policy.fallback_model and not using_fallback:
-                log.warning("SSE stall on %s, switching to fallback %s", role, policy.fallback_model)
-                using_fallback = True
-                if attempt >= total_attempts:
-                    total_attempts += 1
-                continue
-            break
         except LLMError as e:
             last_err = e
-            # M1232: timeout → switch to fallback model (same as stall)
-            if "timed out" in str(e) and policy.fallback_model and not using_fallback:
-                log.warning("Timeout on %s, switching to fallback %s", role, policy.fallback_model)
+            # Stall or timeout with fallback available → switch model
+            is_stall = isinstance(e, LLMStallError)
+            should_fallback = (
+                (is_stall or "timed out" in str(e))
+                and policy.fallback_model
+                and not using_fallback
+            )
+            if should_fallback:
+                log.warning("%s on %s, switching to fallback %s",
+                            "SSE stall" if is_stall else "Timeout",
+                            role, policy.fallback_model)
                 using_fallback = True
                 if attempt >= total_attempts:
                     total_attempts += 1
                 continue
+            # Stall without fallback → give up
+            if is_stall:
+                break
+            # Other LLM errors → retry same model
             if attempt < total_attempts:
                 log.warning("%s retry %d/%d: %s", role.capitalize(), attempt + 1, policy.max_retries, e)
                 if policy.retry_backoff > 0:
