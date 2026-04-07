@@ -23,7 +23,7 @@ See [docker.md](docker.md) for the full directory layout and instance registry.
 On first start, if `config.toml` does not exist in the instance directory, kiso writes a complete template with all fields pre-set to their defaults, then exits with instructions:
 
 ```
-Config created at /root/.kiso/config.toml
+Config created at KISO_DIR/config.toml
   1. Set your token in [tokens]
   2. Configure [providers] and [users]
   3. Restart kiso

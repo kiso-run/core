@@ -1,6 +1,6 @@
 # LLM Roles
 
-Each LLM call has its own role. Each role has its own model (from `config.toml`), its own system prompt (from `~/.kiso/instances/{name}/roles/{role}.md` on the host, `/root/.kiso/roles/{role}.md` inside the container), and receives **only the context it needs**.
+Each LLM call has its own role. Each role has its own model (from `config.toml`), its own system prompt (from `~/.kiso/instances/{name}/roles/{role}.md` on the host, `KISO_DIR/roles/{role}.md` inside the container), and receives **only the context it needs**.
 
 ## Context per Role
 

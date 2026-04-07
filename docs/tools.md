@@ -1,13 +1,13 @@
 # Tools
 
-A tool is a git-cloned package in `~/.kiso/instances/{instance}/tools/{name}/` on the host (mounted at `/root/.kiso/tools/{name}/` inside the container). Runs as a subprocess in a `uv`-managed venv.
+A tool is a git-cloned package in `~/.kiso/instances/{instance}/tools/{name}/` on the host (mounted at `KISO_DIR/tools/{name}/` inside the container). Runs as a subprocess in a `uv`-managed venv.
 
 
 ## Structure
 
 ```
 ~/.kiso/instances/{instance}/tools/    # host path
-/root/.kiso/tools/                     # container-internal path (equivalent)
+KISO_DIR/tools/                     # container-internal path (equivalent)
 ├── search/
 │   ├── kiso.toml           # manifest (required) — identity, args schema, deps
 │   ├── pyproject.toml      # python dependencies (required, uv-managed)
@@ -289,7 +289,7 @@ When the worker encounters a `tool` task:
 
 1. Parses `args` from JSON string, validates against the schema in `kiso.toml`
 2. Builds input JSON (parsed args as object + session + workspace path + scoped ephemeral secrets as dict + plan outputs from preceding tasks)
-3. Pipes input JSON to stdin: `.venv/bin/python /root/.kiso/tools/search/run.py` with `cwd=/root/.kiso/sessions/{session}` (container-internal paths)
+3. Pipes input JSON to stdin: `.venv/bin/python KISO_DIR/tools/search/run.py` with `cwd=KISO_DIR/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values — plaintext, base64, URL-encoded)
 6. Stores task result in DB (status, output)
@@ -305,7 +305,7 @@ Before execution, tool task args are validated at plan time:
 
 ## Discovery
 
-Scanned from `/root/.kiso/tools/` (container-internal) before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a tool or a plain `exec` task.
+Scanned from `KISO_DIR/tools/` before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a tool or a plain `exec` task.
 
 The tool list is scanned on every planner call — no caching. Newly installed or removed tools are immediately visible to the server without a restart. The scan is fast (TOML parse of a handful of files, microseconds) and negligible compared to the LLM call that follows.
 

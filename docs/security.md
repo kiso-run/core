@@ -111,8 +111,8 @@ The planner receives the user's allowed tool list and only sees those tools in i
 
 ### Exec Sandbox
 
-- **admin exec**: runs with `cwd=/root/.kiso/sessions/{session}` (container-internal). Can access any path in the container. Full permissions.
-- **user exec**: runs with `cwd=/root/.kiso/sessions/{session}` (container-internal). **Restricted to the session workspace** — cannot read or write outside `/root/.kiso/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
+- **admin exec**: runs with `cwd=KISO_DIR/sessions/{session}`. Can access any path in the container. Full permissions.
+- **user exec**: runs with `cwd=KISO_DIR/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `KISO_DIR/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
 Tools run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 

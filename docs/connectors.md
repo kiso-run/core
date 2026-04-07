@@ -156,7 +156,7 @@ kiso connector status discord          # check if running
 
 Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/instances/{instance}/connectors/{name}/connector.log`.
 
-Under the hood: `.venv/bin/python /root/.kiso/connectors/{name}/run.py &` (container-internal path) with a management loop that monitors the PID and respawns with backoff.
+Under the hood: `.venv/bin/python KISO_DIR/connectors/{name}/run.py &` with a management loop that monitors the PID and respawns with backoff.
 
 ### Restart Policy
 
