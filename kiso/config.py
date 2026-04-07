@@ -148,17 +148,17 @@ role = "admin"
 [models]
 # Format: "provider/model-name" — all route through your gateway (e.g., OpenRouter)
 # See docs/model-selection.md for rationale and alternatives
-briefer     = "google/gemini-2.5-flash-lite"  # context selection (150 t/s, cheapest)
-classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, simple)
-planner     = "deepseek/deepseek-v3.2"          # plan generation (fast, structured output)
-reviewer    = "google/gemini-2.5-flash-lite"   # output review (1.8s, json_schema native)
-curator     = "google/gemini-2.5-flash"         # knowledge curation (needs reliable json_schema)
-worker      = "deepseek/deepseek-v3.2"          # command translation (strict output format)
-summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, cheap)
-paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
-messenger   = "qwen/qwen3.5-flash-02-23"            # user-facing responses (MMLU 82, natural)
-searcher    = "perplexity/sonar"               # web search (native search API)
-consolidator = "google/gemini-2.5-flash-lite"  # periodic knowledge quality review (async, cheap)
+briefer     = "google/gemini-2.5-flash"       # context selection (json_schema native)
+classifier  = "google/gemini-2.5-flash"       # message classification (fast, simple)
+planner     = "deepseek/deepseek-v3.2"        # plan generation (fast, structured output)
+reviewer    = "google/gemini-2.5-flash-lite"  # output review (json_schema native, high frequency)
+curator     = "google/gemini-2.5-flash"       # knowledge curation (needs reliable json_schema)
+worker      = "deepseek/deepseek-v3.2"        # command translation (strict output format)
+summarizer  = "google/gemini-2.5-flash-lite"  # conversation summary (async, cheap)
+paraphraser = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
+messenger   = "deepseek/deepseek-v3.2"        # user-facing responses (natural language)
+searcher    = "perplexity/sonar"              # web search (native search API)
+consolidator = "google/gemini-2.5-flash-lite" # periodic knowledge quality review (async, cheap)
 
 [settings]
 # --- conversation ---
