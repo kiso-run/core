@@ -2094,7 +2094,7 @@ def _detect_circular_replan(
             if jaccard > 0.5:
                 fp_repeat_count += 1
 
-    if fp_repeat_count >= 2:
+    if fp_repeat_count >= 1:
         log.warning(
             "Circular replan detected (%d repeated strategy overlaps): %s",
             fp_repeat_count, replan_reason,

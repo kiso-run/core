@@ -6278,18 +6278,18 @@ class TestExtendReplan:
             ],
         }
 
-        # Subsequent plans don't extend
-        no_extend_plan = {
-            "goal": "No extend",
-            "secrets": None,
-            "extend_replan": None,
-            "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
-            ],
-        }
-
         planner_calls = []
+
+        def _make_no_extend(n):
+            return {
+                "goal": f"Attempt {n}",
+                "secrets": None,
+                "extend_replan": None,
+                "tasks": [
+                    {"type": "exec", "detail": f"approach {n} exit 1", "tool": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                ],
+            }
 
         async def _planner(db, config, session, role, content, **kwargs):
             planner_calls.append(content)
@@ -6298,7 +6298,7 @@ class TestExtendReplan:
                 return fail_plan
             elif n == 2:
                 return extend_plan  # This one requests extend_replan=10 (capped to 3)
-            return no_extend_plan
+            return _make_no_extend(n)
 
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
@@ -6343,73 +6343,31 @@ class TestExtendReplan:
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "do it", processed=False)
 
-        fail_plan = {
-            "goal": "Will fail",
-            "secrets": None,
-            "extend_replan": None,
-            "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
-            ],
-        }
-
-        # First replan requests extend=2 → gets 2 (total_extensions=2)
-        extend2_plan = {
-            "goal": "Extends by 2",
-            "secrets": None,
-            "extend_replan": 2,
-            "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
-            ],
-        }
-
-        # Second replan requests extend=2 → gets only 1 (cap 3 - 2 used = 1 remaining)
-        extend2_again_plan = {
-            "goal": "Extends by 2 again",
-            "secrets": None,
-            "extend_replan": 2,
-            "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
-            ],
-        }
-
-        # Third replan requests extend=2 → gets 0 (cap fully used)
-        extend2_third_plan = {
-            "goal": "Extends by 2 third time",
-            "secrets": None,
-            "extend_replan": 2,
-            "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
-            ],
-        }
-
-        no_extend_plan = {
-            "goal": "No extend",
-            "secrets": None,
-            "extend_replan": None,
-            "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
-            ],
-        }
-
         planner_calls = []
+
+        def _make_plan(goal, extend=None, n=0):
+            return {
+                "goal": goal,
+                "secrets": None,
+                "extend_replan": extend,
+                "tasks": [
+                    {"type": "exec", "detail": f"approach {n} exit 1", "tool": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                ],
+            }
 
         async def _planner(db, config, session, role, content, **kwargs):
             planner_calls.append(content)
             n = len(planner_calls)
             if n == 1:
-                return fail_plan          # initial plan, fails
+                return _make_plan("Will fail", n=1)
             elif n == 2:
-                return extend2_plan       # replan 1: requests +2, gets 2 (total=2, limit=3)
+                return _make_plan("Extends by 2", extend=2, n=2)
             elif n == 3:
-                return extend2_again_plan # replan 2: requests +2, gets 1 (total=3, limit=4)
+                return _make_plan("Extends by 2 again", extend=2, n=3)
             elif n == 4:
-                return extend2_third_plan # replan 3: requests +2, gets 0 (cap exhausted)
-            return no_extend_plan         # replan 4: no extend, keeps failing
+                return _make_plan("Extends by 2 third time", extend=2, n=4)
+            return _make_plan("No extend", n=n)
 
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
@@ -9484,7 +9442,19 @@ class TestDetectCircularReplanUnit:
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is False
 
-    def test_strategy_fingerprint_overlap(self):
+    def test_strategy_fingerprint_overlap_two_entries(self):
+        """M1229: same strategy failing twice → circular (threshold lowered from 3 to 2)."""
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "reason A completely different", "goal": "g",
+             "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
+            {"failure": "reason B unrelated text here", "goal": "g",
+             "strategy_fingerprint": frozenset({"exec:curl example.com", "exec:parse response"})},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
+    def test_strategy_fingerprint_overlap_three_entries(self):
+        """Same strategy 3 times also detected."""
         from kiso.worker.loop import _detect_circular_replan
         history = [
             {"failure": "reason A completely different", "goal": "g",
@@ -9675,7 +9645,16 @@ class TestCircularReplanDetection:
             ],
         }
 
-        plan_iter = iter([plan_a, plan_b, plan_b])
+        plan_c = {
+            "goal": "Do it",
+            "secrets": None,
+            "extend_replan": None,
+            "tasks": [
+                {"type": "exec", "detail": "try approach C with wget", "tool": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+            ],
+        }
+        plan_iter = iter([plan_a, plan_b, plan_c])
 
         async def _planner(db, config, session, role, content, **kwargs):
             return next(plan_iter, plan_b)
