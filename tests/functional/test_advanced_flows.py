@@ -308,16 +308,18 @@ class TestF41AiderEditFile:
     """F41: Aider fixes a bug in an existing file."""
 
     @pytest.mark.extended
-    async def test_aider_fixes_bug(self, preset_tools_installed, run_message, _func_kiso_dir):
+    async def test_aider_fixes_bug(self, preset_tools_installed, run_message, _func_kiso_dir, func_session):
         """What: Pre-create buggy file → aider fixes → exec verifies.
 
         Why: All existing aider tests create files from scratch. This tests
         aider's primary use case: editing existing code.
         Expects: aider tool task present, exec output contains '7' (3+4).
         """
-        # M1064: write file in kiso_dir (accessible to aider's git workspace)
-        # Using kiso_dir root so the path is stable across sessions.
-        target = _func_kiso_dir / "kiso_test_f41.py"
+        # M1235: create file in session workspace so both aider (git) and
+        # exec (cwd) can access it with relative or absolute paths.
+        workspace = _func_kiso_dir / "sessions" / func_session
+        workspace.mkdir(parents=True, exist_ok=True)
+        target = workspace / "kiso_test_f41.py"
         target.write_text(
             "def add(a, b):\n"
             "    return a - b\n"
@@ -355,15 +357,18 @@ class TestF42AiderAddFeature:
     """F42: Aider adds a method to an existing class."""
 
     @pytest.mark.extended
-    async def test_aider_adds_method(self, preset_tools_installed, run_message, _func_kiso_dir):
+    async def test_aider_adds_method(self, preset_tools_installed, run_message, _func_kiso_dir, func_session):
         """What: Pre-create Calculator class → aider adds multiply → exec verifies.
 
         Why: Tests aider's ability to understand existing code structure and
         extend it — the most common real-world aider use case.
         Expects: aider tool task present, exec output contains '30' (5*6).
         """
-        # M1064: write file in kiso_dir (accessible to aider's git workspace)
-        target = _func_kiso_dir / "kiso_test_f42.py"
+        # M1235: create file in session workspace so both aider (git) and
+        # exec (cwd) can access it with relative or absolute paths.
+        workspace = _func_kiso_dir / "sessions" / func_session
+        workspace.mkdir(parents=True, exist_ok=True)
+        target = workspace / "kiso_test_f42.py"
         target.write_text(
             "class Calculator:\n"
             "    def add(self, a, b):\n"
