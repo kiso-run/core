@@ -281,16 +281,35 @@ reason about what actually happened, not just what a previous prompt said.
 
 ```text
 kiso/                               # installable python package
-├── main.py                         # FastAPI, /msg, /status, /pub, /health
-├── brain.py                        # planner, reviewer, curator, memory packing
-├── llm.py                          # LLM client
+├── main.py                         # FastAPI app, lifespan, boot
+├── api/                            # REST API routes
+│   ├── runtime.py                  # /msg, /status endpoints
+│   ├── sessions.py                 # session management
+│   ├── knowledge.py                # facts, entities, tags
+│   ├── admin.py                    # admin operations
+│   └── projects.py                 # multi-project support
+├── brain/                          # LLM role orchestration
+│   ├── planner.py                  # plan generation + deterministic validation
+│   ├── reviewer.py                 # task output review
+│   ├── curator.py                  # knowledge curation + entity assignment
+│   ├── text_roles.py               # messenger, summarizer, exec translator
+│   └── common.py                   # shared LLM call infra, schemas, retry
 ├── worker/                         # per-session execution runtime
-│   ├── loop.py                     # message processing and orchestration
-│   ├── exec.py / tool.py / search.py
-│   └── utils.py                    # contracts, results, workspace helpers
-├── store.py                        # SQLite access, facts, plans, tasks
+│   ├── loop.py                     # message processing, replan loop
+│   ├── message_flow.py             # messenger + curator + summarizer flow
+│   ├── review_flow.py              # review step orchestration
+│   ├── exec.py / tool.py / search.py  # task handlers
+│   ├── replan.py                   # replan context building
+│   └── state.py / utils.py         # execution state, workspace helpers
+├── store/                          # SQLite persistence
+│   ├── knowledge.py                # facts, entities, tags
+│   ├── plans.py / sessions.py      # plans, tasks, sessions
+│   └── shared.py / setup.py        # queries, schema migrations
+├── llm.py                          # LLM client (SSE streaming, retry)
+├── config.py                       # config loading and validation
+├── sysenv.py                       # system environment detection
 ├── tools.py / connectors.py        # plugin discovery and loading
-└── config.py                       # config loading and validation
+└── roles/*.md                      # LLM role prompts (planner, reviewer, etc.)
 
 ~/.kiso/instances/{name}/           # per-instance state
 ├── config.toml
