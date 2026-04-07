@@ -92,7 +92,7 @@ MODEL_DEFAULTS: dict[str, str] = {
     "classifier": "google/gemini-2.5-flash",
     "planner": "deepseek/deepseek-v3.2",
     "reviewer": "google/gemini-2.5-flash-lite",
-    "curator": "deepseek/deepseek-v3.2",
+    "curator": "google/gemini-2.5-flash",
     "worker": "deepseek/deepseek-v3.2",
     "summarizer": "google/gemini-2.5-flash-lite",
     "paraphraser": "google/gemini-2.5-flash-lite",
@@ -152,7 +152,7 @@ briefer     = "google/gemini-2.5-flash-lite"  # context selection (150 t/s, chea
 classifier  = "google/gemini-2.5-flash-lite"  # message classification (fast, simple)
 planner     = "deepseek/deepseek-v3.2"          # plan generation (fast, structured output)
 reviewer    = "google/gemini-2.5-flash-lite"   # output review (1.8s, json_schema native)
-curator     = "google/gemini-2.5-flash-lite"   # knowledge curation (simple classification)
+curator     = "google/gemini-2.5-flash"         # knowledge curation (needs reliable json_schema)
 worker      = "deepseek/deepseek-v3.2"          # command translation (strict output format)
 summarizer  = "google/gemini-2.5-flash-lite"   # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"   # prompt injection defense (critical path)
