@@ -467,23 +467,20 @@ def _validate_plan_ordering(
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")
 
-    # M1227: exec immediately after tool is only valid when the goal
-    # indicates running/testing.  The goal is always English (planner rule).
-    goal_words = set(goal.lower().split())
-    goal_has_run = bool(goal_words & _GOAL_RUN_KEYWORDS)
-    for i, task in enumerate(tasks):
-        if (
-            task.get("type") == TASK_TYPE_TOOL
-            and i + 1 < len(tasks)
-            and tasks[i + 1].get("type") == TASK_TYPE_EXEC
-            and not goal_has_run
-        ):
-            errors.append(
-                f"Task {i + 2}: exec immediately after tool — reviewer already "
-                f"inspects tool output. Remove the exec task. Add exec after tool "
-                f"ONLY when the user asks to run or test the result."
-            )
-            break
+    # M1227/M1233: codegen-only pattern = plan starts with tool then exec.
+    # Only fire when tasks[0]=tool, tasks[1]=exec.  Multi-step workflows
+    # where tool comes after other tasks are intentional, not verification.
+    if (
+        len(tasks) >= 2
+        and tasks[0].get("type") == TASK_TYPE_TOOL
+        and tasks[1].get("type") == TASK_TYPE_EXEC
+        and not bool(set(goal.lower().split()) & _GOAL_RUN_KEYWORDS)
+    ):
+        errors.append(
+            "Task 2: exec immediately after tool — reviewer already "
+            "inspects tool output. Remove the exec task. Add exec after tool "
+            "ONLY when the user asks to run or test the result."
+        )
 
     return errors
 

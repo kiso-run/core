@@ -9316,6 +9316,24 @@ class TestM1052MsgOnlyValidation:
         )
         assert not any("exec immediately after tool" in e for e in errors)
 
+    def test_exec_after_tool_allowed_in_multistep_workflow(self):
+        """M1233: [search, tool, tool, exec, msg] — exec not at position 1, allowed."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [
+            {"type": "search", "detail": "find programming languages", "expect": "results"},
+            {"type": "tool", "detail": "navigate to TIOBE", "tool": "browser",
+             "args": {"url": "https://tiobe.com"}, "expect": "page loaded"},
+            {"type": "tool", "detail": "extract table", "tool": "browser",
+             "args": {"action": "text"}, "expect": "table data"},
+            {"type": "exec", "detail": "create markdown file from data", "expect": "file created"},
+            {"type": "msg", "detail": "Answer in English. here is the file"},
+        ]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            goal="Create a markdown table of top programming languages.",
+        )
+        assert not any("exec immediately after tool" in e for e in errors)
+
     def test_msg_only_via_validate_plan_with_skills(self):
         """M1052: validate_plan with installed_skills=["browser"] → rejected."""
         plan = {"tasks": [
