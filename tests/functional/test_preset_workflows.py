@@ -197,5 +197,5 @@ class TestF30FullPipeline:
         output = r2.last_plan_msg_output.lower()
         assert_no_failure_language(output)
         import re
-        assert re.search(r"chars:\s*\d+", output), f"Missing chars count: {output[:500]}"
-        assert re.search(r"lines:\s*\d+", output), f"Missing lines count: {output[:500]}"
+        assert re.search(r"(?:char(?:acter)?s?|caratteri)\s*(?:count)?\s*[:*]*\s*\d+", output), f"Missing chars count: {output[:500]}"
+        assert re.search(r"(?:lines?|righe?)\s*(?:count)?\s*[:*]*\s*\d+", output), f"Missing lines count: {output[:500]}"

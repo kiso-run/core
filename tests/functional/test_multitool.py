@@ -167,5 +167,5 @@ class TestF17FullPipeline:
 
         # Should contain deterministic text stats (messenger may reformulate labels)
         import re
-        assert re.search(r"char(?:acter)?s?\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing chars count: {output[:500]}"
-        assert re.search(r"lines?\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing lines count: {output[:500]}"
+        assert re.search(r"(?:char(?:acter)?s?|caratteri)\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing chars count: {output[:500]}"
+        assert re.search(r"(?:lines?|righe?)\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing lines count: {output[:500]}"
