@@ -96,6 +96,13 @@ async def _run_text_role(
             break
         except LLMError as e:
             last_err = e
+            # M1232: timeout → switch to fallback model (same as stall)
+            if "timed out" in str(e) and policy.fallback_model and not using_fallback:
+                log.warning("Timeout on %s, switching to fallback %s", role, policy.fallback_model)
+                using_fallback = True
+                if attempt >= total_attempts:
+                    total_attempts += 1
+                continue
             if attempt < total_attempts:
                 log.warning("%s retry %d/%d: %s", role.capitalize(), attempt + 1, policy.max_retries, e)
                 if policy.retry_backoff > 0:

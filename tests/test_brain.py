@@ -2738,6 +2738,28 @@ class TestRunSummarizer:
         assert result == "Fallback summary"
         assert captured_overrides == [None, "fallback/model"]
 
+    async def test_timeout_uses_fallback_model(self, config):
+        """M1232: LLM timeout triggers fallback model switch."""
+        messages = [{"role": "user", "user": "alice", "content": "Hello"}]
+        captured_overrides = []
+
+        async def _timeout_then_fallback(cfg, role, payload, **kw):
+            captured_overrides.append(kw.get("model_override"))
+            if len(captured_overrides) == 1:
+                raise LLMError("LLM call timed out (ReadTimeout, summarizer, model-a)")
+            return "Fallback after timeout"
+
+        with patch("kiso.brain.call_llm", side_effect=_timeout_then_fallback):
+            result = await _call_role(
+                config,
+                "summarizer",
+                build_summarizer_messages("", messages),
+                SummarizerError,
+                fallback_model="fallback/model",
+            )
+        assert result == "Fallback after timeout"
+        assert captured_overrides == [None, "fallback/model"]
+
 # --- M10: Paraphraser ---
 
 class TestBuildParaphraserMessages:
