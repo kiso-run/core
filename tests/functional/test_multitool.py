@@ -166,6 +166,6 @@ class TestF17FullPipeline:
         assert_no_failure_language(output)
 
         # Should contain deterministic text stats (messenger may reformulate labels)
-        import re
-        assert re.search(r"(?:char(?:acter)?s?|caratteri)\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing chars count: {output[:500]}"
-        assert re.search(r"(?:lines?|righe?)\s*(?:count)?\s*[:*]*\s*\d+", output.lower()), f"Missing lines count: {output[:500]}"
+        from tests.functional.conftest import CHARS_COUNT_RE, LINES_COUNT_RE
+        assert CHARS_COUNT_RE.search(output.lower()), f"Missing chars count: {output[:500]}"
+        assert LINES_COUNT_RE.search(output.lower()), f"Missing lines count: {output[:500]}"

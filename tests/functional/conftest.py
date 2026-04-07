@@ -99,6 +99,15 @@ _LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+.*$", re.MULTILINE)
 _NUMBERED_ITEM_RE = re.compile(r"^\s*\d+\.\s+.*$", re.MULTILINE)
 _BLOCKQUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
 
+# Multilingual regex for text stats assertions (chars/lines count).
+# Matches: "chars: 1432", "**Character Count:** 1432", "caratteri: 92", etc.
+CHARS_COUNT_RE = re.compile(
+    r"(?:char(?:acter)?s?|caratteri)\s*(?:count)?\s*[:*]*\s*\d+", re.IGNORECASE,
+)
+LINES_COUNT_RE = re.compile(
+    r"(?:lines?|righe?)\s*(?:count)?\s*[:*]*\s*\d+", re.IGNORECASE,
+)
+
 
 def _strip_code_blocks(text: str) -> str:
     """Remove Markdown fenced code blocks from *text*."""
