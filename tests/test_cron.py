@@ -117,7 +117,7 @@ def _fake_sleep(max_calls=1):
 
 
 async def test_cron_scheduler_processes_due_jobs(db):
-    """M679: _cron_scheduler fetches due jobs, saves message with source='cron',
+    """_cron_scheduler fetches due jobs, saves message with source='cron',
     enqueues to worker, and updates next_run via croniter."""
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
@@ -162,7 +162,7 @@ async def test_cron_scheduler_processes_due_jobs(db):
 
 
 async def test_cron_scheduler_updates_next_run(db):
-    """M679: After processing, next_run is updated via croniter."""
+    """After processing, next_run is updated via croniter."""
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -189,7 +189,7 @@ async def test_cron_scheduler_updates_next_run(db):
 
 
 async def test_cron_scheduler_per_job_error_continues(db):
-    """M679: Error processing one job doesn't crash the scheduler."""
+    """Error processing one job doesn't crash the scheduler."""
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 

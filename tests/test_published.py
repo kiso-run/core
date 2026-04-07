@@ -205,7 +205,7 @@ class TestGetPubEndpoint:
         assert resp.status_code == 200
 
     async def test_csp_header_present(self, client, _setup_session):
-        """M553: pub responses include CSP and X-Content-Type-Options headers."""
+        """pub responses include CSP and X-Content-Type-Options headers."""
         test_file = self._pub_dir / "page.html"
         test_file.write_text("<html><body>test</body></html>")
 

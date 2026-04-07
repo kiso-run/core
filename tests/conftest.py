@@ -122,7 +122,7 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip)
 
 # ---------------------------------------------------------------------------
-# M927: Inline per-test duration in verbose output
+# Inline per-test duration in verbose output
 # ---------------------------------------------------------------------------
 
 def pytest_report_teststatus(report, config):
@@ -146,7 +146,7 @@ def pytest_report_teststatus(report, config):
 
 
 # ---------------------------------------------------------------------------
-# M479/M480: Zero-delay retry backoff in unit tests
+# Zero-delay retry backoff in unit tests
 # ---------------------------------------------------------------------------
 # Transport retries (kiso.llm) and messenger retries (kiso.brain) use
 # asyncio.sleep for backoff. In unit tests, these sleeps cause timeouts.
@@ -245,7 +245,7 @@ DISCORD_AUTH_HEADER = {"Authorization": "Bearer discord-bot-token"}
 # drift. Pick the smallest class that matches the behavior under test so
 # deterministic infinite-loop regressions still fail promptly.
 LLM_ROLE_ONLY_TIMEOUT = 180   # direct role calls: planner/reviewer/worker/etc.
-# M1062/M1057/M1081: a single plan cycle is ~8+ LLM calls once classifier and
+# a single plan cycle is ~8+ LLM calls once classifier and
 # briefers are included.
 LLM_SINGLE_PLAN_TIMEOUT = 240
 LLM_REPLAN_TIMEOUT = 300      # single request expected to hit reviewer/planner recovery

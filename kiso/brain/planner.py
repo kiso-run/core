@@ -235,7 +235,7 @@ def _validate_plan_tasks(
                 f"Action tasks should do the work only; use a final msg task "
                 f"to tell/send results to the user."
             )
-        # M862: kiso plugin install for names not in registry (without git URL)
+        # kiso plugin install for names not in registry (without git URL)
         if t == TASK_TYPE_EXEC and registry_hint_names is not None:
             name_match = _INSTALL_NAME_RE.search(detail)
             if name_match and not _GIT_URL_RE.search(detail):
@@ -359,7 +359,7 @@ def _validate_plan_tasks(
                     )
                     arg_errors.extend(semantic_errors)
                     if arg_errors:
-                        # M1067: show only required args in example so the
+                        # show only required args in example so the
                         # model focuses on what it MUST provide.
                         required_args = {
                             aname: _TYPE_EXAMPLES.get(adef.get("type", "string"), "value")
@@ -372,7 +372,7 @@ def _validate_plan_tasks(
                             + "; ".join(arg_errors)
                             + f". Required args object: '{example_json}'"
                         )
-                    # M1231: browser must use web URLs, not local file paths
+                    # browser must use web URLs, not local file paths
                     if tool_name == "browser":
                         for v in args.values():
                             if isinstance(v, str) and v.startswith("file://"):
@@ -410,7 +410,7 @@ def _validate_plan_ordering(
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
 
-    # M1056: msg-only plans are rejected unless needs_install or knowledge is set.
+    # msg-only plans are rejected unless needs_install or knowledge is set.
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL, TASK_TYPE_REPLAN}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
@@ -422,8 +422,8 @@ def _validate_plan_ordering(
                 "(set needs_install) or knowledge storage."
             )
 
-    # M1217: msg as first task wastes an LLM call before any action runs.
-    # M1225: skip when needs_install — install validators give targeted feedback.
+    # msg as first task wastes an LLM call before any action runs.
+    # skip when needs_install — install validators give targeted feedback.
     if has_action and tasks[0].get("type") == TASK_TYPE_MSG and not has_needs_install:
         errors.append(
             "msg task must come after action tasks — do not start "
@@ -432,7 +432,7 @@ def _validate_plan_ordering(
 
     # install execs allowed in replans, when user approved in prior msg cycle,
     # or when user directly requested install (needs_install is empty — no proposal).
-    # M979: only block when needs_install IS set (mixed propose+install in same plan).
+    # only block when needs_install IS set (mixed propose+install in same plan).
     if not is_replan and not install_approved and has_needs_install:
         first_install_idx = next(
             (i for i, t in enumerate(tasks)
@@ -467,7 +467,7 @@ def _validate_plan_ordering(
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")
 
-    # M1227/M1233: codegen-only pattern = plan starts with tool then exec.
+    # codegen-only pattern = plan starts with tool then exec.
     # Only fire when tasks[0]=tool, tasks[1]=exec.  Multi-step workflows
     # where tool comes after other tasks are intentional, not verification.
     if (
@@ -581,7 +581,7 @@ _GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL})
 
 
 def _validate_plan_groups(tasks: list[dict]) -> list[str]:
-    """M695: Validate parallel group constraints.
+    """Validate parallel group constraints.
 
     Rules:
     - group only on exec/search/tool (msg/replan → error)
@@ -645,7 +645,7 @@ def validate_plan(
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
         return errors
-    # M950: after a tool was determined to not exist in any registry,
+    # after a tool was determined to not exist in any registry,
     # force the planner to produce a msg-only plan.
     if force_msg_only:
         non_msg = [t for t in tasks if t.get("type") != TASK_TYPE_MSG]
@@ -695,7 +695,7 @@ def validate_plan(
             "auto-publish will generate a download URL automatically."
         )
 
-    # M968: validate knowledge items (if present)
+    # validate knowledge items (if present)
     knowledge = plan.get("knowledge") or []
     for ki, item in enumerate(knowledge, 1):
         if not isinstance(item, str) or len(item.strip()) < _MIN_PROMOTED_FACT_LEN:
@@ -704,7 +704,7 @@ def validate_plan(
                 f"{_MIN_PROMOTED_FACT_LEN} characters"
             )
 
-    # M984: needs_install plans are proposal plans — only msg tasks allowed.
+    # needs_install plans are proposal plans — only msg tasks allowed.
     # Execution tasks go in the NEXT plan after the user approves installation.
     if plan.get("needs_install"):
         non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
@@ -869,7 +869,7 @@ async def _gather_planner_context(
     # inject available entities for briefer selection, enriched with fact tags
     all_entities = await get_all_entities(db)
     if all_entities:
-        # M978: collect fact tags per entity so the briefer knows what each contains
+        # collect fact tags per entity so the briefer knows what each contains
         entity_ids = [e["id"] for e in all_entities]
         placeholders = ",".join("?" * len(entity_ids))
         cur = await db.execute(
@@ -1013,7 +1013,7 @@ async def build_planner_messages(
         except Exception as exc:
             log.warning("Briefer failed for planner, falling back to full context: %s", exc)
 
-    # M825: session_files module when files exist in workspace
+    # session_files module when files exist in workspace
     _has_session_files = "session_files" in context_pool
 
     if briefing:
@@ -1028,11 +1028,11 @@ async def build_planner_messages(
                 modules.append("kiso_native")
         if _has_session_files and "session_files" not in modules:
             modules.append("session_files")
-        # M959: planning_rules contains fundamental task-ordering and
+        # planning_rules contains fundamental task-ordering and
         # expect rules that must always be present (matches fallback path).
         if "planning_rules" not in modules:
             modules.append("planning_rules")
-        # M1054: tools_rules needed when any tools are installed — contains
+        # tools_rules needed when any tools are installed — contains
         # "use directly" rule and args/guide validation.  Broader than M1049
         # (which checked briefing["tools"]) because the briefer sometimes
         # skips tool selection even when tools are relevant.
@@ -1099,7 +1099,7 @@ async def build_planner_messages(
         # Briefer path: use synthesized context + filtered skills
         _add_section(context_parts, "Context", briefing["context"])
         _add_section(context_parts, "Relevant Facts", scored_facts_text)
-        # M937: inject essential system env always (~60 tok). Full version
+        # inject essential system env always (~60 tok). Full version
         # (~400 tok) only when briefer selected install/system modules.
         # Check briefer's raw selection — force-added modules (kiso_native
         # safety net) don't count since they're added unconditionally.
@@ -1109,16 +1109,16 @@ async def build_planner_messages(
             context_parts.append(f"## System Environment\n{sys_env_full}")
         else:
             context_parts.append(f"## System Environment\n{sys_env_essential}")
-            # M963: when kiso_native is loaded (install-decision rules) but
+            # when kiso_native is loaded (install-decision rules) but
             # full sysenv isn't warranted, inject just the install-critical
             # fields so the planner can route install commands correctly.
             if "kiso_native" in modules and install_ctx:
                 _add_section(context_parts, "Install Context", install_ctx)
-        # M1234: suppress generic routing when approved — Install Status
+        # suppress generic routing when approved — Install Status
         # section (added later) has the authoritative instructions.
         if not install_approved:
             _add_section(context_parts, "Install Routing", install_mode_ctx)
-        # M1040: inject user-facing settings only when kiso_commands loaded.
+        # inject user-facing settings only when kiso_commands loaded.
         if "kiso_commands" in modules:
             _settings_text = build_user_settings_text(get_system_env(config))
             _add_section(context_parts, "User Settings", _settings_text)
@@ -1188,7 +1188,7 @@ async def build_planner_messages(
             context_parts.append(f"## Available Recipes\n{build_planner_recipe_list(kept)}")
 
     # Tools section — briefer selects by name, code injects full descriptions.
-    # M824: skip briefer tool filtering when few tools installed — marginal
+    # skip briefer tool filtering when few tools installed — marginal
     # token saving vs catastrophic risk of excluding the right tool.
     tool_filter_threshold = setting_int(
         config.settings, "briefer_tool_filter_threshold", lo=0,
@@ -1231,7 +1231,7 @@ async def build_planner_messages(
     if registry_text:
         context_parts.append(f"## Available Tools (not installed)\n{registry_text}")
 
-    # M954: clarify that built-in search works without websearch installation.
+    # clarify that built-in search works without websearch installation.
     # This is injected unconditionally (not gated by briefer web module) so the
     # planner never fixates on installing websearch for simple research queries.
     # registry_text only contains websearch when it's NOT installed.
@@ -1332,7 +1332,7 @@ async def run_planner(
     else:
         log.warning("No user message found for budget injection")
 
-    # M950: track whether a tool was rejected as not-in-registry across
+    # track whether a tool was rejected as not-in-registry across
     # validation retries.  Once triggered, subsequent retries must produce
     # a msg-only plan (prevents the planner from circumventing via exec).
     _force_msg = False

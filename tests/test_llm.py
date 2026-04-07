@@ -151,7 +151,7 @@ class TestGetProvider:
         assert provider.base_url == "http://localhost:11434/v1"
 
     def test_all_model_defaults_resolve(self):
-        """M252: all MODEL_DEFAULTS resolve via a single gateway provider."""
+        """all MODEL_DEFAULTS resolve via a single gateway provider."""
         from kiso.config import MODEL_DEFAULTS
         config = make_config()
         for role, model_str in MODEL_DEFAULTS.items():
@@ -234,7 +234,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_request_error_empty_message_includes_class_name(self):
-        """M478: empty str(e) should still show error class and 'no detail'."""
+        """empty str(e) should still show error class and 'no detail'."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -245,7 +245,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_transport_retry_succeeds_on_second_attempt(self):
-        """M479: transient RequestError retried, success on second attempt."""
+        """transient RequestError retried, success on second attempt."""
         config = make_config()
         ok = _ok_stream()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -262,7 +262,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_transport_retry_exhausted_raises(self):
-        """M479: after max transport retries, raises LLMError."""
+        """after max transport retries, raises LLMError."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -310,7 +310,7 @@ class TestCallLlm:
                 assert mock_client.stream.call_count == 2
 
     def test_m1041_rate_backoff_zeroed_by_fixture(self):
-        """M1041: _no_retry_backoff fixture zeroes rate limit backoff."""
+        """_no_retry_backoff fixture zeroes rate limit backoff."""
         import kiso.llm
         assert kiso.llm._RATE_INITIAL_BACKOFF == 0.0
 
@@ -439,7 +439,7 @@ class TestCallLlm:
 
     @pytest.mark.asyncio
     async def test_stream_true_in_payload(self):
-        """M299: payload always includes stream=True and stream_options."""
+        """payload always includes stream=True and stream_options."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -503,7 +503,7 @@ class TestCallLlmAudit:
 
     @pytest.mark.asyncio
     async def test_audit_logged_on_request_error(self):
-        """M479: audit logged on each transport attempt (initial + retries)."""
+        """audit logged on each transport attempt (initial + retries)."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
@@ -569,7 +569,7 @@ class TestTimeoutConfig:
 
     @pytest.mark.asyncio
     async def test_all_roles_use_llm_timeout(self):
-        """M422: planner and messenger use unified llm_timeout, not per-role."""
+        """planner and messenger use unified llm_timeout, not per-role."""
         config = make_config(settings={"llm_timeout": 99})
         # Test non-structured roles (structured roles require response_format)
         for role in ("messenger", "worker", "summarizer"):
@@ -1013,7 +1013,7 @@ class TestMaxTokensParam:
 
     @pytest.mark.asyncio
     async def test_max_tokens_none_classifier_gets_default(self):
-        """M1057: classifier role gets CLASSIFIER_MAX_TOKENS when max_tokens is None."""
+        """classifier role gets CLASSIFIER_MAX_TOKENS when max_tokens is None."""
         from kiso.config import CLASSIFIER_MAX_TOKENS
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
@@ -1028,7 +1028,7 @@ class TestMaxTokensParam:
 
     @pytest.mark.asyncio
     async def test_max_tokens_none_non_classifier_no_limit(self):
-        """M1057: non-classifier roles get no max_tokens when None is passed."""
+        """non-classifier roles get no max_tokens when None is passed."""
         config = make_config()
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
@@ -1148,7 +1148,7 @@ class TestInflightCallTracking:
 
 
 class TestJsonSchemaFallback:
-    """M262: json_schema → json_object fallback for incompatible models."""
+    """json_schema → json_object fallback for incompatible models."""
 
     _SCHEMA = {"type": "json_schema", "json_schema": {"name": "review", "strict": True, "schema": {"type": "object"}}}
 
@@ -1275,11 +1275,11 @@ class TestJsonSchemaFallback:
 
 
 class TestM271ReasoningDefaults:
-    """M271: per-role reasoning config is included in API payload."""
+    """per-role reasoning config is included in API payload."""
 
     @pytest.mark.asyncio
     async def test_messenger_no_reasoning_after_m383(self):
-        """M383: messenger switched to deepseek — no reasoning config sent."""
+        """messenger switched to deepseek — no reasoning config sent."""
         config = make_config()
         captured_payload: list[dict] = []
 
@@ -1325,7 +1325,7 @@ def test_m271_reasoning_defaults_import():
     """REASONING_DEFAULTS is importable from config and has expected structure."""
     from kiso.config import REASONING_DEFAULTS
     assert isinstance(REASONING_DEFAULTS, dict)
-    # M383: messenger removed from REASONING_DEFAULTS (deepseek doesn't need it)
+    # messenger removed from REASONING_DEFAULTS (deepseek doesn't need it)
     assert "messenger" not in REASONING_DEFAULTS
 
 
@@ -1333,7 +1333,7 @@ def test_m271_reasoning_defaults_import():
 
 
 class TestM299SSEStreamParsing:
-    """M299: _read_sse_stream correctly parses OpenAI-compatible SSE."""
+    """_read_sse_stream correctly parses OpenAI-compatible SSE."""
 
     @pytest.mark.asyncio
     async def test_multi_chunk_content(self):
@@ -1419,7 +1419,7 @@ class TestM299SSEStreamParsing:
 
 
 class TestM300StallDetection:
-    """M300: stall_timeout aborts stream if no chunk arrives."""
+    """stall_timeout aborts stream if no chunk arrives."""
 
     @pytest.mark.asyncio
     async def test_stall_raises_after_timeout(self):
@@ -1515,13 +1515,13 @@ class TestM300StallDetection:
 
 
 class TestM300RaisedTimeouts:
-    """M300/M422: verify unified timeout defaults."""
+    """verify unified timeout defaults."""
 
     def test_llm_timeout_raised(self):
         assert SETTINGS_DEFAULTS["llm_timeout"] == 600
 
     def test_no_per_role_timeouts(self):
-        """M422: per-role timeouts removed from defaults."""
+        """per-role timeouts removed from defaults."""
         assert "planner_timeout" not in SETTINGS_DEFAULTS
         assert "messenger_timeout" not in SETTINGS_DEFAULTS
 
@@ -1533,7 +1533,7 @@ class TestM300RaisedTimeouts:
 
 
 class TestM303PartialContent:
-    """M303: _read_sse_stream updates inflight_dict with partial_content."""
+    """_read_sse_stream updates inflight_dict with partial_content."""
 
     @pytest.mark.asyncio
     async def test_partial_content_accumulated(self):
@@ -1673,7 +1673,7 @@ def _empty_stream(usage: dict | None = None) -> _StreamCM:
 
 
 class TestM305ReasoningFallback:
-    """M305: empty content with reasoning JSON → fallback for structured roles."""
+    """empty content with reasoning JSON → fallback for structured roles."""
 
     @pytest.mark.asyncio
     async def test_structured_role_uses_reasoning_json_as_content(self):
@@ -1752,7 +1752,7 @@ class TestM305ReasoningFallback:
 
 
 class TestCircuitBreaker:
-    """M629: transport circuit breaker prevents cascade timeouts."""
+    """transport circuit breaker prevents cascade timeouts."""
 
     def setup_method(self):
         import kiso.llm

@@ -1,4 +1,4 @@
-"""M453: Tests for CLI plugin commands (unified plugin view)."""
+"""Tests for CLI plugin commands (unified plugin view)."""
 
 from __future__ import annotations
 
@@ -107,7 +107,7 @@ class TestRunPluginCommand:
 
 
 class TestPluginInstallGitPull:
-    """M980: kiso tool install runs git pull when plugin already exists."""
+    """kiso tool install runs git pull when plugin already exists."""
 
     def test_git_pull_called_on_reinstall(self, tmp_path):
         from cli.plugin_ops import _plugin_install

@@ -1,4 +1,4 @@
-"""M388: Integration tests for P51-P57 fixes — messenger quality & entity backfill."""
+"""Integration tests for P51-P57 fixes — messenger quality & entity backfill."""
 
 from __future__ import annotations
 
@@ -143,7 +143,7 @@ class TestMsgDetailValidation:
     """P54: validate_plan rejects empty msg detail after language prefix."""
 
     def test_only_language_prefix_rejected(self):
-        """M902: msg detail with only language prefix is rejected (too short)."""
+        """msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.",
              "expect": None, "tool": None, "args": None},
@@ -161,7 +161,7 @@ class TestMsgDetailValidation:
         assert not any("empty or too short" in e for e in errors)
 
     def test_m902_no_prefix_substantive_detail_accepted(self):
-        """M902: msg detail without prefix is accepted if substantive (_msg_task adds prefix)."""
+        """msg detail without prefix is accepted if substantive (_msg_task adds prefix)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Tell the user the results",
              "expect": None, "tool": None, "args": None},
@@ -217,7 +217,7 @@ class TestBrieferToolFilterNoTools:
 
     @pytest.mark.asyncio
     async def test_tool_filter_exact_name_no_substring(self, config):
-        """M394: 'git' installed must NOT match briefer tool 'github'."""
+        """'git' installed must NOT match briefer tool 'github'."""
         response = json.dumps({
             "modules": [],
             "tools": ["github", "git"],

@@ -369,7 +369,7 @@ def test_cli_project_parser(args_list, expected):
     ("user", True, False, {"check_session": True}),
 ])
 async def test_curator_project_scoping(db, category, has_project, expected_project_id_set, extra_checks):
-    """M689: Curator assigns project_id based on category and session binding."""
+    """Curator assigns project_id based on category and session binding."""
     from kiso.worker.loop import _apply_curator_result
     from kiso.store import save_learning
 

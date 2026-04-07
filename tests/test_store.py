@@ -513,7 +513,7 @@ async def test_create_task_serializes_dict_args(db: aiosqlite.Connection):
 
 
 async def test_create_task_parallel_group_persists(db: aiosqlite.Connection):
-    """M695: parallel_group round-trips through create_task → get_tasks_for_plan."""
+    """parallel_group round-trips through create_task → get_tasks_for_plan."""
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     await create_task(db, plan_id, "sess1", type="search", detail="A",
@@ -528,7 +528,7 @@ async def test_create_task_parallel_group_persists(db: aiosqlite.Connection):
 
 
 async def test_create_task_parallel_group_default_null(db: aiosqlite.Connection):
-    """M695: parallel_group defaults to None when not specified."""
+    """parallel_group defaults to None when not specified."""
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     await create_task(db, plan_id, "sess1", type="exec", detail="ls")
@@ -1705,7 +1705,7 @@ async def test_save_learning_dedup_skips_promoted(db: aiosqlite.Connection):
 
 
 async def test_word_overlap_stopword_normalization(db: aiosqlite.Connection):
-    """M339: stopwords removed before overlap — paraphrases are caught."""
+    """stopwords removed before overlap — paraphrases are caught."""
     from kiso.store.shared import _word_overlap_ratio
 
     # Without stopword removal these share 6/9 words = 0.67 (under old 0.7 threshold).
@@ -1719,7 +1719,7 @@ async def test_word_overlap_stopword_normalization(db: aiosqlite.Connection):
 
 
 async def test_word_overlap_genuinely_different(db: aiosqlite.Connection):
-    """M339: genuinely different facts have low overlap even after stopword removal."""
+    """genuinely different facts have low overlap even after stopword removal."""
     from kiso.store.shared import _word_overlap_ratio
 
     ratio = _word_overlap_ratio(
@@ -1730,14 +1730,14 @@ async def test_word_overlap_genuinely_different(db: aiosqlite.Connection):
 
 
 async def test_word_overlap_all_stopwords(db: aiosqlite.Connection):
-    """M339: all-stopword strings produce 0.0 overlap."""
+    """all-stopword strings produce 0.0 overlap."""
     from kiso.store.shared import _word_overlap_ratio
 
     assert _word_overlap_ratio("the a is", "and or but") == 0.0
 
 
 async def test_word_overlap_punctuation_stripped(db: aiosqlite.Connection):
-    """M339: punctuation doesn't break matching."""
+    """punctuation doesn't break matching."""
     from kiso.store.shared import _word_overlap_ratio
 
     ratio = _word_overlap_ratio("guidance.studio has form.", "guidance.studio has form")
@@ -1745,7 +1745,7 @@ async def test_word_overlap_punctuation_stripped(db: aiosqlite.Connection):
 
 
 async def test_save_learning_dedup_paraphrase(db: aiosqlite.Connection):
-    """M339: paraphrases are deduped with lowered threshold."""
+    """paraphrases are deduped with lowered threshold."""
     await create_session(db, "sess1")
     r1 = await save_learning(db, "guidance.studio has a CAPTCHA on contact form", "sess1")
     assert r1 != 0
@@ -2244,7 +2244,7 @@ async def test_find_or_create_entity_normalizes_https(db: aiosqlite.Connection):
 
 
 async def test_find_or_create_entity_updates_kind(db: aiosqlite.Connection):
-    """M395: calling with different kind updates the entity."""
+    """calling with different kind updates the entity."""
     eid = await find_or_create_entity(db, "flask", "tool")
     cur = await db.execute("SELECT kind FROM entities WHERE id = ?", (eid,))
     assert (await cur.fetchone())[0] == "tool"
@@ -2256,7 +2256,7 @@ async def test_find_or_create_entity_updates_kind(db: aiosqlite.Connection):
 
 
 async def test_find_or_create_entity_same_kind_no_update(db: aiosqlite.Connection):
-    """M395: same kind does not trigger update."""
+    """same kind does not trigger update."""
     eid = await find_or_create_entity(db, "flask", "framework")
     cur = await db.execute("SELECT updated_at FROM entities WHERE id = ?", (eid,))
     ts1 = (await cur.fetchone())[0]
@@ -2368,7 +2368,7 @@ async def test_backfill_fact_entities_already_linked(db: aiosqlite.Connection):
 
 
 async def test_backfill_word_boundary_java_not_javascript(db: aiosqlite.Connection):
-    """M393: entity 'java' must NOT match fact about 'javascript'."""
+    """entity 'java' must NOT match fact about 'javascript'."""
     from kiso.store import backfill_fact_entities
 
     fid = await save_fact(db, "JavaScript is used for frontend development", "curator")
@@ -2381,7 +2381,7 @@ async def test_backfill_word_boundary_java_not_javascript(db: aiosqlite.Connecti
 
 
 async def test_backfill_word_boundary_sql_not_sqlite(db: aiosqlite.Connection):
-    """M393: entity 'sql' must NOT match fact about 'sqlite'."""
+    """entity 'sql' must NOT match fact about 'sqlite'."""
     from kiso.store import backfill_fact_entities
 
     fid = await save_fact(db, "SQLite is used for local storage", "curator")
@@ -2392,7 +2392,7 @@ async def test_backfill_word_boundary_sql_not_sqlite(db: aiosqlite.Connection):
 
 
 async def test_backfill_word_boundary_exact_match(db: aiosqlite.Connection):
-    """M393: entity 'flask' matches fact about 'Flask uses Jinja2'."""
+    """entity 'flask' matches fact about 'Flask uses Jinja2'."""
     from kiso.store import backfill_fact_entities
 
     fid = await save_fact(db, "Flask uses Jinja2 for rendering", "curator")
@@ -2408,7 +2408,7 @@ async def test_backfill_word_boundary_exact_match(db: aiosqlite.Connection):
 
 
 async def test_m345_migration_converts_entity_tags(tmp_path):
-    """M345: entity: prefixed tags are migrated to entity records on init_db."""
+    """entity: prefixed tags are migrated to entity records on init_db."""
     from kiso.store import init_db
     # First init to create tables
     db = await init_db(tmp_path / "test.db")
@@ -2443,7 +2443,7 @@ async def test_m345_migration_converts_entity_tags(tmp_path):
 
 
 async def test_m345_migration_multiple_entities(tmp_path):
-    """M345: migration handles multiple distinct entity: tags."""
+    """migration handles multiple distinct entity: tags."""
     from kiso.store import init_db
     db = await init_db(tmp_path / "test.db")
     fid1 = await save_fact(db, "Uses Flask for web API", "curator")
@@ -2463,7 +2463,7 @@ async def test_m345_migration_multiple_entities(tmp_path):
 
 
 async def test_m345_migration_no_entity_tags_noop(tmp_path):
-    """M345: migration is a no-op when no entity: tags exist."""
+    """migration is a no-op when no entity: tags exist."""
     from kiso.store import init_db
     db = await init_db(tmp_path / "test.db")
     fid = await save_fact(db, "Uses Python for backend", "curator")
@@ -2480,7 +2480,7 @@ async def test_m345_migration_no_entity_tags_noop(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# M389 — search_facts_scored
+# — search_facts_scored
 # ---------------------------------------------------------------------------
 
 
@@ -2607,7 +2607,7 @@ async def test_scored_keywords_only(db: aiosqlite.Connection):
 
 
 async def test_scored_keyword_fallback_on_empty_entity_tag(db: aiosqlite.Connection):
-    """M962: when entity/tag search returns nothing, fall back to keyword FTS."""
+    """when entity/tag search returns nothing, fall back to keyword FTS."""
     await create_session(db, "s1")
     # Fact with NO tags and NO entity — invisible to entity/tag search
     f1 = await save_fact(db, "Project uses Python 3.12 with FastAPI framework", "curator")
@@ -2624,7 +2624,7 @@ async def test_scored_keyword_fallback_on_empty_entity_tag(db: aiosqlite.Connect
 async def test_scored_keyword_fallback_skipped_when_entity_tag_has_results(
     db: aiosqlite.Connection,
 ):
-    """M962: keyword fallback does NOT run when entity/tag search has results."""
+    """keyword fallback does NOT run when entity/tag search has results."""
     await create_session(db, "s1")
     eid = await find_or_create_entity(db, "flask", "framework")
     f1 = await save_fact(db, "Flask is a micro web framework", "curator", entity_id=eid)
@@ -2641,7 +2641,7 @@ async def test_scored_keyword_fallback_skipped_when_entity_tag_has_results(
 
 
 # ---------------------------------------------------------------------------
-# M410 — Safety fact category
+# — Safety fact category
 # ---------------------------------------------------------------------------
 
 
@@ -2663,7 +2663,7 @@ async def test_get_safety_facts_empty(db: aiosqlite.Connection):
 
 
 async def test_get_behavior_facts(db: aiosqlite.Connection):
-    """M671: save_fact with category='behavior' → get_behavior_facts returns it."""
+    """save_fact with category='behavior' → get_behavior_facts returns it."""
     await create_session(db, "s1")
     fid = await save_fact(db, "Always respond formally and concisely", "admin",
                           category="behavior")
@@ -2674,13 +2674,13 @@ async def test_get_behavior_facts(db: aiosqlite.Connection):
 
 
 async def test_get_behavior_facts_empty(db: aiosqlite.Connection):
-    """M671: get_behavior_facts returns empty list when none exist."""
+    """get_behavior_facts returns empty list when none exist."""
     facts = await get_behavior_facts(db)
     assert facts == []
 
 
 async def test_behavior_facts_not_in_safety(db: aiosqlite.Connection):
-    """M671: behavior facts don't show up in get_safety_facts and vice versa."""
+    """behavior facts don't show up in get_safety_facts and vice versa."""
     await create_session(db, "s1")
     await save_fact(db, "Never delete important data", "admin", category="safety")
     await save_fact(db, "Always use metrics in answers", "admin", category="behavior")
@@ -2719,7 +2719,7 @@ async def test_decay_skips_safety_facts(db: aiosqlite.Connection):
 
 
 async def test_get_behavior_facts_multiple_ordered(db: aiosqlite.Connection):
-    """M671: save 3 behavior facts, get_behavior_facts returns all 3 in creation order."""
+    """save 3 behavior facts, get_behavior_facts returns all 3 in creation order."""
     await create_session(db, "s1")
     id1 = await save_fact(db, "Always respond formally and concisely", "admin", category="behavior")
     id2 = await save_fact(db, "Use metric units in all measurements", "admin", category="behavior")
@@ -2733,7 +2733,7 @@ async def test_get_behavior_facts_multiple_ordered(db: aiosqlite.Connection):
 
 
 async def test_list_knowledge_combined_category_and_tag(db: aiosqlite.Connection):
-    """M672: list_knowledge with both category and tag filters applied together."""
+    """list_knowledge with both category and tag filters applied together."""
     from kiso.store import list_knowledge
     await create_session(db, "s1")
     # Create facts with different categories and tags
@@ -2760,7 +2760,7 @@ async def test_list_knowledge_combined_category_and_tag(db: aiosqlite.Connection
 
 
 async def test_list_knowledge_no_filters(db: aiosqlite.Connection):
-    """M672: list_knowledge with no filters returns all facts."""
+    """list_knowledge with no filters returns all facts."""
     from kiso.store import list_knowledge
     await save_fact(db, "Fact alpha about the system", "admin", category="general")
     await save_fact(db, "Fact beta about behavior rules", "admin", category="behavior")
@@ -2769,7 +2769,7 @@ async def test_list_knowledge_no_filters(db: aiosqlite.Connection):
 
 
 async def test_list_knowledge_entity_filter(db: aiosqlite.Connection):
-    """M672: list_knowledge filtered by entity name."""
+    """list_knowledge filtered by entity name."""
     from kiso.store import list_knowledge
     eid = await find_or_create_entity(db, "backend-api", "service")
     await save_fact(db, "Backend uses FastAPI framework here", "admin",
@@ -2782,7 +2782,7 @@ async def test_list_knowledge_entity_filter(db: aiosqlite.Connection):
 
 
 async def test_save_message_source_cron_persists(db: aiosqlite.Connection):
-    """M682: save_message with source='cron' persists and is readable."""
+    """save_message with source='cron' persists and is readable."""
     await create_session(db, "cron-sess")
     msg_id = await save_message(db, "cron-sess", "cron", "system", "daily check",
                                  trusted=True, processed=False, source="cron")
@@ -2794,7 +2794,7 @@ async def test_save_message_source_cron_persists(db: aiosqlite.Connection):
 
 
 async def test_save_message_source_default_is_user(db: aiosqlite.Connection):
-    """M682: save_message default source is 'user'."""
+    """save_message default source is 'user'."""
     await create_session(db, "user-sess")
     msg_id = await save_message(db, "user-sess", "alice", "user", "hello")
     cur = await db.execute("SELECT source FROM messages WHERE id = ?", (msg_id,))

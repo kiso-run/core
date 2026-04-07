@@ -491,7 +491,7 @@ def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_admin, capsys):
-    """M982: git pull failure in already-installed path prints a warning (does not abort)."""
+    """git pull failure in already-installed path prints a warning (does not abort)."""
     from cli.tool import _tool_install
 
     tools_dir = tmp_path / "tools"
@@ -519,7 +519,7 @@ def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_a
 
 
 def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, mock_admin, capsys):
-    """M982: git pull in already-installed path passes safe.directory config."""
+    """git pull in already-installed path passes safe.directory config."""
     from cli.tool import _tool_install
 
     tools_dir = tmp_path / "tools"
@@ -860,7 +860,7 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, capsys):
-    """M183: check_deps_fn receives deps from manifest, not empty dict."""
+    """check_deps_fn receives deps from manifest, not empty dict."""
     from cli.tool import _tool_install
 
     tools_dir = tmp_path / "tools"
@@ -900,7 +900,7 @@ def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, c
             target="browser", name=None, no_deps=False, show_deps=False,
         ))
 
-    # M183: check_deps must receive the "deps" key from the manifest
+    # check_deps must receive the "deps" key from the manifest
     assert "deps" in captured_info
     assert captured_info["deps"] == {"bin": ["playwright"]}
     out = capsys.readouterr().out
@@ -908,7 +908,7 @@ def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, c
 
 
 def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin, capsys):
-    """M187: auto-retry deps.sh when binaries missing after first install."""
+    """auto-retry deps.sh when binaries missing after first install."""
     from cli.tool import _tool_install
 
     tools_dir = tmp_path / "tools"
@@ -1272,7 +1272,7 @@ class TestUpdatePlugin:
 
 
 # ---------------------------------------------------------------------------
-# M620: kiso tool test
+# kiso tool test
 # ---------------------------------------------------------------------------
 
 class TestToolTest:

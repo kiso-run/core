@@ -1,4 +1,4 @@
-"""M182: End-to-end smoke test for tool lifecycle — broken → repair → healthy.
+"""End-to-end smoke test for tool lifecycle — broken → repair → healthy.
 
 Simulates the real failure scenario: tool dir persists on volume after image
 rebuild, system deps are gone, tool appears installed but broken, auto-repair

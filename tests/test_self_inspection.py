@@ -1,4 +1,4 @@
-"""M358: Integration tests for self-inspection flow — SSH keys, system state."""
+"""Integration tests for self-inspection flow — SSH keys, system state."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ class TestM358SelfInspection:
     # ── 4. Planner validation semantics for self-inspection ──
 
     def test_validate_plan_rejects_kiso_as_tool_task(self):
-        """M876: self-inspection must use exec/tasks, not type='tool' with kiso."""
+        """self-inspection must use exec/tasks, not type='tool' with kiso."""
         plan = {"tasks": [
             {"type": "tool", "detail": "inspect the local host", "tool": "kiso",
              "args": "{}", "expect": "system information returned"},

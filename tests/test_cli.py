@@ -1439,7 +1439,7 @@ def test_setup_readline_registers_completer():
 
 
 def test_setup_readline_enables_bracketed_paste():
-    """M203: _setup_readline enables bracketed paste to prevent auto-submit on paste."""
+    """_setup_readline enables bracketed paste to prevent auto-submit on paste."""
     import readline
 
     calls = []
@@ -2127,14 +2127,14 @@ class TestVersionFile:
         assert __version__ == __import__("kiso._version", fromlist=["__version__"]).__version__
 
     def test_m363_version_matches_metadata(self):
-        """M363: __version__ reads from importlib.metadata, not hardcoded."""
+        """__version__ reads from importlib.metadata, not hardcoded."""
         from importlib.metadata import version as pkg_version
         from kiso._version import __version__ as v
         assert v == pkg_version("kiso"), \
             f"__version__ ({v}) != metadata ({pkg_version('kiso')}): version is hardcoded!"
 
     def test_m363_no_hardcoded_version_in_version_py(self):
-        """M363: _version.py must not contain a hardcoded version string."""
+        """_version.py must not contain a hardcoded version string."""
         from pathlib import Path
         src = (Path(__file__).resolve().parent.parent / "kiso" / "_version.py").read_text()
         # Should not have __version__ = "X.Y.Z" pattern
@@ -3506,7 +3506,7 @@ def test_m306_reset_on_inflight_complete(capsys):
 
 
 # ---------------------------------------------------------------------------
-# M326 — Integration test: no duplicate IN panels in verbose mode
+# — Integration test: no duplicate IN panels in verbose mode
 # ---------------------------------------------------------------------------
 
 import json as _json
@@ -3520,7 +3520,7 @@ def _make_llm_calls_json(*calls):
 
 
 class TestM326VerbosePanelDedup:
-    """M326: verify IN panels are never duplicated for msg tasks in verbose mode."""
+    """verify IN panels are never duplicated for msg tasks in verbose mode."""
 
     def _caps(self):
         return TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
@@ -3687,7 +3687,7 @@ class TestM326VerbosePanelDedup:
 
 
 class TestM331SuppressPendingHeaders:
-    """M331: pending tasks should not render individual task headers."""
+    """pending tasks should not render individual task headers."""
 
     def _caps(self):
         return TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
@@ -3841,7 +3841,7 @@ def test_cancel_cmd_explicit_session(capsys):
 
 
 # ---------------------------------------------------------------------------
-# M413 — kiso rules CLI
+# — kiso rules CLI
 # ---------------------------------------------------------------------------
 
 
@@ -3923,7 +3923,7 @@ def test_rules_remove(capsys):
 
 
 class TestHandleHttpError:
-    """M554: unified HTTP error handler."""
+    """unified HTTP error handler."""
 
     def test_connect_error_fatal(self, capsys):
         from cli._http import _handle_http_error

@@ -73,7 +73,7 @@ class TestPlannerLive:
 
         assert validate_plan(plan) == []
         types = [t["type"] for t in plan["tasks"]]
-        # M709: accept replan or msg as final task — the planner may choose to
+        # accept replan or msg as final task — the planner may choose to
         # investigate and report directly (exec + msg) instead of replanning.
         # Both are valid strategies for a discovery query (same as M655).
         last_type = plan["tasks"][-1]["type"]
@@ -441,15 +441,15 @@ class TestParaphraserLive:
 
 
 # ---------------------------------------------------------------------------
-# M746: Planner — system package install via apt-get
+# Planner — system package install via apt-get
 # ---------------------------------------------------------------------------
 
 
 class TestPlannerSystemPackageLive:
-    """M746: planner uses apt-get for system packages, uv pip for Python libs,
+    """planner uses apt-get for system packages, uv pip for Python libs,
     and kiso tool install for kiso tools."""
 
-    # M864: validation retries + SSE stalls make planner-only live tests slower
+    # validation retries + SSE stalls make planner-only live tests slower
     # than reviewer/worker calls, but they still belong to the role-only class.
     _TIMEOUT = LLM_ROLE_ONLY_TIMEOUT
 
@@ -573,7 +573,7 @@ class TestPlannerSystemPackageLive:
         types = [t["type"] for t in plan["tasks"]]
         details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
         assert "exec" in types, f"Expected exec task, got types: {types}"
-        # M990: the planner should install directly (not check first).
+        # the planner should install directly (not check first).
         # The structural invariant is: an exec task mentioning "install",
         # and validate_plan passes (which blocks bare "pip install").
         assert "install" in details, (
@@ -648,12 +648,12 @@ class TestPlannerSystemPackageLive:
 
 
 # ---------------------------------------------------------------------------
-# M747: Worker — sudo stripping when root
+# Worker — sudo stripping when root
 # ---------------------------------------------------------------------------
 
 
 class TestExecTranslatorSudoLive:
-    """M747: worker strips sudo from commands when sysenv shows root."""
+    """worker strips sudo from commands when sysenv shows root."""
 
     async def test_root_sysenv_strips_sudo(self, live_config):
         """What: Translates 'Install timg with sudo apt install' with root sysenv.
@@ -698,18 +698,18 @@ class TestExecTranslatorSudoLive:
         )
         assert "apt" in command.lower()
 
-    # M951: test_non_root_with_sudo_keeps_sudo removed — Kiso runs
+    # test_non_root_with_sudo_keeps_sudo removed — Kiso runs
     # exclusively as root in Docker; non-root + sudo scenario doesn't
     # exist in production.
 
 
 # ---------------------------------------------------------------------------
-# M751: Classifier — conversation context for confirmations
+# Classifier — conversation context for confirmations
 # ---------------------------------------------------------------------------
 
 
 class TestClassifierConversationLive:
-    """M751: classifier uses conversation context to identify confirmations."""
+    """classifier uses conversation context to identify confirmations."""
 
     async def test_affirmative_after_install_proposal_is_plan(self, live_config):
         """What: 'oh yeah' after kiso asks 'Vuoi installare il browser?'

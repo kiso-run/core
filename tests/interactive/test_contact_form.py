@@ -1,4 +1,4 @@
-"""M624: Interactive test — contact form with CAPTCHA.
+"""Interactive test — contact form with CAPTCHA.
 
 Exercises the full human-relay loop:
 1. Agent navigates to guidance.studio

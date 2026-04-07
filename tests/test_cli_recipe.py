@@ -1,4 +1,4 @@
-"""M773: Tests for CLI recipe commands (recipe management)."""
+"""Tests for CLI recipe commands (recipe management)."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ class TestRecipeList:
 
 @pytest.fixture(autouse=True)
 def _mock_admin():
-    """M592: recipe install/remove now require admin."""
+    """recipe install/remove now require admin."""
     with patch("cli.plugin_ops.require_admin"):
         yield
 

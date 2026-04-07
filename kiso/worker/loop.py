@@ -787,7 +787,7 @@ async def _handle_msg_task(
         idx_after_briefer = [idx_msg]
 
         async def _flush_briefer():
-            """M273: flush briefer calls so CLI renders panels before messenger runs."""
+            """flush briefer calls so CLI renders panels before messenger runs."""
             await _append_calls(ctx.db, task_id, idx_msg)
             idx_after_briefer[0] = get_usage_index()
 
@@ -924,7 +924,7 @@ async def _review_finalize_ok(
     if plan_output is not None and task_row.get("reviewer_summary"):
         plan_output["reviewer_summary"] = task_row["reviewer_summary"]
     if task_row["status"] == "failed":
-        # M983: mark reviewer_ok so the auto-replan safety net doesn't treat
+        # mark reviewer_ok so the auto-replan safety net doesn't treat
         # this as an unexpected failure that needs replanning.
         if plan_output is not None:
             plan_output["reviewer_ok"] = True
@@ -1215,7 +1215,7 @@ async def _handle_exec_task(
         if ctx.slog:
             ctx.slog.info("Task %d translated: %s → %s", task_id, detail[:80], command[:120])
 
-        # M965/M979: block install commands only when the plan ALSO proposed
+        # block install commands only when the plan ALSO proposed
         # install (needs_install set = mixed propose+install in same plan).
         # User-initiated installs (needs_install empty) are allowed.
         if not ctx.install_approved and ctx.plan_has_needs_install and _INSTALL_CMD_RE.search(command):
@@ -1450,7 +1450,7 @@ _TASK_HANDLERS: dict = {
 def _build_execution_batches(
     tasks: list[dict],
 ) -> list[list[tuple[int, dict]]]:
-    """M696: Group consecutive tasks by parallel_group into execution batches.
+    """Group consecutive tasks by parallel_group into execution batches.
 
     Returns a list of batches.  Each batch is a list of ``(index, task_row)``
     tuples.  A batch with one item runs sequentially; a batch with 2+ items
@@ -1727,7 +1727,7 @@ async def _execute_plan(
                 await _cleanup_plan_outputs(session)
                 return False, "cancelled", None, completed, [dict(t) for t in tasks[idx + 1:]], ctx.plan_outputs
 
-    # M823: persist cross-plan summary before cleanup
+    # persist cross-plan summary before cleanup
     try:
         _write_last_plan_summary(session, goal, completed, pre_snapshot)
     except Exception as exc:
@@ -2146,7 +2146,7 @@ async def _run_planning_loop(
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
 
-    # M968: save knowledge items as learnings before execution.
+    # save knowledge items as learnings before execution.
     # The curator will process them in the background task after plan completion.
     for item in plan.get("knowledge") or []:
         if isinstance(item, str) and item.strip():
@@ -2373,7 +2373,7 @@ async def _run_planning_loop(
         # shrink task limit at deeper replan depths — forces focused plans.
         _max_plan_tasks = int(config.settings["max_plan_tasks"])
         _effective_max = max(4, _max_plan_tasks - replan_depth * 3)
-        # M878: force fresh tool discovery — tools may have been installed
+        # force fresh tool discovery — tools may have been installed
         # during the previous plan execution.
         invalidate_tools_cache()
         try:
@@ -2603,7 +2603,7 @@ async def _process_message(
     # check if user approved install in a prior msg cycle
     _install_approved = await session_has_install_proposal(db, session)
 
-    # M878: force fresh tool discovery for every planning decision.
+    # force fresh tool discovery for every planning decision.
     invalidate_tools_cache()
     try:
         plan = await run_planner(

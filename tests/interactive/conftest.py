@@ -1,4 +1,4 @@
-"""M622: Interactive test infrastructure.
+"""Interactive test infrastructure.
 
 Provides the ``HumanRelay`` fixture that bridges agent output and real human
 input during tests requiring manual actions (CAPTCHA, OAuth, SSH key deploy).

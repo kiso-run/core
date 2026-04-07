@@ -70,7 +70,7 @@ class TestCollectOsInfo:
         assert info["release"]
 
     def test_m731_distro_key_on_linux(self):
-        """M731: _collect_os_info returns distro key when freedesktop_os_release works."""
+        """_collect_os_info returns distro key when freedesktop_os_release works."""
         fake_release = {"PRETTY_NAME": "Debian GNU/Linux 12 (bookworm)", "ID": "debian", "ID_LIKE": ""}
         with patch("platform.freedesktop_os_release", return_value=fake_release):
             info = _collect_os_info()
@@ -79,14 +79,14 @@ class TestCollectOsInfo:
         assert info["pkg_manager"] == "apt"
 
     def test_m731_distro_missing_on_oserror(self):
-        """M731: distro key absent when freedesktop_os_release raises OSError."""
+        """distro key absent when freedesktop_os_release raises OSError."""
         with patch("platform.freedesktop_os_release", side_effect=OSError):
             info = _collect_os_info()
         assert "distro" not in info
         assert "pkg_manager" not in info
 
     def test_m731_id_like_fallback(self):
-        """M731: pkg_manager detected via ID_LIKE when ID is unknown."""
+        """pkg_manager detected via ID_LIKE when ID is unknown."""
         fake_release = {"PRETTY_NAME": "Pop!_OS 22.04", "ID": "pop", "ID_LIKE": "ubuntu debian"}
         with patch("platform.freedesktop_os_release", return_value=fake_release):
             info = _collect_os_info()
@@ -135,7 +135,7 @@ class TestCollectUserInfo:
         assert "has_sudo" in info
 
     def test_root_detection(self):
-        """M732: root user detected when uid is 0."""
+        """root user detected when uid is 0."""
         import pwd as _pwd
         with patch("os.getuid", return_value=0), \
              patch.object(_pwd, "getpwuid") as mock_pw:
@@ -145,7 +145,7 @@ class TestCollectUserInfo:
         assert info["user"] == "root"
 
     def test_non_root_detection(self):
-        """M732: non-root user detected when uid is not 0."""
+        """non-root user detected when uid is not 0."""
         import pwd as _pwd
         with patch("os.getuid", return_value=1000), \
              patch.object(_pwd, "getpwuid") as mock_pw:
@@ -155,13 +155,13 @@ class TestCollectUserInfo:
         assert info["user"] == "kiso"
 
     def test_sudo_detected(self):
-        """M732: has_sudo is True when sudo binary exists."""
+        """has_sudo is True when sudo binary exists."""
         with patch("kiso.sysenv.shutil.which", return_value="/usr/bin/sudo"):
             info = _collect_user_info()
         assert info["has_sudo"] is True
 
     def test_sudo_not_detected(self):
-        """M732: has_sudo is False when sudo binary missing."""
+        """has_sudo is False when sudo binary missing."""
         with patch("kiso.sysenv.shutil.which", return_value=None):
             info = _collect_user_info()
         assert info["has_sudo"] is False
@@ -190,22 +190,22 @@ class TestCollectBinaries:
         assert "kiso" in PROBE_BINARIES
 
     def test_m370_system_info_tools(self):
-        """M370: PROBE_BINARIES includes common system info tools."""
+        """PROBE_BINARIES includes common system info tools."""
         for tool in ("free", "ps", "uptime", "uname", "id", "hostname", "df"):
             assert tool in PROBE_BINARIES, f"Missing system tool: {tool}"
 
     def test_m370_ssh_tools(self):
-        """M370: PROBE_BINARIES includes SSH tools."""
+        """PROBE_BINARIES includes SSH tools."""
         for tool in ("ssh", "ssh-keygen", "ssh-keyscan", "scp"):
             assert tool in PROBE_BINARIES, f"Missing SSH tool: {tool}"
 
     def test_m370_network_tools(self):
-        """M370: PROBE_BINARIES includes network tools."""
+        """PROBE_BINARIES includes network tools."""
         for tool in ("ss", "ip", "ping", "dig"):
             assert tool in PROBE_BINARIES, f"Missing network tool: {tool}"
 
     def test_m370_process_tools(self):
-        """M370: PROBE_BINARIES includes process management tools."""
+        """PROBE_BINARIES includes process management tools."""
         for tool in ("kill", "pkill"):
             assert tool in PROBE_BINARIES, f"Missing process tool: {tool}"
 
@@ -391,36 +391,36 @@ class TestBuildSystemEnvSection:
         assert "Linux x86_64 (6.17.0-14-generic)" in section
 
     def test_m731_distro_in_os_line(self, sample_env):
-        """M731: distro name appended to OS line when present."""
+        """distro name appended to OS line when present."""
         sample_env["os"]["distro"] = "Debian GNU/Linux 12 (bookworm)"
         section = build_system_env_section(sample_env)
         assert "— Debian GNU/Linux 12 (bookworm)" in section
 
     def test_m731_pkg_manager_line(self, sample_env):
-        """M731: Package manager line shown when detected."""
+        """Package manager line shown when detected."""
         sample_env["os"]["pkg_manager"] = "apt"
         section = build_system_env_section(sample_env)
         assert "Package manager: apt" in section
 
     def test_m731_no_pkg_manager_line_when_absent(self, sample_env):
-        """M731: No Package manager line when not detected."""
+        """No Package manager line when not detected."""
         section = build_system_env_section(sample_env)
         assert "Package manager:" not in section
 
     def test_m732_user_root_sudo_not_needed(self, sample_env):
-        """M732: root user shows 'sudo not needed'."""
+        """root user shows 'sudo not needed'."""
         sample_env["user_info"] = {"user": "root", "is_root": True, "has_sudo": False}
         section = build_system_env_section(sample_env)
         assert "User: root (sudo not needed" in section
 
     def test_m732_user_with_sudo(self, sample_env):
-        """M732: non-root user with sudo shows 'sudo available'."""
+        """non-root user with sudo shows 'sudo available'."""
         sample_env["user_info"] = {"user": "kiso", "is_root": False, "has_sudo": True}
         section = build_system_env_section(sample_env)
         assert "User: kiso (sudo available)" in section
 
     def test_m732_user_without_sudo(self, sample_env):
-        """M732: non-root user without sudo shows 'sudo not available'."""
+        """non-root user without sudo shows 'sudo not available'."""
         sample_env["user_info"] = {"user": "kiso", "is_root": False, "has_sudo": False}
         section = build_system_env_section(sample_env)
         assert "User: kiso (sudo not available)" in section
@@ -439,12 +439,12 @@ class TestBuildSystemEnvSection:
         assert "telegram (stopped)" in section
 
     def test_no_kiso_cli_in_full(self, sample_env):
-        """M937: Kiso CLI commands removed — covered by kiso_commands module."""
+        """Kiso CLI commands removed — covered by kiso_commands module."""
         section = build_system_env_section(sample_env)
         assert "Kiso CLI (usable in exec tasks):" not in section
 
     def test_no_registry_hints_in_full(self, sample_env):
-        """M937: Registry hints removed — covered by registry tools section."""
+        """Registry hints removed — covered by registry tools section."""
         section = build_system_env_section(sample_env)
         assert "Registry tools available:" not in section
 
@@ -553,7 +553,7 @@ class TestBuildSystemEnvSection:
 
 
 class TestBuildSystemEnvEssential:
-    """M937: essential system env contains only planner-critical lines."""
+    """essential system env contains only planner-critical lines."""
 
     @pytest.fixture()
     def sample_env(self):
@@ -614,7 +614,7 @@ class TestBuildSystemEnvEssential:
 
 
 class TestBuildInstallContext:
-    """M963/M1065: install context contains distro, pkg_manager, available_binaries."""
+    """install context contains distro, pkg_manager, available_binaries."""
 
     def test_both_present(self):
         env = {
@@ -690,7 +690,7 @@ class TestCollectBinariesSysBin:
 
 class TestCollectSystemEnvNewKeys:
     def test_m732_includes_user_info(self, config):
-        """M732: collect_system_env includes user_info with expected keys."""
+        """collect_system_env includes user_info with expected keys."""
         with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert "user_info" in env
@@ -974,7 +974,7 @@ class TestWorkspaceInBuildSection:
 
 
 class TestM888LoadRegistryHints:
-    """M888/M920: _load_registry_hints fetches from online registry."""
+    """_load_registry_hints fetches from online registry."""
 
     def test_returns_tool_descriptions(self):
         """Fetches online registry and returns tool name + description pairs."""
@@ -1031,7 +1031,7 @@ class TestSysenvConfigSettings:
         assert env["user_settings"]["bot_name"] == "TestBot"
 
     def test_configurable_settings_not_in_essential(self):
-        """M1040: settings moved out of essential sysenv."""
+        """settings moved out of essential sysenv."""
         cfg = self._make_cfg(bot_persona="a test persona")
         env = collect_system_env(cfg)
         text = build_system_env_essential(env, session="test")
@@ -1039,7 +1039,7 @@ class TestSysenvConfigSettings:
         assert "bot_persona" not in text
 
     def test_build_user_settings_text(self):
-        """M1040: settings available via dedicated helper."""
+        """settings available via dedicated helper."""
         from kiso.sysenv import build_user_settings_text
         cfg = self._make_cfg(bot_persona="a test persona")
         env = collect_system_env(cfg)

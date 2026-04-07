@@ -42,7 +42,7 @@ class TestChatKBSelfInspection:
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert result.success
-        # M977: classifier may route as plan (system state → plan per rules)
+        # classifier may route as plan (system state → plan per rules)
         # or chat_kb (boot fact available). Both paths produce correct output.
         # Only verify the response contains hostname info.
         lower = result.msg_output.lower()

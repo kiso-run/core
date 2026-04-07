@@ -1,4 +1,4 @@
-"""M623: Interactive test — Moltbook signup and posting.
+"""Interactive test — Moltbook signup and posting.
 
 Requires:
 - Docker (functional test environment)

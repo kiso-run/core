@@ -1,4 +1,4 @@
-"""M676: Tests for knowledge markdown import parser."""
+"""Tests for knowledge markdown import parser."""
 
 from __future__ import annotations
 

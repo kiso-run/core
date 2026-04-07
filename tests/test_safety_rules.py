@@ -71,12 +71,12 @@ async def test_safety_facts_always_injected_into_planner(db, test_config):
 
 
 # ---------------------------------------------------------------------------
-# M675: Behavior facts injected into planner and messenger
+# Behavior facts injected into planner and messenger
 # ---------------------------------------------------------------------------
 
 
 async def test_behavior_facts_injected_into_planner(db, test_config):
-    """M675: Behavior facts appear in planner context."""
+    """Behavior facts appear in planner context."""
     from kiso.store import save_fact, save_message, create_session
     from kiso.brain import build_planner_messages
 
@@ -93,7 +93,7 @@ async def test_behavior_facts_injected_into_planner(db, test_config):
 
 
 def test_behavior_rules_in_messenger_messages():
-    """M675: Behavior rules appear in messenger context when provided."""
+    """Behavior rules appear in messenger context when provided."""
     from kiso.brain import build_messenger_messages
     from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 
@@ -114,7 +114,7 @@ def test_behavior_rules_in_messenger_messages():
 
 
 def test_no_behavior_rules_no_section():
-    """M675: When no behavior rules, the section is omitted."""
+    """When no behavior rules, the section is omitted."""
     from kiso.brain import build_messenger_messages
     from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
 

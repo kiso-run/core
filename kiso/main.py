@@ -135,7 +135,7 @@ def _validate_session_id(session: str) -> None:
 async def _require_project_role(
     db, session: str, username: str, *, min_role: str = "viewer",
 ) -> None:
-    """M686: Raise 403 if session has a project and user lacks *min_role*.
+    """Raise 403 if session has a project and user lacks *min_role*.
 
     min_role="viewer" allows both viewer and member.
     min_role="member" requires member role.
@@ -432,7 +432,7 @@ _CRON_CHECK_INTERVAL = 60  # seconds between cron checks
 
 
 async def _cron_scheduler(db, config, app):
-    """M679: Background loop that fires due cron jobs every 60 seconds."""
+    """Background loop that fires due cron jobs every 60 seconds."""
     from datetime import datetime
 
     from croniter import croniter

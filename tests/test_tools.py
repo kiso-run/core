@@ -356,7 +356,7 @@ class TestDiscoverTools:
         assert result == []
 
     def test_logs_scan_path_and_found_tools(self, tmp_path, caplog):
-        """M966: discover_tools logs the scanned path and found tool names."""
+        """discover_tools logs the scanned path and found tool names."""
         import logging
         tools_dir = tmp_path / "tools"
         tools_dir.mkdir()
@@ -367,7 +367,7 @@ class TestDiscoverTools:
         assert "found 1 tools: echo" in caplog.text
 
     def test_logs_empty_scan_with_subdirs(self, tmp_path, caplog):
-        """M966: discover_tools logs subdirectory names when 0 tools found."""
+        """discover_tools logs subdirectory names when 0 tools found."""
         import logging
         tools_dir = tmp_path / "tools"
         tools_dir.mkdir()
@@ -655,7 +655,7 @@ class TestBuildPlannerToolList:
         assert "guide:" not in result
 
     def test_optional_args_trimmed(self):
-        """M510: only top 3 optional args shown, rest counted."""
+        """only top 3 optional args shown, rest counted."""
         schema = {
             "url": {"type": "string", "required": True, "description": "target URL"},
             "opt_a": {"type": "string", "required": False, "description": "optional A"},
@@ -675,7 +675,7 @@ class TestBuildPlannerToolList:
         assert "(2 more optional args)" in result
 
     def test_few_optional_args_no_trim(self):
-        """M510: 3 or fewer optional args → no trim message."""
+        """3 or fewer optional args → no trim message."""
         schema = {
             "url": {"type": "string", "required": True, "description": "target URL"},
             "opt_a": {"type": "string", "required": False, "description": "optional A"},
@@ -978,7 +978,7 @@ class TestToolSemanticValidationHooks:
 # --- auto_correct_tool_args ---
 
 class TestAutoCorrectToolArgs:
-    """M330: fix common LLM arg name hallucinations."""
+    """fix common LLM arg name hallucinations."""
 
     BROWSER_SCHEMA = {
         "action": {"type": "string", "required": True},
@@ -1266,12 +1266,12 @@ class TestDiscoverToolsCache:
 
 
 # ---------------------------------------------------------------------------
-# M826 — consumes field + file processing routing section
+# — consumes field + file processing routing section
 # ---------------------------------------------------------------------------
 
 
 class TestM826ConsumesField:
-    """M826: consumes field in kiso.toml → file routing in planner tool list."""
+    """consumes field in kiso.toml → file routing in planner tool list."""
 
     def _make_tool(self, name, summary, consumes=None):
         return {

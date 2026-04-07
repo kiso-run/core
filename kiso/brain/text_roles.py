@@ -538,7 +538,7 @@ async def run_exec_translator(
         try:
             _validate_exec_translator_command(command)
 
-            # M1058: always run bash -n syntax check (was >120 chars only)
+            # always run bash -n syntax check (was >120 chars only)
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "bash", "-n",

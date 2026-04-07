@@ -1,4 +1,4 @@
-"""M173: End-to-end smoke test for tool args correction via replan.
+"""End-to-end smoke test for tool args correction via replan.
 
 Simulates the real failure trace: browser tool is installed, planner sends
 args: null, system detects the error and replans with corrected args.
@@ -59,7 +59,7 @@ class TestToolArgsReplanFlow:
         await conn.close()
 
     def test_validate_plan_catches_null_args(self):
-        """M166: validate_plan catches null args against schema."""
+        """validate_plan catches null args against schema."""
         plan = {
             "tasks": [
                 {"type": "tool", "detail": "take screenshot", "tool": "browser",

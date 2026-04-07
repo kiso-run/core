@@ -245,7 +245,7 @@ def test_render_task_header_plain():
 
 
 def test_render_task_header_msg_type():
-    """M232: msg tasks get the same [x/y] header format as other types."""
+    """msg tasks get the same [x/y] header format as other types."""
     task = {"type": "msg", "detail": "Tell the user about results", "status": "running"}
     result = render_task_header(task, 1, 4, _COLOR)
     assert "[1/4]" in result
@@ -453,7 +453,7 @@ def test_render_banner_custom_name_instance_line():
 
 
 def test_render_banner_with_resources():
-    """M219: banner shows resource line when resources dict provided."""
+    """banner shows resource line when resources dict provided."""
     resources = {
         "memory_mb": {"used": 312, "limit": 4096},
         "cpu": {"limit": 2},
@@ -474,7 +474,7 @@ def test_render_banner_no_resources():
 
 
 def test_render_banner_resources_none_values():
-    """M219: resources with None values are skipped gracefully."""
+    """resources with None values are skipped gracefully."""
     resources = {
         "memory_mb": {"used": None, "limit": None},
         "cpu": {"limit": None},
@@ -631,7 +631,7 @@ def test_render_review_ok_with_learning():
 
 
 def test_m333_render_review_with_learning_tags():
-    """M333: learning tags shown in dim style."""
+    """learning tags shown in dim style."""
     task = {
         "review_verdict": "ok",
         "review_learning": "guidance.studio has a contact form",
@@ -643,7 +643,7 @@ def test_m333_render_review_with_learning_tags():
 
 
 def test_m333_render_review_without_learning_tags():
-    """M333: no brackets when tags absent."""
+    """no brackets when tags absent."""
     task = {"review_verdict": "ok", "review_learning": "Uses Flask framework extensively"}
     result = render_review(task, _PLAIN)
     assert "learning:" in result
@@ -651,7 +651,7 @@ def test_m333_render_review_without_learning_tags():
 
 
 def test_m333_render_review_empty_learning_tags():
-    """M333: empty tags string produces no brackets."""
+    """empty tags string produces no brackets."""
     task = {
         "review_verdict": "ok",
         "review_learning": "guidance.studio has a contact form",
@@ -807,7 +807,7 @@ def test_render_plan_detail_multiline_detail():
 
 
 def test_render_plan_detail_msg_strips_answer_prefix():
-    """M236: msg detail strips 'Answer in <lang>.' prefix in plan overview."""
+    """msg detail strips 'Answer in <lang>.' prefix in plan overview."""
     tasks = [{"type": "msg", "detail": "Answer in Italian. Tell the user the result"}]
     result = render_plan_detail(tasks, _PLAIN)
     assert "Tell the user the result" in result
@@ -815,7 +815,7 @@ def test_render_plan_detail_msg_strips_answer_prefix():
 
 
 def test_render_plan_detail_truncates_long_detail():
-    """M236: detail lines are truncated to terminal width."""
+    """detail lines are truncated to terminal width."""
     narrow = _caps(color=False, unicode=False, width=50, tty=False)
     long_detail = "A" * 200
     tasks = [{"type": "exec", "detail": long_detail}]
@@ -827,7 +827,7 @@ def test_render_plan_detail_truncates_long_detail():
 
 
 def test_render_plan_detail_msg_answer_prefix_english():
-    """M236: also works for English prefix."""
+    """also works for English prefix."""
     tasks = [{"type": "msg", "detail": "Answer in English. Summarize findings"}]
     result = render_plan_detail(tasks, _PLAIN)
     assert "Summarize findings" in result
@@ -1836,7 +1836,7 @@ def test_extract_thinking_unicode_content():
 
 
 class TestM303RenderPartialContent:
-    """M303: render_partial_content shows live streaming output."""
+    """render_partial_content shows live streaming output."""
 
     def test_empty_returns_empty(self):
         from cli.render import render_partial_content, TermCaps
@@ -1884,7 +1884,7 @@ class TestM303RenderPartialContent:
         assert vlines == 3
 
     def test_long_line_wraps_to_multiple_visual_lines(self):
-        """M842: long line on narrow terminal → visual lines > newline count."""
+        """long line on narrow terminal → visual lines > newline count."""
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=False, tty=True, width=40, height=24)
         # "  > " prefix = 4 chars, plus 80 chars of content = 84 visible chars
@@ -1895,7 +1895,7 @@ class TestM303RenderPartialContent:
         assert vlines >= 2  # must wrap
 
     def test_short_lines_no_extra_wrapping(self):
-        """M842: short lines within terminal width → visual == logical."""
+        """short lines within terminal width → visual == logical."""
         from cli.render import render_partial_content, TermCaps
         caps = TermCaps(color=False, unicode=False, tty=True, width=120, height=24)
         text = "short\nlines\nhere"

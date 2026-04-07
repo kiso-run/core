@@ -1,4 +1,4 @@
-"""M853: Multi-step integration tests with mock LLM.
+"""Multi-step integration tests with mock LLM.
 
 Tests multi-turn flows that exercise session continuity, replan context,
 and cross-turn state — without real LLM calls or Docker.

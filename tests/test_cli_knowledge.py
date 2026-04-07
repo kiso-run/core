@@ -1,4 +1,4 @@
-"""M673: CLI tests for kiso knowledge commands."""
+"""CLI tests for kiso knowledge commands."""
 
 from __future__ import annotations
 

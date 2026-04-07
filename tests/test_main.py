@@ -51,7 +51,7 @@ async def test_get_session_info(client: httpx.AsyncClient):
 
 
 async def test_post_msg_includes_base_url_in_queue(client: httpx.AsyncClient):
-    """M216: post_msg puts base_url from request into the queue dict."""
+    """post_msg puts base_url from request into the queue dict."""
     import asyncio
 
     captured_msg = {}
@@ -266,7 +266,7 @@ class TestInitKisoDirs:
 
 
 class TestInitSshKeys:
-    """M355: SSH key generation at boot."""
+    """SSH key generation at boot."""
 
     def test_generates_key_when_missing(self, tmp_path):
         """ssh-keygen called when no key exists."""
@@ -364,7 +364,7 @@ class TestInitSshKeys:
 
 @pytest.mark.asyncio
 class TestCollectBootFacts:
-    """M356: system boot facts stored with entity 'self'."""
+    """system boot facts stored with entity 'self'."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -391,7 +391,7 @@ class TestCollectBootFacts:
         facts = await search_facts_by_entity(db, self_ent[0]["id"])
         contents = [f["content"] for f in facts]
         assert any("ssh-ed25519 AAAA" in c for c in contents)
-        # M372: boot fact includes file path
+        # boot fact includes file path
         assert any("id_ed25519.pub" in c for c in contents)
 
     async def test_stores_hostname_fact(self, tmp_path, db):

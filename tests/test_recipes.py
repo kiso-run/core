@@ -1,4 +1,4 @@
-"""M773: Integration test — recipe discovery through briefer flow.
+"""Integration test — recipe discovery through briefer flow.
 
 End-to-end test: temp .md recipes → discover → context_pool → briefer → planner messages.
 """

@@ -1289,7 +1289,7 @@ def test_discover_connectors_skips_files(tmp_path):
 
 
 def test_discover_connectors_ttl_cache(tmp_path):
-    """M518: discover_connectors caches results and invalidation clears cache."""
+    """discover_connectors caches results and invalidation clears cache."""
     from kiso.connectors import invalidate_connectors_cache, _connectors_cache
 
     connectors_dir = tmp_path / "connectors"
@@ -1670,7 +1670,7 @@ def test_connector_run_stale_pid_cleaned(tmp_path, mock_admin, capsys):
 
 
 # ---------------------------------------------------------------------------
-# M620: kiso connector test
+# kiso connector test
 # ---------------------------------------------------------------------------
 
 class TestConnectorTest:

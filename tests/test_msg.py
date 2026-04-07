@@ -193,7 +193,7 @@ async def test_msg_queue_full_returns_429(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M407/M408 — In-flight message handling
+# — In-flight message handling
 # ---------------------------------------------------------------------------
 
 
@@ -229,7 +229,7 @@ async def _cleanup_worker(session: str, blocked, task):
 
 
 async def test_inflight_stop_fast_path(client: httpx.AsyncClient):
-    """M407: stop message during active job triggers fast-path cancel."""
+    """stop message during active job triggers fast-path cancel."""
     sess = "inflight-stop-test"
     blocked, cancel_event, _, task = _make_busy_worker(sess)
     try:
@@ -245,7 +245,7 @@ async def test_inflight_stop_fast_path(client: httpx.AsyncClient):
 
 
 async def test_inflight_stop_via_classifier(client: httpx.AsyncClient):
-    """M408: LLM classifier returns 'stop' → cancel event set."""
+    """LLM classifier returns 'stop' → cancel event set."""
     sess = "inflight-llm-stop"
     blocked, cancel_event, _, task = _make_busy_worker(sess)
     try:
@@ -262,7 +262,7 @@ async def test_inflight_stop_via_classifier(client: httpx.AsyncClient):
 
 
 async def test_inflight_independent_queued_to_pending(client: httpx.AsyncClient):
-    """M408: independent message goes to pending_messages with ack."""
+    """independent message goes to pending_messages with ack."""
     sess = "inflight-independent"
     blocked, _, pending, task = _make_busy_worker(sess)
     try:
@@ -281,7 +281,7 @@ async def test_inflight_independent_queued_to_pending(client: httpx.AsyncClient)
 
 
 async def test_inflight_update_adds_hint(client: httpx.AsyncClient):
-    """M409: update message adds to update_hints with ack."""
+    """update message adds to update_hints with ack."""
     sess = "inflight-update"
     blocked, _, _, task = _make_busy_worker(sess)
     try:
@@ -302,7 +302,7 @@ async def test_inflight_update_adds_hint(client: httpx.AsyncClient):
 
 
 async def test_inflight_conflict_cancels_and_queues(client: httpx.AsyncClient):
-    """M409: conflict cancels current job and queues new message first."""
+    """conflict cancels current job and queues new message first."""
     sess = "inflight-conflict"
     blocked, cancel_event, pending, task = _make_busy_worker(sess)
     try:
@@ -334,14 +334,14 @@ async def test_idle_worker_skips_inflight(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M413 — Safety rules API endpoints
+# — Safety rules API endpoints
 # ---------------------------------------------------------------------------
 
 ADMIN_HEADER = AUTH_HEADER  # testadmin token in conftest
 
 
 async def test_safety_rules_crud(client: httpx.AsyncClient):
-    """M413: add → list → remove safety rules via API."""
+    """add → list → remove safety rules via API."""
     # List — initially empty
     resp = await client.get("/safety-rules", headers=ADMIN_HEADER)
     assert resp.status_code == 200
@@ -370,13 +370,13 @@ async def test_safety_rules_crud(client: httpx.AsyncClient):
 
 
 async def test_safety_rule_empty_content_rejected(client: httpx.AsyncClient):
-    """M413: empty content rejected with 400."""
+    """empty content rejected with 400."""
     resp = await client.post("/safety-rules", json={"content": "   "},
                              headers=ADMIN_HEADER)
     assert resp.status_code == 400
 
 
 async def test_safety_rule_delete_nonexistent(client: httpx.AsyncClient):
-    """M413: deleting nonexistent rule returns 404."""
+    """deleting nonexistent rule returns 404."""
     resp = await client.delete("/safety-rules/99999", headers=ADMIN_HEADER)
     assert resp.status_code == 404

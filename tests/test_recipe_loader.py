@@ -1,4 +1,4 @@
-"""M773: Tests for kiso.recipe_loader — recipe discovery and parsing."""
+"""Tests for kiso.recipe_loader — recipe discovery and parsing."""
 
 from __future__ import annotations
 

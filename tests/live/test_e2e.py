@@ -124,7 +124,7 @@ class TestReplanFlowE2E:
         assert replan_reason is not None
         assert len(replan_reason) > 0
 
-        # M1055: use the real replan context builder so the planner gets
+        # use the real replan context builder so the planner gets
         # "Previous Replan Attempts", "Suggested Fixes", "Completed Tasks"
         from kiso.worker.utils import _build_replan_context
         replan_ctx = _build_replan_context(

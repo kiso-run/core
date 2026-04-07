@@ -1,4 +1,4 @@
-"""M348: Integration tests for entity lifecycle — end-to-end entity model."""
+"""Integration tests for entity lifecycle — end-to-end entity model."""
 
 from __future__ import annotations
 
@@ -151,7 +151,7 @@ class TestM348EntityLifecycle:
 
 
 class TestM348EntityMigration:
-    """M348: migration from entity: tags to entity records."""
+    """migration from entity: tags to entity records."""
 
     async def test_migration_lifecycle(self, tmp_path):
         """End-to-end: old entity: tags → migrated entity records."""

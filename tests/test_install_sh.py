@@ -18,7 +18,7 @@ def _run_bash(script: str, *, timeout: float = 10) -> subprocess.CompletedProces
 
 
 class TestM174DoResetSetsResetRequested:
-    """M174: interactive 'Reset data?' must set RESET_REQUESTED=true."""
+    """interactive 'Reset data?' must set RESET_REQUESTED=true."""
 
     def test_do_reset_sets_reset_requested(self):
         """When confirm returns yes (simulated), RESET_REQUESTED becomes true."""
@@ -103,7 +103,7 @@ class TestM174DoResetSetsResetRequested:
 
 
 class TestM175SkillWipeOnRebuildReset:
-    """M175: skills/ and connectors/ dirs are wiped when NEED_BUILD+RESET_REQUESTED."""
+    """skills/ and connectors/ dirs are wiped when NEED_BUILD+RESET_REQUESTED."""
 
     def test_wipe_block_present_in_install_sh(self):
         """The 3f wipe block exists and references RESET_REQUESTED."""
@@ -264,7 +264,7 @@ class TestAskUsernameCompletion:
 
 
 class TestM200VersionTracking:
-    """M200: instance version tracking — Dockerfile, install.sh, /health."""
+    """instance version tracking — Dockerfile, install.sh, /health."""
 
     def test_dockerfile_has_build_hash_arg(self):
         dockerfile = os.path.join(os.path.dirname(__file__), "..", "Dockerfile")
@@ -344,7 +344,7 @@ print('OK')
 
 
 class TestM745NetworkAndExternalUrl:
-    """M745: ask_network_and_external_url function and config template."""
+    """ask_network_and_external_url function and config template."""
 
     def test_function_defined_in_lib_mode(self):
         """ask_network_and_external_url function is available after sourcing."""
@@ -414,7 +414,7 @@ class TestM745NetworkAndExternalUrl:
 
 
 class TestM769ExternalUrlPortFix:
-    """M769: external_url port is corrected after actual port assignment."""
+    """external_url port is corrected after actual port assignment."""
 
     def test_external_url_port_updated_when_different(self):
         """EXTERNAL_URL with default :8333 is updated to actual SERVER_PORT."""
@@ -463,7 +463,7 @@ class TestM769ExternalUrlPortFix:
         assert "EXTERNAL_URL=[]" in result.stdout
 
     def test_fix_block_present_in_install_sh(self):
-        """M769 port fix block exists in install.sh."""
+        """port fix block exists in install.sh."""
         script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
         with open(script_path) as f:
             content = f.read()
@@ -472,7 +472,7 @@ class TestM769ExternalUrlPortFix:
 
 
 class TestM820ConfigTomlPatch:
-    """M820: config.toml external_url is patched when port changes."""
+    """config.toml external_url is patched when port changes."""
 
     def test_config_toml_patched_when_port_differs(self, tmp_path):
         """sed patches config.toml external_url after M769 variable correction."""
@@ -513,7 +513,7 @@ class TestM820ConfigTomlPatch:
         assert '"http://1.2.3.4:8333"' in result.stdout
 
     def test_m820_sed_present_in_install_sh(self):
-        """M820 sed patch block exists in install.sh."""
+        """sed patch block exists in install.sh."""
         script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
         with open(script_path) as f:
             content = f.read()
@@ -522,7 +522,7 @@ class TestM820ConfigTomlPatch:
 
 
 class TestM759PresetStep:
-    """M759: installer post-install preset selection."""
+    """installer post-install preset selection."""
 
     def test_preset_flag_parsed(self):
         """--preset flag is parsed in arg parser."""

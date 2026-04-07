@@ -1,4 +1,4 @@
-"""M454: Integration test — plugin taxonomy end-to-end.
+"""Integration test — plugin taxonomy end-to-end.
 
 Verifies the three plugin types (tools, recipes, connectors) work together:
 CLI entrypoints, plugin list aggregation, backward compat, registry structure.

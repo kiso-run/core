@@ -1,4 +1,4 @@
-"""M421/M435/M615/M670 — Integration tests for install confirmation flow.
+"""— Integration tests for install confirmation flow.
 
 End-to-end checks that the system prevents silent skill/connector
 installation without user approval.  M615 adds server-side detection
@@ -47,14 +47,14 @@ class TestPlannerPromptInstallRules:
         assert "approved" in self.full.lower() or "consent" in self.full.lower()
 
     def test_m733_core_allows_system_packages(self):
-        """M733/M849: core prompt allows system pkg manager for non-kiso packages."""
+        """core prompt allows system pkg manager for non-kiso packages."""
         core = _load_modular_prompt("planner", [])
         assert "System package requests" in core
         assert "uv pip install" in core
         assert "needs_install" in core
 
     def test_m733_tool_recovery_still_blocks_apt_for_deps(self):
-        """M733: tool_recovery module still blocks apt-get for broken tool deps."""
+        """tool_recovery module still blocks apt-get for broken tool deps."""
         tool_recovery = _load_modular_prompt("planner", ["tool_recovery"])
         assert "Never apt-get/pip install to fix" in tool_recovery
 
@@ -66,7 +66,7 @@ class TestValidatePlanInstallConfirmation:
     """Install execs are blocked in first plan; only allowed in replan."""
 
     def test_install_in_first_plan_rejected(self):
-        """M979: install + needs_install → blocked (mixed propose+install)."""
+        """install + needs_install → blocked (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -75,7 +75,7 @@ class TestValidatePlanInstallConfirmation:
         assert any("first plan" in e for e in errors)
 
     def test_msg_then_install_same_plan_rejected(self):
-        """M979: msg + exec install + needs_install → rejected."""
+        """msg + exec install + needs_install → rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Install browser?", "expect": None},
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
@@ -93,7 +93,7 @@ class TestValidatePlanInstallConfirmation:
         assert not any("first plan" in e for e in errors)
 
     def test_connector_install_also_caught(self):
-        """M979: connector install + needs_install → blocked."""
+        """connector install + needs_install → blocked."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso connector install slack", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -132,7 +132,7 @@ class TestAutoCorrectRemoved:
 
 
 class TestValidatePlanInstallApproved:
-    """M428: install_approved=True allows install execs in first plan."""
+    """install_approved=True allows install execs in first plan."""
 
     def test_install_approved_allows_first_plan_install(self):
         plan = {"tasks": [
@@ -143,7 +143,7 @@ class TestValidatePlanInstallApproved:
         assert not any("first plan" in e for e in errors)
 
     def test_install_not_approved_with_needs_install_blocks(self):
-        """M979: not approved + needs_install → blocked."""
+        """not approved + needs_install → blocked."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -162,7 +162,7 @@ class TestValidatePlanInstallApproved:
 
 @pytest.mark.asyncio
 class TestSessionHasInstallProposal:
-    """M615: session_has_install_proposal checks install_proposal column."""
+    """session_has_install_proposal checks install_proposal column."""
 
     async def test_empty_session_returns_false(self, tmp_path):
         from kiso.store import init_db, create_session, session_has_install_proposal
@@ -208,7 +208,7 @@ class TestSessionHasInstallProposal:
 
 @pytest.mark.asyncio
 class TestInstallProposalEdgeCases:
-    """M615: edge cases for install_proposal column detection."""
+    """edge cases for install_proposal column detection."""
 
     async def test_different_session_not_counted(self, tmp_path):
         """Proposal in session A should not affect session B."""
@@ -295,7 +295,7 @@ from tests.conftest import make_config
 
 @pytest.mark.asyncio
 class TestRetryLoopUninstalledToolFlag:
-    """M615: _retry_llm_with_validation propagates _saw_uninstalled_tool."""
+    """_retry_llm_with_validation propagates _saw_uninstalled_tool."""
 
     async def test_flag_set_when_validation_sees_uninstalled_tool(self):
         """If validation produces 'is not installed' error then valid plan,
@@ -443,7 +443,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         await conn.close()
 
     async def test_msg_only_no_tools_rejected(self, db):
-        """M1056: msg-only plan + no installed tools + needs_install=null → rejected."""
+        """msg-only plan + no installed tools + needs_install=null → rejected."""
         config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -454,7 +454,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
             await run_planner(db, config, "sess1", "admin", "vai su google.com")
 
     async def test_msg_only_with_tools_installed_rejected(self, db):
-        """M1052: msg-only + tools installed + no needs_install → rejected."""
+        """msg-only + tools installed + no needs_install → rejected."""
         config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
@@ -493,7 +493,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
 
 @pytest.mark.asyncio
 class TestReplanInstallProposalPersistence:
-    """M897: replan plans must persist install_proposal like initial plans."""
+    """replan plans must persist install_proposal like initial plans."""
 
     async def test_replan_persists_install_proposal(self, tmp_path):
         """Replan plan with install_proposal → session_has_install_proposal True."""
@@ -583,7 +583,7 @@ class TestReplanInstallProposalPersistence:
 
 @pytest.mark.asyncio
 class TestM901NeedsInstallFilter:
-    """M901: needs_install is filtered to remove already-installed tools."""
+    """needs_install is filtered to remove already-installed tools."""
 
     @pytest.fixture()
     async def db(self, tmp_path):

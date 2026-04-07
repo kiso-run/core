@@ -514,11 +514,11 @@ class TestSettingInt:
         assert setting_int(settings, key, **kwargs) == expected
 
     def test_missing_key_falls_back_to_defaults(self):
-        """M516: missing key uses SETTINGS_DEFAULTS fallback."""
+        """missing key uses SETTINGS_DEFAULTS fallback."""
         assert setting_int({}, "llm_timeout", lo=1) == SETTINGS_DEFAULTS["llm_timeout"]
 
     def test_missing_key_no_default_raises(self):
-        """M516: missing key with no default raises ConfigError."""
+        """missing key with no default raises ConfigError."""
         with pytest.raises(ConfigError, match="Missing required setting"):
             setting_int({}, "nonexistent_setting_xyz")
 
@@ -544,12 +544,12 @@ class TestSettingFloat:
         assert setting_float(settings, key, **kwargs) == pytest.approx(expected)
 
     def test_missing_key_falls_back_to_defaults(self):
-        """M516: missing key uses SETTINGS_DEFAULTS fallback."""
+        """missing key uses SETTINGS_DEFAULTS fallback."""
         result = setting_float({}, "fact_decay_rate", lo=0.0, hi=1.0)
         assert result == pytest.approx(SETTINGS_DEFAULTS["fact_decay_rate"])
 
     def test_missing_key_no_default_raises(self):
-        """M516: missing key with no default raises ConfigError."""
+        """missing key with no default raises ConfigError."""
         with pytest.raises(ConfigError, match="Missing required setting"):
             setting_float({}, "nonexistent_setting_xyz")
 
@@ -622,7 +622,7 @@ class TestResourceLimitDefaults:
 
 
 class TestKisoHomeEnvVar:
-    """M542: KISO_DIR respects KISO_HOME environment variable."""
+    """KISO_DIR respects KISO_HOME environment variable."""
 
     def test_default_is_home_dot_kiso(self, monkeypatch):
         """Without KISO_HOME, KISO_DIR is ~/.kiso."""

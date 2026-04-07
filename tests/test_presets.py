@@ -45,7 +45,7 @@ def _write_preset_toml(tmp_path: Path, content: str = _VALID_TOML) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# M690 — Preset manifest format + validation
+# — Preset manifest format + validation
 # ---------------------------------------------------------------------------
 
 class TestValidatePresetManifest:
@@ -151,7 +151,7 @@ class TestLoadPreset:
 
 
 # ---------------------------------------------------------------------------
-# M691 — Registry "presets" section
+# — Registry "presets" section
 # ---------------------------------------------------------------------------
 
 class TestRegistryPresets:
@@ -179,7 +179,7 @@ class TestRegistryPresets:
 
 
 # ---------------------------------------------------------------------------
-# M692 — Install orchestration
+# — Install orchestration
 # ---------------------------------------------------------------------------
 
 class TestInstallPreset:
@@ -311,7 +311,7 @@ class TestListInstalledPresets:
 
 
 # ---------------------------------------------------------------------------
-# M693 — CLI: kiso preset list/search/install/show
+# — CLI: kiso preset list/search/install/show
 # ---------------------------------------------------------------------------
 
 class TestPresetListCLI:
@@ -520,7 +520,7 @@ class TestPresetRemoveCLI:
 
 
 # ---------------------------------------------------------------------------
-# M694 — Subcommand registration in CLI __init__
+# — Subcommand registration in CLI __init__
 # ---------------------------------------------------------------------------
 
 class TestPresetSubcommandRegistration:
@@ -559,7 +559,7 @@ class TestDefaultPresetInRegistry:
 
 
 class TestM758AutoInstallTools:
-    """M758: install_preset auto-installs tools from manifest."""
+    """install_preset auto-installs tools from manifest."""
 
     def test_auto_install_calls_tool_install(self, tmp_path):
         """install_preset calls _auto_install_tools for manifest.tools."""
@@ -653,12 +653,12 @@ behaviors = ["Always search the web before answering a question."]
 
 
 # ---------------------------------------------------------------------------
-# M819 — Preset install: clean progress output + verify deps.sh
+# — Preset install: clean progress output + verify deps.sh
 # ---------------------------------------------------------------------------
 
 
 class TestM819CleanProgressOutput:
-    """M819: Preset install shows clean progress instead of verbose output."""
+    """Preset install shows clean progress instead of verbose output."""
 
     def test_clone_prints_fetching(self, capsys):
         """_clone_and_load_preset prints 'Fetching preset...' before clone."""
@@ -747,12 +747,12 @@ class TestM819CleanProgressOutput:
 
 
 # ---------------------------------------------------------------------------
-# M1030 — Recipes in preset system
+# — Recipes in preset system
 # ---------------------------------------------------------------------------
 
 
 class TestPresetRecipesManifest:
-    """M1030: recipes field in PresetManifest and validation."""
+    """recipes field in PresetManifest and validation."""
 
     def test_manifest_has_recipes_field(self):
         m = PresetManifest(
@@ -864,7 +864,7 @@ class TestPresetRecipesManifest:
 
 
 class TestPresetRecipeInstall:
-    """M1030: recipe installation writes .md files and tracks them."""
+    """recipe installation writes .md files and tracks them."""
 
     def test_install_writes_recipe_files(self, tmp_path, capsys):
         from cli.preset_ops import install_preset
@@ -922,7 +922,7 @@ class TestPresetRecipeInstall:
 
 
 class TestPresetRecipeRemove:
-    """M1030: recipe removal deletes installed .md files."""
+    """recipe removal deletes installed .md files."""
 
     def test_remove_deletes_recipe_files(self, tmp_path, capsys):
         from cli.preset_ops import remove_preset

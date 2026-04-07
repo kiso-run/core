@@ -110,7 +110,7 @@ class TestCheckCommandDenyList:
             assert hint_contains in result, f"cmd={cmd!r} missing hint {hint_contains!r}"
 
     def test_no_hint_for_generic_deny(self):
-        """M488: patterns without hints don't include 'Hint:' in message."""
+        """patterns without hints don't include 'Hint:' in message."""
         msg = check_command_deny_list("dd if=/dev/zero of=/dev/sda")
         assert "Command blocked" in msg
         assert "Hint:" not in msg
@@ -153,7 +153,7 @@ class TestBuildSecretVariants:
         assert "mysecret" in variants
 
     def test_json_escaped_variant(self):
-        """M506: secrets with special chars get JSON-escaped variant."""
+        """secrets with special chars get JSON-escaped variant."""
         variants = build_secret_variants('my\nsecret"key')
         # JSON escaping: \n → \\n, " → \"
         assert 'my\\nsecret\\"key' in variants
@@ -218,7 +218,7 @@ class TestSanitizeOutput:
         assert result == "value: [REDACTED]"
 
     def test_strips_json_escaped(self):
-        """M506: JSON-escaped secret variant is stripped from output."""
+        """JSON-escaped secret variant is stripped from output."""
         secret = 'key\nwith"quotes'
         result = sanitize_output(
             '{"token": "key\\nwith\\"quotes"}',
@@ -229,12 +229,12 @@ class TestSanitizeOutput:
         assert "[REDACTED]" in result
 
     def test_empty_secrets_noop(self):
-        """M506: no secrets → output returned unchanged (no regex compilation)."""
+        """no secrets → output returned unchanged (no regex compilation)."""
         result = sanitize_output("normal output", {}, {})
         assert result == "normal output"
 
     def test_cache_reused_on_same_secrets(self):
-        """M547: compiled pattern is cached across calls with same secrets."""
+        """compiled pattern is cached across calls with same secrets."""
         import kiso.security as sec
         secrets = {"KEY": "sk-abc123xyz"}
         sanitize_output("first call", secrets, {})
@@ -244,7 +244,7 @@ class TestSanitizeOutput:
         assert sec._sanitize_cache[1] is cached_pattern  # same object
 
     def test_cache_invalidated_on_new_secrets(self):
-        """M547: cache is rebuilt when secret values change."""
+        """cache is rebuilt when secret values change."""
         import kiso.security as sec
         sanitize_output("call 1", {"A": "secret-one-val"}, {})
         old_pattern = sec._sanitize_cache[1]

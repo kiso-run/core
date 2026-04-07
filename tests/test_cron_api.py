@@ -1,4 +1,4 @@
-"""M680: Integration tests for /cron API endpoints."""
+"""Integration tests for /cron API endpoints."""
 
 from __future__ import annotations
 

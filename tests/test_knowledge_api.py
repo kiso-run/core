@@ -1,4 +1,4 @@
-"""M672: Integration tests for /knowledge API endpoints."""
+"""Integration tests for /knowledge API endpoints."""
 
 from __future__ import annotations
 

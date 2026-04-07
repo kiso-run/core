@@ -315,7 +315,7 @@ class TestF41AiderEditFile:
         aider's primary use case: editing existing code.
         Expects: aider tool task present, exec output contains '7' (3+4).
         """
-        # M1235: create file in session workspace so both aider (git) and
+        # create file in session workspace so both aider (git) and
         # exec (cwd) can access it with relative or absolute paths.
         workspace = _func_kiso_dir / "sessions" / func_session
         workspace.mkdir(parents=True, exist_ok=True)
@@ -364,7 +364,7 @@ class TestF42AiderAddFeature:
         extend it — the most common real-world aider use case.
         Expects: aider tool task present, exec output contains '30' (5*6).
         """
-        # M1235: create file in session workspace so both aider (git) and
+        # create file in session workspace so both aider (git) and
         # exec (cwd) can access it with relative or absolute paths.
         workspace = _func_kiso_dir / "sessions" / func_session
         workspace.mkdir(parents=True, exist_ok=True)

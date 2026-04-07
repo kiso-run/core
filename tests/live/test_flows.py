@@ -361,7 +361,7 @@ class TestDiscoveryPlanReplanFlow:
             )
 
         assert validate_plan(discovery_plan) == []
-        # M655: accept replan or msg as final task — the planner may choose to
+        # accept replan or msg as final task — the planner may choose to
         # investigate and report directly (exec + msg) instead of replanning.
         # Both are valid strategies for a discovery query.
         last_type = discovery_plan["tasks"][-1]["type"]
@@ -369,7 +369,7 @@ class TestDiscoveryPlanReplanFlow:
             f"Expected plan to end with replan or msg, "
             f"got: {[t['type'] for t in discovery_plan['tasks']]}"
         )
-        # M989: two valid strategies:
+        # two valid strategies:
         #  a) exec/search investigation tasks (discovery plan)
         #  b) msg-only proposal when needs_install is set (M984 semantic)
         task_types = [t["type"] for t in discovery_plan["tasks"]]
@@ -481,7 +481,7 @@ class TestSearchTaskFlow:
         errors = validate_plan(plan)
         assert errors == [], f"Plan validation failed: {errors}"
         task_types = [t["type"] for t in plan["tasks"]]
-        # M709: accept search or exec as data-gathering task — the planner
+        # accept search or exec as data-gathering task — the planner
         # sometimes uses exec+curl instead of the built-in search type.
         _DATA_TYPES = {"search", "exec", "tool"}
         assert any(t in _DATA_TYPES for t in task_types), (

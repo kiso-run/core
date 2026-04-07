@@ -82,7 +82,7 @@ class TestF36CrossPlanFileHandoff:
         )
         assert r2.success, f"Plan 2 (OCR) failed: {r2.task_types()}"
 
-        # M933: planner should NOT create curl/download tasks (file is local)
+        # planner should NOT create curl/download tasks (file is local)
         last_plan_id = r2.plans[-1]["id"]
         last_plan_tasks = [
             t for t in r2.tasks if t.get("plan_id") == last_plan_id

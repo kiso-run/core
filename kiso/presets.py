@@ -1,4 +1,4 @@
-"""M690: Preset manifest format, validation, and loading."""
+"""Preset manifest format, validation, and loading."""
 
 from __future__ import annotations
 

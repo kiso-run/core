@@ -116,7 +116,7 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
-        # M387: provide browser skill so briefer selection isn't cleared
+        # provide browser skill so briefer selection isn't cleared
         fake_skills = [
             {"name": "browser", "summary": "Navigate, click, fill, screenshot",
              "args_schema": {}, "env": {}, "session_secrets": [],
@@ -414,7 +414,7 @@ class TestBrieferPromptBudget:
 
 
 # ---------------------------------------------------------------------------
-# M450: MD skills in briefer context pool
+# MD skills in briefer context pool
 # ---------------------------------------------------------------------------
 
 
@@ -500,12 +500,12 @@ class TestRecipesInBriefer:
 
 
 # ---------------------------------------------------------------------------
-# M824 — Tool injection: skip briefer filtering when few tools installed
+# — Tool injection: skip briefer filtering when few tools installed
 # ---------------------------------------------------------------------------
 
 
 class TestM824ToolFilterThreshold:
-    """M824: briefer tool filter is skipped when installed tools <= threshold."""
+    """briefer tool filter is skipped when installed tools <= threshold."""
 
     async def test_few_tools_injects_all(self, db):
         """5 tools installed with threshold=10 → planner sees all 5."""
@@ -650,12 +650,12 @@ class TestM824ToolFilterThreshold:
 
 
 # ---------------------------------------------------------------------------
-# M825 — Planner prompt: session file awareness rules
+# — Planner prompt: session file awareness rules
 # ---------------------------------------------------------------------------
 
 
 class TestM825SessionFilesModule:
-    """M825: session_files module injected when workspace has files."""
+    """session_files module injected when workspace has files."""
 
     async def test_session_with_files_gets_module(self, db):
         """Session workspace files → session_files module in prompt."""
@@ -693,7 +693,7 @@ class TestM825SessionFilesModule:
         system = msgs[0]["content"]
         assert "Session file rules:" in system
         assert "exact path shown in the Session Workspace listing" in system
-        # M933: verify the file listing also appears in user content
+        # verify the file listing also appears in user content
         content = msgs[1]["content"]
         assert "## Session Workspace" in content
         assert "test.png" in content

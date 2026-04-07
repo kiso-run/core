@@ -217,7 +217,7 @@ class TestMain:
 
 
 class TestPrintReport:
-    """M852: summary shows total test count and elapsed time."""
+    """summary shows total test count and elapsed time."""
 
     def test_summary_shows_total_tests_and_time(self, capsys):
         results = [

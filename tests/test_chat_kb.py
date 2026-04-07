@@ -1,4 +1,4 @@
-"""M374: Integration tests — chat_kb flow + messenger sanitization."""
+"""Integration tests — chat_kb flow + messenger sanitization."""
 
 from __future__ import annotations
 
@@ -154,7 +154,7 @@ class TestMessengerSanitization:
 
 
 class TestOutputBackedLearningIntegration:
-    """M373 output-backed learning validation in realistic scenarios."""
+    """output-backed learning validation in realistic scenarios."""
 
     def test_negative_claim_about_present_item_filtered(self):
         """Reviewer says "not stated" but subject IS in output."""

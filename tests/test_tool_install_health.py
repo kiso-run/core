@@ -1,4 +1,4 @@
-"""M188: Smoke test — tool install → broken deps → planner reinstall guidance."""
+"""Smoke test — tool install → broken deps → planner reinstall guidance."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class TestToolInstallHealthSmoke:
     validation error for null args includes example format."""
 
     def test_install_detects_missing_binary(self, tmp_path, capsys, mock_admin):
-        """M183/M187: _plugin_install passes deps from manifest to check_deps."""
+        """_plugin_install passes deps from manifest to check_deps."""
         from cli.tool import _tool_install
 
         tools_dir = tmp_path / "tools"
@@ -88,7 +88,7 @@ class TestToolInstallHealthSmoke:
         assert "fake_binary" in out
 
     def test_discover_tools_marks_unhealthy(self, tmp_path):
-        """M176: discover_tools adds healthy=False for missing binary deps."""
+        """discover_tools adds healthy=False for missing binary deps."""
         from kiso.tools import discover_tools
 
         tool_dir = tmp_path / "browser"
@@ -109,7 +109,7 @@ class TestToolInstallHealthSmoke:
         assert "fake_binary" in tools[0]["missing_deps"]
 
     def test_planner_tool_list_shows_broken(self, tmp_path):
-        """M177: build_planner_tool_list annotates unhealthy tools."""
+        """build_planner_tool_list annotates unhealthy tools."""
         from kiso.tools import build_planner_tool_list, discover_tools
 
         tool_dir = tmp_path / "browser"
@@ -131,7 +131,7 @@ class TestToolInstallHealthSmoke:
         assert "kiso tool remove" in result
 
     def test_validation_error_includes_args_example(self):
-        """M184: validation error for null args includes example format."""
+        """validation error for null args includes example format."""
         plan = {"tasks": [
             {"type": "tool", "detail": "screenshot", "tool": "browser",
              "args": None, "expect": "done"},

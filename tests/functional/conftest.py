@@ -438,10 +438,10 @@ def _func_kiso_dir(func_config, tmp_path_factory):
     (kiso_dir / "tools").mkdir()
     (kiso_dir / "sys" / "ssh").mkdir(parents=True)
 
-    # M543: write config.toml for subprocess CLI commands
+    # write config.toml for subprocess CLI commands
     _write_test_config(kiso_dir, func_config)
 
-    # M543: set KISO_HOME so subprocess processes use the isolated dir
+    # set KISO_HOME so subprocess processes use the isolated dir
     old_kiso_home = os.environ.get("KISO_HOME")
     os.environ["KISO_HOME"] = str(kiso_dir)
 
@@ -560,7 +560,7 @@ async def run_message(func_config, func_db, func_session):
             timeout=timeout,
         )
         # Wait for background knowledge task (curator + summarizer).
-        # M634: increased from 30s to 90s — curator with transport retries
+        # increased from 30s to 90s — curator with transport retries
         # can easily exceed 30s.  Log instead of silently swallowing.
         if bg_task is not None and not bg_task.done():
             try:

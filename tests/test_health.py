@@ -24,7 +24,7 @@ async def test_health_includes_version(client: httpx.AsyncClient):
 
 
 async def test_health_includes_resources(client: httpx.AsyncClient):
-    """M219: /health response contains resources dict with expected keys."""
+    """/health response contains resources dict with expected keys."""
     resp = await client.get("/health")
     data = resp.json()
     assert "resources" in data
@@ -40,7 +40,7 @@ async def test_health_includes_resources(client: httpx.AsyncClient):
 
 
 async def test_health_disk_used_is_kiso_dir_size(client: httpx.AsyncClient):
-    """M219 fix: disk_gb.used should reflect KISO_DIR size, not whole filesystem."""
+    """fix: disk_gb.used should reflect KISO_DIR size, not whole filesystem."""
     resp = await client.get("/health")
     data = resp.json()
     disk = data["resources"]["disk_gb"]
@@ -54,7 +54,7 @@ async def test_health_disk_used_is_kiso_dir_size(client: httpx.AsyncClient):
 
 
 async def test_health_disk_limit_from_config(client: httpx.AsyncClient):
-    """M231: disk_gb.limit should use max_disk_gb from config, not filesystem total."""
+    """disk_gb.limit should use max_disk_gb from config, not filesystem total."""
     from kiso.main import app
     max_disk = app.state.config.settings.get("max_disk_gb")
     resp = await client.get("/health")

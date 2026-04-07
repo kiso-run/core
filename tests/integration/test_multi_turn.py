@@ -1,4 +1,4 @@
-"""M619: Integration test — multi-turn approval flow.
+"""Integration test — multi-turn approval flow.
 
 Tests connected flows that span multiple plan cycles:
 - Install proposal → user approval → exec install

@@ -1,4 +1,4 @@
-"""M616: Supervisor lifecycle unit tests.
+"""Supervisor lifecycle unit tests.
 
 Tests ``_supervisor_main`` from cli/connector.py:
 - Clean exit handling

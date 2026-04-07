@@ -1,4 +1,4 @@
-"""M617: Integration test infrastructure.
+"""Integration test infrastructure.
 
 Provides fixtures for connector protocol integration tests:
 - ``integration`` marker gating

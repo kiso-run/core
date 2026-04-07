@@ -1,4 +1,4 @@
-"""M287/M595: Prompt smoke tests.
+"""Prompt smoke tests.
 
 Lightweight guards that role prompt files exist, load, and contain core
 terms.  Behavioral validation lives in test_brain.py and test_worker.py —
@@ -57,7 +57,7 @@ def test_role_prompt_has_core_terms(filename, terms):
 
 
 class TestM734WorkerSudoRule:
-    """M734: worker prompt has sudo-stripping rule for root."""
+    """worker prompt has sudo-stripping rule for root."""
 
     def test_worker_prompt_has_root_sudo_rule(self):
         content = (_ROLES_DIR / "worker.md").read_text()
@@ -70,7 +70,7 @@ class TestM734WorkerSudoRule:
         assert "CANNOT_TRANSLATE" in content
 
 class TestM948PlannerSearchPreference:
-    """M948: planner web guidance keeps built-in search as the default."""
+    """planner web guidance keeps built-in search as the default."""
 
     def test_web_module_describes_search_routing(self):
         web_module = _load_modular_prompt("planner", ["web"]).lower()
@@ -159,7 +159,7 @@ class TestM323LearningPipeline:
 
 
 class TestTimeoutUnification:
-    """M422: per-role timeouts removed, single llm_timeout used."""
+    """per-role timeouts removed, single llm_timeout used."""
 
     def test_default_config_has_no_per_role_timeouts(self):
         from kiso.config import SETTINGS_DEFAULTS
@@ -169,7 +169,7 @@ class TestTimeoutUnification:
 
 
 class TestBrieferModuleDescriptions:
-    """M426: briefer module descriptions must be <=60 chars each."""
+    """briefer module descriptions must be <=60 chars each."""
 
     def test_all_descriptions_within_limit(self):
         for name, desc in _BRIEFER_MODULE_DESCRIPTIONS.items():
@@ -182,7 +182,7 @@ class TestBrieferModuleDescriptions:
             assert desc.strip(), f"Module '{name}' has empty description"
 
     def test_replan_description_no_self_reference(self):
-        """M717: 'replan' description must not contain the word 'replan' to avoid
+        """'replan' description must not contain the word 'replan' to avoid
         LLM hallucination (e.g. 'replen') caused by token-level repetition."""
         desc = _BRIEFER_MODULE_DESCRIPTIONS["replan"]
         assert "replan" not in desc.lower(), (

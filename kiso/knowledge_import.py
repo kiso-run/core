@@ -1,4 +1,4 @@
-"""M676: Parse markdown files into atomic knowledge facts for import."""
+"""Parse markdown files into atomic knowledge facts for import."""
 
 from __future__ import annotations
 

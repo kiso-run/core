@@ -1,4 +1,4 @@
-"""M618: Connector protocol integration tests.
+"""Connector protocol integration tests.
 
 Tests the full connector flow:
 - Session registration via POST /sessions
