@@ -445,15 +445,15 @@ Each replan cycle costs an LLM call. Beyond `max_replan_depth`, track replan rat
 
 ### Message Body Size Limit
 
-POST `/msg` content is validated against `max_message_size` (default: 64 KB). Requests exceeding the limit receive HTTP 413. This prevents oversized messages from consuming memory and being fed to the worker/LLM pipeline.
+POST `/msg` content is validated against `max_message_size` (see [config.md](config.md)). Requests exceeding the limit receive HTTP 413. This prevents oversized messages from consuming memory and being fed to the worker/LLM pipeline.
 
 ### Queue Backpressure
 
-Each session's message queue has a bounded size (`max_queue_size`, default: 50). When the queue is full, new messages receive HTTP 429 (Too Many Requests). This prevents unbounded memory growth from rapid-fire message submission.
+Each session's message queue has a bounded size (`max_queue_size`, see [config.md](config.md)). When the queue is full, new messages receive HTTP 429 (Too Many Requests). This prevents unbounded memory growth from rapid-fire message submission.
 
 ### Plan Task Limit
 
-Plans are validated against `max_plan_tasks` (default: 20). Plans with more tasks fail validation and trigger a retry. This prevents the LLM from generating extremely long plans that would take excessive time and resources to execute.
+Plans are validated against `max_plan_tasks` (see [config.md](config.md)). Plans with more tasks fail validation and trigger a retry. This prevents the LLM from generating extremely long plans that would take excessive time and resources to execute.
 
 ### Worker Crash Recovery
 
@@ -489,7 +489,7 @@ When a cancel event is set during the replan window (after a failed plan executi
 
 ### Output Size Limits
 
-Exec and tool output is capped at a configurable max size (`max_output_size`, default: 1 MB). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/tools.
+Exec and tool output is capped at `max_output_size` (see [config.md](config.md)). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/tools.
 
 ### Post-Plan LLM Timeouts
 

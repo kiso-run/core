@@ -127,7 +127,7 @@ The exec task runs and gets `returncode != 0` → status set to `"failed"`. The 
 
 With OpenRouter pricing, this could cost $5-15 per adversarial message depending on models.
 
-**Current mitigation:** `max_replan_depth` (default 3) caps replanning iterations. `max_plan_tasks` (default 20) caps tasks per plan. Per-message LLM call budget (`max_llm_calls_per_message`, default 200) enforced via `contextvars` — raises `LLMBudgetExceeded` when the ceiling is reached, preventing runaway cost.
+**Current mitigation:** `max_replan_depth` (see [config.md](config.md)) caps replanning iterations. `max_plan_tasks` (see [config.md](config.md)) caps tasks per plan. Per-message LLM call budget (`max_llm_calls_per_message`, default 200) enforced via `contextvars` — raises `LLMBudgetExceeded` when the ceiling is reached, preventing runaway cost.
 
 **Worst-case cost with budget:** At most 200 LLM calls per message (configurable). The budget is set at the start of `_process_message` and cleared at the end, covering all planner, reviewer, worker, curator, and summarizer calls within a single message processing cycle.
 

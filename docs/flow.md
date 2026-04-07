@@ -69,7 +69,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Facts (session-scoped, from `store.facts` — see [Knowledge / Fact scoping](#facts-are-session-scoped))
 - Pending items (global + session, from `store.pending`)
 - Session summary (from `store.sessions.summary`)
-- Last `context_messages` raw messages (default 5, from `store.messages`, trusted only)
+- Last `context_messages` raw messages (from `store.messages`, trusted only)
 - Paraphrased untrusted messages (from step a, with random boundary fencing)
 - Recent msg outputs (all `msg` task outputs since last summarization, from `store.tasks`)
 - Workspace file listing (files in the session directory, max 30, with sizes)
@@ -100,7 +100,7 @@ no longer treats free-form text as the only execution boundary.
 
 ### d) Validates and Persists the Plan
 
-Before execution, kiso validates the plan semantically (see [llm-roles.md — Validation After Parsing](llm-roles.md#validation-after-parsing) for the full rule list and error example). On failure, retries up to `max_validation_retries` (default 3) with specific error feedback. If exhausted: fail the message, notify user. No silent fallback.
+Before execution, kiso validates the plan semantically (see [llm-roles.md — Validation After Parsing](llm-roles.md#validation-after-parsing) for the full rule list and error example). On failure, retries up to `max_validation_retries` (see [config.md](config.md)) with specific error feedback. If exhausted: fail the message, notify user. No silent fallback.
 
 After validation, kiso creates a **plan** entity in `store.plans` (with `goal`, `message_id`, and `status=running`) and persists all tasks to `store.tasks` linked to that plan via `plan_id`. See [database.md — plans](database.md#plans).
 
@@ -161,7 +161,7 @@ When the reviewer determines that the task failed and the plan needs revision, o
 
 **Self-directed replans**: when the planner creates a discovery plan (exec tasks + final `replan` task), the investigation tasks run normally, then the replan task triggers a new planning cycle with the investigation results in context. The completed plan is marked "done" (not "failed") since the investigation succeeded. Self-directed replans count toward the depth limit.
 
-**Max replan depth**: after `max_replan_depth` (default 5) replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on. The planner can request up to +3 additional replan attempts via the `extend_replan` field on the plan.
+**Max replan depth**: after `max_replan_depth` (see [config.md](config.md)) replan cycles for the same original message, the worker stops replanning, notifies the user of the failure, and moves on. The planner can request up to +3 additional replan attempts via the `extend_replan` field on the plan.
 
 **Circular replan detection**: the worker tracks a strategy fingerprint (goal prefix + task type/detail patterns) for each replan attempt. If the same strategy repeats twice (Jaccard overlap > 50%), or failure reasons have > 50% word overlap, the replan loop stops with a "stuck" notification. This prevents the planner from retrying the same failing approach indefinitely.
 
@@ -178,9 +178,11 @@ Before execution, `validate_plan` runs deterministic structural checks that reje
 
 When an LLM call fails, the retry policy depends on the failure type:
 
-- **Validation error** (invalid JSON, missing fields): retry with error feedback (up to `max_validation_retries`, default 3).
-- **SSE stall** (no data for 60s) or **HTTP timeout**: switch to fallback model and retry. The fallback model is configurable via `planner_fallback_model` (see [config.md](config.md)).
-- **Other LLM errors**: retry same model (up to `max_llm_retries`, default 3).
+- **Validation error** (invalid JSON, missing fields): retry with error feedback (up to `max_validation_retries`).
+- **SSE stall** or **HTTP timeout**: switch to fallback model and retry (see `planner_fallback_model` in [config.md](config.md)).
+- **Other LLM errors**: retry same model (up to `max_llm_retries`).
+
+All retry/timeout settings are configurable — see [config.md](config.md).
 
 ### Task Output Chaining
 
@@ -316,7 +318,7 @@ Facts have a `category` (`project`, `user`, `tool`, `general`) and an optional `
 
 ### Consolidation
 
-When facts exceed `knowledge_max_facts` (default 50), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `tool`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
+When facts exceed `knowledge_max_facts` (see [config.md](config.md)), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `tool`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
 
 After consolidation, the worker runs a **decay pass** (reduces confidence for stale facts) and an **archive pass** (moves low-confidence facts to `facts_archive`). See [database.md — facts](database.md#facts) for the full schema.
 
