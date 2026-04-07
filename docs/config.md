@@ -96,7 +96,7 @@ max_replan_depth          = 5
 max_validation_retries    = 3
 max_llm_retries           = 3        # retries on LLM HTTP/stall errors (per call)
 max_plan_tasks            = 20
-planner_fallback_model    = "google/gemini-2.5-flash-lite"  # fallback when primary planner model fails
+planner_fallback_model    = "minimax/minimax-m2.7"          # fallback when primary planner model fails
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
@@ -171,7 +171,7 @@ webhook_max_payload       = 1048576
 | `max_validation_retries` | `3` | Max retries when planner returns structurally valid JSON that fails semantic validation. |
 | `max_llm_retries` | `3` | Max retries on LLM HTTP errors or SSE stalls per call. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
-| `planner_fallback_model` | `"google/gemini-2.5-flash-lite"` | Fallback model when primary planner model exhausts retries. |
+| `planner_fallback_model` | `"minimax/minimax-m2.7"` | Fallback model when primary planner model exhausts retries. |
 | `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
 | `llm_timeout` | `600` | Seconds before any LLM call is cancelled. Also used for graceful shutdown per worker. |
 | `stall_timeout` | `60` | Seconds without SSE data before declaring a stall. Triggers model switch to fallback. |
