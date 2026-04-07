@@ -295,6 +295,14 @@ When the worker encounters a `tool` task:
 6. Stores task result in DB (status, output)
 7. Passes to the reviewer (all exec/tool tasks are always reviewed)
 
+## Validation
+
+Before execution, tool task args are validated at plan time:
+
+- **Schema validation**: args checked against `kiso.toml` arg schema (required fields, types)
+- **Semantic validation**: tool-specific checks (e.g., aider: instruction in `message`, not in `files`)
+- **Browser URL scheme**: browser tool rejects `file://` URLs — browser is for web content (http/https). Use exec with `cat`/`head` to read local files.
+
 ## Discovery
 
 Scanned from `/root/.kiso/tools/` (container-internal) before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a tool or a plain `exec` task.
