@@ -579,6 +579,124 @@ def test_config_template_models_match_defaults():
     )
 
 
+# --- M1264: metadata as single source of truth ---
+
+
+class TestConfigMetadataSingleSource:
+    """Models and settings are defined in metadata tables; the legacy
+    exports (MODEL_DEFAULTS, MODEL_DESCRIPTIONS, SETTINGS_DEFAULTS) are
+    derived from those tables at module load time.
+    """
+
+    def test_model_metadata_table_exists_and_nonempty(self):
+        from kiso.config import _MODEL_METADATA  # type: ignore[attr-defined]
+        assert isinstance(_MODEL_METADATA, (list, tuple))
+        assert len(_MODEL_METADATA) > 0
+        # Each entry must be (role, default_model_id, description)
+        for entry in _MODEL_METADATA:
+            assert len(entry) == 3, f"Bad model metadata entry: {entry!r}"
+            role, default, desc = entry
+            assert isinstance(role, str) and role
+            assert isinstance(default, str) and default
+            assert isinstance(desc, str) and desc
+
+    def test_settings_metadata_table_exists_and_nonempty(self):
+        from kiso.config import _SETTINGS_METADATA  # type: ignore[attr-defined]
+        assert isinstance(_SETTINGS_METADATA, (list, tuple))
+        assert len(_SETTINGS_METADATA) > 0
+        for entry in _SETTINGS_METADATA:
+            assert len(entry) == 2, f"Bad settings metadata entry: {entry!r}"
+            key, _default = entry
+            assert isinstance(key, str) and key
+
+    def test_model_defaults_derived_from_metadata(self):
+        """MODEL_DEFAULTS must equal {role: default for role, default, _ in _MODEL_METADATA}."""
+        from kiso.config import _MODEL_METADATA  # type: ignore[attr-defined]
+        derived = {role: default for role, default, _ in _MODEL_METADATA}
+        assert derived == MODEL_DEFAULTS, (
+            f"MODEL_DEFAULTS drift from _MODEL_METADATA: "
+            f"derived={derived} vs exported={MODEL_DEFAULTS}"
+        )
+
+    def test_model_descriptions_derived_from_metadata(self):
+        from kiso.config import _MODEL_METADATA  # type: ignore[attr-defined]
+        derived = {role: desc for role, _, desc in _MODEL_METADATA}
+        assert derived == MODEL_DESCRIPTIONS
+
+    def test_settings_defaults_derived_from_metadata(self):
+        from kiso.config import _SETTINGS_METADATA  # type: ignore[attr-defined]
+        derived = {key: default for key, default in _SETTINGS_METADATA}
+        assert derived == SETTINGS_DEFAULTS, (
+            f"SETTINGS_DEFAULTS drift from _SETTINGS_METADATA: "
+            f"derived has {set(derived) - set(SETTINGS_DEFAULTS)} extra, "
+            f"missing {set(SETTINGS_DEFAULTS) - set(derived)}"
+        )
+
+    def test_settings_runtime_types_preserved(self):
+        """Type of each setting must match exactly — cli/config_cmd.py
+        relies on isinstance() checks for coercion."""
+        from kiso.config import _SETTINGS_METADATA  # type: ignore[attr-defined]
+        for key, default in _SETTINGS_METADATA:
+            exported_type = type(SETTINGS_DEFAULTS[key])
+            derived_type = type(default)
+            assert exported_type is derived_type, (
+                f"Type drift on {key!r}: exported={exported_type.__name__} "
+                f"vs metadata={derived_type.__name__}"
+            )
+
+    def test_template_settings_keys_match_metadata(self):
+        """CONFIG_TEMPLATE [settings] keys must match _SETTINGS_METADATA keys.
+
+        Stronger drift check than the existing models test — protects the
+        forgotten case where someone adds to _SETTINGS_METADATA but not
+        the template (or vice versa).
+        """
+        import tomllib
+        from kiso.config import _SETTINGS_METADATA  # type: ignore[attr-defined]
+
+        parsed = tomllib.loads(CONFIG_TEMPLATE)
+        template_keys = set(parsed.get("settings", {}))
+        metadata_keys = {key for key, _ in _SETTINGS_METADATA}
+        assert template_keys == metadata_keys, (
+            f"CONFIG_TEMPLATE [settings] drift: "
+            f"missing={metadata_keys - template_keys}, "
+            f"extra={template_keys - metadata_keys}"
+        )
+
+    def test_template_settings_values_match_metadata(self):
+        """Each [settings] value in CONFIG_TEMPLATE must equal the
+        metadata default — types and values byte-for-byte."""
+        import tomllib
+        from kiso.config import _SETTINGS_METADATA  # type: ignore[attr-defined]
+
+        parsed = tomllib.loads(CONFIG_TEMPLATE)
+        template_settings = parsed.get("settings", {})
+        for key, default in _SETTINGS_METADATA:
+            if key not in template_settings:
+                continue  # caught by the keys test above
+            template_val = template_settings[key]
+            assert template_val == default, (
+                f"Setting {key!r}: template={template_val!r} vs metadata={default!r}"
+            )
+            assert type(template_val) is type(default), (
+                f"Setting {key!r}: template type={type(template_val).__name__} "
+                f"vs metadata type={type(default).__name__}"
+            )
+
+    def test_template_models_values_match_metadata(self):
+        """Each [models] value in CONFIG_TEMPLATE must equal the metadata default."""
+        import tomllib
+        from kiso.config import _MODEL_METADATA  # type: ignore[attr-defined]
+
+        parsed = tomllib.loads(CONFIG_TEMPLATE)
+        template_models = parsed.get("models", {})
+        for role, default, _desc in _MODEL_METADATA:
+            assert template_models.get(role) == default, (
+                f"Model {role!r}: template={template_models.get(role)!r} "
+                f"vs metadata={default!r}"
+            )
+
+
 # --- M217: resource limits in config ---
 
 

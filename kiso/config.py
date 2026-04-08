@@ -31,74 +31,105 @@ USER_FACING_SETTINGS: tuple[str, ...] = (
     "consolidation_interval_hours",
 )
 
-# Default values used to write config.toml on first run.
-# NOT used as runtime fallbacks — all settings must be explicitly present.
-SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
-    # conversation
-    "context_messages": 5,
-    "summarize_threshold": 30,
-    "summarize_messages_limit": 100,
-    "bot_name": "Kiso",
-    "bot_persona": "a friendly and knowledgeable assistant",
-    # knowledge / memory
-    "knowledge_max_facts": 50,
-    "fact_decay_days": 7,
-    "fact_decay_rate": 0.1,
-    "fact_archive_threshold": 0.3,
-    "fact_consolidation_min_ratio": 0.3,
-    # consolidator (periodic knowledge quality review)
-    "consolidation_enabled": True,
-    "consolidation_interval_hours": 24,
-    "consolidation_min_facts": 20,
-    # planning
-    "max_replan_depth": 5,
-    "max_validation_retries": 3,
-    "max_llm_retries": 3,
-    "max_plan_tasks": 20,
-    "planner_fallback_model": "minimax/minimax-m2.7",
-    # execution
-    "classifier_timeout": 30,
-    "llm_timeout": 600,
-    "stall_timeout": 60,
-    "max_output_size": 1048576,
-    "max_worker_retries": 2,
-    # limits
-    "max_memory_gb": 4,
-    "max_cpus": 2,
-    "max_disk_gb": 32,
-    "max_pids": 512,
-    "max_llm_calls_per_message": 200,
-    "max_message_size": 65536,
-    "max_queue_size": 50,
-    # server
-    "host": "0.0.0.0",
-    "port": 8333,
-    "external_url": "",
-    "worker_idle_timeout": 300,
-    # fast path
-    "fast_path_enabled": True,
-    # briefer (context intelligence layer)
-    "briefer_enabled": True,
-    "briefer_tool_filter_threshold": 10,
-    # webhooks
-    "webhook_allow_list": [],
-    "webhook_require_https": True,
-    "webhook_secret": "",
-    "webhook_max_payload": 1048576,
-}
+# --- Single source of truth for settings and models ---------------------
+#
+# `_SETTINGS_METADATA` and `_MODEL_METADATA` are the canonical tables.
+# `SETTINGS_DEFAULTS`, `MODEL_DEFAULTS`, and `MODEL_DESCRIPTIONS` are
+# derived from them at module load time and remain importable for
+# backward compatibility.
+#
+# To add or modify a setting/model, edit ONLY the metadata table and
+# (if user-visible) the corresponding line in CONFIG_TEMPLATE below.
+# `tests/test_config.py::TestConfigMetadataSingleSource` enforces that
+# CONFIG_TEMPLATE stays in sync.
+#
+# Each metadata entry is a plain tuple — kept compact intentionally so
+# the table reads like a config file rather than a class hierarchy.
 
+# Settings: (key, default_value). Order is preserved in SETTINGS_DEFAULTS.
+# NOT used as runtime fallbacks — all settings must be explicitly present
+# in the loaded config; defaults are only used to fill missing keys at
+# load time and to write the initial config.toml.
+_SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
+    # conversation
+    ("context_messages", 5),
+    ("summarize_threshold", 30),
+    ("summarize_messages_limit", 100),
+    ("bot_name", "Kiso"),
+    ("bot_persona", "a friendly and knowledgeable assistant"),
+    # knowledge / memory
+    ("knowledge_max_facts", 50),
+    ("fact_decay_days", 7),
+    ("fact_decay_rate", 0.1),
+    ("fact_archive_threshold", 0.3),
+    ("fact_consolidation_min_ratio", 0.3),
+    # consolidator (periodic knowledge quality review)
+    ("consolidation_enabled", True),
+    ("consolidation_interval_hours", 24),
+    ("consolidation_min_facts", 20),
+    # planning
+    ("max_replan_depth", 5),
+    ("max_validation_retries", 3),
+    ("max_llm_retries", 3),
+    ("max_plan_tasks", 20),
+    ("planner_fallback_model", "minimax/minimax-m2.7"),
+    # execution
+    ("classifier_timeout", 30),
+    ("llm_timeout", 600),
+    ("stall_timeout", 60),
+    ("max_output_size", 1048576),
+    ("max_worker_retries", 2),
+    # limits
+    ("max_memory_gb", 4),
+    ("max_cpus", 2),
+    ("max_disk_gb", 32),
+    ("max_pids", 512),
+    ("max_llm_calls_per_message", 200),
+    ("max_message_size", 65536),
+    ("max_queue_size", 50),
+    # server
+    ("host", "0.0.0.0"),
+    ("port", 8333),
+    ("external_url", ""),
+    ("worker_idle_timeout", 300),
+    # fast path
+    ("fast_path_enabled", True),
+    # briefer (context intelligence layer)
+    ("briefer_enabled", True),
+    ("briefer_tool_filter_threshold", 10),
+    # webhooks
+    ("webhook_allow_list", []),
+    ("webhook_require_https", True),
+    ("webhook_secret", ""),
+    ("webhook_max_payload", 1048576),
+)
+
+# Models: (role, default_model_id, description). Order is preserved in
+# MODEL_DEFAULTS / MODEL_DESCRIPTIONS. Description is shown during
+# interactive install.
+_MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
+    ("briefer",      "google/gemini-2.5-flash",      "selects relevant context for each LLM role"),
+    ("classifier",   "google/gemini-2.5-flash",      "classifies messages as plan or chat"),
+    ("planner",      "deepseek/deepseek-v3.2",       "interprets requests, creates task plans"),
+    ("reviewer",     "google/gemini-2.5-flash-lite", "checks task output, decides replan"),
+    ("curator",      "google/gemini-2.5-flash",      "manages learned knowledge"),
+    ("worker",       "deepseek/deepseek-v3.2",       "translates tasks to shell commands"),
+    ("summarizer",   "google/gemini-2.5-flash-lite", "compresses conversation history"),
+    ("paraphraser",  "google/gemini-2.5-flash-lite", "prompt injection defense"),
+    ("messenger",    "deepseek/deepseek-v3.2",       "writes human-readable responses"),
+    ("searcher",     "perplexity/sonar",             "web search (native search)"),
+    ("consolidator", "google/gemini-2.5-flash-lite", "periodic knowledge quality review"),
+)
+
+# Derived legacy exports — preserved for backward compatibility.
+SETTINGS_DEFAULTS: dict[str, int | float | str | bool | list] = {
+    key: default for key, default in _SETTINGS_METADATA
+}
 MODEL_DEFAULTS: dict[str, str] = {
-    "briefer": "google/gemini-2.5-flash",
-    "classifier": "google/gemini-2.5-flash",
-    "planner": "deepseek/deepseek-v3.2",
-    "reviewer": "google/gemini-2.5-flash-lite",
-    "curator": "google/gemini-2.5-flash",
-    "worker": "deepseek/deepseek-v3.2",
-    "summarizer": "google/gemini-2.5-flash-lite",
-    "paraphraser": "google/gemini-2.5-flash-lite",
-    "messenger": "deepseek/deepseek-v3.2",
-    "searcher": "perplexity/sonar",
-    "consolidator": "google/gemini-2.5-flash-lite",
+    role: default for role, default, _desc in _MODEL_METADATA
+}
+MODEL_DESCRIPTIONS: dict[str, str] = {
+    role: desc for role, _default, desc in _MODEL_METADATA
 }
 
 # Per-role reasoning config sent to OpenRouter.  Roles not listed here
@@ -110,21 +141,6 @@ REASONING_DEFAULTS: dict[str, dict | None] = {}
 # All other roles rely on the model's native limit — removing artificial
 # caps prevents silent truncation of complex outputs.
 CLASSIFIER_MAX_TOKENS = 10
-
-# Descriptions shown during interactive install. Keyed by role name.
-MODEL_DESCRIPTIONS: dict[str, str] = {
-    "briefer": "selects relevant context for each LLM role",
-    "classifier": "classifies messages as plan or chat",
-    "planner": "interprets requests, creates task plans",
-    "reviewer": "checks task output, decides replan",
-    "curator": "manages learned knowledge",
-    "worker": "translates tasks to shell commands",
-    "summarizer": "compresses conversation history",
-    "paraphraser": "prompt injection defense",
-    "messenger": "writes human-readable responses",
-    "searcher": "web search (native search)",
-    "consolidator": "periodic knowledge quality review",
-}
 
 # Complete config.toml written on first run. Edit to configure your instance.
 CONFIG_TEMPLATE = """\
@@ -183,6 +199,7 @@ max_replan_depth          = 5
 max_validation_retries    = 3
 max_llm_retries           = 3        # retries for LLM-level failures (timeout, stall, HTTP errors)
 max_plan_tasks            = 20
+planner_fallback_model    = "minimax/minimax-m2.7"  # secondary model used when the primary planner times out / stalls
 
 # --- execution ---
 classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
@@ -205,6 +222,7 @@ max_queue_size            = 50       # queued messages per session
 # --- server ---
 host                      = "0.0.0.0"
 port                      = 8333
+external_url              = ""       # public base URL for webhook callbacks (empty = derive from host:port)
 worker_idle_timeout       = 300
 
 # --- fast path ---
@@ -212,6 +230,7 @@ fast_path_enabled         = true     # skip planner for conversational messages
 
 # --- briefer (context intelligence layer) ---
 briefer_enabled           = true     # LLM-based context selection for each pipeline stage
+briefer_tool_filter_threshold = 10   # only invoke the briefer's tool-filtering pass when this many tools are available
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check
