@@ -1,7 +1,7 @@
 """Functional tests for safety rules enforcement.
 
 F-rules-1: Safety rule prevents path disclosure
-F-rules-2: Behavior rule enforces response language
+F-rules-2: Behavior rule enforces a citation marker on responses
 F-rules-3: Rule removal restores default behavior
 
 Requires ``--functional`` flag and KISO_LLM_API_KEY.
@@ -14,7 +14,6 @@ import pytest
 from kiso.store import save_fact
 from tests.conftest import LLM_SINGLE_PLAN_TIMEOUT
 from tests.functional.conftest import (
-    assert_italian,
     assert_no_failure_language,
     normalize_for_assertion,
 )
@@ -52,37 +51,49 @@ class TestFRulesPathDisclosure:
 
 
 # ---------------------------------------------------------------------------
-# F-rules-2 — Behavior rule enforces language
+# F-rules-2 — Behavior rule enforces a citation marker
 # ---------------------------------------------------------------------------
+#
+# Design note: behavior rules CANNOT override the classifier-detected
+# response language. The messenger pipeline (message_flow._msg_task_impl)
+# prepends "Answer in {response_lang}." to the detail BEFORE invoking
+# the messenger, so a more specific instruction always wins over a
+# generic guideline. This is intentional separation of concerns:
+# behavior rules govern tone/style/content constraints, language
+# detection governs language. This test exercises the behavior-rule
+# injection path WITHOUT conflicting with language detection by writing
+# in Italian, so the classifier and the rule both target the same
+# language.
 
 
-class TestFRulesBehaviorLanguage:
-    """A behavior rule should force the response language regardless of input."""
+class TestFRulesBehaviorCitation:
+    """A behavior rule should add a citation marker to every response."""
 
-    async def test_behavior_rule_forces_italian(self, run_message, func_db):
+    async def test_behavior_rule_enforces_citation_marker(self, run_message, func_db):
+        marker = "[fonte: knowledge base]"
         await save_fact(
             func_db,
-            "Always respond in formal Italian, regardless of the language "
-            "the user writes in.",
+            f"Always end every response with the marker '{marker}'.",
             source="admin", category="behavior",
         )
 
         result = await run_message(
-            "What is the capital of Japan?",
+            "qual è la capitale del Giappone?",
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         output = result.msg_output
         assert_no_failure_language(output)
-        # The response should be in Italian despite English input
+        # The response should contain the citation marker added by the
+        # behavior rule (rule injection path: run_messenger →
+        # behavior_rules → memory_pack).
+        assert marker in output, (
+            f"Behavior rule citation marker not enforced: {output[:300]}"
+        )
+        # Sanity: the response actually answers the question
         normalized = normalize_for_assertion(output)
-        assert any(w in normalized for w in (
-            "tokyo", "tokio", "giappone", "capitale",
-        )), f"Expected answer about Tokyo/Japan: {output[:300]}"
-        # Check for Italian markers
-        assert any(w in normalized for w in (
-            "giappone", "capitale", "citta", "risposta",
-            "del", "della", "il", "la",
-        )), f"Expected Italian response: {output[:300]}"
+        assert any(w in normalized for w in ("tokyo", "tokio")), (
+            f"Expected answer about Tokyo: {output[:300]}"
+        )
 
 
 # ---------------------------------------------------------------------------
