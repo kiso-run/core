@@ -35,15 +35,35 @@ Each level answers a different question:
 
 | Level | Question | Requires | ~Time |
 |-------|----------|----------|-------|
-| **Unit** | Does each function do the right thing? | Host only | ~90s |
+| **Unit** | Does each function do the right thing? | Host only | ~45s (4045 tests, xdist) |
 | **Bash** | Do shell helpers parse/validate correctly? | bats | <5s |
-| **Integration** | Does the HTTP API + worker pipeline work? | Host (mock LLM) | ~10s |
+| **Integration** | Does the HTTP API + worker pipeline work? | Host (mock LLM) | ~6s (25 tests, xdist) |
 | **Docker** | Can the sandbox user escape its workspace? | Docker | <1s |
 | **Plugin** | Do official plugins build and pass their tests? | Docker | ~35s |
 | **Live** | Do real LLMs understand our prompts? | API key | ~15min |
 | **Functional** | Does the full pipeline work end-to-end? | Docker + API key | ~10min |
 | **Extended** | Do multi-plan orchestrations work? | Docker + API key | ~15min |
 | **Interactive** | Do human-gated flows (CAPTCHA, OAuth) work? | Docker + human | manual |
+
+### Performance baseline (M1267, 2026-04-08)
+
+| Tier | Before (sequential) | After (xdist + tmpfs) | Speedup |
+|------|---------------------|------------------------|---------|
+| **Unit** | 137s (4045 tests) | 42s | **3.2x** |
+| **Integration** | 10s (25 tests) | 6s | **1.8x** |
+
+The default `./utils/run_tests.sh` invocation now uses `pytest-xdist`
+(`-n auto`) to parallelize across CPU cores, and `--basetemp=/dev/shm/...`
+on Linux for RAM-speed test storage. xdist works out-of-the-box because
+each xdist worker is a separate subprocess so module-level state in
+`kiso.main` (`_workers`, `_worker_phases`, `_rate_limiter`) is isolated
+per worker. On non-Linux platforms the runner silently falls back to the
+default basetemp.
+
+These flags only apply to the **unit** and **integration** tiers (the
+fast deterministic ones). Live, functional, docker, plugin, and
+interactive tiers intentionally stay sequential because they hit real
+LLMs, real services, or single Docker containers.
 
 ## Confidence tiers
 

@@ -70,6 +70,26 @@ if command -v bats > /dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# Parallel + tmpfs flags for fast tiers (unit, integration)
+# ---------------------------------------------------------------------------
+# pytest-xdist parallelizes test execution across CPU cores. Each xdist
+# worker is a separate subprocess so module-level state in kiso.main
+# (`_workers`, `_worker_phases`, `_rate_limiter`) is naturally isolated
+# per worker.
+#
+# tmpfs (`/dev/shm`) gives RAM-speed storage for the test temp tree
+# without requiring any test code changes (init_db keeps using a real
+# filesystem path, just one that lives in RAM). On non-Linux platforms
+# we silently fall back to the default basetemp.
+PYTEST_PARALLEL=(-n auto)
+PYTEST_BASETEMP=()
+if [[ -d /dev/shm ]]; then
+    _SHM_BASETEMP="/dev/shm/pytest-kiso-$$"
+    PYTEST_BASETEMP=(--basetemp="$_SHM_BASETEMP")
+    trap 'rm -rf "$_SHM_BASETEMP" "$_CAPTURE_DIR"' EXIT
+fi
+
+# ---------------------------------------------------------------------------
 # Failure summary capture
 # ---------------------------------------------------------------------------
 _CAPTURE_DIR="$(mktemp -d)"
@@ -364,7 +384,8 @@ run_unit() {
     run_suite "Unit tests" uv run pytest tests/ -q \
         --ignore=tests/live --ignore=tests/docker \
         --ignore=tests/functional --ignore=tests/integration \
-        --ignore=tests/interactive
+        --ignore=tests/interactive \
+        "${PYTEST_PARALLEL[@]}" "${PYTEST_BASETEMP[@]}"
 }
 
 run_bash() {
@@ -377,7 +398,8 @@ run_bash() {
 }
 
 run_integration() {
-    run_suite "Integration tests" uv run pytest tests/integration/ -v --integration
+    run_suite "Integration tests" uv run pytest tests/integration/ -v --integration \
+        "${PYTEST_PARALLEL[@]}" "${PYTEST_BASETEMP[@]}"
 }
 
 run_live() {
@@ -617,9 +639,9 @@ run_interactive_menu() {
     echo -e "  ${BOLD}Kiso Test Runner${NC}"
     echo ""
     echo -e "  ${DIM}── Fast (host only) ──────────────────────────${NC}"
-    echo -e "  ${CYAN}1${NC}  Unit tests              ${DIM}~3650 tests, ~90s${NC}"
+    echo -e "  ${CYAN}1${NC}  Unit tests              ${DIM}~4045 tests, ~45s (xdist)${NC}"
     echo -e "  ${CYAN}2${NC}  Bash tests              ${DIM}89 tests, <5s${NC}${miss_bats}"
-    echo -e "  ${CYAN}3${NC}  Integration tests       ${DIM}9 tests, ~10s, mock LLM${NC}"
+    echo -e "  ${CYAN}3${NC}  Integration tests       ${DIM}25 tests, ~6s, mock LLM (xdist)${NC}"
     echo ""
     echo -e "  ${DIM}── Real LLM (needs API key) ──────────────────${NC}"
     echo -e "  ${CYAN}4${NC}  Live tests              ${DIM}72 tests, ~15min${NC}${miss_api}"
