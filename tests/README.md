@@ -153,11 +153,12 @@ suite-wiring check:
 ./utils/run_tests.sh
 
 # CI / scripting (non-interactive, combinable flags)
-# Direct (by number — same as menu choices)
+# Direct (by number or letter — same as menu choices)
 ./utils/run_tests.sh 4                        # run live tests
 ./utils/run_tests.sh 1,3                      # run unit + integration
-./utils/run_tests.sh 10                       # all automatic
-./utils/run_tests.sh s "tests/live/test_roles.py::TestFoo"  # specific test
+./utils/run_tests.sh a                        # all automatic
+./utils/run_tests.sh f                        # fast all (skip pipeline tests)
+./utils/run_tests.sh s "tests/functional/test_core_flows.py::TestF23CrossSessionKnowledge"  # specific test (any type — autodetects flags)
 
 # Auto (CI, named flags)
 ./utils/run_tests.sh --auto                   # all automatic

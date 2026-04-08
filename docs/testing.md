@@ -12,10 +12,22 @@
 ./utils/run_tests.sh --auto --bash       # only bash/BATS
 ./utils/run_tests.sh --auto --all        # everything including interactive
 
-# Direct invocation
+# Direct invocation — single test or quick suite by number/letter
+./utils/run_tests.sh 1                                          # unit tests
+./utils/run_tests.sh f                                          # fast all (skip pipeline tests: unit+bash+integration+live+docker+plugins)
+./utils/run_tests.sh a                                          # all automatic suites
+./utils/run_tests.sh s "tests/test_brain.py::test_foo"          # single test (any type — see note below)
+
+# Bypass the runner entirely
 uv run pytest tests/ -q            # unit tests only
 bats tests/bash/                   # bash tests only
 ```
+
+> **`s` mode auto-detects test type from path** and applies the right runner flags
+> automatically: `tests/functional/...` runs in Docker with `--functional`,
+> `tests/live/...` adds `--llm-live --live-network`, `tests/integration/...`
+> adds `--integration`, `tests/docker/...` runs in Docker. Prefer `s "..."`
+> over raw `uv run pytest` so you don't have to remember which flags to pass.
 
 ### Full suite runner
 
