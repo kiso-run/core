@@ -634,16 +634,48 @@ def _format_workspace_files(files: list[dict]) -> str:
     return "Session workspace files:\n" + "\n".join(lines)
 
 
+def _build_provenance_index(
+    plan_outputs: list[dict] | None,
+) -> dict[str, tuple[str | None, int | None]]:
+    """Map workspace-relative path → (origin_tool, origin_task_index).
+
+    Walks each plan_output's ``file_refs`` and ``artifact_refs`` and pulls
+    the (tool, index) declared on each ref. Refs without a usable path
+    are skipped. When two refs target the same path, the first wins
+    (consistent with append-order semantics of plan_outputs).
+    """
+    index: dict[str, tuple[str | None, int | None]] = {}
+    for output in plan_outputs or []:
+        for ref_list_key in ("file_refs", "artifact_refs"):
+            for ref in output.get(ref_list_key) or []:
+                if not isinstance(ref, dict):
+                    continue
+                key = ref.get("workspace_path") or ref.get("path") or ref.get("abs_path")
+                if not key or key in index:
+                    continue
+                index[key] = (
+                    ref.get("origin_tool"),
+                    ref.get("origin_task_index"),
+                )
+    return index
+
+
 def _build_last_plan_summary_data(
     session: str,
     goal: str,
     completed_tasks: list[dict],
     pre_snapshot: set[Path],
+    plan_outputs: list[dict] | None = None,
 ) -> dict:
     """Build the persisted last-plan summary payload."""
     workspace = _session_workspace(session)
     post_snapshot = set(workspace.rglob("*"))
     new_files = post_snapshot - pre_snapshot
+
+    # Per-file provenance derived from plan_output file/artifact refs.
+    # If a file has no matching ref, provenance stays None — we never
+    # invent it by scanning unrelated completed tasks.
+    provenance = _build_provenance_index(plan_outputs)
 
     # Produced files — only real files, skip ignored dirs and dotfiles
     produced_files: list[dict] = []
@@ -656,21 +688,17 @@ def _build_last_plan_summary_data(
             continue
         if any(p.startswith(".") for p in parts):
             continue
-        # Find source tool from completed tasks
-        source_tool = None
-        origin_task_index = None
-        for t in completed_tasks:
-            if t.get("skill") or t.get("tool"):
-                source_tool = t.get("skill") or t.get("tool")
-            if origin_task_index is None and isinstance(t.get("index"), int):
-                origin_task_index = t["index"]
+        rel_str = str(rel)
+        origin_tool, origin_task_index = provenance.get(
+            rel_str, provenance.get(str(f), (None, None))
+        )
         artifact = _make_artifact_ref(
             f,
             workspace=workspace,
             origin_task_index=origin_task_index,
-            origin_tool=source_tool,
+            origin_tool=origin_tool,
         ).to_dict()
-        artifact["tool"] = source_tool
+        artifact["tool"] = origin_tool
         produced_files.append(artifact)
 
     # Key results — reviewer summaries from completed tasks
@@ -706,10 +734,13 @@ def _write_last_plan_summary(
     goal: str,
     completed_tasks: list[dict],
     pre_snapshot: set[Path],
+    plan_outputs: list[dict] | None = None,
 ) -> None:
     """Persist a compact summary of the completed plan for cross-plan context."""
     workspace = _session_workspace(session)
-    data = _build_last_plan_summary_data(session, goal, completed_tasks, pre_snapshot)
+    data = _build_last_plan_summary_data(
+        session, goal, completed_tasks, pre_snapshot, plan_outputs=plan_outputs,
+    )
 
     kiso_dir = workspace / ".kiso"
     kiso_dir.mkdir(exist_ok=True)

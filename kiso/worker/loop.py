@@ -1733,7 +1733,10 @@ async def _execute_plan(
 
     # persist cross-plan summary before cleanup
     try:
-        _write_last_plan_summary(session, goal, completed, pre_snapshot)
+        _write_last_plan_summary(
+            session, goal, completed, pre_snapshot,
+            plan_outputs=ctx.plan_outputs,
+        )
     except Exception as exc:
         log.warning("Failed to write plan summary: %s", exc)
     await _cleanup_plan_outputs(session)

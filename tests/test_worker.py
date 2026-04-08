@@ -13036,6 +13036,163 @@ class TestWriteLastPlanSummary:
             assert data["produced_files"] == []
             assert data["key_results"] == []
 
+    # M1259: produced-file provenance must be tied to the actual producing
+    # task via plan-output file_refs, not guessed by scanning all completed
+    # tasks. When provenance is unknown, fields are omitted/None — never
+    # invented.
+
+    def test_provenance_omitted_when_no_plan_outputs(self, tmp_path):
+        """Without plan_outputs, source_tool/origin_task_index must be None.
+
+        Regression: previously the loop would scan completed_tasks and
+        copy `skill`/`tool`/`index` from arbitrary task rows, fabricating
+        a provenance tie that did not exist.
+        """
+        from kiso.worker.utils import _write_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-prov-none")
+            pre = set(ws.rglob("*"))
+            (ws / "out.txt").write_text("hello")
+            completed = [
+                {"type": "exec", "skill": "browser", "reviewer_summary": "did stuff"},
+            ]
+            _write_last_plan_summary("s-prov-none", "do something", completed, pre)
+
+            data = json.loads((ws / ".kiso" / "last_plan_summary.json").read_text())
+            assert len(data["produced_files"]) == 1
+            f = data["produced_files"][0]
+            # structural fields preserved
+            assert f["path"] == "out.txt"
+            assert f["workspace_path"] == "out.txt"
+            assert f["file_id"].endswith("out.txt")
+            assert f["artifact_id"].endswith("out.txt")
+            # provenance NOT invented from unrelated task scan
+            assert f.get("origin_tool") is None
+            assert f.get("origin_task_index") is None
+            assert f.get("tool") is None
+
+    def test_provenance_uses_plan_output_file_ref(self, tmp_path):
+        """When a plan_output declares a file_ref, that file gets the producing tool/index."""
+        from kiso.worker.utils import _write_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-prov-one")
+            pre = set(ws.rglob("*"))
+            (ws / "report.md").write_text("# report")
+            completed = [
+                {"type": "tool", "skill": "aider", "reviewer_summary": "wrote report"},
+            ]
+            plan_outputs = [
+                {
+                    "index": 1,
+                    "type": "tool",
+                    "detail": "write report",
+                    "output": "ok",
+                    "status": "done",
+                    "file_refs": [
+                        {
+                            "path": "report.md",
+                            "workspace_path": "report.md",
+                            "abs_path": str(ws / "report.md"),
+                            "type": "text",
+                            "origin_task_index": 1,
+                            "origin_tool": "aider",
+                        }
+                    ],
+                }
+            ]
+            _write_last_plan_summary(
+                "s-prov-one", "write a report", completed, pre,
+                plan_outputs=plan_outputs,
+            )
+
+            data = json.loads((ws / ".kiso" / "last_plan_summary.json").read_text())
+            assert len(data["produced_files"]) == 1
+            f = data["produced_files"][0]
+            assert f["path"] == "report.md"
+            assert f.get("origin_tool") == "aider"
+            assert f.get("origin_task_index") == 1
+            assert f.get("tool") == "aider"
+
+    def test_provenance_per_file_in_multitool_plan(self, tmp_path):
+        """Two tasks producing different files: each file gets its own correct provenance.
+
+        Regression: previously every file got the *same* tool — whichever
+        was iterated last in the completed_tasks loop. This test pins the
+        per-file mapping.
+        """
+        from kiso.worker.utils import _write_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-prov-multi")
+            pre = set(ws.rglob("*"))
+            (ws / "code.py").write_text("print(1)")
+            (ws / "shot.png").write_bytes(b"\x89PNG" + b"x" * 100)
+            completed = [
+                {"type": "tool", "skill": "aider", "reviewer_summary": "wrote code"},
+                {"type": "exec", "skill": "browser", "reviewer_summary": "took shot"},
+            ]
+            plan_outputs = [
+                {
+                    "index": 1, "type": "tool", "detail": "code", "output": "ok", "status": "done",
+                    "file_refs": [{
+                        "path": "code.py", "workspace_path": "code.py",
+                        "abs_path": str(ws / "code.py"), "type": "code",
+                        "origin_task_index": 1, "origin_tool": "aider",
+                    }],
+                },
+                {
+                    "index": 2, "type": "exec", "detail": "shot", "output": "ok", "status": "done",
+                    "file_refs": [{
+                        "path": "shot.png", "workspace_path": "shot.png",
+                        "abs_path": str(ws / "shot.png"), "type": "image",
+                        "origin_task_index": 2, "origin_tool": "browser",
+                    }],
+                },
+            ]
+            _write_last_plan_summary(
+                "s-prov-multi", "code then screenshot", completed, pre,
+                plan_outputs=plan_outputs,
+            )
+
+            data = json.loads((ws / ".kiso" / "last_plan_summary.json").read_text())
+            by_path = {f["path"]: f for f in data["produced_files"]}
+            assert "code.py" in by_path and "shot.png" in by_path
+            assert by_path["code.py"].get("origin_tool") == "aider"
+            assert by_path["code.py"].get("origin_task_index") == 1
+            assert by_path["shot.png"].get("origin_tool") == "browser"
+            assert by_path["shot.png"].get("origin_task_index") == 2
+
+    def test_provenance_partial_some_files_unknown(self, tmp_path):
+        """File with matching plan_output gets provenance; orphan file leaves None."""
+        from kiso.worker.utils import _write_last_plan_summary, _session_workspace
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path):
+            ws = _session_workspace("s-prov-partial")
+            pre = set(ws.rglob("*"))
+            (ws / "tracked.md").write_text("ok")
+            (ws / "orphan.log").write_text("ok")  # not in any plan_output
+            plan_outputs = [
+                {
+                    "index": 1, "type": "tool", "detail": "do", "output": "ok", "status": "done",
+                    "file_refs": [{
+                        "path": "tracked.md", "workspace_path": "tracked.md",
+                        "abs_path": str(ws / "tracked.md"), "type": "text",
+                        "origin_task_index": 1, "origin_tool": "aider",
+                    }],
+                },
+            ]
+            _write_last_plan_summary(
+                "s-prov-partial", "do", [{"type": "tool", "skill": "aider"}], pre,
+                plan_outputs=plan_outputs,
+            )
+
+            data = json.loads((ws / ".kiso" / "last_plan_summary.json").read_text())
+            by_path = {f["path"]: f for f in data["produced_files"]}
+            assert by_path["tracked.md"].get("origin_tool") == "aider"
+            assert by_path["tracked.md"].get("origin_task_index") == 1
+            # Orphan: no fake provenance
+            assert by_path["orphan.log"].get("origin_tool") is None
+            assert by_path["orphan.log"].get("origin_task_index") is None
+            assert by_path["orphan.log"].get("tool") is None
+
 
 class TestLoadLastPlanSummary:
     """_load_last_plan_summary returns formatted text or None."""
