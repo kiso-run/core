@@ -566,6 +566,36 @@ def test_connector_update_all(tmp_path, mock_admin, capsys):
     assert "telegram" in out
 
 
+def test_connector_update_preserves_edited_config_toml(
+    tmp_path, mock_admin, capsys,
+):
+    """M1277: an edited config.toml in an installed connector survives
+    an update — _update_plugin (git pull + deps) must not clobber it."""
+    from cli.connector import _connector_update
+
+    connectors_dir = tmp_path / "connectors"
+    connectors_dir.mkdir()
+    connector_dir = connectors_dir / "discord"
+    connector_dir.mkdir()
+    config_file = connector_dir / "config.toml"
+    config_file.write_text(
+        '# user-edited config\nkiso_api = "http://prod.example/8333"\n'
+        'token = "user-secret-discord-token"\n'
+    )
+
+    with (
+        patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+        patch("subprocess.run", side_effect=_ok_run),
+    ):
+        _connector_update(argparse.Namespace(target="discord"))
+
+    assert config_file.exists()
+    text = config_file.read_text()
+    assert "user-edited config" in text
+    assert "user-secret-discord-token" in text
+    assert "prod.example" in text
+
+
 def test_connector_update_nonexistent(tmp_path, mock_admin, capsys):
     from cli.connector import _connector_update
 
