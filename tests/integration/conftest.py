@@ -111,6 +111,10 @@ class WebhookCollector:
     - ``failure_mode="drop_n"`` with ``drop_count=N``: the first N
       attempts return ``(False, 500, attempts=k)`` and DO NOT record;
       attempt N+1 records and returns ``(True, 200, attempts=N+1)``.
+    - ``failure_mode="retry_then_ok"`` with ``simulated_attempts=N``:
+      simulates that ``deliver_webhook`` retried internally N times
+      before succeeding. Returns ``(True, 200, N)`` on every call and
+      records the delivery with the simulated attempts count.
     - ``failure_mode="always_500"``: every attempt returns
       ``(False, 500, attempts=k)`` and never records.
     - ``failure_mode="always_drop"``: connector-style "delivery silently
@@ -126,12 +130,15 @@ class WebhookCollector:
         self._event = asyncio.Event()
         self.failure_mode: str = "ok"
         self.drop_count: int = 0
+        self.simulated_attempts: int = 1
         self._call_index = 0
 
-    def configure(self, *, failure_mode: str = "ok", drop_count: int = 0):
+    def configure(self, *, failure_mode: str = "ok", drop_count: int = 0,
+                  simulated_attempts: int = 1):
         """Configure the failure mode for subsequent calls."""
         self.failure_mode = failure_mode
         self.drop_count = drop_count
+        self.simulated_attempts = simulated_attempts
         self._call_index = 0
 
     def deliver(self, url, session, task_id, content, final, **kwargs):
@@ -154,6 +161,11 @@ class WebhookCollector:
                 return (False, 500, self._call_index)
             self._record_delivery(url, session, task_id, content, final, **kwargs)
             return (True, 200, self._call_index)
+
+        if self.failure_mode == "retry_then_ok":
+            self._record_delivery(url, session, task_id, content, final, **kwargs)
+            self.deliveries[-1]["simulated_attempts"] = self.simulated_attempts
+            return (True, 200, self.simulated_attempts)
 
         if self.failure_mode == "always_500":
             return (False, 500, self._call_index)
