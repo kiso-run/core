@@ -374,13 +374,17 @@ async def _fast_path_chat(
     t0 = time.perf_counter()
     try:
         try:
+            # Budget: briefer + messenger + headroom for DB/scoring queries.
+            # messenger_timeout alone equals a single call_llm budget,
+            # leaving no room for the briefer or retries.
+            chat_timeout = messenger_timeout + _BRIEFER_MSG_TIMEOUT + 30
             text = await asyncio.wait_for(
                 _msg_task(config, db, session, content, goal=content,
                           include_recent=True,
                           user_message=content,
                           on_briefer_done=_flush_briefer,
                           response_lang=user_lang),
-                timeout=messenger_timeout,
+                timeout=chat_timeout,
             )
         except asyncio.TimeoutError:
             raise MessengerError(f"Messenger timed out after {messenger_timeout}s")
