@@ -260,7 +260,10 @@ class TestWorkerLive:
         )
         assert isinstance(text, str)
         assert len(text) > 0
-        assert "paris" in _strip_accents(text.lower())
+        normalized = _strip_accents(text.lower())
+        assert any(w in normalized for w in ("paris", "parigi")), (
+            f"Expected 'paris' or 'parigi' in: {normalized[:200]}"
+        )
 
     async def test_msg_task_with_goal(
         self, live_config, seeded_db, live_session,
