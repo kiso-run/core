@@ -132,4 +132,13 @@ See [security-risks.md](security-risks.md) for full risk analysis.
 - `tool-websearch` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
 - Requires `git` on PATH.
 - **When repos are published**: remove the `pytest.skip` fallback and verify the full install → validate → remove lifecycle passes.
-- **TODO**: add a dedicated test for installing a tool/connector that doesn't exist (e.g. `kiso tool install nonexistent-xyz`). The CLI must give a clear "not found" message instead of dumping raw git stderr.
+- **Done (M1279)**: deterministic CLI tests for installing a
+  tool/connector that doesn't exist live in
+  `tests/test_cli_tool.py::test_skill_install_git_clone_failure_cleanup`
+  (line 556) and
+  `tests/test_cli_connector.py::test_connector_install_git_clone_failure_cleanup`
+  (line 482). They simulate a failed `git clone` (`fatal: repo not
+  found`) and assert the CLI prints a clear "not found" message and
+  cleans up the partial directory. Update/remove on nonexistent
+  targets is covered by `test_skill_update_nonexistent` /
+  `test_skill_remove_nonexistent` and the connector counterparts.
