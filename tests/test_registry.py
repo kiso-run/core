@@ -30,6 +30,67 @@ def _clear_cache():
     reg._registry_ts = 0.0
 
 
+# --- registry.json shape (M1280) ---
+
+
+class TestRegistryJsonShape:
+    """Deterministic shape/consistency checks over the actual
+    registry.json file shipped with the package. Catches accidental
+    schema drift, missing names/descriptions, or duplicate entries."""
+
+    @pytest.fixture()
+    def registry(self):
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parent.parent / "registry.json"
+        return json.loads(path.read_text())
+
+    def test_top_level_keys(self, registry):
+        assert set(registry.keys()) == {"tools", "recipes", "connectors", "presets"}
+
+    def test_tools_have_name_and_description(self, registry):
+        for entry in registry["tools"]:
+            assert entry.get("name")
+            assert entry.get("description")
+
+    def test_connectors_have_name_and_description(self, registry):
+        for entry in registry["connectors"]:
+            assert entry.get("name")
+            assert entry.get("description")
+
+    def test_presets_have_name_and_description(self, registry):
+        for entry in registry["presets"]:
+            assert entry.get("name")
+            assert entry.get("description")
+
+    def test_tool_names_unique(self, registry):
+        names = [e["name"] for e in registry["tools"]]
+        assert len(names) == len(set(names))
+
+    def test_connector_names_unique(self, registry):
+        names = [e["name"] for e in registry["connectors"]]
+        assert len(names) == len(set(names))
+
+    def test_official_tools_present(self, registry):
+        """Pin the canonical official tool list. New official tools
+        must be added here so coverage stays explicit."""
+        names = {e["name"] for e in registry["tools"]}
+        official = {
+            "websearch", "aider", "browser", "moltbook", "gworkspace",
+            "docreader", "transcriber", "ocr",
+        }
+        missing = official - names
+        assert not missing, f"missing official tools in registry.json: {missing}"
+
+    def test_official_connectors_present(self, registry):
+        names = {e["name"] for e in registry["connectors"]}
+        assert "discord" in names
+
+    def test_default_preset_present(self, registry):
+        names = {e["name"] for e in registry["presets"]}
+        assert "default" in names
+
+
 # --- fetch_registry ---
 
 
