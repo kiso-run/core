@@ -98,3 +98,67 @@ class TestUploadsWorkspaceHandoff:
             # File still there with original content
             assert file_path.exists(), "uploads/input.txt vanished after /msg flow"
             assert file_path.read_text() == "preserved across msg"
+
+
+class TestPublishedFilePersistence:
+    """M1274: published file persistence and identity across plans.
+
+    Unit-level coverage for the /pub/{token}/{filename} endpoint is in
+    tests/test_published.py (~15 tests). This class covers the
+    integration contract that an already-published file is preserved
+    across a subsequent /msg flow — the runtime does not duplicate or
+    re-download it.
+    """
+
+    async def test_published_file_persists_across_msg_flow(
+        self, kiso_client: httpx.AsyncClient, tmp_path: Path,
+    ):
+        """A file in `pub/` is still present and accessible after a
+        /msg flow runs through. Inode unchanged → no duplication."""
+        from kiso.pub import pub_token
+
+        sess = "pub-persist"
+        with patch("kiso.worker.utils.KISO_DIR", tmp_path), \
+             patch("kiso.main.KISO_DIR", tmp_path), \
+             patch("kiso.pub.KISO_DIR", tmp_path):
+            ws = _session_workspace(sess)
+            pub_file = ws / "pub" / "report.txt"
+            pub_file.write_text("published artifact content")
+            inode_before = pub_file.stat().st_ino
+
+            from kiso.main import app
+            token = pub_token(sess, app.state.config)
+
+            # File is reachable via /pub/ before the flow
+            resp_before = await kiso_client.get(f"/pub/{token}/report.txt")
+            assert resp_before.status_code == 200
+            assert resp_before.text == "published artifact content"
+
+            # Run a /msg flow
+            await kiso_client.post(
+                "/sessions",
+                json={"session": sess},
+                headers=AUTH_HEADER,
+            )
+            resp = await kiso_client.post(
+                "/msg",
+                json={"session": sess, "user": "testadmin", "content": "do something"},
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 202
+            try:
+                await wait_for_worker_idle(kiso_client, sess, timeout=15.0)
+            except TimeoutError:
+                pass
+            await _cleanup_workers(sess)
+
+            # File still reachable, same content, same inode
+            assert pub_file.exists()
+            assert pub_file.read_text() == "published artifact content"
+            assert pub_file.stat().st_ino == inode_before, (
+                "pub file was duplicated/replaced — inode changed"
+            )
+
+            resp_after = await kiso_client.get(f"/pub/{token}/report.txt")
+            assert resp_after.status_code == 200
+            assert resp_after.text == "published artifact content"
