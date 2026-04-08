@@ -2546,9 +2546,9 @@ async def _process_message(
                 timeout=classifier_timeout,
             )
         except asyncio.TimeoutError:
-            log.warning("Classifier timed out after %ds, falling back to planner",
+            log.warning("Classifier timed out after %ds, falling back to chat",
                         classifier_timeout)
-            msg_class = "plan"
+            msg_class = "chat"
         if msg_class in ("chat", "chat_kb"):
             log.info("Fast path: %s message, skipping planner", msg_class)
             if slog:
