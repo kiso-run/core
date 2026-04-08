@@ -357,11 +357,11 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
 # what the tool actually receives vs what was declared.
 
 _FAKE_TOOL_MANIFEST = """\
+[kiso.tool]
 name = "{name}"
 description = "Fake tool for integration tests — echoes stdin keys and env"
 version = "0.0.1"
-runtime = "python"
-entrypoint = "tool.py"
+session_secrets = ["DECLARED_KEY"]
 """
 
 _FAKE_TOOL_SCRIPT = '''\
@@ -397,26 +397,29 @@ if __name__ == "__main__":
 def fake_tool(tmp_path: Path):
     """Create a fake Kiso tool package in a temp directory.
 
-    Returns the path to the tool directory. The tool's `tool.py` reads
-    stdin as JSON and prints a report containing:
-    - stdin_keys: list of top-level keys in the stdin payload
-    - session_secrets_keys: list of declared session secret keys
-    - session_secrets_values: dict of declared secret values (for
-      assertion that values are NOT leaked when undeclared)
-    - env_keys_visible: list of env vars the tool subprocess can see
-
-    Tests use this to assert containment: the tool should only see
-    declared session_secrets, never undeclared ones, and secrets should
-    NOT be promoted into env vars.
+    Returns a dict shaped like the entries produced by
+    ``kiso.tools.discover_tools``: ``{"name", "path", "session_secrets",
+    "env", ...}``. The tool's `run.py` reads stdin as JSON and prints
+    a containment report. Used by M1273 secret containment tests to
+    assert via real subprocess execution.
     """
     name = "faketool"
     tool_dir = tmp_path / "tools" / name
     tool_dir.mkdir(parents=True)
     (tool_dir / "manifest.toml").write_text(_FAKE_TOOL_MANIFEST.format(name=name))
-    script = tool_dir / "tool.py"
-    script.write_text(_FAKE_TOOL_SCRIPT)
-    script.chmod(0o755)
-    return tool_dir
+    run_py = tool_dir / "run.py"
+    run_py.write_text(_FAKE_TOOL_SCRIPT)
+    run_py.chmod(0o755)
+    return {
+        "name": name,
+        "path": str(tool_dir),
+        "session_secrets": ["DECLARED_KEY"],
+        "env": {},
+        "summary": "fake",
+        "args_schema": {},
+        "version": "0.0.1",
+        "description": "fake",
+    }
 
 
 # ---------------------------------------------------------------------------
