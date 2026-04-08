@@ -29,6 +29,7 @@ from kiso.store import (
     get_recent_messages,
     get_safety_facts,
     get_session,
+    get_session_project_id,
     search_facts,
     search_facts_by_entity,
     search_facts_scored,
@@ -1081,6 +1082,9 @@ async def build_planner_messages(
                     if entity_id is None:
                         entity_id = eid  # primary entity
             briefing["relevant_entities"] = valid_entities
+        planner_project_id = (
+            None if is_admin else await get_session_project_id(db, session)
+        )
         scored_facts = await search_facts_scored(
             db,
             entity_id=entity_id,
@@ -1088,6 +1092,7 @@ async def build_planner_messages(
             keywords=new_message.lower().split()[:10] if new_message else None,
             session=session if not is_admin else None,
             is_admin=is_admin,
+            project_id=planner_project_id,
         )
         if scored_facts:
             scored_facts_text = "\n".join(f"- {f['content']}" for f in scored_facts)

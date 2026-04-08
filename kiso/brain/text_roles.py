@@ -13,7 +13,13 @@ import aiosqlite
 from kiso.config import Config
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.security import fence_content
-from kiso.store import get_behavior_facts, get_facts, get_recent_messages, get_session
+from kiso.store import (
+    get_behavior_facts,
+    get_facts,
+    get_recent_messages,
+    get_session,
+    get_session_project_id,
+)
 
 from .common import (
     MemoryPack,
@@ -302,7 +308,13 @@ async def run_messenger(
         # Only fetch summary/facts when briefer hasn't already filtered them
         sess = await get_session(db, session)
         summary = sess["summary"] if sess else ""
-        facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
+        session_project_id = await get_session_project_id(db, session)
+        facts = await get_facts(
+            db,
+            session=session,
+            limit=_MAX_MESSENGER_FACTS,
+            project_id=session_project_id,
+        )
     recent = None
     if include_recent:
         context_limit = int(config.settings["context_messages"])

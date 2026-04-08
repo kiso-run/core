@@ -21,6 +21,7 @@ from kiso.store import (
     save_fact,
     search_facts,
     search_facts_by_tags,
+    search_facts_scored,
     save_fact_tags,
     unbind_session_from_project,
 )
@@ -409,3 +410,89 @@ async def test_curator_project_scoping(db, category, has_project, expected_proje
 
     if extra_checks.get("check_session"):
         assert matched[0]["session"] == sess
+
+
+# --- M1257: project_id-based filtering (no-username path) ---
+
+
+async def test_get_facts_no_username_no_project_id_excludes_project_facts(db):
+    """When neither username nor project_id is provided (and not admin),
+    project-scoped facts MUST NOT leak. Only global facts (project_id IS NULL)
+    are returned (modulo the user-category session rule).
+    """
+    pid = await create_project(db, "leaky-proj", "alice")
+    await save_fact(db, "Project secret xylophone version 9", "curator",
+                    category="project", project_id=pid)
+    await save_fact(db, "Global fact about rocketships", "curator", category="general")
+
+    facts = await get_facts(db, session="sess1")
+    contents = [f["content"] for f in facts]
+    assert any("rocketships" in c for c in contents)
+    assert not any("xylophone" in c for c in contents), \
+        "Project-scoped fact must not leak when no username and no project_id"
+
+
+async def test_get_facts_with_project_id_includes_that_project(db):
+    """When project_id is passed (session bound to project A), facts of that
+    project AND global facts are returned, but other-project facts are NOT.
+    """
+    pid_a = await create_project(db, "proj-a", "alice")
+    pid_b = await create_project(db, "proj-b", "alice")
+    await save_fact(db, "Alpha proj fact apple", "curator",
+                    category="project", project_id=pid_a)
+    await save_fact(db, "Bravo proj fact banana", "curator",
+                    category="project", project_id=pid_b)
+    await save_fact(db, "Global cherry", "curator", category="general")
+
+    facts = await get_facts(db, session="sess1", project_id=pid_a)
+    contents = [f["content"] for f in facts]
+    assert any("apple" in c for c in contents)
+    assert any("cherry" in c for c in contents)
+    assert not any("banana" in c for c in contents)
+
+
+async def test_search_facts_scored_no_username_no_project_id_excludes_project_facts(db):
+    """search_facts_scored with explicit is_admin=False, session, no username,
+    no project_id MUST NOT return project-scoped facts.
+    """
+    pid = await create_project(db, "scored-leak", "alice")
+    await save_fact(db, "Xylophone leaked from scored search", "curator",
+                    category="project", project_id=pid, tags=["leakage"])
+    await save_fact(db, "Global keyword fact xylophone available", "curator",
+                    category="general", tags=["leakage"])
+
+    results = await search_facts_scored(
+        db, tags=["leakage"], session="sess1", is_admin=False,
+    )
+    contents = [r["content"] for r in results]
+    assert any("Global keyword fact" in c for c in contents)
+    assert not any("leaked from scored" in c for c in contents)
+
+
+async def test_search_facts_scored_with_project_id_filters_other_projects(db):
+    """search_facts_scored with project_id includes that project + global only."""
+    pid_a = await create_project(db, "scored-a", "alice")
+    pid_b = await create_project(db, "scored-b", "alice")
+    await save_fact(db, "Apple fact in scored a", "curator",
+                    category="project", project_id=pid_a, tags=["t"])
+    await save_fact(db, "Banana fact in scored b", "curator",
+                    category="project", project_id=pid_b, tags=["t"])
+    await save_fact(db, "Global cherry scored fact", "curator",
+                    category="general", tags=["t"])
+
+    results = await search_facts_scored(
+        db, tags=["t"], session="sess1", is_admin=False, project_id=pid_a,
+    )
+    contents = [r["content"] for r in results]
+    assert any("Apple fact" in c for c in contents)
+    assert any("cherry" in c for c in contents)
+    assert not any("Banana fact" in c for c in contents)
+
+
+async def test_search_facts_scored_default_admin_unchanged(db):
+    """The default (is_admin=True) behavior is preserved — backward compat."""
+    pid = await create_project(db, "admin-default", "alice")
+    await save_fact(db, "Project admin-default fact zeta", "curator",
+                    category="project", project_id=pid, tags=["k"])
+    results = await search_facts_scored(db, tags=["k"])
+    assert any("zeta" in r["content"] for r in results)

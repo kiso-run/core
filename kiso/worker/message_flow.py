@@ -43,6 +43,7 @@ from kiso.store import (
     get_all_tags,
     get_facts,
     get_kv,
+    get_session_project_id,
     get_oldest_messages,
     get_pending_learnings,
     get_session,
@@ -159,7 +160,13 @@ async def _msg_task_impl(
     if _is_briefer_budget_ok_impl(config):
         try:
             sess = await get_session(db, session)
-            facts = await get_facts(db, session=session, limit=_MAX_MESSENGER_FACTS)
+            session_project_id = await get_session_project_id(db, session)
+            facts = await get_facts(
+                db,
+                session=session,
+                limit=_MAX_MESSENGER_FACTS,
+                project_id=session_project_id,
+            )
             all_tags = await get_all_tags(db)
             all_entities = await get_all_entities(db)
             memory_pack = _build_worker_memory_pack(
@@ -201,6 +208,9 @@ async def _msg_task_impl(
                 entity_id=entity_id,
                 tags=briefing.get("relevant_tags") or None,
                 keywords=detail.lower().split()[:10] if detail else None,
+                session=session,
+                is_admin=False,
+                project_id=session_project_id,
             )
             if scored_facts:
                 facts_text = "\n".join(f"- {f['content']}" for f in scored_facts)

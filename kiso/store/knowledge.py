@@ -316,10 +316,13 @@ async def search_facts_scored(
     is_admin: bool = True,
     limit: int = 50,
     username: str | None = None,
+    project_id: int | None = None,
 ) -> list[dict]:
     if not entity_id and not tags and not keywords:
         return []
-    session_filter, session_params = _fact_session_filter(is_admin, session, prefix="f.", username=username)
+    session_filter, session_params = _fact_session_filter(
+        is_admin, session, prefix="f.", username=username, project_id=project_id,
+    )
     sp = list(session_params)
     fetch_limit = limit * 2
     has_entity_or_tags = entity_id is not None or bool(tags)

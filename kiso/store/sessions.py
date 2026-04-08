@@ -194,9 +194,23 @@ async def get_recent_messages(
 
 
 def _fact_session_filter(
-    is_admin: bool, session: str | None, *, prefix: str = "", username: str | None = None,
+    is_admin: bool,
+    session: str | None,
+    *,
+    prefix: str = "",
+    username: str | None = None,
+    project_id: int | None = None,
 ) -> tuple[str, list]:
-    """Return (sql_fragment, params) for session-scoped fact queries."""
+    """Return (sql_fragment, params) for session-scoped fact queries.
+
+    Project visibility rules (non-admin):
+    - With ``username``: see globals + facts of any project the user is a
+      member of + own-session user-category facts.
+    - With ``project_id`` (no username, e.g. messenger queries): see globals
+      + facts of that one project + own-session user-category facts.
+    - With neither: see ONLY globals + own-session user-category facts.
+      Project-scoped facts MUST NOT leak through this path.
+    """
     if is_admin or session is None:
         return ("", [])
     p = prefix
@@ -210,7 +224,17 @@ def _fact_session_filter(
             f")",
             [username, session],
         )
+    if project_id is not None:
+        return (
+            f" AND ("
+            f"({p}project_id IS NULL AND {p}category != 'user')"
+            f" OR ({p}project_id = ?)"
+            f" OR ({p}category = 'user' AND {p}session = ?)"
+            f")",
+            [project_id, session],
+        )
     return (
+        f" AND ({p}project_id IS NULL)"
         f" AND ({p}category != 'user' OR {p}session = ?)",
         [session],
     )
@@ -222,10 +246,13 @@ async def get_facts(
     is_admin: bool = False,
     limit: int | None = None,
     username: str | None = None,
+    project_id: int | None = None,
 ) -> list[dict]:
     """Return facts filtered by session scope."""
     limit_val = limit if limit is not None else -1
-    filt, params = _fact_session_filter(is_admin, session, username=username)
+    filt, params = _fact_session_filter(
+        is_admin, session, username=username, project_id=project_id,
+    )
     if filt:
         cur = await db.execute(
             f"SELECT * FROM facts WHERE 1=1{filt} ORDER BY id LIMIT ?",
