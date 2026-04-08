@@ -98,17 +98,76 @@ CONNECTOR_AUTH_HEADER = {"Authorization": "Bearer connector-token"}
 
 
 # ---------------------------------------------------------------------------
-# Webhook collector
+# Webhook collector / dropper
 # ---------------------------------------------------------------------------
 
 class WebhookCollector:
-    """Collects webhook delivery calls for assertion."""
+    """Collects webhook delivery calls for assertion.
+
+    Supports configurable failure modes for retry/polling-fallback testing:
+
+    - ``failure_mode="ok"`` (default): every call records and returns
+      ``(True, 200, attempts=1)``.
+    - ``failure_mode="drop_n"`` with ``drop_count=N``: the first N
+      attempts return ``(False, 500, attempts=k)`` and DO NOT record;
+      attempt N+1 records and returns ``(True, 200, attempts=N+1)``.
+    - ``failure_mode="always_500"``: every attempt returns
+      ``(False, 500, attempts=k)`` and never records.
+    - ``failure_mode="always_drop"``: connector-style "delivery silently
+      lost" — never records, returns ``(False, 0, 0)``.
+
+    The ``attempts_log`` list captures every call (record or not) so
+    tests can assert exact attempt counts.
+    """
 
     def __init__(self):
         self.deliveries: list[dict] = []
+        self.attempts_log: list[dict] = []
         self._event = asyncio.Event()
+        self.failure_mode: str = "ok"
+        self.drop_count: int = 0
+        self._call_index = 0
+
+    def configure(self, *, failure_mode: str = "ok", drop_count: int = 0):
+        """Configure the failure mode for subsequent calls."""
+        self.failure_mode = failure_mode
+        self.drop_count = drop_count
+        self._call_index = 0
+
+    def deliver(self, url, session, task_id, content, final, **kwargs):
+        """Simulate a webhook delivery. Returns (success, status_code, attempts)."""
+        self._call_index += 1
+        attempt_record = {
+            "url": url,
+            "session": session,
+            "task_id": task_id,
+            "call_index": self._call_index,
+        }
+        self.attempts_log.append(attempt_record)
+
+        if self.failure_mode == "ok":
+            self._record_delivery(url, session, task_id, content, final, **kwargs)
+            return (True, 200, 1)
+
+        if self.failure_mode == "drop_n":
+            if self._call_index <= self.drop_count:
+                return (False, 500, self._call_index)
+            self._record_delivery(url, session, task_id, content, final, **kwargs)
+            return (True, 200, self._call_index)
+
+        if self.failure_mode == "always_500":
+            return (False, 500, self._call_index)
+
+        if self.failure_mode == "always_drop":
+            return (False, 0, 0)
+
+        raise ValueError(f"Unknown failure_mode: {self.failure_mode}")
 
     def record(self, url, session, task_id, content, final, **kwargs):
+        """Backward-compat shim for tests using the old record() API."""
+        self._record_delivery(url, session, task_id, content, final, **kwargs)
+
+    def _record_delivery(self, url, session, task_id, content, final, **kwargs):
         self.deliveries.append({
             "url": url,
             "session": session,
@@ -120,14 +179,16 @@ class WebhookCollector:
         self._event.set()
 
     async def wait_for_delivery(self, timeout: float = 10.0) -> dict:
-        """Wait for the next delivery. Raises TimeoutError if none arrives."""
+        """Wait for the next successful delivery."""
         await asyncio.wait_for(self._event.wait(), timeout=timeout)
         self._event.clear()
         return self.deliveries[-1]
 
     def clear(self):
         self.deliveries.clear()
+        self.attempts_log.clear()
         self._event.clear()
+        self._call_index = 0
 
 
 # ---------------------------------------------------------------------------
@@ -240,10 +301,11 @@ async def kiso_client(
         else:
             return "Generic response."
 
-    # Mock webhook delivery to use collector
+    # Mock webhook delivery to use collector. The collector decides whether
+    # to record + succeed or simulate failure based on its configured
+    # failure_mode (set via webhook_collector.configure(...) in the test).
     async def mock_deliver_webhook(url, session, task_id, content, final, **kw):
-        webhook_collector.record(url, session, task_id, content, final, **kw)
-        return (True, 200, 1)
+        return webhook_collector.deliver(url, session, task_id, content, final, **kw)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -270,3 +332,148 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
                 return data
         await asyncio.sleep(0.1)
     raise TimeoutError(f"Worker for session {session} did not become idle within {timeout}s")
+
+
+# ---------------------------------------------------------------------------
+# Fake tool package
+# ---------------------------------------------------------------------------
+
+# Minimal manifest schema accepted by Kiso. The script reads its stdin
+# (a JSON payload from the worker), echoes the keys it received plus
+# the env vars it can see and any session_secrets keys, and exits 0.
+# Designed for M1273 secret-containment tests where the test asserts
+# what the tool actually receives vs what was declared.
+
+_FAKE_TOOL_MANIFEST = """\
+name = "{name}"
+description = "Fake tool for integration tests — echoes stdin keys and env"
+version = "0.0.1"
+runtime = "python"
+entrypoint = "tool.py"
+"""
+
+_FAKE_TOOL_SCRIPT = '''\
+#!/usr/bin/env python3
+"""Echoes received stdin keys, declared session_secrets, and visible env."""
+import json
+import os
+import sys
+
+
+def main():
+    raw = sys.stdin.read()
+    try:
+        payload = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        payload = {"_raw": raw}
+
+    report = {
+        "stdin_keys": sorted(payload.keys()),
+        "session_secrets_keys": sorted((payload.get("session_secrets") or {}).keys()),
+        "session_secrets_values": payload.get("session_secrets") or {},
+        "env_keys_visible": sorted([k for k in os.environ.keys() if not k.startswith("_")]),
+    }
+    print(json.dumps(report))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+@pytest.fixture()
+def fake_tool(tmp_path: Path):
+    """Create a fake Kiso tool package in a temp directory.
+
+    Returns the path to the tool directory. The tool's `tool.py` reads
+    stdin as JSON and prints a report containing:
+    - stdin_keys: list of top-level keys in the stdin payload
+    - session_secrets_keys: list of declared session secret keys
+    - session_secrets_values: dict of declared secret values (for
+      assertion that values are NOT leaked when undeclared)
+    - env_keys_visible: list of env vars the tool subprocess can see
+
+    Tests use this to assert containment: the tool should only see
+    declared session_secrets, never undeclared ones, and secrets should
+    NOT be promoted into env vars.
+    """
+    name = "faketool"
+    tool_dir = tmp_path / "tools" / name
+    tool_dir.mkdir(parents=True)
+    (tool_dir / "manifest.toml").write_text(_FAKE_TOOL_MANIFEST.format(name=name))
+    script = tool_dir / "tool.py"
+    script.write_text(_FAKE_TOOL_SCRIPT)
+    script.chmod(0o755)
+    return tool_dir
+
+
+# ---------------------------------------------------------------------------
+# Fake connector directory
+# ---------------------------------------------------------------------------
+
+# Minimal connector launcher. Behavior is controlled by env vars set by
+# the test fixture, so the same launcher can simulate clean exit, crash,
+# hang, or stable run depending on what the supervisor lifecycle test
+# needs to verify.
+
+_FAKE_CONNECTOR_LAUNCHER = '''\
+#!/usr/bin/env python3
+"""Fake connector launcher for supervisor lifecycle tests.
+
+Behavior controlled by env vars:
+- FAKE_CONNECTOR_MODE=clean_exit  → exit 0 immediately
+- FAKE_CONNECTOR_MODE=crash       → exit 1 immediately
+- FAKE_CONNECTOR_MODE=hang        → sleep forever
+- FAKE_CONNECTOR_MODE=stable      → sleep for FAKE_CONNECTOR_STABLE_SECS then exit 0
+- FAKE_CONNECTOR_MODE=crash_after → run for FAKE_CONNECTOR_RUN_SECS, then exit 1
+"""
+import os
+import sys
+import time
+
+mode = os.environ.get("FAKE_CONNECTOR_MODE", "stable")
+if mode == "clean_exit":
+    sys.exit(0)
+if mode == "crash":
+    sys.exit(1)
+if mode == "hang":
+    while True:
+        time.sleep(60)
+if mode == "stable":
+    secs = float(os.environ.get("FAKE_CONNECTOR_STABLE_SECS", "0.5"))
+    time.sleep(secs)
+    sys.exit(0)
+if mode == "crash_after":
+    secs = float(os.environ.get("FAKE_CONNECTOR_RUN_SECS", "0.5"))
+    time.sleep(secs)
+    sys.exit(1)
+sys.exit(2)
+'''
+
+
+@pytest.fixture()
+def fake_connector_dir(tmp_path: Path):
+    """Create a fake connector directory with a controllable launcher.
+
+    Returns the path to the connector directory. The launcher reads
+    `FAKE_CONNECTOR_MODE` from the environment so the test can pick:
+    `clean_exit`, `crash`, `hang`, `stable`, or `crash_after`.
+
+    Used by M1276 connector lifecycle tests to drive the supervisor
+    deterministically without depending on a real connector binary.
+    """
+    name = "fakeconnector"
+    conn_dir = tmp_path / "connectors" / name
+    conn_dir.mkdir(parents=True)
+    launcher = conn_dir / "launcher.py"
+    launcher.write_text(_FAKE_CONNECTOR_LAUNCHER)
+    launcher.chmod(0o755)
+    # Minimal manifest so install/health checks have something to read
+    (conn_dir / "manifest.toml").write_text(
+        f'name = "{name}"\n'
+        'description = "Fake connector for integration tests"\n'
+        'version = "0.0.1"\n'
+        'runtime = "python"\n'
+        'entrypoint = "launcher.py"\n'
+    )
+    return conn_dir

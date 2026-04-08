@@ -45,6 +45,57 @@ Each level answers a different question:
 | **Extended** | Do multi-plan orchestrations work? | Docker + API key | ~15min |
 | **Interactive** | Do human-gated flows (CAPTCHA, OAuth) work? | Docker + human | manual |
 
+### v0.9 existing-coverage audit map (M1268)
+
+Map of the runtime surfaces v0.9 milestones touch, with the test files
+that already cover them. **Read this before adding new tests in any v0.9
+milestone** — it is the only way to avoid duplicating work that older
+suites already do well.
+
+| Surface | Existing coverage | Tier |
+|---------|-------------------|------|
+| Webhook delivery (retry/backoff) | `tests/test_webhook.py:209-341` | unit |
+| Supervisor lifecycle (backoff/restart) | `tests/test_supervisor.py` (251 lines) | unit |
+| Startup recovery helpers | `tests/test_startup_recovery.py` (7 tests) | unit |
+| In-flight `/msg` routing on busy worker | `tests/test_inflight.py` (8 tests, M415) | integration |
+| `/sessions/{session}/cancel` route + drain | `tests/test_cancel.py` (10 tests) | integration |
+| LLM stall / fallback model switch | `tests/test_brain.py::test_stall_uses_fallback_model`, `test_timeout_uses_fallback_model`, `test_retry_llm_with_validation_fallback` (8+ tests) | unit |
+| Schema migrations (ALTER TABLE) | `tests/test_store.py:2069+` (M345 entity migration suite) | unit |
+| Cron CRUD + scheduler | `tests/test_cron.py` (11 tests), `tests/test_cron_api.py` (9 tests) | unit + integration |
+| `/health` route | `tests/test_health.py` (5 tests) | unit |
+| `/pub/{token}/{filename}` route | `tests/test_published.py` (~15 tests, path traversal, symlink, CSP) | unit |
+| `/admin/reload-env` route | `tests/test_admin.py` (11 tests, incl. rate-limit) | unit |
+| Rate limiter route-level | `tests/test_admin.py::test_reload_env_rate_limited_after_limit` | unit |
+| Webhook delivery integration (route → collector) | `tests/integration/test_connector_protocol.py` (5 tests) | integration |
+
+### v0.9 reusable harness (M1268)
+
+`tests/integration/conftest.py` provides reusable fixtures for Phase 1-2:
+
+- **`webhook_collector`** — `WebhookCollector` with configurable
+  `failure_mode`: `ok` (default), `drop_n` (drop first N then succeed),
+  `always_500`, `always_drop`. Tracks `attempts_log` for assertions.
+  Used via `webhook_collector.configure(failure_mode=..., drop_count=N)`.
+- **`kiso_client`** — authenticated httpx AsyncClient wired to the
+  FastAPI app via ASGI, with mocked LLM and webhook delivery routed
+  through the collector.
+- **`fake_tool`** — fixture that creates a Kiso tool package in a temp
+  dir whose `tool.py` reads stdin as JSON and prints a containment
+  report (stdin keys, declared session_secrets, visible env vars). Used
+  by M1273 to assert secret containment end-to-end.
+- **`fake_connector_dir`** — fixture that creates a connector directory
+  with a controllable launcher (modes: `clean_exit`, `crash`, `hang`,
+  `stable`, `crash_after`). Used by M1276 to drive the supervisor
+  lifecycle deterministically.
+- **`wait_for_worker_idle`** (helper, not a fixture) — drain helper that
+  polls `/status` until the worker is idle.
+
+**No spawn-race barrier fixture.** `kiso.main._ensure_worker` is
+synchronous and explicitly atomic ("no await between checking and
+creating"), so the spawn check cannot race within a single asyncio
+event loop. M1270 tests concurrent `/msg` POSTs at the HTTP layer and
+asserts exactly-one-worker without needing to widen any race window.
+
 ### Performance baseline (M1267, 2026-04-08)
 
 | Tier | Before (sequential) | After (xdist + tmpfs) | Speedup |
