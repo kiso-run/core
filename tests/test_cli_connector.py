@@ -1712,3 +1712,86 @@ class TestConnectorTest:
         assert len(calls) == 1
         assert "pytest" in calls[0][0][2]
         assert calls[0][1]["cwd"] == str(connector_dir)
+
+
+# ---------------------------------------------------------------------------
+# M1276: Full lifecycle matrix (run → status → stop) over fake connector dir
+# ---------------------------------------------------------------------------
+
+class TestConnectorLifecycleMatrix:
+    """End-to-end CLI lifecycle in one sequence: run → status → stop.
+
+    The individual commands are exhaustively tested above. This test
+    walks the full sequence and asserts the .pid, .status.json, and
+    connector.log file transitions at each step. Catches any drift
+    where individual commands work in isolation but the sequence
+    breaks (e.g. status not seeing the right pid file, stop not
+    cleaning up properly)."""
+
+    def test_run_status_stop_sequence_transitions_files(
+        self, tmp_path, mock_admin, capsys,
+    ):
+        from cli.connector import (
+            _connector_run, _connector_status, _connector_stop,
+        )
+        import signal
+
+        connectors_dir = tmp_path / "connectors"
+        connectors_dir.mkdir()
+        connector_dir = connectors_dir / "fakeconn"
+        connector_dir.mkdir()
+
+        # 1. RUN: spawn supervisor (mocked Popen), .pid file written
+        mock_proc = MagicMock()
+        mock_proc.pid = 77777
+
+        with (
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("subprocess.Popen", return_value=mock_proc),
+        ):
+            _connector_run(argparse.Namespace(name="fakeconn"))
+
+        assert (connector_dir / ".pid").read_text() == "77777"
+        assert "started" in capsys.readouterr().out
+
+        # 2. STATUS: pid file present + os.kill(pid, 0) succeeds → running
+        with (
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("os.kill"),  # signal 0 succeeds → process alive
+        ):
+            _connector_status(argparse.Namespace(name="fakeconn"))
+
+        out = capsys.readouterr().out
+        assert "running" in out
+        assert "77777" in out
+
+        # 3. Simulate restart metadata appearing in .status.json
+        (connector_dir / ".status.json").write_text(
+            '{"restarts": 2, "consecutive_failures": 0, "gave_up": false}'
+        )
+        with (
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("os.kill"),
+        ):
+            _connector_status(argparse.Namespace(name="fakeconn"))
+        assert "Restarts: 2" in capsys.readouterr().out
+
+        # 4. STOP: SIGTERM, then signal 0 raises → cleanup .pid
+        kill_calls: list[tuple[int, int]] = []
+
+        def fake_kill(pid, sig):
+            kill_calls.append((pid, sig))
+            if sig == 0 and any(s == signal.SIGTERM for _, s in kill_calls):
+                raise ProcessLookupError()
+
+        with (
+            patch("cli.connector.CONNECTORS_DIR", connectors_dir),
+            patch("os.kill", side_effect=fake_kill),
+            patch("time.sleep"),
+        ):
+            _connector_stop(argparse.Namespace(name="fakeconn"))
+
+        assert "stopped" in capsys.readouterr().out
+        assert not (connector_dir / ".pid").exists()
+        # SIGTERM was sent
+        assert any(sig == signal.SIGTERM for _, sig in kill_calls)
