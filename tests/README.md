@@ -96,6 +96,87 @@ creating"), so the spawn check cannot race within a single asyncio
 event loop. M1270 tests concurrent `/msg` POSTs at the HTTP layer and
 asserts exactly-one-worker without needing to widen any race window.
 
+### v0.9 capability coverage matrix (M1285)
+
+Map of major Kiso production guarantees → suite tier that owns them
+→ confidence tier. **Blocking semantic** = deterministic
+state-based oracle. **Optional smoke** = real-network/LLM smoke that
+may drift with externals. **Manual acceptance** = human operator is
+part of the oracle.
+
+| Guarantee | Suite | Confidence |
+|-----------|-------|-----------|
+| Startup recovery (re-enqueue + stale plan failure) | integration `test_runtime_recovery.py` (M1269) + unit `test_startup_recovery.py` | blocking semantic |
+| Worker spawn atomicity (/msg + cron) | integration `test_runtime_concurrency.py` (M1270) | blocking semantic |
+| In-flight `/msg` routing on busy worker | integration `test_inflight.py` (M415) | blocking semantic |
+| Webhook delivery retry (route-level) | integration `test_connector_protocol.py::TestWebhookRetryRouteLevel` (M1271) + unit `test_webhook.py` | blocking semantic |
+| Connector polling fallback (`/status?after=`) | integration `test_connector_protocol.py::TestPollingFallbackRecovery` (M1271) | blocking semantic |
+| `uploads/` workspace handoff | integration `test_workspace_handoff.py` (M1272) + unit `test_worker.py::test_workspace_creates_uploads_dir` | blocking semantic |
+| Scoped `session_secrets` containment | integration `test_secret_boundaries.py` (M1273) + unit `test_tools.py::TestBuildToolInput` + `test_security.py::TestSanitizeOutput` | blocking semantic |
+| `pub/` published file persistence/identity | integration `test_workspace_handoff.py::TestPublishedFilePersistence` (M1274) + unit `test_published.py` | blocking semantic |
+| Circular replan stop | integration `test_replan_stop.py` (M1275) + unit `test_worker.py::TestDetectCircularReplan` (M1229) | blocking semantic |
+| Connector daemon lifecycle | unit `test_supervisor.py` + `test_cli_connector.py::TestConnectorLifecycleMatrix` (M1276) | blocking semantic |
+| Connector install/update/remove health | unit `test_cli_connector.py` (M1277) | blocking semantic |
+| Tool/plugin refresh after install | unit `test_cli_tool.py` (M1278 audit) | blocking semantic |
+| Negative install paths | unit `test_cli_tool.py::test_skill_install_git_clone_failure_cleanup` + connector counterpart (M1279) | blocking semantic |
+| Registry shape consistency | unit `test_registry.py::TestRegistryJsonShape` (M1280) | blocking semantic |
+| LLM stall → fallback model switch | unit `test_brain.py::test_stall_uses_fallback_model` + neighbors (M1232) | blocking semantic |
+| Schema migrations | unit `test_store.py:2069+` (M345) | blocking semantic |
+| Cancel route + drain | unit/integration `test_cancel.py` (10 tests) | blocking semantic |
+| Recovery acceptance multi-plan | functional `test_recovery_flows.py` (M1281) | optional smoke (needs Docker + API key) |
+| Paraphraser → planner boundary | integration `test_paraphraser_boundary.py` (M1282) | blocking semantic |
+| Cross-layer adversarial defenses | integration `test_adversarial_matrix.py` (M1283) | blocking semantic |
+| Sandbox/sandbox-uid isolation | docker `test_sandbox.py` | blocking semantic |
+| Live role compliance (planner/reviewer/etc) | live `test_roles.py`, `test_flows.py`, `test_practical.py` | optional smoke |
+| Plugin clone/build cycle | live `test_plugins.py` | optional smoke |
+| Interactive (CAPTCHA, OAuth, real Discord) | interactive `test_external.py`, `test_contact_form.py`, `test_moltbook.py` | manual acceptance |
+
+### v0.9 deferred ledger (M1285)
+
+Items intentionally deferred from v0.9 with reason. These are not
+forgotten — they are explicit non-goals or will be picked up later.
+
+- **Live LLM stall/fallback runtime test** — unit coverage in
+  `test_brain.py` is exhaustive (8+ tests). A live runtime test would
+  be incremental gain at best.
+- **Schema migration tests** — already covered in
+  `test_store.py:2069+`.
+- **Cancel-mid-execution as its own milestone** — `test_cancel.py`
+  has 10 tests covering route + drain + exec subprocess kill.
+- **Cron + spawn as its own milestone** — folded into M1270.
+  Cron uses the same `_ensure_worker` path as `/msg`.
+- **Runtime/admin API as its own milestone** — verified that
+  `kiso/api/runtime.py` (2 routes) and `kiso/api/admin.py` (7 routes)
+  are well covered by `test_health.py`, `test_published.py`,
+  `test_admin.py`, `test_stats.py`, `test_main.py:530+` (reload-config),
+  `test_cron_api.py`. M1285 audit found no gap.
+- **In-memory SQLite for tests** — `init_db` uses WAL + ALTER TABLE
+  migrations + heavy `tmp_path`. Replaced with **tmpfs**
+  (`--basetemp=/dev/shm`) in M1267 — same RAM-speed gain without
+  refactor.
+- **`tests/test_rename_completeness.py` / `test_import_surfaces.py`
+  deletion** — verified intentional runtime/public-surface guards.
+- **Codegen guardrail (M1233) as its own milestone** — already
+  covered in `test_brain.py::test_m1227_*` and neighbors.
+- **Install routing suppression (M1234) as its own milestone** —
+  unit-level, not milestone-worthy.
+- **`usage_guide` and `consumes` live planner influence test** —
+  high cost, low marginal value (already structurally covered).
+- **Performance / load / fuzz / mutation testing** — high noise,
+  low ROI for Kiso's current stage.
+- **Non-preset workflow smoke (docreader/transcriber)** — needs
+  Docker + API key + plugin download/build cycle. Optional smoke,
+  not added in v0.9.
+- **Live adversarial scenarios under multi-turn pressure** — needs
+  real LLM behavior. Optional live-network smoke, deferred from
+  M1283.
+- **Spawn-race barrier fixture** — verified that
+  `kiso.main._ensure_worker` is sync with structural atomicity, no
+  race window to widen.
+- **Deep audit of test_worker.py / test_brain.py for scenario
+  duplication** — multi-hour maintainer-driven work, deferred to a
+  potential v0.10 follow-up. See `devplan/v0.9-audit.md`.
+
 ### Performance baseline (M1267, 2026-04-08)
 
 | Tier | Before (sequential) | After (xdist + tmpfs) | Speedup |
