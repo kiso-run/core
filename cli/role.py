@@ -1,9 +1,9 @@
 """`kiso role` CLI subcommand — manage role files in ``~/.kiso/roles/``.
 
-M1289: kiso roles are owned by the user dir at runtime
-(``KISO_DIR / "roles"``). The bundled package roles are copied at
-init by ``kiso.main._init_kiso_dirs()``. This CLI provides the
-recovery and discovery hatches:
+Roles are owned by the user dir at runtime (``KISO_DIR / "roles"``).
+The bundled package roles are copied to the user dir at init by
+``kiso.main._init_kiso_dirs()``. This CLI provides the recovery and
+discovery hatches:
 
 - ``kiso role list``: show user vs package role files.
 - ``kiso role reset NAME``: overwrite a single user role file with

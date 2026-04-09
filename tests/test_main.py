@@ -213,7 +213,7 @@ class TestInitKisoDirs:
             _init_kiso_dirs()
         assert (tmp_path / "sys" / "bin").is_dir()
 
-    # -- M1288: pre-create all KISO_DIR subdirectories --
+    # -- All KISO_DIR subdirectories pre-created at init --
 
     def test_creates_tools_directory(self, tmp_path):
         """_init_kiso_dirs creates tools/ for installed kiso tools."""
@@ -243,9 +243,8 @@ class TestInitKisoDirs:
         assert (tmp_path / "sessions").is_dir()
 
     def test_creates_roles_directory(self, tmp_path):
-        """_init_kiso_dirs creates roles/ (M1289 will populate it
-        with the bundled role files; M1288 just ensures the dir
-        exists)."""
+        """_init_kiso_dirs creates roles/ (the bundled role files
+        get copied in by the role-sync step below)."""
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
         assert (tmp_path / "roles").is_dir()
@@ -259,7 +258,7 @@ class TestInitKisoDirs:
         for name in ("tools", "connectors", "recipes", "sessions", "roles"):
             assert (tmp_path / name).is_dir(), f"{name}/ missing after 2nd run"
 
-    # -- M1289: roles copied to user dir at init --
+    # -- Roles copied to user dir at init (no overwrite, self-heal) --
 
     def test_init_copies_all_package_roles_to_user_dir(self, tmp_path):
         """First init copies every bundled role .md to ~/.kiso/roles/."""

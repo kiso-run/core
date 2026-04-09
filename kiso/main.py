@@ -175,7 +175,7 @@ def _init_kiso_dirs() -> None:
         (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
         (KISO_DIR / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
         (KISO_DIR / "reference").mkdir(parents=True, exist_ok=True)
-        # M1288: pre-create runtime subdirectories so kiso has a
+        # Pre-create runtime subdirectories so kiso has a
         # discoverable structure on first install and external
         # scripts can drop files without mkdir-ing first.
         (KISO_DIR / "tools").mkdir(parents=True, exist_ok=True)
@@ -205,7 +205,7 @@ def _init_kiso_dirs() -> None:
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to sync reference docs: %s", e)
 
-    # M1289: Copy bundled roles to ~/.kiso/roles/ — additive only, no
+    # Copy bundled roles to ~/.kiso/roles/ — additive only, no
     # overwrite of existing user customizations. Self-heal empty
     # files (catches `> file.md` accidents). Runtime
     # `_load_system_prompt` reads ONLY from this user dir, no

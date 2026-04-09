@@ -291,7 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     _add_tool_subcommands(sub.add_parser("tool", help="manage tools"))
 
-    # Role (M1289)
+    # Role
     role_sub = sub.add_parser(
         "role", help="manage role files in ~/.kiso/roles/",
     ).add_subparsers(dest="role_command")

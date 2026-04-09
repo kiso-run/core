@@ -1,30 +1,20 @@
-"""M1281 (redesigned in M1287): workspace and file-reuse functional flows.
+"""Workspace and file-reuse functional flows.
 
-The original M1281 test_unreachable_then_local_file_recovery tried to
-test "recovery semantics" against real LLM by relying on the planner
-to choose to replan after a failed first attempt. That oracle is
-fundamentally fragile: the LLM is non-deterministic about when it
-chooses to replan vs. fail gracefully, and the "recovery semantics"
-contract is already deterministically tested in M1275 with mocked
-LLM (test_replan_stop.py).
-
-M1287 redesigns this file:
-
-- ``test_workspace_file_discovery`` (replaces
-  ``test_unreachable_then_local_file_recovery``): pre-shapes the
-  session workspace with a deterministic file, sends an imperative
-  prompt that does NOT give the planner permission to fail, and
-  asserts that the messenger output contains the file content. The
-  planner is free to choose any read strategy (cat, ls, read, etc.).
-- ``test_no_redundant_fetch_when_file_exists_locally``: cleaned up to
-  use ``assert_no_command_word`` (the M1286 helper) for the
-  curl/wget check, eliminating the substring-vs-word-boundary risk
-  that M1286's sweep missed.
+- ``test_workspace_file_discovery``: pre-shapes the session workspace
+  with a deterministic file, sends an imperative prompt that does
+  NOT give the planner permission to fail, and asserts that the
+  messenger output contains the file content. The planner is free
+  to choose any read strategy (cat, ls, read, etc.).
+- ``test_no_redundant_fetch_when_file_exists_locally``: uses
+  ``assert_no_command_word`` (word-boundary, command-field-only)
+  for the curl/wget check.
 
 Recovery semantics (replan-on-failure → stop on stuck) are
-deterministically tested in M1275:
+deterministically tested with mocked LLM in
 ``tests/integration/test_replan_stop.py``. They are intentionally
-NOT re-tested here at functional tier.
+NOT re-tested here at functional tier — real-LLM recovery testing
+is fragile because the planner is non-deterministic about when it
+chooses to replan vs. fail gracefully.
 
 Requires ``--functional`` flag and a running OpenRouter API key.
 These tests need Docker + a real LLM and cannot run on a bare host.
@@ -67,8 +57,8 @@ class TestWorkspaceFileDiscovery:
         # Pre-shape: create the file in the session workspace BEFORE
         # sending any message. Use _session_workspace() so the path
         # resolution matches the worker's view of KISO_DIR (the
-        # functional fixture _func_kiso_dir patches KISO_DIR in
-        # kiso.worker.utils, not at import time in this module).
+        # functional fixture patches KISO_DIR in kiso.worker.utils,
+        # not at import time in this module).
         workspace = _session_workspace(func_session)
         test_file = workspace / "data.txt"
         sentinel = "cached recovery sentinel 4242"
@@ -124,11 +114,10 @@ class TestLocalFileReuseAcrossPlans:
 
         assert result.success
 
-        # M1287: word-boundary check on the command field only.
-        # M1286's original sweep missed this test; the previous
-        # substring scan over command+detail was vulnerable to the
-        # same false-positives M1286 fixed elsewhere ("curly" matches
-        # "curl" inside heredoc bodies).
+        # Word-boundary check on the command field only — avoids
+        # false positives from substring matches (e.g. "curly" in
+        # OCR'd heredoc bodies matching "curl") and from data fields
+        # like task.detail that may contain unrelated text.
         last_plan_id = result.plans[-1]["id"]
         last_plan_tasks = [
             t for t in result.tasks if t.get("plan_id") == last_plan_id

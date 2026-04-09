@@ -867,6 +867,10 @@ class TestValidatePlan:
 # --- _load_system_prompt ---
 
 class TestLoadSystemPrompt:
+    """The runtime loader reads roles only from the user dir
+    (KISO_DIR/roles/). No package fallback. Missing user file →
+    FileNotFoundError with reset hint."""
+
     @pytest.fixture(autouse=True)
     def _isolated_kiso_dir(self, tmp_path):
         """Each test gets a fresh tmp KISO_DIR with an empty roles/."""
@@ -1886,8 +1890,8 @@ class TestRunPlanner:
 
 
 class TestRunPlannerInvestigateMode:
-    """M1290: investigate=True must inject the 'Investigate mode'
-    section into the planner system prompt via the modular loader.
+    """investigate=True must inject the 'Investigate mode' section
+    into the planner system prompt via the modular loader.
     Default (investigate=False) must NOT include it."""
 
     @pytest.fixture()
@@ -4151,7 +4155,7 @@ class TestClassifyMessage:
         ("chat:English", "hello", "chat", "English"),
         ("chat_kb:Italian", "cosa sai su te stesso?", "chat_kb", "Italian"),
         ("plan:English", "list files", "plan", "English"),
-        # M1290: investigate is the 4th category
+        # investigate is the 4th category
         ("investigate:English", "why is nginx returning 502?", "investigate", "English"),
         ("investigate:Italian", "perché il server è down?", "investigate", "Italian"),
         ("INVESTIGATE:English", "show me the config", "investigate", "English"),

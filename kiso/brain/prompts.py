@@ -11,8 +11,7 @@ from kiso.config import KISO_DIR
 # ~/.kiso/roles/ by kiso.main._init_kiso_dirs() at boot. It is NEVER
 # read at runtime by _load_system_prompt — the user dir is the
 # single source of truth. _ROLES_DIR is kept here only so install
-# helpers and the `kiso role reset` CLI can locate the package
-# files.
+# helpers and `kiso role reset` can locate the package files.
 _ROLES_DIR = Path(__file__).resolve().parent.parent / "roles"
 _prompt_cache: dict[str, str] = {}
 _MODULE_MARKER_RE = re.compile(r"<!--\s*MODULE:\s*(\w+)\s*-->")
@@ -26,8 +25,8 @@ def _load_system_prompt(role: str) -> str:
     NO package fallback — the user dir is the single source of
     truth at runtime. ``kiso.main._init_kiso_dirs()`` copies the
     bundled roles to the user dir on every boot if missing or
-    empty (M1289). If the user role file is missing or unreadable,
-    raise ``FileNotFoundError`` with a reset hint.
+    empty. If the user role file is missing or unreadable, raise
+    ``FileNotFoundError`` with a reset hint.
     """
     if role in _prompt_cache:
         return _prompt_cache[role]

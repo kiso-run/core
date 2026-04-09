@@ -1,4 +1,4 @@
-"""Tests for `kiso role reset` CLI command (M1289)."""
+"""Tests for `kiso role reset` and `kiso role list` CLI commands."""
 
 from __future__ import annotations
 

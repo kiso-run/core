@@ -1040,7 +1040,7 @@ async def build_planner_messages(
         # skips tool selection even when tools are relevant.
         if installed and "tools_rules" not in modules:
             modules.append("tools_rules")
-        # M1290: investigate mode injects the read-only diagnose-first
+        # investigate mode injects the read-only diagnose-first
         # contract into the planner system prompt.
         if investigate and "investigate" not in modules:
             modules.append("investigate")
@@ -1064,7 +1064,7 @@ async def build_planner_messages(
             fallback_modules.append("plugin_install")
         if _has_session_files:
             fallback_modules.append("session_files")
-        # M1290: investigate mode injects the read-only diagnose-first
+        # investigate mode injects the read-only diagnose-first
         # contract into the planner system prompt.
         if investigate:
             fallback_modules.append("investigate")

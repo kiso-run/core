@@ -2537,7 +2537,7 @@ async def _process_message(
 
     fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
     user_lang = ""  # empty = messenger detects from user message
-    msg_class = "plan"  # M1290: track classifier output for run_planner dispatch
+    msg_class = "plan"  # tracked so run_planner gets the investigate flag below
     if fast_path_enabled:
         _notify_phase(set_phase, WORKER_PHASE_CLASSIFYING)
         try:
@@ -2621,7 +2621,7 @@ async def _process_message(
             on_context_ready=_flush_pre_planner_usage,
             on_retry=_on_planner_retry,
             install_approved=_install_approved,
-            # M1290: investigate mode → planner gets the read-only
+            # investigate mode → planner gets the read-only
             # diagnose-first contract injected as a modular section.
             investigate=(msg_class == "investigate"),
         )
