@@ -1,3 +1,5 @@
+<!-- Maintainer note (M1294, 2026-04-09): This role is deliberately kept separate from kiso/roles/classifier.md. The two prompts share <5% text, the categories are disjoint, and merging would force a single LLM call to choose between 8 categories (strictly worse for accuracy). See devplan/v0.9-wip.md M1294 before consolidating. -->
+
 A job is currently running with this goal: "{plan_goal}"
 {recent_conversation}The user sent a new message: "{new_message}"
 
