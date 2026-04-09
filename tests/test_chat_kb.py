@@ -8,8 +8,10 @@ from unittest.mock import patch
 import pytest
 
 from kiso.brain import (
+    EMOJI_STRIP_RE,
     _sanitize_messenger_output,
     clean_learn_items,
+    strip_emoji,
 )
 from kiso.config import Config, Provider
 from kiso.store import (
@@ -506,6 +508,59 @@ class TestMessengerSanitization:
     def test_empty_output(self):
         result = _sanitize_messenger_output("")
         assert result == ""
+
+    def test_sanitizer_strips_emoji(self):
+        """M1300: messenger sanitizer also strips emoji deterministically."""
+        text = "**🎯 Interaction**\n💻 Code\n🌐 Net\n🛠 Tools\n🔬 Lab\n📚 Docs"
+        result = _sanitize_messenger_output(text)
+        for ch in ("🎯", "💻", "🌐", "🛠", "🔬", "📚"):
+            assert ch not in result
+        # surrounding text preserved
+        assert "Interaction" in result
+        assert "Code" in result
+
+
+class TestStripEmoji:
+    """M1300: deterministic emoji stripping for messenger output."""
+
+    @pytest.mark.parametrize("emoji,name", [
+        ("\U0001F3AF", "1F3AF target"),
+        ("\U0001F4BB", "1F4BB laptop"),
+        ("\U0001F310", "1F310 globe"),
+        ("\U0001F6E0", "1F6E0 hammer-and-wrench"),
+        ("\U0001F52C", "1F52C microscope"),
+        ("\U0001F4DA", "1F4DA books"),
+        ("\u2600", "2600 sun"),
+        ("\u27BF", "27BF curly loop"),
+        ("\U0001FA9F", "1FA9F window"),
+    ])
+    def test_strips_each_known_emoji(self, emoji, name):
+        text = f"hello {emoji} world"
+        assert strip_emoji(text) == "hello  world"
+
+    def test_keeps_alphanumeric_and_punctuation(self):
+        text = "Ciao! Sono Kiso, versione 0.8.0."
+        assert strip_emoji(text) == text
+
+    def test_keeps_markdown_structure(self):
+        text = "**bold** _italic_ `code` # heading\n- bullet"
+        assert strip_emoji(text) == text
+
+    def test_handles_empty_and_none_safe(self):
+        assert strip_emoji("") == ""
+
+    def test_strips_multiple_in_a_row(self):
+        text = "a🎯b💻c"
+        assert strip_emoji(text) == "abc"
+
+    def test_regex_parity_with_functional_test(self):
+        """The functional test regex must match the production regex."""
+        from tests.functional.test_knowledge import _EMOJI_RE
+        # Both should match the same character set: probe with all six
+        # emoji from the failing run.
+        for ch in ("🎯", "💻", "🌐", "🛠", "🔬", "📚"):
+            assert _EMOJI_RE.search(ch) is not None
+            assert EMOJI_STRIP_RE.search(ch) is not None
 
 
 class TestOutputBackedLearningIntegration:

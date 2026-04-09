@@ -390,9 +390,9 @@ class TestF16ScoredFactRetrieval:
 # F12 — messenger quality
 # ---------------------------------------------------------------------------
 
-_EMOJI_RE = re.compile(
-    "[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA9F]"
-)
+# M1300: import the production emoji regex so the test cannot drift
+# from the deterministic strip applied to messenger output.
+from kiso.brain.text_roles import EMOJI_STRIP_RE as _EMOJI_RE  # noqa: E402
 _FALSE_ACTION_RE = re.compile(
     r"\b(ho esaminato|ho verificato|ho analizzato|ho controllato)\b",
     re.IGNORECASE,

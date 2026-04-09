@@ -356,11 +356,37 @@ _TOOL_CALL_BLOCK_RE = re.compile(
 )
 _TOOL_CALL_TAG_RE = re.compile(r"</?(tool_call|function_call)[^>]*>")
 
+# M1300: deterministic emoji strip for messenger output. The
+# messenger.md prompt has a CRITICAL no-emoji rule, but smaller
+# models (e.g. gemini-2.5-flash) periodically violate it. The
+# regression history (M384, then again 2026-04-09) shows that
+# prompt-only enforcement is not reliable, so we apply a
+# deterministic strip on every messenger output. The character
+# ranges below are kept in sync with the
+# ``tests/functional/test_knowledge.py`` regex via a parity test.
+EMOJI_STRIP_RE = re.compile(
+    "[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA9F]"
+)
+
+
+def strip_emoji(text: str) -> str:
+    """Remove emoji characters from *text*.
+
+    Used to enforce the messenger's no-emoji constraint as a hard
+    rule in code. Operates on the same character ranges the
+    functional test regex covers (``[U+1F300-U+1F9FF]``,
+    ``[U+2600-U+27BF]``, ``[U+1FA00-U+1FA9F]``).
+    """
+    if not text:
+        return text
+    return EMOJI_STRIP_RE.sub("", text)
+
 
 def _sanitize_messenger_output(text: str) -> str:
-    """Strip hallucinated tool_call/function_call XML from messenger output."""
+    """Strip hallucinated tool_call/function_call XML and emoji from messenger output."""
     cleaned = _TOOL_CALL_BLOCK_RE.sub("", text)
     cleaned = _TOOL_CALL_TAG_RE.sub("", cleaned)
+    cleaned = EMOJI_STRIP_RE.sub("", cleaned)
     return cleaned.strip()
 
 
