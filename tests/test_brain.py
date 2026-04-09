@@ -1884,6 +1884,74 @@ class TestRunPlanner:
             with pytest.raises(PlanError, match="(?i)invalid JSON"):
                 await run_planner(db, config, "sess1", "admin", "hello")
 
+
+class TestRunPlannerInvestigateMode:
+    """M1290: investigate=True must inject the 'Investigate mode'
+    section into the planner system prompt via the modular loader.
+    Default (investigate=False) must NOT include it."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        yield conn
+        await conn.close()
+
+    @pytest.fixture()
+    def config(self):
+        return Config(
+            tokens={"cli": "tok"},
+            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
+            users={},
+            models=full_models(planner="gpt-4"),
+            settings=full_settings(max_validation_retries=3, context_messages=5),
+            raw={},
+        )
+
+    async def test_default_planner_does_not_include_investigate_module(
+        self, db, config,
+    ):
+        """Without investigate=True, the planner system prompt does
+        NOT contain the Investigate mode section."""
+        captured: dict = {}
+
+        async def fake_call_llm(cfg, role, messages, **kwargs):
+            if role == "planner":
+                captured["system"] = messages[0]["content"]
+            return VALID_PLAN
+
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                   side_effect=fake_call_llm):
+            await run_planner(db, config, "sess1", "admin", "hello")
+
+        assert "system" in captured
+        assert "Investigate mode" not in captured["system"]
+
+    async def test_investigate_true_injects_investigate_module(
+        self, db, config,
+    ):
+        """With investigate=True, the planner system prompt contains
+        the 'Investigate mode' section text."""
+        captured: dict = {}
+
+        async def fake_call_llm(cfg, role, messages, **kwargs):
+            if role == "planner":
+                captured["system"] = messages[0]["content"]
+            return VALID_PLAN
+
+        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
+                   side_effect=fake_call_llm):
+            await run_planner(
+                db, config, "sess1", "admin", "why is X failing?",
+                investigate=True,
+            )
+
+        assert "system" in captured
+        assert "Investigate mode" in captured["system"]
+        # Key contract phrases from the (compressed) module
+        assert "read-only" in captured["system"].lower()
+        assert "do not change state" in captured["system"].lower()
+
     async def test_invalid_json_retries_before_raising(self, db, config):
         """M84b: JSON parse error should retry, not raise immediately."""
         call_count = 0
@@ -4083,6 +4151,11 @@ class TestClassifyMessage:
         ("chat:English", "hello", "chat", "English"),
         ("chat_kb:Italian", "cosa sai su te stesso?", "chat_kb", "Italian"),
         ("plan:English", "list files", "plan", "English"),
+        # M1290: investigate is the 4th category
+        ("investigate:English", "why is nginx returning 502?", "investigate", "English"),
+        ("investigate:Italian", "perché il server è down?", "investigate", "Italian"),
+        ("INVESTIGATE:English", "show me the config", "investigate", "English"),
+        ("investigate", "is the db running", "investigate", ""),
         ("chat", "hello", "chat", ""),  # LLM fallback: no lang → messenger detects
         ("  chat:French\n", "merci", "chat", "French"),  # strips whitespace
         ("CHAT:ENGLISH", "thanks", "chat", "English"),  # case insensitive → title case
@@ -4094,11 +4167,14 @@ class TestClassifyMessage:
         ("category:Italian:plan", "vai su google", "plan", "Italian"),  # category:lang:cat
         ("category:French:chat", "merci", "chat", "French"),  # category:lang:chat
     ], ids=[
-        "chat-English", "chat_kb-Italian", "plan-English", "plain-category-fallback",
+        "chat-English", "chat_kb-Italian", "plan-English",
+        "investigate-en-bug", "investigate-it-bug",
+        "investigate-case-insensitive", "investigate-no-lang",
+        "plain-category-fallback",
         "whitespace", "case-insensitive", "unexpected-fallback",
-        "empty-fallback", "M881-Russian", "M881-Chinese",
-        "M612-category-Italian", "M612-category-Italian-plan",
-        "M612-category-French-chat",
+        "empty-fallback", "Russian", "Chinese",
+        "category-Italian", "category-Italian-plan",
+        "category-French-chat",
     ])
     async def test_classify_message_parsing(self, llm_return, message, expected_cat, expected_lang):
         config = _make_config_for_classifier()

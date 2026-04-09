@@ -919,6 +919,7 @@ async def build_planner_messages(
     paraphrased_context: str | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
+    investigate: bool = False,
 ) -> tuple[list[dict], list[str], list[dict]]:
     """Build the message list for the planner LLM call.
 
@@ -1039,6 +1040,10 @@ async def build_planner_messages(
         # skips tool selection even when tools are relevant.
         if installed and "tools_rules" not in modules:
             modules.append("tools_rules")
+        # M1290: investigate mode injects the read-only diagnose-first
+        # contract into the planner system prompt.
+        if investigate and "investigate" not in modules:
+            modules.append("investigate")
         system_prompt = _load_modular_prompt("planner", modules)
     else:
         # Fallback path: keyword-based module selection (no briefer).
@@ -1059,6 +1064,10 @@ async def build_planner_messages(
             fallback_modules.append("plugin_install")
         if _has_session_files:
             fallback_modules.append("session_files")
+        # M1290: investigate mode injects the read-only diagnose-first
+        # contract into the planner system prompt.
+        if investigate:
+            fallback_modules.append("investigate")
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
     if not installed:
@@ -1291,6 +1300,7 @@ async def run_planner(
     is_replan: bool = False,
     install_approved: bool = False,
     max_tasks_override: int | None = None,
+    investigate: bool = False,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -1310,7 +1320,7 @@ async def run_planner(
     messages, installed_names, installed_info = await build_planner_messages(
         db, config, session, user_role, new_message, user_tools=user_tools,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
-        install_approved=install_approved,
+        install_approved=install_approved, investigate=investigate,
     )
     if on_context_ready:
         await on_context_ready()

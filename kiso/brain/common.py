@@ -1435,7 +1435,9 @@ def build_classifier_messages(
     return _build_messages(_load_system_prompt("classifier"), user_text)
 
 
-CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({"plan", "chat", "chat_kb"})
+CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({
+    "plan", "chat", "chat_kb", "investigate",
+})
 
 
 async def classify_message(

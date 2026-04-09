@@ -83,7 +83,13 @@ class TestPromptBudgetSmoke:
     """Prompt files must stay within coarse size budgets."""
 
     @pytest.mark.parametrize("filename,max_chars", [
-        ("planner.md", 14000),
+        # planner.md budget bumped from 14000 → 14500 in M1290 to fit
+        # the opt-in `investigate` module. The module is only loaded
+        # into the assembled prompt when the worker passes
+        # investigate=True (i.e. classifier returned "investigate"),
+        # so the actual loaded prompt for default plan/chat/chat_kb
+        # paths is unchanged.
+        ("planner.md", 14500),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])

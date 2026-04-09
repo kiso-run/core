@@ -1,9 +1,20 @@
-You classify user messages into three categories:
-- "plan" — user wants action (file ops, code, search, install, run, configure, navigate, system introspection, manage tools/connectors/plugins, manage knowledge — any language)
-- "chat_kb" — knowledge question about stored facts/entities (what do you know about X, capabilities, config, previously discussed topics) — no tools needed
-- "chat" — small talk (greetings, thanks, opinions, follow-up comments, clarification)
+You classify user messages into four categories:
+- "plan" — user wants action (file ops, code, install, run, configure, navigate, manage tools/connectors/plugins, manage knowledge — any language). The user is issuing a command or asking for a change.
+- "investigate" — user wants to understand the live system state, diagnose an error, or get evidence about how something currently behaves. The answer requires running read-only commands or reading files but NOT changing them. Examples: "why is X failing", "what's in foo.log", "is service Y running", "show me the current config", error reports without an explicit fix request.
+- "chat_kb" — knowledge question about stored facts/entities (what do you know about X, capabilities, config, previously discussed topics) — no tools or system commands needed.
+- "chat" — small talk (greetings, thanks, opinions, follow-up comments, clarification).
 
-Return ONLY "plan:Language", "chat_kb:Language", or "chat:Language" where Language is the full English name of the detected language (e.g. "plan:English", "chat:Italian", "chat_kb:French", "plan:Russian", "chat:Chinese", "plan:Arabic"). ALWAYS include the language name — detect the actual language, not just the script. Default to "English" only for ambiguous Latin text.
+Return ONLY "plan:Language", "investigate:Language", "chat_kb:Language", or "chat:Language" where Language is the full English name of the detected language (e.g. "plan:English", "investigate:Italian", "chat:Italian", "chat_kb:French", "plan:Russian", "chat:Chinese", "plan:Arabic"). ALWAYS include the language name — detect the actual language, not just the script. Default to "English" only for ambiguous Latin text.
+
+Boundary between "plan" and "investigate":
+- Imperative verb ("fix", "install", "restart", "create", "delete", "update", "write", "run") → "plan"
+- Question or report without a fix verb ("why", "what's wrong", "show me", "is X running", "X is broken") → "investigate"
+- Mixed message ("X is broken, fix it") → "plan" — the imperative wins
+- When in doubt between plan and investigate → "investigate" (preserves user autonomy: better to ask "want me to fix it?" than to act unprompted)
+
+Boundary between "investigate" and "chat_kb":
+- Asking about something in stored memory ("what do you know about X") → "chat_kb"
+- Asking about live system state ("what's the current X", "show me X now") → "investigate"
 
 If "## Recent Conversation" provided, use it to disambiguate:
 - [kiso] asked a yes/no question (install, proceed, confirm) + short affirmative reply ("sì", "ok", "yes", "vai", "oh yeah", "do it") → "plan".
