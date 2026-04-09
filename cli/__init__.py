@@ -306,6 +306,24 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--yes", "-y", action="store_true",
                     help="skip confirmation for non-empty existing files")
 
+    # Roles (M1292) — plural form is the canonical surface; singular
+    # `kiso role` above is preserved for one cycle as a deprecated alias.
+    roles_sub = sub.add_parser(
+        "roles", help="discover, inspect, and reset role files",
+    ).add_subparsers(dest="roles_command")
+    roles_sub.add_parser("list", help="list every role with model and override status")
+    p = roles_sub.add_parser("show", help="print the resolved prompt for a role")
+    p.add_argument("name", help="role name")
+    p = roles_sub.add_parser("diff", help="diff a user override against the bundled default")
+    p.add_argument("name", help="role name")
+    p = roles_sub.add_parser("reset", help="overwrite a user override with the bundled default")
+    p.add_argument("name", nargs="?", default=None,
+                   help="role name to reset (omit with --all)")
+    p.add_argument("--all", action="store_true",
+                   help="reset every package role")
+    p.add_argument("--yes", "-y", action="store_true",
+                   help="skip confirmation for non-empty existing files")
+
     # Recipe
     rs = sub.add_parser("recipe", help="manage recipes (planner instructions)").add_subparsers(dest="recipe_command")
     rs.add_parser("list", help="list installed recipes")
@@ -440,6 +458,10 @@ def main() -> None:
         from cli.role import run_role_command
 
         run_role_command(args)
+    elif args.command == "roles":
+        from cli.roles import run_roles_command
+
+        run_roles_command(args)
     elif args.command == "plugin":
         from cli.plugin import run_plugin_command
 
