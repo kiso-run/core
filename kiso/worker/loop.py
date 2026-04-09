@@ -48,12 +48,12 @@ from kiso.brain import (
     ParaphraserError,
     PlanError,
     ReviewError,
-    classify_message,
+    run_classifier,
     apply_consolidation_result,
     run_briefer,
     run_curator,
     run_consolidator,
-    run_exec_translator,
+    run_worker as run_worker_role,
     run_messenger,
     run_paraphraser,
     run_planner,
@@ -217,7 +217,7 @@ async def _deliver_webhook_if_configured(
 
 #: Fixed deterministic transition messages emitted when chat_kb pre-flight
 #: returns no facts and the worker re-routes the message to the investigate
-#: planner. Keyed by the language string returned by ``classify_message``
+#: planner. Keyed by the language string returned by ``run_classifier``
 #: (e.g. ``"Italian"``, ``"English"``). Any unknown or empty value falls
 #: back to the English string. Adding a language is a one-line change.
 _CHAT_KB_FALLBACK_MSGS: dict[str, str] = {
@@ -1289,7 +1289,7 @@ async def _handle_exec_task(
         _ws_files = _list_session_files(ctx.session)
         idx_translate = get_usage_index()
         try:
-            command = await run_exec_translator(
+            command = await run_worker_role(
                 ctx.config, detail, sys_env_text,
                 plan_outputs_text=outputs_text, session=ctx.session,
                 retry_context=retry_context,
@@ -2632,7 +2632,7 @@ async def _process_message(
         _notify_phase(set_phase, WORKER_PHASE_CLASSIFYING)
         try:
             msg_class, user_lang = await asyncio.wait_for(
-                classify_message(
+                run_classifier(
                     config, content, session=session,
                     recent_context=_classifier_ctx,
                     entity_names=_entity_names,

@@ -1440,7 +1440,7 @@ CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({
 })
 
 
-async def classify_message(
+async def run_classifier(
     config: Config, content: str, session: str = "",
     recent_context: str = "",
     entity_names: str = "",
@@ -1540,7 +1540,7 @@ def build_inflight_classifier_messages(
     return [{"role": "user", "content": user_text}]
 
 
-async def classify_inflight(
+async def run_inflight_classifier(
     config: Config, plan_goal: str, new_message: str,
     session: str = "", recent_context: str = "",
 ) -> str:
@@ -1643,8 +1643,8 @@ __brain_exports__ = [
     "build_recent_context",
     "check_safety_rules",
     "classify_failure_class",
-    "classify_inflight",
-    "classify_message",
+    "run_inflight_classifier",
+    "run_classifier",
     "FAILURE_CLASS_BLOCKED_POLICY",
     "FAILURE_CLASS_DELIVERY_SPLIT",
     "FAILURE_CLASS_PLAN_SHAPE",

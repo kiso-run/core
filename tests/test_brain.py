@@ -43,8 +43,8 @@ from kiso.brain import (
     build_planner_messages,
     build_reviewer_messages,
     build_summarizer_messages,
-    classify_message,
-    classify_inflight,
+    run_classifier,
+    run_inflight_classifier,
     build_inflight_classifier_messages,
     CLASSIFIER_CATEGORIES,
     INFLIGHT_CATEGORIES,
@@ -53,7 +53,7 @@ from kiso.brain import (
     _sanitize_for_reviewer,
     run_briefer,
     run_curator,
-    run_exec_translator,
+    run_worker,
 
     run_messenger,
     run_paraphraser,
@@ -3557,7 +3557,7 @@ class TestRunExecTranslator:
     async def test_successful_translation(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="ls -la *.py"):
-            result = await run_exec_translator(
+            result = await run_worker(
                 config, "List all Python files", "OS: Linux",
             )
         assert result == "ls -la *.py"
@@ -3565,7 +3565,7 @@ class TestRunExecTranslator:
     async def test_strips_whitespace(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="  ls -la  \n"):
-            result = await run_exec_translator(
+            result = await run_worker(
                 config, "List files", "OS: Linux",
             )
         assert result == "ls -la"
@@ -3574,20 +3574,20 @@ class TestRunExecTranslator:
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="CANNOT_TRANSLATE"):
             with pytest.raises(ExecTranslatorError, match="Cannot translate"):
-                await run_exec_translator(config, "Do something impossible", "OS: Linux")
+                await run_worker(config, "Do something impossible", "OS: Linux")
 
     async def test_empty_result_raises(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="   "):
             with pytest.raises(ExecTranslatorError, match="Cannot translate"):
-                await run_exec_translator(config, "Do something", "OS: Linux")
+                await run_worker(config, "Do something", "OS: Linux")
 
     async def test_llm_error_raises_translator_error(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     side_effect=LLMError("API down")):
             with pytest.raises(ExecTranslatorError, match="API down"):
-                await run_exec_translator(config, "List files", "OS: Linux")
+                await run_worker(config, "List files", "OS: Linux")
 
     async def test_uses_worker_role(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
@@ -3598,7 +3598,7 @@ class TestRunExecTranslator:
             return "echo hello"
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
-            await run_exec_translator(config, "Say hello", "OS: Linux")
+            await run_worker(config, "Say hello", "OS: Linux")
         assert captured["role"] == "worker"
 
 
@@ -3610,7 +3610,7 @@ class TestExecTranslatorSyntaxCheck:
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value="echo ok"):
-            result = await run_exec_translator(config, "Say ok", "OS: Linux")
+            result = await run_worker(config, "Say ok", "OS: Linux")
         assert result == "echo ok"
 
     async def test_long_valid_command_passes(self):
@@ -3619,7 +3619,7 @@ class TestExecTranslatorSyntaxCheck:
         assert len(long_cmd) > 120
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value=long_cmd):
-            result = await run_exec_translator(config, "Run steps", "OS: Linux")
+            result = await run_worker(config, "Run steps", "OS: Linux")
         assert result == long_cmd
 
     async def test_invalid_command_raises(self):
@@ -3628,7 +3628,7 @@ class TestExecTranslatorSyntaxCheck:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value=bad_cmd):
             with pytest.raises(ExecTranslatorError, match="(?i)syntax error"):
-                await run_exec_translator(config, "Run steps", "OS: Linux")
+                await run_worker(config, "Run steps", "OS: Linux")
 
     async def test_m1058_prompt_echo_back_rejected(self):
         """command containing prompt fragments is rejected."""
@@ -3637,7 +3637,7 @@ class TestExecTranslatorSyntaxCheck:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value=garbage):
             with pytest.raises(ExecTranslatorError, match="echo-back"):
-                await run_exec_translator(config, "List files", "OS: Linux")
+                await run_worker(config, "List files", "OS: Linux")
 
     async def test_m1058_natural_language_rejected(self):
         """command starting with natural language is rejected."""
@@ -3646,7 +3646,7 @@ class TestExecTranslatorSyntaxCheck:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     return_value=explanation):
             with pytest.raises(ExecTranslatorError, match="Natural language"):
-                await run_exec_translator(config, "List files", "OS: Linux")
+                await run_worker(config, "List files", "OS: Linux")
 
     async def test_m1084_syntax_error_gets_one_targeted_retry(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
@@ -3657,7 +3657,7 @@ class TestExecTranslatorSyntaxCheck:
             return ["if then echo ok fi", "echo ok"][len(calls) - 1]
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
-            result = await run_exec_translator(config, "Print ok", "OS: Linux")
+            result = await run_worker(config, "Print ok", "OS: Linux")
 
         assert result == "echo ok"
         assert len(calls) == 2
@@ -3673,7 +3673,7 @@ class TestExecTranslatorSyntaxCheck:
             return ["```bash\npwd\n```", "pwd"][len(calls) - 1]
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
-            result = await run_exec_translator(
+            result = await run_worker(
                 config, "Show the current working directory", "OS: Linux",
             )
 
@@ -3691,7 +3691,7 @@ class TestExecTranslatorSyntaxCheck:
             return ["I will run pwd", "pwd"][len(calls) - 1]
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
-            result = await run_exec_translator(
+            result = await run_worker(
                 config, "Show the current working directory", "OS: Linux",
             )
 
@@ -3704,7 +3704,7 @@ class TestExecTranslatorSyntaxCheck:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     side_effect=["```bash\npwd\n```", "```bash\npwd\n```"]):
             with pytest.raises(ExecTranslatorError, match="Markdown fences"):
-                await run_exec_translator(
+                await run_worker(
                     config, "Show the current working directory", "OS: Linux",
                 )
 
@@ -4180,36 +4180,36 @@ class TestClassifyMessage:
         "category-Italian", "category-Italian-plan",
         "category-French-chat",
     ])
-    async def test_classify_message_parsing(self, llm_return, message, expected_cat, expected_lang):
+    async def test_run_classifier_parsing(self, llm_return, message, expected_cat, expected_lang):
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=llm_return):
-            cat, lang = await classify_message(config, message)
+            cat, lang = await run_classifier(config, message)
         assert cat == expected_cat
         assert lang == expected_lang
 
     async def test_llm_error_falls_back_to_plan(self):
-        """classify_message returns ('plan', '') when LLM call fails."""
+        """run_classifier returns ('plan', '') when LLM call fails."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("timeout")):
-            cat, lang = await classify_message(config, "hello")
+            cat, lang = await run_classifier(config, "hello")
         assert cat == "plan"
         assert lang == ""
 
     async def test_budget_exceeded_falls_back_to_plan(self):
-        """classify_message returns ('plan', '') when LLM budget is exhausted."""
+        """run_classifier returns ('plan', '') when LLM budget is exhausted."""
         from kiso.llm import LLMBudgetExceeded
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("over")):
-            cat, lang = await classify_message(config, "hello")
+            cat, lang = await run_classifier(config, "hello")
         assert cat == "plan"
         assert lang == ""
 
     async def test_uses_classifier_model(self):
-        """classify_message should call LLM with 'classifier' role."""
+        """run_classifier should call LLM with 'classifier' role."""
         config = _make_config_for_classifier()
         mock_llm = AsyncMock(return_value="chat:en")
         with patch("kiso.brain.call_llm", mock_llm):
-            await classify_message(config, "hello", session="s1")
+            await run_classifier(config, "hello", session="s1")
         mock_llm.assert_called_once()
         assert mock_llm.call_args[0][1] == "classifier"  # role argument
         assert mock_llm.call_args[1].get("session") == "s1"
@@ -4328,7 +4328,7 @@ class TestM276ClassifierContext:
         config = _make_config_for_classifier()
         mock_llm = AsyncMock(return_value="plan")
         with patch("kiso.brain.call_llm", mock_llm):
-            await classify_message(config, "e la pagina?", recent_context="Last plan goal: Nav")
+            await run_classifier(config, "e la pagina?", recent_context="Last plan goal: Nav")
         # Check the user message includes context
         messages = mock_llm.call_args[0][2]
         assert "Recent Conversation" in messages[1]["content"]
@@ -4337,7 +4337,7 @@ class TestM276ClassifierContext:
         config = _make_config_for_classifier()
         mock_llm = AsyncMock(return_value="chat")
         with patch("kiso.brain.call_llm", mock_llm):
-            await classify_message(config, "hello", recent_context="")
+            await run_classifier(config, "hello", recent_context="")
         messages = mock_llm.call_args[0][2]
         assert "Recent Conversation" not in messages[1]["content"]
 
@@ -4572,7 +4572,7 @@ class TestExecTranslatorRetryContext:
         task_pos = content.index("## Task")
         assert retry_pos < task_pos
 
-    async def test_run_exec_translator_passes_retry_context(self):
+    async def test_run_worker_passes_retry_context(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         captured_messages = []
 
@@ -4581,7 +4581,7 @@ class TestExecTranslatorRetryContext:
             return "python3 script.py"
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
-            result = await run_exec_translator(
+            result = await run_worker(
                 config, "Run script", "OS: Linux",
                 retry_context="use python3 not python",
             )
@@ -4590,7 +4590,7 @@ class TestExecTranslatorRetryContext:
         assert "## Retry Context" in user_content
         assert "use python3 not python" in user_content
 
-    async def test_run_exec_translator_passes_recipe_contracts(self):
+    async def test_run_worker_passes_recipe_contracts(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         captured_messages = []
 
@@ -4599,7 +4599,7 @@ class TestExecTranslatorRetryContext:
             return "printf '{}\n'"
 
         with patch("kiso.brain.call_llm", side_effect=_capture):
-            result = await run_exec_translator(
+            result = await run_worker(
                 config,
                 "Generate the report",
                 "OS: Linux",
@@ -5372,7 +5372,7 @@ class TestExecTranslatorMaxTokens:
     async def test_exec_translator_no_max_tokens(self):
         config = _make_brain_config()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value="echo hi") as mock_llm:
-            await run_exec_translator(config, "print hi", "Linux x86_64", session="s1")
+            await run_worker(config, "print hi", "Linux x86_64", session="s1")
             mock_llm.assert_called_once()
             _, kwargs = mock_llm.call_args
             # no max_tokens passed — call_llm won't set one for worker
@@ -9144,26 +9144,26 @@ class TestClassifyInflight:
         "stop", "update", "independent", "conflict",
         "whitespace", "case-insensitive", "unexpected-fallback",
     ])
-    async def test_classify_inflight_parsing(self, llm_return, goal, msg, expected):
+    async def test_run_inflight_classifier_parsing(self, llm_return, goal, msg, expected):
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=llm_return):
-            result = await classify_inflight(config, goal, msg)
+            result = await run_inflight_classifier(config, goal, msg)
         assert result == expected
 
     async def test_llm_error_falls_back_to_independent(self):
-        """classify_inflight returns 'independent' when LLM call fails."""
+        """run_inflight_classifier returns 'independent' when LLM call fails."""
         config = _make_config_for_classifier()
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     side_effect=LLMError("timeout")):
-            result = await classify_inflight(config, "goal", "msg")
+            result = await run_inflight_classifier(config, "goal", "msg")
         assert result == "independent"
 
     async def test_uses_classifier_role(self):
-        """classify_inflight should call LLM with 'classifier' role."""
+        """run_inflight_classifier should call LLM with 'classifier' role."""
         config = _make_config_for_classifier()
         mock_llm = AsyncMock(return_value="stop")
         with patch("kiso.brain.call_llm", mock_llm):
-            await classify_inflight(config, "goal", "msg", session="s1")
+            await run_inflight_classifier(config, "goal", "msg", session="s1")
         mock_llm.assert_called_once()
         assert mock_llm.call_args[0][1] == "classifier"
         assert mock_llm.call_args[1].get("session") == "s1"

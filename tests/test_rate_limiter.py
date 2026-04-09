@@ -67,8 +67,8 @@ async def test_msg_rate_limited_after_20(client: httpx.AsyncClient):
     """POST /msg returns 429 for the 21st request from the same user."""
     _rate_limiter.reset()
 
-    # Mock classify_inflight to avoid slow LLM calls that let tokens refill
-    with patch("kiso.main.classify_inflight", new_callable=AsyncMock,
+    # Mock run_inflight_classifier to avoid slow LLM calls that let tokens refill
+    with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock,
                return_value="independent"):
         # 20 allowed requests
         for _ in range(20):
@@ -95,7 +95,7 @@ async def test_msg_rate_limit_is_per_user(client: httpx.AsyncClient):
     """Rate limit on /msg is per user: exhausting one user does not block another."""
     _rate_limiter.reset()
 
-    with patch("kiso.main.classify_inflight", new_callable=AsyncMock,
+    with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock,
                return_value="independent"):
         for _ in range(20):
             await client.post(

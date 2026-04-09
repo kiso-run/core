@@ -119,7 +119,7 @@ async def post_msg(
             plan_goal = (plan.get("goal", "") if plan else "") or ""
             inflight_recent = await main_mod.get_recent_messages(db, body.session, limit=3)
             inflight_ctx = main_mod.build_recent_context(inflight_recent, max_chars=400)
-            category = await main_mod.classify_inflight(
+            category = await main_mod.run_inflight_classifier(
                 config,
                 plan_goal,
                 body.content,

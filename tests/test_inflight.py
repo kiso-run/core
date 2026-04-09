@@ -48,12 +48,12 @@ async def _cleanup_worker(session: str, blocked, task):
 
 
 async def test_stop_fast_path_no_llm_call(client: httpx.AsyncClient):
-    """Pure stop word triggers cancel without classify_inflight LLM call."""
+    """Pure stop word triggers cancel without run_inflight_classifier LLM call."""
     sess = "inflight-stop-fp"
     blocked, cancel_event, _, _, task = _make_busy_worker(sess)
     classify_mock = AsyncMock(return_value="stop")
     try:
-        with patch("kiso.main.classify_inflight", classify_mock):
+        with patch("kiso.main.run_inflight_classifier", classify_mock):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "STOP",
             }, headers=AUTH_HEADER)
@@ -61,7 +61,7 @@ async def test_stop_fast_path_no_llm_call(client: httpx.AsyncClient):
         data = resp.json()
         assert data["inflight"] == "stop"
         assert cancel_event.is_set()
-        # classify_inflight should NOT have been called (fast-path)
+        # run_inflight_classifier should NOT have been called (fast-path)
         classify_mock.assert_not_called()
     finally:
         await _cleanup_worker(sess, blocked, task)
@@ -93,7 +93,7 @@ async def test_independent_queues_to_pending_with_ack(client: httpx.AsyncClient)
     sess = "inflight-indep"
     blocked, _, pending, _, task = _make_busy_worker(sess)
     try:
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="independent"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="independent"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "what time is it?",
             }, headers=AUTH_HEADER)
@@ -117,7 +117,7 @@ async def test_update_adds_hint_with_ack(client: httpx.AsyncClient):
     sess = "inflight-update"
     blocked, _, _, hints, task = _make_busy_worker(sess)
     try:
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="update"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="update"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "use port 8080 instead",
             }, headers=AUTH_HEADER)
@@ -141,7 +141,7 @@ async def test_conflict_cancels_and_queues_first(client: httpx.AsyncClient):
     sess = "inflight-conflict"
     blocked, cancel_event, pending, _, task = _make_busy_worker(sess)
     try:
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="conflict"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="conflict"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "no, do Y instead",
             }, headers=AUTH_HEADER)
@@ -167,7 +167,7 @@ async def test_stop_with_content_after_not_fast_path(client: httpx.AsyncClient):
     blocked, cancel_event, _, _, task = _make_busy_worker(sess)
     classify_mock = AsyncMock(return_value="update")
     try:
-        with patch("kiso.main.classify_inflight", classify_mock):
+        with patch("kiso.main.run_inflight_classifier", classify_mock):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "stop using port 80",
             }, headers=AUTH_HEADER)

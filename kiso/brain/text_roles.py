@@ -47,7 +47,7 @@ def build_summarizer_messages(
     current_summary: str, messages: list[dict]
 ) -> list[dict]:
     """Build the message list for the summarizer LLM call."""
-    system_prompt = _load_system_prompt("summarizer-session")
+    system_prompt = _load_system_prompt("summarizer")
     parts: list[str] = []
     _add_section(parts, "Current Summary", current_summary)
     parts.append(f"## Messages\n{build_recent_context(messages, kiso_truncate=0)}")
@@ -517,7 +517,7 @@ def _validate_exec_translator_command(command: str) -> None:
         )
 
 
-async def run_exec_translator(
+async def run_worker(
     config: Config,
     detail: str,
     sys_env_text: str,

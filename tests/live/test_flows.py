@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from kiso.brain import (
-    run_exec_translator,
+    run_worker,
     run_paraphraser,
     run_planner,
     run_reviewer,
@@ -213,7 +213,7 @@ class TestExecTranslator:
         sys_env_text = build_system_env_section(sys_env)
 
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config,
                 "List all files and directories in the current directory",
                 sys_env_text,
@@ -237,7 +237,7 @@ class TestExecTranslator:
         sys_env_text = build_system_env_section(sys_env)
 
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config,
                 "Print the text 'hello world' to standard output",
                 sys_env_text,
@@ -260,7 +260,7 @@ class TestExecTranslator:
         sys_env_text = build_system_env_section(sys_env)
 
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config,
                 "Create a file called test.txt containing the text 'hello'",
                 sys_env_text,
@@ -284,7 +284,7 @@ class TestExecTranslator:
         sys_env_text = build_system_env_section(sys_env)
 
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config,
                 "Show the current working directory",
                 sys_env_text,
@@ -314,7 +314,7 @@ class TestExecTranslator:
         )
 
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config,
                 "Show the contents of the config file found in the previous task",
                 sys_env_text,

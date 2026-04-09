@@ -21,7 +21,7 @@ def _strip_accents(text: str) -> str:
 
 from kiso.brain import (
     run_curator,
-    run_exec_translator,
+    run_worker,
     run_paraphraser,
     run_planner,
     run_reviewer,
@@ -343,7 +343,7 @@ class TestExecTranslatorLive:
         }
         sys_env_text = build_system_env_section(fake_env, session="test-sess")
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config, "List all files in the current directory",
                 sys_env_text,
             ),
@@ -685,7 +685,7 @@ class TestExecTranslatorSudoLive:
         }
         sys_env_text = build_system_env_section(fake_env, session="test-sess")
         command = await asyncio.wait_for(
-            run_exec_translator(
+            run_worker(
                 live_config,
                 "Install timg using sudo apt install",
                 sys_env_text,
@@ -721,13 +721,13 @@ class TestClassifierConversationLive:
         when the conversation shows kiso asked a yes/no question.
         Expects: Classified as 'plan', not 'chat'.
         """
-        from kiso.brain import build_recent_context, classify_message
+        from kiso.brain import build_recent_context, run_classifier
         context = build_recent_context([
             {"role": "user", "user": "root", "content": "vai su guidance.studio e fai screenshot"},
             {"role": "assistant", "content": "Per navigare serve il browser tool. Vuoi che lo installi?"},
         ])
         category, lang = await asyncio.wait_for(
-            classify_message(live_config, "oh yeah", recent_context=context),
+            run_classifier(live_config, "oh yeah", recent_context=context),
             timeout=TIMEOUT,
         )
         assert category == "plan", (
@@ -741,9 +741,9 @@ class TestClassifierConversationLive:
         classified as chat (no action implied).
         Expects: Classified as 'chat'.
         """
-        from kiso.brain import classify_message
+        from kiso.brain import run_classifier
         category, lang = await asyncio.wait_for(
-            classify_message(live_config, "good morning", recent_context=""),
+            run_classifier(live_config, "good morning", recent_context=""),
             timeout=TIMEOUT,
         )
         assert category == "chat", (

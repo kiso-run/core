@@ -62,7 +62,7 @@ _ROLES: tuple[RoleMeta, ...] = (
         ),
         model_key="classifier",
         prompt_filename="classifier.md",
-        python_entry="kiso.brain.common.classify_message",
+        python_entry="kiso.brain.common.run_classifier",
     ),
     RoleMeta(
         name="consolidator",
@@ -91,7 +91,7 @@ _ROLES: tuple[RoleMeta, ...] = (
         ),
         model_key="classifier",
         prompt_filename="inflight-classifier.md",
-        python_entry="kiso.brain.common.classify_inflight",
+        python_entry="kiso.brain.common.run_inflight_classifier",
     ),
     RoleMeta(
         name="messenger",
@@ -141,12 +141,12 @@ _ROLES: tuple[RoleMeta, ...] = (
         python_entry="kiso.brain.text_roles.run_searcher",
     ),
     RoleMeta(
-        name="summarizer-session",
+        name="summarizer",
         description=(
             "Compresses conversation history into structured summaries."
         ),
         model_key="summarizer",
-        prompt_filename="summarizer-session.md",
+        prompt_filename="summarizer.md",
         python_entry="kiso.brain.text_roles.run_summarizer",
     ),
     RoleMeta(
@@ -156,7 +156,7 @@ _ROLES: tuple[RoleMeta, ...] = (
         ),
         model_key="worker",
         prompt_filename="worker.md",
-        python_entry="kiso.brain.text_roles.run_exec_translator",
+        python_entry="kiso.brain.text_roles.run_worker",
     ),
 )
 

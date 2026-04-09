@@ -26,7 +26,7 @@ from kiso.stats import aggregate, read_audit_entries
 from kiso.brain import (
     WORKER_PHASE_IDLE, invalidate_prompt_cache,
     _VALID_FACT_CATEGORIES,
-    build_recent_context, classify_inflight, is_stop_message,
+    build_recent_context, run_inflight_classifier, is_stop_message,
 )
 from kiso.config import ConfigError, KISO_DIR, load_config, reload_config, setting_bool, setting_int
 import kiso.llm as _llm_mod
@@ -169,6 +169,45 @@ class WorkerEntry:
     update_hints: list = field(default_factory=list)
 
 
+def _migrate_summarizer_session_role(roles_dir: "Path") -> None:
+    """In-place migration for the M1293 summarizer file rename.
+
+    The bundled file ``summarizer-session.md`` was renamed to
+    ``summarizer.md`` so the role filename matches its key in
+    ``_MODEL_METADATA``. Existing user dirs may still hold a
+    customized ``summarizer-session.md`` from before M1293; this
+    helper renames it in place.
+
+    Behavior:
+
+    - Only ``summarizer-session.md`` exists → rename to
+      ``summarizer.md``.
+    - Only ``summarizer.md`` exists → no-op.
+    - Both exist → keep both, log a warning, and let the new
+      filename win at load time (the runtime loader looks up
+      ``summarizer.md``).
+    - Neither exists → no-op.
+
+    Idempotent: safe to call on every boot.
+    """
+    legacy = roles_dir / "summarizer-session.md"
+    new = roles_dir / "summarizer.md"
+    if not legacy.exists():
+        return
+    if new.exists():
+        log.warning(
+            "Both summarizer-session.md and summarizer.md exist in %s; "
+            "keeping both, summarizer.md is the canonical one",
+            roles_dir,
+        )
+        return
+    try:
+        legacy.rename(new)
+        log.info("Migrated %s -> summarizer.md", legacy.name)
+    except OSError as e:
+        log.warning("Failed to migrate summarizer-session.md: %s", e)
+
+
 def _init_kiso_dirs() -> None:
     """Ensure ~/.kiso/ subdirectories exist and sync reference docs."""
     try:
@@ -210,6 +249,11 @@ def _init_kiso_dirs() -> None:
     # files (catches `> file.md` accidents). Runtime
     # `_load_system_prompt` reads ONLY from this user dir, no
     # package fallback.
+    # M1293: migrate legacy summarizer-session.md → summarizer.md
+    # before the additive copy, so the bundled summarizer.md does not
+    # land alongside a stale legacy file.
+    _migrate_summarizer_session_role(KISO_DIR / "roles")
+
     try:
         roles_pkg = importlib.resources.files("kiso") / "roles"
         roles_dest = KISO_DIR / "roles"

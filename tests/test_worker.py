@@ -127,7 +127,7 @@ def _patch_translator():
     """Convenience: patch run_exec_translator as a pass-through for tests
     where exec detail already contains a valid shell command."""
     return patch(
-        "kiso.worker.loop.run_exec_translator",
+        "kiso.worker.loop.run_worker_role",
         new_callable=AsyncMock,
         side_effect=_passthrough_translator,
     )
@@ -2118,7 +2118,7 @@ class TestExecTranslatorIntegration:
             translator_calls.append(detail)
             return "ls -la"
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                     side_effect=_capture_translator), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
@@ -2143,7 +2143,7 @@ class TestExecTranslatorIntegration:
         async def _translate(cfg, detail, sys_env_text, **kw):
             return "echo translated"
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                     side_effect=_translate), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
@@ -2166,7 +2166,7 @@ class TestExecTranslatorIntegration:
                           expect="magic")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                     side_effect=ExecTranslatorError("Cannot translate")), \
              _patch_kiso_dir(tmp_path):
             success, reason, _stuck, completed, remaining, _po = await _execute_plan(
@@ -2202,7 +2202,7 @@ class TestExecTranslatorIntegration:
                 return "echo hello > hello.txt"
             return "cat hello.txt"
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                     side_effect=_capture_translator), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
@@ -2233,7 +2233,7 @@ class TestExecTranslatorIntegration:
             captured_sys_env.append(sys_env_text)
             return "ls"
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                     side_effect=_capture), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
@@ -2254,7 +2254,7 @@ class TestExecTranslatorIntegration:
 
         translator_mock = AsyncMock()
 
-        with patch("kiso.worker.loop.run_exec_translator", translator_mock), \
+        with patch("kiso.worker.loop.run_worker_role", translator_mock), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
              _patch_kiso_dir(tmp_path):
             success, reason, _stuck, completed, remaining, _po = await _execute_plan(
@@ -3643,7 +3643,7 @@ class TestPostInstallRescan:
             patch("kiso.worker.loop.invalidate_tools_cache"),
             patch("kiso.worker.loop._exec_task", new_callable=AsyncMock,
                   return_value=("installed", "", True, 0)),
-            patch("kiso.worker.loop.run_exec_translator", return_value="echo ok"),
+            patch("kiso.worker.loop.run_worker_role", return_value="echo ok"),
             patch("kiso.worker.loop._run_review_step", new_callable=AsyncMock,
                   return_value=({"status": "ok", "reason": None, "learn": [],
                                  "retry_hint": None, "summary": "ok"}, None)),
@@ -3680,7 +3680,7 @@ class TestPostInstallRescan:
             patch("kiso.worker.loop.invalidate_tools_cache"),
             patch("kiso.worker.loop._exec_task", new_callable=AsyncMock,
                   return_value=("files", "", True, 0)),
-            patch("kiso.worker.loop.run_exec_translator", return_value="ls -la"),
+            patch("kiso.worker.loop.run_worker_role", return_value="ls -la"),
             patch("kiso.worker.loop._run_review_step", new_callable=AsyncMock,
                   return_value=({"status": "ok", "reason": None, "learn": [],
                                  "retry_hint": None, "summary": "ok"}, None)),
@@ -7376,7 +7376,7 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi there!")
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
@@ -7398,7 +7398,7 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value=("plan", "en"))
         mock_messenger = AsyncMock(return_value="Done")
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
@@ -7433,7 +7433,7 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=plan)
         mock_classifier = AsyncMock(return_value=("plan", "en"))
         mock_loop = AsyncMock(return_value=1)
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop._run_planning_loop", mock_loop), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
@@ -7456,7 +7456,7 @@ class TestFastPathIntegration:
         mock_planner = AsyncMock(return_value=CHAT_PLAN)
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_planner", mock_planner), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
@@ -7477,7 +7477,7 @@ class TestFastPathIntegration:
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
         mock_post = AsyncMock()
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              _patch_kiso_dir(tmp_path):
@@ -7499,7 +7499,7 @@ class TestFastPathIntegration:
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi")
         mock_paraphraser = AsyncMock(return_value="paraphrased")
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop.run_paraphraser", mock_paraphraser), \
              _patch_kiso_dir(tmp_path):
@@ -7735,7 +7735,7 @@ class TestWorkerRetry:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock, side_effect=_capture_translator), \
+             patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock, side_effect=_capture_translator), \
              _patch_kiso_dir(tmp_path):
             success, reason, _stuck, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -8394,7 +8394,7 @@ class TestTaskHandlers:
         task_row = await _make_task_row(db, plan_id, "exec", "list files")
         ctx = _make_ctx(db)
         with patch(
-            "kiso.worker.loop.run_exec_translator",
+            "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
             side_effect=ExecTranslatorError("LLM failed"),
         ), _patch_kiso_dir(tmp_path):
@@ -8437,7 +8437,7 @@ class TestTaskHandlers:
             "summary": "The failure is already informative and acceptable.",
         }
         with patch(
-            "kiso.worker.loop.run_exec_translator",
+            "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
             return_value="exit 1",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
@@ -8463,7 +8463,7 @@ class TestTaskHandlers:
         ctx.plan_has_needs_install = True
         assert ctx.install_approved is False
         with patch(
-            "kiso.worker.loop.run_exec_translator",
+            "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
             return_value="kiso tool install ocr",
         ), _patch_kiso_dir(tmp_path):
@@ -8480,7 +8480,7 @@ class TestTaskHandlers:
         ctx.plan_has_needs_install = False
         assert ctx.install_approved is False
         with patch(
-            "kiso.worker.loop.run_exec_translator",
+            "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
             return_value="kiso tool install ocr",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
@@ -8497,7 +8497,7 @@ class TestTaskHandlers:
         ctx = _make_ctx(db)
         ctx.install_approved = True
         with patch(
-            "kiso.worker.loop.run_exec_translator",
+            "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
             return_value="kiso tool install ocr",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
@@ -8514,7 +8514,7 @@ class TestTaskHandlers:
         ctx = _make_ctx(db)
         assert ctx.install_approved is False
         with patch(
-            "kiso.worker.loop.run_exec_translator",
+            "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
             return_value="kiso tool list",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
@@ -9299,7 +9299,7 @@ class TestRunPlanningLoop:
         }
         run_planner_mock = AsyncMock(side_effect=AssertionError("run_planner should not be called"))
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock, return_value="exit 1"), \
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock, return_value="exit 1"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_ok_failed), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Failure explained to user"), \
              patch("kiso.worker.loop.run_planner", run_planner_mock), \
@@ -10283,7 +10283,7 @@ class TestProcessMessagePhaseCallback:
         mock_classifier = AsyncMock(return_value=("chat", "en"))
         mock_messenger = AsyncMock(return_value="Hi!")
         mock_post = AsyncMock()
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_messenger", mock_messenger), \
              patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
@@ -10336,7 +10336,7 @@ class TestProcessMessagePhaseCallback:
         mock_classifier = AsyncMock(return_value=("plan", "en"))
         mock_post = AsyncMock()
 
-        with patch("kiso.worker.loop.classify_message", mock_classifier), \
+        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
              patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
@@ -11288,7 +11288,7 @@ class TestExecTaskBrieferIntegration:
             return "ok"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+             patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                    side_effect=_capturing_translator), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
@@ -11327,7 +11327,7 @@ class TestExecTaskBrieferIntegration:
                 return "python - <<'PY'\nfrom pathlib import Path\nPath('kiso_test_f42.py').write_text('class Calculator:\\n    pass\\n')\nPY"
             return f"echo {detail}"
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock, side_effect=_capturing_translator), \
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock, side_effect=_capturing_translator), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
@@ -11354,7 +11354,7 @@ class TestExecTaskBrieferIntegration:
             translator_calls.append(kw.get("plan_outputs_text", ""))
             return f"echo {detail}"
 
-        with patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+        with patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                    side_effect=_capturing_translator), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
@@ -11434,7 +11434,7 @@ class TestM273FlushBrieferUsage:
             return "echo ok"
 
         with patch("kiso.worker.loop._append_calls", real_append), \
-             patch("kiso.worker.loop.run_exec_translator", new_callable=AsyncMock,
+             patch("kiso.worker.loop.run_worker_role", new_callable=AsyncMock,
                    side_effect=_mock_translator), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \

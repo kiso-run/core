@@ -249,7 +249,7 @@ async def test_inflight_stop_via_classifier(client: httpx.AsyncClient):
     sess = "inflight-llm-stop"
     blocked, cancel_event, _, task = _make_busy_worker(sess)
     try:
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="stop"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="stop"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "annulla tutto per favore",
             }, headers=AUTH_HEADER)
@@ -266,7 +266,7 @@ async def test_inflight_independent_queued_to_pending(client: httpx.AsyncClient)
     sess = "inflight-independent"
     blocked, _, pending, task = _make_busy_worker(sess)
     try:
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="independent"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="independent"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "che ore sono?",
             }, headers=AUTH_HEADER)
@@ -287,7 +287,7 @@ async def test_inflight_update_adds_hint(client: httpx.AsyncClient):
     try:
         from kiso.main import _workers
         entry = _workers[sess]
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="update"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="update"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "usa porta 8080",
             }, headers=AUTH_HEADER)
@@ -306,7 +306,7 @@ async def test_inflight_conflict_cancels_and_queues(client: httpx.AsyncClient):
     sess = "inflight-conflict"
     blocked, cancel_event, pending, task = _make_busy_worker(sess)
     try:
-        with patch("kiso.main.classify_inflight", new_callable=AsyncMock, return_value="conflict"):
+        with patch("kiso.main.run_inflight_classifier", new_callable=AsyncMock, return_value="conflict"):
             resp = await client.post("/msg", json={
                 "session": sess, "user": "testuser", "content": "no fai X invece",
             }, headers=AUTH_HEADER)
