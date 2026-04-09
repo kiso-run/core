@@ -53,9 +53,13 @@ class TestF3SSHKey:
         # Response is in Italian (use last_plan to exclude English replan notifications)
         assert_italian(result.last_plan_msg_output)
         assert_no_failure_language(result.last_plan_msg_output)
-        assert "exec" in result.task_types(), (
-            f"Expected an exec task for SSH self-inspection, got: {result.task_types()}"
-        )
+
+        # M1301: do not assert on the presence of an exec task. The SSH
+        # public key is in boot facts, so the classifier may legitimately
+        # route this query to the chat_kb fast path (single msg task) or
+        # the planner may emit an exec task to read the file. Both paths
+        # are correct as long as the actual key appears in the output —
+        # which the SSH_KEY_RE assertion below already enforces.
 
         # SSH key is present somewhere in task outputs (msg or exec)
         all_output = "\n".join(
