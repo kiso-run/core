@@ -594,6 +594,24 @@ Pass `--no-reload` to any write command (`add`, `edit`, `remove`, `alias`) to sk
 | Alias in wrong format | `error: alias '...' must be in 'connector:platform_id' format` |
 | Removing/demoting last admin | `error: cannot remove/demote the last admin` |
 
+## Role Management
+
+Every LLM call in kiso has a *role* — see [llm-roles.md](llm-roles.md) for the architecture. Role prompts live in `~/.kiso/roles/{name}.md` and are owned by the user dir at runtime. The CLI surface for discovering and inspecting them is `kiso roles` (plural):
+
+```bash
+kiso roles list                  # tabular view: name, model, override flag, description
+kiso roles show planner          # print the resolved prompt + model + entry header
+kiso roles diff planner          # unified diff of user override vs bundled default
+kiso roles reset planner         # overwrite the user override with the bundled default
+kiso roles reset --all --yes     # restore every role to the bundled default
+```
+
+`kiso roles list` reads from `kiso/brain/roles_registry.py`, the single source of truth for role metadata. Each row includes the default model resolved from `kiso/config.py:_MODEL_METADATA` and a `[user override]` marker if the file in `~/.kiso/roles/` differs from the bundled default byte-for-byte.
+
+The singular `kiso role` form (`kiso role list`, `kiso role reset NAME`) is preserved as a deprecated alias for one cycle to keep existing scripts working.
+
+Editing a role file is supported and persistent. After editing, run `kiso roles diff <name>` to confirm your changes are picked up — kiso reads the user override at runtime, never the bundled default. To start over, `kiso roles reset <name>` writes the bundled version back.
+
 ## Deploy Secret Management
 
 Only admins can manage deploy secrets.

@@ -304,6 +304,20 @@ reliability without collapsing into a narrow workflow engine.
 Planning, execution, review, memory, and delivery should have distinct roles
 and explicit contracts.
 
+Each LLM step in kiso is a separately-named role with its own model, its own
+prompt file in `~/.kiso/roles/`, and its own narrow output schema. The full
+catalogue (currently 12 roles: classifier, inflight-classifier, briefer,
+planner, reviewer, worker, messenger, searcher, summarizer, curator,
+consolidator, paraphraser) is defined in `kiso/brain/roles_registry.py` —
+the single source of truth for role metadata. Default models are derived
+from `kiso/config.py:_MODEL_METADATA` at access time, so the registry and
+the config cannot drift. The user-facing entry point is `kiso roles`
+(see [cli.md — Role Management](cli.md#role-management)).
+
+Splitting the work this way is what makes kiso debuggable: every LLM call has
+exactly one role label, one prompt file, one model, and one output schema. A
+failure can be replayed in isolation without re-running the entire loop.
+
 ### Durable state over ephemeral narration
 
 Important state should be persisted or reconstructable. The system should not

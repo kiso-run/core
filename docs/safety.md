@@ -116,7 +116,7 @@ All categories except `stop` return an immediate `ack` message to the user.
 
 ### Code
 
-- Stop detection: `kiso/brain.py` — `is_stop_message()` (M407)
-- Classifier: `kiso/brain.py` — `classify_inflight()` (M406)
+- Stop detection: `kiso/brain/common.py` — `is_stop_message()`
+- Classifier: `kiso/brain/common.py` — `run_inflight_classifier()`
 - Routing: `kiso/main.py` — `post_msg()` inflight handling (M408/M409)
 - Worker drain: `kiso/worker/loop.py` — `pending_messages` drain after plan completes (M408)
