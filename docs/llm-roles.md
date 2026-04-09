@@ -24,6 +24,17 @@ $ kiso roles reset planner         # restore the bundled default
 
 Under the hood, every role has an entry in `kiso/brain/roles_registry.py`. The registry is the **single source of truth** for role metadata (name, description, model key, prompt filename, Python entry point) and the default model is derived from `kiso/config.py:_MODEL_METADATA` at access time, so the two cannot drift. Adding a new role is a two-line change: one entry in `_MODEL_METADATA`, one entry in the registry.
 
+## Self-healing role loader (M1296)
+
+Role files in `~/.kiso/roles/` are populated in two ways:
+
+- **Eager seed at server startup.** `kiso.main._init_kiso_dirs()` runs on every FastAPI lifespan and additively copies the bundled defaults from `kiso/roles/` into `~/.kiso/roles/`. Existing non-empty user files are never overwritten — your customizations are safe across restarts.
+- **Lazy self-heal at first access.** `kiso.brain.prompts._load_system_prompt()` checks the user file at every cache miss. If the file is missing or empty (deleted, truncated, never created, or part of an isolated test KISO_DIR), the loader copies the bundled default into the user dir atomically (`tmp + rename`), logs a `WARNING`, and reads the seeded file. The user dir remains the runtime source of truth — the bundled file is the **factory seed**, not an alternate read path. After self-heal the file lives in the user dir and subsequent reads are unaffected.
+
+This two-layer scheme is what makes kiso resilient to role-file corruption at runtime: a file deleted by mistake or lost on an ephemeral container volume does not kill the server. The next LLM call self-heals it and continues. The trade-off: if a user customized a role and then deletes the file, self-heal silently restores the bundled default and the customization is lost (the warning log is the only signal). The alternative — hard-failing the server on the next LLM call — was the M1289 behavior and was strictly worse for hosted deployments where CLI access is not always available.
+
+`FileNotFoundError` is raised by the loader **only** when both the user file and the bundled default are missing — i.e., the kiso installation itself is corrupted and reinstalling is the only fix.
+
 ## Context per Role
 
 | Context piece | Classifier | Briefer | Planner | Reviewer | Worker | Messenger | Searcher | Summarizer | Curator | Paraphraser |

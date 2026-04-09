@@ -318,6 +318,14 @@ Splitting the work this way is what makes kiso debuggable: every LLM call has
 exactly one role label, one prompt file, one model, and one output schema. A
 failure can be replayed in isolation without re-running the entire loop.
 
+The role loader is **self-healing** at runtime: if a user role file is missing
+or empty (corruption, ephemeral volume, fresh install) the loader copies the
+bundled default into the user dir, logs a warning, and continues. The user dir
+remains the runtime source of truth — the bundle is the factory seed. This
+mirrors what `_init_kiso_dirs()` does at server boot, just deferred to first
+access. See [llm-roles.md — Self-healing role loader](llm-roles.md#self-healing-role-loader-m1296)
+for the full contract.
+
 ### Durable state over ephemeral narration
 
 Important state should be persisted or reconstructable. The system should not
