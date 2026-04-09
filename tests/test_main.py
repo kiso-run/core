@@ -213,6 +213,52 @@ class TestInitKisoDirs:
             _init_kiso_dirs()
         assert (tmp_path / "sys" / "bin").is_dir()
 
+    # -- M1288: pre-create all KISO_DIR subdirectories --
+
+    def test_creates_tools_directory(self, tmp_path):
+        """_init_kiso_dirs creates tools/ for installed kiso tools."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert (tmp_path / "tools").is_dir()
+
+    def test_creates_connectors_directory(self, tmp_path):
+        """_init_kiso_dirs creates connectors/ for installed connectors."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert (tmp_path / "connectors").is_dir()
+
+    def test_creates_recipes_directory(self, tmp_path):
+        """_init_kiso_dirs creates recipes/ for user .md recipes."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert (tmp_path / "recipes").is_dir()
+
+    def test_creates_sessions_directory(self, tmp_path):
+        """_init_kiso_dirs creates sessions/ as the per-session
+        workspace parent. _session_workspace creates {sid}/ lazily
+        with parents=True, but creating the parent at init makes the
+        structure discoverable to users and external scripts."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert (tmp_path / "sessions").is_dir()
+
+    def test_creates_roles_directory(self, tmp_path):
+        """_init_kiso_dirs creates roles/ (M1289 will populate it
+        with the bundled role files; M1288 just ensures the dir
+        exists)."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert (tmp_path / "roles").is_dir()
+
+    def test_all_new_dirs_are_idempotent(self, tmp_path):
+        """Running _init_kiso_dirs twice with the new dirs already
+        present is a no-op (no error, dirs still exist)."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+            _init_kiso_dirs()
+        for name in ("tools", "connectors", "recipes", "sessions", "roles"):
+            assert (tmp_path / name).is_dir(), f"{name}/ missing after 2nd run"
+
     # -- 87b: error paths --
 
     def test_mkdir_oserror_logs_warning_and_returns(self, tmp_path, caplog):

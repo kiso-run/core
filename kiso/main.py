@@ -175,6 +175,14 @@ def _init_kiso_dirs() -> None:
         (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
         (KISO_DIR / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
         (KISO_DIR / "reference").mkdir(parents=True, exist_ok=True)
+        # M1288: pre-create runtime subdirectories so kiso has a
+        # discoverable structure on first install and external
+        # scripts can drop files without mkdir-ing first.
+        (KISO_DIR / "tools").mkdir(parents=True, exist_ok=True)
+        (KISO_DIR / "connectors").mkdir(parents=True, exist_ok=True)
+        (KISO_DIR / "recipes").mkdir(parents=True, exist_ok=True)
+        (KISO_DIR / "sessions").mkdir(parents=True, exist_ok=True)
+        (KISO_DIR / "roles").mkdir(parents=True, exist_ok=True)
     except OSError as e:
         log.warning("Failed to create kiso directories: %s", e)
         return
