@@ -2218,7 +2218,11 @@ class TestM83PlanSchema:
             _jsonschema.validate(instance=instance, schema=_PLAN_SCHEMA_INNER)
 
     def _plan(self, **overrides):
-        base = {"goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}], "extend_replan": None, "needs_install": None, "knowledge": None}
+        base = {
+            "goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}],
+            "extend_replan": None, "needs_install": None, "knowledge": None,
+            "kb_answer": None,
+        }
         base.update(overrides)
         return base
 
@@ -9606,6 +9610,148 @@ class TestM1052MsgOnlyValidation:
             install_route={"mode": "unknown_kiso_tool", "target": "missing-tool"},
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
+
+
+class TestM1303KbAnswerFlag:
+    """M1303 Bug B: kb_answer flag allows msg-only plans for KB recall.
+
+    The planner sets kb_answer=true when it can answer the user from
+    briefer-supplied facts (KB context) and no action is needed. The
+    validator accepts the msg-only plan when this flag is set. A
+    coherence check rejects mixed plans (msg + non-msg) where
+    kb_answer=true is incoherent — the planner cannot claim "I'm only
+    answering from KB" while also emitting action tasks.
+    """
+
+    def test_kb_answer_allows_msg_only(self):
+        """[msg] with kb_answer=True → passes (KB recall)."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. Flask 3.0 with SQLAlchemy"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_kb_answer=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_still_rejected_when_kb_answer_absent(self):
+        """[msg] without kb_answer → still rejected (regression guard)."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. hello"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+        )
+        assert any("Plan has only msg tasks" in e for e in errors)
+
+    def test_msg_only_still_rejected_when_kb_answer_false(self):
+        """[msg] with kb_answer=False explicitly → still rejected."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. hello"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_kb_answer=False,
+        )
+        assert any("Plan has only msg tasks" in e for e in errors)
+
+    def test_kb_answer_independent_from_needs_install(self):
+        """[msg] with both kb_answer=True and needs_install=True → passes."""
+        from kiso.brain import _validate_plan_ordering
+        tasks = [{"type": "msg", "detail": "Answer in English. install + recall"}]
+        errors = _validate_plan_ordering(
+            tasks, is_replan=False, install_approved=False,
+            has_needs_install=True,
+            has_kb_answer=True,
+        )
+        assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_kb_answer_rejects_mixed_plan_with_exec(self):
+        """kb_answer=True + exec task → coherence rejection."""
+        plan = {
+            "goal": "Answer from KB and run a command",
+            "secrets": [],
+            "kb_answer": True,
+            "tasks": [
+                {"type": "exec", "detail": "ls -la", "expect": "files"},
+                {"type": "msg", "detail": "Answer in English. result", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert any("kb_answer is set but plan contains action tasks" in e for e in errors), (
+            f"Expected coherence rejection, got: {errors}"
+        )
+
+    def test_kb_answer_rejects_mixed_plan_with_tool(self):
+        """kb_answer=True + tool task → coherence rejection."""
+        plan = {
+            "goal": "Answer from KB and use a tool",
+            "secrets": [],
+            "kb_answer": True,
+            "tasks": [
+                {"type": "tool", "detail": "navigate", "tool": "browser",
+                 "args": {"url": "https://example.com"}, "expect": "page"},
+                {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=["browser"])
+        assert any("kb_answer is set but plan contains action tasks" in e for e in errors)
+
+    def test_kb_answer_msg_only_passes_via_validate_plan(self):
+        """End-to-end: kb_answer=True + [msg] passes full validate_plan()."""
+        plan = {
+            "goal": "Answer from KB",
+            "secrets": [],
+            "kb_answer": True,
+            "tasks": [
+                {"type": "msg", "detail": "Answer in English. The project uses Flask 3.0",
+                 "expect": None, "tool": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert errors == [], f"Expected no errors, got: {errors}"
+
+    def _inner_schema(self):
+        """PLAN_SCHEMA is wrapped as OpenAI json_schema response_format.
+
+        Return the inner JSON-schema dict for jsonschema.validate().
+        """
+        from kiso.brain.common import PLAN_SCHEMA
+        return PLAN_SCHEMA["json_schema"]["schema"]
+
+    def test_plan_schema_accepts_kb_answer_field(self):
+        """PLAN_SCHEMA must accept kb_answer field (additionalProperties=false)."""
+        import jsonschema
+
+        plan = {
+            "goal": "Answer from KB",
+            "secrets": [],
+            "extend_replan": None,
+            "needs_install": None,
+            "knowledge": None,
+            "kb_answer": True,
+            "tasks": [
+                {"type": "msg", "detail": "Answer in English. fact",
+                 "expect": None, "tool": None, "args": None},
+            ],
+        }
+        # Should not raise
+        jsonschema.validate(instance=plan, schema=self._inner_schema())
+
+    def test_plan_schema_accepts_kb_answer_null(self):
+        """PLAN_SCHEMA must accept kb_answer=null (default/absent)."""
+        import jsonschema
+
+        plan = {
+            "goal": "Some action",
+            "secrets": [],
+            "extend_replan": None,
+            "needs_install": None,
+            "knowledge": None,
+            "kb_answer": None,
+            "tasks": [
+                {"type": "exec", "detail": "ls", "expect": "files",
+                 "tool": None, "args": None},
+            ],
+        }
+        jsonschema.validate(instance=plan, schema=self._inner_schema())
 
     def test_msg_only_allowed_for_unavailable_named_tool_marker(self):
         """M1205b: returned plans remain valid without the original install route context."""

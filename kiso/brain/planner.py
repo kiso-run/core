@@ -405,22 +405,32 @@ def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
     has_needs_install: bool = False,
     has_knowledge: bool = False,
+    has_kb_answer: bool = False,
     allow_msg_only: bool = False,
     goal: str = "",
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
 
-    # msg-only plans are rejected unless needs_install or knowledge is set.
+    # msg-only plans are rejected unless one of the escape flags is set:
+    # needs_install (install proposal), knowledge (storage), kb_answer
+    # (M1303: KB recall from briefer context), or allow_msg_only
+    # (structural fallback).
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL, TASK_TYPE_REPLAN}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
-        if not has_needs_install and not has_knowledge and not allow_msg_only:
+        if (
+            not has_needs_install
+            and not has_knowledge
+            and not has_kb_answer
+            and not allow_msg_only
+        ):
             errors.append(
                 "Plan has only msg tasks — include at least one "
                 "exec/tool/search task for action requests. "
                 "Msg-only is valid only for kiso tool install proposals "
-                "(set needs_install) or knowledge storage."
+                "(set needs_install), knowledge storage, or KB recall "
+                "(set kb_answer when answering from briefer context)."
             )
 
     # msg as first task wastes an LLM call before any action runs.
@@ -666,6 +676,7 @@ def validate_plan(
         tasks, is_replan, install_approved,
         has_needs_install=bool(plan.get("needs_install")),
         has_knowledge=bool(plan.get("knowledge")),
+        has_kb_answer=bool(plan.get("kb_answer")),
         allow_msg_only=(
             force_msg_only
             or plan.get("msg_only_fallback") == "unavailable_named_tool"
@@ -713,6 +724,22 @@ def validate_plan(
             errors.append(
                 f"needs_install is set — only msg tasks are allowed "
                 f"(found: {non_msg}). End the plan with a msg asking for approval."
+            )
+            return errors
+
+    # M1303 Bug B coherence check: kb_answer is only valid for msg-only
+    # plans answering from briefer-supplied KB context. If the planner
+    # sets it together with action tasks, the flag is incoherent — the
+    # plan is not actually a recall, it has work to do. Mirrors the
+    # needs_install coherence pattern above.
+    if plan.get("kb_answer"):
+        non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
+        if non_msg:
+            errors.append(
+                f"kb_answer is set but plan contains action tasks "
+                f"(found: {non_msg}). kb_answer is only valid for msg-only "
+                f"plans answering from briefer-supplied KB context. "
+                f"Either remove all action tasks or set kb_answer=false."
             )
             return errors
 

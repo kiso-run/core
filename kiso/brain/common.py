@@ -964,7 +964,13 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
         {"type": "array", "items": {"type": "string"}},
         {"type": "null"},
     ]},
-}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge"])
+    # M1303 Bug B: KB recall escape hatch. The planner sets this to true
+    # when the briefer has already provided the answer in the "Relevant
+    # Facts" section and no action is needed. The validator accepts
+    # msg-only plans when this flag is true. A coherence check rejects
+    # plans where kb_answer=true is mixed with non-msg tasks.
+    "kb_answer": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge", "kb_answer"])
 
 
 REVIEW_SCHEMA: dict = _build_strict_schema("review", {

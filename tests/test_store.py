@@ -1575,6 +1575,173 @@ async def test_fts5_fallback_on_empty_query_returns_all_facts(db: aiosqlite.Conn
     assert len(results) == 2
 
 
+# --- M1303 Bug A: _fts5_query tokenizer alignment ---
+
+
+class TestFts5QueryTokenization:
+    """M1303 Bug A: _fts5_query must split on FTS5 separators (`.`, `/`, `-`).
+
+    Background: the default FTS5 unicode61 tokenizer treats `.`, `/`, `-` as
+    word boundaries, but the previous regex `[A-Za-z0-9_./-]+` kept those
+    characters inside tokens. The mismatch produced invalid FTS5 queries
+    (e.g. `guidance.studio` → `syntax error near "."`) which were silently
+    swallowed by the `try/except` in `_search_facts_by_keywords`, leaving
+    callers to see "0 facts" for any query containing dotted/slashed/hyphenated
+    identifiers. The fix restricts the regex to FTS5 word characters
+    (`[A-Za-z0-9_]+`) so every separator becomes an implicit token boundary,
+    matching the way the indexer actually stores content.
+
+    Tokenization tests are pure (no DB), end-to-end tests verify the
+    FTS5 query is now syntactically valid AND returns the expected matches.
+    """
+
+    def test_dotted_identifier_splits(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("guidance.studio") == "guidance OR studio"
+
+    def test_slashed_path_splits(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("/tmp/foo") == "tmp OR foo"
+
+    def test_hyphenated_identifier_splits(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("dash-name") == "dash OR name"
+
+    def test_underscore_preserved_as_single_token(self):
+        """`_` is a word character in unicode61 — must NOT split."""
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("snake_case_var") == "snake_case_var"
+
+    def test_dotted_version_string_splits(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("v1.2.3") == "v1 OR 2 OR 3"
+
+    def test_python_module_path_splits(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("kiso.brain.common") == "kiso OR brain OR common"
+
+    def test_mixed_word_and_separator(self):
+        """`mixed.case_var` → splits on `.`, keeps `_`."""
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("mixed.case_var") == "mixed OR case_var"
+
+    def test_free_form_with_dotted_identifier(self):
+        """Realistic user query containing a dotted entity name."""
+        from kiso.store.knowledge import _fts5_query
+        result = _fts5_query("cosa sai di guidance.studio?")
+        # Order matters (insertion order via dict.fromkeys)
+        assert result == "cosa OR sai OR di OR guidance OR studio"
+
+    def test_empty_input_returns_empty_string(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("") == ""
+
+    def test_only_separators_returns_empty_string(self):
+        from kiso.store.knowledge import _fts5_query
+        assert _fts5_query("...///---") == ""
+
+    def test_dedup_preserves_first_occurrence(self):
+        from kiso.store.knowledge import _fts5_query
+        # "guidance.studio" → ["guidance", "studio"], "studio.guidance" → reversed
+        assert _fts5_query("guidance.studio studio") == "guidance OR studio"
+
+
+class TestFts5QueryEndToEnd:
+    """M1303 Bug A: end-to-end verification through search_facts on real FTS5.
+
+    These tests are written to be RED before the fix: they pass enough
+    decoy facts that the silent fts5-error fallback to "all facts" can no
+    longer satisfy the assertion. The relevant fact must come back via the
+    actual FTS5 path with strict ranking.
+    """
+
+    async def test_search_facts_via_scored_dotted_identifier(
+        self, db: aiosqlite.Connection,
+    ):
+        """search_facts_scored with a dotted-identifier keyword must find
+        the seeded fact. Bypasses search_facts' fallback because
+        search_facts_scored returns [] (not all facts) on FTS5 error."""
+        from kiso.store import search_facts_scored
+        await save_fact(
+            db,
+            "guidance.studio is a SaaS platform for interactive user onboarding workflows",
+            source="curator",
+            category="general",
+        )
+        # Plus several decoy facts so a fallback that returned everything
+        # would still trivially pass — but search_facts_scored doesn't fall back.
+        for content in (
+            "Random fact A about something else",
+            "Random fact B about another thing",
+            "Random fact C with no overlap",
+        ):
+            await save_fact(db, content, source="curator", category="general")
+
+        results = await search_facts_scored(
+            db,
+            entity_id=None,
+            tags=None,
+            keywords=["cosa", "sai", "di", "guidance.studio?"],
+            session=None,
+            is_admin=True,
+        )
+        assert len(results) >= 1
+        assert results[0]["content"].startswith("guidance.studio"), (
+            f"Expected guidance.studio fact ranked first. Got: {[r['content'] for r in results]}"
+        )
+
+    async def test_search_facts_via_scored_path_keyword(
+        self, db: aiosqlite.Connection,
+    ):
+        """search_facts_scored with a `/tmp/foo` keyword must find the path fact."""
+        from kiso.store import search_facts_scored
+        await save_fact(
+            db,
+            "Path /tmp/foo contains the build artifacts",
+            source="curator",
+            category="general",
+        )
+        for content in ("decoy 1", "decoy 2", "decoy 3"):
+            await save_fact(db, content, source="curator", category="general")
+
+        results = await search_facts_scored(
+            db,
+            entity_id=None,
+            tags=None,
+            keywords=["qual", "è", "il", "path", "/tmp/foo?"],
+            session=None,
+            is_admin=True,
+        )
+        assert len(results) >= 1
+        assert "/tmp/foo" in results[0]["content"]
+
+    async def test_search_facts_via_scored_module_path(
+        self, db: aiosqlite.Connection,
+    ):
+        """search_facts_scored with a dotted Python module path keyword."""
+        from kiso.store import search_facts_scored
+        await save_fact(
+            db,
+            "kiso.brain.common defines the call_llm helper",
+            source="curator",
+            category="general",
+        )
+        for content in ("alpha decoy", "beta decoy"):
+            await save_fact(db, content, source="curator", category="general")
+
+        results = await search_facts_scored(
+            db,
+            entity_id=None,
+            tags=None,
+            keywords=["cosa", "fa", "kiso.brain.common?"],
+            session=None,
+            is_admin=True,
+        )
+        assert len(results) >= 1
+        assert "kiso.brain.common" in results[0]["content"]
+
+
+
 # --- M44b: save_learning fact poisoning filter ---
 
 

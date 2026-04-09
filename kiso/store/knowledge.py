@@ -19,7 +19,21 @@ from .shared import (
 
 
 def _fts5_query(text: str) -> str:
-    tokens = [t.strip() for t in re.findall(r"[A-Za-z0-9_./-]+", text)]
+    """Tokenize *text* into a valid FTS5 OR-query.
+
+    M1303 Bug A: the regex must mirror what the FTS5 unicode61 tokenizer
+    actually treats as a word character. The default unicode61 splits on
+    `.`, `/`, `-` (and any other non-word, non-underscore character), so
+    those characters MUST be excluded from the regex character class. The
+    previous regex `[A-Za-z0-9_./-]+` kept them inside tokens, producing
+    queries like `guidance.studio` that FTS5 rejects with
+    `syntax error near "."`. The exception was silently swallowed by
+    callers, returning 0 facts for any query containing a dotted/slashed
+    identifier — F13 was the visible symptom, but the bug affected every
+    file path, version string, URL, and dotted module name in the
+    codebase.
+    """
+    tokens = [t.strip() for t in re.findall(r"[A-Za-z0-9_]+", text)]
     if not tokens:
         return ""
     return " OR ".join(dict.fromkeys(tokens))
