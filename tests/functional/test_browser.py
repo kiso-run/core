@@ -17,6 +17,7 @@ import pytest
 from tests.functional.conftest import (
     assert_italian,
     assert_no_failure_language,
+    drive_install_flow,
     tool_installed,
     assert_url_reachable,
 )
@@ -24,42 +25,6 @@ from tests.functional.conftest import (
 pytestmark = pytest.mark.functional
 
 from tests.conftest import LLM_INSTALL_TIMEOUT as BROWSER_TIMEOUT
-
-async def _run_with_install_flow(
-    run_message,
-    prompt: str,
-    *,
-    timeout: float = BROWSER_TIMEOUT,
-) -> "FunctionalResult":  # noqa: F821
-    """Send *prompt* and handle the install-proposal flow if needed.
-
-    Three-turn flow when browser is not pre-installed:
-      1. Original prompt → planner proposes install (msg-only plan)
-      2. "sì, installa il tool browser" → planner installs the tool
-      3. Repeat original prompt → planner uses the now-installed tool
-
-    If the browser tool is already installed, returns after a single turn.
-    Retries the install confirmation if the first attempt doesn't result in
-    a tool appearing on disk (LLM may generate a different plan).
-    """
-    result = await run_message(prompt, timeout=timeout)
-
-    if tool_installed("browser"):
-        return result
-
-    # Turn 2: confirm installation
-    install_result = await run_message(
-        "sì, installa il tool browser", timeout=timeout,
-    )
-
-    if not tool_installed("browser"):
-        # Install may have failed or the LLM didn't execute the install.
-        # Return the install result so the assertion shows what went wrong.
-        return install_result
-
-    # Turn 3: repeat original request with tool now available
-    result = await run_message(prompt, timeout=timeout)
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -80,22 +45,20 @@ class TestF1BrowserInstall:
         if tool_installed("browser"):
             pytest.skip("Browser already installed — nothing to test")
 
-        # Turn 1: request that needs browser
-        await run_message(
+        # drive_install_flow keeps sending follow-ups until the tool is
+        # actually installed (or max_turns is reached). Robust to LLM
+        # behavior on Turn 1: planner is free to propose install,
+        # install directly, or attempt a workaround.
+        await drive_install_flow(
+            run_message,
+            "browser",
             "vai su example.com e dimmi cosa vedi",
             timeout=BROWSER_TIMEOUT,
         )
 
-        if tool_installed("browser"):
-            return  # installed on first turn (fast path)
-
-        # Turn 2: confirm installation
-        await run_message(
-            "sì, installa il tool browser",
-            timeout=BROWSER_TIMEOUT,
+        assert tool_installed("browser"), (
+            "Browser tool not installed after approval flow"
         )
-
-        assert tool_installed("browser"), "Browser tool not installed after approval flow"
 
 
 class TestF1BrowserNavigate:
@@ -184,10 +147,12 @@ class TestF2WikipediaPython:
         Deterministic target avoids fragile dynamic-content assertions.
         Expects: Plan succeeds, response contains "python" (case-insensitive).
         """
-        result = await _run_with_install_flow(
+        result = await drive_install_flow(
             run_message,
+            "browser",
             "go to https://en.wikipedia.org/wiki/Python_(programming_language) "
             "and tell me in a few words what Python is",
+            timeout=BROWSER_TIMEOUT,
         )
 
         assert result.success, (

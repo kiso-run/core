@@ -16,48 +16,15 @@ from __future__ import annotations
 import pytest
 
 from tests.functional.conftest import (
+    assert_no_command_word,
     assert_no_failure_language,
+    drive_install_flow,
     tool_installed,
 )
 
 pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
 from tests.conftest import LLM_INSTALL_TIMEOUT as TOOL_TIMEOUT
-
-async def _run_with_tool_install(
-    run_message,
-    tool_name: str,
-    prompt: str,
-    *,
-    timeout: float = TOOL_TIMEOUT,
-):
-    """Send *prompt* and handle the install-proposal flow if tool is missing.
-
-    Uses the shared conversational install flow, generalized for any tool.
-
-    Three-turn flow when tool is not pre-installed:
-      1. Original prompt → planner proposes install (msg-only plan)
-      2. "sì, installa il tool {name}" → planner installs the tool
-      3. Repeat original prompt → planner uses the now-installed tool
-
-    If the tool is already installed, returns after a single turn.
-    """
-    result = await run_message(prompt, timeout=timeout)
-
-    if tool_installed(tool_name):
-        return result
-
-    # Turn 2: confirm installation
-    install_result = await run_message(
-        f"sì, installa il tool {tool_name}",
-        timeout=timeout,
-    )
-
-    if not tool_installed(tool_name):
-        return install_result
-
-    # Turn 3: repeat original request with tool now available
-    return await run_message(prompt, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +49,8 @@ class TestF17FullPipeline:
         Expects: Final message contains deterministic text stats from OCR text.
         """
         # --- Plan 1: screenshot (installs browser if needed) ---
-        r1 = await _run_with_tool_install(
-            run_message, "browser",
+        r1 = await drive_install_flow(
+            run_message,"browser",
             "Navigate to https://en.wikipedia.org/wiki/Python_(programming_language) and take a screenshot of the page",
         )
         assert r1.success, f"Plan 1 (screenshot) failed: {r1.task_types()}"
@@ -92,8 +59,8 @@ class TestF17FullPipeline:
         )
 
         # --- Plan 2: OCR the screenshot (installs ocr if needed) ---
-        r2 = await _run_with_tool_install(
-            run_message, "ocr",
+        r2 = await drive_install_flow(
+            run_message,"ocr",
             "Extract the text from the screenshot using OCR",
         )
         assert r2.success, f"Plan 2 (OCR) failed: {r2.task_types()}"
@@ -116,8 +83,8 @@ class TestF17FullPipeline:
         )
 
         # --- Plan 3: write text stats script with aider (installs aider if needed) ---
-        r3 = await _run_with_tool_install(
-            run_message, "aider",
+        r3 = await drive_install_flow(
+            run_message,"aider",
             "Use aider to create a Python script text_stats.py that reads "
             "text from stdin and prints exactly two lines: 'chars: N' and "
             "'lines: N'. Create only the file. Do not run it and do not add tests.",
@@ -157,9 +124,10 @@ class TestF17FullPipeline:
         assert "text_stats.py" in task_blob, (
             f"Expected plan 4 to reuse generated script path, got: {task_blob[:500]}"
         )
-        assert "curl" not in task_blob and "wget" not in task_blob, (
-            f"Unexpected re-download instead of local path reuse: {task_blob[:500]}"
-        )
+        # Use word-boundary check on the command field only, not on the
+        # full task blob which includes heredoc bodies (OCR text, etc.)
+        # that may incidentally contain substrings like "curly brackets".
+        assert_no_command_word(last_plan_tasks, ["curl", "wget"])
 
         output = r4.last_plan_msg_output
         assert len(output) > 20, f"Output too short: {output}"

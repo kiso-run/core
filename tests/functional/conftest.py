@@ -654,3 +654,99 @@ def preset_tools_installed():
     missing = [n for n in _PRESET_TOOLS if n not in installed]
     if missing:
         pytest.skip(f"Tools not available after install: {missing}")
+
+
+# ---------------------------------------------------------------------------
+# M1286: drive_install_flow + assert_no_command_word
+# ---------------------------------------------------------------------------
+
+# Two test-infrastructure helpers added by M1286 to make functional
+# tests robust against:
+# 1. LLM behavior drift on Turn 1 of an install flow (the planner is
+#    free to propose, install directly, or work around — the helper
+#    just keeps driving the conversation forward)
+# 2. False-positive substring matches when an assertion intended to
+#    catch shell commands scans free-form data fields (heredoc bodies,
+#    OCR text, planner reasoning) that may incidentally contain
+#    substrings matching command names (e.g. "curly" matches "curl")
+
+
+async def drive_install_flow(
+    run_message,
+    tool_name: str,
+    prompt: str,
+    *,
+    max_turns: int = 4,
+    timeout: float | None = None,
+):
+    """Drive a conversation forward until *tool_name* is installed.
+
+    Sends *prompt*, then loops sending follow-up "sì, installa il
+    tool {tool_name}" messages until the tool is installed or
+    *max_turns* is reached. When the tool finally installs, re-issues
+    the original prompt one more time so the returned result reflects
+    the installed-tool path.
+
+    The helper does NOT prescribe what the planner should do on any
+    given turn — it just drives the conversation forward the way a
+    real user would. The planner remains free to propose installation,
+    install directly, attempt a workaround, or change strategy
+    mid-flow. This preserves Kiso's generalist nature in functional
+    tests.
+
+    If *max_turns* is exhausted without the tool being installed,
+    returns the last result so the caller's assertion can show the
+    diagnostic state.
+
+    *timeout* defaults to ``LLM_INSTALL_TIMEOUT`` (15 min) because the
+    install plan often downloads multi-hundred-MB packages and runs
+    deps.sh. Caller can override with a smaller value for tests where
+    the tool is already installed.
+    """
+    if timeout is None:
+        from tests.conftest import LLM_INSTALL_TIMEOUT
+        timeout = LLM_INSTALL_TIMEOUT
+    kwargs = {"timeout": timeout}
+    result = await run_message(prompt, **kwargs)
+    turns_used = 1
+    while not tool_installed(tool_name) and turns_used < max_turns:
+        result = await run_message(
+            f"sì, installa il tool {tool_name}", **kwargs,
+        )
+        turns_used += 1
+    if tool_installed(tool_name):
+        result = await run_message(prompt, **kwargs)
+    return result
+
+
+def assert_no_command_word(tasks, words):
+    """Assert no exec task in *tasks* has a command containing any of
+    *words* as a whole word.
+
+    Only the ``command`` field of ``exec`` tasks is inspected. The
+    ``detail`` field is intentionally NOT scanned because it often
+    contains heredoc bodies with arbitrary stdin data (OCR output,
+    API responses, planner reasoning text) that may incidentally
+    contain substrings matching command names — e.g. "curly brackets"
+    in OCR text would false-match "curl".
+
+    Word boundaries (``\\b``) are used so "curly", "libcurl",
+    "pycurl", "wgetopt", etc. do not trigger a match for "curl" /
+    "wget".
+
+    This helper is the recommended way to assert "the planner did
+    not emit a re-download / recompile / rm-style command" in any
+    functional test.
+    """
+    pattern = re.compile(
+        r"\b(" + "|".join(re.escape(w) for w in words) + r")\b"
+    )
+    for t in tasks:
+        if t.get("type") != "exec":
+            continue
+        command = t.get("command") or ""
+        m = pattern.search(command)
+        assert m is None, (
+            f"forbidden command word {m.group(0)!r} in exec task command: "
+            f"{command[:200]}"
+        )

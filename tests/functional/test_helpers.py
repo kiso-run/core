@@ -288,3 +288,279 @@ class TestFunctionalResult:
     def test_last_plan_msg_output_empty(self):
         r = FunctionalResult(success=False)
         assert r.last_plan_msg_output == ""
+
+
+# ---------------------------------------------------------------------------
+# assert_no_command_word — M1286
+# ---------------------------------------------------------------------------
+
+
+class TestAssertNoCommandWord:
+    """Verify the command-vs-data assertion helper:
+
+    - inspects only the `command` field of `exec` tasks
+    - uses word boundaries so "curly", "libcurl", etc. don't match
+    - ignores `detail` (heredoc bodies, planner reasoning text)
+    - ignores non-exec tasks
+    """
+
+    def test_exec_task_with_curl_command_fails(self):
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec", "command": "curl http://example.com",
+                  "detail": "fetch data"}]
+        with pytest.raises(AssertionError, match="curl"):
+            assert_no_command_word(tasks, ["curl", "wget"])
+
+    def test_exec_task_with_wget_command_fails(self):
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec", "command": "wget -q https://x.test",
+                  "detail": ""}]
+        with pytest.raises(AssertionError, match="wget"):
+            assert_no_command_word(tasks, ["curl", "wget"])
+
+    def test_curly_in_detail_does_not_match_curl_word(self):
+        """Regression for the M1286 false positive: 'curly brackets'
+        in heredoc body must NOT match 'curl' as a command word."""
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [
+            {
+                "type": "exec",
+                "command": "python3 text_stats.py",
+                "detail": (
+                    "python3 text_stats.py << 'eof'\n"
+                    "Python uses indentation rather than curly brackets\n"
+                    "eof"
+                ),
+            }
+        ]
+        # Must not raise — 'curl' must NOT match 'curly'
+        assert_no_command_word(tasks, ["curl", "wget"])
+
+    def test_libcurl_in_command_does_not_match_curl_word(self):
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec", "command": "gcc -lcurl libcurl_demo.c",
+                  "detail": ""}]
+        # 'curl' must not match 'libcurl' (no word boundary on the left)
+        assert_no_command_word(tasks, ["curl"])
+
+    def test_msg_task_ignored(self):
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [
+            {"type": "msg", "command": "curl http://anything", "detail": ""},
+        ]
+        # Only exec tasks are inspected
+        assert_no_command_word(tasks, ["curl"])
+
+    def test_empty_task_list(self):
+        from tests.functional.conftest import assert_no_command_word
+        assert_no_command_word([], ["curl"])
+
+    def test_task_with_no_command(self):
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec", "detail": "some detail"}]
+        assert_no_command_word(tasks, ["curl"])
+
+    def test_assertion_message_includes_command_and_word(self):
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec", "command": "curl --silent http://x"}]
+        with pytest.raises(AssertionError) as exc:
+            assert_no_command_word(tasks, ["curl"])
+        assert "curl" in str(exc.value)
+
+    def test_word_boundary_at_end_too(self):
+        """'curly' at end of word also must not match 'curl'."""
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec", "command": "echo curly_brace_test"}]
+        assert_no_command_word(tasks, ["curl"])
+
+    def test_curl_as_subcommand_argument_still_matches(self):
+        """Defensive: 'curl' as a real shell token in the command
+        should still trigger, even mid-command."""
+        from tests.functional.conftest import assert_no_command_word
+        tasks = [{"type": "exec",
+                  "command": "bash -c 'curl http://x | jq .'"}]
+        with pytest.raises(AssertionError):
+            assert_no_command_word(tasks, ["curl"])
+
+
+# ---------------------------------------------------------------------------
+# drive_install_flow — M1286
+# ---------------------------------------------------------------------------
+
+
+class TestDriveInstallFlow:
+    """Verify the drive-until-done install loop:
+
+    - if tool already installed when called, sends prompt once and
+      returns
+    - if tool installs after one follow-up, re-issues prompt so the
+      result reflects the installed-tool path
+    - if tool never installs, gives up at max_turns and returns the
+      last result so the caller's assertion shows what went wrong
+    - does not constrain what the planner does — just drives the
+      conversation forward
+    """
+
+    async def test_tool_already_installed_returns_after_first_call(self):
+        from unittest.mock import patch
+        from tests.functional.conftest import drive_install_flow
+
+        calls: list[str] = []
+
+        async def fake_run(content, **kwargs):
+            calls.append(content)
+            return f"result-of:{content}"
+
+        with patch(
+            "tests.functional.conftest.tool_installed", return_value=True
+        ):
+            result = await drive_install_flow(
+                fake_run, "browser", "do something", max_turns=4,
+            )
+
+        # 2 calls: original + re-issued original after install confirmed
+        assert calls == ["do something", "do something"]
+        assert result == "result-of:do something"
+
+    async def test_installs_after_one_followup(self):
+        from unittest.mock import patch
+        from tests.functional.conftest import drive_install_flow
+
+        calls: list[str] = []
+        # tool_installed returns False initially, then True after the
+        # follow-up message
+        installed_state = {"value": False}
+
+        def fake_installed(name):
+            return installed_state["value"]
+
+        async def fake_run(content, **kwargs):
+            calls.append(content)
+            if "installa il tool" in content:
+                installed_state["value"] = True
+            return f"result-of:{content}"
+
+        with patch(
+            "tests.functional.conftest.tool_installed",
+            side_effect=fake_installed,
+        ):
+            result = await drive_install_flow(
+                fake_run, "browser", "do something", max_turns=4,
+            )
+
+        assert calls == [
+            "do something",
+            "sì, installa il tool browser",
+            "do something",
+        ]
+        # final result is the re-issued prompt
+        assert result == "result-of:do something"
+
+    async def test_installs_after_two_followups(self):
+        from unittest.mock import patch
+        from tests.functional.conftest import drive_install_flow
+
+        calls: list[str] = []
+        followup_count = {"n": 0}
+
+        def fake_installed(name):
+            return followup_count["n"] >= 2
+
+        async def fake_run(content, **kwargs):
+            calls.append(content)
+            if "installa il tool" in content:
+                followup_count["n"] += 1
+            return f"result-of:{content}"
+
+        with patch(
+            "tests.functional.conftest.tool_installed",
+            side_effect=fake_installed,
+        ):
+            await drive_install_flow(
+                fake_run, "ocr", "extract text", max_turns=4,
+            )
+
+        # original + 2 follow-ups + re-issued original
+        assert calls == [
+            "extract text",
+            "sì, installa il tool ocr",
+            "sì, installa il tool ocr",
+            "extract text",
+        ]
+
+    async def test_never_installs_gives_up_at_max_turns(self):
+        from unittest.mock import patch
+        from tests.functional.conftest import drive_install_flow
+
+        calls: list[str] = []
+
+        async def fake_run(content, **kwargs):
+            calls.append(content)
+            return f"result-of:{content}"
+
+        with patch(
+            "tests.functional.conftest.tool_installed", return_value=False
+        ):
+            result = await drive_install_flow(
+                fake_run, "aider", "go", max_turns=3,
+            )
+
+        # 1 original + 2 follow-ups (max_turns=3 total user turns), no
+        # final re-issued prompt because the tool never installed
+        assert len(calls) == 3
+        assert calls[0] == "go"
+        assert all(
+            "installa il tool aider" in c for c in calls[1:]
+        )
+        # caller still gets a result (the last follow-up's response)
+        # so their assertion can show diagnostic state
+        assert result is not None
+
+    async def test_default_timeout_is_install_timeout(self):
+        """Regression: default timeout MUST be LLM_INSTALL_TIMEOUT
+        (not run_message's own default of 300s). The install plan
+        downloads multi-hundred-MB packages and runs deps.sh — 300s
+        is not enough."""
+        from unittest.mock import patch
+        from tests.functional.conftest import drive_install_flow
+        from tests.conftest import LLM_INSTALL_TIMEOUT
+
+        captured_kwargs: list[dict] = []
+
+        async def fake_run(content, **kwargs):
+            captured_kwargs.append(dict(kwargs))
+            return f"result-of:{content}"
+
+        with patch(
+            "tests.functional.conftest.tool_installed", return_value=True
+        ):
+            await drive_install_flow(
+                fake_run, "browser", "do something", max_turns=4,
+            )
+
+        # Every call must have received the install-sized timeout
+        assert all(
+            kw.get("timeout") == LLM_INSTALL_TIMEOUT for kw in captured_kwargs
+        ), f"timeout not propagated correctly: {captured_kwargs}"
+
+    async def test_does_not_constrain_planner_phrasing(self):
+        """The follow-up phrasing is the helper's choice — but the
+        helper itself never inspects what the planner did or
+        what role the run_message returned. It only checks
+        tool_installed() between turns."""
+        from unittest.mock import patch
+        from tests.functional.conftest import drive_install_flow
+
+        async def fake_run(content, **kwargs):
+            # planner could return literally anything; helper does not
+            # inspect the content
+            return {"weird": "shape", "tasks": ["whatever"]}
+
+        with patch(
+            "tests.functional.conftest.tool_installed", return_value=True
+        ):
+            result = await drive_install_flow(
+                fake_run, "browser", "anything", max_turns=4,
+            )
+        # No assertion on result shape — just doesn't crash
+        assert result == {"weird": "shape", "tasks": ["whatever"]}

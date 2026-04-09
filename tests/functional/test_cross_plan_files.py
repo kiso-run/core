@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 
 from tests.functional.conftest import (
+    assert_no_command_word,
     assert_no_failure_language,
     tool_installed,
 )
@@ -87,15 +88,15 @@ class TestF36CrossPlanFileHandoff:
         last_plan_tasks = [
             t for t in r2.tasks if t.get("plan_id") == last_plan_id
         ]
+        # Word-boundary check on the command field only — avoids false
+        # positives like "libcurl" or "curly" that may appear in
+        # command text but are not the curl program (M1286).
+        assert_no_command_word(last_plan_tasks, ["curl", "wget"])
         exec_tasks = [
             t for t in last_plan_tasks if t.get("type") == "exec"
         ]
         for t in exec_tasks:
             detail = (t.get("detail") or "").lower()
-            cmd = (t.get("command") or "").lower()
-            assert "curl" not in cmd and "wget" not in cmd, (
-                f"Download command in exec task (file should be local): {cmd[:200]}"
-            )
             assert "download" not in detail, (
                 f"Download task created (file should be local): {detail[:200]}"
             )
