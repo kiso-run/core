@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 
+from kiso._subprocess_utils import communicate_with_timeout
 from kiso.config import KISO_DIR
 from kiso.tools import check_deps, discover_tools, invalidate_tools_cache
 
@@ -65,8 +66,11 @@ async def repair_unhealthy_tools(tools_dir: Path | None = None) -> list[str]:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_clean_env(),
+                # M1295: own process group so the helper can
+                # killpg the whole tree on timeout.
+                start_new_session=True,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=remaining)
+            stdout, stderr = await communicate_with_timeout(proc, None, remaining)
             if proc.returncode == 0:
                 log.info("Tool '%s' deps.sh succeeded", tool["name"])
             else:
@@ -149,8 +153,11 @@ async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_clean_env(),
+                # M1295: own process group so the helper can
+                # killpg the whole tree on timeout.
+                start_new_session=True,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=remaining)
+            stdout, stderr = await communicate_with_timeout(proc, None, remaining)
             if proc.returncode == 0:
                 log.info("Tool '%s' deps.sh succeeded", tool["name"])
             else:

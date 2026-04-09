@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from kiso._subprocess_utils import communicate_with_timeout
+
 log = logging.getLogger(__name__)
 
 _HOOK_TIMEOUT = 10  # seconds
@@ -51,10 +53,13 @@ async def run_pre_exec_hooks(
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # M1295: own process group so the helper can
+                # killpg the whole tree on timeout (the shell may
+                # have forked children that hold the pipes open).
+                start_new_session=True,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(context.encode()),
-                timeout=_HOOK_TIMEOUT,
+            stdout, stderr = await communicate_with_timeout(
+                proc, context.encode(), _HOOK_TIMEOUT,
             )
             if blocking and proc.returncode != 0:
                 msg = stderr.decode(errors="replace").strip() or "blocked by pre-exec hook"
@@ -98,10 +103,11 @@ async def run_post_exec_hooks(
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
+                # M1295: see run_pre_exec_hooks above
+                start_new_session=True,
             )
-            await asyncio.wait_for(
-                proc.communicate(context.encode()),
-                timeout=_HOOK_TIMEOUT,
+            await communicate_with_timeout(
+                proc, context.encode(), _HOOK_TIMEOUT,
             )
         except (asyncio.TimeoutError, OSError) as e:
             log.warning("Post-exec hook failed: %s", e)

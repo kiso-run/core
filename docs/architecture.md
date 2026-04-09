@@ -326,6 +326,19 @@ mirrors what `_init_kiso_dirs()` does at server boot, just deferred to first
 access. See [llm-roles.md — Self-healing role loader](llm-roles.md#self-healing-role-loader-m1296)
 for the full contract.
 
+Subprocess timeouts are also self-cleaning: every code path that wraps
+`proc.communicate()` in a deadline goes through
+`kiso._subprocess_utils.communicate_with_timeout`. On timeout the helper
+SIGKILLs the **entire process group** (so a shell that forked children does
+not leave orphans holding the parent's pipes), drains the communicate task
+naturally so the StreamReaders unwind cleanly, and reaps the OS process via
+`proc.wait()` before re-raising `TimeoutError`. Callers must create the
+subprocess with `start_new_session=True` so the helper has a real process
+group to target. This is the M1295 fix; without it, hook and tool-repair
+timeouts left orphan subprocesses and leaked
+`_UnixSubprocessTransport` instances that would later fire `__del__` on a
+closed event loop.
+
 ### Durable state over ephemeral narration
 
 Important state should be persisted or reconstructable. The system should not

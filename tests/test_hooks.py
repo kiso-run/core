@@ -69,6 +69,57 @@ class TestPreExecHooks:
         finally:
             kiso.hooks._HOOK_TIMEOUT = orig
 
+    async def test_pre_hook_timeout_reaps_subprocess(self, tmp_path):
+        """M1295: when a pre-exec hook times out, the underlying
+        subprocess must be killed and reaped before
+        run_pre_exec_hooks returns. Otherwise the hook process
+        keeps running, the asyncio child watcher keeps a stale
+        callback registered for the PID, and the
+        ``_UnixSubprocessTransport`` survives until GC, firing
+        ``BaseSubprocessTransport.__del__`` after the event loop
+        closes (Exception ignored: Event loop is closed).
+
+        Spawns a hook running ``sleep 30`` with a 0.1s timeout,
+        then verifies (via ``os.kill(pid, 0)``) that the spawned
+        PID no longer exists after the call returns.
+        """
+        import os
+        import asyncio
+        import kiso.hooks
+
+        # Wrap create_subprocess_shell to capture the PID of the
+        # spawned hook process so we can probe it post-call.
+        captured_pids: list[int] = []
+        real = asyncio.create_subprocess_shell
+
+        async def spy(*args, **kwargs):
+            proc = await real(*args, **kwargs)
+            captured_pids.append(proc.pid)
+            return proc
+
+        script = tmp_path / "slow_hook.sh"
+        script.write_text("#!/bin/sh\nsleep 30\n")
+        script.chmod(0o755)
+        hooks = [{"command": str(script), "blocking": True}]
+
+        orig_timeout = kiso.hooks._HOOK_TIMEOUT
+        kiso.hooks._HOOK_TIMEOUT = 0.1
+        orig_create = asyncio.create_subprocess_shell
+        asyncio.create_subprocess_shell = spy
+        try:
+            result = await run_pre_exec_hooks(hooks, "ls", "list", "s1", 1)
+        finally:
+            kiso.hooks._HOOK_TIMEOUT = orig_timeout
+            asyncio.create_subprocess_shell = orig_create
+
+        assert result.allowed is True
+        assert captured_pids, "expected the hook to spawn a subprocess"
+        # Wait briefly so the kernel reflects the kill in /proc.
+        await asyncio.sleep(0.05)
+        for pid in captured_pids:
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+
     async def test_empty_command_skipped(self):
         hooks = [{"command": "", "blocking": True}]
         result = await run_pre_exec_hooks(hooks, "ls", "list", "s1", 1)
@@ -139,3 +190,43 @@ class TestPostExecHooks:
         hooks = [{"command": str(script)}]
         # Should not raise
         await run_post_exec_hooks(hooks, "ls", "list", "s1", 1, "", "", 0)
+
+    async def test_post_hook_timeout_reaps_subprocess(self, tmp_path):
+        """M1295: same contract as the pre-exec test, applied to
+        post-exec. When a post-exec hook times out, the helper
+        must SIGKILL + reap the spawned process. Verified
+        OS-level via os.kill(pid, 0)."""
+        import os
+        import asyncio
+        import kiso.hooks
+
+        captured_pids: list[int] = []
+        real = asyncio.create_subprocess_shell
+
+        async def spy(*args, **kwargs):
+            proc = await real(*args, **kwargs)
+            captured_pids.append(proc.pid)
+            return proc
+
+        script = tmp_path / "slow_hook.sh"
+        script.write_text("#!/bin/sh\nsleep 30\n")
+        script.chmod(0o755)
+        hooks = [{"command": str(script)}]
+
+        orig_timeout = kiso.hooks._HOOK_TIMEOUT
+        kiso.hooks._HOOK_TIMEOUT = 0.1
+        orig_create = asyncio.create_subprocess_shell
+        asyncio.create_subprocess_shell = spy
+        try:
+            await run_post_exec_hooks(
+                hooks, "ls", "list", "s1", 1, "out", "", 0,
+            )
+        finally:
+            kiso.hooks._HOOK_TIMEOUT = orig_timeout
+            asyncio.create_subprocess_shell = orig_create
+
+        assert captured_pids, "expected the hook to spawn a subprocess"
+        await asyncio.sleep(0.05)
+        for pid in captured_pids:
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)

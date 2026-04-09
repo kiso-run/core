@@ -310,6 +310,56 @@ class TestRunSubprocessCancel:
         assert success is False
         assert exit_code == -15
 
+    async def test_cancel_branch_leaves_pending_task_done(self, tmp_path, monkeypatch):
+        """M1295 regression-keeper: verify that
+        ``_run_subprocess``'s cancel branch already drives the
+        cancelled ``proc.communicate()`` task to ``done()`` state
+        by virtue of yielding to the loop inside
+        ``_kill_proc``'s ``await proc.wait()``.
+
+        This test exists to prevent a future refactor from
+        breaking the implicit cleanup that ``_run_subprocess``
+        already provides. The actual M1295 leak is in
+        ``kiso/hooks.py`` and ``kiso/tool_repair.py`` — see
+        the M1295 milestone in devplan/v0.9-wip.md for the
+        corrected diagnosis. ``_run_subprocess`` itself is
+        clean.
+        """
+        import kiso.worker.utils as utils
+
+        captured_pending: list[list[asyncio.Task]] = []
+        real_wait = asyncio.wait
+
+        async def spy_wait(*args, **kwargs):
+            done, pending = await real_wait(*args, **kwargs)
+            captured_pending.append(list(pending))
+            return done, pending
+
+        monkeypatch.setattr(utils.asyncio, "wait", spy_wait)
+
+        cancel = asyncio.Event()
+        asyncio.get_event_loop().call_later(0.05, cancel.set)
+        _stdout, _stderr, success, exit_code = await _run_subprocess(
+            "sleep 30",
+            env={"PATH": "/usr/bin:/bin"},
+            cwd=str(tmp_path),
+            shell=True,
+            cancel_event=cancel,
+        )
+
+        assert success is False
+        assert exit_code == -15
+        assert captured_pending, "cancel branch was not entered"
+        pending_tasks = captured_pending[-1]
+        assert pending_tasks, "expected at least 1 pending task in the race"
+        for t in pending_tasks:
+            assert t.done(), (
+                f"_run_subprocess cancel branch left {t!r} not done; "
+                f"this would re-introduce the M1295 leak class. The "
+                f"`await _kill_proc(proc)` step must yield to the "
+                f"loop so the cancelled comm_task drains."
+            )
+
 
 # --- _exec_task ---
 
