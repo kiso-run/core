@@ -18,7 +18,12 @@ from kiso.store import (
     init_db,
     save_fact,
 )
-from kiso.worker.loop import _fast_path_chat, _msg_task
+from kiso.worker.loop import (
+    _CHAT_KB_FALLBACK_MSGS,
+    _chat_kb_preflight_fallback,
+    _fast_path_chat,
+    _msg_task,
+)
 from tests.conftest import full_settings, full_models
 
 
@@ -119,6 +124,136 @@ class TestChatKBEntityFlow:
         assert "planner" not in roles_called
         assert "reviewer" not in roles_called
         assert "messenger" in roles_called
+
+
+class TestChatKBPreflightFallback:
+    """M1291: pre-flight chat_kb facts check + investigate fallback."""
+
+    @pytest.fixture()
+    async def db(self, tmp_path):
+        from kiso.store import create_plan
+        conn = await init_db(tmp_path / "test.db")
+        await create_session(conn, "sess1")
+        plan_id = await create_plan(conn, "sess1", 1, "Thinking...")
+        conn._test_plan_id = plan_id  # type: ignore[attr-defined]
+        yield conn
+        await conn.close()
+
+    async def _list_msg_tasks(self, db, plan_id):
+        from kiso.store import get_tasks_for_plan
+        tasks = await get_tasks_for_plan(db, plan_id)
+        return [t for t in tasks if t.get("type") == "msg"]
+
+    async def test_preflight_returns_false_when_facts_exist(self, db):
+        """Facts present in DB → no fallback, no transition task created."""
+        config = _config()
+        eid = await find_or_create_entity(db, "self", "system")
+        await save_fact(
+            db, "Database hostname is db.internal.example.com",
+            source="system", session=None, category="system",
+            tags=["database"], entity_id=eid,
+        )
+        plan_id = db._test_plan_id
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="What is the database hostname?",
+                user_lang="English",
+            )
+
+        assert triggered is False
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert msg_tasks == []
+
+    async def test_preflight_triggers_fallback_on_empty_db(self, db):
+        """Empty KB → fallback signaled, transition msg task persisted."""
+        config = _config()
+        plan_id = db._test_plan_id
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="What is the current uptime?",
+                user_lang="English",
+            )
+
+        assert triggered is True
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert len(msg_tasks) == 1
+        assert _CHAT_KB_FALLBACK_MSGS["English"] in (msg_tasks[0].get("output") or "")
+
+    async def test_preflight_skipped_when_content_empty(self, db):
+        """Empty content → no keywords → return False, no fallback."""
+        config = _config()
+        plan_id = db._test_plan_id
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="",
+                user_lang="English",
+            )
+
+        assert triggered is False
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert msg_tasks == []
+
+    async def test_preflight_search_error_does_not_fallback(self, db):
+        """search_facts_scored raises → return False, no transition task."""
+        config = _config()
+        plan_id = db._test_plan_id
+
+        async def _boom(*a, **kw):
+            raise RuntimeError("simulated DB failure")
+
+        with patch("kiso.worker.loop.search_facts_scored", side_effect=_boom), \
+             patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="What is the database hostname?",
+                user_lang="English",
+            )
+
+        assert triggered is False
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert msg_tasks == []
+
+    async def test_transition_message_italian(self, db):
+        """user_lang='Italian' → italian string used."""
+        config = _config()
+        plan_id = db._test_plan_id
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="qual è l'uptime del sistema?",
+                user_lang="Italian",
+            )
+
+        assert triggered is True
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert len(msg_tasks) == 1
+        output = msg_tasks[0].get("output") or ""
+        assert _CHAT_KB_FALLBACK_MSGS["Italian"] in output
+        assert "knowledge base" in output  # appears in both languages, sanity
+
+    async def test_transition_message_unknown_lang_defaults_english(self, db):
+        """Unknown user_lang → English fallback."""
+        config = _config()
+        plan_id = db._test_plan_id
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="What is the current uptime?",
+                user_lang="Klingon",
+            )
+
+        assert triggered is True
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        output = msg_tasks[0].get("output") or ""
+        assert _CHAT_KB_FALLBACK_MSGS["English"] in output
 
 
 class TestMessengerSanitization:

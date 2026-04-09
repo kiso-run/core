@@ -132,6 +132,7 @@ from kiso.store import (
     session_has_install_proposal,
     save_pending_item,
     search_facts,
+    search_facts_scored,
     update_fact_usage,
     update_learning,
     update_plan_goal,
@@ -212,6 +213,95 @@ async def _deliver_webhook_if_configured(
         deliver_webhook_fn=deliver_webhook,
         audit_mod=audit,
     )
+
+
+#: Fixed deterministic transition messages emitted when chat_kb pre-flight
+#: returns no facts and the worker re-routes the message to the investigate
+#: planner. Keyed by the language string returned by ``classify_message``
+#: (e.g. ``"Italian"``, ``"English"``). Any unknown or empty value falls
+#: back to the English string. Adding a language is a one-line change.
+_CHAT_KB_FALLBACK_MSGS: dict[str, str] = {
+    "English": "I don't have this in my knowledge base — let me check the live system.",
+    "Italian": "Non ho questa informazione nella mia knowledge base — vado a controllare il sistema dal vivo.",
+}
+
+
+async def _chat_kb_preflight_fallback(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    plan_id: int,
+    content: str,
+    user_lang: str,
+    slog: SessionLogger | None = None,
+) -> bool:
+    """Pre-flight chat_kb facts check with transparent investigate fallback.
+
+    When the classifier routes a message to ``chat_kb``, do a cheap keyword
+    search against the facts store *before* committing to the chat_kb path.
+    If the search returns no facts, persist a deterministic transition msg
+    task on ``plan_id`` (so the user sees the mode switch via the existing
+    task/webhook delivery path) and return ``True`` so the caller can
+    re-route the same user message through ``run_planner(investigate=True)``.
+
+    Returns ``False`` (do NOT fall back) when:
+
+    - The user message has no extractable keywords.
+    - The pre-flight returns at least one fact.
+    - The pre-flight raises (treat as "safe to proceed with chat_kb"; we
+      reserve the fallback for *empty result*, not *failed query*).
+
+    Trade-off: the pre-flight uses raw keywords from ``content``
+    (``content.lower().split()[:10]``), the same pattern
+    ``_msg_task_impl`` uses on its own facts query. The full chat_kb
+    path adds ``entity_id`` + ``relevant_tags`` from the briefer, so
+    the pre-flight is strictly less precise. False negatives are
+    accepted as "investigate plan instead of chat response" — verbose
+    but never wrong.
+    """
+    keywords = [w for w in content.lower().split()[:10] if w] if content else []
+    if not keywords:
+        return False
+    try:
+        session_project_id = await get_session_project_id(db, session)
+        preflight_facts = await search_facts_scored(
+            db,
+            entity_id=None,
+            tags=None,
+            keywords=keywords,
+            session=session,
+            is_admin=False,
+            project_id=session_project_id,
+        )
+    except Exception as e:  # noqa: BLE001 — see docstring: errors don't trigger fallback
+        log.warning("chat_kb pre-flight failed (%s) — staying on chat_kb path", e)
+        if slog:
+            slog.info("chat_kb pre-flight failed: %s — staying on chat_kb path", e)
+        return False
+    if preflight_facts:
+        return False
+
+    transition_msg = _CHAT_KB_FALLBACK_MSGS.get(user_lang) or _CHAT_KB_FALLBACK_MSGS["English"]
+    deploy_secrets = collect_deploy_secrets()
+    await update_plan_goal(db, plan_id, "KB lookup → investigate")
+    transition_task_id = await create_task(
+        db, plan_id, session, TASK_TYPE_MSG, transition_msg,
+    )
+    await update_task(
+        db, transition_task_id, "done", output=transition_msg, duration_ms=0,
+    )
+    await save_message(
+        db, session, None, "assistant", transition_msg,
+        trusted=True, processed=True,
+    )
+    await _deliver_webhook_if_configured(
+        db, config, session, transition_task_id, transition_msg, False,
+        deploy_secrets=deploy_secrets,
+    )
+    log.info("chat_kb pre-flight empty → falling back to investigate")
+    if slog:
+        slog.info("chat_kb pre-flight empty → fallback to investigate")
+    return True
 
 
 def _is_briefer_budget_ok(config: Config) -> bool:
@@ -2553,6 +2643,14 @@ async def _process_message(
             log.warning("Classifier timed out after %ds, falling back to chat",
                         classifier_timeout)
             msg_class = "chat"
+        # M1291: chat_kb pre-flight. If KB has no facts matching the user
+        # message keywords, persist a transition msg and re-route through
+        # the investigate planner instead of the empty chat_kb path.
+        if msg_class == "chat_kb":
+            if await _chat_kb_preflight_fallback(
+                db, config, session, plan_id, content, user_lang, slog=slog,
+            ):
+                msg_class = "investigate"
         if msg_class in ("chat", "chat_kb"):
             log.info("Fast path: %s message, skipping planner", msg_class)
             if slog:
