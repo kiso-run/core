@@ -225,6 +225,110 @@ _CHAT_KB_FALLBACK_MSGS: dict[str, str] = {
     "Italian": "Non ho questa informazione nella mia knowledge base — vado a controllare il sistema dal vivo.",
 }
 
+#: Fixed deterministic transition messages emitted when the dispatcher
+#: promotes a ``plan``/``investigate``-classified message to ``chat_kb``
+#: because the KB has a confident keyword match. Symmetric to
+#: ``_CHAT_KB_FALLBACK_MSGS``. Same language-keyed shape; English
+#: fallback when the language is unknown.
+_PLAN_TO_CHAT_KB_PROMOTE_MSGS: dict[str, str] = {
+    "English": "Found this in my knowledge base — answering directly.",
+    "Italian": "Ho trovato l'informazione nella mia knowledge base — rispondo direttamente.",
+}
+
+#: First-token imperative verbs that block plan→chat_kb promotion. The
+#: rule is intentionally narrow: only the first whitespace-delimited
+#: token is checked, lowercased, and stripped of punctuation. The set
+#: covers EN/IT/ES because those are the languages exercised by the
+#: functional test suite. False negatives are accepted — failing to
+#: promote a KB query is verbose but never wrong; promoting an action
+#: request would be wrong, so the gate errs on the side of NOT
+#: promoting.
+_PLAN_PROMOTE_IMPERATIVE_PREFIXES: frozenset[str] = frozenset({
+    # English
+    "run", "install", "uninstall", "fix", "create", "delete", "remove",
+    "update", "upgrade", "downgrade", "write", "build", "make", "execute",
+    "launch", "start", "stop", "kill", "restart", "reload", "add", "deploy",
+    "push", "pull", "clone", "commit", "merge", "rebase", "send", "fetch",
+    "download", "upload", "save", "copy", "move", "rename", "edit",
+    "change", "modify", "generate", "configure", "setup", "set", "reset",
+    "clear", "open", "close", "navigate", "go", "browse", "scrape",
+    "crawl", "search", "find", "list", "show", "tell", "remember",
+    "forget", "learn", "teach", "register", "unregister", "enable",
+    "disable", "activate", "deactivate", "format", "compile", "test",
+    "run.", "execute.",
+    # Italian
+    "esegui", "installa", "disinstalla", "correggi", "crea", "cancella",
+    "elimina", "aggiorna", "scrivi", "costruisci", "fai", "fammi",
+    "lancia", "avvia", "ferma", "riavvia", "ricarica", "aggiungi",
+    "distribuisci", "invia", "manda", "scarica", "salva", "copia",
+    "sposta", "rinomina", "modifica", "cambia", "genera", "configura",
+    "imposta", "azzera", "apri", "chiudi", "naviga", "vai", "cerca",
+    "trova", "elenca", "mostra", "dimmi", "ricordati", "ricorda",
+    "dimentica", "impara", "registra", "disabilita", "abilita",
+    "attiva", "disattiva", "compila",
+    # Spanish
+    "ejecuta", "instala", "desinstala", "arregla", "borra", "elimina",
+    "actualiza", "escribe", "construye", "haz", "lanza", "inicia",
+    "para", "reinicia", "recarga", "agrega", "añade", "anade",
+    "despliega", "envía", "envia", "manda", "descarga", "guarda",
+    "copia", "mueve", "renombra", "modifica", "cambia", "genera",
+    "configura", "establece", "abre", "cierra", "navega", "ve",
+    "busca", "encuentra", "lista", "muestra", "dime", "recuerda",
+    "olvida", "aprende", "registra", "habilita", "deshabilita",
+    "activa", "desactiva", "compila",
+})
+
+
+def _looks_like_question(content: str) -> bool:
+    """Cheap deterministic check: does ``content`` look like a question?
+
+    The check is conservative: requires either a literal ``?`` somewhere
+    in the message OR a first-token question word in EN/IT/ES. False
+    negatives (some questions skipped) are acceptable; false positives
+    (declarative sentences treated as questions) would route knowledge
+    statements to the chat_kb fast path instead of the planner storage
+    path, so we avoid them.
+    """
+    if not content:
+        return False
+    if "?" in content:
+        return True
+    first = content.strip().split(maxsplit=1)
+    if not first:
+        return False
+    head = first[0].lower().strip(".,;:!¿¡")
+    # Common question starters across the three project languages.
+    return head in _PLAN_PROMOTE_QUESTION_PREFIXES
+
+
+_PLAN_PROMOTE_QUESTION_PREFIXES: frozenset[str] = frozenset({
+    # English
+    "what", "what's", "who", "who's", "when", "where", "why", "how",
+    "which", "whose", "whom",
+    # Italian
+    "cosa", "che", "chi", "quando", "dove", "perché", "perche",
+    "come", "quale", "quali",
+    # Spanish
+    "qué", "que", "quién", "quien", "cuándo", "cuando", "dónde",
+    "donde", "por", "cómo", "como", "cuál", "cual", "cuáles", "cuales",
+})
+
+
+def _has_imperative_prefix(content: str) -> bool:
+    """Return True if ``content`` starts with a known imperative verb.
+
+    Used by the plan→chat_kb promotion gate to skip messages that are
+    actions (run, install, fix, ...) even if they happen to mention a
+    KB-known entity.
+    """
+    if not content:
+        return False
+    first = content.strip().split(maxsplit=1)
+    if not first:
+        return False
+    head = first[0].lower().strip(".,;:!¿¡")
+    return head in _PLAN_PROMOTE_IMPERATIVE_PREFIXES
+
 
 async def _chat_kb_preflight_fallback(
     db: aiosqlite.Connection,
@@ -301,6 +405,97 @@ async def _chat_kb_preflight_fallback(
     log.info("chat_kb pre-flight empty → falling back to investigate")
     if slog:
         slog.info("chat_kb pre-flight empty → fallback to investigate")
+    return True
+
+
+async def _plan_chat_kb_preflight_promotion(
+    db: aiosqlite.Connection,
+    config: Config,
+    session: str,
+    plan_id: int,
+    content: str,
+    user_lang: str,
+    slog: SessionLogger | None = None,
+) -> bool:
+    """Pre-flight promotion of ``plan``/``investigate`` → ``chat_kb``.
+
+    Symmetric counterpart to :func:`_chat_kb_preflight_fallback`. When
+    the classifier routes a message to ``plan`` or ``investigate`` but
+    the KB already contains matching facts, this function persists a
+    deterministic transition msg on ``plan_id`` and returns ``True`` so
+    the caller can re-route the message through the existing chat_kb
+    fast path (skipping the planner entirely).
+
+    Returns ``False`` (do NOT promote) when:
+
+    - The message has no ``?`` and no question-word prefix.
+    - The first token is a known imperative verb in EN/IT/ES.
+    - The message has no extractable keywords.
+    - The pre-flight returns no facts.
+    - The pre-flight raises (treat as "safe to stay on plan path").
+
+    Trade-off: same as :func:`_chat_kb_preflight_fallback` — the
+    pre-flight uses raw keywords from ``content``
+    (``content.lower().split()[:10]``), the same pattern
+    ``_msg_task_impl`` uses on its own facts query. The full chat_kb
+    path adds ``entity_id`` + ``relevant_tags`` from the briefer, so
+    the pre-flight is strictly less precise. Both error directions are
+    safe: a false negative leaves the planner to handle the message
+    (verbose but correct); a false positive is prevented by the
+    imperative-verb gate so action requests cannot reach this code
+    path even when they mention a KB-known entity.
+    """
+    if not _looks_like_question(content):
+        return False
+    if _has_imperative_prefix(content):
+        return False
+    keywords = [w for w in content.lower().split()[:10] if w] if content else []
+    if not keywords:
+        return False
+    try:
+        session_project_id = await get_session_project_id(db, session)
+        preflight_facts = await search_facts_scored(
+            db,
+            entity_id=None,
+            tags=None,
+            keywords=keywords,
+            session=session,
+            is_admin=False,
+            project_id=session_project_id,
+        )
+    except Exception as e:  # noqa: BLE001 — symmetric with fallback: errors don't promote
+        log.warning("plan→chat_kb promotion pre-flight failed (%s) — staying on plan path", e)
+        if slog:
+            slog.info("plan→chat_kb promotion pre-flight failed: %s — staying on plan path", e)
+        return False
+    if not preflight_facts:
+        return False
+
+    transition_msg = (
+        _PLAN_TO_CHAT_KB_PROMOTE_MSGS.get(user_lang)
+        or _PLAN_TO_CHAT_KB_PROMOTE_MSGS["English"]
+    )
+    deploy_secrets = collect_deploy_secrets()
+    await update_plan_goal(db, plan_id, "Plan → chat_kb (KB hit)")
+    transition_task_id = await create_task(
+        db, plan_id, session, TASK_TYPE_MSG, transition_msg,
+    )
+    await update_task(
+        db, transition_task_id, "done", output=transition_msg, duration_ms=0,
+    )
+    await save_message(
+        db, session, None, "assistant", transition_msg,
+        trusted=True, processed=True,
+    )
+    await _deliver_webhook_if_configured(
+        db, config, session, transition_task_id, transition_msg, False,
+        deploy_secrets=deploy_secrets,
+    )
+    log.info("plan→chat_kb promotion: KB has %d match(es) → fast path",
+             len(preflight_facts))
+    if slog:
+        slog.info("plan→chat_kb promotion: KB has %d match(es) → fast path",
+                  len(preflight_facts))
     return True
 
 
@@ -2651,6 +2846,15 @@ async def _process_message(
                 db, config, session, plan_id, content, user_lang, slog=slog,
             ):
                 msg_class = "investigate"
+        # M1299: symmetric promotion. If the classifier routed a question
+        # to plan/investigate but the KB already has matching facts,
+        # persist a transition msg and route through the existing chat_kb
+        # fast path instead of waking the planner.
+        if msg_class in ("plan", "investigate"):
+            if await _plan_chat_kb_preflight_promotion(
+                db, config, session, plan_id, content, user_lang, slog=slog,
+            ):
+                msg_class = "chat_kb"
         if msg_class in ("chat", "chat_kb"):
             log.info("Fast path: %s message, skipping planner", msg_class)
             if slog:
