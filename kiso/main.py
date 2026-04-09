@@ -208,69 +208,107 @@ def _migrate_summarizer_session_role(roles_dir: "Path") -> None:
         log.warning("Failed to migrate summarizer-session.md: %s", e)
 
 
-def _init_kiso_dirs() -> None:
-    """Ensure ~/.kiso/ subdirectories exist and sync reference docs."""
+def _populate_kiso_dir(target: Path) -> None:
+    """Seed *target* with standard subdirs + bundled roles + reference docs.
+
+    Called by :func:`_init_kiso_dirs` at server startup with
+    ``target=KISO_DIR``. Idempotent and safe to call repeatedly.
+    Does NOT generate SSH keys or fetch boot facts — those stay
+    in :func:`_init_kiso_dirs` because they are production-only.
+
+    Behavior:
+
+    - Creates the standard subdirs (``tools``, ``connectors``,
+      ``recipes``, ``sessions``, ``roles``, ``reference``,
+      ``sys/bin``, ``sys/ssh``).
+    - Runs the M1293 ``summarizer-session.md → summarizer.md``
+      migration before copying bundled roles, so a stale legacy
+      file does not land alongside the canonical filename.
+    - Additively copies bundled roles into ``target/roles/``: a
+      file is written only if missing or empty (catches
+      ``> file.md`` accidents). Existing non-empty user files
+      are never overwritten.
+    - Syncs bundled reference docs into ``target/reference/``,
+      overwriting on content change.
+
+    The eager seed performed here mirrors the lazy self-heal in
+    :func:`kiso.brain.prompts._load_system_prompt`. Both paths
+    converge on the same end state: the user dir is the runtime
+    source of truth, and the bundled defaults are the factory
+    seed. The eager path lets ``ls ~/.kiso/roles/`` work right
+    after install; the lazy path makes the loader resilient to
+    runtime corruption.
+    """
+    import importlib.resources
+
     try:
-        (KISO_DIR / "sys" / "bin").mkdir(parents=True, exist_ok=True)
-        (KISO_DIR / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
-        (KISO_DIR / "reference").mkdir(parents=True, exist_ok=True)
-        # Pre-create runtime subdirectories so kiso has a
-        # discoverable structure on first install and external
-        # scripts can drop files without mkdir-ing first.
-        (KISO_DIR / "tools").mkdir(parents=True, exist_ok=True)
-        (KISO_DIR / "connectors").mkdir(parents=True, exist_ok=True)
-        (KISO_DIR / "recipes").mkdir(parents=True, exist_ok=True)
-        (KISO_DIR / "sessions").mkdir(parents=True, exist_ok=True)
-        (KISO_DIR / "roles").mkdir(parents=True, exist_ok=True)
+        (target / "sys" / "bin").mkdir(parents=True, exist_ok=True)
+        (target / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
+        (target / "reference").mkdir(parents=True, exist_ok=True)
+        (target / "tools").mkdir(parents=True, exist_ok=True)
+        (target / "connectors").mkdir(parents=True, exist_ok=True)
+        (target / "recipes").mkdir(parents=True, exist_ok=True)
+        (target / "sessions").mkdir(parents=True, exist_ok=True)
+        (target / "roles").mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        log.warning("Failed to create kiso directories: %s", e)
+        log.warning("Failed to create kiso directories under %s: %s", target, e)
         return
 
-    # Sync bundled reference docs to ~/.kiso/reference/
-    import importlib.resources
+    # Sync bundled reference docs
     try:
         ref_pkg = importlib.resources.files("kiso") / "reference"
-        dest = KISO_DIR / "reference"
+        dest = target / "reference"
         for src_file in ref_pkg.iterdir():
             if src_file.name.endswith(".md"):
-                target = dest / src_file.name
+                ref_target = dest / src_file.name
                 try:
                     content = src_file.read_text(encoding="utf-8")
-                    # Only write if changed (avoid unnecessary writes)
-                    if not target.exists() or target.read_text(encoding="utf-8") != content:
-                        target.write_text(content, encoding="utf-8")
+                    if not ref_target.exists() or ref_target.read_text(encoding="utf-8") != content:
+                        ref_target.write_text(content, encoding="utf-8")
                 except OSError as e:
                     log.warning("Failed to sync reference file %s: %s", src_file.name, e)
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to sync reference docs: %s", e)
 
-    # Copy bundled roles to ~/.kiso/roles/ — additive only, no
-    # overwrite of existing user customizations. Self-heal empty
-    # files (catches `> file.md` accidents). Runtime
-    # `_load_system_prompt` reads ONLY from this user dir, no
-    # package fallback.
-    # M1293: migrate legacy summarizer-session.md → summarizer.md
-    # before the additive copy, so the bundled summarizer.md does not
-    # land alongside a stale legacy file.
-    _migrate_summarizer_session_role(KISO_DIR / "roles")
+    # M1293: rename legacy summarizer-session.md → summarizer.md before
+    # the additive copy, so the bundled summarizer.md does not land
+    # alongside a stale legacy file.
+    _migrate_summarizer_session_role(target / "roles")
 
+    # Additively copy bundled roles. Existing non-empty user files
+    # are preserved; empty files are self-healed.
     try:
         roles_pkg = importlib.resources.files("kiso") / "roles"
-        roles_dest = KISO_DIR / "roles"
+        roles_dest = target / "roles"
         for src_file in roles_pkg.iterdir():
             if not src_file.name.endswith(".md"):
                 continue
-            target = roles_dest / src_file.name
+            role_target = roles_dest / src_file.name
             try:
-                if not target.exists() or target.stat().st_size == 0:
-                    target.write_text(src_file.read_text(encoding="utf-8"),
-                                      encoding="utf-8")
+                if not role_target.exists() or role_target.stat().st_size == 0:
+                    role_target.write_text(
+                        src_file.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
             except OSError as e:
                 log.warning("Failed to copy role file %s: %s", src_file.name, e)
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to copy bundled roles: %s", e)
 
-    # --- SSH key generation ---
+
+def _init_kiso_dirs() -> None:
+    """Ensure ~/.kiso/ subdirectories exist and sync bundled defaults.
+
+    Server-startup wrapper around :func:`_populate_kiso_dir` plus
+    SSH key generation. The role population is **eager** here so
+    that ``ls ~/.kiso/roles/`` shows files immediately after install
+    and operators can edit them without waiting for the first LLM
+    call. The runtime loader
+    :func:`kiso.brain.prompts._load_system_prompt` performs a
+    matching **lazy** self-heal on first access for any file that
+    is missing or empty after startup (e.g., a runtime corruption).
+    """
+    _populate_kiso_dir(KISO_DIR)
     _init_ssh_keys()
 
 

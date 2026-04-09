@@ -867,9 +867,15 @@ class TestValidatePlan:
 # --- _load_system_prompt ---
 
 class TestLoadSystemPrompt:
-    """The runtime loader reads roles only from the user dir
-    (KISO_DIR/roles/). No package fallback. Missing user file →
-    FileNotFoundError with reset hint."""
+    """The runtime loader reads roles from the user dir
+    (KISO_DIR/roles/). The user dir is the runtime source of
+    truth; M1296 lazy self-heal copies the bundled default into
+    the user dir on first access if the file is missing or
+    empty (mirrors the eager seed performed by
+    ``_init_kiso_dirs`` at server startup). Hard
+    FileNotFoundError fires only when both the user file and
+    the bundled default are missing — i.e., the kiso install
+    itself is broken."""
 
     @pytest.fixture(autouse=True)
     def _isolated_kiso_dir(self, tmp_path):
@@ -917,26 +923,114 @@ class TestLoadSystemPrompt:
         prompt = _load_system_prompt(role)
         assert prompt == f"Custom {role} prompt"
 
-    def test_missing_user_role_raises_with_reset_hint(self, _isolated_kiso_dir):
-        """No package fallback. If the user file is missing, the
-        loader raises FileNotFoundError with a clear reset hint."""
-        with pytest.raises(FileNotFoundError, match="kiso role reset"):
-            _load_system_prompt("planner")
+    def test_missing_user_role_self_heals_from_bundle(
+        self, _isolated_kiso_dir, caplog,
+    ):
+        """M1296: when the user role file is missing, the loader
+        copies the bundled default into the user dir, logs a
+        WARNING, and returns the bundled content. After self-heal
+        the file exists in the user dir (the runtime source of
+        truth) and subsequent reads use it directly."""
+        target = _isolated_kiso_dir / "roles" / "planner.md"
+        assert not target.exists()
+        with caplog.at_level("WARNING", logger="kiso.brain.prompts"):
+            prompt = _load_system_prompt("planner")
+        assert "planner" in prompt.lower()
+        # Self-heal landed the bundled file in the user dir
+        assert target.exists()
+        assert target.read_text() == prompt
+        # Operator-visible warning
+        assert any(
+            "self-healed role 'planner'" in r.message.lower()
+            for r in caplog.records
+        ), f"missing self-heal warning, records={[r.message for r in caplog.records]}"
 
-    def test_unknown_role_raises_with_reset_hint(self, _isolated_kiso_dir):
-        """An unknown role name also raises with the reset hint."""
-        with pytest.raises(FileNotFoundError, match="kiso role reset"):
-            _load_system_prompt("nonexistent")
+    def test_empty_user_file_triggers_self_heal(self, _isolated_kiso_dir):
+        """M1296: a zero-byte user file is treated as missing.
+        Catches `> file.md` accidents and partial writes."""
+        target = _isolated_kiso_dir / "roles" / "planner.md"
+        target.write_text("")
+        assert target.stat().st_size == 0
+        prompt = _load_system_prompt("planner")
+        assert prompt
+        assert target.stat().st_size > 0
+        assert target.read_text() == prompt
 
-    def test_no_package_fallback_even_when_package_has_role(
+    def test_self_heal_does_not_overwrite_existing_user_override(
         self, _isolated_kiso_dir,
     ):
-        """Regression: even though kiso/roles/planner.md exists in
-        the package, the loader must NOT fall back to it. The user
-        dir is the single source of truth."""
-        # User dir empty (set up by fixture), package has planner.md
-        with pytest.raises(FileNotFoundError):
-            _load_system_prompt("planner")
+        """M1296: a non-empty user file is the source of truth and
+        is read verbatim. Self-heal must not touch it."""
+        target = _isolated_kiso_dir / "roles" / "planner.md"
+        target.write_text("CUSTOM PLANNER OVERRIDE")
+        prompt = _load_system_prompt("planner")
+        assert prompt == "CUSTOM PLANNER OVERRIDE"
+        assert target.read_text() == "CUSTOM PLANNER OVERRIDE"
+
+    def test_unknown_role_raises_when_bundle_missing_too(
+        self, _isolated_kiso_dir,
+    ):
+        """M1296: a role name that exists in neither the user dir
+        nor the bundle still raises FileNotFoundError. This is the
+        only remaining hard-fail path — it indicates the kiso
+        installation itself is corrupted."""
+        with pytest.raises(FileNotFoundError, match="installation may be corrupted"):
+            _load_system_prompt("nonexistent_role_xyz")
+
+    def test_self_heal_uses_atomic_write(self, _isolated_kiso_dir):
+        """M1296: self-heal must use a tmp + rename pattern so a
+        crash mid-copy cannot leave a partial file behind. Verify
+        no .tmp file remains after the copy."""
+        _load_system_prompt("planner")
+        target = _isolated_kiso_dir / "roles" / "planner.md"
+        tmp_residue = _isolated_kiso_dir / "roles" / "planner.md.tmp"
+        assert target.exists()
+        assert not tmp_residue.exists()
+
+    def test_functional_fixture_pattern_self_heals(self, tmp_path):
+        """M1296 regression: replicate the multi-module patch
+        pattern used by tests/functional/conftest.py:_func_kiso_dir
+        (creates an isolated kiso dir, patches KISO_DIR on every
+        consumer module, but does NOT pre-populate roles/) and
+        verify the loader self-heals on first access. This is the
+        deterministic equivalent of the 36 functional + 9 extended
+        fails reported in the M1296 problem statement.
+        """
+        _modules = [
+            "kiso.config", "kiso.brain", "kiso.tools", "kiso.main",
+            "kiso.pub", "kiso.log", "kiso.audit", "kiso.sysenv",
+            "kiso.connectors", "kiso.recipe_loader", "kiso.tool_repair",
+            "kiso.worker.loop", "kiso.worker.utils",
+        ]
+        invalidate_prompt_cache()
+        # Mirror _func_kiso_dir: create the dir, do NOT touch roles/
+        (tmp_path / "tools").mkdir()
+        (tmp_path / "sys" / "ssh").mkdir(parents=True)
+        patches = [patch(f"{m}.KISO_DIR", tmp_path) for m in _modules]
+        for p in patches:
+            p.start()
+        try:
+            # First load triggers self-heal for every requested role
+            for role in ("classifier", "planner", "briefer", "messenger"):
+                prompt = _load_system_prompt(role)
+                assert prompt and len(prompt) > 100
+                assert (tmp_path / "roles" / f"{role}.md").exists()
+        finally:
+            for p in patches:
+                p.stop()
+            invalidate_prompt_cache()
+
+    def test_live_fixture_pattern_self_heals(self, tmp_path):
+        """M1296 regression: replicate the
+        ``with patch("kiso.brain.KISO_DIR", tmp_path):`` pattern
+        used by 18 per-test sites in tests/live/test_e2e.py,
+        test_flows.py, test_practical.py, test_roles.py — none of
+        which populate roles/ in tmp_path. Loader must self-heal."""
+        invalidate_prompt_cache()
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            prompt = _load_system_prompt("planner")
+        assert "planner" in prompt.lower()
+        assert (tmp_path / "roles" / "planner.md").exists()
 
 
 # --- _load_system_prompt — cache (M65b) ---
