@@ -205,6 +205,27 @@ def _init_kiso_dirs() -> None:
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to sync reference docs: %s", e)
 
+    # M1289: Copy bundled roles to ~/.kiso/roles/ — additive only, no
+    # overwrite of existing user customizations. Self-heal empty
+    # files (catches `> file.md` accidents). Runtime
+    # `_load_system_prompt` reads ONLY from this user dir, no
+    # package fallback.
+    try:
+        roles_pkg = importlib.resources.files("kiso") / "roles"
+        roles_dest = KISO_DIR / "roles"
+        for src_file in roles_pkg.iterdir():
+            if not src_file.name.endswith(".md"):
+                continue
+            target = roles_dest / src_file.name
+            try:
+                if not target.exists() or target.stat().st_size == 0:
+                    target.write_text(src_file.read_text(encoding="utf-8"),
+                                      encoding="utf-8")
+            except OSError as e:
+                log.warning("Failed to copy role file %s: %s", src_file.name, e)
+    except (FileNotFoundError, OSError, TypeError) as e:
+        log.warning("Failed to copy bundled roles: %s", e)
+
     # --- SSH key generation ---
     _init_ssh_keys()
 

@@ -259,6 +259,71 @@ class TestInitKisoDirs:
         for name in ("tools", "connectors", "recipes", "sessions", "roles"):
             assert (tmp_path / name).is_dir(), f"{name}/ missing after 2nd run"
 
+    # -- M1289: roles copied to user dir at init --
+
+    def test_init_copies_all_package_roles_to_user_dir(self, tmp_path):
+        """First init copies every bundled role .md to ~/.kiso/roles/."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        roles_dir = tmp_path / "roles"
+        # At least the canonical roles must be copied
+        for role in ("planner", "reviewer", "messenger", "classifier",
+                     "briefer", "curator", "paraphraser"):
+            target = roles_dir / f"{role}.md"
+            assert target.is_file(), f"role {role}.md not copied"
+            assert len(target.read_text()) > 0, f"role {role}.md is empty"
+
+    def test_init_does_not_overwrite_existing_role(self, tmp_path):
+        """A user-customized role file (non-empty) is preserved."""
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir(parents=True)
+        custom_path = roles_dir / "planner.md"
+        custom_path.write_text("# my custom planner\n\nDo X first.")
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        # Custom content unchanged
+        assert custom_path.read_text() == "# my custom planner\n\nDo X first."
+
+    def test_init_self_heals_empty_role(self, tmp_path):
+        """An empty role file (0 bytes) is restored from the package
+        — catches the 'I did `> file.md` by mistake' case."""
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir(parents=True)
+        empty_path = roles_dir / "planner.md"
+        empty_path.write_text("")
+        assert empty_path.stat().st_size == 0
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        # Now populated from package
+        assert empty_path.stat().st_size > 0
+
+    def test_init_idempotent_with_populated_user_roles(self, tmp_path):
+        """Running init twice on a populated user dir is a no-op:
+        no rewrites, no overwrites, no errors."""
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        mtime1 = (tmp_path / "roles" / "planner.md").stat().st_mtime
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        mtime2 = (tmp_path / "roles" / "planner.md").stat().st_mtime
+        assert mtime1 == mtime2, "role file rewritten on second init"
+
+    def test_init_partial_user_dir_fills_missing_roles(self, tmp_path):
+        """If user has some roles but not others, only the missing
+        ones get copied. Existing ones are left alone."""
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir(parents=True)
+        custom = roles_dir / "planner.md"
+        custom.write_text("# custom planner")
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        # Custom still custom
+        assert custom.read_text() == "# custom planner"
+        # Other roles got auto-copied
+        reviewer = roles_dir / "reviewer.md"
+        assert reviewer.is_file()
+        assert len(reviewer.read_text()) > 0
+
     # -- 87b: error paths --
 
     def test_mkdir_oserror_logs_warning_and_returns(self, tmp_path, caplog):

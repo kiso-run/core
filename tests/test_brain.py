@@ -867,34 +867,72 @@ class TestValidatePlan:
 # --- _load_system_prompt ---
 
 class TestLoadSystemPrompt:
+    @pytest.fixture(autouse=True)
+    def _isolated_kiso_dir(self, tmp_path):
+        """Each test gets a fresh tmp KISO_DIR with an empty roles/."""
+        roles_dir = tmp_path / "roles"
+        roles_dir.mkdir()
+        invalidate_prompt_cache()
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            yield tmp_path
+        invalidate_prompt_cache()
+
     @pytest.mark.parametrize("role,expected_substring", [
         ("planner", "planner"),
         ("reviewer", "task reviewer"),
         ("worker", "shell command translator"),
     ], ids=["planner", "reviewer", "worker"])
-    def test_package_default_when_no_user_file(self, role, expected_substring):
+    def test_user_role_loaded(self, _isolated_kiso_dir, role, expected_substring):
+        """The loader reads the role file from the user dir. Test
+        sets up the user dir by copying from the package (mirrors
+        what _init_kiso_dirs does at boot)."""
+        from pathlib import Path
+        pkg_role = Path(__file__).resolve().parent.parent / "kiso" / "roles" / f"{role}.md"
+        (_isolated_kiso_dir / "roles" / f"{role}.md").write_text(
+            pkg_role.read_text(encoding="utf-8"), encoding="utf-8"
+        )
         prompt = _load_system_prompt(role)
         assert expected_substring in prompt
 
-    def test_worker_default_has_cannot_translate(self):
+    def test_worker_default_has_cannot_translate(self, _isolated_kiso_dir):
+        from pathlib import Path
+        pkg_role = Path(__file__).resolve().parent.parent / "kiso" / "roles" / "worker.md"
+        (_isolated_kiso_dir / "roles" / "worker.md").write_text(
+            pkg_role.read_text(encoding="utf-8"), encoding="utf-8"
+        )
         prompt = _load_system_prompt("worker")
         assert "CANNOT_TRANSLATE" in prompt
 
     @pytest.mark.parametrize("role", ["planner", "reviewer", "worker"],
                              ids=["planner", "reviewer", "worker"])
-    def test_user_override_takes_priority(self, tmp_path, role):
-        roles_dir = tmp_path / "roles"
-        roles_dir.mkdir()
-        (roles_dir / f"{role}.md").write_text(f"Custom {role} prompt")
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            prompt = _load_system_prompt(role)
+    def test_user_custom_content_loaded(self, _isolated_kiso_dir, role):
+        """Custom user content is loaded verbatim."""
+        (_isolated_kiso_dir / "roles" / f"{role}.md").write_text(
+            f"Custom {role} prompt"
+        )
+        prompt = _load_system_prompt(role)
         assert prompt == f"Custom {role} prompt"
 
-    def test_unknown_role_raises(self, tmp_path):
-        # Use a tmp_path with no roles dir as KISO_DIR to avoid class-wide mock
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            with pytest.raises(FileNotFoundError, match="No prompt found for role 'nonexistent'"):
-                _load_system_prompt("nonexistent")
+    def test_missing_user_role_raises_with_reset_hint(self, _isolated_kiso_dir):
+        """No package fallback. If the user file is missing, the
+        loader raises FileNotFoundError with a clear reset hint."""
+        with pytest.raises(FileNotFoundError, match="kiso role reset"):
+            _load_system_prompt("planner")
+
+    def test_unknown_role_raises_with_reset_hint(self, _isolated_kiso_dir):
+        """An unknown role name also raises with the reset hint."""
+        with pytest.raises(FileNotFoundError, match="kiso role reset"):
+            _load_system_prompt("nonexistent")
+
+    def test_no_package_fallback_even_when_package_has_role(
+        self, _isolated_kiso_dir,
+    ):
+        """Regression: even though kiso/roles/planner.md exists in
+        the package, the loader must NOT fall back to it. The user
+        dir is the single source of truth."""
+        # User dir empty (set up by fixture), package has planner.md
+        with pytest.raises(FileNotFoundError):
+            _load_system_prompt("planner")
 
 
 # --- _load_system_prompt — cache (M65b) ---

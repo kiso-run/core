@@ -152,6 +152,47 @@ def pytest_report_teststatus(report, config):
 # asyncio.sleep for backoff. In unit tests, these sleeps cause timeouts.
 # This autouse fixture sets backoff to 0 without patching asyncio.sleep.
 
+@pytest.fixture(scope="session", autouse=True)
+def _populated_user_roles_dir(tmp_path_factory):
+    """M1289: ensure tests have a populated user roles dir.
+
+    After M1289 simplified ``_load_system_prompt`` to read only from
+    ``KISO_DIR / "roles"`` (no package fallback), tests that don't
+    explicitly patch ``KISO_DIR`` would fail because the real
+    ``~/.kiso/roles/`` is only populated after ``_init_kiso_dirs()``
+    runs at server boot.
+
+    This session-scoped autouse fixture creates a tmp KISO_DIR,
+    copies all bundled roles into it, and patches
+    ``kiso.brain.KISO_DIR`` to point there. Tests that explicitly
+    patch ``KISO_DIR`` to a different tmp_path (e.g.
+    ``TestLoadSystemPrompt``) override this session-level patch
+    via function-scoped patches, so isolated tests still work.
+    """
+    import importlib.resources
+    from pathlib import Path
+
+    test_kiso_dir = tmp_path_factory.mktemp("kiso_test_home")
+    roles_dest = test_kiso_dir / "roles"
+    roles_dest.mkdir(parents=True)
+
+    # Copy bundled roles
+    try:
+        roles_pkg = importlib.resources.files("kiso") / "roles"
+        for src_file in roles_pkg.iterdir():
+            if src_file.name.endswith(".md"):
+                (roles_dest / src_file.name).write_text(
+                    src_file.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+    except (FileNotFoundError, OSError, TypeError):
+        pass  # Fall through; tests that need roles will fail clearly
+
+    p = patch("kiso.brain.KISO_DIR", test_kiso_dir)
+    p.start()
+    yield test_kiso_dir
+    p.stop()
+
+
 @pytest.fixture(autouse=True)
 def _no_retry_backoff():
     """Set retry/delay constants to 0 for fast tests."""

@@ -291,6 +291,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     _add_tool_subcommands(sub.add_parser("tool", help="manage tools"))
 
+    # Role (M1289)
+    role_sub = sub.add_parser(
+        "role", help="manage role files in ~/.kiso/roles/",
+    ).add_subparsers(dest="role_command")
+    role_sub.add_parser("list", help="list user vs package roles")
+    rp = role_sub.add_parser(
+        "reset", help="overwrite a role file with the package version",
+    )
+    rp.add_argument("name", nargs="?", default=None,
+                    help="role name to reset (omit with --all)")
+    rp.add_argument("--all", action="store_true",
+                    help="reset every package role")
+    rp.add_argument("--yes", "-y", action="store_true",
+                    help="skip confirmation for non-empty existing files")
+
     # Recipe
     rs = sub.add_parser("recipe", help="manage recipes (planner instructions)").add_subparsers(dest="recipe_command")
     rs.add_parser("list", help="list installed recipes")
@@ -421,6 +436,10 @@ def main() -> None:
         from cli.recipe import run_recipe_command
 
         run_recipe_command(args)
+    elif args.command == "role":
+        from cli.role import run_role_command
+
+        run_role_command(args)
     elif args.command == "plugin":
         from cli.plugin import run_plugin_command
 
