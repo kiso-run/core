@@ -104,7 +104,7 @@ class TestF36CrossPlanFileHandoff:
         # OCR tool task should have correct path with pub/ prefix
         ocr_tasks = [
             t for t in last_plan_tasks
-            if t.get("type") == "tool" and t.get("skill") == "ocr"
+            if t.get("type") == "wrapper" and t.get("skill") == "ocr"
         ]
         assert ocr_tasks, f"No OCR tool task found. Types: {[t.get('type') for t in last_plan_tasks]}"
 

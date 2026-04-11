@@ -48,10 +48,10 @@ async def test_list_knowledge_filter_by_category(client: httpx.AsyncClient):
 async def test_list_knowledge_filter_by_tag(client: httpx.AsyncClient):
     await client.post("/knowledge", headers=AUTH_HEADER,
                       json={"content": "Flask is a Python framework",
-                            "category": "tool", "tags": ["python", "flask"]})
+                            "category": "wrapper", "tags": ["python", "flask"]})
     await client.post("/knowledge", headers=AUTH_HEADER,
                       json={"content": "React is a JS framework",
-                            "category": "tool", "tags": ["javascript", "react"]})
+                            "category": "wrapper", "tags": ["javascript", "react"]})
 
     resp = await client.get("/knowledge", headers=AUTH_HEADER,
                             params={"tag": "python"})

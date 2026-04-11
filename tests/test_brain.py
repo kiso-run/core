@@ -227,11 +227,11 @@ class TestValidatePlan:
 
     def test_skill_without_expect(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "search", "expect": None, "tool": "search", "args": "{}"},
+            {"type": "wrapper", "detail": "search", "expect": None, "tool": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("tool task must have expect describing WHAT RESULT" in e for e in errors)
+        assert any("wrapper task must have expect describing WHAT RESULT" in e for e in errors)
 
     def test_msg_with_expect(self):
         plan = {"tasks": [
@@ -351,7 +351,7 @@ class TestValidatePlan:
 
     def test_skill_name_required(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "do thing", "expect": "ok", "tool": None, "args": "{}"},
+            {"type": "wrapper", "detail": "do thing", "expect": "ok", "tool": None, "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
@@ -359,7 +359,7 @@ class TestValidatePlan:
 
     def test_skill_not_installed(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
+            {"type": "wrapper", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["echo"])
@@ -368,7 +368,7 @@ class TestValidatePlan:
     def test_m903_uninstalled_registry_tool_proposes_install(self):
         """uninstalled tool in registry → 'propose install' not 'use exec'."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
+            {"type": "wrapper", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[],
@@ -381,7 +381,7 @@ class TestValidatePlan:
     def test_m903_uninstalled_unknown_tool_informs_user(self):
         """uninstalled tool NOT in registry → inform user."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "magic", "expect": "ok", "tool": "magic_tool", "args": "{}"},
+            {"type": "wrapper", "detail": "magic", "expect": "ok", "tool": "magic_tool", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[],
@@ -394,7 +394,7 @@ class TestValidatePlan:
     def test_skill_not_installed_feedback_informs_user(self):
         """unknown tool → informs user, suggests alternatives."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "search web", "expect": "results", "tool": "websearch", "args": "{}"},
+            {"type": "wrapper", "detail": "search web", "expect": "results", "tool": "websearch", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["browser"])
@@ -403,7 +403,7 @@ class TestValidatePlan:
 
     def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
+            {"type": "wrapper", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[])
@@ -412,7 +412,7 @@ class TestValidatePlan:
     def test_skill_not_installed_approved_suggests_exec_install(self):
         """when install_approved=True, error guides to exec install."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
+            {"type": "wrapper", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[], install_approved=True)
@@ -423,7 +423,7 @@ class TestValidatePlan:
     def test_skill_not_installed_not_approved_unknown_informs_user(self):
         """unknown tool (not in registry) → inform user."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
+            {"type": "wrapper", "detail": "browse", "expect": "ok", "tool": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=[], install_approved=False)
@@ -453,7 +453,7 @@ class TestValidatePlan:
     def test_wrapper_name_is_task_type_exec(self):
         """tool='exec' is a task type confusion, not a real tool."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "create file", "expect": "ok", "tool": "exec", "args": "{}"},
+            {"type": "wrapper", "detail": "create file", "expect": "ok", "tool": "exec", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. done", "expect": None},
         ]}
         errors = validate_plan(plan)
@@ -463,7 +463,7 @@ class TestValidatePlan:
     def test_wrapper_name_is_task_type_msg(self):
         """tool='msg' is a task type confusion."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "send", "expect": "ok", "tool": "msg", "args": "{}"},
+            {"type": "wrapper", "detail": "send", "expect": "ok", "tool": "msg", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. done", "expect": None},
         ]}
         errors = validate_plan(plan)
@@ -472,7 +472,7 @@ class TestValidatePlan:
     def test_wrapper_name_is_prompt_module_web(self):
         """tool='web' is a prompt module, not a tool."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "browse site", "expect": "ok", "tool": "web", "args": "{}"},
+            {"type": "wrapper", "detail": "browse site", "expect": "ok", "tool": "web", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. done", "expect": None},
         ]}
         errors = validate_plan(plan)
@@ -480,7 +480,7 @@ class TestValidatePlan:
 
     def test_skill_installed_passes(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
+            {"type": "wrapper", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["search"])
@@ -489,7 +489,7 @@ class TestValidatePlan:
     def test_skill_no_installed_list_skips_check(self):
         """When installed_skills is None, skip skill-not-installed check."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
+            {"type": "wrapper", "detail": "search", "expect": "ok", "tool": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=None)
@@ -613,7 +613,7 @@ class TestValidatePlan:
         plan = {
             "goal": "Create a Python script text_stats.py using aider for code generation.",
             "tasks": [
-                {"type": "tool", "detail": "create text_stats.py", "tool": "aider",
+                {"type": "wrapper", "detail": "create text_stats.py", "tool": "aider",
                  "args": {"message": "create", "files": "text_stats.py"}, "expect": "file created"},
                 {"type": "exec", "detail": "verify script exists", "expect": "ok"},
                 {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
@@ -627,7 +627,7 @@ class TestValidatePlan:
         plan = {
             "goal": "Create text_stats.py then run it on the OCR text.",
             "tasks": [
-                {"type": "tool", "detail": "create text_stats.py", "tool": "aider",
+                {"type": "wrapper", "detail": "create text_stats.py", "tool": "aider",
                  "args": {"message": "create", "files": "text_stats.py"}, "expect": "file created"},
                 {"type": "exec", "detail": "run text_stats.py on ocr_text.txt", "expect": "chars and lines"},
                 {"type": "msg", "detail": "Answer in English. results", "expect": None, "tool": None, "args": None},
@@ -645,7 +645,7 @@ class TestValidatePlan:
         plan = {
             "goal": "View the file",
             "tasks": [
-                {"type": "tool", "detail": "open file", "tool": "browser",
+                {"type": "wrapper", "detail": "open file", "tool": "browser",
                  "args": {"url": "file:///tmp/test.py"}, "expect": "content"},
                 {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
             ],
@@ -659,7 +659,7 @@ class TestValidatePlan:
         plan = {
             "goal": "Visit website",
             "tasks": [
-                {"type": "tool", "detail": "visit example.com", "tool": "browser",
+                {"type": "wrapper", "detail": "visit example.com", "tool": "browser",
                  "args": {"url": "https://example.com"}, "expect": "page content"},
                 {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
             ],
@@ -1138,18 +1138,18 @@ class TestBuildPlannerMessages:
         from kiso.store import save_fact
         await save_fact(db, "Uses Flask", "curator", category="project")
         await save_fact(db, "Prefers dark mode", "curator", category="user")
-        await save_fact(db, "Git available", "curator", category="tool")
+        await save_fact(db, "Git available", "curator", category="wrapper")
         await save_fact(db, "Some general fact", "curator", category="general")
         msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "### Project" in content
         assert "### User" in content
-        assert "### Tool" in content
+        assert "### Wrapper" in content
         assert "### General" in content
         # Verify order: project before user before tool before general
         proj_pos = content.index("### Project")
         user_pos = content.index("### User")
-        tool_pos = content.index("### Tool")
+        tool_pos = content.index("### Wrapper")
         gen_pos = content.index("### General")
         assert proj_pos < user_pos < tool_pos < gen_pos
 
@@ -1182,7 +1182,7 @@ class TestBuildPlannerMessages:
         """M44f: non-admin planner context never shows session labels or the other-sessions block."""
         from kiso.store import save_fact
         await create_session(db, "sess1")
-        await save_fact(db, "Uses pytest", "curator", session="sess1", category="tool")
+        await save_fact(db, "Uses pytest", "curator", session="sess1", category="wrapper")
         msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "user", "hello")
         content = msgs[1]["content"]
         assert "Uses pytest" in content
@@ -2237,13 +2237,13 @@ class TestM83PlanSchema:
     def test_valid_extend_replan_integer(self):
         self._valid(self._plan(extend_replan=3))
 
-    @pytest.mark.parametrize("t", ["exec", "msg", "tool", "search", "replan"])
+    @pytest.mark.parametrize("t", ["exec", "msg", "wrapper", "search", "replan"])
     def test_valid_task_type(self, t):
         self._valid(self._plan(tasks=[{"type": t, "detail": "x", "tool": None, "args": None, "expect": None}]))
 
     def test_wrapper_task_object_args_valid(self):
         self._valid(self._plan(tasks=[
-            {"type": "tool", "detail": "search", "tool": "search", "args": {"q": "test"}, "expect": "results"},
+            {"type": "wrapper", "detail": "search", "tool": "search", "args": {"q": "test"}, "expect": "results"},
         ]))
 
     # Invalid ---
@@ -2284,7 +2284,7 @@ class TestM83PlanSchema:
 
     def test_task_string_args_invalid(self):
         self._invalid(self._plan(tasks=[
-            {"type": "tool", "detail": "search", "tool": "search", "args": "{}", "expect": "results"},
+            {"type": "wrapper", "detail": "search", "tool": "search", "args": "{}", "expect": "results"},
         ]))
 
     def test_extend_replan_wrong_type(self):
@@ -3894,7 +3894,7 @@ class TestM166ValidatePlanSkillArgs:
 
     def test_missing_required_arg_rejected(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": "{}", "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3905,7 +3905,7 @@ class TestM166ValidatePlanSkillArgs:
 
     def test_valid_args_accepted(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": {"action": "screenshot"}, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3916,7 +3916,7 @@ class TestM166ValidatePlanSkillArgs:
 
     def test_invalid_json_args_rejected(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": "not-json{", "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3927,7 +3927,7 @@ class TestM166ValidatePlanSkillArgs:
 
     def test_non_object_args_rejected(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": '["wrong"]', "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3938,7 +3938,7 @@ class TestM166ValidatePlanSkillArgs:
 
     def test_null_args_checked_against_schema(self):
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": None, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3950,7 +3950,7 @@ class TestM166ValidatePlanSkillArgs:
     def test_no_info_skips_args_validation(self):
         """When installed_skills_info is not provided, args are not validated."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": None, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3961,7 +3961,7 @@ class TestM166ValidatePlanSkillArgs:
     def test_m184_args_example_in_validation_error(self):
         """validation error includes args example from schema."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "do stuff", "tool": "browser",
+            {"type": "wrapper", "detail": "do stuff", "tool": "browser",
              "args": None, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -3975,7 +3975,7 @@ class TestM166ValidatePlanSkillArgs:
     def test_m184_args_example_required_only(self):
         """example includes only required params from schema."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "do stuff", "tool": "browser",
+            {"type": "wrapper", "detail": "do stuff", "tool": "browser",
              "args": "{}", "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
@@ -5050,7 +5050,7 @@ class TestM48CuratorCategoryField:
         cat = item_props["category"]
         enum_values = [x.get("enum", []) for x in cat.get("anyOf", []) if x.get("type") == "string"]
         flat = [v for sub in enum_values for v in sub]
-        for v in ("project", "user", "tool", "general"):
+        for v in ("project", "user", "wrapper", "general"):
             assert v in flat
 
     def test_48d_curator_schema_category_in_required_list(self):
@@ -5179,11 +5179,11 @@ class TestM343CuratorEntityFields:
         kind = item_props["entity_kind"]
         enum_values = [x.get("enum", []) for x in kind.get("anyOf", []) if x.get("type") == "string"]
         flat = [v for sub in enum_values for v in sub]
-        for v in ("website", "company", "tool", "person", "project", "concept"):
+        for v in ("website", "company", "wrapper", "person", "project", "concept"):
             assert v in flat
 
     def test_build_curator_messages_with_entities(self):
-        entities = [{"name": "flask", "kind": "tool"}, {"name": "myproject", "kind": "project"}]
+        entities = [{"name": "flask", "kind": "wrapper"}, {"name": "myproject", "kind": "project"}]
         msgs = build_curator_messages(
             [{"id": 1, "content": "test"}],
             available_entities=entities,
@@ -5306,14 +5306,14 @@ class TestGroupFactsByCategory:
         facts = [
             self._fact("proj note", "project"),
             self._fact("user pref", "user"),
-            self._fact("tool info", "tool"),
+            self._fact("wrapper info", "wrapper"),
             self._fact("general note", "general"),
         ]
         parts = _group_facts_by_category(facts)
         assert len(parts) == 4
         assert any("Project" in p for p in parts)
         assert any("User" in p for p in parts)
-        assert any("Tool" in p for p in parts)
+        assert any("Wrapper" in p for p in parts)
         assert any("General" in p for p in parts)
 
     def test_unknown_category_falls_to_general(self):
@@ -5724,7 +5724,7 @@ class TestM186EscalatingValidationError:
             captured_messages.append(list(messages))
             # Always return a valid JSON that fails validation the same way
             return json.dumps({"tasks": [
-                {"type": "tool", "detail": "do", "tool": "browser",
+                {"type": "wrapper", "detail": "do", "tool": "browser",
                  "args": None, "expect": "done"},
                 {"type": "msg", "detail": "Answer in English. report results", "expect": None,
                  "tool": None, "args": None},
@@ -6016,7 +6016,7 @@ class TestPlannerSemanticToolValidation:
             "goal": "Use echo",
             "tasks": [
                 {
-                    "type": "tool",
+                    "type": "wrapper",
                     "detail": "Use echo",
                     "tool": "echo",
                     "args": "{\"text\": \"bad\"}",
@@ -6056,7 +6056,7 @@ class TestPlannerSemanticToolValidation:
             "goal": "Create a script with aider",
             "tasks": [
                 {
-                    "type": "tool",
+                    "type": "wrapper",
                     "detail": "Use aider",
                     "tool": "aider",
                     "args": json.dumps(
@@ -6101,7 +6101,7 @@ class TestPlannerSemanticToolValidation:
             "goal": "Create a script with aider",
             "tasks": [
                 {
-                    "type": "tool",
+                    "type": "wrapper",
                     "detail": "Use aider",
                     "tool": "aider",
                     "args": json.dumps(
@@ -6149,7 +6149,7 @@ class TestPlannerSemanticToolValidation:
             "goal": "Update script with aider",
             "tasks": [
                 {
-                    "type": "tool",
+                    "type": "wrapper",
                     "detail": "Use aider",
                     "tool": "aider",
                     "args": json.dumps(
@@ -6202,7 +6202,7 @@ class TestM418NoSilentAutoCorrect:
         "goal": "Navigate to example.com",
         "secrets": None,
         "tasks": [
-            {"type": "tool", "detail": "visit site", "tool": "browser",
+            {"type": "wrapper", "detail": "visit site", "tool": "browser",
              "args": '{"action": "navigate"}', "expect": "page loads"},
             {"type": "msg", "detail": "Answer in English. report results", "tool": None, "args": None, "expect": None},
         ],
@@ -6916,10 +6916,10 @@ class TestBrieferPlannerIntegration:
 
         # Create entity "flask" with a fact whose content shares no words
         # with the user message, so FTS5 cannot find it — only entity matching will.
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         await save_fact(
             db, "Supports Jinja2 templating and WSGI interface",
-            source="curator", category="tool",
+            source="curator", category="wrapper",
             tags=["python"], entity_id=eid,
         )
         config = self._config(briefer_enabled=False)
@@ -7259,7 +7259,7 @@ class TestM346BrieferEntityRetrieval:
     async def test_entity_facts_dedup_against_keywords(self, db):
         """entity facts matching keywords appear exactly once in scored results."""
         from kiso.store import find_or_create_entity
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         # This fact matches both entity and keywords
         await save_fact(db, "Flask web framework version 3.0", "curator", entity_id=eid)
 
@@ -7288,7 +7288,7 @@ class TestM346BrieferEntityRetrieval:
     async def test_entities_in_briefer_context_pool(self, db):
         """available entities appear in briefer context pool."""
         from kiso.store import find_or_create_entity
-        await find_or_create_entity(db, "flask", "tool")
+        await find_or_create_entity(db, "flask", "wrapper")
 
         captured_messages = []
 
@@ -9528,7 +9528,7 @@ class TestM1052MsgOnlyValidation:
         """[tool, exec, msg] rejected when goal doesn't mention running."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "tool", "detail": "create script", "tool": "aider",
+            {"type": "wrapper", "detail": "create script", "tool": "aider",
              "args": {"message": "create file"}, "expect": "file created"},
             {"type": "exec", "detail": "verify script exists", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. done"},
@@ -9543,7 +9543,7 @@ class TestM1052MsgOnlyValidation:
         """[tool, exec, msg] allowed when goal mentions running."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "tool", "detail": "create script", "tool": "aider",
+            {"type": "wrapper", "detail": "create script", "tool": "aider",
              "args": {"message": "create file"}, "expect": "file created"},
             {"type": "exec", "detail": "run script on data", "expect": "output"},
             {"type": "msg", "detail": "Answer in English. results"},
@@ -9558,7 +9558,7 @@ class TestM1052MsgOnlyValidation:
         """[tool, exec, msg] allowed when goal mentions testing."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "tool", "detail": "add multiply method", "tool": "aider",
+            {"type": "wrapper", "detail": "add multiply method", "tool": "aider",
              "args": {"message": "add method"}, "expect": "method added"},
             {"type": "exec", "detail": "test Calculator().multiply(5,6)", "expect": "30"},
             {"type": "msg", "detail": "Answer in English. result is 30"},
@@ -9574,9 +9574,9 @@ class TestM1052MsgOnlyValidation:
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "search", "detail": "find programming languages", "expect": "results"},
-            {"type": "tool", "detail": "navigate to TIOBE", "tool": "browser",
+            {"type": "wrapper", "detail": "navigate to TIOBE", "tool": "browser",
              "args": {"url": "https://tiobe.com"}, "expect": "page loaded"},
-            {"type": "tool", "detail": "extract table", "tool": "browser",
+            {"type": "wrapper", "detail": "extract table", "tool": "browser",
              "args": {"action": "text"}, "expect": "table data"},
             {"type": "exec", "detail": "create markdown file from data", "expect": "file created"},
             {"type": "msg", "detail": "Answer in English. here is the file"},
@@ -9686,7 +9686,7 @@ class TestM1303KbAnswerFlag:
             "secrets": [],
             "kb_answer": True,
             "tasks": [
-                {"type": "tool", "detail": "navigate", "tool": "browser",
+                {"type": "wrapper", "detail": "navigate", "tool": "browser",
                  "args": {"url": "https://example.com"}, "expect": "page"},
                 {"type": "msg", "detail": "Answer in English. done", "expect": None, "tool": None, "args": None},
             ],
@@ -9841,8 +9841,8 @@ class TestValidatePlanGroups:
     def test_wrapper_tasks_in_group_valid(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "tool", "detail": "fetch page A", "group": 1},
-            {"type": "tool", "detail": "fetch page B", "group": 1},
+            {"type": "wrapper", "detail": "fetch page A", "group": 1},
+            {"type": "wrapper", "detail": "fetch page B", "group": 1},
             {"type": "msg", "detail": "Answer in English. report"},
         ]
         assert _validate_plan_groups(tasks) == []
@@ -9943,7 +9943,7 @@ class TestInstalledToolExecRouting:
 
     def test_valid_wrapper_task_still_accepted(self):
         plan = {"goal": "test", "tasks": [
-            {"type": "tool", "detail": "Write hello.py", "tool": "aider",
+            {"type": "wrapper", "detail": "Write hello.py", "tool": "aider",
              "args": "{}", "expect": "hello.py created"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
@@ -9979,7 +9979,7 @@ class TestActionTaskUserDeliveryRouting:
 
     def test_tool_with_user_delivery_wording_rejected(self):
         plan = {"goal": "test", "tasks": [
-            {"type": "tool", "detail": "Extract text from screenshot.png and tell me the result",
+            {"type": "wrapper", "detail": "Extract text from screenshot.png and tell me the result",
              "tool": "ocr", "args": "{}", "expect": "ocr text extracted"},
             {"type": "msg", "detail": "Answer in English. report results",
              "tool": None, "args": None, "expect": None},
@@ -10008,7 +10008,7 @@ class TestActionTaskUserDeliveryRouting:
 
     def test_normal_multi_step_plan_with_final_msg_still_accepted(self):
         plan = {"goal": "test", "tasks": [
-            {"type": "tool", "detail": "Extract text from screenshot.png",
+            {"type": "wrapper", "detail": "Extract text from screenshot.png",
              "tool": "ocr", "args": "{}", "expect": "ocr text extracted"},
             {"type": "exec", "detail": "Run word_count.py using the extracted text and save top words to results.txt",
              "tool": None, "args": None, "expect": "results.txt created"},
@@ -10133,7 +10133,7 @@ class TestSelfInspectionPlanSemantics:
 
     def test_self_inspection_kiso_tool_plan_rejected(self):
         plan = {"goal": "Show SSH key", "tasks": [
-            {"type": "tool", "detail": "inspect the local instance",
+            {"type": "wrapper", "detail": "inspect the local instance",
              "tool": "kiso", "args": "{}", "expect": "SSH public key shown"},
             {"type": "msg", "detail": "Answer in English. report results"},
         ]}
@@ -10152,7 +10152,7 @@ class TestM950ForceMsgOnly:
         {"type": "msg", "detail": "Answer in English. result"},
     ]}
     _TOOL_PLAN = {"tasks": [
-        {"type": "tool", "detail": "do thing", "tool": "magic", "args": "{}", "expect": "ok"},
+        {"type": "wrapper", "detail": "do thing", "tool": "magic", "args": "{}", "expect": "ok"},
         {"type": "msg", "detail": "Answer in English. result"},
     ]}
 
@@ -10177,7 +10177,7 @@ class TestM950ForceMsgOnly:
         """The unavailable-tool error contains the marker string."""
         from kiso.brain import _WRAPPER_UNAVAILABLE_MARKER
         plan = {"tasks": [
-            {"type": "tool", "detail": "magic", "expect": "ok",
+            {"type": "wrapper", "detail": "magic", "expect": "ok",
              "tool": "zzz_fake", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
@@ -10189,7 +10189,7 @@ class TestM950ForceMsgOnly:
         """Tool in registry but not installed does NOT contain unavailable marker."""
         from kiso.brain import _WRAPPER_UNAVAILABLE_MARKER
         plan = {"tasks": [
-            {"type": "tool", "detail": "search", "expect": "ok",
+            {"type": "wrapper", "detail": "search", "expect": "ok",
              "tool": "websearch", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
@@ -10373,7 +10373,7 @@ class TestNeedsInstallCoherence:
 
     def test_tool_in_needs_install_used_as_task_rejected(self):
         plan = {"goal": "test", "needs_install": ["browser"], "tasks": [
-            {"type": "tool", "detail": "navigate", "tool": "browser",
+            {"type": "wrapper", "detail": "navigate", "tool": "browser",
              "args": '{"url": "http://x"}', "expect": "page loaded"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
@@ -10383,7 +10383,7 @@ class TestNeedsInstallCoherence:
     def test_tool_not_in_needs_install_rejected(self):
         """needs_install is set → only msg tasks allowed, even if tool not in needs_install."""
         plan = {"goal": "test", "needs_install": ["aider"], "tasks": [
-            {"type": "tool", "detail": "navigate", "tool": "browser",
+            {"type": "wrapper", "detail": "navigate", "tool": "browser",
              "args": '{"url": "http://x"}', "expect": "page loaded"},
             {"type": "msg", "detail": "Answer in English. result"},
         ], "extend_replan": None}
@@ -10394,7 +10394,7 @@ class TestNeedsInstallCoherence:
         """needs_install set with tool task → M984 fires (only msg tasks allowed).
         Previously M868 coherence check fired here, but M984 supersedes it."""
         plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
-            {"type": "tool", "detail": "write script", "tool": "aider",
+            {"type": "wrapper", "detail": "write script", "tool": "aider",
              "args": '{"message": "x"}', "expect": "done"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
@@ -10404,7 +10404,7 @@ class TestNeedsInstallCoherence:
     def test_not_approved_gives_ask_user_guidance(self):
         """when not approved, feedback says ask user first."""
         plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
-            {"type": "tool", "detail": "write script", "tool": "aider",
+            {"type": "wrapper", "detail": "write script", "tool": "aider",
              "args": '{"message": "x"}', "expect": "done"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
@@ -10476,7 +10476,7 @@ class TestArtifactGoalMismatch:
 
     def test_generate_report_with_tool_accepted(self):
         plan = {"goal": "Generate a CSV report with sales data", "tasks": [
-            {"type": "tool", "detail": "Generate CSV", "tool": "datagen",
+            {"type": "wrapper", "detail": "Generate CSV", "tool": "datagen",
              "args": '{"format": "csv"}', "expect": "csv file"},
             {"type": "msg", "detail": "Answer in English. Report ready"},
         ]}

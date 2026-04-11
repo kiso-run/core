@@ -60,7 +60,7 @@ class TestValidatePresetManifest:
         assert any("Missing [kiso] section" in e for e in errors)
 
     def test_wrong_type(self):
-        errors = validate_preset_manifest({"kiso": {"type": "tool", "name": "x", "version": "1", "description": "d", "preset": {}}})
+        errors = validate_preset_manifest({"kiso": {"type": "wrapper", "name": "x", "version": "1", "description": "d", "preset": {}}})
         assert any("type must be 'preset'" in e for e in errors)
 
     @pytest.mark.parametrize("omitted,expected_substr", [
@@ -127,7 +127,7 @@ class TestLoadPreset:
 
     def test_load_invalid_manifest(self, tmp_path):
         path = tmp_path / "bad.toml"
-        path.write_text("[kiso]\ntype = 'tool'\n", encoding="utf-8")
+        path.write_text("[kiso]\ntype = 'wrapper'\n", encoding="utf-8")
         with pytest.raises(ValueError, match="Invalid preset manifest"):
             load_preset(path)
 

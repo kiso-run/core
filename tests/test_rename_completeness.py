@@ -57,3 +57,22 @@ class TestWrapperRenameRuntimeInvariants:
     def test_registry_uses_connectors_key(self):
         registry = json.loads((ROOT / "registry.json").read_text())
         assert "connectors" in registry, "registry.json missing 'connectors' key"
+
+    def test_task_type_wrapper_value(self):
+        """M1308: TASK_TYPE_WRAPPER constant must have value 'wrapper'."""
+        from kiso.brain.common import TASK_TYPE_WRAPPER
+        assert TASK_TYPE_WRAPPER == "wrapper", (
+            f"TASK_TYPE_WRAPPER must be 'wrapper', got '{TASK_TYPE_WRAPPER}'"
+        )
+
+    def test_fact_categories_use_wrapper(self):
+        """M1308: 'wrapper' in valid fact categories, 'tool' not."""
+        from kiso.brain.common import _VALID_FACT_CATEGORIES
+        assert "wrapper" in _VALID_FACT_CATEGORIES
+        assert "tool" not in _VALID_FACT_CATEGORIES
+
+    def test_entity_kinds_use_wrapper(self):
+        """M1308: 'wrapper' in entity kinds, 'tool' not."""
+        from kiso.brain.common import _ENTITY_KINDS
+        assert "wrapper" in _ENTITY_KINDS
+        assert "tool" not in _ENTITY_KINDS

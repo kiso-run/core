@@ -234,12 +234,12 @@ def revalidate_permissions(
     if task_type == "search":
         return PermissionResult(allowed=True, role=user.role, wrappers=user.wrappers)
 
-    if task_type in ("skill", "tool") and wrapper_name and user.role == "user":
+    if task_type == "wrapper" and wrapper_name and user.role == "user":
         if user.wrappers != "*":
             if wrapper_name not in (user.wrappers or []):
                 return PermissionResult(
                     allowed=False,
-                    reason=f"Tool '{wrapper_name}' not in user's allowed wrappers",
+                    reason=f"Wrapper '{wrapper_name}' not in user's allowed wrappers",
                 )
 
     return PermissionResult(allowed=True, role=user.role, wrappers=user.wrappers)

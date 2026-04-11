@@ -16,11 +16,11 @@ from kiso.wrapper_repair import (
 # Minimal valid kiso.toml for a tool with a binary dep
 _TOML_WITH_DEP = """\
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "{name}"
 version = "0.1.0"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Test tool"
 usage_guide = "test"
 
@@ -33,11 +33,11 @@ bin = ["{binary}"]
 
 _TOML_NO_DEPS = """\
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "{name}"
 version = "0.1.0"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Test tool"
 usage_guide = "test"
 

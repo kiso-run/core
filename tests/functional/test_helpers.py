@@ -242,7 +242,7 @@ class TestFunctionalResult:
             success=True,
             tasks=[
                 {"type": "exec", "status": "done"},
-                {"type": "tool", "status": "done"},
+                {"type": "wrapper", "status": "done"},
                 {"type": "msg", "status": "done"},
             ],
         )
@@ -253,7 +253,7 @@ class TestFunctionalResult:
             success=True,
             tasks=[
                 {"type": "exec", "tool": None},
-                {"type": "tool", "tool": "browser"},
+                {"type": "wrapper", "tool": "browser"},
                 {"type": "msg", "tool": None},
             ],
         )

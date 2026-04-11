@@ -170,7 +170,7 @@ class TestM348EntityMigration:
         entities = await get_all_entities(db)
         assert len(entities) == 1
         assert entities[0]["name"] == "flask"
-        assert entities[0]["kind"] == "tool"  # default from migration
+        assert entities[0]["kind"] == "wrapper"  # default from migration
 
         # Facts linked to entity
         entity_facts = await search_facts_by_entity(db, entities[0]["id"])

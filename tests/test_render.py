@@ -225,9 +225,9 @@ def test_render_task_header_failed():
 
 
 def test_render_task_header_skill_with_name():
-    task = {"type": "tool", "detail": "search query", "status": "running", "skill": "web_search"}
+    task = {"type": "wrapper", "detail": "search query", "status": "running", "skill": "web_search"}
     result = render_task_header(task, 1, 2, _COLOR)
-    assert "tool:web_search" in result
+    assert "wrapper:web_search" in result
 
 
 def test_render_task_header_with_spinner():
@@ -790,11 +790,11 @@ def test_render_plan_detail_empty():
 
 def test_render_plan_detail_skill_type():
     tasks = [
-        {"type": "tool", "detail": "Search the web"},
+        {"type": "wrapper", "detail": "Search the web"},
         {"type": "msg", "detail": "Report findings"},
     ]
     result = render_plan_detail(tasks, _PLAIN)
-    assert "[tool]" in result
+    assert "[wrapper]" in result
     assert "[msg]" in result
     assert "\033[" not in result
 
@@ -1392,7 +1392,7 @@ def test_render_llm_call_output_panel_curator_formatted():
     curator_response = json.dumps({"evaluations": [
         {"learning_id": 1, "verdict": "promote",
          "fact": "Uses Flask for web API", "reason": "Tech choice",
-         "tags": ["tech-stack", "web"], "entity_name": "flask", "entity_kind": "tool"},
+         "tags": ["tech-stack", "web"], "entity_name": "flask", "entity_kind": "wrapper"},
         {"learning_id": 2, "verdict": "discard",
          "fact": None, "reason": "Transient state"},
         {"learning_id": 3, "verdict": "ask",
@@ -1407,7 +1407,7 @@ def test_render_llm_call_output_panel_curator_formatted():
     result = render_llm_call_output_panel(call, _PLAIN)
     assert "promote" in result
     assert "Uses Flask for web API" in result
-    assert "flask (tool)" in result
+    assert "flask (wrapper)" in result
     assert "tech-stack, web" in result
     assert "discard" in result
     assert "ask" in result

@@ -61,7 +61,7 @@ def test_validate_connector_manifest_wrong_type(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
     manifest = {
         "kiso": {
-            "type": "tool",
+            "type": "wrapper",
             "name": "x",
             "connector": {"platform": "x"},
         }
@@ -1295,7 +1295,7 @@ def test_discover_connectors_invalid_manifest_skipped(tmp_path, caplog):
     connectors_dir.mkdir()
     d = connectors_dir / "bad"
     d.mkdir()
-    (d / "kiso.toml").write_text('[kiso]\nname = "bad"\ntype = "tool"\n')
+    (d / "kiso.toml").write_text('[kiso]\nname = "bad"\ntype = "wrapper"\n')
     (d / "run.py").write_text("pass\n")
     (d / "pyproject.toml").write_text("[project]\nname = 'bad'\n")
 

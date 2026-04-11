@@ -357,7 +357,7 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
 # what the tool actually receives vs what was declared.
 
 _FAKE_TOOL_MANIFEST = """\
-[kiso.tool]
+[kiso.wrapper]
 name = "{name}"
 description = "Fake tool for integration tests — echoes stdin keys and env"
 version = "0.0.1"

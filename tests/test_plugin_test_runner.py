@@ -19,7 +19,7 @@ from cli.plugin_test_runner import (
 
 
 SAMPLE_REGISTRY = {
-    "tools": [
+    "wrappers": [
         {"name": "websearch", "description": "Web search"},
         {"name": "browser", "description": "Browser automation"},
     ],
@@ -33,14 +33,14 @@ class TestResolveFilter:
     def test_empty_filter_returns_all(self):
         targets = _resolve_filter(SAMPLE_REGISTRY, "")
         names = {(t, n) for t, n in targets}
-        assert ("tool", "websearch") in names
-        assert ("tool", "browser") in names
+        assert ("wrapper", "websearch") in names
+        assert ("wrapper", "browser") in names
         assert ("connector", "discord") in names
         assert len(targets) == 3
 
     def test_tools_filter(self):
         targets = _resolve_filter(SAMPLE_REGISTRY, "tools")
-        assert all(t == "tool" for t, _ in targets)
+        assert all(t == "wrapper" for t, _ in targets)
         assert len(targets) == 2
 
     def test_connectors_filter(self):
@@ -50,7 +50,7 @@ class TestResolveFilter:
 
     def test_specific_name_autodetects_type(self):
         targets = _resolve_filter(SAMPLE_REGISTRY, "browser")
-        assert targets == [("tool", "browser")]
+        assert targets == [("wrapper", "browser")]
 
     def test_specific_connector_autodetects(self):
         targets = _resolve_filter(SAMPLE_REGISTRY, "discord")
@@ -58,7 +58,7 @@ class TestResolveFilter:
 
     def test_multiple_names(self):
         targets = _resolve_filter(SAMPLE_REGISTRY, "browser,discord")
-        assert ("tool", "browser") in targets
+        assert ("wrapper", "browser") in targets
         assert ("connector", "discord") in targets
         assert len(targets) == 2
 
@@ -189,7 +189,7 @@ class TestTestOnePlugin:
 class TestMain:
     def test_main_all_pass(self):
         fake_result = PluginTestResult(
-            name="fake", plugin_type="tool", stage="done",
+            name="fake", plugin_type="wrapper", stage="done",
             passed=True, test_count=3, duration_s=1.0,
         )
         with patch("cli.plugin_test_runner.test_plugins", return_value=[fake_result]):
@@ -197,15 +197,15 @@ class TestMain:
 
     def test_main_some_fail(self):
         results = [
-            PluginTestResult(name="a", plugin_type="tool", stage="done", passed=True),
-            PluginTestResult(name="b", plugin_type="tool", stage="test", passed=False, error="fail"),
+            PluginTestResult(name="a", plugin_type="wrapper", stage="done", passed=True),
+            PluginTestResult(name="b", plugin_type="wrapper", stage="test", passed=False, error="fail"),
         ]
         with patch("cli.plugin_test_runner.test_plugins", return_value=results):
             assert main("") == 1
 
     def test_main_skipped_counts_as_pass(self):
         fake_result = PluginTestResult(
-            name="fake", plugin_type="tool", stage="done",
+            name="fake", plugin_type="wrapper", stage="done",
             passed=True, skipped=True, error="no tests/",
         )
         with patch("cli.plugin_test_runner.test_plugins", return_value=[fake_result]):
@@ -221,9 +221,9 @@ class TestPrintReport:
 
     def test_summary_shows_total_tests_and_time(self, capsys):
         results = [
-            PluginTestResult(name="a", plugin_type="tool", stage="done",
+            PluginTestResult(name="a", plugin_type="wrapper", stage="done",
                              passed=True, test_count=50, duration_s=3.0),
-            PluginTestResult(name="b", plugin_type="tool", stage="done",
+            PluginTestResult(name="b", plugin_type="wrapper", stage="done",
                              passed=True, test_count=30, duration_s=2.5),
         ]
         _print_report(results)

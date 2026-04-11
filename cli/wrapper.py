@@ -41,7 +41,7 @@ _search_entries = search_entries
 def _wrapper_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
     """Tool-specific post-install steps: env var warnings, usage guide, git exclude."""
     kiso_section = manifest.get("kiso", {})
-    tool_section = kiso_section.get("tool", kiso_section.get("skill", {}))
+    tool_section = kiso_section.get("wrapper", {})
     env_decl = tool_section.get("env", {})
     wrapper_name = kiso_section.get("name", name)
     for key in env_decl:

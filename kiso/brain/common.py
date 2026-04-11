@@ -54,7 +54,7 @@ log = logging.getLogger(__name__)
 # Task type constants
 TASK_TYPE_EXEC = "exec"
 TASK_TYPE_MSG = "msg"
-TASK_TYPE_WRAPPER = "tool"
+TASK_TYPE_WRAPPER = "wrapper"
 TASK_TYPE_SEARCH = "search"
 TASK_TYPE_REPLAN = "replan"
 TASK_TYPES: frozenset[str] = frozenset({
@@ -94,8 +94,8 @@ WORKER_PHASES: frozenset[str] = frozenset({
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _MESSENGER_RETRY_BACKOFF: float = 1.0  # seconds between retries (0 in tests)
 _MAX_MESSENGER_RETRIES = 2  # max retries on transient LLM errors
-_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "tool", "user", "system", "safety", "behavior"})
-_ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "tool", "person", "project", "concept", "system"})
+_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "wrapper", "user", "system", "safety", "behavior"})
+_ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "wrapper", "person", "project", "concept", "system"})
 
 # In-flight message classification
 INFLIGHT_CATEGORIES: frozenset[str] = frozenset({"stop", "update", "independent", "conflict"})
@@ -945,7 +945,7 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
     "tasks": {"type": "array", "items": {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["exec", "msg", "tool", "search", "replan"]},
+            "type": {"type": "string", "enum": ["exec", "msg", "wrapper", "search", "replan"]},
             "detail": {"type": "string"},
             "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "args": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},

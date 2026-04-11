@@ -24,11 +24,11 @@ from kiso.wrapper_repair import repair_unhealthy_wrappers
 # Minimal valid kiso.toml
 _TOML = """\
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "{name}"
 version = "0.1.0"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "{summary}"
 usage_guide = "test guide"
 

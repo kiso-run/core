@@ -303,7 +303,7 @@ class TestRetryLoopUninstalledToolFlag:
         # First call: LLM returns plan with tool task → validation rejects
         bad_plan = json.dumps({
             "goal": "Navigate", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "tool", "tool": "browser",
+            "tasks": [{"type": "wrapper", "tool": "browser",
                         "detail": "go", "args": None, "expect": "page"}],
         })
         # Second call: LLM returns valid msg-only plan
@@ -353,7 +353,7 @@ class TestRetryLoopUninstalledToolFlag:
         """If uninstalled-tool error mixed with other errors, flag still set."""
         bad = json.dumps({
             "goal": "X", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "tool", "tool": "browser",
+            "tasks": [{"type": "wrapper", "tool": "browser",
                         "detail": "go", "args": None, "expect": "page"}],
         })
         good = json.dumps({

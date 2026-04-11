@@ -40,7 +40,7 @@ def _clean_subprocess_env() -> dict[str, str]:
 
 def _clone_and_test(tmp_path: Path, kind: str, name: str) -> None:
     """Clone an official plugin repo, sync deps, and run its tests."""
-    prefix = "tool-" if kind == "tool" else "connector-"
+    prefix = "wrapper-" if kind == "wrapper" else "connector-"
     git_url = f"https://github.com/{OFFICIAL_ORG}/{prefix}{name}.git"
     plugin_dir = tmp_path / name
 

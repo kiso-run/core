@@ -42,7 +42,7 @@ def _assert_tool_used(result: FunctionalResult, wrapper_name: str) -> None:
     """Assert that *wrapper_name* appears as a tool-type task in *result*."""
     tasks = [
         t for t in result.tasks
-        if t.get("type") == "tool"
+        if t.get("type") == "wrapper"
         and FunctionalResult.task_wrapper_name(t) == wrapper_name
     ]
     assert tasks, (
@@ -234,7 +234,7 @@ class TestF39ToolInstallAndUse:
         # Browser tool must have been used
         wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in r3.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
         ]
         assert "browser" in wrapper_names, (
             f"Browser not used in stage 3. Tool names: {wrapper_names}"

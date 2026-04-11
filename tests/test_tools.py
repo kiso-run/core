@@ -36,36 +36,36 @@ from kiso.plugins import _validate_plugin_manifest_base
 
 MINIMAL_TOML = """\
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "echo"
 version = "0.1.0"
 description = "Echo tool"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Echoes input back"
 usage_guide = "Just pass any text."
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 text = { type = "string", required = true, description = "text to echo" }
 """
 
 FULL_TOML = """\
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "search"
 version = "0.2.0"
 description = "Web search"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Web search via API"
 usage_guide = "Use short queries. Prefer English keywords."
 session_secrets = ["api_token"]
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 query = { type = "string", required = true, description = "search query" }
 max_results = { type = "int", required = false, default = 5, description = "max results" }
 
-[kiso.tool.env]
+[kiso.wrapper.env]
 api_key = { required = true }
 
 [kiso.deps]
@@ -93,31 +93,31 @@ def _write_validator(tool_dir: Path, body: str) -> None:
 
 class TestValidatePluginManifestBase:
     def test_missing_kiso_section(self, tmp_path):
-        errors = _validate_plugin_manifest_base({}, tmp_path, "tool")
+        errors = _validate_plugin_manifest_base({}, tmp_path, "wrapper")
         assert "missing [kiso] section" in errors
 
     def test_wrong_type(self, tmp_path):
-        manifest = {"kiso": {"type": "connector", "name": "x", "tool": {}}}
+        manifest = {"kiso": {"type": "connector", "name": "x", "wrapper": {}}}
         (tmp_path / "run.py").write_text("")
         (tmp_path / "pyproject.toml").write_text("")
-        errors = _validate_plugin_manifest_base(manifest, tmp_path, "tool")
-        assert any("kiso.type must be 'tool'" in e for e in errors)
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "wrapper")
+        assert any("kiso.type must be 'wrapper'" in e for e in errors)
 
     def test_missing_plugin_section(self, tmp_path):
-        manifest = {"kiso": {"type": "tool", "name": "x"}}
-        errors = _validate_plugin_manifest_base(manifest, tmp_path, "tool")
-        assert "missing [kiso.tool] section" in errors
+        manifest = {"kiso": {"type": "wrapper", "name": "x"}}
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "wrapper")
+        assert "missing [kiso.wrapper] section" in errors
 
     def test_missing_run_py(self, tmp_path):
-        manifest = {"kiso": {"type": "tool", "name": "x", "tool": {}}}
+        manifest = {"kiso": {"type": "wrapper", "name": "x", "wrapper": {}}}
         (tmp_path / "pyproject.toml").write_text("")
-        errors = _validate_plugin_manifest_base(manifest, tmp_path, "tool")
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "wrapper")
         assert "run.py is missing" in errors
 
     def test_missing_pyproject(self, tmp_path):
-        manifest = {"kiso": {"type": "tool", "name": "x", "tool": {}}}
+        manifest = {"kiso": {"type": "wrapper", "name": "x", "wrapper": {}}}
         (tmp_path / "run.py").write_text("")
-        errors = _validate_plugin_manifest_base(manifest, tmp_path, "tool")
+        errors = _validate_plugin_manifest_base(manifest, tmp_path, "wrapper")
         assert "pyproject.toml is missing" in errors
 
     def test_valid_returns_empty(self, tmp_path):
@@ -128,7 +128,7 @@ class TestValidatePluginManifestBase:
         assert errors == []
 
     def test_connector_type_used_in_messages(self, tmp_path):
-        manifest = {"kiso": {"type": "tool", "name": "x", "connector": {}}}
+        manifest = {"kiso": {"type": "wrapper", "name": "x", "connector": {}}}
         errors = _validate_plugin_manifest_base(manifest, tmp_path, "connector")
         assert any("'connector'" in e for e in errors)
 
@@ -153,13 +153,13 @@ class TestValidateManifest:
         assert "missing [kiso] section" in errors
 
     def test_wrong_type(self, tmp_path):
-        toml = MINIMAL_TOML.replace('type = "tool"', 'type = "connector"')
+        toml = MINIMAL_TOML.replace('type = "wrapper"', 'type = "connector"')
         _create_tool(tmp_path, "bad", toml)
         import tomllib
         with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
             manifest = tomllib.load(f)
         errors = _validate_manifest(manifest, tmp_path / "bad")
-        assert any("kiso.type must be 'tool'" in e for e in errors)
+        assert any("kiso.type must be 'wrapper'" in e for e in errors)
 
     def test_missing_name(self, tmp_path):
         toml = MINIMAL_TOML.replace('name = "echo"', '')
@@ -177,7 +177,7 @@ class TestValidateManifest:
         with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
             manifest = tomllib.load(f)
         errors = _validate_manifest(manifest, tmp_path / "bad")
-        assert "missing [kiso.tool] section" in errors
+        assert "missing [kiso.wrapper] section" in errors
 
     def test_missing_summary(self, tmp_path):
         toml = MINIMAL_TOML.replace('summary = "Echoes input back"', '')
@@ -186,7 +186,7 @@ class TestValidateManifest:
         with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
             manifest = tomllib.load(f)
         errors = _validate_manifest(manifest, tmp_path / "bad")
-        assert any("kiso.tool.summary is required" in e for e in errors)
+        assert any("kiso.wrapper.summary is required" in e for e in errors)
 
     def test_invalid_arg_type(self, tmp_path):
         toml = MINIMAL_TOML.replace('type = "string"', 'type = "date"')
@@ -221,15 +221,15 @@ class TestValidateManifest:
 
     def test_args_not_a_table(self, tmp_path):
         toml = (
-            '[kiso]\ntype = "tool"\nname = "x"\n'
-            '[kiso.tool]\nsummary = "X"\nargs = "not_a_table"\n'
+            '[kiso]\ntype = "wrapper"\nname = "x"\n'
+            '[kiso.wrapper]\nsummary = "X"\nargs = "not_a_table"\n'
         )
         _create_tool(tmp_path, "bad", toml)
         import tomllib
         with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
             manifest = tomllib.load(f)
         errors = _validate_manifest(manifest, tmp_path / "bad")
-        assert any("[kiso.tool.args] must be a table" in e for e in errors)
+        assert any("[kiso.wrapper.args] must be a table" in e for e in errors)
 
     def test_arg_not_a_table(self, tmp_path):
         toml = MINIMAL_TOML.replace(
@@ -245,20 +245,20 @@ class TestValidateManifest:
 
     def test_env_not_a_table(self, tmp_path):
         toml = (
-            '[kiso]\ntype = "tool"\nname = "x"\n'
-            '[kiso.tool]\nsummary = "X"\nenv = "not_a_table"\n'
+            '[kiso]\ntype = "wrapper"\nname = "x"\n'
+            '[kiso.wrapper]\nsummary = "X"\nenv = "not_a_table"\n'
         )
         _create_tool(tmp_path, "bad", toml)
         import tomllib
         with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
             manifest = tomllib.load(f)
         errors = _validate_manifest(manifest, tmp_path / "bad")
-        assert any("[kiso.tool.env] must be a table" in e for e in errors)
+        assert any("[kiso.wrapper.env] must be a table" in e for e in errors)
 
     def test_invalid_session_secrets_type(self, tmp_path):
         toml = MINIMAL_TOML.replace(
-            "[kiso.tool.args]",
-            'session_secrets = "not_a_list"\n\n[kiso.tool.args]',
+            "[kiso.wrapper.args]",
+            'session_secrets = "not_a_list"\n\n[kiso.wrapper.args]',
         )
         _create_tool(tmp_path, "bad", toml)
         import tomllib
@@ -1338,17 +1338,17 @@ class TestM826ConsumesField:
         (tool_dir / "pyproject.toml").write_text('[project]\nname = "ocr"\nversion = "0.1.0"')
         (tool_dir / "kiso.toml").write_text("""
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "ocr"
 version = "0.1.0"
 description = "OCR tool"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Extract text from images"
 usage_guide = "Use this to extract text from images."
 consumes = ["image"]
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 file_path = { type = "string", required = true, description = "path to image" }
 """)
         invalidate_wrappers_cache()
@@ -1364,17 +1364,17 @@ file_path = { type = "string", required = true, description = "path to image" }
         (tool_dir / "pyproject.toml").write_text('[project]\nname = "exotic"\nversion = "0.1.0"')
         (tool_dir / "kiso.toml").write_text("""
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "exotic"
 version = "0.1.0"
 description = "Exotic tool"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Process exotic formats"
 usage_guide = "Handles exotic data."
 consumes = ["hologram", "image"]
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 """)
         invalidate_wrappers_cache()
         result = discover_wrappers(tmp_path / "wrappers")

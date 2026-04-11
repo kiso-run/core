@@ -488,13 +488,13 @@ async def test_create_task_all_fields(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     task_id = await create_task(
-        db, plan_id, "sess1", type="tool", detail="search web",
+        db, plan_id, "sess1", type="wrapper", detail="search web",
         skill="search", args='{"query": "test"}', expect="results found",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
     assert len(tasks) == 1
     t = tasks[0]
-    assert t["type"] == "tool"
+    assert t["type"] == "wrapper"
     assert t["skill"] == "search"
     assert t["args"] == '{"query": "test"}'
     assert t["expect"] == "results found"
@@ -505,7 +505,7 @@ async def test_create_task_serializes_dict_args(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     await create_task(
-        db, plan_id, "sess1", type="tool", detail="search web",
+        db, plan_id, "sess1", type="wrapper", detail="search web",
         skill="search", args={"query": "test", "page": 1}, expect="results found",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
@@ -1172,11 +1172,11 @@ async def test_facts_archive_table_exists(db: aiosqlite.Connection):
 
 
 async def test_save_fact_with_category_and_confidence(db: aiosqlite.Connection):
-    fid = await save_fact(db, "Uses Docker", "curator", category="tool", confidence=0.9)
+    fid = await save_fact(db, "Uses Docker", "curator", category="wrapper", confidence=0.9)
     facts = await get_facts(db)
     assert len(facts) == 1
     assert facts[0]["content"] == "Uses Docker"
-    assert facts[0]["category"] == "tool"
+    assert facts[0]["category"] == "wrapper"
     assert facts[0]["confidence"] == 0.9
 
 
@@ -1363,7 +1363,7 @@ async def test_get_facts_user_fact_visible_in_own_session(db: aiosqlite.Connecti
 async def test_get_facts_global_categories_always_visible(db: aiosqlite.Connection):
     """M43: project / tool / general facts are returned regardless of session."""
     await save_fact(db, "Uses FastAPI", "curator", session="session-X", category="project")
-    await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="tool")
+    await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="wrapper")
     await save_fact(db, "Async preferred", "curator", session="session-X", category="general")
 
     for sess in ("session-X", "session-Y", "session-Z"):
@@ -2139,7 +2139,7 @@ async def test_decay_facts_zero_rate_no_confidence_change(db: aiosqlite.Connecti
 async def test_archive_preserves_all_fields(db: aiosqlite.Connection):
     """archive_low_confidence_facts copies all fields to facts_archive correctly."""
     fid = await save_fact(
-        db, "Weak fact", "curator", session="sess1", category="tool", confidence=0.1
+        db, "Weak fact", "curator", session="sess1", category="wrapper", confidence=0.1
     )
     archived = await archive_low_confidence_facts(db, threshold=0.3)
     assert archived == 1
@@ -2149,7 +2149,7 @@ async def test_archive_preserves_all_fields(db: aiosqlite.Connection):
     assert row["content"] == "Weak fact"
     assert row["source"] == "curator"
     assert row["session"] == "sess1"
-    assert row["category"] == "tool"
+    assert row["category"] == "wrapper"
     assert row["confidence"] == pytest.approx(0.1)
     assert row["archived_at"] is not None
 
@@ -2412,9 +2412,9 @@ async def test_find_or_create_entity_normalizes_https(db: aiosqlite.Connection):
 
 async def test_find_or_create_entity_updates_kind(db: aiosqlite.Connection):
     """calling with different kind updates the entity."""
-    eid = await find_or_create_entity(db, "flask", "tool")
+    eid = await find_or_create_entity(db, "flask", "wrapper")
     cur = await db.execute("SELECT kind FROM entities WHERE id = ?", (eid,))
-    assert (await cur.fetchone())[0] == "tool"
+    assert (await cur.fetchone())[0] == "wrapper"
 
     eid2 = await find_or_create_entity(db, "flask", "framework")
     assert eid2 == eid  # same entity
@@ -2463,7 +2463,7 @@ async def test_search_facts_by_entity(db: aiosqlite.Connection):
 
 async def test_save_fact_with_entity_id(db: aiosqlite.Connection):
     """save_fact stores entity_id in facts table."""
-    eid = await find_or_create_entity(db, "flask", "tool")
+    eid = await find_or_create_entity(db, "flask", "wrapper")
     fid = await save_fact(db, "Flask uses Jinja2 templates", "curator", entity_id=eid)
     cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
     row = await cur.fetchone()
@@ -2595,7 +2595,7 @@ async def test_m345_migration_converts_entity_tags(tmp_path):
     entities = await get_all_entities(db)
     assert len(entities) == 1
     assert entities[0]["name"] == "flask"
-    assert entities[0]["kind"] == "tool"
+    assert entities[0]["kind"] == "wrapper"
     # Facts should be linked
     cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid1,))
     assert (await cur.fetchone())[0] == entities[0]["id"]
@@ -2905,19 +2905,19 @@ async def test_list_knowledge_combined_category_and_tag(db: aiosqlite.Connection
     await create_session(db, "s1")
     # Create facts with different categories and tags
     await save_fact(db, "Flask is a Python web framework tool", "admin",
-                    category="tool", tags=["python", "web"])
+                    category="wrapper", tags=["python", "web"])
     await save_fact(db, "React is a JavaScript UI library tool", "admin",
-                    category="tool", tags=["javascript", "web"])
+                    category="wrapper", tags=["javascript", "web"])
     await save_fact(db, "Python async programming is a general topic", "admin",
                     category="general", tags=["python"])
 
     # Combined filter: category=tool AND tag=python → only Flask fact
-    results = await list_knowledge(db, category="tool", tag="python")
+    results = await list_knowledge(db, category="wrapper", tag="python")
     assert len(results) == 1
     assert "Flask" in results[0]["content"]
 
     # Combined filter: category=tool AND tag=web → both tool facts
-    results = await list_knowledge(db, category="tool", tag="web")
+    results = await list_knowledge(db, category="wrapper", tag="web")
     assert len(results) == 2
 
     # Combined filter: category=general AND tag=python → only async fact

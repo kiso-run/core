@@ -62,7 +62,7 @@ class TestToolArgsReplanFlow:
         """validate_plan catches null args against schema."""
         plan = {
             "tasks": [
-                {"type": "tool", "detail": "take screenshot", "tool": "browser",
+                {"type": "wrapper", "detail": "take screenshot", "tool": "browser",
                  "args": None, "expect": "screenshot saved"},
                 {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
             ],
@@ -81,7 +81,7 @@ class TestToolArgsReplanFlow:
             "goal": "Take screenshot",
             "secrets": None,
             "tasks": [
-                {"type": "tool", "detail": "take screenshot of example.com",
+                {"type": "wrapper", "detail": "take screenshot of example.com",
                  "tool": "browser", "args": None, "expect": "screenshot saved"},
                 {"type": "msg", "detail": "Report result", "tool": None,
                  "args": None, "expect": None},
@@ -93,7 +93,7 @@ class TestToolArgsReplanFlow:
             "goal": "Take screenshot",
             "secrets": None,
             "tasks": [
-                {"type": "tool", "detail": "take screenshot of example.com",
+                {"type": "wrapper", "detail": "take screenshot of example.com",
                  "tool": "browser",
                  "args": '{"action": "screenshot"}',
                  "expect": "screenshot saved"},
@@ -147,7 +147,7 @@ class TestToolArgsReplanFlow:
             "entry": "browser.sh",
         }
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="tool",
+        await create_task(db, plan_id, "sess1", type="wrapper",
                           detail="take screenshot", skill="browser",
                           args=None, expect="screenshot")
 

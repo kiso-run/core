@@ -174,7 +174,7 @@ async def test_session_project_id_default_none(db):
 
 async def test_fact_global_visible_to_all(db):
     """Global facts (no project_id, non-user category) are visible to everyone."""
-    await save_fact(db, "Global tool fact for everyone", "system", category="tool")
+    await save_fact(db, "Global tool fact for everyone", "system", category="wrapper")
     # Non-admin, with username — should see global facts
     facts = await get_facts(db, session="sess1", username="bob")
     assert any("Global tool fact" in f["content"] for f in facts)

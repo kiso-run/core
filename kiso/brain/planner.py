@@ -99,7 +99,7 @@ log = logging.getLogger("kiso.brain")
 
 _IMPORTED_NAMES = set(globals())
 
-_KISO_CMD_KEYWORDS = frozenset({"tool", "skill", "connector", "env", "instance", "kiso"})
+_KISO_CMD_KEYWORDS = frozenset({"wrapper", "connector", "env", "instance", "kiso"})
 _USER_MGMT_KEYWORDS = frozenset({"user", "admin", "alias"})
 
 def _validate_plan_structure(
@@ -800,7 +800,7 @@ def _split_facts_by_session(
 
 def _group_facts_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
     """Group facts by category and return formatted section parts."""
-    cats: dict[str, list[str]] = {"project": [], "user": [], "tool": [], "general": []}
+    cats: dict[str, list[str]] = {"project": [], "user": [], "wrapper": [], "general": []}
     for f in fact_list:
         cat = f.get("category", "general")
         if cat not in cats:
@@ -813,7 +813,7 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
             line += f" [session:{f['session']}]"
         cats[cat].append(line)
     parts: list[str] = []
-    for cat in ("project", "user", "tool", "general"):
+    for cat in ("project", "user", "wrapper", "general"):
         if cats[cat]:
             parts.append(f"### {cat.title()}\n" + "\n".join(cats[cat]))
     return parts
@@ -823,7 +823,7 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
 # capability-gap heuristic to inject plugin-install guidance when the
 # message implies a capability not covered by installed tools.
 # Keep minimal — only precise keywords that unambiguously require a tool.
-_KISO_CMD_KEYWORDS = frozenset({"tool", "skill", "connector", "env", "instance", "kiso"})
+_KISO_CMD_KEYWORDS = frozenset({"wrapper", "connector", "env", "instance", "kiso"})
 _USER_MGMT_KEYWORDS = frozenset({"user", "admin", "alias"})
 
 

@@ -175,22 +175,22 @@ def _resolve_filter(registry: dict, filter_arg: str) -> list[tuple[str, str]]:
     - "browser"    → auto-detect type from registry
     - "browser,discord" → multiple, auto-detect each
     """
-    tools = registry.get("tools", [])
+    wrappers = registry.get("wrappers", [])
     connectors = registry.get("connectors", [])
 
     if not filter_arg:
-        result = [("tool", t["name"]) for t in tools]
+        result = [("wrapper", t["name"]) for t in wrappers]
         result += [("connector", c["name"]) for c in connectors]
         return result
 
-    if filter_arg == "tools":
-        return [("tool", t["name"]) for t in tools]
+    if filter_arg in ("tools", "wrappers"):
+        return [("wrapper", t["name"]) for t in wrappers]
 
     if filter_arg == "connectors":
         return [("connector", c["name"]) for c in connectors]
 
     # Specific names — auto-detect type
-    wrapper_names = {t["name"] for t in tools}
+    wrapper_names = {t["name"] for t in wrappers}
     connector_names = {c["name"] for c in connectors}
     result = []
     for name in filter_arg.split(","):
@@ -198,7 +198,7 @@ def _resolve_filter(registry: dict, filter_arg: str) -> list[tuple[str, str]]:
         if not name:
             continue
         if name in wrapper_names:
-            result.append(("tool", name))
+            result.append(("wrapper", name))
         elif name in connector_names:
             result.append(("connector", name))
         else:

@@ -144,7 +144,7 @@ def _normalize_task_contract(
 
     declared_inputs: list[str] = []
     if wrapper_name:
-        declared_inputs.append(f"tool:{wrapper_name}")
+        declared_inputs.append(f"wrapper:{wrapper_name}")
     if args:
         declared_inputs.extend(
             f"{name}={value}"

@@ -71,7 +71,7 @@ class TestF17FullPipeline:
         ocr_tool_outputs = [
             t.get("output", "") or ""
             for t in r2.tasks
-            if t.get("type") == "tool" and t.get("plan_id") == last_plan_id
+            if t.get("type") == "wrapper" and t.get("plan_id") == last_plan_id
             and t.get("status") == "done"
         ]
         assert ocr_tool_outputs, (
@@ -94,7 +94,7 @@ class TestF17FullPipeline:
         # Verify aider was used (tool task, not exec)
         aider_tasks = [
             t for t in r3.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
             and (t.get("skill") == "aider" or t.get("tool") == "aider")
         ]
         assert aider_tasks, (

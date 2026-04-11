@@ -51,8 +51,8 @@ class TestToolInstallHealthSmoke:
             dest = Path(cmd[3])
             dest.mkdir(parents=True, exist_ok=True)
             (dest / "kiso.toml").write_text(
-                '[kiso]\ntype = "tool"\nname = "browser"\n'
-                "[kiso.tool]\n"
+                '[kiso]\ntype = "wrapper"\nname = "browser"\n'
+                "[kiso.wrapper]\n"
                 'summary = "Browser automation"\n'
                 'usage_guide = "Use browser"\n'
                 '[kiso.deps]\nbin = ["fake_binary"]\n'
@@ -94,8 +94,8 @@ class TestToolInstallHealthSmoke:
         tool_dir = tmp_path / "browser"
         tool_dir.mkdir()
         (tool_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "tool"\nname = "browser"\n'
-            "[kiso.tool]\n"
+            '[kiso]\ntype = "wrapper"\nname = "browser"\n'
+            "[kiso.wrapper]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["fake_binary"]\n'
@@ -115,8 +115,8 @@ class TestToolInstallHealthSmoke:
         tool_dir = tmp_path / "browser"
         tool_dir.mkdir()
         (tool_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "tool"\nname = "browser"\n'
-            "[kiso.tool]\n"
+            '[kiso]\ntype = "wrapper"\nname = "browser"\n'
+            "[kiso.wrapper]\n"
             'summary = "Browser automation"\n'
             'usage_guide = "Use browser"\n'
             '[kiso.deps]\nbin = ["fake_binary"]\n'
@@ -133,7 +133,7 @@ class TestToolInstallHealthSmoke:
     def test_validation_error_includes_args_example(self):
         """validation error for null args includes example format."""
         plan = {"tasks": [
-            {"type": "tool", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
              "args": None, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}

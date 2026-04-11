@@ -117,8 +117,8 @@ class TestPluginInstallGitPull:
         plugin_dir = tmp_path / "wrappers" / "test-tool"
         plugin_dir.mkdir(parents=True)
         (plugin_dir / "kiso.toml").write_text(
-            '[kiso]\nname = "test-tool"\ntype = "tool"\n\n'
-            '[kiso.tool]\nsummary = "Test"\n\n'
+            '[kiso]\nname = "test-tool"\ntype = "wrapper"\n\n'
+            '[kiso.wrapper]\nsummary = "Test"\n\n'
             '[kiso.tool.args]\n'
         )
 

@@ -66,7 +66,7 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
         for row in entity_tags:
             tag = row[0]
             name = tag[len("entity:"):]
-            entity_id = await find_or_create_entity(db, name, "tool")
+            entity_id = await find_or_create_entity(db, name, "wrapper")
             await db.execute(
                 "UPDATE facts SET entity_id = ? WHERE id IN "
                 "(SELECT fact_id FROM fact_tags WHERE tag = ?)",
@@ -74,5 +74,11 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
             )
             await db.execute("DELETE FROM fact_tags WHERE tag = ?", (tag,))
         await db.commit()
+
+    # M1308: Migrate legacy "tool" → "wrapper" in stored data
+    await db.execute("UPDATE facts SET category = 'wrapper' WHERE category = 'tool'")
+    await db.execute("UPDATE entities SET kind = 'wrapper' WHERE kind = 'tool'")
+    await db.execute("UPDATE tasks SET type = 'wrapper' WHERE type = 'tool'")
+    await db.commit()
 
     return db

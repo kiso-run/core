@@ -278,7 +278,7 @@ class TestF15EntityDedupTagReuse:
         from kiso.store import find_or_create_entity, save_fact
 
         # Pre-seed entity + fact
-        eid = await find_or_create_entity(func_db, "flask", "tool")
+        eid = await find_or_create_entity(func_db, "flask", "wrapper")
         await save_fact(
             func_db,
             "Flask is a lightweight Python web framework",
@@ -334,7 +334,7 @@ class TestF16ScoredFactRetrieval:
         from kiso.store import find_or_create_entity, save_fact
 
         # Pre-seed 3 entities
-        flask_id = await find_or_create_entity(func_db, "flask", "tool")
+        flask_id = await find_or_create_entity(func_db, "flask", "wrapper")
         await save_fact(
             func_db, "Flask is a lightweight Python web framework with Jinja2 templates",
             source="curator", category="general",
@@ -346,7 +346,7 @@ class TestF16ScoredFactRetrieval:
             tags=["python", "web"], entity_id=flask_id,
         )
 
-        django_id = await find_or_create_entity(func_db, "django", "tool")
+        django_id = await find_or_create_entity(func_db, "django", "wrapper")
         await save_fact(
             func_db, "Django is a batteries-included Python web framework with ORM",
             source="curator", category="general",

@@ -1241,7 +1241,7 @@ async def _handle_wrapper_task(
     setup_error: str | None = None
     args: dict | None = None
     if tool_info is None:
-        setup_error = f"Tool '{wrapper_name}' not installed"
+        setup_error = f"Wrapper '{wrapper_name}' not installed"
     else:
         if args_raw is None:
             args = {}
@@ -1306,12 +1306,12 @@ async def _handle_wrapper_task(
                 )
             )
             if validation_errors:
-                setup_error = "Tool args validation failed: " + "; ".join(validation_errors)
+                setup_error = "Wrapper args validation failed: " + "; ".join(validation_errors)
 
     if setup_error:
         return await _fail_task_and_audit(
-            ctx, task_id, "tool", detail, setup_error, i + 1,
-            replan_reason=f"Tool task failed: {setup_error}",
+            ctx, task_id, "wrapper", detail, setup_error, i + 1,
+            replan_reason=f"Wrapper task failed: {setup_error}",
         )
 
     await _write_plan_outputs(ctx.session, ctx.plan_outputs)
@@ -1347,7 +1347,7 @@ async def _handle_wrapper_task(
         if exit_code == -15 and stderr == "cancelled":
             task_duration_ms = int((time.perf_counter() - t0) * 1000)
             await update_task(ctx.db, task_id, "cancelled", duration_ms=task_duration_ms)
-            _audit_task(ctx, task_id, "tool", detail, "cancelled", task_duration_ms)
+            _audit_task(ctx, task_id, "wrapper", detail, "cancelled", task_duration_ms)
             return _TaskHandlerResult(stop=True, stop_replan="cancelled")
 
         stdout, stderr = _sanitize_task_output(stdout, stderr, ctx)
@@ -1356,16 +1356,16 @@ async def _handle_wrapper_task(
 
         if not success:
             log.warning(
-                "Tool task %d failed (exit %d): stdout=%.500s stderr=%.500s",
+                "Wrapper task %d failed (exit %d): stdout=%.500s stderr=%.500s",
                 task_id, exit_code, stdout or "", stderr or "",
             )
         else:
             log.info(
-                "Tool task %d ok: stdout=%.200s",
+                "Wrapper task %d ok: stdout=%.200s",
                 task_id, stdout[:200] if stdout else "",
             )
             if stderr:
-                log.info("Tool task %d stderr: %.500s", task_id, stderr[:500])
+                log.info("Wrapper task %d stderr: %.500s", task_id, stderr[:500])
 
         # Auto-publish new files to pub/ and append URLs
         _auto_publish_skill_files(ctx.session, pre_snapshot)
@@ -1375,12 +1375,12 @@ async def _handle_wrapper_task(
         await update_task(ctx.db, task_id, status, output=stdout, stderr=stderr, duration_ms=task_duration_ms)
         task_row = {**task_row, "output": stdout, "stderr": stderr, "status": status,
                     "exit_code": exit_code}
-        _audit_task(ctx, task_id, "tool", detail, task_row["status"],
+        _audit_task(ctx, task_id, "wrapper", detail, task_row["status"],
                    task_duration_ms, len(task_row.get("output") or ""))
-        _log_task_done(ctx, task_id, "tool", task_row["status"], task_duration_ms)
+        _log_task_done(ctx, task_id, "wrapper", task_row["status"], task_duration_ms)
 
         plan_output_entry = _make_plan_output(
-            i + 1, "tool", detail, task_row.get("output") or "", task_row["status"],
+            i + 1, "wrapper", detail, task_row.get("output") or "", task_row["status"],
             session=ctx.session,
             contract=task_row.get("contract"),
             file_refs=input_file_refs,
@@ -1400,7 +1400,7 @@ async def _handle_wrapper_task(
             return await _review_stop_stuck(ctx, task_id, review, plan_output_entry, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
-            if await _should_retry_task(ctx, task_id, review, wrapper_retries, "tool"):
+            if await _should_retry_task(ctx, task_id, review, wrapper_retries, "wrapper"):
                 wrapper_retries += 1
                 continue
             return await _review_stop_replan(ctx, task_id, review, plan_output_entry, usage_idx_before, wrapper_retries)
@@ -1509,7 +1509,7 @@ async def _handle_exec_task(
         # User-initiated installs (needs_install empty) are allowed.
         if not ctx.install_approved and ctx.plan_has_needs_install and _INSTALL_CMD_RE.search(command):
             error_output = (
-                "Tool installation blocked — user approval required. "
+                "Wrapper installation blocked — user approval required. "
                 "Set needs_install in your plan and ask the user first."
             )
             log.warning("Exec task %d blocked: install without approval: %s", task_id, command[:120])
@@ -2073,7 +2073,7 @@ async def _apply_curator_result(
     """Apply curator evaluations: promote facts, create pending questions, discard.
 
     M689: If session has project_id, facts with category in {"project", "behavior"}
-    are scoped to that project. Facts with category in {"general", "tool", "system"}
+    are scoped to that project. Facts with category in {"general", "wrapper", "system"}
     remain global (project_id=NULL).
     """
     # resolve project_id once for the session

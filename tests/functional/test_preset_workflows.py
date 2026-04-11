@@ -47,7 +47,7 @@ class TestF27BrowseAndDescribe:
         assert_no_failure_language(result.last_plan_msg_output)
         wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in result.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
         ]
         assert "browser" in wrapper_names, f"Browser not used: {wrapper_names}"
 
@@ -83,7 +83,7 @@ class TestF28ScreenshotOCR:
         # Should have used both browser and ocr tools
         wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in result.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
         ]
         assert "browser" in wrapper_names, f"Browser not used: {wrapper_names}"
         assert result.has_published_file("*.png"), (
@@ -136,7 +136,7 @@ class TestF29AiderWriteCode:
         # Aider should have been used as a tool task
         aider_tasks = [
             t for t in result.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
             and FunctionalResult.task_wrapper_name(t) == "aider"
         ]
         assert aider_tasks, (
@@ -177,7 +177,7 @@ class TestF30FullPipeline:
         assert r1.success, f"Plan 1 failed: {r1.task_types()}"
         r1_wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in r1.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
         ]
         assert "browser" in r1_wrapper_names, f"Plan 1 missing browser tool: {r1_wrapper_names}"
         assert "ocr" in r1_wrapper_names, f"Plan 1 missing ocr tool: {r1_wrapper_names}"
@@ -192,7 +192,7 @@ class TestF30FullPipeline:
         assert r2.success, f"Plan 2 failed: {r2.task_types()}"
         r2_wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in r2.tasks
-            if t.get("type") == "tool"
+            if t.get("type") == "wrapper"
         ]
         assert "aider" in r2_wrapper_names, f"Plan 2 missing aider tool: {r2_wrapper_names}"
         assert "exec" in r2.task_types(), f"Plan 2 missing exec task: {r2.task_types()}"

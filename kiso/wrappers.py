@@ -48,26 +48,26 @@ class WrapperError(Exception):
     """Tool discovery, validation, or execution error."""
 
 
-def _validate_manifest(manifest: dict, tool_dir: Path) -> list[str]:
+def _validate_manifest(manifest: dict, wrapper_dir: Path) -> list[str]:
     """Validate a kiso.toml manifest. Returns list of error strings."""
-    errors = _validate_plugin_manifest_base(manifest, tool_dir, "tool")
+    errors = _validate_plugin_manifest_base(manifest, wrapper_dir, "wrapper")
 
-    # Base already checked [kiso] and [kiso.tool] sections; if either is
+    # Base already checked [kiso] and [kiso.wrapper] sections; if either is
     # missing it returned early, so re-check before accessing fields.
     kiso = manifest.get("kiso")
     if not isinstance(kiso, dict):
         return errors
-    tool_section = kiso.get("tool")
-    if not isinstance(tool_section, dict):
+    wrapper_section = kiso.get("wrapper")
+    if not isinstance(wrapper_section, dict):
         return errors
 
-    if not tool_section.get("summary") or not isinstance(tool_section.get("summary"), str):
-        errors.append("kiso.tool.summary is required and must be a string")
+    if not wrapper_section.get("summary") or not isinstance(wrapper_section.get("summary"), str):
+        errors.append("kiso.wrapper.summary is required and must be a string")
 
     # Validate args schema
-    args_section = tool_section.get("args", {})
+    args_section = wrapper_section.get("args", {})
     if not isinstance(args_section, dict):
-        errors.append("[kiso.tool.args] must be a table")
+        errors.append("[kiso.wrapper.args] must be a table")
     else:
         for arg_name, arg_def in args_section.items():
             if not isinstance(arg_def, dict):
@@ -80,18 +80,18 @@ def _validate_manifest(manifest: dict, tool_dir: Path) -> list[str]:
                 )
 
     # Validate env declarations
-    env_section = tool_section.get("env", {})
+    env_section = wrapper_section.get("env", {})
     if not isinstance(env_section, dict):
-        errors.append("[kiso.tool.env] must be a table")
+        errors.append("[kiso.wrapper.env] must be a table")
 
     # Validate session_secrets
-    session_secrets = tool_section.get("session_secrets")
+    session_secrets = wrapper_section.get("session_secrets")
     if session_secrets is not None and not isinstance(session_secrets, list):
-        errors.append("kiso.tool.session_secrets must be a list of strings")
+        errors.append("kiso.wrapper.session_secrets must be a list of strings")
 
     # Validate usage_guide (required string)
-    if not tool_section.get("usage_guide") or not isinstance(tool_section.get("usage_guide"), str):
-        errors.append("kiso.tool.usage_guide is required and must be a string")
+    if not wrapper_section.get("usage_guide") or not isinstance(wrapper_section.get("usage_guide"), str):
+        errors.append("kiso.wrapper.usage_guide is required and must be a string")
 
     return errors
 
@@ -140,7 +140,7 @@ def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
             continue
         seen_names.add(name)
 
-        tool_section = kiso.get("tool", {})
+        tool_section = kiso.get("wrapper", {})
         args_schema = tool_section.get("args", {})
         env_decl = tool_section.get("env", {})
         session_secrets = tool_section.get("session_secrets", [])
