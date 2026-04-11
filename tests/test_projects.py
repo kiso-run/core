@@ -496,3 +496,75 @@ async def test_search_facts_scored_default_admin_unchanged(db):
                     category="project", project_id=pid, tags=["k"])
     results = await search_facts_scored(db, tags=["k"])
     assert any("zeta" in r["content"] for r in results)
+
+
+# --- M1305: is_admin must NOT bypass project isolation ---
+
+
+async def test_is_admin_does_not_bypass_project_isolation_scored(db):
+    """M1305: is_admin=True must still respect project_id filtering.
+
+    Admin privilege bypasses *session* scoping (see user-category facts
+    from any session).  It must NOT bypass *project* scoping — an admin
+    whose session is bound to project A must not see facts from project B.
+    """
+    pid_a = await create_project(db, "admin-iso-a", "alice")
+    pid_b = await create_project(db, "admin-iso-b", "bob")
+    await save_fact(db, "Secret recipe in project A", "curator",
+                    category="general", project_id=pid_a, tags=["food"])
+    await save_fact(db, "Public recipe in project B", "curator",
+                    category="general", project_id=pid_b, tags=["food"])
+    await save_fact(db, "Global cooking tip", "curator",
+                    category="general", tags=["food"])
+
+    results = await search_facts_scored(
+        db, tags=["food"], session="sess1", is_admin=True, project_id=pid_a,
+    )
+    contents = [r["content"] for r in results]
+    assert any("Secret recipe" in c for c in contents), "own-project fact must be visible"
+    assert any("Global cooking" in c for c in contents), "global fact must be visible"
+    assert not any("Public recipe" in c for c in contents), (
+        "is_admin=True must NOT leak facts from other projects"
+    )
+
+
+async def test_is_admin_does_not_bypass_project_isolation_get_facts(db):
+    """M1305: get_facts with is_admin=True must still filter by project_id."""
+    pid_a = await create_project(db, "admin-getf-a", "alice")
+    pid_b = await create_project(db, "admin-getf-b", "bob")
+    await save_fact(db, "Alpha secret in A", "curator",
+                    category="general", project_id=pid_a)
+    await save_fact(db, "Bravo secret in B", "curator",
+                    category="general", project_id=pid_b)
+    await save_fact(db, "Global gamma fact", "curator",
+                    category="general")
+
+    facts = await get_facts(db, session="sess1", is_admin=True, project_id=pid_a)
+    contents = [f["content"] for f in facts]
+    assert any("Alpha secret" in c for c in contents)
+    assert any("Global gamma" in c for c in contents)
+    assert not any("Bravo secret" in c for c in contents), (
+        "is_admin=True must NOT leak facts from other projects"
+    )
+
+
+async def test_is_admin_does_not_bypass_project_isolation_search_facts(db):
+    """M1305: search_facts with is_admin=True + project_id must filter."""
+    pid_a = await create_project(db, "admin-sf-a", "alice")
+    pid_b = await create_project(db, "admin-sf-b", "bob")
+    await save_fact(db, "Xylophone encryption in project A", "curator",
+                    category="general", project_id=pid_a)
+    await save_fact(db, "Xylophone mention in project B", "curator",
+                    category="general", project_id=pid_b)
+    await save_fact(db, "Global xylophone fact", "curator",
+                    category="general")
+
+    results = await search_facts(
+        db, "xylophone", session="sess1", is_admin=True, project_id=pid_a,
+    )
+    contents = [r["content"] for r in results]
+    assert any("project A" in c for c in contents)
+    assert any("Global xylophone" in c for c in contents)
+    assert not any("project B" in c for c in contents), (
+        "is_admin=True must NOT leak facts from other projects"
+    )

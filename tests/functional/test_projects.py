@@ -76,11 +76,11 @@ class TestFProjIsolation:
     """A fact in project A is NOT visible to a session bound to project B."""
 
     async def test_project_fact_isolated(self, run_message, func_db):
-        # Create two projects
-        pid_a = await create_project(func_db, "proj-secret", "testadmin")
+        # Create two projects — proj-secret owned by a different user
+        # so testadmin is genuinely NOT a member (create_project auto-adds
+        # the creator as member).
+        pid_a = await create_project(func_db, "proj-secret", "other-user")
         pid_b = await create_project(func_db, "proj-public", "testadmin")
-        await add_project_member(func_db, pid_b, "testadmin", role="member")
-        # NOTE: testadmin is NOT a member of proj-secret
 
         # Seed a distinctive fact ONLY in project A
         await save_fact(

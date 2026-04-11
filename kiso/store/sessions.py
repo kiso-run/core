@@ -203,18 +203,34 @@ def _fact_session_filter(
 ) -> tuple[str, list]:
     """Return (sql_fragment, params) for session-scoped fact queries.
 
-    Project visibility rules (non-admin):
+    ``is_admin`` bypasses *session* scoping (user-category visibility
+    across sessions) but does NOT bypass *project* scoping.  When a
+    ``project_id`` or ``username`` is supplied the project filter is
+    always applied, even for admins.
+
+    Project visibility rules:
     - With ``username``: see globals + facts of any project the user is a
-      member of + own-session user-category facts.
+      member of + (non-admin: own-session user-category facts).
     - With ``project_id`` (no username, e.g. messenger queries): see globals
-      + facts of that one project + own-session user-category facts.
-    - With neither: see ONLY globals + own-session user-category facts.
-      Project-scoped facts MUST NOT leak through this path.
+      + facts of that one project + (non-admin: own-session user-category).
+    - With neither: admin → no filter; non-admin → ONLY globals +
+      own-session user-category facts.  Project-scoped facts MUST NOT
+      leak through the non-admin path.
     """
-    if is_admin or session is None:
-        return ("", [])
     p = prefix
+
+    # --- project-scoped paths (always applied, even for admin) ---
     if username:
+        if is_admin or session is None:
+            # Admin + username: project membership filter, no session restriction
+            return (
+                f" AND ("
+                f"{p}project_id IS NULL"
+                f" OR ({p}project_id IS NOT NULL AND {p}project_id IN"
+                f" (SELECT project_id FROM project_members WHERE username = ?))"
+                f")",
+                [username],
+            )
         return (
             f" AND ("
             f"({p}project_id IS NULL AND {p}category != 'user')"
@@ -225,6 +241,12 @@ def _fact_session_filter(
             [username, session],
         )
     if project_id is not None:
+        if is_admin or session is None:
+            # Admin + project_id: project filter, no session restriction
+            return (
+                f" AND ({p}project_id IS NULL OR {p}project_id = ?)",
+                [project_id],
+            )
         return (
             f" AND ("
             f"({p}project_id IS NULL AND {p}category != 'user')"
@@ -233,6 +255,10 @@ def _fact_session_filter(
             f")",
             [project_id, session],
         )
+
+    # --- no project context ---
+    if is_admin or session is None:
+        return ("", [])
     return (
         f" AND ({p}project_id IS NULL)"
         f" AND ({p}category != 'user' OR {p}session = ?)",

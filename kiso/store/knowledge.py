@@ -47,11 +47,12 @@ async def search_facts(
     is_admin: bool = False,
     limit: int = 15,
     username: str | None = None,
+    project_id: int | None = None,
 ) -> list[dict]:
     q = _fts5_query(query)
     if not q:
-        return await get_facts(db, session=session, is_admin=is_admin, username=username)
-    filt, params = _fact_session_filter(is_admin, session, prefix="f.", username=username)
+        return await get_facts(db, session=session, is_admin=is_admin, username=username, project_id=project_id)
+    filt, params = _fact_session_filter(is_admin, session, prefix="f.", username=username, project_id=project_id)
     try:
         cur = await db.execute(
             "SELECT f.* FROM facts f "
@@ -63,9 +64,9 @@ async def search_facts(
         results = await _rows_to_dicts(cur)
     except Exception as exc:
         log.debug("FTS5 search failed, falling back to full scan: %s", exc, exc_info=True)
-        return await get_facts(db, session=session, is_admin=is_admin, username=username)
+        return await get_facts(db, session=session, is_admin=is_admin, username=username, project_id=project_id)
     if not results:
-        return await get_facts(db, session=session, is_admin=is_admin, username=username)
+        return await get_facts(db, session=session, is_admin=is_admin, username=username, project_id=project_id)
     return results
 
 

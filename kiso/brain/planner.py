@@ -840,14 +840,16 @@ async def _gather_planner_context(
     is_admin = user_role == "admin"
     context_limit = int(config.settings["context_messages"])
 
-    # batch independent DB queries
-    sess, facts, pending, recent = await asyncio.gather(
-        get_session(db, session),
-        search_facts(db, new_message, session=session, is_admin=is_admin),
+    # get_session first — its project_id feeds search_facts
+    sess = await get_session(db, session)
+    session_project_id = sess["project_id"] if sess else None
+    summary = sess["summary"] if sess else ""
+
+    facts, pending, recent = await asyncio.gather(
+        search_facts(db, new_message, session=session, is_admin=is_admin, project_id=session_project_id),
         get_pending_items(db, session),
         get_recent_messages(db, session, limit=context_limit),
     )
-    summary = sess["summary"] if sess else ""
 
     # Format facts for context pool
     facts_text = ""
@@ -1118,9 +1120,7 @@ async def build_planner_messages(
                     if entity_id is None:
                         entity_id = eid  # primary entity
             briefing["relevant_entities"] = valid_entities
-        planner_project_id = (
-            None if is_admin else await get_session_project_id(db, session)
-        )
+        planner_project_id = await get_session_project_id(db, session)
         scored_facts = await search_facts_scored(
             db,
             entity_id=entity_id,
