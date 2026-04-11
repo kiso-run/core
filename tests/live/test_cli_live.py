@@ -45,7 +45,7 @@ def _assert_search_smoke_output(out: str, *, kind: str, query: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-class TestSkillSearch:
+class TestWrapperSearch:
     """Optional smoke tests for remote registry-backed tool search."""
 
     def test_search_returns_results(self, capsys):
@@ -108,8 +108,8 @@ class TestConnectorSearch:
 # ---------------------------------------------------------------------------
 
 
-class TestSkillInstallRemove:
-    def test_install_and_remove_official_skill(self, tmp_path: Path, capsys):
+class TestWrapperInstallRemove:
+    def test_install_and_remove_official_wrapper(self, tmp_path: Path, capsys):
         """What: Installs the 'websearch' tool from kiso-run org, verifies the directory, then removes it.
 
         Why: Validates the full skill install/remove lifecycle with a real git clone.
@@ -227,8 +227,8 @@ class TestConnectorInstallRemove:
 # ---------------------------------------------------------------------------
 
 
-class TestSkillInstallNotFound:
-    def test_install_nonexistent_skill(self, tmp_path: Path, capsys):
+class TestWrapperInstallNotFound:
+    def test_install_nonexistent_wrapper(self, tmp_path: Path, capsys):
         """What: Attempts to install a nonexistent skill ('nonexistent-xyz-999').
 
         Why: Validates the CLI shows a clean user-facing 'not found' error, not raw git stderr.
