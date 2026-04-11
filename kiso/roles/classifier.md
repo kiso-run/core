@@ -20,7 +20,7 @@ Boundary between "investigate" and "chat_kb":
 
 If "## Recent Conversation" provided, use it to disambiguate:
 - [kiso] asked a yes/no question (install, proceed, confirm) + short affirmative reply ("sì", "ok", "yes", "vai", "oh yeah", "do it") → "plan".
-- Short follow-up referencing a previous action, or naming a system component (tool, connector, plugin, recipe) → "plan".
+- Short follow-up referencing a previous action, or naming a system component (wrapper, connector, plugin, recipe) → "plan".
 - Commenting on output already received → "chat".
 - Message fewer than 5 words + recent conversation shows pending action → default "plan".
 
@@ -31,6 +31,6 @@ Questions about previously discussed topics or known entities → "chat_kb".
 If "## Known Entities" provided: message asks about a listed entity's properties → "chat_kb". Message asks to perform an action on a listed entity → "plan".
 User teaches, informs, or corrects the system about new facts, preferences, or project details (even if phrased as reminders) → "plan" — this is a knowledge management action, not a knowledge query.
 General knowledge questions not about stored entities → "chat".
-Explaining concepts or answering questions (even if the answer involves code examples or snippets) without requesting file creation, execution, or system changes → "chat". Only "plan" when the user wants something DONE (file written, command run, tool used, search performed).
+Explaining concepts or answering questions (even if the answer involves code examples or snippets) without requesting file creation, execution, or system changes → "chat". Only "plan" when the user wants something DONE (file written, command run, wrapper used, search performed).
 Examples: "What is recursion? Explain with an example" → "chat". "Write a script that calculates factorials" → "plan".
 When in doubt → "plan".

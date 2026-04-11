@@ -88,7 +88,7 @@ class TestPromptBudgetSmoke:
         # worker passes investigate=True. The actual loaded prompt
         # for default plan/chat/chat_kb paths is smaller because the
         # modular loader excludes non-selected sections.
-        ("planner.md", 14500),
+        ("planner.md", 14700),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])

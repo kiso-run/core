@@ -276,13 +276,13 @@ def _validate_plan_tasks(
                     "use uv pip install."
                 )
             if task.get("tool") is not None:
-                errors.append(f"Task {i}: search task must have tool = null")
+                errors.append(f"Task {i}: search task must have wrapper = null")
         if t == TASK_TYPE_REPLAN:
             replan_count += 1
             if task.get("expect") is not None:
                 errors.append(f"Task {i}: replan task must have expect = null")
             if task.get("tool") is not None:
-                errors.append(f"Task {i}: replan task must have tool = null")
+                errors.append(f"Task {i}: replan task must have wrapper = null")
             if task.get("args") is not None:
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
@@ -290,7 +290,7 @@ def _validate_plan_tasks(
         if t == TASK_TYPE_WRAPPER:
             wrapper_name = task.get("tool")
             if not wrapper_name:
-                errors.append(f"Task {i}: tool task must have a non-null tool name")
+                errors.append(f"Task {i}: wrapper task must have a non-null wrapper name")
             elif wrapper_name in (TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_REPLAN):
                 errors.append(
                     f"Task {i}: '{wrapper_name}' is a task TYPE, not a tool. "
@@ -308,7 +308,7 @@ def _validate_plan_tasks(
                 if install_approved:
                     errors.append(
                         f"Task {i}: tool '{wrapper_name}' is not installed. "
-                        f"Available tools: {available}. "
+                        f"Available wrappers: {available}. "
                         f"You CANNOT use type=tool for uninstalled tools. "
                         f"Installation is approved — plan an exec task to install "
                         f"{wrapper_name} via the kiso CLI, then replan to use it."
@@ -488,8 +488,8 @@ def _validate_plan_ordering(
         and not bool(set(goal.lower().split()) & _GOAL_RUN_KEYWORDS)
     ):
         errors.append(
-            "Task 2: exec immediately after tool — reviewer already "
-            "inspects tool output. Remove the exec task. Add exec after tool "
+            "Task 2: exec immediately after wrapper — reviewer already "
+            "inspects wrapper output. Remove the exec task. Add exec after wrapper "
             "ONLY when the user asks to run or test the result."
         )
 
@@ -1063,12 +1063,12 @@ async def build_planner_messages(
         # expect rules that must always be present (matches fallback path).
         if "planning_rules" not in modules:
             modules.append("planning_rules")
-        # tools_rules needed when any tools are installed — contains
+        # wrappers_rules needed when any tools are installed — contains
         # "use directly" rule and args/guide validation.  Broader than M1049
         # (which checked briefing["tools"]) because the briefer sometimes
         # skips tool selection even when tools are relevant.
-        if installed and "tools_rules" not in modules:
-            modules.append("tools_rules")
+        if installed and "wrappers_rules" not in modules:
+            modules.append("wrappers_rules")
         # investigate mode injects the read-only diagnose-first
         # contract into the planner system prompt.
         if investigate and "investigate" not in modules:
@@ -1270,7 +1270,7 @@ async def build_planner_messages(
     # always-inject available registry tools (not gated by briefer) so the
     # planner knows what tools can be installed via `kiso wrapper install`.
     if registry_text:
-        context_parts.append(f"## Available Tools (not installed)\n{registry_text}")
+        context_parts.append(f"## Available wrappers (not installed)\n{registry_text}")
 
     # clarify that built-in search works without websearch installation.
     # This is injected unconditionally (not gated by briefer web module) so the

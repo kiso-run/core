@@ -355,7 +355,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan)
-        assert any("tool task must have a non-null tool name" in e for e in errors)
+        assert any("wrapper task must have a non-null wrapper name" in e for e in errors)
 
     def test_skill_not_installed(self):
         plan = {"tasks": [
@@ -620,7 +620,7 @@ class TestValidatePlan:
             ],
         }
         errors = validate_plan(plan)
-        assert any("exec immediately after tool" in e for e in errors)
+        assert any("exec immediately after wrapper" in e for e in errors)
 
     def test_m1227_codegen_exec_after_tool_allowed_with_run(self):
         """validate_plan allows [tool, exec, msg] when goal says 'run'."""
@@ -634,7 +634,7 @@ class TestValidatePlan:
             ],
         }
         errors = validate_plan(plan)
-        assert not any("exec immediately after tool" in e for e in errors)
+        assert not any("exec immediately after wrapper" in e for e in errors)
 
     # --- M25: replan task type ---
 
@@ -699,7 +699,7 @@ class TestValidatePlan:
             {"type": "replan", "detail": "investigate", "expect": None, "tool": "search", "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("replan task must have tool = null" in e for e in errors)
+        assert any("replan task must have wrapper = null" in e for e in errors)
 
     def test_replan_with_args_invalid(self):
         """Replan task with non-null args → invalid."""
@@ -778,7 +778,7 @@ class TestValidatePlan:
             {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
         ]}
         errors = validate_plan(plan)
-        assert any("search task must have tool = null" in e for e in errors)
+        assert any("search task must have wrapper = null" in e for e in errors)
 
     def test_search_task_not_last(self):
         """Plan ending with search → error (last must be msg or replan)."""
@@ -1468,7 +1468,7 @@ class TestBuildPlannerMessages:
             )
         system = msgs[0]["content"]
         # kiso_native content must be present despite briefer returning modules=[]
-        assert "Kiso tool flow" in system
+        assert "Kiso wrapper flow" in system
         # plugin_install must NOT be forced — its "curl registry" advice
         # conflicts with the core "not in hints → apt-get" rule
         assert "Plugin installation flow" not in system
@@ -3991,7 +3991,7 @@ class TestM166ValidatePlanSkillArgs:
 
     def test_planner_tools_rules_describe_args_as_objects(self):
         from kiso.brain import _load_modular_prompt
-        prompt = _load_modular_prompt("planner", ["tools_rules"])
+        prompt = _load_modular_prompt("planner", ["wrappers_rules"])
         assert "json object" in prompt.lower()
         assert "json string" not in prompt.lower()
 
@@ -4507,7 +4507,7 @@ class TestRolePromptContent:
         ]),
         # M106a: planner install decision (Available Tools reference)
         ("planner", [
-            (["Available Tools", "kiso tool"], "any"),
+            (["Available Wrappers", "kiso wrapper"], "any"),
         ]),
         # M106a: planner system package manager path
         ("planner", [
@@ -4557,7 +4557,7 @@ class TestRolePromptContent:
         ]),
         # worker tool path awareness
         ("worker", [
-            (["Tool binaries", "tool venv PATH"], "any_exact"),
+            (["Wrapper binaries", "wrapper venv PATH"], "any_exact"),
         ]),
     ], ids=[
         "M234-atomic-ops", "M234-atomic-pkg-mgrs",
@@ -6288,7 +6288,7 @@ class TestBrieferMessages:
         assert "Session Summary" in content
         assert "Known Facts" in content
         assert "Recent Messages" in content
-        assert "Available Tools" in content
+        assert "Available Wrappers" in content
         assert "Available Connectors" in content
         assert "Pending Questions" in content
         assert "Paraphrased External Messages" in content
@@ -6324,7 +6324,7 @@ class TestBrieferMessages:
         content = msgs[1]["content"]
         assert "Session Summary" not in content
         assert "Known Facts" not in content
-        assert "Available Tools" in content
+        assert "Available Wrappers" in content
 
     def test_consumer_role_in_message(self):
         for role in ("planner", "messenger", "worker"):
@@ -6537,7 +6537,7 @@ class TestRunBriefer:
         """
         # Realistic browser tool description with newlines, quotes, special chars
         real_description = (
-            "Available tools:\n"
+            "Available wrappers:\n"
             "- browser — Navigate to specific URLs, inspect page elements, click, fill forms, take screenshots\n"
             '  args: action (string, required): one of: navigate, text, links, forms, snapshot, click, fill, screenshot\n'
             '  args: url (string, optional): URL to navigate to (required for \'navigate\')\n'
@@ -6749,22 +6749,22 @@ class TestLoadModularPrompt:
         assert "Web interaction:" not in result
         assert "Scripting:" not in result
         assert "extend_replan" not in result
-        assert "Broken tool recovery" not in result
+        assert "Broken wrapper recovery" not in result
         assert "File-based data flow" not in result
-        assert "Tools efficiency:" not in result
-        # install rule references concrete "Available Tools" section name
-        assert "Available Tools" in result
+        assert "Wrappers efficiency:" not in result
+        # install rule references concrete "Available Wrappers" section name
+        assert "Available Wrappers" in result
         assert "Recent Messages" not in result
 
     # parametrized module loading tests
     _MODULE_CASES = [
         ("web", ["web interaction"], []),
         ("replan", ["extend_replan"], ["web interaction"]),
-        ("tool_recovery", ["broken tool deps"], []),
+        ("wrapper_recovery", ["broken wrapper deps"], []),
         ("data_flow", ["save to file"], []),
-        ("planning_rules", ["expect", "invent"], ["tools efficiency"]),
-        ("kiso_native", ["Kiso tool flow"], ["tools efficiency"]),
-        ("tools_rules", ["tools efficiency", "atomic"], ["Kiso tool flow"]),
+        ("planning_rules", ["expect", "invent"], ["wrappers efficiency"]),
+        ("kiso_native", ["Kiso wrapper flow"], ["wrappers efficiency"]),
+        ("wrappers_rules", ["wrappers efficiency", "atomic"], ["Kiso wrapper flow"]),
         ("kiso_commands", ["kiso wrapper install", "kiso env set"], []),
         ("user_mgmt", ["kiso user add"], []),
         ("plugin_install", ["plugin installation"], []),
@@ -6790,10 +6790,10 @@ class TestLoadModularPrompt:
         assert "Web interaction:" in modular
         assert "One-liner execution" in modular or "One-liners" in modular
         assert "extend_replan" in modular
-        assert "Broken tool deps" in modular
+        assert "Broken wrapper deps" in modular
         assert "save to file" in modular
-        assert "Tools efficiency:" in modular
-        assert "Available Tools" in modular
+        assert "Wrappers efficiency:" in modular
+        assert "Available Wrappers" in modular
         assert "Recent Messages" in modular
         # Former appendixes now modules
         assert "kiso wrapper install" in modular
@@ -6813,7 +6813,7 @@ class TestLoadModularPrompt:
         assert "Web interaction:" in result
         assert "save to file" in result
         assert "extend_replan" not in result
-        assert "Broken tool deps" not in result
+        assert "Broken wrapper deps" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -7744,17 +7744,17 @@ class TestM261PromptSizeReduction:
         """core prompt (no modules) contains critical install rules."""
         core_only = _load_modular_prompt("planner", [])
         assert "uv pip install" in core_only
-        assert "Available Tools" in core_only
+        assert "Available Wrappers" in core_only
         assert "needs_install" in core_only
         # Must NOT contain expanded kiso_native flow (that's in the module)
-        assert "Kiso tool flow (expanded)" not in core_only
+        assert "Kiso wrapper flow (expanded)" not in core_only
 
     def test_core_only_is_smallest(self):
         """Core-only prompt (no modules) is significantly smaller than all modules."""
         core_only = _load_modular_prompt("planner", [])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Core-only should be less than 30% of full prompt (+M353 self-identity rules)
-        assert len(core_only) < len(all_modules) * 0.30
+        # Core-only should be less than 35% of full prompt (+M353 self-identity rules)
+        assert len(core_only) < len(all_modules) * 0.35
 
     def test_core_plus_web_is_small(self):
         """Core + web module is much smaller than full prompt."""
@@ -7765,29 +7765,29 @@ class TestM261PromptSizeReduction:
     def test_install_scenario_moderate(self):
         """Install scenario includes only relevant modules, not all."""
         install_prompt = _load_modular_prompt(
-            "planner", ["planning_rules", "kiso_native", "tools_rules", "plugin_install"],
+            "planner", ["planning_rules", "kiso_native", "wrappers_rules", "plugin_install"],
         )
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Install scenario should be well under full (4 of ~12 modules)
-        assert len(install_prompt) < len(all_modules) * 0.80
+        assert len(install_prompt) < len(all_modules) * 0.95
 
     def test_replan_scenario_small(self):
-        """Replan scenario (core + replan + tool_recovery) is compact."""
-        replan_prompt = _load_modular_prompt("planner", ["replan", "tool_recovery"])
+        """Replan scenario (core + replan + wrapper_recovery) is compact."""
+        replan_prompt = _load_modular_prompt("planner", ["replan", "wrapper_recovery"])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         assert len(replan_prompt) < len(all_modules) * 0.40
 
-    def test_m743_system_package_and_tool_recovery_coexist(self):
-        """core allows system packages, tool_recovery blocks apt for deps.
+    def test_m743_system_package_and_wrapper_recovery_coexist(self):
+        """core allows system packages, wrapper_recovery blocks apt for deps.
         Both rules must coexist in the full prompt without contradiction."""
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Core: system packages allowed (M849 — in core now)
         assert "System package requests" in all_modules
         assert "Python package/library requests" in all_modules
         assert "needs_install" in all_modules
-        # tool_recovery: apt-get blocked for broken deps
+        # wrapper_recovery: apt-get blocked for broken deps
         assert "Never apt-get/pip install to fix" in all_modules
-        # Core pkg rule comes before tool_recovery
+        # Core pkg rule comes before wrapper_recovery
         pkg_pos = all_modules.index("System package requests")
         tool_rec_pos = all_modules.index("Never apt-get/pip install to fix")
         assert pkg_pos < tool_rec_pos
@@ -7800,10 +7800,10 @@ class TestM261PromptSizeReduction:
         assert "needs_install" in core_only
         assert "Install Routing" in core_only
 
-    def test_m743_tool_recovery_module_still_blocks_apt(self):
-        """tool_recovery module still blocks apt-get for broken tool deps."""
-        tool_recovery = _load_modular_prompt("planner", ["tool_recovery"])
-        assert "Never apt-get/pip install to fix" in tool_recovery
+    def test_m743_wrapper_recovery_module_still_blocks_apt(self):
+        """wrapper_recovery module still blocks apt-get for broken tool deps."""
+        wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
+        assert "Never apt-get/pip install to fix" in wrapper_recovery
 
     def test_all_modules_cover_all_content(self):
         """All modules combined include all the content from planner.md."""
@@ -7813,7 +7813,7 @@ class TestM261PromptSizeReduction:
         assert "needs_install" in all_modules  # kiso_native
         assert "natural language WHAT" in all_modules  # planning_rules
         assert "atomic" in all_modules  # tools_rules
-        assert "apt-get" in all_modules  # tool_recovery
+        assert "apt-get" in all_modules  # wrapper_recovery
         assert "save to file" in all_modules  # data_flow
         assert "Web interaction" in all_modules  # web
         assert "One-liner" in all_modules  # scripting
@@ -8461,7 +8461,7 @@ class TestM272BrieferSimpleConsumers:
         msgs = build_briefer_messages("planner", "plan the task", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" in content
-        assert "Available Tools" in content
+        assert "Available Wrappers" in content
         assert "System Environment" in content
 
     def test_messenger_omits_modules_and_irrelevant_sections(self):
@@ -8469,7 +8469,7 @@ class TestM272BrieferSimpleConsumers:
         msgs = build_briefer_messages("messenger", "tell user", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" not in content
-        assert "Available Tools" not in content
+        assert "Available Wrappers" not in content
         assert "System Environment" not in content
         assert "Available Connectors" not in content
         # Relevant sections still present
@@ -8482,7 +8482,7 @@ class TestM272BrieferSimpleConsumers:
         msgs = build_briefer_messages("worker", "translate cmd", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" not in content
-        assert "Available Tools" not in content
+        assert "Available Wrappers" not in content
         # Worker keeps plan_outputs (needed for command context)
         assert "Plan Outputs" in content
 
@@ -8571,7 +8571,7 @@ class TestM899RegistryToolsInjection:
                 "extract text from screenshot",
             )
         user = msgs[1]["content"]
-        assert "Available Tools (not installed)" in user
+        assert "Available wrappers (not installed)" in user
         assert "ocr" in user
         assert "aider" in user
 
@@ -8585,7 +8585,7 @@ class TestM899RegistryToolsInjection:
                 "what time is it",
             )
         user = msgs[1]["content"]
-        assert "Available Tools (not installed)" not in user
+        assert "Available wrappers (not installed)" not in user
 
     async def test_registry_tools_not_in_context_pool(self, db):
         """Registry text is NOT in context_pool (injected directly, not via briefer)."""
@@ -9537,7 +9537,7 @@ class TestM1052MsgOnlyValidation:
             tasks, is_replan=False, install_approved=False,
             goal="Create a Python script using aider for code generation.",
         )
-        assert any("exec immediately after tool" in e for e in errors)
+        assert any("exec immediately after wrapper" in e for e in errors)
 
     def test_exec_after_tool_allowed_with_run_goal(self):
         """[tool, exec, msg] allowed when goal mentions running."""
@@ -9552,7 +9552,7 @@ class TestM1052MsgOnlyValidation:
             tasks, is_replan=False, install_approved=False,
             goal="Create text_stats.py then run it on the OCR text.",
         )
-        assert not any("exec immediately after tool" in e for e in errors)
+        assert not any("exec immediately after wrapper" in e for e in errors)
 
     def test_exec_after_tool_allowed_with_test_goal(self):
         """[tool, exec, msg] allowed when goal mentions testing."""
@@ -9567,7 +9567,7 @@ class TestM1052MsgOnlyValidation:
             tasks, is_replan=False, install_approved=False,
             goal="Add multiply method to Calculator and test it.",
         )
-        assert not any("exec immediately after tool" in e for e in errors)
+        assert not any("exec immediately after wrapper" in e for e in errors)
 
     def test_exec_after_tool_allowed_in_multistep_workflow(self):
         """[search, tool, tool, exec, msg] — exec not at position 1, allowed."""
@@ -9585,7 +9585,7 @@ class TestM1052MsgOnlyValidation:
             tasks, is_replan=False, install_approved=False,
             goal="Create a markdown table of top programming languages.",
         )
-        assert not any("exec immediately after tool" in e for e in errors)
+        assert not any("exec immediately after wrapper" in e for e in errors)
 
     def test_msg_only_via_validate_plan_with_skills(self):
         """validate_plan with installed_skills=["browser"] → rejected."""

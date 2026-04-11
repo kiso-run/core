@@ -1,13 +1,13 @@
-# Tool Authoring Reference
+# Wrapper Authoring Reference
 
 ## File Structure
 
 ```
-~/.kiso/instances/{instance}/tools/{name}/
+~/.kiso/instances/{instance}/wrappers/{name}/
 ├── kiso.toml           # manifest (required)
 ├── pyproject.toml      # python deps (required, uv-managed)
 ├── run.py              # entry point (required)
-├── LICENSE             # MIT for official tools (required)
+├── LICENSE             # MIT for official wrappers (required)
 ├── config.example.toml # default config (optional, copied to config.toml on install)
 ├── deps.sh             # system deps (optional, must be idempotent)
 ├── .gitignore
@@ -22,21 +22,21 @@ No `src/` layout. Kiso runs `.venv/bin/python run.py` as a subprocess. All code 
 
 ```toml
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "search"
 version = "0.1.0"
 description = "Web search using Brave Search API"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Web search using Brave Search API"    # one-liner shown to planner
 # session_secrets = ["github_token"]             # user-provided credentials (optional)
 # usage_guide = "Use short queries."             # operational guidance for planner
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 query = { type = "string", required = true, description = "search query" }
 max_results = { type = "int", required = false, default = 5, description = "max results" }
 
-[kiso.tool.env]
+[kiso.wrapper.env]
 api_key = { required = true }   # → env var KISO_TOOL_WEBSEARCH_API_KEY
 
 [kiso.deps]
@@ -46,7 +46,7 @@ bin = ["curl"]                  # checked with `which` after install
 
 ### Secrets
 
-- `[kiso.tool.env]` → deploy secrets (env vars, set via `kiso env`)
+- `[kiso.wrapper.env]` → deploy secrets (env vars, set via `kiso env`)
 - `session_secrets` → ephemeral (user-provided at runtime, in memory only, passed via input JSON)
 
 ### Env Var Naming
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
 ### SIGTERM handling
 
-For long-running tools, forward SIGTERM to child processes for graceful shutdown:
+For long-running wrappers, forward SIGTERM to child processes for graceful shutdown:
 
 ```python
 import signal
@@ -153,7 +153,7 @@ config.toml
 
 ## Testing
 
-Tools have their own venv and `pyproject.toml`, so tests live inside the tool repo. Assumes kiso is installed and the tool's venv is set up (`kiso tool install` or `uv sync`).
+Wrappers have their own venv and `pyproject.toml`, so tests live inside the wrapper repo. Assumes kiso is installed and the wrapper's venv is set up (`kiso wrapper install` or `uv sync`).
 
 ### pyproject.toml — add test deps
 
@@ -209,7 +209,7 @@ def test_stdin_stdout_contract():
 ### Running tests
 
 ```bash
-cd ~/.kiso/tools/{name}
+cd ~/.kiso/wrappers/{name}
 uv run --group dev pytest tests/ -v
 ```
 
@@ -222,15 +222,15 @@ uv run --group dev pytest tests/ -v
 
 ## License
 
-Official tools use the **MIT License**. Include a `LICENSE` file in the repo root. Third-party tools can use any license.
+Official wrappers use the **MIT License**. Include a `LICENSE` file in the repo root. Third-party wrappers can use any license.
 
 ## Key Conventions
 
-- Install: `kiso tool install {name|url}` (official: `kiso-run/tool-{name}`)
-- Discovery: rescanned from `~/.kiso/tools/` before each planner call
+- Install: `kiso wrapper install {name|url}` (official: `kiso-run/wrapper-{name}`)
+- Discovery: rescanned from `~/.kiso/wrappers/` before each planner call
 - Execution: `.venv/bin/python run.py` with JSON piped to stdin, `cwd=session workspace`
-- Environment: only `PATH` + declared env vars from `[kiso.tool.env]`
+- Environment: only `PATH` + declared env vars from `[kiso.wrapper.env]`
 - Exit 0 = success, exit 1 = failure (kiso marks as failed task)
 - Output sanitized (secrets stripped) before storage and LLM inclusion
-- All tool tasks are reviewed by the reviewer after execution
+- All wrapper tasks are reviewed by the reviewer after execution
 - `uv` for dependency management — kiso runs `uv sync` on install

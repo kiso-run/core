@@ -1011,19 +1011,19 @@ _MIN_PROMOTED_FACT_LEN = 10
 # Available prompt modules that the briefer can select.
 # core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
-    "planning_rules", "kiso_native", "tools_rules",
-    "web", "replan", "tool_recovery", "data_flow",
+    "planning_rules", "kiso_native", "wrappers_rules",
+    "web", "replan", "wrapper_recovery", "data_flow",
     "kiso_commands", "user_mgmt", "plugin_install",
 })
 _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "planning_rules": "task ordering, expect rules, multi-step plans",
     "kiso_native": "kiso-first policy, registry checking",
-    "tools_rules": "tool usage rules, atomic operations",
-    "web": "URLs, websites, browser tool rules",
+    "wrappers_rules": "wrapper usage rules, atomic operations",
+    "web": "URLs, websites, browser wrapper rules",
     "data_flow": "file-based data flow for large outputs",
     "replan": "re-planning after failure, extend flag",
-    "tool_recovery": "broken tool reinstall procedure",
-    "kiso_commands": "kiso CLI (tool/connector/env/user mgmt)",
+    "wrapper_recovery": "broken wrapper reinstall procedure",
+    "kiso_commands": "kiso CLI (wrapper/connector/env/user mgmt)",
     "user_mgmt": "user/alias management, role permissions",
     "plugin_install": "plugin discovery and installation",
 }
@@ -1225,7 +1225,7 @@ def _load_modular_prompt(role: str, modules: list[str]) -> str:
 
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("tools", "Available Tools"),
+    ("tools", "Available Wrappers"),
     ("recipes", "Available Recipes"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),

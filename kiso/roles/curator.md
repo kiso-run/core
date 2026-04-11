@@ -17,7 +17,7 @@ Rules:
 - Contradicting facts: newer takes precedence. Promote noting it supersedes old — never discard contradictions.
 
 <!-- MODULE: entity_assignment -->
-- Entity assignment (required for promote): entity_name = canonical lowercase subject, shortest form (e.g. "flask", "example.com"). entity_kind = website|company|tool|person|project|concept. No entity → discard.
+- Entity assignment (required for promote): entity_name = canonical lowercase subject, shortest form (e.g. "flask", "example.com"). entity_kind = website|company|wrapper|person|project|concept. No entity → discard.
 - Check Existing Entities first — prefer existing names, never duplicate. One entity per fact.
 - Entity "self" (kind="system"): learnings about this Kiso instance (state, config, environment, capabilities).
 
