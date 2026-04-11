@@ -1,14 +1,13 @@
-"""Runtime-focused guards for the tool -> wrapper rename (M1306).
+"""Runtime-focused guards for the wrapper rename (M1306-M1319).
 
-These tests intentionally avoid source-tree string scans and doc/file-name
-policing. The goal is to protect runtime invariants: the new modules import,
-the legacy files are gone, and the registry uses the runtime key the
-CLI/runtime expects.
+These tests protect runtime invariants: the correct modules import,
+legacy files are gone, and the registry/schema use the expected names.
 """
 
 from __future__ import annotations
 
 import importlib
+import inspect
 import json
 from pathlib import Path
 
@@ -34,13 +33,12 @@ class TestWrapperRenameRuntimeInvariants:
             module = importlib.import_module(module_name)
             assert hasattr(module, attr), f"{module_name} missing {attr}"
 
-    def test_legacy_tool_files_removed(self):
+    def test_legacy_files_removed(self):
         legacy_paths = [
             SRC / "tools.py",
             SRC / "tool_repair.py",
             SRC / "worker" / "tool.py",
             CLI / "tool.py",
-            # Also check old skill-era files are still gone
             SRC / "skills.py",
             SRC / "skill_repair.py",
             SRC / "skill_loader.py",
@@ -59,20 +57,40 @@ class TestWrapperRenameRuntimeInvariants:
         assert "connectors" in registry, "registry.json missing 'connectors' key"
 
     def test_task_type_wrapper_value(self):
-        """M1308: TASK_TYPE_WRAPPER constant must have value 'wrapper'."""
         from kiso.brain.common import TASK_TYPE_WRAPPER
-        assert TASK_TYPE_WRAPPER == "wrapper", (
-            f"TASK_TYPE_WRAPPER must be 'wrapper', got '{TASK_TYPE_WRAPPER}'"
-        )
+        assert TASK_TYPE_WRAPPER == "wrapper"
 
     def test_fact_categories_use_wrapper(self):
-        """M1308: 'wrapper' in valid fact categories, 'tool' not."""
         from kiso.brain.common import _VALID_FACT_CATEGORIES
         assert "wrapper" in _VALID_FACT_CATEGORIES
         assert "tool" not in _VALID_FACT_CATEGORIES
 
     def test_entity_kinds_use_wrapper(self):
-        """M1308: 'wrapper' in entity kinds, 'tool' not."""
         from kiso.brain.common import _ENTITY_KINDS
         assert "wrapper" in _ENTITY_KINDS
         assert "tool" not in _ENTITY_KINDS
+
+    def test_db_tasks_column_is_wrapper(self):
+        """M1319: DB schema uses 'wrapper' column, not 'skill'."""
+        from kiso.store.shared import SCHEMA
+        assert "wrapper" in SCHEMA
+        assert "skill" not in SCHEMA
+
+    def test_create_task_uses_wrapper_kwarg(self):
+        """M1319: create_task() accepts wrapper= kwarg, not skill=."""
+        from kiso.store.plans import create_task
+        sig = inspect.signature(create_task)
+        assert "wrapper" in sig.parameters
+        assert "skill" not in sig.parameters
+
+    def test_cli_user_wrappers_flag(self):
+        """M1319: CLI user command uses --wrappers flag, not --skills."""
+        import cli.user as user_mod
+        src = inspect.getsource(user_mod)
+        assert "--wrappers" in src
+        assert "--skills" not in src
+
+    def test_install_detect_regex_matches_wrapper(self):
+        from kiso.brain.common import _INSTALL_CMD_RE
+        assert _INSTALL_CMD_RE.search("kiso wrapper install browser")
+        assert _INSTALL_CMD_RE.search("kiso connector install discord")

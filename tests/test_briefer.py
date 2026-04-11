@@ -80,7 +80,7 @@ class TestBrieferScenarios:
     """Integration tests simulating different request types through the briefer."""
 
     async def test_simple_request_minimal_briefing(self, db):
-        """Simple question → briefer selects no modules, no skills, minimal context."""
+        """Simple question → briefer selects no modules, no wrappers, minimal context."""
         briefing = _briefing(context="User wants to know the time.")
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -104,7 +104,7 @@ class TestBrieferScenarios:
         assert "User wants to know the time." in user_content
 
     async def test_web_request_selects_web_module(self, db):
-        """Web request → briefer selects web module + browser skill."""
+        """Web request → briefer selects web module + browser wrapper."""
         briefing = _briefing(
             modules=["web"],
             tools=["browser"],
@@ -116,7 +116,7 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
-        # provide browser skill so briefer selection isn't cleared
+        # provide browser wrapper so briefer selection isn't cleared
         fake_skills = [
             {"name": "browser", "summary": "Navigate, click, fill, screenshot",
              "args_schema": {}, "env": {}, "session_secrets": [],
@@ -132,7 +132,7 @@ class TestBrieferScenarios:
         user_content = msgs[1]["content"]
         # Web module injected
         assert "Web interaction:" in system
-        # Browser skill present
+        # Browser wrapper present
         # build_planner_wrapper_list rebuilds full descriptions from installed tools
         assert "browser" in user_content
         assert "Navigate, click, fill, screenshot" in user_content
@@ -144,7 +144,7 @@ class TestBrieferScenarios:
         """Replan context → briefer selects replan module + failure context."""
         briefing = _briefing(
             modules=["replan"],
-            context="Previous plan failed: browser skill not installed.",
+            context="Previous plan failed: browser wrapper not installed.",
         )
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -238,7 +238,7 @@ class TestBrieferFallback:
             return json.dumps({
                 "goal": "test", "secrets": None,
                 "tasks": [{"type": "msg", "detail": "Answer in English. hi",
-                           "tool": None, "args": None, "expect": None}],
+                           "wrapper": None, "args": None, "expect": None}],
             })
 
         with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
@@ -414,7 +414,7 @@ class TestBrieferPromptBudget:
 
 
 # ---------------------------------------------------------------------------
-# MD skills in briefer context pool
+# MD wrappers in briefer context pool
 # ---------------------------------------------------------------------------
 
 

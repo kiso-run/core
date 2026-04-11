@@ -64,7 +64,7 @@ class TestPlannerLive:
             plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
-                    "Check the plugin registry to find what skills are available, "
+                    "Check the plugin registry to find what wrappers are available, "
                     "then install one that can do web search. "
                     "You must investigate the registry first before deciding.",
                 ),
@@ -179,12 +179,12 @@ class TestReviewerLive:
         review = await asyncio.wait_for(
             run_reviewer(
                 live_config,
-                goal="Install the aider skill",
-                detail="kiso skill install aider",
-                expect="Skill 'aider' installed successfully, exits 0",
+                goal="Install the aider wrapper",
+                detail="kiso wrapper install aider",
+                expect="Wrapper 'aider' installed successfully, exits 0",
                 output="warning: KISO_WRAPPER_AIDER_API_KEY not set\n"
-                       "Skill 'aider' installed successfully.",
-                user_message="install the aider skill",
+                       "Wrapper 'aider' installed successfully.",
+                user_message="install the aider wrapper",
                 success=True,
             ),
             timeout=TIMEOUT,
@@ -201,11 +201,11 @@ class TestReviewerLive:
         review = await asyncio.wait_for(
             run_reviewer(
                 live_config,
-                goal="Install the aider skill cleanly",
-                detail="kiso skill install aider",
-                expect="Skill installed with no warnings or errors",
+                goal="Install the aider wrapper cleanly",
+                detail="kiso wrapper install aider",
+                expect="Wrapper installed with no warnings or errors",
                 output="warning: KISO_WRAPPER_AIDER_API_KEY not set\n"
-                       "Skill 'aider' installed successfully.",
+                       "Wrapper 'aider' installed successfully.",
                 user_message="install aider with no issues",
                 success=True,
             ),
@@ -223,12 +223,12 @@ class TestReviewerLive:
         review = await asyncio.wait_for(
             run_reviewer(
                 live_config,
-                goal="Install the aider skill",
-                detail="kiso skill install aider",
-                expect="Skill 'aider' installed successfully, exits 0",
+                goal="Install the aider wrapper",
+                detail="kiso wrapper install aider",
+                expect="Wrapper 'aider' installed successfully, exits 0",
                 output="warning: KISO_WRAPPER_AIDER_API_KEY not set\n"
                        "error: installation failed",
-                user_message="install the aider skill",
+                user_message="install the aider wrapper",
                 success=False,
             ),
             timeout=TIMEOUT,

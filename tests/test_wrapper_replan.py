@@ -62,9 +62,9 @@ class TestToolArgsReplanFlow:
         """validate_plan catches null args against schema."""
         plan = {
             "tasks": [
-                {"type": "wrapper", "detail": "take screenshot", "tool": "browser",
+                {"type": "wrapper", "detail": "take screenshot", "wrapper": "browser",
                  "args": None, "expect": "screenshot saved"},
-                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
             ],
         }
         info = {"browser": BROWSER_TOOL_INFO}
@@ -82,8 +82,8 @@ class TestToolArgsReplanFlow:
             "secrets": None,
             "tasks": [
                 {"type": "wrapper", "detail": "take screenshot of example.com",
-                 "tool": "browser", "args": None, "expect": "screenshot saved"},
-                {"type": "msg", "detail": "Report result", "tool": None,
+                 "wrapper": "browser", "args": None, "expect": "screenshot saved"},
+                {"type": "msg", "detail": "Report result", "wrapper": None,
                  "args": None, "expect": None},
             ],
         }
@@ -94,10 +94,10 @@ class TestToolArgsReplanFlow:
             "secrets": None,
             "tasks": [
                 {"type": "wrapper", "detail": "take screenshot of example.com",
-                 "tool": "browser",
+                 "wrapper": "browser",
                  "args": '{"action": "screenshot"}',
                  "expect": "screenshot saved"},
-                {"type": "msg", "detail": "Report result", "tool": None,
+                {"type": "msg", "detail": "Report result", "wrapper": None,
                  "args": None, "expect": None},
             ],
         }
@@ -148,7 +148,7 @@ class TestToolArgsReplanFlow:
         }
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper",
-                          detail="take screenshot", skill="browser",
+                          detail="take screenshot", wrapper="browser",
                           args=None, expect="screenshot")
 
         ctx = _PlanCtx(

@@ -138,8 +138,6 @@ def preset_show(args: argparse.Namespace) -> None:
         print(f"  Description: {tracking.get('description', '')}")
         if tracking.get("wrappers"):
             print(f"  Wrappers: {', '.join(tracking['wrappers'])}")
-        if tracking.get("skills"):
-            print(f"  Skills: {', '.join(tracking['skills'])}")
         if tracking.get("connectors"):
             print(f"  Connectors: {', '.join(tracking['connectors'])}")
         if tracking.get("fact_ids"):
@@ -177,8 +175,6 @@ def preset_installed(args: argparse.Namespace) -> None:
         print(f"    {facts} facts, {behaviors} behaviors")
         if p.get("wrappers"):
             print(f"    wrappers: {', '.join(p['wrappers'])}")
-        if p.get("skills"):
-            print(f"    skills: {', '.join(p['skills'])}")
 
 
 def preset_remove(args: argparse.Namespace) -> None:
@@ -196,8 +192,6 @@ def _render_manifest(manifest) -> None:
     print(f"  Description: {manifest.description}")
     if manifest.wrappers:
         print(f"  Wrappers: {', '.join(manifest.wrappers)}")
-    if manifest.skills:
-        print(f"  Skills: {', '.join(manifest.skills)}")
     if manifest.connectors:
         print(f"  Connectors: {', '.join(manifest.connectors)}")
     if manifest.knowledge_facts:

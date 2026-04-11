@@ -94,7 +94,7 @@ class TestM358SelfInspection:
     def test_validate_plan_rejects_kiso_as_wrapper_task(self):
         """self-inspection must use exec/tasks, not type='wrapper' with kiso."""
         plan = {"tasks": [
-            {"type": "wrapper", "detail": "inspect the local host", "tool": "kiso",
+            {"type": "wrapper", "detail": "inspect the local host", "wrapper": "kiso",
              "args": "{}", "expect": "system information returned"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}

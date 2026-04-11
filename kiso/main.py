@@ -629,7 +629,7 @@ async def lifespan(app: FastAPI):
             if repaired:
                 log.info("Repaired tools on startup: %s", repaired)
         except Exception as e:
-            log.warning("Background tool repair failed: %s", e)
+            log.warning("Background wrapper repair failed: %s", e)
 
     repair_task = asyncio.create_task(_background_wrapper_repair())
 

@@ -1,7 +1,7 @@
 """Fixtures and helpers for functional acceptance tests.
 
 Functional tests exercise the full kiso pipeline (classifier → planner →
-worker → skills → messenger) with real LLM, real network, and real skill
+worker → wrappers → messenger) with real LLM, real network, and real wrapper
 execution.  They are gated by ``--functional`` and optionally
 ``--destructive`` pytest flags.
 """
@@ -331,8 +331,8 @@ class FunctionalResult:
 
     @staticmethod
     def task_wrapper_name(task: dict) -> str:
-        """Return the tool name for a task (handles DB column `skill` vs `tool`)."""
-        return task.get("skill") or task.get("tool") or ""
+        """Return the tool name for a task (handles DB column `wrapper` vs `tool`)."""
+        return task.get("wrapper") or task.get("wrapper") or ""
 
 
 # ---------------------------------------------------------------------------

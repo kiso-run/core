@@ -3,7 +3,7 @@
 Full user-scenario tests using real LLMs + real exec.
 Tests exercise realistic patterns: exec chaining, full _process_message
 pipeline, multi-turn context propagation, replan recovery, knowledge
-pipeline, and skill task execution.
+pipeline, and wrapper task execution.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ class TestExecChaining:
             await create_task(
                 seeded_db, plan_id, live_session,
                 type=t["type"], detail=t["detail"],
-                skill=t.get("tool"), args=t.get("args"),
+                wrapper=t.get("wrapper"), args=t.get("args"),
                 expect=t.get("expect"),
             )
 
@@ -401,7 +401,7 @@ class TestReplanRecovery:
 
 
 # ---------------------------------------------------------------------------
-# L4.6 — Skill task execution
+# L4.6 — Wrapper task execution
 # ---------------------------------------------------------------------------
 
 
@@ -411,11 +411,11 @@ class TestSkillExecution:
     ):
         """What: Creates a minimal echo-test tool, asks the planner to use it, then executes and reviews.
 
-        Why: Validates end-to-end skill/tool task execution — planner selection, subprocess run, reviewer approval.
-        Expects: Plan contains a tool task, execution succeeds, output contains 'hello from skill test'.
+        Why: Validates end-to-end wrapper/tool task execution — planner selection, subprocess run, reviewer approval.
+        Expects: Plan contains a tool task, execution succeeds, output contains 'hello from wrapper test'.
         """
-        # Create a minimal echo skill
-        skill_dir = tmp_path / "skills" / "echo-test"
+        # Create a minimal echo wrapper
+        skill_dir = tmp_path / "wrappers" / "echo-test"
         skill_dir.mkdir(parents=True)
 
         (skill_dir / "kiso.toml").write_text(
@@ -451,7 +451,7 @@ class TestSkillExecution:
         }
 
         content = (
-            "Use the echo-test tool to echo the text 'hello from skill test'"
+            "Use the echo-test tool to echo the text 'hello from wrapper test'"
         )
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user", content,
@@ -480,7 +480,7 @@ class TestSkillExecution:
             await create_task(
                 seeded_db, plan_id, live_session,
                 type=t["type"], detail=t["detail"],
-                skill=t.get("tool"), args=t.get("args"),
+                wrapper=t.get("wrapper"), args=t.get("args"),
                 expect=t.get("expect"),
             )
 
@@ -499,7 +499,7 @@ class TestSkillExecution:
         assert success is True
         tool_completed = [t for t in completed if t["type"] == "tool"]
         assert tool_completed
-        assert "hello from skill test" in tool_completed[0]["output"]
+        assert "hello from wrapper test" in tool_completed[0]["output"]
 
 
 # ---------------------------------------------------------------------------

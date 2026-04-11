@@ -45,12 +45,12 @@ def _write_raw(raw: dict, path: Path | None = None) -> None:
         tomli_w.dump(raw, f)
 
 
-def _parse_skills(skills_arg: str) -> list[str]:
-    """Parse a comma-separated skills string; exits on empty result."""
-    skills_list = [s.strip() for s in skills_arg.split(",") if s.strip()]
-    if not skills_list:
-        die("--skills contains no valid skill names")
-    return skills_list
+def _parse_wrappers(wrappers_arg: str) -> list[str]:
+    """Parse a comma-separated wrappers string; exits on empty result."""
+    wrappers_list = [s.strip() for s in wrappers_arg.split(",") if s.strip()]
+    if not wrappers_list:
+        die("--wrappers contains no valid wrapper names")
+    return wrappers_list
 
 
 def _other_admins(users: dict, exclude: str) -> list[str]:
@@ -85,7 +85,7 @@ def _system_user_exists(username: str) -> bool:
 
 
 def _user_list(args) -> None:
-    """List all users with their role, skills, and aliases."""
+    """List all users with their role, wrappers, and aliases."""
     require_admin()
 
     raw = _read_raw()
@@ -101,15 +101,15 @@ def _user_list(args) -> None:
 
     for name, udata in users.items():
         role = udata.get("role", "?")
-        skills = udata.get("skills", None)
+        wrappers = udata.get("wrappers", None)
         aliases = udata.get("aliases", {})
 
-        if skills == "*":
-            skills_str = "*"
-        elif isinstance(skills, list):
-            skills_str = ", ".join(skills)
+        if wrappers == "*":
+            wrappers_str = "*"
+        elif isinstance(wrappers, list):
+            wrappers_str = ", ".join(wrappers)
         else:
-            skills_str = "-"
+            wrappers_str = "-"
 
         aliases_str = (
             ", ".join(f"{k}:{v}" for k, v in aliases.items()) if aliases else "-"
@@ -117,7 +117,7 @@ def _user_list(args) -> None:
 
         print(f"  {name}")
         print(f"    role:    {role}")
-        print(f"    skills:  {skills_str}")
+        print(f"    wrappers:  {wrappers_str}")
         print(f"    aliases: {aliases_str}")
 
 
@@ -127,7 +127,7 @@ def _user_add(args) -> None:
 
     username = args.username
     role = args.role
-    skills_arg = args.skills
+    wrappers_arg = args.wrappers
     alias_pairs = args.alias or []
 
     if not NAME_RE.match(username):
@@ -147,8 +147,8 @@ def _user_add(args) -> None:
     if role not in ("admin", "user"):
         die("--role must be 'admin' or 'user'")
 
-    if role == "user" and not skills_arg:
-        die("--skills required for role=user (use '*' or a comma-separated list of skill names)")
+    if role == "user" and not wrappers_arg:
+        die("--wrappers required for role=user (use '*' or a comma-separated list of wrapper names)")
 
     aliases: dict[str, str] = {}
     for pair in alias_pairs:
@@ -166,10 +166,10 @@ def _user_add(args) -> None:
 
     user_entry: dict = {"role": role}
     if role == "user":
-        if skills_arg == "*":
-            user_entry["skills"] = "*"
+        if wrappers_arg == "*":
+            user_entry["wrappers"] = "*"
         else:
-            user_entry["skills"] = _parse_skills(skills_arg)
+            user_entry["wrappers"] = _parse_wrappers(wrappers_arg)
     if aliases:
         user_entry["aliases"] = aliases
 
@@ -180,15 +180,15 @@ def _user_add(args) -> None:
 
 
 def _user_edit(args) -> None:
-    """Edit role and/or skills of an existing user."""
+    """Edit role and/or wrappers of an existing user."""
     require_admin()
 
     username = args.username
     new_role = args.role
-    skills_arg = args.skills
+    wrappers_arg = args.wrappers
 
-    if new_role is None and skills_arg is None:
-        die("at least one of --role or --skills must be provided")
+    if new_role is None and wrappers_arg is None:
+        die("at least one of --role or --wrappers must be provided")
 
     raw = _read_raw()
     users = raw.get("users", {})
@@ -205,18 +205,18 @@ def _user_edit(args) -> None:
         if not _other_admins(users, username):
             die("cannot demote the last admin")
 
-    # Skills handling
-    if skills_arg is not None:
-        new_skills = "*" if skills_arg == "*" else _parse_skills(skills_arg)
+    # Wrappers handling
+    if wrappers_arg is not None:
+        new_wrappers = "*" if wrappers_arg == "*" else _parse_wrappers(wrappers_arg)
     else:
-        new_skills = entry.get("skills")
+        new_wrappers = entry.get("wrappers")
 
-    if final_role == "user" and not new_skills:
-        die("--skills required when role is 'user' and no existing skills are set")
+    if final_role == "user" and not new_wrappers:
+        die("--wrappers required when role is 'user' and no existing wrappers are set")
 
     entry["role"] = final_role
     if final_role == "user":
-        entry["skills"] = new_skills
+        entry["wrappers"] = new_wrappers
 
     _write_raw(raw)
     _maybe_reload(args)

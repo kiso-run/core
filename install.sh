@@ -741,7 +741,7 @@ for k,v in d.items():
 
     echo
     yellow "  Reset data? This wipes EVERYTHING: conversations, messages, learnings,"
-    yellow "  skills, connectors, installed binaries, and all session files."
+    yellow "  wrappers, connectors, installed binaries, and all session files."
     yellow "  Only config.toml and .env (API key) are kept."
     yellow "  Useful if something is broken or you want a fresh start."
     if confirm "  Reset data for '$INST_NAME'?" "n"; then
@@ -835,7 +835,7 @@ if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
     if find "$INST_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
         bold "Cleaning root-owned files from previous install..."
         docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine sh -c '
-            for d in sessions audit sys reference skills/*/; do
+            for d in sessions audit sys reference wrappers/*/; do
                 rm -rf "/mnt/kiso/$d" 2>/dev/null
             done
             rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
@@ -844,14 +844,14 @@ if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
     fi
 fi
 
-# ── 3f. Wipe skills/connectors on reset ───────────────────────────────────────
+# ── 3f. Wipe wrappers/connectors on reset ───────────────────────────────────────
 # When a reset is requested AND the image is being rebuilt, unconditionally
-# remove skills/ and connectors/ directories. deps.sh artifacts live in the
+# remove wrappers/ and connectors/ directories. deps.sh artifacts live in the
 # image (gone after rebuild), so keeping stale skill dirs leads to "installed
-# but broken" skills.
+# but broken" wrappers.
 
 if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
-    for _wipe_dir in skills connectors; do
+    for _wipe_dir in wrappers connectors; do
         if [[ -d "$INST_DIR/$_wipe_dir" ]]; then
             bold "Wiping $_wipe_dir directory (reset requested)..."
             # Use alpine container to handle root-owned files

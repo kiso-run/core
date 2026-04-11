@@ -192,7 +192,7 @@ def _render_markdown(text: str, caps: TermCaps) -> str:
 _ICONS_UNICODE = {
     "plan": "◆",
     "exec": "▶",
-    "skill": "⚡",
+    "wrapper": "⚡",
     "msg": "💬",
     "ok": "✓",
     "fail": "✗",
@@ -206,7 +206,7 @@ _ICONS_UNICODE = {
 _ICONS_ASCII = {
     "plan": "*",
     "exec": ">",
-    "skill": "!",
+    "wrapper": "!",
     "msg": '"',
     "ok": "ok",
     "fail": "FAIL",
@@ -262,7 +262,7 @@ def render_plan_detail(tasks: list[dict], caps: TermCaps) -> str:
     if not tasks:
         return ""
     lines: list[str] = []
-    # Reserve space for prefix: "  1. [skill]  " ≈ 16 chars
+    # Reserve space for prefix: "  1. [wrapper]  " ≈ 16 chars
     max_detail = max(caps.width - 16, 40)
     for i, t in enumerate(tasks, 1):
         ttype = t.get("type", "?")
@@ -336,7 +336,7 @@ def render_task_header(
     status = task.get("status", "")
     ttype = task.get("type", "")
     detail = task.get("detail", "")
-    skill_name = task.get("skill", "")
+    wrapper_name = task.get("wrapper", "")
 
     # Pick icon based on status
     if status == "done":
@@ -351,8 +351,8 @@ def render_task_header(
         # running or other → type icon
         icon = _icon(ttype, caps)
 
-    # Label: wrapper:name for wrapper tasks with a skill/wrapper field
-    label = f"wrapper:{skill_name}" if ttype == "wrapper" and skill_name else ttype
+    # Label: wrapper:name for wrapper tasks with a wrapper/wrapper field
+    label = f"wrapper:{wrapper_name}" if ttype == "wrapper" and wrapper_name else ttype
 
     # Build detail part — first line only, to keep the header on one line
     if detail:
@@ -538,7 +538,7 @@ def render_banner(
         kiso_label = f"{kiso_label}  v{version}"
     name_line = _style(kiso_label, _BOLD, _MAGENTA, caps=caps)
     dot = _sym(" · ", " | ", caps)
-    caps_text = f"  run commands{dot}search the web{dot}write code{dot}use skills"
+    caps_text = f"  run commands{dot}search the web{dot}write code{dot}use wrappers"
     caps_line = _style(caps_text, _DIM, caps=caps)
     hint = _style(f"  /help for commands{dot}Ctrl+C to cancel a task", _DIM, caps=caps)
     instance_session = _style(f"  instance: {bot_name}  |  session: {session}", _DIM, caps=caps)

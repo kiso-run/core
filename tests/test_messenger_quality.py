@@ -146,7 +146,7 @@ class TestMsgDetailValidation:
         """msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.",
-             "expect": None, "tool": None, "args": None},
+             "expect": None, "wrapper": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("empty or too short" in e for e in errors)
@@ -155,7 +155,7 @@ class TestMsgDetailValidation:
         plan = {"tasks": [
             {"type": "msg",
              "detail": "Answer in Italian. Tell the user the SSH key is at ~/.kiso/sys/ssh/",
-             "expect": None, "tool": None, "args": None},
+             "expect": None, "wrapper": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)
@@ -164,7 +164,7 @@ class TestMsgDetailValidation:
         """msg detail without prefix is accepted if substantive (_msg_task adds prefix)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Tell the user the results",
-             "expect": None, "tool": None, "args": None},
+             "expect": None, "wrapper": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)
@@ -172,7 +172,7 @@ class TestMsgDetailValidation:
 
 
 # ---------------------------------------------------------------------------
-# P55: Briefer skill filter with no skills installed
+# P55: Briefer wrapper filter with no wrappers installed
 # ---------------------------------------------------------------------------
 
 
@@ -209,7 +209,7 @@ class TestBrieferToolFilterNoTools:
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available skills:\n- browser — navigate, click, fill, screenshot"}
+        ctx = {"tools": "Available wrappers:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
         assert "browser" in result["tools"]
@@ -226,7 +226,7 @@ class TestBrieferToolFilterNoTools:
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available skills:\n- git — version control operations"}
+        ctx = {"tools": "Available wrappers:\n- git — version control operations"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
         assert "git" in result["tools"]

@@ -250,7 +250,7 @@ def _validate_plan_tasks(
                         f"for Python libraries use uv pip install."
                     )
         if t == TASK_TYPE_MSG:
-            for field in ("expect", "tool", "args"):
+            for field in ("expect", "wrapper", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
             # Language prefix ("Answer in X.") is NOT validated here —
@@ -275,20 +275,20 @@ def _validate_plan_tasks(
                     "manager (e.g. apt-get install), for Python libraries "
                     "use uv pip install."
                 )
-            if task.get("tool") is not None:
+            if task.get("wrapper") is not None:
                 errors.append(f"Task {i}: search task must have wrapper = null")
         if t == TASK_TYPE_REPLAN:
             replan_count += 1
             if task.get("expect") is not None:
                 errors.append(f"Task {i}: replan task must have expect = null")
-            if task.get("tool") is not None:
+            if task.get("wrapper") is not None:
                 errors.append(f"Task {i}: replan task must have wrapper = null")
             if task.get("args") is not None:
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
                 errors.append(f"Task {i}: replan task can only be the last task")
         if t == TASK_TYPE_WRAPPER:
-            wrapper_name = task.get("tool")
+            wrapper_name = task.get("wrapper")
             if not wrapper_name:
                 errors.append(f"Task {i}: wrapper task must have a non-null wrapper name")
             elif wrapper_name in (TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_REPLAN):
@@ -747,7 +747,7 @@ def validate_plan(
     needs = plan.get("needs_install") or []
     if needs:
         for i, t in enumerate(tasks, 1):
-            if t.get("type") == TASK_TYPE_WRAPPER and t.get("tool") in needs:
+            if t.get("type") == TASK_TYPE_WRAPPER and t.get("wrapper") in needs:
                 if install_approved:
                     errors.append(
                         f"Task {i}: tool '{t['tool']}' is not installed yet. "
@@ -1137,7 +1137,7 @@ async def build_planner_messages(
     context_parts: list[str] = []
 
     if briefing:
-        # Briefer path: use synthesized context + filtered skills
+        # Briefer path: use synthesized context + filtered wrappers
         _add_section(context_parts, "Context", briefing["context"])
         _add_section(context_parts, "Relevant Facts", scored_facts_text)
         # inject essential system env always (~60 tok). Full version

@@ -77,7 +77,7 @@ CURATOR_VERDICTS: frozenset[str] = frozenset({
     CURATOR_VERDICT_PROMOTE, CURATOR_VERDICT_ASK, CURATOR_VERDICT_DISCARD,
 })
 
-# Example values for tool args types (used in validation error messages)
+# Example values for wrapper args types (used in validation error messages)
 _TYPE_EXAMPLES: dict = {"string": "value", "int": 1, "float": 1.0, "bool": True}
 
 # Worker phase constants
@@ -133,28 +133,28 @@ def _format_message_history(messages: list[dict]) -> str:
 
 _INSTALL_KEYWORDS = frozenset({
     "install", "installa", "installo", "installare", "installer",
-    "needs_install", "tool install", "connector install",
+    "needs_install", "wrapper install", "connector install",
 })
 _APPROVAL_KEYWORDS = frozenset({
     "sì", "si", "yes", "ok", "vai", "do it", "proceed", "confirma",
     "installa", "install",
 })
 _INSTALL_MODE_NONE = "none"
-_INSTALL_MODE_KISO_WRAPPER = "kiso_tool"
-_INSTALL_MODE_UNKNOWN_KISO_WRAPPER = "unknown_kiso_tool"
+_INSTALL_MODE_KISO_WRAPPER = "kiso_wrapper"
+_INSTALL_MODE_UNKNOWN_KISO_WRAPPER = "unknown_kiso_wrapper"
 _INSTALL_MODE_PYTHON_LIB = "python_lib"
 _INSTALL_MODE_SYSTEM_PKG = "system_pkg"
 _INSTALL_TARGET_RE = re.compile(
     r"\b(?:install|installa|installare|installer)\b"
     r"(?:\s+(?:the|a|an|il|lo|la|i|gli|le|un|una))?"
-    r"(?:\s+(?:kiso\s+tool|tool|plugin|package|pkg|pacchetto|libreria|library|module|modulo|python\s+package|python\s+library|python\s+module|system\s+package|pacchetto\s+di\s+sistema))?"
+    r"(?:\s+(?:kiso\s+wrapper|wrapper|tool|plugin|package|pkg|pacchetto|libreria|library|module|modulo|python\s+package|python\s+library|python\s+module|system\s+package|pacchetto\s+di\s+sistema))?"
     r"\s+['\"`]?"
     r"([a-z0-9][a-z0-9._+-]{0,63})"
     r"['\"`]?\b",
     re.IGNORECASE,
 )
 _NAMED_TOOL_TARGET_RE = re.compile(
-    r"\b(?:kiso\s+tool|tool|plugin|connector|skill)\b\s+['\"`]([a-z0-9][a-z0-9._+-]{0,63})['\"`]",
+    r"\b(?:kiso\s+wrapper|wrapper|tool|plugin|connector)\b\s+['\"`]([a-z0-9][a-z0-9._+-]{0,63})['\"`]",
     re.IGNORECASE,
 )
 _SYSTEM_INSTALL_HINT_RE = re.compile(
@@ -166,7 +166,7 @@ _PYTHON_INSTALL_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 _KISO_WRAPPER_SIGNAL_RE = re.compile(
-    r"\b(?:kiso\s+tool|kiso\s+plugin|plugin|connector|skill|registry)\b",
+    r"\b(?:kiso\s+wrapper|kiso\s+plugin|plugin|connector|wrapper|tool|registry)\b",
     re.IGNORECASE,
 )
 _COMMON_PYTHON_PACKAGES = frozenset({
@@ -221,7 +221,7 @@ def _compress_install_turns(lines: list[str]) -> list[str]:
 
             if is_proposal and is_approval and is_result:
                 # Compress: extract tool name heuristically
-                result.append("[install completed] tool installed and available.")
+                result.append("[install completed] wrapper installed and available.")
                 i += 3
                 continue
 
@@ -232,7 +232,7 @@ def _compress_install_turns(lines: list[str]) -> list[str]:
 
 
 def _parse_registry_hint_names(registry_hints: str) -> frozenset[str]:
-    """Extract tool names from sysenv registry_hints text."""
+    """Extract wrapper names from sysenv registry_hints text."""
     if not registry_hints:
         return frozenset()
     return frozenset(
@@ -243,7 +243,7 @@ def _parse_registry_hint_names(registry_hints: str) -> frozenset[str]:
 
 
 def _extract_install_target(message: str) -> str | None:
-    """Best-effort package/tool target extraction from install requests."""
+    """Best-effort package/wrapper target extraction from install requests."""
     named_match = _NAMED_TOOL_TARGET_RE.search(message)
     if named_match and any(kw in message.lower() for kw in _INSTALL_KEYWORDS):
         target = _normalize_install_target_token(named_match.group(1))
@@ -260,13 +260,13 @@ def _extract_install_target(message: str) -> str | None:
 
 
 def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
-    """Return True when the user explicitly frames *target* as a named tool/plugin."""
+    """Return True when the user explicitly frames *target* as a named wrapper/plugin."""
     if not target:
         return False
     if _KISO_WRAPPER_SIGNAL_RE.search(message):
         return True
     escaped = re.escape(target)
-    return bool(re.search(rf"\btool\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))
+    return bool(re.search(rf"\b(?:wrapper|tool)\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))
 
 
 def _classify_install_mode(
@@ -300,7 +300,7 @@ def _classify_install_mode(
         return {
             "mode": _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
             "target": target,
-            "reason": "user explicitly requested a named tool/plugin not present in current kiso wrapper context",
+            "reason": "user explicitly requested a named wrapper/plugin not present in current kiso wrapper context",
         }
 
     if _SYSTEM_INSTALL_HINT_RE.search(msg_lower):
@@ -353,9 +353,9 @@ def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
         lines.append("Route: kiso wrapper proposal — set needs_install + approval msg only.")
         lines.append("Do not use apt-get or uv pip install for this target.")
     elif mode == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER:
-        lines.append("Route: unknown named tool/plugin request — msg only.")
+        lines.append("Route: unknown named wrapper/plugin request — msg only.")
         lines.append("Do not set needs_install and do not use apt-get, uv pip install, or kiso wrapper install.")
-        lines.append("Explain that the named tool is not available in the current registry/tool context and ask for a git URL or installation instructions if it is private.")
+        lines.append("Explain that the named wrapper is not available in the current registry/wrapper context and ask for a git URL or installation instructions if it is private.")
     elif mode == _INSTALL_MODE_PYTHON_LIB:
         lines.append(f"Route: Python library — exec `uv pip install {target}`.")
         lines.append("Do not set needs_install and do not use the system package manager.")
@@ -384,7 +384,7 @@ def build_recent_context(
     can be very long; the gist is enough for context).
 
     Install proposal→approval→result sequences are compressed to reduce
-    context noise after tool installation cycles.
+    context noise after wrapper installation cycles.
 
     When *max_chars* > 0, older messages are dropped to stay within budget
     (most recent messages preserved).
@@ -509,7 +509,7 @@ _PIP_INSTALL_RE = re.compile(
     re.IGNORECASE,
 )
 _UV_PIP_RE = re.compile(r"\buv\s+pip\b", re.IGNORECASE)
-# marker substring in validation errors for uninstalled-tool detection.
+# marker substring in validation errors for uninstalled-wrapper detection.
 # Used both when generating the error (validate_plan) and detecting it
 # (_retry_llm_with_validation).  Keep in sync.
 _WRAPPER_NOT_INSTALLED_MARKER = "is not installed"
@@ -544,8 +544,8 @@ def check_safety_rules(detail: str, safety_facts: list[dict]) -> str | None:
 
 
 _PLUGIN_DISCOVERY_RE = re.compile(
-    r"(?:tool|skill|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
-    r"|(?:registr|kiso).*(?:tool|skill|connector|plugin)",
+    r"(?:tool|wrapper|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
+    r"|(?:registr|kiso).*(?:tool|wrapper|connector|plugin)",
     re.IGNORECASE,
 )
 
@@ -561,22 +561,22 @@ VALIDATION_RETRY_CLASSES: frozenset[str] = frozenset({
 _PLAN_REWRITE_ERROR_PATTERNS = (
     "plan has only msg tasks",
     "last task must be type",
-    "goal mentions creating a file/document but plan has no exec or tool task",
+    "goal mentions creating a file/document but plan has no exec or wrapper task",
     "needs_install is set",
     "a plan can have at most one replan task",
     "group ",
-    "installs a tool/connector in the first plan",
-    "plan installs a tool after user approval but ends with msg",
+    "installs a wrapper/connector in the first plan",
+    "plan installs a wrapper after user approval but ends with msg",
 )
 _APPROACH_RESET_ERROR_PATTERNS = (
-    "the requested tool does not exist in any registry",
+    "the requested wrapper does not exist in any registry",
     "plan only msg tasks explaining the situation to the user",
     "cannot be found in the public registry",
 )
 _TASK_REPAIR_ERROR_PATTERNS = (
-    "tool args invalid",
-    "tool args is not valid json",
-    "tool args must be a json object",
+    "wrapper args invalid",
+    "wrapper args is not valid json",
+    "wrapper args must be a json object",
     "missing required arg:",
     "must have expect = null",
     "must have tool = null",
@@ -629,10 +629,10 @@ def classify_failure_class(errors_or_reason: list[str] | str | None) -> str:
         text = str(errors_or_reason or "").lower()
 
     if (
-        "tool args validation failed" in text
-        or "tool args invalid" in text
-        or "tool args is not valid json" in text
-        or "tool args must be a json object" in text
+        "wrapper args validation failed" in text
+        or "wrapper args invalid" in text
+        or "wrapper args is not valid json" in text
+        or "wrapper args must be a json object" in text
         or "missing required arg:" in text
         or "files must contain file paths only" in text
     ):
@@ -947,12 +947,12 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
         "properties": {
             "type": {"type": "string", "enum": ["exec", "msg", "wrapper", "search", "replan"]},
             "detail": {"type": "string"},
-            "tool": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "wrapper": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "args": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
             "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "group": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
         },
-        "required": ["type", "detail", "tool", "args", "expect"],
+        "required": ["type", "detail", "wrapper", "args", "expect"],
         "additionalProperties": False,
     }},
     "extend_replan": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
@@ -1284,7 +1284,7 @@ def build_briefer_messages(
     pool = _prefilter_context_pool(context_pool, consumer_role, is_replan)
     system_prompt = _load_system_prompt("briefer")
 
-    # messenger/worker never use modules or skills — omit those sections
+    # messenger/worker never use modules or wrappers — omit those sections
     # to save ~400 tokens per briefer call for these simple consumers.
     _simple_consumer = consumer_role in ("messenger", "worker")
 

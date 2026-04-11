@@ -132,7 +132,7 @@ class TestM362CLICommandAudit:
                 result[name] = sorted(subs)
         return result
 
-    @pytest.mark.parametrize("cmd_group", ["skill", "connector", "env", "user", "reset"])
+    @pytest.mark.parametrize("cmd_group", ["wrapper", "connector", "env", "user", "reset"])
     def test_subcommands_match(self, cmd_group):
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["kiso_commands"])
@@ -153,7 +153,7 @@ class TestM323LearningPipeline:
     def test_clean_learn_items_filters_garbage(self):
         from kiso.brain import clean_learn_items
         bad_batch = [
-            "browser skill installed successfully",
+            "browser wrapper installed successfully",
             "The contact form includes Name [8], Email [9], and details [10].",
             "guidance.studio has a contact form with name and email fields",
         ]

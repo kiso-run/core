@@ -122,7 +122,7 @@ def _facts_from_registry(output: str, seen: set[str]) -> list[str] | None:
     try:
         data = json.loads(output)
         if isinstance(data, dict) and "name" in data:
-            fact = f"Skill/connector '{data['name']}' found in registry"
+            fact = f"Wrapper/connector '{data['name']}' found in registry"
             if "version" in data:
                 fact += f" (v{data['version']})"
             if fact not in seen:

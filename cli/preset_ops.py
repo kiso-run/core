@@ -83,7 +83,7 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
 
     1. Seed knowledge facts via POST /knowledge
     2. Seed behaviors via POST /knowledge (category=behavior)
-    3. Print tool/skill install instructions
+    3. Print wrapper install instructions
     4. Save tracking file
     """
     from cli._http import cli_post
@@ -100,8 +100,6 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         print(f"  Description: {manifest.description}")
         if manifest.wrappers:
             print(f"  Wrappers to install: {', '.join(manifest.wrappers)}")
-        if manifest.skills:
-            print(f"  Skills to install: {', '.join(manifest.skills)}")
         if manifest.connectors:
             print(f"  Connectors to install: {', '.join(manifest.connectors)}")
         if manifest.knowledge_facts:
@@ -183,7 +181,6 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         "fact_ids": fact_ids,
         "behavior_ids": behavior_ids,
         "wrappers": manifest.wrappers,
-        "skills": manifest.skills,
         "connectors": manifest.connectors,
         "installed_wrappers": installed_wrappers,
         "installed_connectors": installed_connectors,

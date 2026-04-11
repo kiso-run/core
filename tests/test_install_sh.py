@@ -103,7 +103,7 @@ class TestM174DoResetSetsResetRequested:
 
 
 class TestM175SkillWipeOnRebuildReset:
-    """skills/ and connectors/ dirs are wiped when NEED_BUILD+RESET_REQUESTED."""
+    """wrappers/ and connectors/ dirs are wiped when NEED_BUILD+RESET_REQUESTED."""
 
     def test_wipe_block_present_in_install_sh(self):
         """The 3f wipe block exists and references RESET_REQUESTED."""
@@ -111,7 +111,7 @@ class TestM175SkillWipeOnRebuildReset:
         with open(script_path) as f:
             content = f.read()
         assert 'NEED_BUILD" == true && "$RESET_REQUESTED" == true' in content
-        assert "skills" in content
+        assert "wrappers" in content
         assert "connectors" in content
 
     def test_wipe_block_skipped_when_no_reset(self):
@@ -123,8 +123,8 @@ class TestM175SkillWipeOnRebuildReset:
             NEED_BUILD=true
             RESET_REQUESTED=false
             INST_DIR="$(mktemp -d)"
-            mkdir -p "$INST_DIR/skills/browser"
-            touch "$INST_DIR/skills/browser/kiso.toml"
+            mkdir -p "$INST_DIR/wrappers/browser"
+            touch "$INST_DIR/wrappers/browser/kiso.toml"
 
             bold() { :; }
             green() { :; }
@@ -132,10 +132,10 @@ class TestM175SkillWipeOnRebuildReset:
 
             # Simulate the wipe block logic
             if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
-                rm -rf "$INST_DIR/skills"
+                rm -rf "$INST_DIR/wrappers"
             fi
 
-            if [[ -d "$INST_DIR/skills/browser" ]]; then
+            if [[ -d "$INST_DIR/wrappers/browser" ]]; then
                 echo "SKILLS_SURVIVED=true"
             else
                 echo "SKILLS_SURVIVED=false"
@@ -146,7 +146,7 @@ class TestM175SkillWipeOnRebuildReset:
         assert "SKILLS_SURVIVED=true" in result.stdout
 
     def test_wipe_block_runs_when_reset_requested(self):
-        """When NEED_BUILD+RESET_REQUESTED, skills dir is removed."""
+        """When NEED_BUILD+RESET_REQUESTED, wrappers dir is removed."""
         result = _run_bash("""
             export KISO_INSTALL_LIB=1
             source ./install.sh
@@ -154,8 +154,8 @@ class TestM175SkillWipeOnRebuildReset:
             NEED_BUILD=true
             RESET_REQUESTED=true
             INST_DIR="$(mktemp -d)"
-            mkdir -p "$INST_DIR/skills/browser"
-            touch "$INST_DIR/skills/browser/kiso.toml"
+            mkdir -p "$INST_DIR/wrappers/browser"
+            touch "$INST_DIR/wrappers/browser/kiso.toml"
             mkdir -p "$INST_DIR/connectors/telegram"
             touch "$INST_DIR/connectors/telegram/kiso.toml"
 
@@ -165,14 +165,14 @@ class TestM175SkillWipeOnRebuildReset:
 
             # Simulate the wipe block (without docker — just rm)
             if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
-                for _wipe_dir in skills connectors; do
+                for _wipe_dir in wrappers connectors; do
                     if [[ -d "$INST_DIR/$_wipe_dir" ]]; then
                         rm -rf "$INST_DIR/$_wipe_dir"
                     fi
                 done
             fi
 
-            [[ -d "$INST_DIR/skills" ]] && echo "SKILLS=exists" || echo "SKILLS=gone"
+            [[ -d "$INST_DIR/wrappers" ]] && echo "SKILLS=exists" || echo "SKILLS=gone"
             [[ -d "$INST_DIR/connectors" ]] && echo "CONNECTORS=exists" || echo "CONNECTORS=gone"
             rm -rf "$INST_DIR"
         """)

@@ -39,11 +39,11 @@ def user_add_env(tmp_path):
         yield config
 
 
-def _make_add_args(username: str, role: str = "admin", skills: str | None = None):
+def _make_add_args(username: str, role: str = "admin", wrappers: str | None = None):
     return argparse.Namespace(
         username=username,
         role=role,
-        skills=skills,
+        wrappers=wrappers,
         alias=[],
         no_reload=True,
         user="admin1",

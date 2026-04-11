@@ -746,7 +746,7 @@ async def _persist_plan_tasks(
             db, plan_id, session,
             type=contract.task_type,
             detail=contract.intent,
-            skill=contract.wrapper_name,
+            wrapper=contract.wrapper_name,
             args=args_payload,
             expect=contract.expect,
             parallel_group=t.get("group"),
@@ -1228,7 +1228,7 @@ async def _handle_wrapper_task(
     task_id = task_row["id"]
     _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
-    wrapper_name = task_row.get("skill")  # DB field still "skill" until schema migration
+    wrapper_name = task_row.get("wrapper")  
     args_raw = task_row.get("args")
     tool_info = ctx.installed_wrappers_by_name.get(wrapper_name)
     t0 = time.perf_counter()
@@ -1870,7 +1870,7 @@ async def _execute_plan(
         for idx, task_row in batch:
             perm = revalidate_permissions(
                 fresh_config, username, task_row["type"],
-                wrapper_name=task_row.get("skill"),
+                wrapper_name=task_row.get("wrapper"),
             )
             if not perm.allowed:
                 await update_task(db, task_row["id"], "failed", output=perm.reason)

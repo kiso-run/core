@@ -67,7 +67,7 @@ def _wrapper_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
 def run_wrapper_command(args) -> None:
     """Dispatch to the appropriate wrapper subcommand."""
     from cli.plugin_ops import dispatch_subcommand
-    dispatch_subcommand(args, "tool_command", {
+    dispatch_subcommand(args, "wrapper_command", {
         "list": _wrapper_list, "search": _wrapper_search, "install": _wrapper_install,
         "update": _wrapper_update, "remove": _wrapper_remove, "test": _wrapper_test,
     }, "usage: kiso wrapper {list,search,install,update,remove,test}")

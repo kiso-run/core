@@ -27,12 +27,12 @@ from tests._cli_plugin_helpers import mock_admin, _ok_run, fake_clone_plugin  # 
             "github-com_sniku_jquery-doublescroll",
         ),
         (
-            "https://gitlab.com/team/cool-skill.git",
-            "gitlab-com_team_cool-skill",
+            "https://gitlab.com/team/cool-wrapper.git",
+            "gitlab-com_team_cool-wrapper",
         ),
         (
-            "https://github.com/someone/my-skill",
-            "github-com_someone_my-skill",
+            "https://github.com/someone/my-wrapper",
+            "github-com_someone_my-wrapper",
         ),
         (
             "git@GitHub.COM:Team/Mixed-Case.git",
@@ -78,7 +78,7 @@ def test_is_url(target: str, expected: bool):
 
 
 def test_run_wrapper_command_no_subcommand(capsys):
-    args = argparse.Namespace(tool_command=None)
+    args = argparse.Namespace(wrapper_command=None)
     with pytest.raises(SystemExit, match="1"):
         run_wrapper_command(args)
     out = capsys.readouterr().out
@@ -145,11 +145,11 @@ def test_skill_list_empty(capsys):
 def test_skill_list_shows_skills(capsys):
     from cli.wrapper import _wrapper_list
 
-    skills = [
+    wrappers = [
         {"name": "search", "version": "0.1.0", "summary": "Web search"},
         {"name": "aider", "version": "0.3.2", "summary": "Code editing"},
     ]
-    with patch("cli.wrapper.discover_wrappers", return_value=skills):
+    with patch("cli.wrapper.discover_wrappers", return_value=wrappers):
         _wrapper_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "search" in out
@@ -162,11 +162,11 @@ def test_skill_list_shows_skills(capsys):
 def test_skill_list_column_alignment(capsys):
     from cli.wrapper import _wrapper_list
 
-    skills = [
+    wrappers = [
         {"name": "a", "version": "1.0", "summary": "Short"},
         {"name": "longname", "version": "10.20.30", "summary": "Long"},
     ]
-    with patch("cli.wrapper.discover_wrappers", return_value=skills):
+    with patch("cli.wrapper.discover_wrappers", return_value=wrappers):
         _wrapper_list(argparse.Namespace())
     lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
     assert len(lines) == 2
@@ -246,7 +246,7 @@ def test_skill_search_no_results(capsys):
 
 
 def test_skill_search_cross_type_hint_shown(capsys):
-    """M102b: when skill search finds nothing, hint about matching connectors."""
+    """M102b: when wrapper search finds nothing, hint about matching connectors."""
     from cli.wrapper import _wrapper_search
 
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
@@ -321,7 +321,7 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
     tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
-    clone_fn = _fake_clone_with_manifest("myskill", "Custom skill")
+    clone_fn = _fake_clone_with_manifest("myskill", "Custom wrapper")
 
     def run_dispatch(cmd, **kwargs):
         if cmd[0] == "git":
@@ -353,7 +353,7 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
     tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
-    clone_fn = _fake_clone_with_manifest("myskill", "Custom skill")
+    clone_fn = _fake_clone_with_manifest("myskill", "Custom wrapper")
 
     def run_dispatch(cmd, **kwargs):
         if cmd[0] == "git":
@@ -1003,7 +1003,7 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
-    """Update all when skills dir doesn't exist."""
+    """Update all when wrappers dir doesn't exist."""
     from cli.wrapper import _wrapper_update
 
     with patch("cli.wrapper.WRAPPERS_DIR", tmp_path / "nonexistent"):
@@ -1013,7 +1013,7 @@ def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
-    """Update all when skills dir is empty."""
+    """Update all when wrappers dir is empty."""
     from cli.wrapper import _wrapper_update
 
     tools_dir = tmp_path / "wrappers"
@@ -1165,7 +1165,7 @@ def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
 
 
 def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
-    """No usage_guide in toml → no override file created (skill won't validate
+    """No usage_guide in toml → no override file created (wrapper won't validate
     but we test the file-creation logic in isolation via a passing manifest
     that has an empty usage_guide-like value)."""
     from cli.wrapper import _wrapper_install

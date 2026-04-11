@@ -264,7 +264,7 @@ def _build_exec_env() -> dict[str, str]:
 
     - PATH: sys/bin + kiso venv bin + system PATH
     - HOME: real home directory (so ``Path.home() / ".kiso"`` resolves correctly
-      in child processes like ``kiso skill install``)
+      in child processes like ``kiso wrapper install``)
     - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists
     - GIT_SSH_COMMAND: use sys/ssh config if it exists
     """
@@ -413,8 +413,8 @@ def _snapshot_workspace(session: str) -> set[Path]:
 
 
 # Top-level directories in the workspace that should never be auto-published.
-# Skills/tools create caches, profiles, and temp files here — they are internal,
-# not user-facing output.  Skills can still write directly to pub/ if they want
+# Wrappers/tools create caches, profiles, and temp files here — they are internal,
+# not user-facing output.  Wrappers can still write directly to pub/ if they want
 # to publish specific files.
 _PUB_IGNORE_DIRS = frozenset({
     ".browser", ".cache", ".local", ".config", ".mozilla", ".playwright",
@@ -698,7 +698,7 @@ def _build_last_plan_summary_data(
             origin_task_index=origin_task_index,
             origin_wrapper=origin_wrapper,
         ).to_dict()
-        artifact["tool"] = origin_wrapper
+        artifact["wrapper"] = origin_wrapper
         produced_files.append(artifact)
 
     # Key results — reviewer summaries from completed tasks
@@ -809,7 +809,7 @@ def _build_execution_state(session: str) -> ExecutionState:
             normalized_produced_files.append(item)
             continue
         artifact = _make_artifact_ref(raw_path, workspace=workspace).to_dict()
-        artifact["tool"] = item.get("tool")
+        artifact["wrapper"] = item.get("wrapper")
         normalized_produced_files.append(artifact)
     return ExecutionState(
         session=session,

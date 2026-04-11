@@ -1,4 +1,4 @@
-"""Plugin umbrella CLI commands — unified view across tools, skills, connectors."""
+"""Plugin umbrella CLI commands — unified view across tools, wrappers, connectors."""
 
 from __future__ import annotations
 

@@ -233,7 +233,7 @@ def make_messenger_response(content: str = "Hello! How can I help?") -> str:
 def make_briefing_response() -> str:
     return json.dumps({
         "modules": [],
-        "skills": [],
+        "wrappers": [],
         "context": [],
         "output_indices": [],
         "relevant_tags": [],

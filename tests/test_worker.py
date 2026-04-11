@@ -92,24 +92,24 @@ from tests.conftest import patch_kiso_dir as _patch_kiso_dir
 VALID_PLAN = {
     "goal": "Say hello",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "Hello!", "tool": None, "args": None, "expect": None}],
+    "tasks": [{"type": "msg", "detail": "Hello!", "wrapper": None, "args": None, "expect": None}],
 }
 
 EXEC_THEN_MSG_PLAN = {
     "goal": "List files",
     "secrets": None,
     "tasks": [
-        {"type": "exec", "detail": "echo hello", "tool": None, "args": None, "expect": "prints hello"},
-        {"type": "msg", "detail": "Report the output", "tool": None, "args": None, "expect": None},
+        {"type": "exec", "detail": "echo hello", "wrapper": None, "args": None, "expect": "prints hello"},
+        {"type": "msg", "detail": "Report the output", "wrapper": None, "args": None, "expect": None},
     ],
 }
 
 TOOL_PLAN = {
-    "goal": "Use skill",
+    "goal": "Use wrapper",
     "secrets": None,
     "tasks": [
-        {"type": "wrapper", "detail": "search", "tool": "search", "args": "{}", "expect": "results"},
-        {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+        {"type": "wrapper", "detail": "search", "wrapper": "search", "args": "{}", "expect": "results"},
+        {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
     ],
 }
 
@@ -558,7 +558,7 @@ class TestMsgTask:
         # Briefer returns mixed-case entity name
         briefing = {
             "modules": [],
-            "skills": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": ["website"],
@@ -653,7 +653,7 @@ class TestRunWorker:
         assert tasks[1]["status"] == "done"
 
     async def test_plan_with_secrets_extracts_them(self, db, tmp_path):
-        """Secrets from the plan are extracted and available for skill execution."""
+        """Secrets from the plan are extracted and available for wrapper execution."""
         config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "use token", processed=False)
@@ -661,7 +661,7 @@ class TestRunWorker:
         plan_with_secrets = {
             "goal": "Use token",
             "secrets": [{"key": "api_token", "value": "tok_abc"}],
-            "tasks": [{"type": "msg", "detail": "Done", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Done", "wrapper": None, "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -691,8 +691,8 @@ class TestRunWorker:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -718,8 +718,8 @@ class TestRunWorker:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -880,8 +880,8 @@ class TestRunWorker:
             "goal": "First attempt",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -889,7 +889,7 @@ class TestRunWorker:
             "goal": "Second attempt",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "Explaining the failure", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Explaining the failure", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -930,8 +930,8 @@ class TestRunWorker:
             "goal": "Run something",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo test", "tool": None, "args": None, "expect": "output"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo test", "wrapper": None, "args": None, "expect": "output"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -969,8 +969,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -1012,8 +1012,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -1059,8 +1059,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -1100,15 +1100,15 @@ class TestRunWorker:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "report", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "report", "wrapper": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -1151,15 +1151,15 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Fixed",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -1211,15 +1211,15 @@ class TestRunWorker:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -1262,7 +1262,7 @@ class TestRunWorker:
         assert plans[1] == "done"    # new plan succeeded
 
     async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
-        """Skill task review error → plan fails (after replan attempts)."""
+        """Wrapper task review error → plan fails (after replan attempts)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
@@ -1279,7 +1279,7 @@ class TestRunWorker:
         assert plan["status"] == "failed"
 
     async def test_skill_review_ok_still_fails_plan(self, db, tmp_path):
-        """Even if reviewer says ok for a skill task, plan still fails (skill not installed)."""
+        """Even if reviewer says ok for a wrapper task, plan still fails (wrapper not installed)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
@@ -1708,8 +1708,8 @@ class TestBuildReplanContext:
         history = [
             {
                 "goal": "Install browser",
-                "failure": "skill not found",
-                "what_was_tried": ["[exec] kiso skill install browser"],
+                "failure": "wrapper not found",
+                "what_was_tried": ["[exec] kiso wrapper install browser"],
                 "key_outputs": ["[exec] registry: browser v1.0 available"],
             },
         ]
@@ -1733,32 +1733,32 @@ class TestBuildReplanContext:
         assert "chars truncated" in ctx or len(long_output) > ctx.count("x")
 
     def test_confirmed_facts_from_registry_json(self):
-        """extract skill name from registry JSON output."""
+        """extract wrapper name from registry JSON output."""
         import json as _json
         registry_output = _json.dumps({"name": "browser", "version": "1.0", "description": "Browse the web"})
         completed = [{"type": "exec", "detail": "curl registry", "status": "done", "output": registry_output}]
-        ctx = _build_replan_context(completed, [], "skill not installed", [])
+        ctx = _build_replan_context(completed, [], "wrapper not installed", [])
         assert "Confirmed Facts" in ctx
         assert "browser" in ctx
         assert "DO NOT re-verify" in ctx
 
     def test_confirmed_facts_from_registry_list(self):
-        """extract skill names from registry JSON array."""
+        """extract wrapper names from registry JSON array."""
         import json as _json
         registry_output = _json.dumps([
             {"name": "browser", "version": "1.0"},
             {"name": "search", "version": "2.0"},
         ])
         completed = [{"type": "exec", "detail": "curl registry", "status": "done", "output": registry_output}]
-        ctx = _build_replan_context(completed, [], "need skills", [])
+        ctx = _build_replan_context(completed, [], "need wrappers", [])
         assert "Confirmed Facts" in ctx
         assert "browser" in ctx
         assert "search" in ctx
 
     def test_confirmed_facts_from_install_output(self):
         """extract install status from command output."""
-        completed = [{"type": "exec", "detail": "kiso skill install browser", "status": "done",
-                      "output": "Skill 'browser' installed successfully\nReady to use"}]
+        completed = [{"type": "exec", "detail": "kiso wrapper install browser", "status": "done",
+                      "output": "Wrapper 'browser' installed successfully\nReady to use"}]
         ctx = _build_replan_context(completed, [], "next step", [])
         assert "Confirmed Facts" in ctx
         assert "installed" in ctx.lower()
@@ -1809,7 +1809,7 @@ class TestM949TaskTypeLabel:
     """replan context includes tool name in task type labels."""
 
     def test_wrapper_task_includes_wrapper_name(self):
-        completed = [{"type": "wrapper", "tool": "ocr", "detail": "Extract text",
+        completed = [{"type": "wrapper", "wrapper": "ocr", "detail": "Extract text",
                        "status": "done", "output": "hello"}]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "[wrapper/ocr]" in ctx
@@ -1822,7 +1822,7 @@ class TestM949TaskTypeLabel:
         assert "[exec/" not in ctx
 
     def test_remaining_wrapper_task_includes_wrapper_name(self):
-        remaining = [{"type": "wrapper", "tool": "browser", "detail": "Navigate"}]
+        remaining = [{"type": "wrapper", "wrapper": "browser", "detail": "Navigate"}]
         ctx = _build_replan_context([], remaining, "failed", [])
         assert "[wrapper/browser]" in ctx
 
@@ -1834,7 +1834,7 @@ class TestM949TaskTypeLabel:
 
     def test_tool_none_no_suffix(self):
         """Wrapper field is None (e.g. exec task) — no slash suffix."""
-        completed = [{"type": "exec", "tool": None, "detail": "ls",
+        completed = [{"type": "exec", "wrapper": None, "detail": "ls",
                        "status": "done", "output": "files"}]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "[exec]" in ctx
@@ -1941,11 +1941,11 @@ class TestExecutePlan:
         assert completed[0]["output"] == "hello"
 
     async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
-        """Skill not installed → replan with error message (M164)."""
+        """Wrapper not installed → replan with error message (M164)."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          skill="search", args="{}", expect="results")
+                          wrapper="search", args="{}", expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         mock_reviewer = AsyncMock(return_value=REVIEW_REPLAN)
@@ -1969,12 +1969,12 @@ class TestExecutePlan:
         assert "not installed" in _po[0]["output"]
 
     async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
-        """Invalid JSON in skill args → replan with error (M164)."""
+        """Invalid JSON in wrapper args → replan with error (M164)."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="do thing",
-                          skill="browser", args="not-json{", expect="done")
+                          wrapper="browser", args="not-json{", expect="done")
         tasks = await get_tasks_for_plan(db, plan_id)
         task_row = tasks[0]
         ctx = _PlanCtx(
@@ -1993,7 +1993,7 @@ class TestExecutePlan:
         assert result.plan_output is not None
 
     async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
-        """Skill args missing required field → replan with error (M164)."""
+        """Wrapper args missing required field → replan with error (M164)."""
         config = make_config()
         tool_info = {
             "name": "browser",
@@ -2002,7 +2002,7 @@ class TestExecutePlan:
         }
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="take screenshot",
-                          skill="browser", args="{}", expect="screenshot")
+                          wrapper="browser", args="{}", expect="screenshot")
         tasks = await get_tasks_for_plan(db, plan_id)
         task_row = tasks[0]
         ctx = _PlanCtx(
@@ -2021,12 +2021,12 @@ class TestExecutePlan:
         assert result.plan_output["status"] == "failed"
 
     async def test_skill_execution_failure_reviewer_replan(self, db, tmp_path):
-        """skill executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
+        """wrapper executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="take screenshot",
-                          skill="browser", args="{}", expect="screenshot")
+                          wrapper="browser", args="{}", expect="screenshot")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
         tasks = await get_tasks_for_plan(db, plan_id)
         task_row = tasks[0]
@@ -2039,7 +2039,7 @@ class TestExecutePlan:
             slog=None, sandbox_uid=None,
         )
         with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                    return_value=("error output", "skill crashed", False, 1)), \
+                    return_value=("error output", "wrapper crashed", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                     return_value=REVIEW_REPLAN), \
              patch("kiso.worker.loop._write_plan_outputs", new_callable=AsyncMock), \
@@ -2051,11 +2051,11 @@ class TestExecutePlan:
         assert result.plan_output is not None
 
     async def test_skill_review_error(self, db, tmp_path):
-        """Skill not installed → replan (M164); reviewer never reached."""
+        """Wrapper not installed → replan (M164); reviewer never reached."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          skill="search", args="{}", expect="results")
+                          wrapper="search", args="{}", expect="results")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("err")), \
              _patch_kiso_dir(tmp_path):
@@ -2103,7 +2103,7 @@ class TestExecutePlan:
         await create_task(db, plan_id, "sess1", type="exec", detail="echo registry",
                           expect="JSON output")
         await create_task(db, plan_id, "sess1", type="replan",
-                          detail="install appropriate skill")
+                          detail="install appropriate wrapper")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              _patch_translator(), \
@@ -2115,7 +2115,7 @@ class TestExecutePlan:
         assert success is False
         assert reason is not None
         assert reason.startswith("Self-directed replan:")
-        assert "install appropriate skill" in reason
+        assert "install appropriate wrapper" in reason
         assert len(completed) == 2  # exec + replan both completed
         assert remaining == []
 
@@ -2562,8 +2562,8 @@ class TestPersistPlanTasks:
     async def test_persists_all_tasks(self, db):
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tasks = [
-            {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
         ]
         ids = await _persist_plan_tasks(db, plan_id, "sess1", tasks)
         assert len(ids) == 2
@@ -2576,13 +2576,13 @@ class TestPersistPlanTasks:
     async def test_persists_skill_fields(self, db):
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tasks = [
-            {"type": "wrapper", "detail": "search", "tool": "search", "args": '{"q":"test"}', "expect": "results"},
+            {"type": "wrapper", "detail": "search", "wrapper": "search", "args": '{"q":"test"}', "expect": "results"},
         ]
         ids = await _persist_plan_tasks(db, plan_id, "sess1", tasks)
         assert len(ids) == 1
 
         db_tasks = await get_tasks_for_plan(db, plan_id)
-        assert db_tasks[0]["skill"] == "search"
+        assert db_tasks[0]["wrapper"] == "search"
         assert db_tasks[0]["args"] == '{"q":"test"}'
 
 
@@ -3168,7 +3168,7 @@ class TestExecutePlanOutputChaining:
         assert "hello" in user_content
 
     async def test_plan_outputs_accumulates_all_types(self, db, tmp_path):
-        """plan_outputs should accumulate entries for exec, msg, and skill tasks."""
+        """plan_outputs should accumulate entries for exec, msg, and wrapper tasks."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo step1", expect="ok")
@@ -3194,11 +3194,11 @@ class TestExecutePlanOutputChaining:
         assert "## Preceding Task Outputs" in msg_calls[0][1]["content"]
 
     async def test_skill_output_in_plan_outputs(self, db, tmp_path):
-        """Skill task output should be accumulated in plan_outputs."""
+        """Wrapper task output should be accumulated in plan_outputs."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          skill="search", args="{}", expect="results")
+                          wrapper="search", args="{}", expect="results")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_kiso_dir(tmp_path):
@@ -3207,7 +3207,7 @@ class TestExecutePlanOutputChaining:
             )
 
         assert success is False
-        # Skill accumulated in plan_outputs before cleanup — verify via DB task output
+        # Wrapper accumulated in plan_outputs before cleanup — verify via DB task output
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "not installed" in tasks[0]["output"]
 
@@ -3215,8 +3215,8 @@ class TestExecutePlanOutputChaining:
 # --- M7: _wrapper_task ---
 
 def _create_echo_skill(tmp_path: Path) -> dict:
-    """Create a minimal echo skill for testing and return its info dict."""
-    skill_dir = tmp_path / "skills" / "echo"
+    """Create a minimal echo wrapper for testing and return its info dict."""
+    skill_dir = tmp_path / "wrappers" / "echo"
     skill_dir.mkdir(parents=True)
     (skill_dir / "run.py").write_text(
         "import json, sys\n"
@@ -3243,18 +3243,18 @@ def _create_echo_skill(tmp_path: Path) -> dict:
 
 class TestToolTask:
     async def test_successful_skill(self, tmp_path):
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", skill, {"text": "hello"}, None, None,
+                "sess1", wrapper, {"text": "hello"}, None, None,
             )
         assert success is True
         result = json.loads(stdout)
         assert result["text"] == "hello"
 
     async def test_skill_receives_plan_outputs(self, tmp_path):
-        # Create skill that dumps full input
-        skill_dir = tmp_path / "skills" / "dump"
+        # Create wrapper that dumps full input
+        skill_dir = tmp_path / "wrappers" / "dump"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text(
             "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data))\n"
@@ -3264,7 +3264,7 @@ class TestToolTask:
             '[kiso.wrapper]\nsummary = "Dump"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "dump"\nversion = "0.1.0"')
-        skill = {
+        wrapper = {
             "name": "dump", "summary": "Dump", "args_schema": {}, "env": {},
             "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
         }
@@ -3272,7 +3272,7 @@ class TestToolTask:
         plan_outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "files", "status": "done"}]
         with _patch_kiso_dir(tmp_path):
             stdout, _, success, _ = await _wrapper_task(
-                "sess1", skill, {}, plan_outputs, None,
+                "sess1", wrapper, {}, plan_outputs, None,
             )
         assert success is True
         data = json.loads(stdout)
@@ -3280,7 +3280,7 @@ class TestToolTask:
         assert data["plan_outputs"][0]["output"] == "files"
 
     async def test_skill_scoped_secrets(self, tmp_path):
-        skill_dir = tmp_path / "skills" / "sec"
+        skill_dir = tmp_path / "wrappers" / "sec"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text(
             "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
@@ -3290,7 +3290,7 @@ class TestToolTask:
             '[kiso.wrapper]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
-        skill = {
+        wrapper = {
             "name": "sec", "summary": "Sec", "args_schema": {}, "env": {},
             "session_secrets": ["api_token"], "path": str(skill_dir),
             "version": "0.1.0", "description": "",
@@ -3299,14 +3299,14 @@ class TestToolTask:
         secrets = {"api_token": "tok_123", "other": "should_not_appear"}
         with _patch_kiso_dir(tmp_path):
             stdout, _, success, _ = await _wrapper_task(
-                "sess1", skill, {}, None, secrets,
+                "sess1", wrapper, {}, None, secrets,
             )
         assert success is True
         result = json.loads(stdout)
         assert result == {"api_token": "tok_123"}
 
     async def test_skill_failing_script(self, tmp_path):
-        skill_dir = tmp_path / "skills" / "fail"
+        skill_dir = tmp_path / "wrappers" / "fail"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import sys; print('err msg', file=sys.stderr); sys.exit(1)")
         (skill_dir / "kiso.toml").write_text(
@@ -3314,20 +3314,20 @@ class TestToolTask:
             '[kiso.wrapper]\nsummary = "Fail"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "fail"\nversion = "0.1.0"')
-        skill = {
+        wrapper = {
             "name": "fail", "summary": "Fail", "args_schema": {}, "env": {},
             "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
         }
 
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", skill, {}, None, None,
+                "sess1", wrapper, {}, None, None,
             )
         assert success is False
         assert "err msg" in stderr
 
     async def test_skill_executable_not_found(self, tmp_path):
-        skill_dir = tmp_path / "skills" / "broken"
+        skill_dir = tmp_path / "wrappers" / "broken"
         skill_dir.mkdir(parents=True)
         # Point run.py to a nonexistent path
         (skill_dir / "run.py").write_text("pass")
@@ -3340,21 +3340,21 @@ class TestToolTask:
         # This will trigger FileNotFoundError from create_subprocess_exec
         venv_python = skill_dir / ".venv" / "bin" / "python"
         venv_python.mkdir(parents=True)  # directory, not file
-        skill = {
+        wrapper = {
             "name": "broken", "summary": "Broken", "args_schema": {}, "env": {},
             "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
         }
 
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", skill, {}, None, None,
+                "sess1", wrapper, {}, None, None,
             )
         assert success is False
         # Might be PermissionError or similar — just check it failed
         assert stderr != ""
 
     async def test_skill_runs_in_workspace(self, tmp_path):
-        skill_dir = tmp_path / "skills" / "pwd"
+        skill_dir = tmp_path / "wrappers" / "pwd"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import os; print(os.getcwd())")
         (skill_dir / "kiso.toml").write_text(
@@ -3362,21 +3362,21 @@ class TestToolTask:
             '[kiso.wrapper]\nsummary = "Pwd"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "pwd"\nversion = "0.1.0"')
-        skill = {
+        wrapper = {
             "name": "pwd", "summary": "Pwd", "args_schema": {}, "env": {},
             "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
         }
 
         with _patch_kiso_dir(tmp_path):
             stdout, _, success, _ = await _wrapper_task(
-                "sess1", skill, {}, None, None,
+                "sess1", wrapper, {}, None, None,
             )
         assert success is True
         expected = str(tmp_path / "sessions" / "sess1")
         assert stdout.strip() == expected
 
 
-# --- M7: _execute_plan with real skill ---
+# --- M7: _execute_plan with real wrapper ---
 
 class TestExecutePlanTool:
     @pytest.fixture()
@@ -3390,7 +3390,7 @@ class TestExecutePlanTool:
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          skill="nonexistent", args='{"q":"test"}', expect="results")
+                          wrapper="nonexistent", args='{"q":"test"}', expect="results")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
@@ -3407,15 +3407,15 @@ class TestExecutePlanTool:
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args="not json", expect="ok")
+                          wrapper="echo", args="not json", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        # Create a real skill so lookup succeeds
-        skill = _create_echo_skill(tmp_path)
-        skills_dir = tmp_path / "skills"
+        # Create a real wrapper so lookup succeeds
+        wrapper = _create_echo_skill(tmp_path)
+        skills_dir = tmp_path / "wrappers"
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3430,13 +3430,13 @@ class TestExecutePlanTool:
         plan_id = await create_plan(db, "sess1", 1, "Test")
         # Missing required arg 'text'
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{}', expect="ok")
+                          wrapper="echo", args='{}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, _, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3451,14 +3451,14 @@ class TestExecutePlanTool:
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{"text":"hello"}', expect="ok")
+                          wrapper="echo", args='{"text":"hello"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3466,7 +3466,7 @@ class TestExecutePlanTool:
 
         assert success is True
         assert len(completed) == 2
-        # First task is skill with output
+        # First task is wrapper with output
         skill_task = completed[0]
         assert skill_task["status"] == "done"
         result = json.loads(skill_task["output"])
@@ -3476,11 +3476,11 @@ class TestExecutePlanTool:
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="sec",
-                          skill="sec", args='{}', expect="ok")
+                          wrapper="sec", args='{}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        # Create skill that outputs session_secrets
-        skill_dir = tmp_path / "skills" / "sec"
+        # Create wrapper that outputs session_secrets
+        skill_dir = tmp_path / "wrappers" / "sec"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text(
             "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
@@ -3490,7 +3490,7 @@ class TestExecutePlanTool:
             '[kiso.wrapper]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
-        skill = {
+        wrapper = {
             "name": "sec", "summary": "Sec", "args_schema": {},
             "env": {}, "session_secrets": ["api_token"],
             "path": str(skill_dir), "version": "0.1.0", "description": "",
@@ -3500,7 +3500,7 @@ class TestExecutePlanTool:
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, _, _, completed, _, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3516,13 +3516,13 @@ class TestExecutePlanTool:
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{"text":"hi"}', expect="ok")
+                          wrapper="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3533,14 +3533,14 @@ class TestExecutePlanTool:
         assert len(remaining) == 1  # msg task remaining
 
     async def test_skill_review_replan_carries_retry_hint(self, db, tmp_path):
-        """skill handler propagates retry_hint to plan_output on replan."""
+        """wrapper handler propagates retry_hint to plan_output on replan."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{"text":"hi"}', expect="ok")
+                          wrapper="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         review_with_hint = {
             "status": "replan", "reason": "Task failed",
@@ -3549,7 +3549,7 @@ class TestExecutePlanTool:
         }
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_hint), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, plan_outputs = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3557,20 +3557,20 @@ class TestExecutePlanTool:
 
         assert success is False
         assert reason == "Task failed"
-        # The skill task's plan_output should carry the retry_hint
+        # The wrapper task's plan_output should carry the retry_hint
         skill_outputs = [po for po in plan_outputs if po.get("type") == "wrapper"]
         assert len(skill_outputs) == 1
         assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
 
     async def test_skill_retry_on_transient_failure(self, db, tmp_path):
-        """skill retries internally when reviewer provides retry_hint."""
+        """wrapper retries internally when reviewer provides retry_hint."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{"text":"hi"}', expect="ok")
+                          wrapper="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         review_replan_with_hint = {
             "status": "replan", "reason": "Task failed",
@@ -3583,7 +3583,7 @@ class TestExecutePlanTool:
         with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
                     return_value=("ok output", "", True, 0)), \
              patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
              _patch_kiso_dir(tmp_path):
             success, reason, _stuck, completed, remaining, _po = await _execute_plan(
@@ -3592,18 +3592,18 @@ class TestExecutePlanTool:
 
         assert success is True
         assert reason is None
-        # Skill was reviewed twice (retry + success)
+        # Wrapper was reviewed twice (retry + success)
         assert reviewer_side.call_count == 2
 
     async def test_skill_retry_exhausted_escalates_to_replan(self, db, tmp_path):
-        """skill escalates to replan after max_worker_retries exhausted."""
+        """wrapper escalates to replan after max_worker_retries exhausted."""
         config = make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{"text":"hi"}', expect="ok")
+                          wrapper="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         review_replan_with_hint = {
             "status": "replan", "reason": "Still failing",
@@ -3615,7 +3615,7 @@ class TestExecutePlanTool:
         with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
                     return_value=("error", "crash", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, plan_outputs = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -3630,14 +3630,14 @@ class TestExecutePlanTool:
         assert skill_outputs[0].get("retry_hint") == "try something else"
 
     async def test_skill_no_retry_without_hint(self, db, tmp_path):
-        """skill does NOT retry when reviewer returns replan without retry_hint."""
+        """wrapper does NOT retry when reviewer returns replan without retry_hint."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          skill="echo", args='{"text":"hi"}', expect="ok")
+                          wrapper="echo", args='{"text":"hi"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
 
         # replan without retry_hint → immediate escalation, no retry
         reviewer_side = AsyncMock(return_value=REVIEW_REPLAN)
@@ -3645,7 +3645,7 @@ class TestExecutePlanTool:
         with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
                     return_value=("error", "crash", False, 1)), \
              patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, reason, _, _, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -4491,11 +4491,11 @@ class TestPermissionRevalidation:
         assert "no longer exists" in tasks[0]["output"]
 
     async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
-        """Skill removed from user's allowed list → fails."""
+        """Wrapper removed from user's allowed list → fails."""
         config = make_config(users={"bob": User(role="user", wrappers=["search"])})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="deploy",
-                          skill="deploy", args="{}", expect="ok")
+                          wrapper="deploy", args="{}", expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         # Reload returns config where bob only has "search"
@@ -4645,15 +4645,15 @@ class TestPerSessionSandbox:
             proc.returncode = 0
             return proc
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _wrapper_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=9999)
+            await _wrapper_task("sess1", wrapper, {"text": "hi"}, None, None, sandbox_uid=9999)
 
         assert captured_kwargs.get("user") == 9999
 
     async def test_skill_no_sandbox_uid_no_user_kwarg(self, tmp_path):
-        """When sandbox_uid is None, 'user' kwarg is NOT passed to skill subprocess."""
+        """When sandbox_uid is None, 'user' kwarg is NOT passed to wrapper subprocess."""
         captured_kwargs = {}
 
         async def _mock_subprocess(*args, **kwargs):
@@ -4663,10 +4663,10 @@ class TestPerSessionSandbox:
             proc.returncode = 0
             return proc
 
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
         with _patch_kiso_dir(tmp_path), \
              patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _wrapper_task("sess1", skill, {"text": "hi"}, None, None, sandbox_uid=None)
+            await _wrapper_task("sess1", wrapper, {"text": "hi"}, None, None, sandbox_uid=None)
 
         assert "user" not in captured_kwargs
 
@@ -4680,7 +4680,7 @@ class TestPermissionRevalidationEdgeCases:
         await conn.close()
 
     async def test_exec_allowed_for_user_role(self, db, tmp_path):
-        """User role can run exec tasks (permission check only blocks removed users/skills)."""
+        """User role can run exec tasks (permission check only blocks removed users/wrappers)."""
         config = make_config(users={"bob": User(role="user", wrappers=["search"])})
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -4896,8 +4896,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -4955,8 +4955,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -4999,8 +4999,8 @@ class TestCancelMechanism:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5043,8 +5043,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5097,7 +5097,7 @@ class TestOutputTruncation:
         assert stdout.endswith("[truncated]")
 
     async def test_skill_output_truncated_when_large(self, tmp_path):
-        skill_dir = tmp_path / "skills" / "big"
+        skill_dir = tmp_path / "wrappers" / "big"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("print('B' * 2000)")
         (skill_dir / "kiso.toml").write_text(
@@ -5105,13 +5105,13 @@ class TestOutputTruncation:
             '[kiso.wrapper]\nsummary = "Big"\n'
         )
         (skill_dir / "pyproject.toml").write_text('[project]\nname = "big"\nversion = "0.1.0"')
-        skill = {
+        wrapper = {
             "name": "big", "summary": "Big", "args_schema": {}, "env": {},
             "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
         }
         with _patch_kiso_dir(tmp_path):
             stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", skill, {}, None, None, max_output_size=100,
+                "sess1", wrapper, {}, None, None, max_output_size=100,
             )
         assert success is True
         assert stdout.endswith("[truncated]")
@@ -5262,8 +5262,8 @@ class TestCancelDuringReplanWindow:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5349,8 +5349,8 @@ class TestWorkerCrashRecovery:
             "goal": "Crash during exec",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5426,7 +5426,7 @@ class TestMalformedSecrets:
         plan_with_bad_secrets = {
             "goal": "Say hello",
             "secrets": [{"k": "v"}],  # wrong keys
-            "tasks": [{"type": "msg", "detail": "Hello!", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Hello!", "wrapper": None, "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -5450,7 +5450,7 @@ class TestMalformedSecrets:
         plan_with_string_secrets = {
             "goal": "Say hello",
             "secrets": ["not-a-dict"],
-            "tasks": [{"type": "msg", "detail": "Hello!", "tool": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Hello!", "wrapper": None, "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -5708,8 +5708,8 @@ class TestSanitizeTaskDetail:
             "secrets": [{"key": "API_KEY", "value": "sk-secret-value-1234"}],
             "tasks": [
                 {"type": "exec", "detail": "curl -H 'Authorization: Bearer sk-secret-value-1234' https://api.example.com",
-                 "tool": None, "args": None, "expect": "200 OK"},
-                {"type": "msg", "detail": "Done deploying", "tool": None, "args": None, "expect": None},
+                 "wrapper": None, "args": None, "expect": "200 OK"},
+                {"type": "msg", "detail": "Done deploying", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5732,7 +5732,7 @@ class TestSanitizeTaskDetail:
         assert "[REDACTED]" in exec_task["detail"]
 
     async def test_secret_in_skill_args_redacted(self, db, tmp_path):
-        """Secret value in skill args → [REDACTED] in DB."""
+        """Secret value in wrapper args → [REDACTED] in DB."""
         config = make_config()
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
@@ -5742,9 +5742,9 @@ class TestSanitizeTaskDetail:
             "secrets": [{"key": "TOKEN", "value": "tok-mysecret5678"}],
             "tasks": [
                 {"type": "wrapper", "detail": "search the web",
-                 "tool": "search", "args": '{"query": "test", "token": "tok-mysecret5678"}',
+                 "wrapper": "search", "args": '{"query": "test", "token": "tok-mysecret5678"}',
                  "expect": "results"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5837,8 +5837,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5882,8 +5882,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -5915,8 +5915,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6067,24 +6067,24 @@ class TestSelfDirectedReplan:
         """Self-directed replan marks the investigation plan as 'done' not 'failed'."""
         config = make_config()
         await create_session(db, "sess1")
-        msg_id = await save_message(db, "sess1", "alice", "user", "install search skill", processed=False)
+        msg_id = await save_message(db, "sess1", "alice", "user", "install search wrapper", processed=False)
 
         investigation_plan = {
-            "goal": "Investigate available skills",
+            "goal": "Investigate available wrappers",
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "echo registry", "tool": None, "args": None, "expect": "JSON output"},
-                {"type": "replan", "detail": "install the right skill", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo registry", "wrapper": None, "args": None, "expect": "JSON output"},
+                {"type": "replan", "detail": "install the right wrapper", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
         followup_plan = {
-            "goal": "Install search skill",
+            "goal": "Install search wrapper",
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "Done investigating", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Done investigating", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6097,7 +6097,7 @@ class TestSelfDirectedReplan:
             return followup_plan
 
         queue: asyncio.Queue = asyncio.Queue()
-        await queue.put({"id": msg_id, "content": "install search skill", "user_role": "admin"})
+        await queue.put({"id": msg_id, "content": "install search wrapper", "user_role": "admin"})
 
         with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Done"), \
@@ -6135,7 +6135,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "replan", "detail": "investigate more", "tool": None, "args": None, "expect": None},
+                {"type": "replan", "detail": "investigate more", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6165,7 +6165,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "replan", "detail": "decide next step", "tool": None, "args": None, "expect": None},
+                {"type": "replan", "detail": "decide next step", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6174,7 +6174,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "All done", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "All done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6227,8 +6227,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6238,8 +6238,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6249,7 +6249,7 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "Done!", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Done!", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6312,8 +6312,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6323,8 +6323,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 10,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -6336,8 +6336,8 @@ class TestExtendReplan:
                 "secrets": None,
                 "extend_replan": None,
                 "tasks": [
-                    {"type": "exec", "detail": f"approach {n} exit 1", "tool": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": f"approach {n} exit 1", "wrapper": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
                 ],
             }
 
@@ -6401,8 +6401,8 @@ class TestExtendReplan:
                 "secrets": None,
                 "extend_replan": extend,
                 "tasks": [
-                    {"type": "exec", "detail": f"approach {n} exit 1", "tool": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": f"approach {n} exit 1", "wrapper": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
                 ],
             }
 
@@ -6677,7 +6677,7 @@ class TestAutoPublishToolFiles:
             workspace = _session_workspace("test-session")
             pre = _snapshot_workspace("test-session")
 
-            # Simulate skill creating a file
+            # Simulate wrapper creating a file
             (workspace / "screenshot.png").write_bytes(b"fake-image")
 
             published = _auto_publish_skill_files("test-session", pre)
@@ -7402,7 +7402,7 @@ class TestFastPathChat:
 CHAT_PLAN = {
     "goal": "Chat",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "hi", "tool": None, "args": None, "expect": None}],
+    "tasks": [{"type": "msg", "detail": "hi", "wrapper": None, "args": None, "expect": None}],
 }
 
 
@@ -7473,11 +7473,11 @@ class TestFastPathIntegration:
                 {
                     "type": "wrapper",
                     "detail": "Open the page",
-                    "tool": "browser",
+                    "wrapper": "browser",
                     "args": {"action": "navigate", "url": "https://example.com"},
                     "expect": "Page loaded",
                 },
-                {"type": "msg", "detail": "Answer in English. Done.", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Answer in English. Done.", "wrapper": None, "args": None, "expect": None},
             ],
         }
         mock_planner = AsyncMock(return_value=plan)
@@ -8403,12 +8403,12 @@ class TestTaskHandlers:
     # --- _handle_wrapper_task ---
 
     async def test_handle_wrapper_task_not_installed_returns_stop(self, db, plan_id, tmp_path):
-        """skill handler returns stop=True when skill is not installed."""
+        """wrapper handler returns stop=True when wrapper is not installed."""
         task_row = await _make_task_row(
-            db, plan_id, "skill", "Search for something",
-            skill="missing-skill", args="{}"
+            db, plan_id, "wrapper", "Search for something",
+            wrapper="missing-wrapper", args="{}"
         )
-        ctx = _make_ctx(db, installed_wrappers=[])  # no skills installed
+        ctx = _make_ctx(db, installed_wrappers=[])  # no wrappers installed
         with _patch_kiso_dir(tmp_path):
             result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
 
@@ -8417,18 +8417,18 @@ class TestTaskHandlers:
         assert result.completed_row is None
 
     async def test_handle_wrapper_task_invalid_json_args_returns_stop(self, db, plan_id, tmp_path):
-        """skill handler returns stop=True when args JSON is malformed."""
+        """wrapper handler returns stop=True when args JSON is malformed."""
         tool_info = {
-            "name": "test-skill",
-            "summary": "A test skill",
+            "name": "test-wrapper",
+            "summary": "A test wrapper",
             "args_schema": {},
             "env": {},
             "session_secrets": [],
             "path": "/fake/path",
         }
         task_row = await _make_task_row(
-            db, plan_id, "skill", "Run test skill",
-            skill="test-skill", args="{invalid json}"
+            db, plan_id, "wrapper", "Run test wrapper",
+            wrapper="test-wrapper", args="{invalid json}"
         )
         ctx = _make_ctx(db, installed_wrappers=[tool_info])
         with _patch_kiso_dir(tmp_path):
@@ -8615,20 +8615,20 @@ class TestTaskHandlers:
         assert result.completed_row is None
 
     async def test_handle_wrapper_task_success_returns_plan_output(self, db, plan_id, tmp_path):
-        """skill handler returns plan_output with correct fields on success."""
+        """wrapper handler returns plan_output with correct fields on success."""
         tool_info = {
-            "name": "test-skill",
-            "summary": "A test skill",
+            "name": "test-wrapper",
+            "summary": "A test wrapper",
             "args_schema": {},
             "env": {},
             "session_secrets": [],
             "path": "/fake/path",
         }
-        task_row = await _make_task_row(db, plan_id, "wrapper", "run the skill",
-                                        skill="test-skill", args="{}")
+        task_row = await _make_task_row(db, plan_id, "wrapper", "run the wrapper",
+                                        wrapper="test-wrapper", args="{}")
         ctx = _make_ctx(db, installed_wrappers=[tool_info])
         with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                   return_value=("skill output", "", True, 0)), \
+                   return_value=("wrapper output", "", True, 0)), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
@@ -8638,7 +8638,7 @@ class TestTaskHandlers:
         assert result.plan_output is not None
         assert result.plan_output["type"] == "wrapper"
         assert result.plan_output["index"] == 1
-        assert result.plan_output["output"] == "skill output"
+        assert result.plan_output["output"] == "wrapper output"
         assert result.plan_output["status"] == "done"
 
     async def test_handle_wrapper_task_repairs_unique_workspace_file_arg(self, db, plan_id, tmp_path):
@@ -8656,7 +8656,7 @@ class TestTaskHandlers:
         }
         task_row = await _make_task_row(
             db, plan_id, "tool", "extract text",
-            skill="ocr", args='{"file_path":"screenshot_*.png"}', expect="ocr text",
+            wrapper="ocr", args='{"file_path":"screenshot_*.png"}', expect="ocr text",
         )
         ctx = _make_ctx(db, installed_wrappers=[tool_info])
         with _patch_kiso_dir(tmp_path):
@@ -8693,12 +8693,12 @@ class TestToolCacheInvalidation:
         yield pid
 
     async def test_exec_task_invalidates_skill_cache(self, db, plan_id, tmp_path):
-        """After exec task completes, skill cache is invalidated and ctx refreshed."""
+        """After exec task completes, wrapper cache is invalidated and ctx refreshed."""
         task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
         ctx = _make_ctx(db)
         assert ctx.installed_wrappers == []
 
-        new_skills = [{"name": "new-skill", "summary": "Just installed"}]
+        new_skills = [{"name": "new-wrapper", "summary": "Just installed"}]
         with _patch_translator(), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                    return_value=REVIEW_OK), \
@@ -9217,7 +9217,7 @@ class TestRunPlanningLoop:
             "goal": "Do something",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "run cmd", "tool": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "run cmd", "wrapper": None, "args": None, "expect": "ok"},
             ],
         }
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
@@ -9261,7 +9261,7 @@ class TestRunPlanningLoop:
         replan_plan = {
             "goal": "Retry", "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
         with patch("kiso.worker.loop._execute_plan", side_effect=_mock_execute_plan), \
@@ -9384,7 +9384,7 @@ class TestRunPlanningLoop:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
             ],
         }
         success_plan = {
@@ -9392,7 +9392,7 @@ class TestRunPlanningLoop:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -9479,8 +9479,8 @@ class TestDetectCircularReplanUnit:
     def test_word_overlap_detected(self):
         from kiso.worker.loop import _detect_circular_replan
         history = [
-            {"failure": "browser skill not installed cannot navigate to site", "goal": "g"},
-            {"failure": "browser skill not installed cannot navigate to the site", "goal": "g"},
+            {"failure": "browser wrapper not installed cannot navigate to site", "goal": "g"},
+            {"failure": "browser wrapper not installed cannot navigate to the site", "goal": "g"},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is True
 
@@ -9612,8 +9612,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -9625,9 +9625,9 @@ class TestCircularReplanDetection:
 
         # Reviewer always says replan with similar reasons
         review_reasons = [
-            "browser skill not installed, cannot navigate to site",
-            "browser skill not installed, cannot navigate to the site",
-            "browser skill still not installed, cannot navigate",
+            "browser wrapper not installed, cannot navigate to site",
+            "browser wrapper not installed, cannot navigate to the site",
+            "browser wrapper still not installed, cannot navigate",
         ]
         review_idx = [0]
 
@@ -9681,8 +9681,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "try approach A with curl", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "try approach A with curl", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
         plan_b = {
@@ -9690,8 +9690,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "search", "detail": "find a completely different thing", "tool": None, "args": None, "expect": "results"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "search", "detail": "find a completely different thing", "wrapper": None, "args": None, "expect": "results"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -9700,8 +9700,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "try approach C with wget", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "try approach C with wget", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
         plan_iter = iter([plan_a, plan_b, plan_c])
@@ -9764,8 +9764,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -10038,11 +10038,11 @@ class TestBumpFactUsage:
 class TestPlanCtxToolsDict:
     def test_post_init_builds_dict(self, db):
         """_PlanCtx.__post_init__ derives installed_wrappers_by_name from installed_wrappers."""
-        skills = [
+        wrappers = [
             {"name": "alpha", "summary": "A"},
             {"name": "beta", "summary": "B"},
         ]
-        ctx = _make_ctx(db, installed_wrappers=skills)
+        ctx = _make_ctx(db, installed_wrappers=wrappers)
         assert ctx.installed_wrappers_by_name == {
             "alpha": {"name": "alpha", "summary": "A"},
             "beta": {"name": "beta", "summary": "B"},
@@ -10053,7 +10053,7 @@ class TestPlanCtxToolsDict:
         assert ctx.installed_wrappers_by_name == {}
 
     def test_missing_skill_returns_none(self, db):
-        """Dict lookup for unknown skill name returns None (not KeyError)."""
+        """Dict lookup for unknown wrapper name returns None (not KeyError)."""
         ctx = _make_ctx(db, installed_wrappers=[{"name": "echo", "summary": "x"}])
         assert ctx.installed_wrappers_by_name.get("unknown") is None
 
@@ -10134,7 +10134,7 @@ class TestPreReplanCancelFix:
             "goal": "Fail then cancel",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
             ],
         }
 
@@ -10365,15 +10365,15 @@ class TestProcessMessagePhaseCallback:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo fail", "tool": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo fail", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "fixed", "tool": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "fixed", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -10543,7 +10543,7 @@ class TestSuggestedFixesSection:
         history = [{
             "goal": "navigate to site",
             "failure": "browser engine missing",
-            "what_was_tried": ["[skill] browser navigate"],
+            "what_was_tried": ["[wrapper] browser navigate"],
             "key_outputs": [],
             "retry_hints": ["Run playwright install to download missing browsers"],
         }]
@@ -10733,11 +10733,11 @@ class TestE2EWebScenario:
     """Verify the full orchestration for a multi-plan scenario.
 
     Simulates: user asks for website info + screenshot on a factory-reset
-    state (no skills). Verifies the system correctly:
+    state (no wrappers). Verifies the system correctly:
     1. Uses search for content understanding
     2. Checks registry when screenshot needed
-    3. Installs browser skill
-    4. Uses browser skill for screenshot
+    3. Installs browser wrapper
+    4. Uses browser wrapper for screenshot
     5. Delivers final msg
     """
 
@@ -10749,7 +10749,7 @@ class TestE2EWebScenario:
         await conn.close()
 
     async def test_multi_plan_registry_then_install_then_use(self, db, tmp_path):
-        """Full flow: plan1 (search + registry check) → plan2 (install) → plan3 (use skill + msg)."""
+        """Full flow: plan1 (search + registry check) → plan2 (install) → plan3 (use wrapper + msg)."""
         config = make_config(settings={
             "worker_idle_timeout": 1,
             "llm_timeout": 5,
@@ -10770,35 +10770,35 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "search", "detail": "visit example.com and describe the company",
-                 "tool": None, "args": None, "expect": "description of the company"},
-                {"type": "exec", "detail": "check kiso registry for browser skill",
-                 "tool": None, "args": None, "expect": "registry JSON"},
+                 "wrapper": None, "args": None, "expect": "description of the company"},
+                {"type": "exec", "detail": "check kiso registry for browser wrapper",
+                 "wrapper": None, "args": None, "expect": "registry JSON"},
                 {"type": "replan", "detail": "install browser and take screenshot",
-                 "tool": None, "args": None, "expect": None},
+                 "wrapper": None, "args": None, "expect": None},
             ],
         }
-        # Plan 2: install browser skill + replan
+        # Plan 2: install browser wrapper + replan
         plan2 = {
-            "goal": "Install browser skill",
+            "goal": "Install browser wrapper",
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "install the browser skill",
-                 "tool": None, "args": None, "expect": "skill installed"},
-                {"type": "replan", "detail": "use browser skill for screenshot",
-                 "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "install the browser wrapper",
+                 "wrapper": None, "args": None, "expect": "wrapper installed"},
+                {"type": "replan", "detail": "use browser wrapper for screenshot",
+                 "wrapper": None, "args": None, "expect": None},
             ],
         }
-        # Plan 3: use browser skill + msg
+        # Plan 3: use browser wrapper + msg
         plan3 = {
             "goal": "Take screenshot and report to user",
             "secrets": None,
             "extend_replan": None,
             "tasks": [
                 {"type": "exec", "detail": "take screenshot of example.com and save to pub/",
-                 "tool": None, "args": None, "expect": "screenshot saved"},
+                 "wrapper": None, "args": None, "expect": "screenshot saved"},
                 {"type": "msg", "detail": "Answer in Italian. Tell user about the company and share screenshot",
-                 "tool": None, "args": None, "expect": None},
+                 "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -11801,16 +11801,16 @@ class TestM336StuckHandling:
     """Verify stuck review status stops execution without triggering replan."""
 
     async def test_skill_handler_returns_stop_stuck(self, db, tmp_path):
-        """Skill handler sets stop_stuck (not stop_replan) for stuck reviews."""
+        """Wrapper handler sets stop_stuck (not stop_replan) for stuck reviews."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
-        skill = _create_echo_skill(tmp_path)
+        wrapper = _create_echo_skill(tmp_path)
         await create_task(db, plan_id, "sess1", type="wrapper", detail="submit form",
-                          skill="echo", args='{"text":"hello"}', expect="ok")
+                          wrapper="echo", args='{"text":"hello"}', expect="ok")
         await create_task(db, plan_id, "sess1", type="msg", detail="done")
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_STUCK), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[skill]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
              _patch_kiso_dir(tmp_path):
             success, replan, stuck, completed, remaining, _po = await _execute_plan(
                 db, config, "sess1", plan_id, "Test", "msg", 5,
@@ -11890,8 +11890,8 @@ class TestM337BroadenedCircularDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -11981,8 +11981,8 @@ class TestM338BlockExtendWhenStuck:
                 "secrets": None,
                 "extend_replan": 3,  # always request extension
                 "tasks": [
-                    {"type": "exec", "detail": "exit 1", "tool": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
                 ],
             }
 
@@ -12193,8 +12193,8 @@ class TestM341StuckFlow:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "fill form", "tool": None, "args": None, "expect": "submitted"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "fill form", "wrapper": None, "args": None, "expect": "submitted"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -12253,8 +12253,8 @@ class TestM341StuckFlow:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "curl site", "tool": None, "args": None, "expect": "page loaded"},
-                {"type": "msg", "detail": "done", "tool": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "curl site", "wrapper": None, "args": None, "expect": "page loaded"},
+                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
 
@@ -12576,10 +12576,10 @@ class TestPersistPlanTasksGroup:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Test")
         plan_tasks = [
-            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": "info", "group": 1},
-            {"type": "search", "detail": "B", "tool": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "merge", "tool": None, "args": None, "expect": "done"},
-            {"type": "msg", "detail": "Answer in English. report", "tool": None, "args": None, "expect": None},
+            {"type": "search", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "search", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "merge", "wrapper": None, "args": None, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. report", "wrapper": None, "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
         tasks = await get_tasks_for_plan(db, pid)
@@ -12603,9 +12603,9 @@ class TestParallelGroupFromDB:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Parallel test")
         plan_tasks = [
-            {"type": "search", "detail": "search alpha", "tool": None, "args": None, "expect": "info", "group": 1},
-            {"type": "search", "detail": "search beta", "tool": None, "args": None, "expect": "info", "group": 1},
-            {"type": "msg", "detail": "Answer in English. summarize results", "tool": None, "args": None, "expect": None},
+            {"type": "search", "detail": "search alpha", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "search", "detail": "search beta", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "msg", "detail": "Answer in English. summarize results", "wrapper": None, "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
         tasks = await get_tasks_for_plan(db, pid)
@@ -12632,12 +12632,12 @@ class TestParallelGroupFromDB:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Multi-group test")
         plan_tasks = [
-            {"type": "search", "detail": "A", "tool": None, "args": None, "expect": "info", "group": 1},
-            {"type": "search", "detail": "B", "tool": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "merge", "tool": None, "args": None, "expect": "done"},
-            {"type": "search", "detail": "C", "tool": None, "args": None, "expect": "info", "group": 2},
-            {"type": "search", "detail": "D", "tool": None, "args": None, "expect": "info", "group": 2},
-            {"type": "msg", "detail": "Answer in English. report", "tool": None, "args": None, "expect": None},
+            {"type": "search", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "search", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "merge", "wrapper": None, "args": None, "expect": "done"},
+            {"type": "search", "detail": "C", "wrapper": None, "args": None, "expect": "info", "group": 2},
+            {"type": "search", "detail": "D", "wrapper": None, "args": None, "expect": "info", "group": 2},
+            {"type": "msg", "detail": "Answer in English. report", "wrapper": None, "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
         tasks = await get_tasks_for_plan(db, pid)
@@ -12770,7 +12770,7 @@ class TestExecutionState:
                     "path": "artifact.txt",
                     "abs_path": str(ws / "artifact.txt"),
                     "type": "document",
-                    "tool": "exec",
+                    "wrapper": "exec",
                 }],
                 "key_results": ["artifact written"],
                 "ts": "2026-04-05T10:00:00+00:00",
@@ -12826,7 +12826,7 @@ class TestPlannerTaskPersistence:
                 {
                     "type": "wrapper",
                     "detail": "Use echo",
-                    "tool": "echo",
+                    "wrapper": "echo",
                     "args": {"text": "hello"},
                     "expect": "ok",
                 },
@@ -12844,7 +12844,7 @@ class TestTaskContract:
             {
                 "type": "wrapper",
                 "detail": "Extract OCR text",
-                "tool": "ocr",
+                "wrapper": "ocr",
                 "args": {"file_path": "shot.png"},
                 "expect": "ocr text extracted",
             },
@@ -13054,7 +13054,7 @@ class TestWriteLastPlanSummary:
             # Simulate a tool producing a file
             (ws / "screenshot.png").write_bytes(b"x" * 100)
             completed = [
-                {"type": "exec", "skill": "browser", "reviewer_summary": "Screenshot taken successfully"},
+                {"type": "exec", "wrapper": "browser", "reviewer_summary": "Screenshot taken successfully"},
             ]
             _write_last_plan_summary("s-sum", "Take a screenshot", completed, pre)
 
@@ -13095,7 +13095,7 @@ class TestWriteLastPlanSummary:
         """Without plan_outputs, source_tool/origin_task_index must be None.
 
         Regression: previously the loop would scan completed_tasks and
-        copy `skill`/`tool`/`index` from arbitrary task rows, fabricating
+        copy `wrapper`/`tool`/`index` from arbitrary task rows, fabricating
         a provenance tie that did not exist.
         """
         from kiso.worker.utils import _write_last_plan_summary, _session_workspace
@@ -13104,7 +13104,7 @@ class TestWriteLastPlanSummary:
             pre = set(ws.rglob("*"))
             (ws / "out.txt").write_text("hello")
             completed = [
-                {"type": "exec", "skill": "browser", "reviewer_summary": "did stuff"},
+                {"type": "exec", "wrapper": "browser", "reviewer_summary": "did stuff"},
             ]
             _write_last_plan_summary("s-prov-none", "do something", completed, pre)
 
@@ -13119,7 +13119,7 @@ class TestWriteLastPlanSummary:
             # provenance NOT invented from unrelated task scan
             assert f.get("origin_wrapper") is None
             assert f.get("origin_task_index") is None
-            assert f.get("tool") is None
+            assert f.get("wrapper") is None
 
     def test_provenance_uses_plan_output_file_ref(self, tmp_path):
         """When a plan_output declares a file_ref, that file gets the producing tool/index."""
@@ -13129,7 +13129,7 @@ class TestWriteLastPlanSummary:
             pre = set(ws.rglob("*"))
             (ws / "report.md").write_text("# report")
             completed = [
-                {"type": "wrapper", "skill": "aider", "reviewer_summary": "wrote report"},
+                {"type": "wrapper", "wrapper": "aider", "reviewer_summary": "wrote report"},
             ]
             plan_outputs = [
                 {
@@ -13161,7 +13161,7 @@ class TestWriteLastPlanSummary:
             assert f["path"] == "report.md"
             assert f.get("origin_wrapper") == "aider"
             assert f.get("origin_task_index") == 1
-            assert f.get("tool") == "aider"
+            assert f.get("wrapper") == "aider"
 
     def test_provenance_per_file_in_multitool_plan(self, tmp_path):
         """Two tasks producing different files: each file gets its own correct provenance.
@@ -13177,8 +13177,8 @@ class TestWriteLastPlanSummary:
             (ws / "code.py").write_text("print(1)")
             (ws / "shot.png").write_bytes(b"\x89PNG" + b"x" * 100)
             completed = [
-                {"type": "wrapper", "skill": "aider", "reviewer_summary": "wrote code"},
-                {"type": "exec", "skill": "browser", "reviewer_summary": "took shot"},
+                {"type": "wrapper", "wrapper": "aider", "reviewer_summary": "wrote code"},
+                {"type": "exec", "wrapper": "browser", "reviewer_summary": "took shot"},
             ]
             plan_outputs = [
                 {
@@ -13230,7 +13230,7 @@ class TestWriteLastPlanSummary:
                 },
             ]
             _write_last_plan_summary(
-                "s-prov-partial", "do", [{"type": "wrapper", "skill": "aider"}], pre,
+                "s-prov-partial", "do", [{"type": "wrapper", "wrapper": "aider"}], pre,
                 plan_outputs=plan_outputs,
             )
 
@@ -13241,7 +13241,7 @@ class TestWriteLastPlanSummary:
             # Orphan: no fake provenance
             assert by_path["orphan.log"].get("origin_wrapper") is None
             assert by_path["orphan.log"].get("origin_task_index") is None
-            assert by_path["orphan.log"].get("tool") is None
+            assert by_path["orphan.log"].get("wrapper") is None
 
 
 class TestLoadLastPlanSummary:
@@ -13258,7 +13258,7 @@ class TestLoadLastPlanSummary:
                 "produced_files": [{
                     "path": "shot.png",
                     "abs_path": str(ws / "shot.png"),
-                    "tool": "browser",
+                    "wrapper": "browser",
                     "type": "image",
                 }],
                 "key_results": ["Screenshot saved"],
@@ -13405,7 +13405,7 @@ class TestWorkspaceFileRouting:
             plan_id,
             "tool",
             detail="Use aider",
-            skill="aider",
+            wrapper="aider",
             args=json.dumps({
                 "message": "Create text_stats.py",
                 "files": "Write a Python script named text_stats.py that reads stdin and prints counts.",
@@ -13456,7 +13456,7 @@ class TestWorkspaceFileRouting:
             plan_id,
             "tool",
             detail="Use echo",
-            skill="echo",
+            wrapper="echo",
             args=json.dumps({"text": " raw "}),
             expect="echo output",
         )

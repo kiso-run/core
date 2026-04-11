@@ -22,7 +22,6 @@ description = "A test persona preset"
 
 [kiso.preset]
 wrappers = ["websearch", "browser"]
-skills = ["ad-copy"]
 connectors = []
 
 [kiso.preset.knowledge]
@@ -116,7 +115,6 @@ class TestLoadPreset:
         assert m.name == "test-preset"
         assert m.version == "0.1.0"
         assert m.wrappers == ["websearch", "browser"]
-        assert m.skills == ["ad-copy"]
         assert len(m.knowledge_facts) == 1
         assert len(m.behaviors) == 1
         assert "SEMRUSH_API_KEY" in m.env_vars
@@ -145,7 +143,6 @@ class TestLoadPreset:
         path.write_text(toml, encoding="utf-8")
         m = load_preset(path)
         assert m.wrappers == []
-        assert m.skills == []
         assert m.knowledge_facts == []
         assert m.behaviors == []
 
@@ -257,7 +254,7 @@ class TestRemovePreset:
         tracking_data = {
             "name": "rm-test", "version": "1.0.0", "description": "test",
             "fact_ids": [10, 11], "behavior_ids": [20],
-            "wrappers": [], "skills": [], "connectors": [],
+            "wrappers": [], "connectors": [],
         }
         tracking_file.write_text(json.dumps(tracking_data), encoding="utf-8")
 
@@ -452,7 +449,7 @@ class TestPresetShowCLI:
         from cli.preset import preset_show
         tracking = {
             "name": "my-preset", "version": "1.0.0", "description": "My preset",
-            "wrappers": ["browser"], "skills": [], "connectors": [],
+            "wrappers": ["browser"], "connectors": [],
             "fact_ids": [1, 2], "behavior_ids": [3],
         }
         args = make_cli_args(name="my-preset")
@@ -497,7 +494,7 @@ class TestPresetInstalledCLI:
         from cli.preset import preset_installed
         presets = [
             {"name": "a", "version": "1.0.0", "description": "Alpha",
-             "fact_ids": [1, 2], "behavior_ids": [3], "wrappers": ["browser"], "skills": []},
+             "fact_ids": [1, 2], "behavior_ids": [3], "wrappers": ["browser"]},
         ]
         args = make_cli_args()
         with patch("cli.preset_ops.list_installed_presets", return_value=presets):
@@ -628,7 +625,6 @@ description = "Test preset"
 
 [kiso.preset]
 wrappers = ["websearch"]
-skills = []
 connectors = []
 
 [kiso.preset.knowledge]
@@ -937,7 +933,7 @@ class TestPresetRecipeRemove:
         tracking_data = {
             "name": "rm-recipe", "version": "1.0.0", "description": "test",
             "fact_ids": [], "behavior_ids": [],
-            "wrappers": [], "skills": [], "connectors": [],
+            "wrappers": [], "connectors": [],
             "recipe_files": ["exploration.md", "error-diagnosis.md"],
         }
 
@@ -969,7 +965,7 @@ class TestPresetRecipeRemove:
         tracking_data = {
             "name": "rm-gone", "version": "1.0.0", "description": "test",
             "fact_ids": [], "behavior_ids": [],
-            "wrappers": [], "skills": [], "connectors": [],
+            "wrappers": [], "connectors": [],
             "recipe_files": ["gone.md"],
         }
         tracking_file = tmp_path / "presets" / "rm-gone.installed.json"

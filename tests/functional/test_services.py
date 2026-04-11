@@ -36,7 +36,7 @@ pytestmark = [
 
 
 class TestF5MoltbookSignup:
-    """Best-effort smoke test for moltbook signup via browser skill."""
+    """Best-effort smoke test for moltbook signup via browser wrapper."""
 
     async def test_service_signup(self, run_message):
         """What: External service signup test via browser tool on moltbook.
@@ -60,10 +60,10 @@ class TestF5MoltbookSignup:
         assert_italian(result.last_plan_msg_output)
         assert_no_failure_language(result.last_plan_msg_output)
 
-        # Browser skill was used
-        wrapper_names = [t.get("skill") for t in result.tool_tasks()]
+        # Browser wrapper was used
+        wrapper_names = [t.get("wrapper") for t in result.tool_tasks()]
         assert "browser" in wrapper_names, (
-            f"Browser skill not used. Skills: {wrapper_names}"
+            f"Browser wrapper not used. Wrappers: {wrapper_names}"
         )
 
         # Output mentions successful registration
@@ -119,10 +119,10 @@ class TestF6MoltbookPost:
         assert_italian(result.last_plan_msg_output)
         assert_no_failure_language(result.last_plan_msg_output)
 
-        # Browser skill was used
-        wrapper_names = [t.get("skill") for t in result.tool_tasks()]
+        # Browser wrapper was used
+        wrapper_names = [t.get("wrapper") for t in result.tool_tasks()]
         assert "browser" in wrapper_names, (
-            f"Browser skill not used. Skills: {wrapper_names}"
+            f"Browser wrapper not used. Wrappers: {wrapper_names}"
         )
 
         # Output mentions posting

@@ -866,7 +866,7 @@ def test_poll_status_plan_header_updates_with_real_goal(capsys, plain_caps):
     resp1.raise_for_status = MagicMock()
     resp2 = MagicMock()
     resp2.json.return_value = {
-        "plan": {"id": 1, "message_id": 7, "goal": "Install browser skill", "status": "done"},
+        "plan": {"id": 1, "message_id": 7, "goal": "Install browser wrapper", "status": "done"},
         "tasks": [
             {"id": 1, "plan_id": 1, "type": "exec", "detail": "install", "status": "done",
              "output": "ok"},
@@ -884,7 +884,7 @@ def test_poll_status_plan_header_updates_with_real_goal(capsys, plain_caps):
     # Initial "Thinking..." should appear
     assert "Thinking..." in out
     # Updated real goal should also appear
-    assert "Install browser skill" in out
+    assert "Install browser wrapper" in out
     # Task count should appear with the updated header
     assert "2 tasks" in out
 

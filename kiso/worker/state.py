@@ -134,7 +134,7 @@ def _normalize_task_contract(
     """Derive a declarative contract from an existing planner task shape."""
     task_type = str(task.get("type") or "")
     intent = str(task.get("detail") or "")
-    wrapper_name = task.get("tool") or task.get("skill")
+    wrapper_name = task.get("wrapper")
     args = _coerce_task_args(task.get("args"))
     expect = task.get("expect")
 
@@ -203,7 +203,7 @@ class TaskResult:
             "retry_hint": self.retry_hint,
             "failure_class": self.failure_class,
             "exit_code": self.exit_code,
-            "tool": self.wrapper_name,
+            "wrapper": self.wrapper_name,
             "contract": self.contract.to_dict() if self.contract else None,
             "file_refs": list(self.file_refs),
             "artifact_refs": list(self.artifact_refs),
@@ -225,7 +225,7 @@ def _task_result_from_source(entry: dict) -> TaskResult:
         retry_hint=entry.get("retry_hint"),
         failure_class=entry.get("failure_class"),
         exit_code=entry.get("exit_code"),
-        wrapper_name=entry.get("tool") or entry.get("skill"),
+        wrapper_name=entry.get("wrapper"),
         contract=contract,
         file_refs=list(entry.get("file_refs") or []),
         artifact_refs=list(entry.get("artifact_refs") or []),

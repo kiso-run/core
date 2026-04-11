@@ -54,7 +54,7 @@ class TestIntegrationUserList:
         _run(["user", "list", "--json"], config_path)
         data = json.loads(capsys.readouterr().out)
         assert data["boss"]["role"] == "admin"
-        assert data["alice"]["skills"] == ["skill1", "skill2"]
+        assert data["alice"]["wrappers"] == ["skill1", "skill2"]
 
     def test_list_no_subcommand_exits(self, tmp_path, capsys):
         config_path = make_user_config(tmp_path)
@@ -79,8 +79,8 @@ class TestIntegrationUserAdd:
 
     def test_add_user_with_skills_no_reload(self, tmp_path):
         config_path = make_user_config(tmp_path)
-        _run(["user", "add", "bob", "--role", "user", "--skills", "read,write", "--no-reload"], config_path)
-        assert read_users(config_path)["bob"]["skills"] == ["read", "write"]
+        _run(["user", "add", "bob", "--role", "user", "--wrappers", "read,write", "--no-reload"], config_path)
+        assert read_users(config_path)["bob"]["wrappers"] == ["read", "write"]
 
     def test_add_existing_fails(self, tmp_path, capsys):
         config_path = make_user_config(tmp_path)
@@ -110,8 +110,8 @@ class TestIntegrationUserEdit:
 
     def test_edit_skills(self, tmp_path):
         config_path = make_user_config(tmp_path)
-        _run(["user", "edit", "alice", "--skills", "x,y", "--no-reload"], config_path)
-        assert read_users(config_path)["alice"]["skills"] == ["x", "y"]
+        _run(["user", "edit", "alice", "--wrappers", "x,y", "--no-reload"], config_path)
+        assert read_users(config_path)["alice"]["wrappers"] == ["x", "y"]
 
     def test_edit_nonexistent_fails(self, tmp_path, capsys):
         config_path = make_user_config(tmp_path)
@@ -157,7 +157,7 @@ class TestIntegrationUserAlias:
     def test_remove_alias(self, tmp_path, capsys):
         config_path = make_user_config(tmp_path, users={
             "boss": {"role": "admin"},
-            "alice": {"role": "user", "skills": ["s1"], "aliases": {"discord": "alice#1234"}},
+            "alice": {"role": "user", "wrappers": ["s1"], "aliases": {"discord": "alice#1234"}},
         })
         _run(
             ["user", "alias", "alice", "--connector", "discord", "--remove", "--no-reload"],

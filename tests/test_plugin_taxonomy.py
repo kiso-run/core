@@ -19,7 +19,7 @@ class TestPluginTaxonomyCLIEntrypoints:
     """All CLI entrypoints import and dispatch without errors."""
 
     @pytest.mark.parametrize("module,func,attr", [
-        ("cli.wrapper", "run_wrapper_command", "tool_command"),
+        ("cli.wrapper", "run_wrapper_command", "wrapper_command"),
         ("cli.recipe", "run_recipe_command", "recipe_command"),
         ("cli.connector", "run_connector_command", "connector_command"),
         ("cli.plugin", "run_plugin_command", "plugin_command"),

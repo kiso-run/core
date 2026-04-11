@@ -1,6 +1,6 @@
 """L6 — Plugin tests.
 
-Clone each official skill/connector from the registry, install deps, and
+Clone each official wrapper/connector from the registry, install deps, and
 run their internal test suite.
 
 Gated behind ``--live-network`` flag (requires git + network access).

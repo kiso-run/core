@@ -252,14 +252,14 @@ class TestFunctionalResult:
         r = FunctionalResult(
             success=True,
             tasks=[
-                {"type": "exec", "tool": None},
-                {"type": "wrapper", "tool": "browser"},
-                {"type": "msg", "tool": None},
+                {"type": "exec", "wrapper": None},
+                {"type": "wrapper", "wrapper": "browser"},
+                {"type": "msg", "wrapper": None},
             ],
         )
         tools = r.tool_tasks()
         assert len(tools) == 1
-        assert tools[0]["tool"] == "browser"
+        assert tools[0]["wrapper"] == "browser"
 
     def test_last_plan_msg_output_single_plan(self):
         r = FunctionalResult(

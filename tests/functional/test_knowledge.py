@@ -169,7 +169,7 @@ class TestF13ChatKBClassification:
         # Response should contain pre-seeded fact content
         output_lower = result.msg_output.lower()
         assert "onboarding" in output_lower or "saas" in output_lower or "workflow" in output_lower
-        # chat_kb fast path: no exec or skill tasks, only msg
+        # chat_kb fast path: no exec or wrapper tasks, only msg
         types = result.task_types()
         assert "exec" not in types, f"Expected no exec tasks, got: {types}"
         assert "tool" not in types, f"Expected no tool tasks, got: {types}"

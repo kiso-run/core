@@ -225,7 +225,7 @@ def test_render_task_header_failed():
 
 
 def test_render_task_header_skill_with_name():
-    task = {"type": "wrapper", "detail": "search query", "status": "running", "skill": "web_search"}
+    task = {"type": "wrapper", "detail": "search query", "status": "running", "wrapper": "web_search"}
     result = render_task_header(task, 1, 2, _COLOR)
     assert "wrapper:web_search" in result
 

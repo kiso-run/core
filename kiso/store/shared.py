@@ -53,7 +53,7 @@ class TaskDict(TypedDict):
     session: str
     type: str
     detail: str
-    skill: str | None
+    wrapper: str | None
     args: str | None
     expect: str | None
     command: str | None
@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     webhook     TEXT,
     description TEXT,
     summary     TEXT DEFAULT '',
+    project_id  INTEGER REFERENCES projects(id),
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -104,6 +105,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content   TEXT NOT NULL,
     trusted   BOOLEAN DEFAULT 1,
     processed BOOLEAN DEFAULT 0,
+    source    TEXT DEFAULT 'user',
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session, id);
@@ -133,7 +135,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     session      TEXT NOT NULL,
     type         TEXT NOT NULL,
     detail       TEXT NOT NULL,
-    skill        TEXT,
+    wrapper      TEXT,
     args         TEXT,
     expect       TEXT,
     command      TEXT,
@@ -149,6 +151,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     output_tokens INTEGER NOT NULL DEFAULT 0,
     llm_calls     TEXT,
     duration_ms INTEGER DEFAULT NULL,
+    parallel_group INTEGER,
+    review_learning_tags TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -165,6 +169,8 @@ CREATE TABLE IF NOT EXISTS facts (
     confidence REAL DEFAULT 1.0,
     last_used  TEXT,
     use_count  INTEGER DEFAULT 0,
+    project_id INTEGER REFERENCES projects(id),
+    entity_id  INTEGER REFERENCES entities(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_facts_cat_sess ON facts(category, session);

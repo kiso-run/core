@@ -1,6 +1,6 @@
 """— Integration tests for install confirmation flow.
 
-End-to-end checks that the system prevents silent skill/connector
+End-to-end checks that the system prevents silent wrapper/connector
 installation without user approval.  M615 adds server-side detection
 of install proposals (replaces keyword heuristic).  M670 broadens
 detection for msg-only plans on fresh instances.
@@ -303,13 +303,13 @@ class TestRetryLoopUninstalledToolFlag:
         # First call: LLM returns plan with tool task → validation rejects
         bad_plan = json.dumps({
             "goal": "Navigate", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "wrapper", "tool": "browser",
+            "tasks": [{"type": "wrapper", "wrapper": "browser",
                         "detail": "go", "args": None, "expect": "page"}],
         })
         # Second call: LLM returns valid msg-only plan
         good_plan = json.dumps({
             "goal": "Ask install", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "tool": None,
+            "tasks": [{"type": "msg", "wrapper": None,
                         "detail": "Answer in English. Install browser?",
                         "args": None, "expect": None}],
         })
@@ -335,7 +335,7 @@ class TestRetryLoopUninstalledToolFlag:
         """Normal validation (no tool errors) → _saw_uninstalled_tool=False."""
         good_plan = json.dumps({
             "goal": "Say hello", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "tool": None,
+            "tasks": [{"type": "msg", "wrapper": None,
                         "detail": "Answer in English. Hello!",
                         "args": None, "expect": None}],
         })
@@ -353,12 +353,12 @@ class TestRetryLoopUninstalledToolFlag:
         """If uninstalled-tool error mixed with other errors, flag still set."""
         bad = json.dumps({
             "goal": "X", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "wrapper", "tool": "browser",
+            "tasks": [{"type": "wrapper", "wrapper": "browser",
                         "detail": "go", "args": None, "expect": "page"}],
         })
         good = json.dumps({
             "goal": "Ask", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "tool": None,
+            "tasks": [{"type": "msg", "wrapper": None,
                         "detail": "Answer in English. Install?",
                         "args": None, "expect": None}],
         })
@@ -397,7 +397,7 @@ def _msg_only_plan(*, needs_install=None):
         "tasks": [{
             "type": "msg",
             "detail": "Answer in Italian. Vuoi installare il browser?",
-            "tool": None,
+            "wrapper": None,
             "args": None,
             "expect": None,
         }],
@@ -415,14 +415,14 @@ def _exec_msg_plan():
             {
                 "type": "exec",
                 "detail": "Run hello script",
-                "tool": None,
+                "wrapper": None,
                 "args": None,
                 "expect": "prints hello",
             },
             {
                 "type": "msg",
                 "detail": "Answer in English. Report the script output and results to the user",
-                "tool": None,
+                "wrapper": None,
                 "args": None,
                 "expect": None,
             },

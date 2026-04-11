@@ -57,7 +57,7 @@ class TestExecAndReviewOkE2E:
             await create_task(
                 seeded_db, plan_id, live_session,
                 type=t["type"], detail=t["detail"],
-                skill=t.get("tool"), args=t.get("args"),
+                wrapper=t.get("wrapper"), args=t.get("args"),
                 expect=t.get("expect"),
             )
 

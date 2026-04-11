@@ -280,7 +280,7 @@ def test_cross_type_hint_missing_key_returns_none():
 
 
 def test_connector_search_cross_type_hint_shown(capsys):
-    """M102b: when connector search finds nothing, hint about matching skills."""
+    """M102b: when connector search finds nothing, hint about matching wrappers."""
     from cli.connector import _connector_search
 
     with patch("cli.connector.fetch_registry", return_value=FAKE_REGISTRY):

@@ -70,7 +70,7 @@ class TestUserList:
     def test_wildcard_skills_shown(self, tmp_path, capsys):
         config_path = _make_config(tmp_path, users={
             "boss": {"role": "admin"},
-            "bob": {"role": "user", "skills": "*"},
+            "bob": {"role": "user", "wrappers": "*"},
         })
         with (
             patch("cli.user.require_admin"),
@@ -80,7 +80,7 @@ class TestUserList:
             _user_list(_args())
 
         out = capsys.readouterr().out
-        assert "skills:  *" in out
+        assert "wrappers:  *" in out
 
     def test_json_output(self, tmp_path, capsys):
         """--json prints valid JSON with all user data."""
@@ -97,7 +97,7 @@ class TestUserList:
         assert "boss" in data
         assert data["boss"]["role"] == "admin"
         assert "alice" in data
-        assert data["alice"]["skills"] == ["skill1", "skill2"]
+        assert data["alice"]["wrappers"] == ["skill1", "skill2"]
 
     def test_json_empty(self, tmp_path, capsys):
         """--json on empty config prints '{}'."""
@@ -127,12 +127,12 @@ class TestUserAdd:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_add
-            _user_add(_args(username="newadmin", role="admin", skills=None, alias=None))
+            _user_add(_args(username="newadmin", role="admin", wrappers=None, alias=None))
 
         users = _read_users(config_path)
         assert "newadmin" in users
         assert users["newadmin"]["role"] == "admin"
-        assert "skills" not in users["newadmin"]
+        assert "wrappers" not in users["newadmin"]
         assert "User 'newadmin' added" in capsys.readouterr().out
 
     def test_add_user_with_skill_list(self, tmp_path, capsys):
@@ -143,10 +143,10 @@ class TestUserAdd:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_add
-            _user_add(_args(username="bob", role="user", skills="read,write", alias=None))
+            _user_add(_args(username="bob", role="user", wrappers="read,write", alias=None))
 
         users = _read_users(config_path)
-        assert users["bob"]["skills"] == ["read", "write"]
+        assert users["bob"]["wrappers"] == ["read", "write"]
 
     def test_add_user_with_wildcard_skills(self, tmp_path):
         config_path = _make_config(tmp_path)
@@ -156,9 +156,9 @@ class TestUserAdd:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_add
-            _user_add(_args(username="bob", role="user", skills="*", alias=None))
+            _user_add(_args(username="bob", role="user", wrappers="*", alias=None))
 
-        assert _read_users(config_path)["bob"]["skills"] == "*"
+        assert _read_users(config_path)["bob"]["wrappers"] == "*"
 
     def test_add_with_alias(self, tmp_path):
         config_path = _make_config(tmp_path)
@@ -169,7 +169,7 @@ class TestUserAdd:
         ):
             from cli.user import _user_add
             _user_add(_args(
-                username="bob", role="user", skills="*",
+                username="bob", role="user", wrappers="*",
                 alias=["discord:bob#5678"],
             ))
 
@@ -185,7 +185,7 @@ class TestUserAdd:
         ):
             from cli.user import _user_add
             with pytest.raises(SystemExit) as exc:
-                _user_add(_args(username="INVALID USER!", role="admin", skills=None, alias=None))
+                _user_add(_args(username="INVALID USER!", role="admin", wrappers=None, alias=None))
 
         assert exc.value.code == 1
         assert "invalid user" in capsys.readouterr().err
@@ -199,7 +199,7 @@ class TestUserAdd:
         ):
             from cli.user import _user_add
             with pytest.raises(SystemExit) as exc:
-                _user_add(_args(username="bob", role=None, skills=None, alias=None))
+                _user_add(_args(username="bob", role=None, wrappers=None, alias=None))
 
         assert exc.value.code == 1
         assert "--role" in capsys.readouterr().err
@@ -213,7 +213,7 @@ class TestUserAdd:
         ):
             from cli.user import _user_add
             with pytest.raises(SystemExit) as exc:
-                _user_add(_args(username="boss", role="admin", skills=None, alias=None))
+                _user_add(_args(username="boss", role="admin", wrappers=None, alias=None))
 
         assert exc.value.code == 1
         assert "already exists" in capsys.readouterr().err
@@ -227,10 +227,10 @@ class TestUserAdd:
         ):
             from cli.user import _user_add
             with pytest.raises(SystemExit) as exc:
-                _user_add(_args(username="bob", role="user", skills=None, alias=None))
+                _user_add(_args(username="bob", role="user", wrappers=None, alias=None))
 
         assert exc.value.code == 1
-        assert "--skills" in capsys.readouterr().err
+        assert "--wrappers" in capsys.readouterr().err
 
     def test_add_bad_alias_format_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -242,7 +242,7 @@ class TestUserAdd:
             from cli.user import _user_add
             with pytest.raises(SystemExit) as exc:
                 _user_add(_args(
-                    username="bob", role="user", skills="*",
+                    username="bob", role="user", wrappers="*",
                     alias=["no-colon-here"],
                 ))
 
@@ -250,7 +250,7 @@ class TestUserAdd:
         assert "format" in capsys.readouterr().err
 
     def test_add_empty_skills_segments_fails(self, tmp_path, capsys):
-        """Skills like ',' or 'a,,b' produce empty segments and must be rejected."""
+        """Wrappers like ',' or 'a,,b' produce empty segments and must be rejected."""
         config_path = _make_config(tmp_path)
         with (
             patch("cli.user.require_admin"),
@@ -259,13 +259,13 @@ class TestUserAdd:
         ):
             from cli.user import _user_add
             with pytest.raises(SystemExit) as exc:
-                _user_add(_args(username="bob", role="user", skills=",", alias=None))
+                _user_add(_args(username="bob", role="user", wrappers=",", alias=None))
 
         assert exc.value.code == 1
-        assert "no valid skill" in capsys.readouterr().err
+        assert "no valid wrapper" in capsys.readouterr().err
 
     def test_add_strips_whitespace_from_skills(self, tmp_path):
-        """Skills like 'a , b' are normalized to ['a', 'b']."""
+        """Wrappers like 'a , b' are normalized to ['a', 'b']."""
         config_path = _make_config(tmp_path)
         with (
             patch("cli.user.require_admin"),
@@ -273,9 +273,9 @@ class TestUserAdd:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_add
-            _user_add(_args(username="bob", role="user", skills=" read , write ", alias=None))
+            _user_add(_args(username="bob", role="user", wrappers=" read , write ", alias=None))
 
-        assert _read_users(config_path)["bob"]["skills"] == ["read", "write"]
+        assert _read_users(config_path)["bob"]["wrappers"] == ["read", "write"]
 
     def test_add_no_reload_skips_reload(self, tmp_path):
         """--no-reload writes config but does not call _call_reload."""
@@ -286,7 +286,7 @@ class TestUserAdd:
             patch("cli.user._call_reload") as mock_reload,
         ):
             from cli.user import _user_add
-            _user_add(_args(username="bob", role="admin", skills=None, alias=None, no_reload=True))
+            _user_add(_args(username="bob", role="admin", wrappers=None, alias=None, no_reload=True))
 
         mock_reload.assert_not_called()
         assert "bob" in _read_users(config_path)
@@ -305,7 +305,7 @@ class TestUserEdit:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_edit
-            _user_edit(_args(username="alice", role="admin", skills=None))
+            _user_edit(_args(username="alice", role="admin", wrappers=None))
 
         users = _read_users(config_path)
         assert users["alice"]["role"] == "admin"
@@ -319,9 +319,9 @@ class TestUserEdit:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_edit
-            _user_edit(_args(username="alice", role=None, skills="read,write"))
+            _user_edit(_args(username="alice", role=None, wrappers="read,write"))
 
-        assert _read_users(config_path)["alice"]["skills"] == ["read", "write"]
+        assert _read_users(config_path)["alice"]["wrappers"] == ["read", "write"]
 
     def test_edit_no_args_fails(self, tmp_path, capsys):
         config_path = _make_config(tmp_path)
@@ -332,7 +332,7 @@ class TestUserEdit:
         ):
             from cli.user import _user_edit
             with pytest.raises(SystemExit) as exc:
-                _user_edit(_args(username="alice", role=None, skills=None))
+                _user_edit(_args(username="alice", role=None, wrappers=None))
 
         assert exc.value.code == 1
         assert "at least one" in capsys.readouterr().err
@@ -346,7 +346,7 @@ class TestUserEdit:
         ):
             from cli.user import _user_edit
             with pytest.raises(SystemExit) as exc:
-                _user_edit(_args(username="nobody", role="admin", skills=None))
+                _user_edit(_args(username="nobody", role="admin", wrappers=None))
 
         assert exc.value.code == 1
         assert "does not exist" in capsys.readouterr().err
@@ -355,7 +355,7 @@ class TestUserEdit:
         """Cannot demote the only admin to user."""
         config_path = _make_config(tmp_path, users={
             "boss": {"role": "admin"},
-            "alice": {"role": "user", "skills": "*"},
+            "alice": {"role": "user", "wrappers": "*"},
         })
         with (
             patch("cli.user.require_admin"),
@@ -364,7 +364,7 @@ class TestUserEdit:
         ):
             from cli.user import _user_edit
             with pytest.raises(SystemExit) as exc:
-                _user_edit(_args(username="boss", role="user", skills="*"))
+                _user_edit(_args(username="boss", role="user", wrappers="*"))
 
         assert exc.value.code == 1
         assert "last admin" in capsys.readouterr().err
@@ -381,12 +381,12 @@ class TestUserEdit:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_edit
-            _user_edit(_args(username="boss", role="user", skills="read"))
+            _user_edit(_args(username="boss", role="user", wrappers="read"))
 
         assert _read_users(config_path)["boss"]["role"] == "user"
 
     def test_edit_role_user_without_skills_fails(self, tmp_path, capsys):
-        """Setting role=user on a user with no skills and no --skills fails."""
+        """Setting role=user on a user with no wrappers and no --wrappers fails."""
         config_path = _make_config(tmp_path, users={
             "boss": {"role": "admin"},
             "bob": {"role": "admin"},
@@ -398,13 +398,13 @@ class TestUserEdit:
         ):
             from cli.user import _user_edit
             with pytest.raises(SystemExit) as exc:
-                _user_edit(_args(username="bob", role="user", skills=None))
+                _user_edit(_args(username="bob", role="user", wrappers=None))
 
         assert exc.value.code == 1
-        assert "--skills" in capsys.readouterr().err
+        assert "--wrappers" in capsys.readouterr().err
 
     def test_edit_wildcard_skills(self, tmp_path):
-        """--skills '*' is stored as the literal string '*', not a list."""
+        """--wrappers '*' is stored as the literal string '*', not a list."""
         config_path = _make_config(tmp_path)
         with (
             patch("cli.user.require_admin"),
@@ -412,24 +412,24 @@ class TestUserEdit:
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_edit
-            _user_edit(_args(username="alice", role=None, skills="*"))
+            _user_edit(_args(username="alice", role=None, wrappers="*"))
 
-        assert _read_users(config_path)["alice"]["skills"] == "*"
+        assert _read_users(config_path)["alice"]["wrappers"] == "*"
 
     def test_edit_promote_to_admin_preserves_skills(self, tmp_path):
-        """Promoting a user to admin leaves the skills key intact."""
-        config_path = _make_config(tmp_path)  # alice has skills: ["skill1", "skill2"]
+        """Promoting a user to admin leaves the wrappers key intact."""
+        config_path = _make_config(tmp_path)  # alice has wrappers: ["skill1", "skill2"]
         with (
             patch("cli.user.require_admin"),
             patch("cli.user.CONFIG_PATH_DEFAULT", config_path),
             patch("cli.user._call_reload"),
         ):
             from cli.user import _user_edit
-            _user_edit(_args(username="alice", role="admin", skills=None))
+            _user_edit(_args(username="alice", role="admin", wrappers=None))
 
         alice = _read_users(config_path)["alice"]
         assert alice["role"] == "admin"
-        assert alice["skills"] == ["skill1", "skill2"]
+        assert alice["wrappers"] == ["skill1", "skill2"]
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +469,7 @@ class TestUserRemove:
         """Removing the only admin is rejected to prevent lockout."""
         config_path = _make_config(tmp_path, users={
             "boss": {"role": "admin"},
-            "alice": {"role": "user", "skills": "*"},
+            "alice": {"role": "user", "wrappers": "*"},
         })
         with (
             patch("cli.user.require_admin"),
@@ -528,7 +528,7 @@ class TestUserAlias:
         config_path = _make_config(tmp_path, users={
             "boss": {"role": "admin"},
             "alice": {
-                "role": "user", "skills": ["skill1"],
+                "role": "user", "wrappers": ["skill1"],
                 "aliases": {"discord": "alice#old"},
             },
         })
@@ -548,7 +548,7 @@ class TestUserAlias:
         config_path = _make_config(tmp_path, users={
             "boss": {"role": "admin"},
             "alice": {
-                "role": "user", "skills": ["skill1"],
+                "role": "user", "wrappers": ["skill1"],
                 "aliases": {"discord": "alice#1234"},
             },
         })

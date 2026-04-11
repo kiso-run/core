@@ -167,16 +167,16 @@ async def create_task(
     session: str,
     type: str,
     detail: str,
-    skill: str | None = None,
+    wrapper: str | None = None,
     args: str | dict | None = None,
     expect: str | None = None,
     parallel_group: int | None = None,
 ) -> int:
     args = _serialize_task_args(args)
     cur = await db.execute(
-        "INSERT INTO tasks (plan_id, session, type, detail, skill, args, expect, parallel_group) "
+        "INSERT INTO tasks (plan_id, session, type, detail, wrapper, args, expect, parallel_group) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (plan_id, session, type, detail, skill, args, expect, parallel_group),
+        (plan_id, session, type, detail, wrapper, args, expect, parallel_group),
     )
     await db.commit()
     return cast(int, cur.lastrowid)

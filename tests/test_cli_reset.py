@@ -331,15 +331,15 @@ class TestResetAll:
 
         (tmp_path / "config.toml").write_text("[tokens]\ncli = 'tok'\n")
         (tmp_path / ".env").write_text("KEY=val\n")
-        (tmp_path / "skills").mkdir()
-        (tmp_path / "skills" / "search").mkdir()
+        (tmp_path / "wrappers").mkdir()
+        (tmp_path / "wrappers" / "search").mkdir()
 
         with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_all(_make_args(reset_command="all"))
 
         assert (tmp_path / "config.toml").exists()
         assert (tmp_path / ".env").exists()
-        assert (tmp_path / "skills").exists()
+        assert (tmp_path / "wrappers").exists()
 
     def test_preserves_db_file(self, tmp_path, capsys):
         """reset all clears rows but keeps store.db (unlike factory)."""

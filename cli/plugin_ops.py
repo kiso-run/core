@@ -42,7 +42,7 @@ _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 def url_to_name(url: str) -> str:
     """Convert a git URL to a plugin install name.
 
-    Algorithm (from docs/skills.md):
+    Algorithm (from docs/wrappers.md):
     1. Strip .git suffix
     2. Normalize SSH (git@host:ns/repo -> host/ns/repo) and HTTPS (strip scheme)
     3. Lowercase

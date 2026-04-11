@@ -353,7 +353,7 @@ class TestDiscoveryPlanReplanFlow:
             discovery_plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
-                    "Check the plugin registry to see what skills are available, "
+                    "Check the plugin registry to see what wrappers are available, "
                     "then install one that can do web search. "
                     "You must investigate the registry first before deciding.",
                 ),
@@ -417,7 +417,7 @@ class TestDiscoveryPlanReplanFlow:
             completed, [], replan_reason, [],
         )
         enriched_message = (
-            "Check the plugin registry to see what skills are available, "
+            "Check the plugin registry to see what wrappers are available, "
             "then install one that can do web search.\n\n"
             + replan_context
         )
@@ -445,7 +445,7 @@ class TestDiscoveryPlanReplanFlow:
             f"Expected action plan to end with msg or replan, "
             f"got: {[t['type'] for t in action_plan['tasks']]}"
         )
-        # Should reference web-search or the skill from investigation
+        # Should reference web-search or the wrapper from investigation
         plan_text = str(action_plan).lower()
         assert "web" in plan_text or "search" in plan_text or "tool" in plan_text, (
             f"Action plan should reference investigation results, got: {action_plan}"

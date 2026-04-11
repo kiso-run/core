@@ -41,7 +41,7 @@ def _assert_search_smoke_output(out: str, *, kind: str, query: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# L5.1 — Skill search
+# L5.1 — Wrapper search
 # ---------------------------------------------------------------------------
 
 
@@ -49,9 +49,9 @@ class TestWrapperSearch:
     """Optional smoke tests for remote registry-backed tool search."""
 
     def test_search_returns_results(self, capsys):
-        """What: Runs 'kiso skill search' with an empty query string.
+        """What: Runs 'kiso wrapper search' with an empty query string.
 
-        Why: Validates the skill search fetches the remote registry and lists available skills.
+        Why: Validates the wrapper search fetches the remote registry and lists available wrappers.
         Expects: Non-empty stdout output.
         """
         from cli.wrapper import _wrapper_search as _skill_search
@@ -64,9 +64,9 @@ class TestWrapperSearch:
         _assert_search_smoke_output(out, kind="tool", query="")
 
     def test_search_with_query(self, capsys):
-        """What: Runs 'kiso skill search' with query 'search' to filter results.
+        """What: Runs 'kiso wrapper search' with query 'search' to filter results.
 
-        Why: Validates the skill search filters by keyword without crashing.
+        Why: Validates the wrapper search filters by keyword without crashing.
         Expects: Non-empty stdout output.
         """
         from cli.wrapper import _wrapper_search as _skill_search
@@ -104,7 +104,7 @@ class TestConnectorSearch:
 
 
 # ---------------------------------------------------------------------------
-# L5.3 — Skill install + remove lifecycle
+# L5.3 — Wrapper install + remove lifecycle
 # ---------------------------------------------------------------------------
 
 
@@ -112,13 +112,13 @@ class TestWrapperInstallRemove:
     def test_install_and_remove_official_wrapper(self, tmp_path: Path, capsys):
         """What: Installs the 'websearch' tool from kiso-run org, verifies the directory, then removes it.
 
-        Why: Validates the full skill install/remove lifecycle with a real git clone.
+        Why: Validates the full wrapper install/remove lifecycle with a real git clone.
         Expects: After install: dir exists, kiso.toml present, no .installing marker. After remove: dir gone.
         """
         if shutil.which("git") is None:
             pytest.skip("git not found on PATH")
 
-        skills_dir = tmp_path / "skills"
+        skills_dir = tmp_path / "wrappers"
         skills_dir.mkdir()
 
         # Pick a tool that is likely to exist in the org.
@@ -142,7 +142,7 @@ class TestWrapperInstallRemove:
             _skill_install(args)
 
         skill_dir = skills_dir / skill_name
-        assert skill_dir.is_dir(), f"Skill dir not created: {skill_dir}"
+        assert skill_dir.is_dir(), f"Wrapper dir not created: {skill_dir}"
         assert (skill_dir / "kiso.toml").exists(), "kiso.toml missing"
         assert not (skill_dir / ".installing").exists(), ".installing marker left behind"
 
@@ -159,7 +159,7 @@ class TestWrapperInstallRemove:
 
             _skill_remove(remove_args)
 
-        assert not skill_dir.exists(), f"Skill dir not removed: {skill_dir}"
+        assert not skill_dir.exists(), f"Wrapper dir not removed: {skill_dir}"
         out2 = capsys.readouterr().out
         assert "removed" in out2.lower()
 
@@ -223,13 +223,13 @@ class TestConnectorInstallRemove:
 
 
 # ---------------------------------------------------------------------------
-# L5.5 — Install nonexistent skill/connector → clean error
+# L5.5 — Install nonexistent wrapper/connector → clean error
 # ---------------------------------------------------------------------------
 
 
 class TestWrapperInstallNotFound:
     def test_install_nonexistent_wrapper(self, tmp_path: Path, capsys):
-        """What: Attempts to install a nonexistent skill ('nonexistent-xyz-999').
+        """What: Attempts to install a nonexistent wrapper ('nonexistent-xyz-999').
 
         Why: Validates the CLI shows a clean user-facing 'not found' error, not raw git stderr.
         Expects: SystemExit raised, output contains 'not found' and 'kiso-run', no 'fatal:'.
@@ -237,7 +237,7 @@ class TestWrapperInstallNotFound:
         if shutil.which("git") is None:
             pytest.skip("git not found on PATH")
 
-        skills_dir = tmp_path / "skills"
+        skills_dir = tmp_path / "wrappers"
         skills_dir.mkdir()
 
         args = Namespace(

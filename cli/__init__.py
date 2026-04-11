@@ -154,8 +154,8 @@ def _save_readline_history() -> None:
 
 
 def _add_wrapper_subcommands(parent_parser: argparse.ArgumentParser) -> None:
-    """Add tool subcommands (shared by 'tool' and 'skill' alias)."""
-    s = parent_parser.add_subparsers(dest="tool_command")
+    """Add tool subcommands (shared by 'tool' and 'wrapper' alias)."""
+    s = parent_parser.add_subparsers(dest="wrapper_command")
     s.add_parser("list", help="list installed tools")
     sp = s.add_parser("search", help="search official tools on GitHub")
     sp.add_argument("query", nargs="?", default="", help="search filter")
@@ -203,16 +203,16 @@ def _add_user_parser(sub) -> None:
     p = s.add_parser("add", help="add a user")
     p.add_argument("username", help="user name")
     p.add_argument("--role", required=True, choices=["admin", "user"], help="user role")
-    p.add_argument("--skills", default=None, metavar="SKILLS",
-                   help="allowed skills: '*' or comma-separated names (required for role=user)")
+    p.add_argument("--wrappers", default=None, metavar="SKILLS",
+                   help="allowed wrappers: '*' or comma-separated names (required for role=user)")
     p.add_argument("--alias", action="append", metavar="CONNECTOR:ID",
                    help="connector alias in 'connector:platform_id' format (repeatable)")
     p.add_argument("--no-reload", action="store_true", dest="no_reload",
                    help="skip hot-reload after writing config (useful when server is not running)")
-    p = s.add_parser("edit", help="edit role or skills of an existing user")
+    p = s.add_parser("edit", help="edit role or wrappers of an existing user")
     p.add_argument("username", help="user to edit")
     p.add_argument("--role", default=None, choices=["admin", "user"], help="new role")
-    p.add_argument("--skills", default=None, metavar="SKILLS", help="new skills: '*' or comma-separated names")
+    p.add_argument("--wrappers", default=None, metavar="SKILLS", help="new wrappers: '*' or comma-separated names")
     p.add_argument("--no-reload", action="store_true", dest="no_reload", help="skip hot-reload after writing config")
     p = s.add_parser("remove", help="remove a user")
     p.add_argument("username", help="user to remove")

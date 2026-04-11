@@ -133,9 +133,9 @@ class TestToolInstallHealthSmoke:
     def test_validation_error_includes_args_example(self):
         """validation error for null args includes example format."""
         plan = {"tasks": [
-            {"type": "wrapper", "detail": "screenshot", "tool": "browser",
+            {"type": "wrapper", "detail": "screenshot", "wrapper": "browser",
              "args": None, "expect": "done"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "tool": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
         ]}
         info = {"browser": {"args_schema": {
             "action": {"type": "string", "required": True},

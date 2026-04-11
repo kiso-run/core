@@ -15,7 +15,6 @@ class PresetManifest:
     version: str
     description: str
     wrappers: list[str] = field(default_factory=list)
-    skills: list[str] = field(default_factory=list)
     connectors: list[str] = field(default_factory=list)
     knowledge_facts: list[dict] = field(default_factory=list)
     behaviors: list[str] = field(default_factory=list)
@@ -52,7 +51,7 @@ def validate_preset_manifest(manifest: dict) -> list[str]:
         return errors
 
     # Validate list-of-string fields
-    for list_field in ("wrappers", "skills", "connectors"):
+    for list_field in ("wrappers", "connectors"):
         val = preset.get(list_field, [])
         if not isinstance(val, list):
             errors.append(f"kiso.preset.{list_field} must be a list")
@@ -129,7 +128,6 @@ def _manifest_from_dict(kiso: dict) -> PresetManifest:
         version=kiso["version"],
         description=kiso["description"],
         wrappers=preset.get("wrappers", []),
-        skills=preset.get("skills", []),
         connectors=preset.get("connectors", []),
         knowledge_facts=knowledge.get("facts", []),
         behaviors=knowledge.get("behaviors", []),

@@ -489,13 +489,13 @@ async def test_create_task_all_fields(db: aiosqlite.Connection):
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     task_id = await create_task(
         db, plan_id, "sess1", type="wrapper", detail="search web",
-        skill="search", args='{"query": "test"}', expect="results found",
+        wrapper="search", args='{"query": "test"}', expect="results found",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
     assert len(tasks) == 1
     t = tasks[0]
     assert t["type"] == "wrapper"
-    assert t["skill"] == "search"
+    assert t["wrapper"] == "search"
     assert t["args"] == '{"query": "test"}'
     assert t["expect"] == "results found"
     assert t["status"] == "pending"
@@ -506,7 +506,7 @@ async def test_create_task_serializes_dict_args(db: aiosqlite.Connection):
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     await create_task(
         db, plan_id, "sess1", type="wrapper", detail="search web",
-        skill="search", args={"query": "test", "page": 1}, expect="results found",
+        wrapper="search", args={"query": "test", "page": 1}, expect="results found",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
     assert json.loads(tasks[0]["args"]) == {"page": 1, "query": "test"}
@@ -2233,40 +2233,6 @@ async def test_update_task_running_preserves_null_duration(db: aiosqlite.Connect
     assert tasks[0]["duration_ms"] == 500
 
 
-async def test_duration_ms_migration_on_existing_db(tmp_path):
-    """Migration adds duration_ms to a DB created without it."""
-    from kiso.store import init_db as _init_db
-    db_path = tmp_path / "legacy.db"
-    # Create a DB with the old schema (no duration_ms)
-    import aiosqlite
-    db = await aiosqlite.connect(db_path)
-    await db.execute("""CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        plan_id INTEGER NOT NULL,
-        session TEXT NOT NULL,
-        type TEXT NOT NULL,
-        detail TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        output TEXT,
-        stderr TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )""")
-    await db.commit()
-    await db.close()
-    # Re-open with init_db — should add duration_ms via migration
-    db = await _init_db(db_path)
-    cur = await db.execute("PRAGMA table_info(tasks)")
-    columns = {row[1] for row in await cur.fetchall()}
-    assert "duration_ms" in columns
-    await db.close()
-
-
-# ---------------------------------------------------------------------------
-# Fact tagging (M248)
-# ---------------------------------------------------------------------------
-
-
 async def test_save_fact_with_tags(db: aiosqlite.Connection):
     """save_fact with tags creates both fact and fact_tags rows."""
     fid = await save_fact(db, "Browser uses Playwright", "curator", tags=["browser", "tech-stack"])
@@ -2572,83 +2538,6 @@ async def test_backfill_word_boundary_exact_match(db: aiosqlite.Connection):
 
 
 # --- M345: entity: tag migration ---
-
-
-async def test_m345_migration_converts_entity_tags(tmp_path):
-    """entity: prefixed tags are migrated to entity records on init_db."""
-    from kiso.store import init_db
-    # First init to create tables
-    db = await init_db(tmp_path / "test.db")
-    fid1 = await save_fact(db, "Uses Flask for web API", "curator")
-    fid2 = await save_fact(db, "Flask has good documentation", "curator")
-    # Manually insert entity: tags (simulating pre-M345 data)
-    await save_fact_tags(db, fid1, ["entity:flask", "tech-stack"])
-    await save_fact_tags(db, fid2, ["entity:flask"])
-    await db.close()
-
-    # Re-open — migration should run
-    db = await init_db(tmp_path / "test.db")
-    # entity: tags should be gone
-    cur = await db.execute("SELECT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
-    assert await cur.fetchall() == []
-    # Entity record should exist
-    entities = await get_all_entities(db)
-    assert len(entities) == 1
-    assert entities[0]["name"] == "flask"
-    assert entities[0]["kind"] == "wrapper"
-    # Facts should be linked
-    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid1,))
-    assert (await cur.fetchone())[0] == entities[0]["id"]
-    cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid2,))
-    assert (await cur.fetchone())[0] == entities[0]["id"]
-    # Non-entity tags should be preserved
-    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ?", (fid1,))
-    tags = [r[0] for r in await cur.fetchall()]
-    assert "tech-stack" in tags
-    assert "entity:flask" not in tags
-    await db.close()
-
-
-async def test_m345_migration_multiple_entities(tmp_path):
-    """migration handles multiple distinct entity: tags."""
-    from kiso.store import init_db
-    db = await init_db(tmp_path / "test.db")
-    fid1 = await save_fact(db, "Uses Flask for web API", "curator")
-    fid2 = await save_fact(db, "Docker for deployment environment", "curator")
-    await save_fact_tags(db, fid1, ["entity:flask"])
-    await save_fact_tags(db, fid2, ["entity:docker"])
-    await db.close()
-
-    db = await init_db(tmp_path / "test.db")
-    entities = await get_all_entities(db)
-    assert len(entities) == 2
-    names = {e["name"] for e in entities}
-    assert names == {"flask", "docker"}
-    cur = await db.execute("SELECT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
-    assert await cur.fetchall() == []
-    await db.close()
-
-
-async def test_m345_migration_no_entity_tags_noop(tmp_path):
-    """migration is a no-op when no entity: tags exist."""
-    from kiso.store import init_db
-    db = await init_db(tmp_path / "test.db")
-    fid = await save_fact(db, "Uses Python for backend", "curator")
-    await save_fact_tags(db, fid, ["tech-stack"])
-    await db.close()
-
-    db = await init_db(tmp_path / "test.db")
-    entities = await get_all_entities(db)
-    assert len(entities) == 0
-    cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ?", (fid,))
-    tags = [r[0] for r in await cur.fetchall()]
-    assert tags == ["tech-stack"]
-    await db.close()
-
-
-# ---------------------------------------------------------------------------
-# — search_facts_scored
-# ---------------------------------------------------------------------------
 
 
 async def test_scored_entity_only(db: aiosqlite.Connection):

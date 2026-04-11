@@ -1,7 +1,7 @@
 """F3-F4: System capability functional tests.
 
 F3: SSH key display.
-F4: Git clone + intelligent file editing (aider skill) + push.
+F4: Git clone + intelligent file editing (aider wrapper) + push.
 """
 
 from __future__ import annotations
@@ -120,10 +120,10 @@ class TestF4GitAiderPush:
             f"Expected git workflow to target docs/testing.md, got: {task_blob[:500]}"
         )
 
-        # Check that aider skill was used (preferred) or exec editing was done
+        # Check that aider wrapper was used (preferred) or exec editing was done
         wrapper_names = [
-            t.get("skill") for t in result.tool_tasks()
-            if t.get("skill")
+            t.get("wrapper") for t in result.tool_tasks()
+            if t.get("wrapper")
         ]
         exec_outputs = "\n".join(
             t.get("output") or "" for t in result.tasks
@@ -135,6 +135,6 @@ class TestF4GitAiderPush:
             for kw in ("sed", "echo", "tee", "testing.md", "timestamp", "date")
         )
         assert aider_used or editing_done, (
-            f"Neither aider skill nor direct editing detected. "
-            f"Skills used: {wrapper_names}, exec output excerpt: {exec_outputs[:300]}"
+            f"Neither aider wrapper nor direct editing detected. "
+            f"Wrappers used: {wrapper_names}, exec output excerpt: {exec_outputs[:300]}"
         )

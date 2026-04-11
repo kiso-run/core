@@ -95,7 +95,7 @@ class TestF17FullPipeline:
         aider_tasks = [
             t for t in r3.tasks
             if t.get("type") == "wrapper"
-            and (t.get("skill") == "aider" or t.get("tool") == "aider")
+            and (t.get("wrapper") == "aider" or t.get("wrapper") == "aider")
         ]
         assert aider_tasks, (
             f"Expected aider tool task, got types: {r3.task_types()}"

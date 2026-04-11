@@ -129,7 +129,7 @@ class TestToolLifecycleRecovery:
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         marker = tmp_path / "should_not_run.marker"
-        _create_tool(tools_dir, "echo", "Echo skill",
+        _create_tool(tools_dir, "echo", "Echo wrapper",
                      binary="bash",
                      deps_sh=f"#!/bin/bash\ntouch {marker}")
 
@@ -138,7 +138,7 @@ class TestToolLifecycleRecovery:
         assert tools[0]["healthy"] is True
 
         tool_list = build_planner_wrapper_list(tools, "admin")
-        assert "- echo — Echo skill" in tool_list
+        assert "- echo — Echo wrapper" in tool_list
         assert "[BROKEN" not in tool_list
         assert not marker.exists()  # deps.sh was never called
 
@@ -146,7 +146,7 @@ class TestToolLifecycleRecovery:
         """Multiple tools: one healthy, one broken — only broken is flagged."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
-        _create_tool(tools_dir, "echo", "Echo skill", binary="bash")
+        _create_tool(tools_dir, "echo", "Echo wrapper", binary="bash")
         _create_tool(tools_dir, "browser", "Browser automation",
                      binary="nonexistent_xyz_12345")
 
@@ -163,7 +163,7 @@ class TestToolLifecycleRecovery:
 
         tool_list = build_planner_wrapper_list(tools, "admin")
         # echo is clean
-        assert "- echo — Echo skill" in tool_list
+        assert "- echo — Echo wrapper" in tool_list
         # browser is annotated
         assert "[BROKEN" in tool_list
         assert "nonexistent_xyz_12345" in tool_list
@@ -180,7 +180,7 @@ class TestToolLifecycleRecovery:
         # Simulate: tool was installed, binary existed, then image was rebuilt
         # (binary is gone). Tool dir persists on volume.
         _create_tool(
-            tools_dir, "my-skill", "My tool",
+            tools_dir, "my-wrapper", "My tool",
             binary="my_tool",
             deps_sh=f"#!/bin/bash\ntouch {fake_bin} && chmod +x {fake_bin}",
         )
@@ -196,7 +196,7 @@ class TestToolLifecycleRecovery:
 
         # 3. Auto-repair on startup
         repaired = await repair_unhealthy_wrappers(tools_dir)
-        assert "my-skill" in repaired
+        assert "my-wrapper" in repaired
         assert fake_bin.exists()
 
         # 4. Re-discovery: healthy
@@ -210,4 +210,4 @@ class TestToolLifecycleRecovery:
         # 5. Planner sees clean tool
         tool_list = build_planner_wrapper_list(tools, "admin")
         assert "[BROKEN" not in tool_list
-        assert "- my-skill — My tool" in tool_list
+        assert "- my-wrapper — My tool" in tool_list

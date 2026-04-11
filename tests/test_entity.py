@@ -149,39 +149,3 @@ class TestM348EntityLifecycle:
         assert "guidance.studio has a CAPTCHA form" in user_content
         assert "[entity: guidance.studio]" in user_content
 
-
-class TestM348EntityMigration:
-    """migration from entity: tags to entity records."""
-
-    async def test_migration_lifecycle(self, tmp_path):
-        """End-to-end: old entity: tags → migrated entity records."""
-        db = await init_db(tmp_path / "test.db")
-        # Simulate old-style entity: tags
-        fid1 = await save_fact(db, "Flask uses Jinja2 templates", "curator")
-        fid2 = await save_fact(db, "Flask supports async views", "curator")
-        await save_fact_tags(db, fid1, ["entity:flask", "tech-stack"])
-        await save_fact_tags(db, fid2, ["entity:flask"])
-        await db.close()
-
-        # Re-init triggers migration
-        db = await init_db(tmp_path / "test.db")
-
-        # Entity created from tag
-        entities = await get_all_entities(db)
-        assert len(entities) == 1
-        assert entities[0]["name"] == "flask"
-        assert entities[0]["kind"] == "wrapper"  # default from migration
-
-        # Facts linked to entity
-        entity_facts = await search_facts_by_entity(db, entities[0]["id"])
-        assert len(entity_facts) == 2
-
-        # entity: tags removed, non-entity tags preserved
-        import aiosqlite
-        cur = await db.execute("SELECT tag FROM fact_tags WHERE tag LIKE 'entity:%'")
-        assert await cur.fetchall() == []
-        cur = await db.execute("SELECT tag FROM fact_tags WHERE fact_id = ?", (fid1,))
-        tags = [r[0] for r in await cur.fetchall()]
-        assert "tech-stack" in tags
-
-        await db.close()
