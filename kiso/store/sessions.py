@@ -257,8 +257,14 @@ def _fact_session_filter(
         )
 
     # --- no project context ---
-    if is_admin or session is None:
+    if session is None:
+        # System-level queries (consolidator, dedup) — no session context,
+        # no project filter.  These callers need cross-project visibility.
         return ("", [])
+    if is_admin:
+        # Admin with an active session but no project binding: bypass
+        # session scoping but still exclude project-scoped facts.
+        return (f" AND ({p}project_id IS NULL)", [])
     return (
         f" AND ({p}project_id IS NULL)"
         f" AND ({p}category != 'user' OR {p}session = ?)",

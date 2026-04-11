@@ -213,17 +213,41 @@ async def test_fact_user_category_session_scoped(db):
     assert not any("dark mode" in f["content"] for f in facts)
 
 
-async def test_fact_admin_sees_all(db):
-    """Admin bypasses all scoping — sees everything."""
+async def test_fact_admin_no_session_sees_all(db):
+    """Admin with session=None (system queries) sees everything.
+
+    This is the consolidator/dedup path — no session context means
+    cross-project visibility is needed.
+    """
     pid = await create_project(db, "proj-secret", "alice")
     await save_fact(db, "Secret admin-only project fact", "curator",
                     category="project", project_id=pid)
     await save_fact(db, "User session-only fact content here", "curator",
                     category="user", session="sess1")
-    # Admin sees all
-    facts = await get_facts(db, is_admin=True)
+    facts = await get_facts(db, is_admin=True)  # session=None (default)
     assert any("Secret admin-only" in f["content"] for f in facts)
     assert any("User session-only" in f["content"] for f in facts)
+
+
+async def test_fact_admin_with_session_excludes_project_facts(db):
+    """M1305: Admin with an active session but no project binding must
+    NOT see project-scoped facts.  Admin privilege bypasses session scoping
+    (can see user-category from any session), not project scoping.
+    """
+    pid = await create_project(db, "proj-secret", "alice")
+    await save_fact(db, "Secret project fact for isolation", "curator",
+                    category="project", project_id=pid)
+    await save_fact(db, "User session-only fact content here", "curator",
+                    category="user", session="sess1")
+    await save_fact(db, "Global fact visible to all", "curator",
+                    category="general")
+    # Admin WITH session but WITHOUT project binding
+    facts = await get_facts(db, session="sess-admin", is_admin=True)
+    assert any("Global fact" in f["content"] for f in facts)
+    assert any("User session-only" in f["content"] for f in facts)
+    assert not any("Secret project fact" in f["content"] for f in facts), (
+        "Admin with session but no project context must NOT see project-scoped facts"
+    )
 
 
 async def test_search_facts_respects_project_scope(db):
@@ -399,7 +423,9 @@ async def test_curator_project_scoping(db, category, has_project, expected_proje
 
     await _apply_curator_result(db, sess, {"evaluations": [evaluation]})
 
-    facts = await get_facts(db, is_admin=True)
+    # Pass project_id so admin can see project-scoped facts (M1305:
+    # admin without project context no longer bypasses project filter).
+    facts = await get_facts(db, is_admin=True, project_id=pid)
     matched = [f for f in facts if fact_text in f["content"]]
     assert len(matched) == 1
 
@@ -489,12 +515,12 @@ async def test_search_facts_scored_with_project_id_filters_other_projects(db):
     assert not any("Banana fact" in c for c in contents)
 
 
-async def test_search_facts_scored_default_admin_unchanged(db):
-    """The default (is_admin=True) behavior is preserved — backward compat."""
+async def test_search_facts_scored_admin_with_project_id(db):
+    """Admin with explicit project_id sees that project's facts."""
     pid = await create_project(db, "admin-default", "alice")
     await save_fact(db, "Project admin-default fact zeta", "curator",
                     category="project", project_id=pid, tags=["k"])
-    results = await search_facts_scored(db, tags=["k"])
+    results = await search_facts_scored(db, tags=["k"], project_id=pid)
     assert any("zeta" in r["content"] for r in results)
 
 
