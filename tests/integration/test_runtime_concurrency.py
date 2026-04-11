@@ -128,7 +128,7 @@ class TestCronSharesSpawnCheck:
             "id": -1,
             "content": "cron prompt",
             "user_role": "admin",
-            "user_tools": "*",
+            "user_wrappers": "*",
             "username": "cron",
             "base_url": "",
         })
@@ -204,7 +204,7 @@ class TestCronBypassesInflightClassification:
                 "id": -2,
                 "content": "stop",  # would be a stop fast-path via /msg
                 "user_role": "admin",
-                "user_tools": "*",
+                "user_wrappers": "*",
                 "username": "cron",
                 "base_url": "",
             }

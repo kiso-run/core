@@ -535,7 +535,7 @@ class TestM824ToolFilterThreshold:
             models=full_models(),
             settings=full_settings(
                 briefer_enabled=True,
-                briefer_tool_filter_threshold=10,
+                briefer_wrapper_filter_threshold=10,
             ),
             raw={},
         )
@@ -584,7 +584,7 @@ class TestM824ToolFilterThreshold:
             models=full_models(),
             settings=full_settings(
                 briefer_enabled=True,
-                briefer_tool_filter_threshold=10,
+                briefer_wrapper_filter_threshold=10,
             ),
             raw={},
         )
@@ -632,7 +632,7 @@ class TestM824ToolFilterThreshold:
             models=full_models(),
             settings=full_settings(
                 briefer_enabled=True,
-                briefer_tool_filter_threshold=0,
+                briefer_wrapper_filter_threshold=0,
             ),
             raw={},
         )

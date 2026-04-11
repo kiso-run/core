@@ -108,7 +108,7 @@ async def live_msg(seeded_db, live_session):
             "id": msg_id,
             "content": content,
             "user_role": user_role,
-            "user_tools": "*",
+            "user_wrappers": "*",
             "username": "testadmin",
         }
 

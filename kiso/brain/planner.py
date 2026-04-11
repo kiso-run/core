@@ -165,7 +165,7 @@ def _find_direct_wrapper_exec(
         return None
 
     lower = (detail or "").lower()
-    if "kiso tool " in lower or "kiso connector " in lower:
+    if "kiso wrapper " in lower or "kiso connector " in lower:
         return None
     if _INSTALL_CMD_RE.search(lower):
         return None
@@ -216,7 +216,7 @@ def _validate_plan_tasks(
             errors.append(
                 f"Task {i}: exec detail is analytical, not actionable — "
                 f"rewrite as a concrete shell command description "
-                f"(e.g., 'Run kiso tool install browser')"
+                f"(e.g., 'Run kiso wrapper install browser')"
             )
         direct_tool_exec = _find_direct_wrapper_exec(detail, installed_skills)
         if t == TASK_TYPE_EXEC and direct_tool_exec:
@@ -268,7 +268,7 @@ def _validate_plan_tasks(
                 errors.append(
                     f"Task {i}: search cannot be used for kiso plugin discovery. "
                     "If the tool name appears in registry_hints or "
-                    "'Available Tools (not installed)', it is a kiso tool — "
+                    "'Available Tools (not installed)', it is a kiso wrapper — "
                     "use the kiso_native install flow (set needs_install, "
                     "msg for approval). If it does NOT appear there, it is "
                     "not a kiso plugin — for system packages use the package "
@@ -428,7 +428,7 @@ def _validate_plan_ordering(
             errors.append(
                 "Plan has only msg tasks — include at least one "
                 "exec/tool/search task for action requests. "
-                "Msg-only is valid only for kiso tool install proposals "
+                "Msg-only is valid only for kiso wrapper install proposals "
                 "(set needs_install), knowledge storage, or KB recall "
                 "(set kb_answer when answering from briefer context)."
             )
@@ -528,7 +528,7 @@ def _validate_install_route_consistency(
             )
         if non_msg_types:
             errors.append(
-                f"Unknown named tool '{target}' is not available in the current kiso tool context. "
+                f"Unknown named tool '{target}' is not available in the current kiso wrapper context. "
                 f"Plan ONLY msg tasks explaining that it cannot be installed from the current registry/tool set, "
                 f"and suggest a git URL or private installation instructions if applicable."
             )
@@ -550,13 +550,13 @@ def _validate_install_route_consistency(
                 continue
             errors.append(
                 f"Task {i}: install routing target is '{target}', but this plan installs '{install_name}'. "
-                f"Use `kiso tool install {target}` for the approved registry tool."
+                f"Use `kiso wrapper install {target}` for the approved registry tool."
             )
             continue
         if _SYSTEM_INSTALL_HINT_RE.search(lower) or _PIP_INSTALL_RE.search(lower):
             errors.append(
                 f"Task {i}: install routing target '{target}' is a kiso tool. "
-                f"Do not use system package managers or pip/uv pip here; use `kiso tool install {target}`."
+                f"Do not use system package managers or pip/uv pip here; use `kiso wrapper install {target}`."
             )
             continue
         # Natural-language detail mentioning the target + install intent
@@ -567,7 +567,7 @@ def _validate_install_route_consistency(
 
     if install_approved and not has_target_mention_install:
         errors.append(
-            f"Approved install for kiso tool '{target}' requires an exec task that "
+            f"Approved install for kiso wrapper '{target}' requires an exec task that "
             f"installs '{target}', then a final replan task."
         )
 
@@ -575,7 +575,7 @@ def _validate_install_route_consistency(
         if explicit_request and has_target_mention_install:
             if tasks and tasks[-1].get("type") == TASK_TYPE_MSG:
                 errors.append(
-                    f"Explicit install for kiso tool '{target}' must end with replan, "
+                    f"Explicit install for kiso wrapper '{target}' must end with replan, "
                     f"not msg — the original request may still be pending."
                 )
         else:
@@ -648,7 +648,7 @@ def validate_plan(
     If installed_skills_info is provided (name→tool dict), tool args are
     validated against the schema at plan time.
     If is_replan is False, extend_replan is stripped.
-    If registry_hint_names is provided, exec tasks with ``kiso tool install``
+    If registry_hint_names is provided, exec tasks with ``kiso wrapper install``
     are validated: the name must be in the registry (or a git URL).
     If force_msg_only is True, only msg tasks are allowed — all other task
     types are rejected (set after a tool-not-in-registry rejection).
@@ -944,7 +944,7 @@ async def build_planner_messages(
     session: str,
     user_role: str,
     new_message: str,
-    user_tools: str | list[str] | None = None,
+    user_wrappers: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
@@ -987,7 +987,7 @@ async def build_planner_messages(
         log.info("discover_wrappers() found: %s", ", ".join(installed_names))
 
     # Build the tool list text for context pool
-    full_wrapper_list = build_planner_wrapper_list(installed, user_role, user_tools)
+    full_wrapper_list = build_planner_wrapper_list(installed, user_role, user_wrappers)
     if full_wrapper_list:
         context_pool["tools"] = full_wrapper_list
 
@@ -1232,7 +1232,7 @@ async def build_planner_messages(
     # skip briefer tool filtering when few tools installed — marginal
     # token saving vs catastrophic risk of excluding the right tool.
     tool_filter_threshold = setting_int(
-        config.settings, "briefer_tool_filter_threshold", lo=0,
+        config.settings, "briefer_wrapper_filter_threshold", lo=0,
     )
     if briefing and briefing["tools"]:
         if len(installed) <= tool_filter_threshold:
@@ -1240,13 +1240,13 @@ async def build_planner_messages(
             log.debug("Skipping briefer tool filter: %d tools <= threshold %d",
                       len(installed), tool_filter_threshold)
             _selected = set(briefing["tools"])
-            tiered_list = build_planner_wrapper_list(installed, user_role, user_tools, selected_names=_selected)
+            tiered_list = build_planner_wrapper_list(installed, user_role, user_wrappers, selected_names=_selected)
             if tiered_list:
                 context_parts.append(f"## Tools\n{tiered_list}")
         else:
             selected_names = set(briefing["tools"])
             selected_tools = [t for t in installed if t["name"] in selected_names]
-            selected_tool_text = build_planner_wrapper_list(selected_tools, user_role, user_tools)
+            selected_tool_text = build_planner_wrapper_list(selected_tools, user_role, user_wrappers)
             if selected_tool_text:
                 context_parts.append(f"## Tools\n{selected_tool_text}")
     elif full_wrapper_list:
@@ -1268,7 +1268,7 @@ async def build_planner_messages(
         )
 
     # always-inject available registry tools (not gated by briefer) so the
-    # planner knows what tools can be installed via `kiso tool install`.
+    # planner knows what tools can be installed via `kiso wrapper install`.
     if registry_text:
         context_parts.append(f"## Available Tools (not installed)\n{registry_text}")
 
@@ -1300,7 +1300,7 @@ async def build_planner_messages(
             "A prior plan proposed tool installation and the user approved. "
             "Do NOT set needs_install — the user has already approved. "
             "Plan exec tasks to install directly via the kiso CLI "
-            "(e.g., exec 'kiso tool install browser'), then replan as last task. "
+            "(e.g., exec 'kiso wrapper install browser'), then replan as last task. "
             "Do NOT add tool tasks for uninstalled tools — they become "
             "available after the replan. "
             "For tools already installed: use them directly."
@@ -1320,7 +1320,7 @@ async def run_planner(
     session: str,
     user_role: str,
     new_message: str,
-    user_tools: str | list[str] | None = None,
+    user_wrappers: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     on_context_ready: Callable | None = None,
     on_retry: Callable[[int, int, str], None] | None = None,
@@ -1345,7 +1345,7 @@ async def run_planner(
     Raises PlanError if all retries exhausted.
     """
     messages, installed_names, installed_info = await build_planner_messages(
-        db, config, session, user_role, new_message, user_tools=user_tools,
+        db, config, session, user_role, new_message, user_wrappers=user_wrappers,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
         install_approved=install_approved, investigate=investigate,
     )

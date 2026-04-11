@@ -435,7 +435,7 @@ def _func_kiso_dir(func_config, tmp_path_factory):
     SSH keys are generated inside the temp dir.
     """
     kiso_dir = tmp_path_factory.mktemp("kiso_home")
-    (kiso_dir / "tools").mkdir()
+    (kiso_dir / "wrappers").mkdir()
     (kiso_dir / "sys" / "ssh").mkdir(parents=True)
 
     # write config.toml for subprocess CLI commands
@@ -538,7 +538,7 @@ async def run_message(func_config, func_db, func_session):
             "id": msg_id,
             "content": content,
             "user_role": "admin",
-            "user_tools": "*",
+            "user_wrappers": "*",
             "username": "testadmin",
             "base_url": base_url,
         }
@@ -641,7 +641,7 @@ def preset_tools_installed():
         if name in installed:
             continue
         result = subprocess.run(
-            ["uv", "run", "kiso", "tool", "install", name],
+            ["uv", "run", "kiso", "wrapper", "install", name],
             capture_output=True, text=True, timeout=300,
         )
         if result.returncode != 0:

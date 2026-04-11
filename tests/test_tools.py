@@ -302,13 +302,13 @@ class TestValidateManifest:
 
 class TestEnvVarName:
     def test_basic(self):
-        assert _env_var_name("search", "api_key") == "KISO_TOOL_SEARCH_API_KEY"
+        assert _env_var_name("search", "api_key") == "KISO_WRAPPER_SEARCH_API_KEY"
 
     def test_with_dashes(self):
-        assert _env_var_name("my-tool", "auth-token") == "KISO_TOOL_MY_TOOL_AUTH_TOKEN"
+        assert _env_var_name("my-tool", "auth-token") == "KISO_WRAPPER_MY_TOOL_AUTH_TOKEN"
 
     def test_uppercase(self):
-        assert _env_var_name("Echo", "Key") == "KISO_TOOL_ECHO_KEY"
+        assert _env_var_name("Echo", "Key") == "KISO_WRAPPER_ECHO_KEY"
 
 
 # --- discover_wrappers ---
@@ -1151,9 +1151,9 @@ class TestBuildToolEnv:
 
     def test_env_var_present(self):
         tool = {"name": "search", "env": {"api_key": {"required": True}}}
-        with patch.dict(os.environ, {"KISO_TOOL_SEARCH_API_KEY": "sk-123"}):
+        with patch.dict(os.environ, {"KISO_WRAPPER_SEARCH_API_KEY": "sk-123"}):
             env = build_wrapper_env(tool)
-        assert env["KISO_TOOL_SEARCH_API_KEY"] == "sk-123"
+        assert env["KISO_WRAPPER_SEARCH_API_KEY"] == "sk-123"
 
     def test_env_var_missing_required(self):
         tool = {"name": "search", "env": {"api_key": {"required": True}}}
@@ -1162,14 +1162,14 @@ class TestBuildToolEnv:
             os.environ["PATH"] = "/usr/bin"
             env = build_wrapper_env(tool)
         # Should not include missing var, just PATH
-        assert "KISO_TOOL_SEARCH_API_KEY" not in env
+        assert "KISO_WRAPPER_SEARCH_API_KEY" not in env
 
     def test_env_var_missing_optional(self):
         tool = {"name": "search", "env": {"api_key": {"required": False}}}
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
             env = build_wrapper_env(tool)
-        assert "KISO_TOOL_SEARCH_API_KEY" not in env
+        assert "KISO_WRAPPER_SEARCH_API_KEY" not in env
 
     def test_venv_bin_in_path(self, tmp_path):
         """Tool's .venv/bin/ is prepended to PATH so pip-installed CLIs are found."""
@@ -1186,12 +1186,12 @@ class TestBuildToolEnv:
             },
         }
         with patch.dict(os.environ, {
-            "KISO_TOOL_SEARCH_API_KEY": "key1",
-            "KISO_TOOL_SEARCH_TOKEN": "tok1",
+            "KISO_WRAPPER_SEARCH_API_KEY": "key1",
+            "KISO_WRAPPER_SEARCH_TOKEN": "tok1",
         }):
             env = build_wrapper_env(tool)
-        assert env["KISO_TOOL_SEARCH_API_KEY"] == "key1"
-        assert env["KISO_TOOL_SEARCH_TOKEN"] == "tok1"
+        assert env["KISO_WRAPPER_SEARCH_API_KEY"] == "key1"
+        assert env["KISO_WRAPPER_SEARCH_TOKEN"] == "tok1"
 
 
     def test_no_fallback_when_neither_set(self):
@@ -1200,7 +1200,7 @@ class TestBuildToolEnv:
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
             env = build_wrapper_env(tool)
-        assert "KISO_TOOL_AIDER_API_KEY" not in env
+        assert "KISO_WRAPPER_AIDER_API_KEY" not in env
 
     def test_llm_api_key_propagated(self):
         """Base LLM key is included in tool env when set."""

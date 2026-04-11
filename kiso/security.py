@@ -190,10 +190,10 @@ def sanitize_value(
 
 
 def collect_deploy_secrets() -> dict[str, str]:
-    """Collect KISO_TOOL_*, KISO_CONNECTOR_* env vars + LLM API key."""
+    """Collect KISO_WRAPPER_*, KISO_CONNECTOR_* env vars + LLM API key."""
     secrets: dict[str, str] = {}
     for k, v in os.environ.items():
-        if k.startswith(("KISO_TOOL_", "KISO_CONNECTOR_")):
+        if k.startswith(("KISO_WRAPPER_", "KISO_CONNECTOR_")):
             secrets[k] = v
     val = os.environ.get(LLM_API_KEY_ENV)
     if val:
@@ -209,7 +209,7 @@ class PermissionResult:
     allowed: bool
     reason: str = ""
     role: str = ""
-    tools: str | list[str] | None = None
+    wrappers: str | list[str] | None = None
 
 
 def revalidate_permissions(
@@ -232,14 +232,14 @@ def revalidate_permissions(
 
     # search tasks are safe (no shell execution, no sandbox) — always allowed
     if task_type == "search":
-        return PermissionResult(allowed=True, role=user.role, tools=user.tools)
+        return PermissionResult(allowed=True, role=user.role, wrappers=user.wrappers)
 
     if task_type in ("skill", "tool") and wrapper_name and user.role == "user":
-        if user.tools != "*":
-            if wrapper_name not in (user.tools or []):
+        if user.wrappers != "*":
+            if wrapper_name not in (user.wrappers or []):
                 return PermissionResult(
                     allowed=False,
-                    reason=f"Tool '{wrapper_name}' not in user's allowed tools",
+                    reason=f"Tool '{wrapper_name}' not in user's allowed wrappers",
                 )
 
-    return PermissionResult(allowed=True, role=user.role, tools=user.tools)
+    return PermissionResult(allowed=True, role=user.role, wrappers=user.wrappers)

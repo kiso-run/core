@@ -148,7 +148,7 @@ role = "user"
         load_config(_write(tmp_path, text))
     err = _die_msg(capsys)
     assert "bob" in err
-    assert "tools" in err
+    assert "wrappers" in err
 
 
 def test_duplicate_alias(tmp_path: Path, capsys):
@@ -163,7 +163,7 @@ role = "admin"
 discord = "alice123"
 [users.bob]
 role = "user"
-tools = "*"
+wrappers = "*"
 [users.bob.aliases]
 discord = "alice123"
 """
@@ -288,11 +288,11 @@ cli = "tok"
 base_url = "http://x"
 [users.bob]
 role = "user"
-tools = 42
+wrappers = 42
 """
     with pytest.raises(SystemExit):
         load_config(_write(tmp_path, text))
-    assert "tools" in _die_msg(capsys)
+    assert "wrappers" in _die_msg(capsys)
 
 
 def test_aliases_not_a_table(tmp_path: Path, capsys):

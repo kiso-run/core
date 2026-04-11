@@ -42,8 +42,8 @@ def _show_preset_summary(manifest) -> None:
     header = f"Installing preset '{manifest.name}' v{manifest.version}"
     print(f"  {header}")
     print(f"  {'─' * len(header)}")
-    if manifest.tools:
-        print(f"  Tools:     {', '.join(manifest.tools)}")
+    if manifest.wrappers:
+        print(f"  Wrappers:  {', '.join(manifest.wrappers)}")
     if manifest.connectors:
         print(f"  Connectors: {', '.join(manifest.connectors)}")
     if manifest.behaviors:
@@ -136,8 +136,8 @@ def preset_show(args: argparse.Namespace) -> None:
     if tracking:
         print(f"Preset: {tracking['name']} v{tracking.get('version', '?')}")
         print(f"  Description: {tracking.get('description', '')}")
-        if tracking.get("tools"):
-            print(f"  Tools: {', '.join(tracking['tools'])}")
+        if tracking.get("wrappers"):
+            print(f"  Wrappers: {', '.join(tracking['wrappers'])}")
         if tracking.get("skills"):
             print(f"  Skills: {', '.join(tracking['skills'])}")
         if tracking.get("connectors"):
@@ -175,8 +175,8 @@ def preset_installed(args: argparse.Namespace) -> None:
         version = p.get("version", "?")
         print(f"  {p['name']}  v{version}  — {p.get('description', '')}")
         print(f"    {facts} facts, {behaviors} behaviors")
-        if p.get("tools"):
-            print(f"    tools: {', '.join(p['tools'])}")
+        if p.get("wrappers"):
+            print(f"    wrappers: {', '.join(p['wrappers'])}")
         if p.get("skills"):
             print(f"    skills: {', '.join(p['skills'])}")
 
@@ -194,8 +194,8 @@ def _render_manifest(manifest) -> None:
     """Pretty-print a PresetManifest."""
     print(f"Preset: {manifest.name} v{manifest.version}")
     print(f"  Description: {manifest.description}")
-    if manifest.tools:
-        print(f"  Tools: {', '.join(manifest.tools)}")
+    if manifest.wrappers:
+        print(f"  Wrappers: {', '.join(manifest.wrappers)}")
     if manifest.skills:
         print(f"  Skills: {', '.join(manifest.skills)}")
     if manifest.connectors:

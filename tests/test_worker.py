@@ -3039,7 +3039,7 @@ class TestExecutePlanSanitization:
             detail="echo sk-secret-deploy-key", expect="output",
         )
 
-        env_patch = {"KISO_TOOL_TOKEN": "sk-secret-deploy-key"}
+        env_patch = {"KISO_WRAPPER_TOKEN": "sk-secret-deploy-key"}
 
         with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
              _patch_translator(), \
@@ -3675,7 +3675,7 @@ class TestPostInstallRescan:
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "install browser")
         await create_task(db, plan_id, "sess1", type="exec",
-                          detail="kiso tool install browser", expect="tool installed")
+                          detail="kiso wrapper install browser", expect="tool installed")
 
         unhealthy_tool = {"name": "browser", "healthy": False, "missing_deps": ["playwright"]}
         healthy_tool = {"name": "browser", "healthy": True, "missing_deps": []}
@@ -4492,7 +4492,7 @@ class TestPermissionRevalidation:
 
     async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
         """Skill removed from user's allowed list → fails."""
-        config = make_config(users={"bob": User(role="user", tools=["search"])})
+        config = make_config(users={"bob": User(role="user", wrappers=["search"])})
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="tool", detail="deploy",
                           skill="deploy", args="{}", expect="ok")
@@ -4508,7 +4508,7 @@ class TestPermissionRevalidation:
 
         assert success is False
         tasks = await get_tasks_for_plan(db, plan_id)
-        assert "not in user's allowed tools" in tasks[0]["output"]
+        assert "not in user's allowed wrappers" in tasks[0]["output"]
 
     async def test_config_reload_failure_uses_cached(self, db, tmp_path):
         """ConfigError → falls back to cached config, execution continues."""
@@ -4681,7 +4681,7 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_exec_allowed_for_user_role(self, db, tmp_path):
         """User role can run exec tasks (permission check only blocks removed users/skills)."""
-        config = make_config(users={"bob": User(role="user", tools=["search"])})
+        config = make_config(users={"bob": User(role="user", wrappers=["search"])})
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -5482,7 +5482,7 @@ class TestSandboxWorkspaceInExecutePlan:
         """When revalidate_permissions returns role='user' and sandbox UID is set,
         _session_workspace is called with sandbox_uid."""
         config = make_config(
-            users={"bob": User(role="user", tools="*")},
+            users={"bob": User(role="user", wrappers="*")},
         )
         plan_id = await create_plan(db, "sess1", 1, "Test sandbox")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -7416,7 +7416,7 @@ class TestFastPathIntegration:
         await conn.close()
 
     def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": "u1"}
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_wrappers": None, "username": "u1"}
 
     async def test_chat_message_skips_planner(self, db, tmp_path):
         """When classifier returns 'chat', planner should not be called."""
@@ -8515,7 +8515,7 @@ class TestTaskHandlers:
         with patch(
             "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
-            return_value="kiso tool install ocr",
+            return_value="kiso wrapper install ocr",
         ), _patch_kiso_dir(tmp_path):
             result = await _handle_exec_task(ctx, task_row, 0, True, 0)
 
@@ -8532,7 +8532,7 @@ class TestTaskHandlers:
         with patch(
             "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
-            return_value="kiso tool install ocr",
+            return_value="kiso wrapper install ocr",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                  return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
@@ -8549,7 +8549,7 @@ class TestTaskHandlers:
         with patch(
             "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
-            return_value="kiso tool install ocr",
+            return_value="kiso wrapper install ocr",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                  return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
@@ -8559,14 +8559,14 @@ class TestTaskHandlers:
         assert result.completed_row is not None
 
     async def test_handle_exec_wrapper_list_not_blocked(self, db, plan_id, tmp_path):
-        """kiso tool list is not blocked (not an install command)."""
+        """kiso wrapper list is not blocked (not an install command)."""
         task_row = await _make_task_row(db, plan_id, "exec", "List installed tools")
         ctx = _make_ctx(db)
         assert ctx.install_approved is False
         with patch(
             "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
-            return_value="kiso tool list",
+            return_value="kiso wrapper list",
         ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
                  return_value=REVIEW_OK), \
              _patch_kiso_dir(tmp_path):
@@ -10320,7 +10320,7 @@ class TestProcessMessagePhaseCallback:
         await conn.close()
 
     def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": "u1"}
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_wrappers": None, "username": "u1"}
 
     @pytest.mark.asyncio
     async def test_phase_transitions_for_chat(self, db, tmp_path):
@@ -10358,7 +10358,7 @@ class TestProcessMessagePhaseCallback:
         config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         # Use username=None to bypass runtime permission re-validation
         # (test config has no users defined)
-        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_tools": None, "username": None}
+        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_wrappers": None, "username": None}
         phases = []
 
         fail_plan = {

@@ -289,7 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("msg", help="send a message and print the response").add_argument("message", help="message text")
 
-    _add_wrapper_subcommands(sub.add_parser("tool", help="manage tools"))
+    _add_wrapper_subcommands(sub.add_parser("wrapper", help="manage wrappers"))
 
     # Role
     role_sub = sub.add_parser(
@@ -446,7 +446,7 @@ def main() -> None:
         _chat(args)
     elif args.command == "msg":
         _msg_cmd(args)
-    elif args.command == "tool":
+    elif args.command == "wrapper":
         from cli.wrapper import run_wrapper_command
 
         run_wrapper_command(args)

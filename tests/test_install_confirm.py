@@ -68,7 +68,7 @@ class TestValidatePlanInstallConfirmation:
     def test_install_in_first_plan_rejected(self):
         """install + needs_install → blocked (mixed propose+install)."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
@@ -78,7 +78,7 @@ class TestValidatePlanInstallConfirmation:
         """msg + exec install + needs_install → rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Install browser?", "expect": None},
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
@@ -86,7 +86,7 @@ class TestValidatePlanInstallConfirmation:
 
     def test_replan_allows_install(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True)
@@ -136,7 +136,7 @@ class TestValidatePlanInstallApproved:
 
     def test_install_approved_allows_first_plan_install(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=False, install_approved=True)
@@ -145,7 +145,7 @@ class TestValidatePlanInstallApproved:
     def test_install_not_approved_with_needs_install_blocks(self):
         """not approved + needs_install → blocked."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan, is_replan=False, install_approved=False)
@@ -153,7 +153,7 @@ class TestValidatePlanInstallApproved:
 
     def test_replan_still_works_without_approval(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "ok"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True, install_approved=False)

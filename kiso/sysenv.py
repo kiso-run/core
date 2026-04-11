@@ -238,7 +238,7 @@ def _load_registry_hints() -> str:
     if not data:
         return ""
     parts: list[str] = []
-    for s in data.get("tools", []):
+    for s in data.get("wrappers", []):
         name = s.get("name", "")
         desc = s.get("description", "")
         if name and desc:

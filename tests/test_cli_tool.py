@@ -104,7 +104,7 @@ def test_require_admin_non_admin_exits(capsys):
     from cli.plugin_ops import require_admin as _require_admin
 
     cfg = MagicMock()
-    cfg.users = {"bob": User(role="user", tools="*")}
+    cfg.users = {"bob": User(role="user", wrappers="*")}
     with (
         patch("cli.plugin_ops.load_config", return_value=cfg),
         patch("cli.plugin_ops.getpass.getuser", return_value="bob"),
@@ -139,7 +139,7 @@ def test_skill_list_empty(capsys):
     with patch("cli.wrapper.discover_wrappers", return_value=[]):
         _wrapper_list(argparse.Namespace())
     out = capsys.readouterr().out
-    assert "No tools installed." in out
+    assert "No wrappers installed." in out
 
 
 def test_skill_list_shows_skills(capsys):
@@ -181,7 +181,7 @@ def test_skill_list_column_alignment(capsys):
 
 
 FAKE_REGISTRY = {
-    "tools": [
+    "wrappers": [
         {"name": "search", "description": "Web search with Brave and Serper"},
         {"name": "aider", "description": "Code editing and refactoring"},
     ],
@@ -242,7 +242,7 @@ def test_skill_search_no_results(capsys):
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
         _wrapper_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
-    assert "No tools found." in out
+    assert "No wrappers found." in out
 
 
 def test_skill_search_cross_type_hint_shown(capsys):
@@ -252,7 +252,7 @@ def test_skill_search_cross_type_hint_shown(capsys):
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
         _wrapper_search(argparse.Namespace(query="discord"))
     out = capsys.readouterr().out
-    assert "No tools found." in out
+    assert "No wrappers found." in out
     assert "kiso connector search" in out
     assert "discord" in out
 
@@ -264,7 +264,7 @@ def test_skill_search_cross_type_hint_not_shown_when_no_match(capsys):
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
         _wrapper_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
-    assert "No tools found." in out
+    assert "No wrappers found." in out
     assert "kiso connector search" not in out
 
 
@@ -272,11 +272,11 @@ def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
     """M102b: no cross-type hint when query is empty (all results shown)."""
     from cli.wrapper import _wrapper_search
 
-    empty_registry = {"tools": [], "connectors": [{"name": "discord", "description": "Discord bridge"}]}
+    empty_registry = {"wrappers": [], "connectors": [{"name": "discord", "description": "Discord bridge"}]}
     with patch("cli.wrapper._fetch_registry", return_value=empty_registry):
         _wrapper_search(argparse.Namespace(query=""))
     out = capsys.readouterr().out
-    assert "No tools found." in out
+    assert "No wrappers found." in out
     assert "kiso connector search" not in out
 
 
@@ -285,7 +285,7 @@ def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
 
 def _fake_clone_with_manifest(name="search", summary="Web search", usage_guide="Use default guidance."):
     """Tool-specific clone factory (delegates to shared helper)."""
-    return fake_clone_plugin("tool", name, summary=summary, usage_guide=usage_guide)
+    return fake_clone_plugin("wrapper", name, summary=summary, usage_guide=usage_guide)
 
 
 def test_skill_install_official(tmp_path, mock_admin, capsys):
@@ -855,7 +855,7 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
 
     out = capsys.readouterr().out
     assert "still missing binaries after install: ffmpeg, node" in out
-    assert "kiso tool remove" in out
+    assert "kiso wrapper remove" in out
     assert "installed successfully" in out
 
 
@@ -995,7 +995,7 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
         ))
 
     out = capsys.readouterr().out
-    assert "KISO_TOOL_SEARCH_API_KEY not set" in out
+    assert "KISO_WRAPPER_SEARCH_API_KEY not set" in out
     assert "installed successfully" in out
 
 
@@ -1009,7 +1009,7 @@ def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
     with patch("cli.wrapper.WRAPPERS_DIR", tmp_path / "nonexistent"):
         _wrapper_update(argparse.Namespace(target="all"))
 
-    assert "No tools installed" in capsys.readouterr().out
+    assert "No wrappers installed" in capsys.readouterr().out
 
 
 def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
@@ -1022,7 +1022,7 @@ def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
     with patch("cli.wrapper.WRAPPERS_DIR", tools_dir):
         _wrapper_update(argparse.Namespace(target="all"))
 
-    assert "No tools installed" in capsys.readouterr().out
+    assert "No wrappers installed" in capsys.readouterr().out
 
 
 def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
@@ -1253,22 +1253,22 @@ def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
 class TestUpdatePlugin:
     def test_all_target_no_dir(self, tmp_path, capsys):
         from cli.plugin_ops import _update_plugin
-        _update_plugin("all", tmp_path / "missing", "tool", lambda x: [], [])
-        assert "No tools installed" in capsys.readouterr().out
+        _update_plugin("all", tmp_path / "missing", "wrapper", lambda x: [], [])
+        assert "No wrappers installed" in capsys.readouterr().out
 
     def test_all_target_empty_dir(self, tmp_path, capsys):
         from cli.plugin_ops import _update_plugin
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
-        _update_plugin("all", plugin_dir, "tool", lambda x: [], [])
-        assert "No tools installed" in capsys.readouterr().out
+        _update_plugin("all", plugin_dir, "wrapper", lambda x: [], [])
+        assert "No wrappers installed" in capsys.readouterr().out
 
     def test_single_target_not_found(self, tmp_path):
         from cli.plugin_ops import _update_plugin
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
         with pytest.raises(SystemExit):
-            _update_plugin("nonexistent", plugin_dir, "tool", lambda x: [], [])
+            _update_plugin("nonexistent", plugin_dir, "wrapper", lambda x: [], [])
 
 
 # ---------------------------------------------------------------------------

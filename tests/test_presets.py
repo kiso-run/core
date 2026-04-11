@@ -21,7 +21,7 @@ version = "0.1.0"
 description = "A test persona preset"
 
 [kiso.preset]
-tools = ["websearch", "browser"]
+wrappers = ["websearch", "browser"]
 skills = ["ad-copy"]
 connectors = []
 
@@ -79,8 +79,8 @@ class TestValidatePresetManifest:
         assert any("Missing [kiso.preset]" in e for e in errors)
 
     @pytest.mark.parametrize("preset_extra,expected_substr", [
-        ({"tools": "bad"}, "tools must be a list"),
-        ({"tools": [1, 2]}, "strings"),
+        ({"wrappers": "bad"}, "wrappers must be a list"),
+        ({"wrappers": [1, 2]}, "strings"),
     ])
     def test_tools_wrong_type(self, preset_extra, expected_substr):
         manifest = {"kiso": {"type": "preset", "name": "x", "version": "1",
@@ -115,7 +115,7 @@ class TestLoadPreset:
         assert isinstance(m, PresetManifest)
         assert m.name == "test-preset"
         assert m.version == "0.1.0"
-        assert m.tools == ["websearch", "browser"]
+        assert m.wrappers == ["websearch", "browser"]
         assert m.skills == ["ad-copy"]
         assert len(m.knowledge_facts) == 1
         assert len(m.behaviors) == 1
@@ -144,7 +144,7 @@ class TestLoadPreset:
         path = tmp_path / "preset.toml"
         path.write_text(toml, encoding="utf-8")
         m = load_preset(path)
-        assert m.tools == []
+        assert m.wrappers == []
         assert m.skills == []
         assert m.knowledge_facts == []
         assert m.behaviors == []
@@ -188,7 +188,7 @@ class TestInstallPreset:
 
         manifest = PresetManifest(
             name="test-p", version="0.1.0", description="Test",
-            tools=["websearch"],
+            wrappers=["websearch"],
             knowledge_facts=[{"content": "ROI matters most", "category": "project", "tags": ["kpi"]}],
             behaviors=["Always use data"],
         )
@@ -218,7 +218,7 @@ class TestInstallPreset:
     def test_install_dry_run(self, capsys):
         manifest = PresetManifest(
             name="dry-test", version="1.0.0", description="Dry",
-            tools=["browser"], behaviors=["Be concise always"],
+            wrappers=["browser"], behaviors=["Be concise always"],
         )
         args = make_cli_args()
         from cli.preset_ops import install_preset
@@ -257,7 +257,7 @@ class TestRemovePreset:
         tracking_data = {
             "name": "rm-test", "version": "1.0.0", "description": "test",
             "fact_ids": [10, 11], "behavior_ids": [20],
-            "tools": [], "skills": [], "connectors": [],
+            "wrappers": [], "skills": [], "connectors": [],
         }
         tracking_file.write_text(json.dumps(tracking_data), encoding="utf-8")
 
@@ -393,7 +393,7 @@ class TestPresetInstallCLI:
         from kiso.presets import PresetManifest
         mock_manifest = PresetManifest(
             name="test-preset", version="1.0.0", description="Test",
-            tools=[], behaviors=["Always be helpful."],
+            wrappers=[], behaviors=["Always be helpful."],
         )
         with patch("cli.plugin_ops.require_admin"), \
              patch("cli.preset.fetch_registry", return_value=reg), \
@@ -408,7 +408,7 @@ class TestPresetInstallCLI:
         from cli.preset import preset_install
         mock_manifest = PresetManifest(
             name="custom", version="1.0.0", description="Custom",
-            tools=[], behaviors=["Be concise."],
+            wrappers=[], behaviors=["Be concise."],
         )
         args = make_cli_args(target="https://github.com/example/preset-custom.git", dry_run=False)
         with patch("cli.plugin_ops.require_admin"), \
@@ -452,7 +452,7 @@ class TestPresetShowCLI:
         from cli.preset import preset_show
         tracking = {
             "name": "my-preset", "version": "1.0.0", "description": "My preset",
-            "tools": ["browser"], "skills": [], "connectors": [],
+            "wrappers": ["browser"], "skills": [], "connectors": [],
             "fact_ids": [1, 2], "behavior_ids": [3],
         }
         args = make_cli_args(name="my-preset")
@@ -497,7 +497,7 @@ class TestPresetInstalledCLI:
         from cli.preset import preset_installed
         presets = [
             {"name": "a", "version": "1.0.0", "description": "Alpha",
-             "fact_ids": [1, 2], "behavior_ids": [3], "tools": ["browser"], "skills": []},
+             "fact_ids": [1, 2], "behavior_ids": [3], "wrappers": ["browser"], "skills": []},
         ]
         args = make_cli_args()
         with patch("cli.preset_ops.list_installed_presets", return_value=presets):
@@ -562,12 +562,12 @@ class TestM758AutoInstallTools:
     """install_preset auto-installs tools from manifest."""
 
     def test_auto_install_calls_wrapper_install(self, tmp_path):
-        """install_preset calls _auto_install_tools for manifest.tools."""
+        """install_preset calls _auto_install_tools for manifest.wrappers."""
         from cli.preset_ops import install_preset
 
         manifest = PresetManifest(
             name="test-auto", version="1.0.0", description="test",
-            tools=["websearch", "browser"], behaviors=["Always search before answering — never guess."],
+            wrappers=["websearch", "browser"], behaviors=["Always search before answering — never guess."],
         )
         args = MagicMock()
         installed = []
@@ -591,7 +591,7 @@ class TestM758AutoInstallTools:
 
         manifest = PresetManifest(
             name="test-track", version="1.0.0", description="test",
-            tools=["websearch", "browser"],
+            wrappers=["websearch", "browser"],
             behaviors=["Always search before answering — never guess."],
         )
         args = MagicMock()
@@ -627,7 +627,7 @@ version = "1.0.0"
 description = "Test preset"
 
 [kiso.preset]
-tools = ["websearch"]
+wrappers = ["websearch"]
 skills = []
 connectors = []
 
@@ -637,14 +637,14 @@ behaviors = ["Always search the web before answering a question."]
 """)
         manifest = load_preset(preset)
         assert manifest.name == "test"
-        assert manifest.tools == ["websearch"]
+        assert manifest.wrappers == ["websearch"]
         assert len(manifest.behaviors) == 1
 
     def test_preset_behaviors_not_placeholder(self, tmp_path):
         """Behaviors must be non-empty strings >= 20 chars."""
         manifest = PresetManifest(
             name="test", version="1.0.0", description="test",
-            tools=[], behaviors=["Always search before answering — never guess."],
+            wrappers=[], behaviors=["Always search before answering — never guess."],
         )
         for b in manifest.behaviors:
             assert isinstance(b, str) and len(b) >= 20, (
@@ -677,7 +677,7 @@ class TestM819CleanProgressOutput:
 
         manifest = PresetManifest(
             name="demo", version="2.0.0", description="Demo",
-            tools=["browser", "aider"], behaviors=["Be helpful.", "Be concise."],
+            wrappers=["browser", "aider"], behaviors=["Be helpful.", "Be concise."],
         )
         _show_preset_summary(manifest)
         out = capsys.readouterr().out
@@ -720,7 +720,7 @@ class TestM819CleanProgressOutput:
 
         manifest = PresetManifest(
             name="summary-test", version="1.0.0", description="Test",
-            tools=["browser", "ocr"],
+            wrappers=["browser", "ocr"],
             behaviors=["Always search before answering — never guess."],
         )
         args = MagicMock()
@@ -937,7 +937,7 @@ class TestPresetRecipeRemove:
         tracking_data = {
             "name": "rm-recipe", "version": "1.0.0", "description": "test",
             "fact_ids": [], "behavior_ids": [],
-            "tools": [], "skills": [], "connectors": [],
+            "wrappers": [], "skills": [], "connectors": [],
             "recipe_files": ["exploration.md", "error-diagnosis.md"],
         }
 
@@ -969,7 +969,7 @@ class TestPresetRecipeRemove:
         tracking_data = {
             "name": "rm-gone", "version": "1.0.0", "description": "test",
             "fact_ids": [], "behavior_ids": [],
-            "tools": [], "skills": [], "connectors": [],
+            "wrappers": [], "skills": [], "connectors": [],
             "recipe_files": ["gone.md"],
         }
         tracking_file = tmp_path / "presets" / "rm-gone.installed.json"

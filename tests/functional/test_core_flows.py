@@ -269,7 +269,7 @@ class TestF23CrossSessionKnowledge:
             "id": msg_id,
             "content": "che database usa il progetto Artemis?",
             "user_role": "admin",
-            "user_tools": "*",
+            "user_wrappers": "*",
             "username": "testadmin",
             "base_url": "http://test",
         }

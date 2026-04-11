@@ -518,13 +518,13 @@ async def _startup_recovery(db, config) -> None:
             # Re-resolve user role/tools from current config
             resolved = resolve_user(config, msg["user"] or "", "")
             user_role = resolved.user.role if resolved.user else "user"
-            user_tools = resolved.user.tools if resolved.user else None
+            user_wrappers = resolved.user.wrappers if resolved.user else None
             try:
                 queue.put_nowait({
                     "id": msg["id"],
                     "content": msg["content"],
                     "user_role": user_role,
-                    "user_tools": user_tools,
+                    "user_wrappers": user_wrappers,
                     "username": msg["user"],
                     "base_url": "",
                 })
@@ -576,7 +576,7 @@ async def _cron_scheduler(db, config, app):
                     "id": msg_id,
                     "content": prompt,
                     "user_role": "admin",
-                    "user_tools": "*",
+                    "user_wrappers": "*",
                     "username": "cron",
                     "base_url": "",
                 }

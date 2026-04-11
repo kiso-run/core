@@ -65,31 +65,31 @@ def _wrapper_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
 
 
 def run_wrapper_command(args) -> None:
-    """Dispatch to the appropriate tool subcommand."""
+    """Dispatch to the appropriate wrapper subcommand."""
     from cli.plugin_ops import dispatch_subcommand
     dispatch_subcommand(args, "tool_command", {
         "list": _wrapper_list, "search": _wrapper_search, "install": _wrapper_install,
         "update": _wrapper_update, "remove": _wrapper_remove, "test": _wrapper_test,
-    }, "usage: kiso tool {list,search,install,update,remove,test}")
+    }, "usage: kiso wrapper {list,search,install,update,remove,test}")
 
 
 def _wrapper_list(args) -> None:
-    """List installed tools."""
-    _list_plugins(discover_wrappers, "tools")
+    """List installed wrappers."""
+    _list_plugins(discover_wrappers, "wrappers")
 
 
 def _wrapper_search(args) -> None:
     """Search official tools from the registry."""
     registry = _fetch_registry()
-    results = _search_entries(registry.get("tools", []), args.query)
-    _render_search_results(results, args.query, "tool", registry)
+    results = _search_entries(registry.get("wrappers", []), args.query)
+    _render_search_results(results, args.query, "wrapper", registry)
 
 
 def _wrapper_install(args) -> None:
-    """Install a tool from official repo or git URL."""
+    """Install a wrapper from official repo or git URL."""
     _require_admin()
     _plugin_install(
-        plugin_type="tool",
+        plugin_type="wrapper",
         official_prefix=OFFICIAL_PREFIX,
         parent_dir=WRAPPERS_DIR,
         validate_fn=_validate_manifest,
@@ -104,7 +104,7 @@ def _wrapper_update(args) -> None:
     _require_admin()
     from kiso.sysenv import invalidate_cache
     _update_plugin(
-        args.target, WRAPPERS_DIR, "tool", check_deps,
+        args.target, WRAPPERS_DIR, "wrapper", check_deps,
         [invalidate_cache], uv_before_deps=True,
     )
 
@@ -114,7 +114,7 @@ def _wrapper_remove(args) -> None:
     _require_admin()
     from kiso.sysenv import invalidate_cache
     from kiso.wrappers import invalidate_wrappers_cache
-    _remove_plugin(args.name, WRAPPERS_DIR / args.name, "tool", [invalidate_cache, invalidate_wrappers_cache])
+    _remove_plugin(args.name, WRAPPERS_DIR / args.name, "wrapper", [invalidate_cache, invalidate_wrappers_cache])
 
 
 def _wrapper_test(args) -> None:
@@ -122,7 +122,7 @@ def _wrapper_test(args) -> None:
     from cli.plugin_ops import _check_plugin_installed
     name = args.name
     tool_dir = WRAPPERS_DIR / name
-    _check_plugin_installed(tool_dir, "tool", name)
+    _check_plugin_installed(tool_dir, "wrapper", name)
     test_dir = tool_dir / "tests"
     if not test_dir.exists():
         die(f"tool '{name}' has no tests/ directory")

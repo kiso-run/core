@@ -96,7 +96,7 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     ("fast_path_enabled", True),
     # briefer (context intelligence layer)
     ("briefer_enabled", True),
-    ("briefer_tool_filter_threshold", 10),
+    ("briefer_wrapper_filter_threshold", 10),
     # webhooks
     ("webhook_allow_list", []),
     ("webhook_require_https", True),
@@ -230,7 +230,7 @@ fast_path_enabled         = true     # skip planner for conversational messages
 
 # --- briefer (context intelligence layer) ---
 briefer_enabled           = true     # LLM-based context selection for each pipeline stage
-briefer_tool_filter_threshold = 10   # only invoke the briefer's tool-filtering pass when this many tools are available
+briefer_wrapper_filter_threshold = 10   # only invoke the briefer's tool-filtering pass when this many tools are available
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check
@@ -248,7 +248,7 @@ class Provider:
 @dataclass(frozen=True)
 class User:
     role: str  # "admin" | "user"
-    tools: str | list[str] | None = None  # None for admin, "*" or list for user
+    wrappers: str | list[str] | None = None  # None for admin, "*" or list for user
     aliases: dict[str, str] = field(default_factory=dict)
 
 
@@ -377,12 +377,12 @@ def _build_config(path: Path, on_error) -> Config:
         if role not in ("admin", "user"):
             on_error(f"user '{uname}': role must be 'admin' or 'user', got '{role}'")
 
-        tools = udata.get("tools")
+        wrappers = udata.get("wrappers")
         if role == "user":
-            if tools is None:
-                on_error(f"user '{uname}' has role=user but no 'tools' field")
-            if tools != "*" and not isinstance(tools, list):
-                on_error(f"user '{uname}': tools must be '*' or a list of tool names")
+            if wrappers is None:
+                on_error(f"user '{uname}' has role=user but no 'wrappers' field")
+            if wrappers != "*" and not isinstance(wrappers, list):
+                on_error(f"user '{uname}': wrappers must be '*' or a list of wrapper names")
 
         # aliases
         aliases_raw = udata.get("aliases", {})
@@ -399,7 +399,7 @@ def _build_config(path: Path, on_error) -> Config:
             all_aliases[key] = uname
             aliases[connector] = platform_id
 
-        users[uname] = User(role=role, tools=tools, aliases=aliases)
+        users[uname] = User(role=role, wrappers=wrappers, aliases=aliases)
 
     # --- models: all roles required ---
     models_raw = raw.get("models", {})

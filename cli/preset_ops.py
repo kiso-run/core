@@ -98,8 +98,8 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     if dry_run:
         print(f"Dry run — preset '{manifest.name}' v{manifest.version}")
         print(f"  Description: {manifest.description}")
-        if manifest.tools:
-            print(f"  Tools to install: {', '.join(manifest.tools)}")
+        if manifest.wrappers:
+            print(f"  Wrappers to install: {', '.join(manifest.wrappers)}")
         if manifest.skills:
             print(f"  Skills to install: {', '.join(manifest.skills)}")
         if manifest.connectors:
@@ -151,9 +151,9 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     installed_wrappers: list[str] = []
     installed_connectors: list[str] = []
 
-    if manifest.tools:
+    if manifest.wrappers:
         from cli.wrapper import _wrapper_install
-        installed_wrappers = _auto_install_plugins(manifest.tools, _wrapper_install)
+        installed_wrappers = _auto_install_plugins(manifest.wrappers, _wrapper_install)
 
     if manifest.connectors:
         from cli.connector import _connector_install
@@ -182,7 +182,7 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         "description": manifest.description,
         "fact_ids": fact_ids,
         "behavior_ids": behavior_ids,
-        "tools": manifest.tools,
+        "wrappers": manifest.wrappers,
         "skills": manifest.skills,
         "connectors": manifest.connectors,
         "installed_wrappers": installed_wrappers,
@@ -195,7 +195,7 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     parts: list[str] = []
     if installed_wrappers:
         parts.append(f"{len(installed_wrappers)} tools")
-    skipped_tools = set(manifest.tools) - set(installed_wrappers)
+    skipped_tools = set(manifest.wrappers) - set(installed_wrappers)
     if skipped_tools:
         parts.append(f"{len(skipped_tools)} tools skipped")
     if installed_connectors:

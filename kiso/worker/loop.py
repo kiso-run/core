@@ -2421,7 +2421,7 @@ async def _run_planning_loop(
     plan_id: int,
     plan: dict,
     user_role: str,
-    user_tools: "str | list[str] | None",
+    user_wrappers: "str | list[str] | None",
     messenger_timeout: int,
     session_secrets: dict,
     cancel_event: "asyncio.Event | None",
@@ -2671,7 +2671,7 @@ async def _run_planning_loop(
         try:
             new_plan = await run_planner(
                 db, config, session, user_role, enriched_message,
-                user_tools=user_tools,
+                user_wrappers=user_wrappers,
                 on_retry=_on_replan_retry,
                 is_replan=True,
                 max_tasks_override=_effective_max,
@@ -2790,7 +2790,7 @@ async def _process_message(
     msg_id: int = msg["id"]
     content: str = msg["content"]
     user_role: str = msg["user_role"]
-    user_tools: str | list[str] | None = msg.get("user_tools")
+    user_wrappers: str | list[str] | None = msg.get("user_wrappers")
     username: str | None = msg.get("username")
     base_url: str = msg.get("base_url", "")
 
@@ -2918,7 +2918,7 @@ async def _process_message(
     try:
         plan = await run_planner(
             db, config, session, user_role, content,
-            user_tools=user_tools,
+            user_wrappers=user_wrappers,
             paraphrased_context=paraphrased_context,
             on_context_ready=_flush_pre_planner_usage,
             on_retry=_on_planner_retry,
@@ -2989,7 +2989,7 @@ async def _process_message(
     _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
     current_plan_id = await _run_planning_loop(
         db, config, session, msg_id, content,
-        plan_id, plan, user_role, user_tools, messenger_timeout,
+        plan_id, plan, user_role, user_wrappers, messenger_timeout,
         session_secrets, cancel_event, max_replan_depth,
         username, slog, set_phase=set_phase, base_url=base_url,
         update_hints=update_hints, response_lang=user_lang,

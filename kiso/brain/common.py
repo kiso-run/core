@@ -165,7 +165,7 @@ _PYTHON_INSTALL_HINT_RE = re.compile(
     r"\b(?:uv\s+pip|pip|pypi|python\s+package|python\s+library|python\s+module|pacchetto python|libreria python|modulo python)\b",
     re.IGNORECASE,
 )
-_KISO_TOOL_SIGNAL_RE = re.compile(
+_KISO_WRAPPER_SIGNAL_RE = re.compile(
     r"\b(?:kiso\s+tool|kiso\s+plugin|plugin|connector|skill|registry)\b",
     re.IGNORECASE,
 )
@@ -263,7 +263,7 @@ def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
     """Return True when the user explicitly frames *target* as a named tool/plugin."""
     if not target:
         return False
-    if _KISO_TOOL_SIGNAL_RE.search(message):
+    if _KISO_WRAPPER_SIGNAL_RE.search(message):
         return True
     escaped = re.escape(target)
     return bool(re.search(rf"\btool\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))
@@ -293,14 +293,14 @@ def _classify_install_mode(
             "target": target,
             "target_installed": target in installed_names,
             "explicit_install_request": True,
-            "reason": "target matches kiso tool context",
+            "reason": "target matches kiso wrapper context",
         }
 
     if _is_explicit_named_wrapper_request(message, target):
         return {
             "mode": _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
             "target": target,
-            "reason": "user explicitly requested a named tool/plugin not present in current kiso tool context",
+            "reason": "user explicitly requested a named tool/plugin not present in current kiso wrapper context",
         }
 
     if _SYSTEM_INSTALL_HINT_RE.search(msg_lower):
@@ -350,11 +350,11 @@ def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
     pkg_manager = (sys_env.get("os") or {}).get("pkg_manager") or "package manager"
     lines = [f"Target: {target}", f"Mode: {mode}"]
     if mode == _INSTALL_MODE_KISO_WRAPPER:
-        lines.append("Route: kiso tool proposal — set needs_install + approval msg only.")
+        lines.append("Route: kiso wrapper proposal — set needs_install + approval msg only.")
         lines.append("Do not use apt-get or uv pip install for this target.")
     elif mode == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER:
         lines.append("Route: unknown named tool/plugin request — msg only.")
-        lines.append("Do not set needs_install and do not use apt-get, uv pip install, or kiso tool install.")
+        lines.append("Do not set needs_install and do not use apt-get, uv pip install, or kiso wrapper install.")
         lines.append("Explain that the named tool is not available in the current registry/tool context and ask for a git URL or installation instructions if it is private.")
     elif mode == _INSTALL_MODE_PYTHON_LIB:
         lines.append(f"Route: Python library — exec `uv pip install {target}`.")
@@ -494,11 +494,11 @@ def _repair_json(text: str) -> str:
 
 
 _INSTALL_CMD_RE = re.compile(
-    r"kiso\s+(tool|skill|connector)\s+install", re.IGNORECASE,
+    r"kiso\s+(wrapper|connector)\s+install", re.IGNORECASE,
 )
-# Extract plugin name from "kiso tool install <name>" for registry validation.
+# Extract plugin name from "kiso wrapper install <name>" for registry validation.
 _INSTALL_NAME_RE = re.compile(
-    r"kiso\s+(?:tool|skill|connector)\s+install\s+(\S+)", re.IGNORECASE,
+    r"kiso\s+(?:wrapper|connector)\s+install\s+(\S+)", re.IGNORECASE,
 )
 # Detect external git URLs — these bypass registry name validation.
 _GIT_URL_RE = re.compile(r"https?://|git@|\.git\b", re.IGNORECASE)

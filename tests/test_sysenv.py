@@ -979,7 +979,7 @@ class TestM888LoadRegistryHints:
     def test_returns_tool_descriptions(self):
         """Fetches online registry and returns tool name + description pairs."""
         registry_data = {
-            "tools": [
+            "wrappers": [
                 {"name": "browser", "description": "Headless browser"},
                 {"name": "ocr", "description": "Image OCR"},
             ],

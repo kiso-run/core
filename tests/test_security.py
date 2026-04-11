@@ -285,7 +285,7 @@ class TestSanitizeValue:
 class TestCollectDeploySecrets:
     def test_env_vars(self):
         env = {
-            "KISO_TOOL_API_KEY": "sk-123",
+            "KISO_WRAPPER_API_KEY": "sk-123",
             "KISO_CONNECTOR_TOKEN": "ct-456",
             "PATH": "/usr/bin",
             "HOME": "/home/user",
@@ -293,7 +293,7 @@ class TestCollectDeploySecrets:
         with patch.dict(os.environ, env, clear=True):
             secrets = collect_deploy_secrets()
         assert secrets == {
-            "KISO_TOOL_API_KEY": "sk-123",
+            "KISO_WRAPPER_API_KEY": "sk-123",
             "KISO_CONNECTOR_TOKEN": "ct-456",
         }
 
@@ -318,18 +318,18 @@ class TestCollectDeploySecrets:
         )
 
     def test_empty_env_returns_empty_dict(self):
-        """No KISO_TOOL_*/KISO_CONNECTOR_* env vars → empty dict."""
+        """No KISO_WRAPPER_*/KISO_CONNECTOR_* env vars → empty dict."""
         with patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=True):
             secrets = collect_deploy_secrets()
         assert secrets == {}
 
     def test_non_kiso_prefixed_vars_excluded(self):
         """Non-kiso-prefixed vars must not appear in secrets."""
-        env = {"MY_SECRET": "oops", "KISO_TOOL_X": "ok", "PATH": "/bin"}
+        env = {"MY_SECRET": "oops", "KISO_WRAPPER_X": "ok", "PATH": "/bin"}
         with patch.dict(os.environ, env, clear=True):
             secrets = collect_deploy_secrets()
         assert "MY_SECRET" not in secrets
-        assert "KISO_TOOL_X" in secrets
+        assert "KISO_WRAPPER_X" in secrets
 
 
 # --- Random boundary fencing ---
@@ -387,8 +387,8 @@ class TestFenceContent:
 def _perm_config(**user_overrides) -> Config:
     users = {
         "alice": User(role="admin"),
-        "bob": User(role="user", tools=["search", "deploy"]),
-        "charlie": User(role="user", tools="*"),
+        "bob": User(role="user", wrappers=["search", "deploy"]),
+        "charlie": User(role="user", wrappers="*"),
     }
     users.update(user_overrides)
     return Config(
@@ -419,7 +419,7 @@ class TestRevalidatePermissions:
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "bob", "skill", wrapper_name="forbidden")
         assert result.allowed is False
-        assert "not in user's allowed tools" in result.reason
+        assert "not in user's allowed wrappers" in result.reason
 
     def test_revalidate_admin_all_skills(self):
         cfg = _perm_config()
@@ -451,10 +451,10 @@ class TestRevalidatePermissions:
         assert result.allowed is True
 
     def test_revalidate_returns_tools_field(self):
-        """PermissionResult.tools populated from user config."""
+        """PermissionResult.wrappers populated from user config."""
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "bob", "exec")
-        assert result.tools == ["search", "deploy"]
+        assert result.wrappers == ["search", "deploy"]
 
     def test_revalidate_msg_allowed_for_user_role(self):
         """msg tasks allowed for user role."""
@@ -473,7 +473,7 @@ class TestRevalidatePermissions:
         result = revalidate_permissions(cfg, "bob", "search")
         assert result.allowed is True
         assert result.role == "user"
-        assert result.tools == ["search", "deploy"]
+        assert result.wrappers == ["search", "deploy"]
 
 
 # --- Double masking proof ---

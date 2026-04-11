@@ -97,8 +97,8 @@ def _validate_manifest(manifest: dict, tool_dir: Path) -> list[str]:
 
 
 def _env_var_name(wrapper_name: str, key: str) -> str:
-    """Build env var name: KISO_TOOL_{NAME}_{KEY}."""
-    return plugin_env_var_name("TOOL", wrapper_name, key)
+    """Build env var name: KISO_WRAPPER_{NAME}_{KEY}."""
+    return plugin_env_var_name("WRAPPER", wrapper_name, key)
 
 
 def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
@@ -225,7 +225,7 @@ def check_deps(tool: dict) -> list[str]:
 def build_planner_wrapper_list(
     tools: list[dict],
     user_role: str = "admin",
-    user_tools: str | list[str] | None = None,
+    user_wrappers: str | list[str] | None = None,
     selected_names: set[str] | None = None,
 ) -> str:
     """Build the tool list text for the planner context.
@@ -243,8 +243,8 @@ def build_planner_wrapper_list(
         return ""
 
     # Filter by user access
-    if user_role != "admin" and user_tools != "*":
-        allowed = set(user_tools) if isinstance(user_tools, list) else set()
+    if user_role != "admin" and user_wrappers != "*":
+        allowed = set(user_wrappers) if isinstance(user_wrappers, list) else set()
         tools = [t for t in tools if t["name"] in allowed]
 
     if not tools:
@@ -532,7 +532,7 @@ def build_wrapper_env(tool: dict) -> dict[str, str]:
     """Build the environment dict for a tool subprocess.
 
     Includes PATH, the base LLM API key (when set), and any tool-specific
-    deploy secret env vars (KISO_TOOL_{NAME}_{KEY}).
+    deploy secret env vars (KISO_WRAPPER_{NAME}_{KEY}).
     """
     venv_bin = _wrapper_venv_bin(tool)
     sys_path = os.environ.get("PATH", "/usr/bin:/bin")

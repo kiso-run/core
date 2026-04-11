@@ -809,7 +809,7 @@ class TestValidatePlan:
     def test_m420_install_in_first_plan_rejected(self):
         """exec install + needs_install set in first plan → error (mixed propose+install)."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
@@ -819,7 +819,7 @@ class TestValidatePlan:
         """msg + exec install + needs_install → still rejected (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Confirm install", "expect": None},
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "replan", "detail": "continue after install", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
@@ -836,7 +836,7 @@ class TestValidatePlan:
     def test_m420_replan_allows_install(self):
         """is_replan=True allows exec install (user approved in prior cycle)."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True)
@@ -845,7 +845,7 @@ class TestValidatePlan:
     def test_m420_multiple_installs_single_error(self):
         """Multiple install execs + needs_install → only one error."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso skill install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "exec", "detail": "kiso connector install slack", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ], "needs_install": ["browser", "slack"]}
@@ -1807,7 +1807,7 @@ class TestBuildPlannerMessages:
             "planning_rules module missing from planner prompt"
         )
 
-    async def test_user_tools_filtered(self, db, config):
+    async def test_user_wrappers_filtered(self, db, config):
         await create_session(db, "sess1")
         fake_skills = [
             {"name": "search", "summary": "Search", "args_schema": {},
@@ -1817,7 +1817,7 @@ class TestBuildPlannerMessages:
         ]
         with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(
-                db, config, "sess1", "user", "hello", user_tools=["search"],
+                db, config, "sess1", "user", "hello", user_wrappers=["search"],
             )
         content = msgs[1]["content"]
         # Tools section should only show search, not aider (restricted user)
@@ -4469,7 +4469,7 @@ class TestRolePromptContent:
         # planner atomic operations
         ("planner", [
             (["atomic"], None),
-            (["kiso tool install", "Install commands are atomic"], "any"),
+            (["kiso wrapper install", "Install commands are atomic"], "any"),
             (["never decompose"], None),
         ]),
         # planner atomic covers package managers
@@ -4961,7 +4961,7 @@ class TestPlannerContextualRules:
             db, self._config(), "test-session", "admin", "install the search skill",
         )
         system = msgs[0]["content"]
-        assert "kiso tool install" in system
+        assert "kiso wrapper install" in system
 
     async def test_user_keyword_injects_user_mgmt(self, db):
         """Message mentioning 'user' should inject user-mgmt appendix."""
@@ -6765,7 +6765,7 @@ class TestLoadModularPrompt:
         ("planning_rules", ["expect", "invent"], ["tools efficiency"]),
         ("kiso_native", ["Kiso tool flow"], ["tools efficiency"]),
         ("tools_rules", ["tools efficiency", "atomic"], ["Kiso tool flow"]),
-        ("kiso_commands", ["kiso tool install", "kiso env set"], []),
+        ("kiso_commands", ["kiso wrapper install", "kiso env set"], []),
         ("user_mgmt", ["kiso user add"], []),
         ("plugin_install", ["plugin installation"], []),
     ]
@@ -6796,7 +6796,7 @@ class TestLoadModularPrompt:
         assert "Available Tools" in modular
         assert "Recent Messages" in modular
         # Former appendixes now modules
-        assert "kiso tool install" in modular
+        assert "kiso wrapper install" in modular
         assert "PROTECTION" in modular or "Caller Role" in modular
         assert "Plugin installation flow:" in modular
 
@@ -7818,7 +7818,7 @@ class TestM261PromptSizeReduction:
         assert "Web interaction" in all_modules  # web
         assert "One-liner" in all_modules  # scripting
         assert "extend_replan" in all_modules  # replan
-        assert "kiso tool install" in all_modules  # kiso_commands
+        assert "kiso wrapper install" in all_modules  # kiso_commands
         assert "never generate" in all_modules  # user_mgmt
         assert "Plugin installation" in all_modules  # plugin_install
 
@@ -7973,7 +7973,7 @@ class TestM261BrieferModuleCoverage:
         system = await self._run_with_briefer_modules(
             db, "list kiso envs", ["kiso_commands"],
         )
-        assert "kiso tool install" in system
+        assert "kiso wrapper install" in system
 
     async def test_user_mgmt_module_selected(self, db):
         """Briefer selecting user_mgmt covers old user keyword matching."""
@@ -9361,7 +9361,7 @@ class TestValidatePlanOrdering:
         """install exec + needs_install set → blocked (mixed propose+install)."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False, has_needs_install=True)
@@ -9371,7 +9371,7 @@ class TestValidatePlanOrdering:
         """install exec without needs_install → user-initiated, allowed."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False, has_needs_install=False)
@@ -9380,7 +9380,7 @@ class TestValidatePlanOrdering:
     def test_install_in_replan_allowed(self):
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=False)
@@ -9396,7 +9396,7 @@ class TestValidatePlanOrdering:
         """install + install_approved + msg last → must replan."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=True)
@@ -9406,7 +9406,7 @@ class TestValidatePlanOrdering:
         """install + install_approved + replan last → accepted."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "replan", "detail": "continue with original request"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=True)
@@ -9416,7 +9416,7 @@ class TestValidatePlanOrdering:
         """install + no prior approval + msg last → ok (user just asked to install)."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso tool install browser", "expect": "installed"},
+            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. installed"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=False)
@@ -9896,7 +9896,7 @@ class TestNonActionableExecDetail:
         assert any("analytical" in e for e in errors)
 
     def test_concrete_command_accepted(self):
-        errors = validate_plan(self._plan("Run kiso tool install browser"))
+        errors = validate_plan(self._plan("Run kiso wrapper install browser"))
         assert not any("analytical" in e for e in errors)
 
     def test_verify_with_path_accepted(self):
@@ -9951,7 +9951,7 @@ class TestInstalledToolExecRouting:
 
     def test_kiso_wrapper_install_exec_still_accepted(self):
         errors = validate_plan(
-            self._plan("Run kiso tool install aider"),
+            self._plan("Run kiso wrapper install aider"),
             installed_skills=["aider"],
         )
         assert not any("routes installed tool" in e for e in errors)
@@ -10067,18 +10067,18 @@ class TestRegistryInstallValidation:
         ]}
 
     def test_kiso_install_unknown_name_rejected(self):
-        errors = validate_plan(self._plan("kiso tool install timg"),
+        errors = validate_plan(self._plan("kiso wrapper install timg"),
                                registry_hint_names=self._HINTS)
         assert any("not in the kiso plugin registry" in e for e in errors)
 
     def test_kiso_install_known_name_accepted(self):
-        errors = validate_plan(self._plan("kiso tool install browser"),
+        errors = validate_plan(self._plan("kiso wrapper install browser"),
                                registry_hint_names=self._HINTS)
         assert not any("not in the kiso plugin registry" in e for e in errors)
 
     def test_kiso_install_with_git_url_accepted(self):
         errors = validate_plan(
-            self._plan("kiso tool install https://github.com/someone/my-tool.git"),
+            self._plan("kiso wrapper install https://github.com/someone/my-tool.git"),
             registry_hint_names=self._HINTS,
         )
         assert not any("not in the kiso plugin registry" in e for e in errors)
@@ -10090,7 +10090,7 @@ class TestRegistryInstallValidation:
 
     def test_no_registry_hints_skips_check(self):
         """When registry_hint_names is None, check is skipped."""
-        errors = validate_plan(self._plan("kiso tool install timg"))
+        errors = validate_plan(self._plan("kiso wrapper install timg"))
         assert not any("not in the kiso plugin registry" in e for e in errors)
 
 
@@ -10257,7 +10257,7 @@ class TestM1198InstallRouteValidation:
             "goal": "test",
             "needs_install": None,
             "tasks": [
-                {"type": "exec", "detail": "Run kiso tool install browser", "expect": "browser installed"},
+                {"type": "exec", "detail": "Run kiso wrapper install browser", "expect": "browser installed"},
                 {"type": "replan", "detail": "Continue with original request", "expect": None, "tool": None, "args": None},
             ],
         }
@@ -10266,14 +10266,14 @@ class TestM1198InstallRouteValidation:
             install_approved=True,
             install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
         )
-        assert not any("kiso tool install browser" in e for e in errors)
+        assert not any("kiso wrapper install browser" in e for e in errors)
 
     def test_approved_kiso_tool_route_accepts_trailing_punctuation_in_exec_detail(self):
         plan = {
             "goal": "test",
             "needs_install": None,
             "tasks": [
-                {"type": "exec", "detail": "Run kiso tool install browser.", "expect": "browser installed"},
+                {"type": "exec", "detail": "Run kiso wrapper install browser.", "expect": "browser installed"},
                 {"type": "replan", "detail": "Continue with original request", "expect": None, "tool": None, "args": None},
             ],
         }
@@ -10282,7 +10282,7 @@ class TestM1198InstallRouteValidation:
             install_approved=True,
             install_route={"mode": "kiso_tool", "target": "browser", "target_installed": False},
         )
-        assert not any("kiso tool install browser" in e for e in errors)
+        assert not any("kiso wrapper install browser" in e for e in errors)
 
 
 class TestM1210ExplicitInstallRequest:
@@ -10320,7 +10320,7 @@ class TestM1210ExplicitInstallRequest:
 
     def test_explicit_install_shell_command_also_works(self):
         """Shell command detail still accepted (backward compat)."""
-        plan = self._install_replan_plan(detail="Run kiso tool install browser")
+        plan = self._install_replan_plan(detail="Run kiso wrapper install browser")
         errors = validate_plan(plan, install_route=self._KISO_ROUTE)
         assert not any("is not installed yet" in e for e in errors)
 
@@ -10348,7 +10348,7 @@ class TestM1210ExplicitInstallRequest:
     def test_approval_shell_command_detail_accepted(self):
         """install_approved + shell command detail → still accepted."""
         errors = validate_plan(
-            self._install_replan_plan(detail="Run kiso tool install browser"),
+            self._install_replan_plan(detail="Run kiso wrapper install browser"),
             install_approved=True,
             install_route=self._KISO_ROUTE_NO_EXPLICIT,
         )

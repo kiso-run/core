@@ -91,12 +91,12 @@ async def post_msg(
             processed=False,
         )
         user_role = resolved.user.role if resolved.user else "user"
-        user_tools = resolved.user.tools if resolved.user else None
+        user_wrappers = resolved.user.wrappers if resolved.user else None
         msg_payload = {
             "id": msg_id,
             "content": body.content,
             "user_role": user_role,
-            "user_tools": user_tools,
+            "user_wrappers": user_wrappers,
             "username": resolved.username,
             "base_url": str(request.base_url).rstrip("/"),
         }
