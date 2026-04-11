@@ -39,7 +39,7 @@ Recipes shape the **plan** — the sequence of tasks the planner creates:
 
 - **Task ordering**: "search first, then verify, then report"
 - **Strategy**: "use 2+ sources", "backup before modifying"
-- **Tool selection**: "prefer websearch over browser for research"
+- **Wrapper selection**: "prefer websearch over browser for research"
 - **Task detail specificity**: more detailed exec descriptions → better worker output
 
 ### Example: Good Recipe
@@ -63,7 +63,7 @@ This works because it changes the **plan structure** (3 exec tasks in a specific
 Recipes do NOT reach the execution layer:
 
 - **Worker output**: the worker (shell command translator) has its own prompt and doesn't see recipes
-- **Tool behavior**: tools (aider, browser, websearch) run as separate processes — recipe instructions don't reach them
+- **Wrapper behavior**: wrappers (aider, browser, websearch) run as separate processes — recipe instructions don't reach them
 - **Messenger style**: the messenger has its own prompt for formatting responses
 - **Generated code quality**: scripts written by exec tasks are produced by the worker LLM, not the planner
 
@@ -86,7 +86,7 @@ This **won't work** because the planner doesn't write code. It creates an exec t
 ## Key Principle
 
 > Recipes shape the PLAN, not the EXECUTION.
-> The planner decides **what** to do; the worker and tools decide **how** to do it.
+> The planner decides **what** to do; the worker and wrappers decide **how** to do it.
 
 ## Managing Recipes
 
@@ -98,7 +98,7 @@ kiso recipe remove <name>                  # remove a recipe
 
 ## Recipes in Presets
 
-Presets can bundle recipes alongside tools, knowledge, and behaviors.
+Presets can bundle recipes alongside wrappers, knowledge, and behaviors.
 In a preset's `preset.toml`:
 
 ```toml
@@ -121,4 +121,4 @@ Create a recipe when you find yourself repeatedly telling kiso to follow a speci
 Do NOT create a recipe for:
 - Code style preferences (use aider config or `.editorconfig` instead)
 - Response formatting (use behaviors: `kiso behavior add "..."`)
-- Tool-specific settings (configure the tool itself)
+- Wrapper-specific settings (configure the wrapper itself)

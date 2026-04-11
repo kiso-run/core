@@ -5,7 +5,7 @@ collapsing into prompt soup.
 
 It plans, executes, reviews, replans, remembers, and reports through a runtime
 that is built around explicit contracts, isolated execution, and durable state.
-You can use it as a CLI assistant, wire it into connectors, give it tools, and
+You can use it as a CLI assistant, wire it into connectors, give it wrappers, and
 let it run real workflows across files, shells, APIs, and multi-step recovery.
 
 Most agent bots are still "one big prompt plus vibes". Kiso is not.
@@ -30,7 +30,7 @@ This matters because the hard problems in agent systems are usually not raw
 generation quality. They are handoff problems:
 
 - the planner thinks a file exists, but the executor cannot find it
-- a tool edits something, but the next step tests the wrong path
+- a wrapper edits something, but the next step tests the wrong path
 - the model retries the same broken strategy with different wording
 - memory gets stuffed into prompts with no distinction between facts and recent execution state
 
@@ -42,7 +42,7 @@ prompt boundary.
 Kiso is not a chat wrapper that stops at advice. It can:
 
 - run shell commands in isolated workspaces
-- install and call tools packaged as plugins
+- install and call wrappers packaged as plugins
 - search, inspect files, produce reports, and publish artifacts
 - continue across multiple plans when a workflow needs investigation first
 - report progress and final outputs back through CLI or connectors
@@ -57,7 +57,7 @@ It is a runtime for open-ended agent tasks with enough structure to stay sane.
 That means:
 
 - open-ended planner outputs
-- tools and connectors as plugins
+- wrappers and connectors as plugins
 - persistent knowledge and behavior rules
 - project/session scoping
 - room for strict safety rules without turning the system into a brittle workflow engine
@@ -67,7 +67,7 @@ That means:
 At a high level, Kiso:
 
 1. receives a user message through CLI or an API-backed connector
-2. builds role-aware context from recent conversation, knowledge, rules, tools, and workspace state
+2. builds role-aware context from recent conversation, knowledge, rules, wrappers, and workspace state
 3. asks the planner for a task graph
 4. normalizes that plan into executable task contracts
 5. runs tasks one by one, carrying forward structured results, file refs, artifact refs, and dependency links
@@ -92,7 +92,7 @@ That can work for toy tasks, but it breaks down under real orchestration.
 Kiso is designed around the actual failure surfaces:
 
 - execution needs isolation
-- tools need contracts, not just best-effort JSON
+- wrappers need contracts, not just best-effort JSON
 - multi-step workflows need durable state
 - replans need memory of what was already tried
 - memory needs semantic knowledge separated from recent operational context
@@ -105,7 +105,7 @@ recoverable than a single-turn coding agent loop.
 
 - Structured planning, execution, review, and replan loops
 - Per-session workspaces with published artifacts and uploads directories
-- Tool and connector plugins, each in its own isolated environment
+- Wrapper and connector plugins, each in its own isolated environment
 - Runtime file/artifact identity and dependency-aware handoff
 - Knowledge system with facts, entities, tags, confidence, decay, and curation
 - Behavior rules and safety constraints carried into planning
@@ -123,7 +123,7 @@ recoverable than a single-turn coding agent loop.
 run the targeted tests, and summarize the tradeoffs."
 ```
 
-Kiso can inspect the workspace, run shell commands, edit files through tools,
+Kiso can inspect the workspace, run shell commands, edit files through wrappers,
 execute verification steps, and report exactly what changed.
 
 ### Research and artifact production
@@ -161,7 +161,7 @@ pretending that the first guessed strategy was correct.
 Use Kiso when you need an agent that must:
 
 - carry work across multiple execution and review steps
-- touch real files, commands, tools, or connectors
+- touch real files, commands, wrappers, or connectors
 - recover from partial failure without losing the thread
 - keep durable knowledge and session/project context
 - stay general-purpose instead of being locked to one workflow template
@@ -187,8 +187,8 @@ kiso
 # Or send a single message
 kiso msg "find all Python files larger than 1MB and summarize what they do"
 
-# Install a tool
-kiso tool install browser
+# Install a wrapper
+kiso wrapper install browser
 
 # Create a recurring task
 kiso cron add "0 9 * * *" "check competitor prices" --session marketing
@@ -235,7 +235,7 @@ kiso sessions
 kiso session create dev
 
 # Plugins
-kiso tool install search
+kiso wrapper install search
 kiso plugin list
 kiso preset install performance-marketer
 
@@ -253,7 +253,7 @@ kiso cron add "0 9 * * *" "check prices" --session marketing
 
 ```text
 message -> planner -> task contracts -> worker execution -> review/replan -> user delivery
-                   \-> memory + tools + workspace state ->/
+                   \-> memory + wrappers + workspace state ->/
 ```
 
 The key point is that Kiso does not treat text as the only handoff boundary.
@@ -265,7 +265,7 @@ reason about what actually happened, not just what a previous prompt said.
 - [architecture.md](docs/architecture.md) — What Kiso is, why the architecture works, and how the core pieces fit together
 - [flow.md](docs/flow.md) — Full message lifecycle and runtime sequencing
 - [config.md](docs/config.md) — Configuration, providers, models, tokens
-- [tools.md](docs/tools.md) — Tool system and packaging
+- [wrappers.md](docs/wrappers.md) — Wrapper system and packaging
 - [connectors.md](docs/connectors.md) — Platform bridges and connector model
 - [api.md](docs/api.md) — HTTP API
 - [cli.md](docs/cli.md) — Terminal client and management commands
@@ -298,7 +298,7 @@ kiso/                               # installable python package
 │   ├── loop.py                     # message processing, replan loop
 │   ├── message_flow.py             # messenger + curator + summarizer flow
 │   ├── review_flow.py              # review step orchestration
-│   ├── exec.py / tool.py / search.py  # task handlers
+│   ├── exec.py / wrapper.py / search.py  # task handlers
 │   ├── replan.py                   # replan context building
 │   └── state.py / utils.py         # execution state, workspace helpers
 ├── store/                          # SQLite persistence
@@ -308,22 +308,22 @@ kiso/                               # installable python package
 ├── llm.py                          # LLM client (SSE streaming, retry)
 ├── config.py                       # config loading and validation
 ├── sysenv.py                       # system environment detection
-├── tools.py / connectors.py        # plugin discovery and loading
+├── wrappers.py / connectors.py        # plugin discovery and loading
 └── roles/*.md                      # LLM role prompts (planner, reviewer, etc.)
 
 ~/.kiso/instances/{name}/           # per-instance state
 ├── config.toml
 ├── store.db
-├── tools/{name}/
+├── wrappers/{name}/
 ├── connectors/{name}/
 └── sessions/{sid}/                 # workspace, pub/, uploads/
 ```
 
 ## Package Model
 
-Tools and connectors use the same packaging shape: `kiso.toml` manifest,
+Wrappers and connectors use the same packaging shape: `kiso.toml` manifest,
 `pyproject.toml`, and `run.py`. Each runs in its own isolated environment.
 
-Official packages follow the `kiso-run/tool-{name}` and
+Official packages follow the `kiso-run/wrapper-{name}` and
 `kiso-run/connector-{name}` naming pattern, but any git repo with a valid
 `kiso.toml` can participate.

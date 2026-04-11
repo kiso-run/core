@@ -1,10 +1,10 @@
-# Tool Development — Devplan Standard
+# Wrapper Development — Devplan Standard
 
-Every tool should include a `DEVPLAN.md` in its root directory. This ensures
+Every wrapper should include a `DEVPLAN.md` in its root directory. This ensures
 that improvement requests and feature additions are structured, traceable,
 and actionable by automated agents.
 
-## Why a devplan per tool?
+## Why a devplan per wrapper?
 
 - **Traceability:** Each change has a numbered milestone with rationale.
 - **Agent-friendly:** Automated agents can read the devplan and execute
@@ -15,10 +15,10 @@ and actionable by automated agents.
 ## DEVPLAN.md Structure
 
 ```markdown
-# {Tool Name} — Development Plan
+# {Wrapper Name} — Development Plan
 
 ## Overview
-What the tool does, current capabilities, known limitations.
+What the wrapper does, current capabilities, known limitations.
 
 ## Architecture
 Key files, dependencies, kiso integration points.
@@ -37,19 +37,19 @@ Key files, dependencies, kiso integration points.
 
 ### consumes
 
-Declare which file types this tool processes in `kiso.toml`:
+Declare which file types this wrapper processes in `kiso.toml`:
 
 ```toml
-[kiso.tool]
+[kiso.wrapper]
 consumes = ["image"]   # valid: image, document, audio, video, code, web_page
 ```
 
 The planner uses this to auto-route session workspace files to the right
-tool. Tool devplans should track which `consumes` values are declared.
+wrapper. Wrapper devplans should track which `consumes` values are declared.
 
 ## Milestones
 
-Numbered from M1 (per-tool, independent of core numbering).
+Numbered from M1 (per-wrapper, independent of core numbering).
 
 ### M1 — Feature name
 
@@ -78,8 +78,8 @@ Bullet list with enough context for an agent to pick up and implement:
 
 ## Conventions
 
-- **Milestone numbers are per-tool.** M1 in the browser tool is unrelated
-  to M1 in the search tool.
+- **Milestone numbers are per-wrapper.** M1 in the browser wrapper is unrelated
+  to M1 in the search wrapper.
 - **Keep it actionable.** Each milestone should be implementable in a single
   session by an agent.
 - **Update the capabilities table** when adding or changing actions.
@@ -87,10 +87,10 @@ Bullet list with enough context for an agent to pick up and implement:
   Write them as milestones with Problem/Change structure.
 - **Mark completed milestones** with `[x]` and ✅.
 
-## Tool file structure reminder
+## Wrapper file structure reminder
 
 ```
-tools/{name}/
+wrappers/{name}/
 ├── kiso.toml           # manifest (required)
 ├── pyproject.toml      # python dependencies (required)
 ├── run.py              # entry point (required)
@@ -100,4 +100,4 @@ tools/{name}/
 └── .venv/              # created by uv on install
 ```
 
-See [tools.md](tools.md) for the full tool specification.
+See [wrappers.md](wrappers.md) for the full wrapper specification.

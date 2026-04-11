@@ -84,16 +84,16 @@ CREATE TABLE tasks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_id         INTEGER NOT NULL,   -- which plan this task belongs to
     session         TEXT NOT NULL,
-    type            TEXT NOT NULL,      -- exec | msg | tool | search | replan
+    type            TEXT NOT NULL,      -- exec | msg | wrapper | search | replan
     detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg)
-    tool            TEXT,               -- tool name (if type=tool)
+    wrapper            TEXT,               -- wrapper name (if type=wrapper)
     args            TEXT,               -- serialized structured args (planner emits objects; DB stores JSON)
-    expect          TEXT,               -- success criteria (required for exec and tool tasks)
+    expect          TEXT,               -- success criteria (required for exec and wrapper tasks)
     command         TEXT,               -- translated shell command (exec only, set after LLM translation)
     status          TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
     substatus       TEXT,               -- free-text detail on current status (e.g. "reviewing")
     output          TEXT,               -- stdout / generated text
-    stderr          TEXT,               -- stderr (exec/tool only)
+    stderr          TEXT,               -- stderr (exec/wrapper only)
     retry_count     INTEGER NOT NULL DEFAULT 0,
     review_verdict  TEXT,               -- "pass" | "fail" | "replan" (set after reviewer runs)
     review_reason   TEXT,               -- reviewer rationale
@@ -111,7 +111,7 @@ CREATE INDEX idx_tasks_status ON tasks(session, status);
 ```
 
 - `plan_id` replaces the old `message_id` + `goal` — the plan owns the goal, tasks reference the plan.
-- `exec` and `tool` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
+- `exec` and `wrapper` tasks are always reviewed. `expect` is required for them. `msg` tasks are never reviewed.
 - The DB row is no longer treated as the only execution contract. Before
   execution, the worker normalizes each row into a `TaskContract` carrying
   delivery mode, verification mode, expected outputs, declared inputs, and
@@ -148,7 +148,7 @@ CREATE TABLE facts (
     content    TEXT NOT NULL,
     source     TEXT NOT NULL,       -- "curator" | "summarizer" | "manual"
     session    TEXT,                -- provenance: which session originated this (null for manual)
-    category   TEXT DEFAULT 'general',  -- "project" | "user" | "tool" | "general"
+    category   TEXT DEFAULT 'general',  -- "project" | "user" | "wrapper" | "general"
     confidence REAL DEFAULT 1.0,    -- 0.0–1.0; decays with disuse, raises with use
     last_used  TEXT,                -- ISO timestamp of last inclusion in planner context
     use_count  INTEGER DEFAULT 0,   -- how many times included in a plan context
@@ -158,14 +158,14 @@ CREATE TABLE facts (
 ```
 
 **Facts visibility depends on category** (M43):
-- `project`, `tool`, `general`: global — visible to all sessions.
+- `project`, `wrapper`, `general`: global — visible to all sessions.
 - `user`: session-scoped — visible only in the originating session (and to admin sessions).
 
 The `session` column serves dual purpose: provenance (who created it) and, for `user`-category facts, access scope.
 
 Facts are **certain truths** that have passed evaluation by the curator. They are not created directly by the reviewer — the reviewer produces learnings (see below), and the curator promotes confirmed learnings to facts. See [flow.md — Facts Lifecycle](flow.md#facts-lifecycle).
 
-- **`category`**: one of `project`, `user`, `tool`, `general`. The planner receives facts grouped by category so it can find relevant context faster.
+- **`category`**: one of `project`, `user`, `wrapper`, `general`. The planner receives facts grouped by category so it can find relevant context faster.
 - **`confidence`**: starts at 1.0. Decays by `fact_decay_rate` for facts not used in `fact_decay_days` days. Facts below `fact_archive_threshold` (default 0.3) are moved to `facts_archive`.
 - **`last_used` / `use_count`**: updated after each successful plan that included the fact in the planner context. Facts used frequently maintain their confidence.
 
@@ -184,7 +184,7 @@ Named subjects that facts can be linked to. Each entity has a canonical name and
 CREATE TABLE entities (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL UNIQUE,  -- canonical lowercase name (e.g. "flask", "guidance.studio")
-    kind       TEXT NOT NULL,         -- "website" | "company" | "tool" | "person" | "project" | "concept"
+    kind       TEXT NOT NULL,         -- "website" | "company" | "wrapper" | "person" | "project" | "concept"
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```

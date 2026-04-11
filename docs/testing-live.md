@@ -62,8 +62,8 @@ A full run of all live tests makes roughly 30-50 LLM calls using the models in `
 | L1 | `test_roles.py` | 8 | Single brain function called in isolation | 1 | `--llm-live` |
 | L2 | `test_flows.py` | 4 | 2-3 connected components | 2-3 | `--llm-live` |
 | L3 | `test_e2e.py` | 4 | Full pipeline through `_execute_plan` | 3-5 | `--llm-live` |
-| L4 | `test_practical.py` | 7 | Realistic user scenarios (exec chaining, full `_process_message`, multi-turn, replan, knowledge pipeline, tool execution) | 3-8 | `--llm-live` |
-| L5 | `test_cli_live.py` | 5 | CLI lifecycle (tool/connector search, install/remove) | 0 | `--live-network` |
+| L4 | `test_practical.py` | 7 | Realistic user scenarios (exec chaining, full `_process_message`, multi-turn, replan, knowledge pipeline, wrapper execution) | 3-8 | `--llm-live` |
+| L5 | `test_cli_live.py` | 5 | CLI lifecycle (wrapper/connector search, install/remove) | 0 | `--live-network` |
 
 ## CI (GitHub Actions)
 
@@ -83,7 +83,7 @@ Add `KISO_LLM_API_KEY` as a repository secret, then use it in your workflow:
 - **Timeouts**: Every LLM call wrapped in `asyncio.wait_for(...)` to prevent hangs. L1/L2: 90s, L3: 120s, L4: 120s.
 - **Infrastructure isolation**: E2e and practical tests mock filesystem/security/webhook infrastructure (`mock_noop_infra` fixture) while letting real LLM calls flow through.
 - **Deterministic failure**: The replan test uses a manually-built failing plan (`ls /absolutely_nonexistent_dir_xyz`) rather than relying on the LLM to produce one.
-- **Temporary directories**: CLI install tests use `tmp_path` for `TOOLS_DIR` to avoid polluting `~/.kiso/instances/{instance}/tools/`.
+- **Temporary directories**: CLI install tests use `tmp_path` for `TOOLS_DIR` to avoid polluting `~/.kiso/instances/{instance}/wrappers/`.
 
 ## Troubleshooting
 
@@ -129,11 +129,11 @@ Tests planned for M21 that verify security properties with real LLMs:
 See [security-risks.md](security-risks.md) for full risk analysis.
 
 ### L5 install tests skipped
-- `tool-websearch` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
+- `wrapper-websearch` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
 - Requires `git` on PATH.
 - **When repos are published**: remove the `pytest.skip` fallback and verify the full install → validate → remove lifecycle passes.
 - **Done (M1279)**: deterministic CLI tests for installing a
-  tool/connector that doesn't exist live in
+  wrapper/connector that doesn't exist live in
   `tests/test_cli_tool.py::test_skill_install_git_clone_failure_cleanup`
   (line 556) and
   `tests/test_cli_connector.py::test_connector_install_git_clone_failure_cleanup`

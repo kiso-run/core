@@ -1,13 +1,13 @@
-# Tools
+# Wrappers
 
-A tool is a git-cloned package in `~/.kiso/instances/{instance}/tools/{name}/` on the host (mounted at `KISO_DIR/tools/{name}/` inside the container). Runs as a subprocess in a `uv`-managed venv.
+A wrapper is a git-cloned package in `~/.kiso/instances/{instance}/wrappers/{name}/` on the host (mounted at `KISO_DIR/wrappers/{name}/` inside the container). Runs as a subprocess in a `uv`-managed venv.
 
 
 ## Structure
 
 ```
-~/.kiso/instances/{instance}/tools/    # host path
-KISO_DIR/tools/                     # container-internal path (equivalent)
+~/.kiso/instances/{instance}/wrappers/    # host path
+KISO_DIR/wrappers/                     # container-internal path (equivalent)
 ├── search/
 │   ├── kiso.toml           # manifest (required) — identity, args schema, deps
 │   ├── pyproject.toml      # python dependencies (required, uv-managed)
@@ -18,31 +18,31 @@ KISO_DIR/tools/                     # container-internal path (equivalent)
 └── .../
 ```
 
-A directory is a valid tool if it contains `kiso.toml` (with `type = "tool"`), `pyproject.toml`, and `run.py`.
+A directory is a valid wrapper if it contains `kiso.toml` (with `type = "wrapper"`), `pyproject.toml`, and `run.py`.
 
 All three are required — install fails if any is missing.
 
 ## kiso.toml
 
-The single source of truth. Declares what this tool is, what arguments it takes, what it needs, and what system deps it requires.
+The single source of truth. Declares what this wrapper is, what arguments it takes, what it needs, and what system deps it requires.
 
 ```toml
 [kiso]
-type = "tool"
+type = "wrapper"
 name = "search"
 version = "0.1.0"
 description = "Web search using Brave Search API"
 
-[kiso.tool]
+[kiso.wrapper]
 summary = "Web search using Brave Search API"    # one-liner for the planner
-# session_secrets = ["github_token"]             # user-provided credentials (not needed for this tool)
+# session_secrets = ["github_token"]             # user-provided credentials (not needed for this wrapper)
 # usage_guide = "Use short queries. Prefer English keywords."  # operational guidance for the planner
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 query = { type = "string", required = true, description = "search query" }
 max_results = { type = "int", required = false, default = 5, description = "number of results to return" }
 
-[kiso.tool.env]
+[kiso.wrapper.env]
 api_key = { required = true }     # → KISO_TOOL_SEARCH_API_KEY
 
 [kiso.deps]
@@ -52,12 +52,12 @@ bin = ["curl"]                    # checked with `which` after install
 
 ### consumes
 
-Optional field declaring what file types this tool can process. Used to
+Optional field declaring what file types this wrapper can process. Used to
 auto-generate a "File processing" routing section in the planner context,
-so the planner knows which tool to use for which file type.
+so the planner knows which wrapper to use for which file type.
 
 ```toml
-[kiso.tool]
+[kiso.wrapper]
 summary = "Image OCR — extract text from photos, screenshots, receipts"
 consumes = ["image"]
 ```
@@ -65,10 +65,10 @@ consumes = ["image"]
 Valid vocabulary: `image`, `document`, `audio`, `video`, `code`, `web_page`.
 Unknown values are warned and skipped (forward-compatible).
 
-When at least one installed tool declares `consumes`, the planner sees:
+When at least one installed wrapper declares `consumes`, the planner sees:
 
 ```
-File processing (match session workspace files to these tools):
+File processing (match session workspace files to these wrappers):
 - image files → ocr (Image OCR), describe (Describe image contents)
 - document files → docreader (Read documents)
 - audio files → transcriber (Transcribe audio)
@@ -76,23 +76,23 @@ File processing (match session workspace files to these tools):
 
 ### Two Kinds of Secrets
 
-- `[kiso.tool.env]` → **deploy secrets** (env vars, set by admin via `kiso env`, passed via subprocess environment)
+- `[kiso.wrapper.env]` → **deploy secrets** (env vars, set by admin via `kiso env`, passed via subprocess environment)
 - `session_secrets` → **ephemeral secrets** (user-provided at runtime, in worker memory only — never persisted. Passed via input JSON — only declared ones)
 
 See [security.md — Secrets](security.md#5-secrets) for the full comparison and scoping rules.
 
 ### Usage Guide
 
-The `usage_guide` field in `[kiso.tool]` provides operational guidance visible
+The `usage_guide` field in `[kiso.wrapper]` provides operational guidance visible
 to the planner. On install, this text is copied to `usage_guide.local.md` in
-the tool directory. Edit that file to customize how the agent uses the tool.
+the wrapper directory. Edit that file to customize how the agent uses the wrapper.
 
-The local file is git-ignored — `kiso tool update` won't overwrite your edits.
+The local file is git-ignored — `kiso wrapper update` won't overwrite your edits.
 
 Example:
 
 ```toml
-[kiso.tool]
+[kiso.wrapper]
 summary = "Web search using Brave Search API"
 usage_guide = """\
 Use short, specific queries. Prefer English keywords.
@@ -105,7 +105,7 @@ max_results=3 is usually enough."""
 The planner receives the one-liner, the args schema, and the usage guide (if set):
 
 ```
-Available tools:
+Available wrappers:
 - search — Web search using Brave Search API
   args: query (string, required): search query
         max_results (int, optional, default=5): number of results to return
@@ -128,7 +128,7 @@ Name and key are uppercased, `-` becomes `_`.
 
 ### Version
 
-Display metadata. Shown in `kiso tool list` output. Kiso does not enforce version compatibility — updates are always `git pull` to latest.
+Display metadata. Shown in `kiso wrapper list` output. Kiso does not enforce version compatibility — updates are always `git pull` to latest.
 
 ## run.py
 
@@ -145,7 +145,7 @@ def run(args, context):
     context: full input dict (includes args, session, workspace, session_secrets)
     return:  result text (str)
     """
-    # tool logic here
+    # wrapper logic here
     return "result"
 
 
@@ -172,10 +172,10 @@ No async, no imports from kiso, no shared state. JSON in, text out.
 ```
 
 - `session_secrets`: **only** the keys declared in `kiso.toml`, not the full session credentials.
-- `plan_outputs`: outputs from preceding tasks in the same plan. See [flow.md — Task Output Chaining](flow.md#task-output-chaining). Empty array if this is the first task. Tools can use it or ignore it.
+- `plan_outputs`: outputs from preceding tasks in the same plan. See [flow.md — Task Output Chaining](flow.md#task-output-chaining). Empty array if this is the first task. Wrappers can use it or ignore it.
 - `workspace`: the session directory. Always contains two subdirectories:
   - `pub/` — write files here to make them publicly accessible via a URL (see [flow.md — Public File Serving](flow.md#public-file-serving))
-  - `uploads/` — files received from the outside (email attachments, Discord files, etc.) are written here by connectors; tools can read from it
+  - `uploads/` — files received from the outside (email attachments, Discord files, etc.) are written here by connectors; wrappers can read from it
 
 ### Output (stdout)
 
@@ -197,23 +197,23 @@ Runs inside the Docker container. If it fails, kiso warns the user and suggests 
 
 ## Installation
 
-Only admins can install tools.
+Only admins can install wrappers.
 
 ### Via CLI
 
 ```bash
 # official (resolves from kiso-run org)
-kiso tool install websearch
-# → clones git@github.com:kiso-run/tool-websearch.git
-# → ~/.kiso/instances/{instance}/tools/websearch/
+kiso wrapper install websearch
+# → clones git@github.com:kiso-run/wrapper-websearch.git
+# → ~/.kiso/instances/{instance}/wrappers/websearch/
 
 # unofficial (full git URL)
-kiso tool install git@github.com:someone/my-tool.git
-# → ~/.kiso/instances/{instance}/tools/github-com_someone_my-tool/
+kiso wrapper install git@github.com:someone/my-wrapper.git
+# → ~/.kiso/instances/{instance}/wrappers/github-com_someone_my-wrapper/
 
 # unofficial with custom name
-kiso tool install git@github.com:someone/my-tool.git --name custom
-# → ~/.kiso/instances/{instance}/tools/custom/
+kiso wrapper install git@github.com:someone/my-wrapper.git --name custom
+# → ~/.kiso/instances/{instance}/wrappers/custom/
 ```
 
 ### Unofficial Repo Warning
@@ -224,7 +224,7 @@ Unofficial repos trigger a confirmation prompt before install. If `deps.sh` is p
 
 | Source | Name |
 |---|---|
-| Official (`kiso tool install search`) | `search` |
+| Official (`kiso wrapper install search`) | `search` |
 | Unofficial URL | `{domain}_{namespace}_{repo}` |
 | Explicit `--name` | whatever you pass |
 
@@ -238,80 +238,80 @@ Unofficial repos trigger a confirmation prompt before install. If `deps.sh` is p
 Examples:
 ```
 git@github.com:sniku/jQuery-doubleScroll.git  → github-com_sniku_jquery-doublescroll
-https://gitlab.com/team/cool-tool.git         → gitlab-com_team_cool-tool
+https://gitlab.com/team/cool-wrapper.git         → gitlab-com_team_cool-wrapper
 ```
 
 ### Install Flow
 
 ```
-1. touch ~/.kiso/instances/{instance}/tools/{name}/.installing (prevents discovery during install)
-2. git clone → ~/.kiso/instances/{instance}/tools/{name}/
-3. Validate kiso.toml (exists? type=tool? has name? has [kiso.tool.args]?)
+1. touch ~/.kiso/instances/{instance}/wrappers/{name}/.installing (prevents discovery during install)
+2. git clone → ~/.kiso/instances/{instance}/wrappers/{name}/
+3. Validate kiso.toml (exists? type=wrapper? has name? has [kiso.wrapper.args]?)
 4. Validate run.py and pyproject.toml exist — fail if missing
 5. If unofficial repo → warn user, ask confirmation (see security.md)
 6. uv sync (pyproject.toml → .venv)  ← must run before deps.sh
 7. If deps.sh exists → run it (skipped with --no-deps)
-   ⚠ on failure: warn user, suggest "ask the bot to fix deps for tool {name}"
+   ⚠ on failure: warn user, suggest "ask the bot to fix deps for wrapper {name}"
    Note: deps.sh may call binaries installed by uv (e.g. playwright install webkit)
 8. Check [kiso.deps].bin (verify with `which`)
-9. Check [kiso.tool.env] vars
+9. Check [kiso.wrapper.env] vars
    ⚠ KISO_TOOL_SEARCH_API_KEY not set (warn, don't block)
-10. rm ~/.kiso/instances/{instance}/tools/{name}/.installing
+10. rm ~/.kiso/instances/{instance}/wrappers/{name}/.installing
 ```
 
 ### Update / Remove
 
 ```bash
-kiso tool update search          # git pull + deps.sh + uv sync
-kiso tool update all             # update all installed tools
-kiso tool remove search
-kiso tool list                   # list installed tools
+kiso wrapper update search          # git pull + deps.sh + uv sync
+kiso wrapper update all             # update all installed wrappers
+kiso wrapper remove search
+kiso wrapper list                   # list installed wrappers
 ```
 
 ```
-$ kiso tool list
+$ kiso wrapper list
   search   0.1.0  — Web search using Brave Search API
-  aider    0.3.2  — Code editing tool using LLM
+  aider    0.3.2  — Code editing wrapper using LLM
   browser  0.1.0  — Headless WebKit browser automation
 ```
 
 ### Search
 
 ```bash
-kiso tool search [query]
+kiso wrapper search [query]
 # → fetches https://raw.githubusercontent.com/kiso-run/core/main/registry.json
 # → matches by name first, then by description
 ```
 
 ## Execution
 
-When the worker encounters a `tool` task:
+When the worker encounters a `wrapper` task:
 
 1. Parses `args` from JSON string, validates against the schema in `kiso.toml`
 2. Builds input JSON (parsed args as object + session + workspace path + scoped ephemeral secrets as dict + plan outputs from preceding tasks)
-3. Pipes input JSON to stdin: `.venv/bin/python KISO_DIR/tools/search/run.py` with `cwd=KISO_DIR/sessions/{session}`
+3. Pipes input JSON to stdin: `.venv/bin/python KISO_DIR/wrappers/search/run.py` with `cwd=KISO_DIR/sessions/{session}`
 4. Captures stdout (output) and stderr (debug)
 5. Sanitizes output (strips known secret values — plaintext, base64, URL-encoded)
 6. Stores task result in DB (status, output)
-7. Passes to the reviewer (all exec/tool tasks are always reviewed)
+7. Passes to the reviewer (all exec/wrapper tasks are always reviewed)
 
 ## Validation
 
-Before execution, tool task args are validated at plan time:
+Before execution, wrapper task args are validated at plan time:
 
 - **Schema validation**: args checked against `kiso.toml` arg schema (required fields, types)
-- **Semantic validation**: tool-specific checks (e.g., aider: instruction in `message`, not in `files`)
-- **Browser URL scheme**: browser tool rejects `file://` URLs — browser is for web content (http/https). Use exec with `cat`/`head` to read local files.
+- **Semantic validation**: wrapper-specific checks (e.g., aider: instruction in `message`, not in `files`)
+- **Browser URL scheme**: browser wrapper rejects `file://` URLs — browser is for web content (http/https). Use exec with `cat`/`head` to read local files.
 
 ## Discovery
 
-Scanned from `KISO_DIR/tools/` before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a tool or a plain `exec` task.
+Scanned from `KISO_DIR/wrappers/` before each planner call. Reads `kiso.toml` from each directory (skips directories with `.installing` marker file). The planner sees one-liners and args schemas (see [What the Planner Sees](#what-the-planner-sees) for format) and decides whether to use a wrapper or a plain `exec` task.
 
-The tool list is scanned on every planner call — no caching. Newly installed or removed tools are immediately visible to the server without a restart. The scan is fast (TOML parse of a handful of files, microseconds) and negligible compared to the LLM call that follows.
+The wrapper list is scanned on every planner call — no caching. Newly installed or removed wrappers are immediately visible to the server without a restart. The scan is fast (TOML parse of a handful of files, microseconds) and negligible compared to the LLM call that follows.
 
 ## Why Subprocesses
 
 - **Isolation**: own venv, no dependency conflicts.
 - **Simplicity**: JSON in, text out. No dynamic imports or async coordination.
-- **Safety**: crashing tool doesn't take down the worker.
+- **Safety**: crashing wrapper doesn't take down the worker.
 - **Language-agnostic**: run.py can call anything (Node, Go, curl, etc.).

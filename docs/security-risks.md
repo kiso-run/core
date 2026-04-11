@@ -59,7 +59,7 @@ eval $(printf '\x72\x6d\x20-rf /')             # hex-encoded eval
 - `save_learning()` filters content matching `_SENSITIVE_PATTERN` (passwords/tokens/hex secrets) before storage (M44c).
 - `user`-category facts are session-scoped (M43): a poisoned user-fact is confined to the session where it was injected and does not cross-contaminate other sessions.
 
-**Residual risk:** `project`, `tool`, and `general` facts are still global. A poisoned fact in these categories influences all sessions until consolidated or deleted. The curator can be fooled by convincing-sounding content.
+**Residual risk:** `project`, `wrapper`, and `general` facts are still global. A poisoned fact in these categories influences all sessions until consolidated or deleted. The curator can be fooled by convincing-sounding content.
 
 ---
 
@@ -93,7 +93,7 @@ except PlanError as e:
     return  # ← user gets nothing
 ```
 
-When the planner fails after all validation retries (e.g., LLM keeps hallucinating tools), the message is marked as `processed=1` but no plan, no task, and no response is created. From the user's perspective, they sent a message and got silence.
+When the planner fails after all validation retries (e.g., LLM keeps hallucinating wrappers), the message is marked as `processed=1` but no plan, no task, and no response is created. From the user's perspective, they sent a message and got silence.
 
 **Planned fix (M21d):** Save a system message to DB and deliver via webhook.
 
@@ -121,7 +121,7 @@ The exec task runs and gets `returncode != 0` → status set to `"failed"`. The 
 **Worst case per message:**
 - `max_replan_depth` = 3 attempts
 - Each attempt: 1 planner call + up to `max_plan_tasks` (20) tasks
-- Each exec/tool task: 1 execution + 1 reviewer call
+- Each exec/wrapper task: 1 execution + 1 reviewer call
 - Each msg task: 1 worker call
 - Total: 3 × (1 planner + 20 task calls + 20 reviewer calls) = **~123 LLM calls**
 
@@ -181,6 +181,6 @@ Admin users execute commands without sandbox isolation. This is intentional — 
 
 ### Facts: scoping and cross-session risk
 
-`project`, `tool`, and `general` facts are global — visible in all sessions by design (shared knowledge base). A compromised session can still inject poisoned facts into these global categories, influencing all future sessions.
+`project`, `wrapper`, and `general` facts are global — visible in all sessions by design (shared knowledge base). A compromised session can still inject poisoned facts into these global categories, influencing all future sessions.
 
 `user`-category facts are session-scoped (M43): they are only visible in the session where they were created, limiting blast radius for user-preference poisoning.

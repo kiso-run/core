@@ -42,7 +42,7 @@ Authorization: Bearer <token>
 1. Validates the bearer token against `config.toml` tokens (401 if no match)
 2. Logs which named token was used
 3. Checks if `user` is in `config.users` whitelist (direct name or alias match — see [security.md](security.md)).
-   - **Whitelisted**: resolves Linux user, role, and allowed tools. Message saved with `trusted=1`.
+   - **Whitelisted**: resolves Linux user, role, and allowed wrappers. Message saved with `trusted=1`.
    - **Not whitelisted**: saves message with `trusted=0` (context and audit). Responds `202 Accepted`. Does **not** enqueue or process. Stops here.
 4. If session doesn't exist, creates it implicitly (no webhook, no connector metadata)
 5. Saves the message to `store.messages` with `processed=0`
@@ -90,7 +90,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Paraphrased untrusted messages (from step a, with random boundary fencing)
 - Recent msg outputs (all `msg` task outputs since last summarization, from `store.tasks`)
 - Workspace file listing (files in the session directory, max 30, with sizes)
-- Tool summaries and args schemas (only tools allowed for this user, from `kiso.toml`, rescanned on each planner call — skips directories with `.installing` marker)
+- Wrapper summaries and args schemas (only wrappers allowed for this user, from `kiso.toml`, rescanned on each planner call — skips directories with `.installing` marker)
 - Caller role (admin | user)
 - New message
 
@@ -101,11 +101,11 @@ Uses structured output (`response_format` with strict JSON schema — see [llm-r
 Returns JSON with:
 - `goal`: high-level objective for the entire process. Stored for the reviewer and potential replan cycles.
 - `secrets`: `{key, value}` pairs or `null`. If present, stored in **worker memory** (ephemeral, never in DB). See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
-- `tasks`: `exec`, `tool`, and `search` tasks must include an `expect` field with semantic success criteria (they are always reviewed). Tool/search `args` are now structured objects in the planner contract, not JSON-in-string payloads.
+- `tasks`: `exec`, `wrapper`, and `search` tasks must include an `expect` field with semantic success criteria (they are always reviewed). Wrapper/search `args` are now structured objects in the planner contract, not JSON-in-string payloads.
 
 Before execution, Kiso normalizes each raw planner task into an internal
 `TaskContract`. The contract carries:
-- normalized task identity (`type`, intent, tool name, parsed args)
+- normalized task identity (`type`, intent, wrapper name, parsed args)
 - delivery mode (`action` vs `user-facing`)
 - verification mode (`review` vs `none`)
 - allowed repair scope
@@ -130,7 +130,7 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 | `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context, structured preceding task results, and authoritative dependency links when prior files/artifacts are relevant. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=KISO_DIR/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `messenger` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The messenger does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the messenger doesn't see the raw conversation](llm-roles.md#why-the-messenger-doesnt-see-the-raw-conversation)). |
 | `search` | Calls LLM with `searcher` role (see [config.md](config.md) for default model). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
-| `tool` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python KISO_DIR/tools/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
+| `wrapper` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python KISO_DIR/wrappers/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
 
 **Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The runtime also normalizes those outputs into canonical `TaskResult` objects and carries `file_refs`, `artifact_refs`, failure classes, reviewer summaries, and dependency links forward. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
 
@@ -140,7 +140,7 @@ All LLM calls, task executions, and webhook deliveries are logged to the audit t
 
 ### g) Reviews and Delivers
 
-**For `exec`, `tool`, and `search` tasks** (always reviewed):
+**For `exec`, `wrapper`, and `search` tasks** (always reviewed):
 
 1. **Review**: Reviewer receives process goal + task detail + task expect + task output + original user message. Uses structured output. Two outcomes:
    - `status: "ok"` → proceed to next task
@@ -166,7 +166,7 @@ When the reviewer determines that the task failed and the plan needs revision, o
 1. **Notify the user**: the worker creates a `msg` task on the current plan with the replan notification (so the CLI can display it), saves a system message, and delivers a webhook (with `final: false`) explaining that a replan is happening and why (using the reviewer's `reason`).
 
 2. **Call the planner** with enriched context:
-   - Everything the planner normally receives (facts, pending, summary, messages, tools, role, original message)
+   - Everything the planner normally receives (facts, pending, summary, messages, wrappers, role, original message)
    - **completed**: tasks already executed, normalized into structured task results
    - **remaining**: tasks that were planned but not yet executed
    - **failure**: the failed task, its output, and the reviewer's `reason`
@@ -186,9 +186,9 @@ When the reviewer determines that the task failed and the plan needs revision, o
 
 Before execution, `validate_plan` runs deterministic structural checks that reject invalid plans with specific error feedback (the planner retries with the error message). Key guardrails:
 
-- **No msg-first**: plans must start with action tasks (exec/tool/search), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
-- **Codegen-only shape**: when the first task is a tool and the second is exec, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen tools — the reviewer already inspects tool output.
-- **Browser URL validation**: browser tool args with `file://` URLs are rejected. Browser is for web content (http/https); local files should be read with exec.
+- **No msg-first**: plans must start with action tasks (exec/wrapper/search), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
+- **Codegen-only shape**: when the first task is a wrapper and the second is exec, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen wrappers — the reviewer already inspects wrapper output.
+- **Browser URL validation**: browser wrapper args with `file://` URLs are rejected. Browser is for web content (http/https); local files should be read with exec.
 - **Install routing**: plans that mix install proposals (`needs_install` set) with install exec tasks are rejected. The install flow is: propose (msg-only) → user approves → install (exec + replan).
 
 ### LLM Retry and Fallback
@@ -209,7 +209,7 @@ The worker accumulates outputs from completed tasks in the current plan and pass
 [
   {
     "index": 1,
-    "type": "tool",
+    "type": "wrapper",
     "detail": "Search for fly.io deployment guides",
     "output": "1. fly.io/docs/python - Deploy Python apps...",
     "status": "done"
@@ -224,7 +224,7 @@ The worker accumulates outputs from completed tasks in the current plan and pass
 ]
 ```
 
-Fields: `index` (1-based position in the plan), `type`, `detail` (what was requested), `output` (stdout for exec/tool, generated text for msg), `status` (`done` or `failed` — so the consumer knows if the output is a result or an error).
+Fields: `index` (1-based position in the plan), `type`, `detail` (what was requested), `output` (stdout for exec/wrapper, generated text for msg), `status` (`done` or `failed` — so the consumer knows if the output is a result or an error).
 
 Internally, Kiso reconstructs a canonical `TaskResult` from this transport plus
 the task row. That runtime result is what replans, dependency inference, and
@@ -242,7 +242,7 @@ How each task type receives preceding outputs:
 | Task type | Mechanism | Details |
 |---|---|---|
 | `exec` | File `{workspace}/.kiso/plan_outputs.json` | Written before each execution. Empty array (`[]`) if first task. The planner writes commands that reference it, e.g. `jq -r '.[-1].output' .kiso/plan_outputs.json`. |
-| `tool` | `plan_outputs` field in input JSON | Same structure, added alongside `args`, `session`, `workspace`, `session_secrets` in the stdin JSON. |
+| `wrapper` | `plan_outputs` field in input JSON | Same structure, added alongside `args`, `session`, `workspace`, `session_secrets` in the stdin JSON. |
 | `search` | Fenced section in searcher LLM prompt | Same structure as `msg`, preceding outputs provided in the searcher's context. |
 | `msg` | Fenced section in messenger LLM prompt | Formatted as readable text inside boundary fencing (external content). The worker uses it naturally when writing responses. |
 
@@ -322,10 +322,10 @@ Planner, Worker, and Curator receive facts in their context. Reviewer, Summarize
 
 See [database.md — facts](database.md#facts) for the full schema.
 
-Facts have a `category` (`project`, `user`, `tool`, `general`) and an optional `session` column (provenance).
+Facts have a `category` (`project`, `user`, `wrapper`, `general`) and an optional `session` column (provenance).
 
 **Visibility rules (M43)**:
-- `project`, `tool`, `general` facts: always global — visible in every session.
+- `project`, `wrapper`, `general` facts: always global — visible in every session.
 - `user` facts: scoped to the session where they were created. Other sessions do not see them.
 - `user` facts: not visible outside their originating session.
 
@@ -335,7 +335,7 @@ Facts have a `category` (`project`, `user`, `tool`, `general`) and an optional `
 
 ### Consolidation
 
-When facts exceed `knowledge_max_facts` (see [config.md](config.md)), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `tool`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
+When facts exceed `knowledge_max_facts` (see [config.md](config.md)), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `wrapper`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
 
 After consolidation, the worker runs a **decay pass** (reduces confidence for stale facts) and an **archive pass** (moves low-confidence facts to `facts_archive`). See [database.md — facts](database.md#facts) for the full schema.
 
@@ -351,7 +351,7 @@ Facts are grouped by category. For regular users:
 ### User
 - Team: marco (backend), anna (frontend)
 
-### Tool
+### Wrapper
 - Tests run with: pytest tests/ -q
 ```
 
@@ -403,14 +403,14 @@ WORKER (per session)
   │  pass plan_outputs        │
   │  │                        │
   │  exec → translate → run   │
-  │  tool → validate → run    │
+  │  wrapper → validate → run    │
   │  search → searcher LLM     │
   │  msg → generate → deliver │
   │  replan → trigger replan  │
   │         │                 │
   │  sanitize + accumulate    │
   │         │                 │
-  │  exec/tool/search ──▶ review  │
+  │  exec/wrapper/search ──▶ review  │
   │                 │    │    │
   │              ok │  replan ──▶ new plan (parent_id)
   │                 │         │
@@ -443,5 +443,5 @@ When displaying a plan execution, the CLI shows:
    - Task header with index, type, and detail
    - For `exec` tasks: the translated shell command (e.g. `$ ls -la`)
    - Task output (truncated on TTY)
-   - Review verdict (for exec/tool/search tasks)
+   - Review verdict (for exec/wrapper/search tasks)
 4. **Token usage summary** at the end (input/output tokens and model used)

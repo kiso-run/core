@@ -30,7 +30,7 @@ explains the selection criteria — see config.md for the actual values.
 ### Briefer
 
 **Requirement:** reliable structured output. Runs before every planner/messenger
-call to select relevant context modules, tools, and facts. Needs native
+call to select relevant context modules, wrappers, and facts. Needs native
 `json_schema` support for consistent structured responses. Flash (not flash-lite)
 because briefer decisions directly affect planner quality.
 
@@ -43,14 +43,14 @@ across languages.
 ### Planner
 
 **Requirement:** strong reasoning + structured output. Understands user intent,
-selects tools, produces valid multi-step JSON plans. Runs once per message.
+selects wrappers, produces valid multi-step JSON plans. Runs once per message.
 DeepSeek-v3.2 produces well-structured plans with low hallucination and
 handles multilingual input well. Cost is low ($0.28/$0.42 per M tokens).
 
 ### Worker
 
 **Requirement:** precise command translation. Translates task descriptions to
-exact shell commands. Needs to handle file paths, heredocs, and tool-specific
+exact shell commands. Needs to handle file paths, heredocs, and wrapper-specific
 syntax correctly. DeepSeek-v3.2's code understanding makes it reliable for
 this role.
 

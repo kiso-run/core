@@ -10,7 +10,7 @@ instructions.
 
 That means Kiso is not just:
 
-- a chatbot with tool calls
+- a chatbot with wrapper calls
 - a shell wrapper around an LLM
 - a fixed workflow engine
 
@@ -50,7 +50,7 @@ user / connector / CLI
   - workspace state
   - operational memory
   - semantic memory
-  - tools / policies
+  - wrappers / policies
         |
         v
       planner
@@ -60,7 +60,7 @@ user / connector / CLI
         |
         v
       worker
-  - exec / tool / search / msg
+  - exec / wrapper / search / msg
   - file refs / artifact refs
   - dependency-aware handoff
         |
@@ -92,7 +92,7 @@ Most agent failures are handoff failures, not "the model had a bad sentence".
 
 Typical failure classes:
 
-- a tool edited a file but the next step tested the wrong path
+- a wrapper edited a file but the next step tested the wrong path
 - a previous failure is described vaguely, so the planner retries the same idea
 - user-facing output gets mixed into internal action tasks
 - memory retrieval returns the wrong kind of context because execution state and semantic facts are blended together
@@ -110,7 +110,7 @@ The planner receives:
 - session summary
 - pending items
 - semantic knowledge
-- available tools
+- available wrappers
 - workspace-visible files
 - role and policy context
 
@@ -127,7 +127,7 @@ Before execution, raw planner tasks are normalized into `TaskContract` objects.
 These contracts carry the semantics the runtime actually depends on, including:
 
 - task type and intent
-- tool name and structured args
+- wrapper name and structured args
 - delivery mode
 - verification mode
 - declared inputs
@@ -180,7 +180,7 @@ thinks happened".
 
 ### Reviewer
 
-`exec`, `tool`, and `search` tasks do not automatically count as success just
+`exec`, `wrapper`, and `search` tasks do not automatically count as success just
 because they produced output.
 
 The reviewer decides whether the task:
@@ -234,11 +234,11 @@ Semantic memory is about durable knowledge:
 This split matters because a runtime should not treat "what just happened in
 this plan" the same as "what we know about the project".
 
-### Tools and Connectors
+### Wrappers and Connectors
 
-Kiso stays general-purpose by treating tools and connectors as plugins.
+Kiso stays general-purpose by treating wrappers and connectors as plugins.
 
-Tools extend execution abilities:
+Wrappers extend execution abilities:
 
 - browser automation
 - OCR
@@ -278,7 +278,7 @@ Kiso is a strong fit when you need:
 - open-ended planning with real execution
 - multi-step recovery and replanning
 - durable context across sessions or projects
-- plugin-based extension through tools and connectors
+- plugin-based extension through wrappers and connectors
 - a runtime that remains general-purpose while still enforcing structure
 
 Kiso is a weak fit when the problem is already:
@@ -334,7 +334,7 @@ not leave orphans holding the parent's pipes), drains the communicate task
 naturally so the StreamReaders unwind cleanly, and reaps the OS process via
 `proc.wait()` before re-raising `TimeoutError`. Callers must create the
 subprocess with `start_new_session=True` so the helper has a real process
-group to target. This is the M1295 fix; without it, hook and tool-repair
+group to target. This is the M1295 fix; without it, hook and wrapper-repair
 timeouts left orphan subprocesses and leaked
 `_UnixSubprocessTransport` instances that would later fire `__del__` on a
 closed event loop.

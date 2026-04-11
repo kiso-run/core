@@ -54,11 +54,11 @@ aliases.telegram = "marco_tg"
 
 [users.anna]
 role = "user"
-tools = "*"
+wrappers = "*"
 
 [users.luca]
 role = "user"
-tools = ["search", "aider"]
+wrappers = ["search", "aider"]
 
 [models]
 briefer     = "google/gemini-2.5-flash-lite"
@@ -144,7 +144,7 @@ webhook_max_payload       = 1048576
 | `providers.*.base_url` | Required. No implicit default. |
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
-| `users.*.tools` | Required for `user` role. `"*"` for all tools, or a list of tool names. Ignored for admins (always all). |
+| `users.*.wrappers` | Required for `user` role. `"*"` for all wrappers, or a list of wrapper names. Ignored for admins (always all). |
 | `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`, `consolidator`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
 | `[settings]` | All fields required. See table below. |
 
@@ -175,7 +175,7 @@ webhook_max_payload       = 1048576
 | `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
 | `llm_timeout` | `600` | Seconds before any LLM call is cancelled. Also used for graceful shutdown per worker. |
 | `stall_timeout` | `60` | Seconds without SSE data before declaring a stall. Triggers model switch to fallback. |
-| `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or tool task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
+| `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or wrapper task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
 | `max_worker_retries` | `2` | Max worker-level retries per exec/search task before escalating to a full replan. |
 | `external_url` | `""` | Public URL for published file download links. Set by installer when public network is chosen. |
 | `max_memory_gb` | `4` | Container RAM limit (applied via docker run/update). |
@@ -240,16 +240,16 @@ aliases.email = "marco@example.com"
 
 [users.anna]
 role = "user"
-tools = "*"
+wrappers = "*"
 aliases.discord = "anna_dev"
 
 [users.luca]
 role = "user"
-tools = ["search", "aider"]
+wrappers = ["search", "aider"]
 ```
 
-- **`role`**: `"admin"` (unrestricted exec, package management, all tools) or `"user"` (sandboxed exec, allowed tools only).
-- **`tools`**: which tools the planner can use for this user. `"*"` = all, or a list. Admins always have all tools regardless of this field.
+- **`role`**: `"admin"` (unrestricted exec, package management, all wrappers) or `"user"` (sandboxed exec, allowed wrappers only).
+- **`wrappers`**: which wrappers the planner can use for this user. `"*"` = all, or a list. Admins always have all wrappers regardless of this field.
 - **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform user.
 
 User identifiers are Linux users. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.

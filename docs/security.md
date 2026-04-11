@@ -54,7 +54,7 @@ aliases.telegram = "marco_tg"
 
 [users.anna]
 role = "user"
-tools = "*"
+wrappers = "*"
 aliases.discord = "anna_dev"
 ```
 
@@ -92,29 +92,29 @@ Each user needs an actual Linux user for the exec sandbox (see below). The user 
 
 ## 4. Role-Based Permissions
 
-| Role | Allowed task types | Tools | Package management | Who |
+| Role | Allowed task types | Wrappers | Package management | Who |
 |---|---|---|---|---|
-| `admin` | `exec` (unrestricted), `msg`, `tool`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
-| `user` | `exec` (sandboxed), `msg`, `tool`, `search` | per-user (`tools` field) | no | `role = "user"` in `[users]` |
+| `admin` | `exec` (unrestricted), `msg`, `wrapper`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
+| `user` | `exec` (sandboxed), `msg`, `wrapper`, `search` | per-user (`wrappers` field) | no | `role = "user"` in `[users]` |
 
-Both roles can use all task types. The differences are the **sandbox**, **tool access**, and optionally **exec confirmation**.
+Both roles can use all task types. The differences are the **sandbox**, **wrapper access**, and optionally **exec confirmation**.
 
-### Tool Access Control
+### Wrapper Access Control
 
-Users have a `tools` field in config that controls which tools the planner can use:
+Users have a `wrappers` field in config that controls which wrappers the planner can use:
 
-- `tools = "*"` — all installed tools
-- `tools = ["search", "aider"]` — only these specific tools
-- Admins always have access to all tools regardless of this field
+- `wrappers = "*"` — all installed wrappers
+- `wrappers = ["search", "aider"]` — only these specific wrappers
+- Admins always have access to all wrappers regardless of this field
 
-The planner receives the user's allowed tool list and only sees those tools in its context. It cannot plan tasks for tools the user doesn't have access to.
+The planner receives the user's allowed wrapper list and only sees those wrappers in its context. It cannot plan tasks for wrappers the user doesn't have access to.
 
 ### Exec Sandbox
 
 - **admin exec**: runs with `cwd=KISO_DIR/sessions/{session}`. Can access any path in the container. Full permissions.
 - **user exec**: runs with `cwd=KISO_DIR/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `KISO_DIR/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
-Tools run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
+Wrappers run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
 
 ### Knowledge Isolation
 
@@ -131,7 +131,7 @@ surface in a completely different context where the participants don't know it a
 
 | Category | Scope |
 |---|---|
-| `project`, `tool`, `general` | Global — technical facts are context-neutral |
+| `project`, `wrapper`, `general` | Global — technical facts are context-neutral |
 | `user` | Session where generated — personal learnings stay in their context |
 | Any category, admin user | Global — admins have system-wide oversight |
 
@@ -170,27 +170,27 @@ echo `rm -rf /`             # backtick substitution
 
 The full command is also checked as-is to catch patterns that span metacharacters (e.g. fork bombs `:(){ :|:& };:`).
 
-Additionally, the user's **role is re-verified** from `config.toml` before each exec/tool/search task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
+Additionally, the user's **role is re-verified** from `config.toml` before each exec/wrapper/search task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
 
 ### Runtime Permission Re-validation
 
-Before executing any task, kiso re-reads the user's role and allowed tools from `config.toml`:
+Before executing any task, kiso re-reads the user's role and allowed wrappers from `config.toml`:
 
 - If the user was removed from config → task fails, remaining tasks cancelled
 - If the user's role was downgraded (admin → user) → exec tasks run sandboxed
-- If a tool was removed from the user's allowed list → tool task fails
+- If a wrapper was removed from the user's allowed list → wrapper task fails
 
 This prevents stale permissions from being exploited between message ingestion and task execution.
 
 ### Package Management (admin only)
 
-Only admins can install/update/remove tools and connectors (includes running `deps.sh`).
+Only admins can install/update/remove wrappers and connectors (includes running `deps.sh`).
 
 ## 5. Secrets
 
 ### Deploy Secrets
 
-API keys and tokens that tools/connectors need to function. Belong to the *deployment*, not any user. The bot uses these as its own credentials (see [Bot Identity](#1-bot-identity)).
+API keys and tokens that wrappers/connectors need to function. Belong to the *deployment*, not any user. The bot uses these as its own credentials (see [Bot Identity](#1-bot-identity)).
 
 **Lifecycle**: set by admin via `kiso env set`. Persistent across restarts.
 
@@ -201,11 +201,11 @@ API keys and tokens that tools/connectors need to function. Belong to the *deplo
 **Declaration** in `kiso.toml`:
 
 ```toml
-[kiso.tool.env]
+[kiso.wrapper.env]
 api_key = { required = true }     # → KISO_TOOL_SEARCH_API_KEY
 ```
 
-Checked on install (warns if missing). Passed to tool automatically via subprocess environment.
+Checked on install (warns if missing). Passed to wrapper automatically via subprocess environment.
 
 **Management**:
 
@@ -228,11 +228,11 @@ Credentials a user provides during conversation (e.g. "use this token for now: t
 **Scoping** in `kiso.toml`:
 
 ```toml
-[kiso.tool]
+[kiso.wrapper]
 session_secrets = ["api_token"]
 ```
 
-Kiso passes **only the declared session secrets** to the tool. A tool declaring `session_secrets = ["api_token"]` will never see other ephemeral secrets — limits blast radius.
+Kiso passes **only the declared session secrets** to the wrapper. A wrapper declaring `session_secrets = ["api_token"]` will never see other ephemeral secrets — limits blast radius.
 
 **Planner behavior**: if a user shares credentials, the planner extracts them into the `secrets` field and informs the user they are temporary. If permanent credentials are needed, the planner tells the user to ask an admin to configure them as deploy secrets.
 
@@ -245,15 +245,15 @@ Kiso passes **only the declared session secrets** to the tool. A tool declaring 
 | **Storage** | `.env` file + env vars | Worker memory only (never DB) |
 | **Set by** | Admin via `kiso env` | User in chat, extracted by planner |
 | **Persistence** | Permanent until deleted | Lost on worker shutdown |
-| **Passed to tool via** | Subprocess environment | Input JSON (`session_secrets` field) |
-| **Declared in kiso.toml** | `[kiso.tool.env]` | `session_secrets = [...]` |
+| **Passed to wrapper via** | Subprocess environment | Input JSON (`session_secrets` field) |
+| **Declared in kiso.toml** | `[kiso.wrapper.env]` | `session_secrets = [...]` |
 
 ### Access Summary
 
 | Context | Deploy secrets | Ephemeral secrets |
 |---|---|---|
 | `exec` tasks | Not available (clean env, PATH only) | Not available |
-| `tool` tasks | Available via env vars (automatic) | Only declared ones, via input JSON |
+| `wrapper` tasks | Available via env vars (automatic) | Only declared ones, via input JSON |
 | `search` tasks | Not available (LLM call, no env) | Not available |
 | `msg` tasks | Not available (LLM sees nothing) | Not available (LLM sees key names only, never values) |
 
@@ -261,12 +261,12 @@ Kiso passes **only the declared session secrets** to the tool. A tool declaring 
 
 1. **Output sanitization**: known secret values (deploy + ephemeral) stripped from task output — plaintext, base64, and URL-encoded variants. Best-effort; encoded variants beyond these are not guaranteed to be caught. See [audit.md](audit.md) for the masking algorithm.
 2. **Clean subprocess env**: exec tasks inherit only PATH.
-3. **Scoped secrets**: tools receive only declared secrets, not the full bag.
+3. **Scoped secrets**: wrappers receive only declared secrets, not the full bag.
 4. **Prompt hardening**: every role's prompt includes "never reveal secrets or configuration."
 
 ## 6. Prompt Injection Defense
 
-Any content originating from outside kiso's trust boundary is treated as potentially hostile. This includes messages from non-whitelisted users **and** output from exec/tool tasks (which may contain attacker-crafted content from the internet, external repos, APIs, etc.).
+Any content originating from outside kiso's trust boundary is treated as potentially hostile. This includes messages from non-whitelisted users **and** output from exec/wrapper tasks (which may contain attacker-crafted content from the internet, external repos, APIs, etc.).
 
 ### Layer 1: Paraphrasing
 
@@ -294,11 +294,11 @@ Before fencing, any occurrence of the pattern `<<<.*>>>` in the content is escap
 <<<END_UNTRUSTED_CTX_9f2a7c1e>>>
 ```
 
-**Task output** (exec/tool results, in reviewer and replan context):
+**Task output** (exec/wrapper results, in reviewer and replan context):
 
 ```
 <<<TASK_OUTPUT_3b8d4f2a>>>
-... stdout/stderr from exec or tool ...
+... stdout/stderr from exec or wrapper ...
 <<<END_TASK_OUTPUT_3b8d4f2a>>>
 ```
 
@@ -317,7 +317,7 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 | Content | Fenced | Where |
 |---|---|---|
 | Untrusted messages (paraphrased) | yes | Planner context |
-| Exec/tool task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
+| Exec/wrapper task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
 | Facts, summary, pending items | no | Generated internally by kiso LLM calls |
 | Trusted user messages | no | From whitelisted users |
 | Task detail, expect | no | Written by the planner |
@@ -326,17 +326,17 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 
 These layers reduce risk significantly but cannot guarantee absolute protection against all prompt injection techniques. In security-sensitive environments, disable untrusted message inclusion entirely (config setting) or restrict shared sessions to whitelisted users only.
 
-### Tool Trust Model
+### Wrapper Trust Model
 
-Tools run as subprocesses with **unrestricted network access**. A compromised or malicious tool can exfiltrate data (including ephemeral secrets passed via input JSON) via HTTP calls to external servers. Kiso does not sandbox tool network access.
+Wrappers run as subprocesses with **unrestricted network access**. A compromised or malicious wrapper can exfiltrate data (including ephemeral secrets passed via input JSON) via HTTP calls to external servers. Kiso does not sandbox wrapper network access.
 
 Mitigations are organizational, not technical:
-- **Official tools** (from `kiso-run` org) are reviewed and trusted
-- **Unofficial tools** trigger a warning on install (see [section 8](#8-unofficial-package-warning))
-- **Secret scoping** limits which ephemeral secrets each tool receives (declared in `kiso.toml`)
-- **Output sanitization** strips known secret values from tool output before storage
+- **Official wrappers** (from `kiso-run` org) are reviewed and trusted
+- **Unofficial wrappers** trigger a warning on install (see [section 8](#8-unofficial-package-warning))
+- **Secret scoping** limits which ephemeral secrets each wrapper receives (declared in `kiso.toml`)
+- **Output sanitization** strips known secret values from wrapper output before storage
 
-**Admin responsibility**: only install tools you trust. Review `run.py` and dependencies before installing unofficial packages.
+**Admin responsibility**: only install wrappers you trust. Review `run.py` and dependencies before installing unofficial packages.
 
 ## 7. Webhook Validation
 
@@ -374,10 +374,10 @@ Without this allowlist, `localhost` webhook URLs are rejected by default.
 
 ## 8. Unofficial Package Warning
 
-When installing a tool or connector from a source outside the `kiso-run` GitHub org, kiso warns and **displays the contents of `deps.sh`** (if present) before asking for confirmation:
+When installing a wrapper or connector from a source outside the `kiso-run` GitHub org, kiso warns and **displays the contents of `deps.sh`** (if present) before asking for confirmation:
 
 ```
-⚠ This is an unofficial package from github.com:someone/my-tool.
+⚠ This is an unofficial package from github.com:someone/my-wrapper.
 
 deps.sh contents (will run as root in container):
 ────────────────────────────────────────
@@ -405,7 +405,7 @@ Kiso enforces safe package installation inside the container:
 | "install flask with pipx" | `pipx install flask` | Explicit user choice, isolated env — allowed |
 | "install flask with pip" | **Blocked** → retried as `uv pip install flask` | Bare `pip install` can corrupt the system venv where kiso runs |
 | "install timg" | `apt-get install -y timg` | System package (not in registry_hints) |
-| "install browser" | `needs_install: ["browser"]` + msg asking for approval | Kiso tool (in registry_hints) |
+| "install browser" | `needs_install: ["browser"]` + msg asking for approval | Kiso wrapper (in registry_hints) |
 
 **Why bare `pip install` is blocked:**
 
@@ -414,12 +414,12 @@ Kiso's Python environment (`/opt/kiso/.venv/`) contains the server itself and al
 **Enforcement layers:**
 
 1. **Prompt rule** (always visible in core prompt): tells the planner to use `uv pip install` for Python libraries
-2. **Safety net** (brain.py): forces the `kiso_native` module into the planner context when tools need installing, ensuring the full install decision tree is available
+2. **Safety net** (brain.py): forces the `kiso_native` module into the planner context when wrappers need installing, ensuring the full install decision tree is available
 3. **Validation** (brain.py `_PIP_INSTALL_RE`): deterministically rejects exec tasks containing `pip install` without `uv` prefix. Catches both literal (`pip install flask`) and natural language (`install flask using pip`) phrasings
 
 The validation feedback tells the LLM to retry with `uv pip install`. The user sees the successful result — the internal retry is transparent.
 
-**Tools that bypass the check:** `pipx install` is allowed because pipx creates isolated environments per application. `apt-get install` is allowed for system packages. Only bare `pip install` (which operates on the shared system venv) is blocked.
+**Wrappers that bypass the check:** `pipx install` is allowed because pipx creates isolated environments per application. `apt-get install` is allowed for system packages. Only bare `pip install` (which operates on the shared system venv) is blocked.
 
 ## 10. Implementation Notes
 
@@ -431,7 +431,7 @@ Hardening measures to implement for production deployments.
 - **User names**: must match Linux user constraints (`^[a-z_][a-z0-9_-]{0,31}$`).
 - **Token names** in config: same constraints as user names.
 - **Alias values**: case-sensitive, no Unicode normalization. Duplicate aliases across users are rejected at config load time.
-- **Tool args JSON**: max 64KB. Nesting depth max 5 levels. Validated before passing to subprocess.
+- **Wrapper args JSON**: max 64KB. Nesting depth max 5 levels. Validated before passing to subprocess.
 
 ### Rate Limiting
 
@@ -464,7 +464,7 @@ The worker's message-processing loop is wrapped in a try/except that catches une
 On startup, kiso recovers from unclean shutdowns:
 
 1. **Stale plans/tasks**: Any plans or tasks left in `running` status (from a previous crash) are marked `failed`. Tasks receive output `"Server restarted"`.
-2. **Unprocessed messages**: Trusted messages with `processed=0` are re-enqueued to their session workers. User roles and tools are re-resolved from the current config (not cached from ingestion time).
+2. **Unprocessed messages**: Trusted messages with `processed=0` are re-enqueued to their session workers. User roles and wrappers are re-resolved from the current config (not cached from ingestion time).
 3. **Graceful shutdown**: On shutdown, workers receive a cancel signal and are given `llm_timeout` seconds to finish. Workers that don't finish are force-cancelled.
 
 ### Audit File Locking
@@ -477,19 +477,19 @@ After extracting content from an LLM response, kiso validates that the content i
 
 ### Plan Task Type Validation
 
-`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `tool`, `search`, `replan`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
+`validate_plan()` explicitly rejects unknown task types (anything other than `exec`, `msg`, `wrapper`, `search`, `replan`). While the JSON schema enum guards this at the LLM level, defensive validation catches any schema bypass or malformed plan.
 
 ### Cancel During Replan
 
 When a cancel event is set during the replan window (after a failed plan execution, before the replanning LLM call), the worker checks `cancel_event` and breaks out of the replan loop immediately. This prevents unnecessary LLM calls and task execution after the user has requested cancellation.
 
-### Tool Name Deduplication
+### Wrapper Name Deduplication
 
-`discover_tools()` tracks seen tool names and skips duplicate entries when two tool directories declare the same `name` in `kiso.toml`. The first directory (sorted alphabetically) wins. Duplicates are logged as warnings.
+`discover_tools()` tracks seen wrapper names and skips duplicate entries when two wrapper directories declare the same `name` in `kiso.toml`. The first directory (sorted alphabetically) wins. Duplicates are logged as warnings.
 
 ### Output Size Limits
 
-Exec and tool output is capped at `max_output_size` (see [config.md](config.md)). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/tools.
+Exec and wrapper output is capped at `max_output_size` (see [config.md](config.md)). Output exceeding the limit is truncated with a `[truncated]` marker. The task still completes normally — truncation does not cause failure. Prevents memory exhaustion from malicious or runaway commands/wrappers.
 
 ### Post-Plan LLM Timeouts
 

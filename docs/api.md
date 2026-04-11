@@ -251,7 +251,7 @@ Every `msg` task output is POSTed to the session's webhook URL (set via `POST /s
 ```
 
 - `final: true` on the last `msg` task in the current plan, sent only after the entire plan completes successfully (no pending reviews). Also `true` on the cancel summary message.
-- Only `msg` tasks trigger webhooks — `exec` and `tool` outputs are internal. See [flow.md — Delivers msg Tasks](flow.md#f-reviews-and-delivers).
+- Only `msg` tasks trigger webhooks — `exec` and `wrapper` outputs are internal. See [flow.md — Delivers msg Tasks](flow.md#f-reviews-and-delivers).
 - **Retry**: 3 attempts with backoff (1s, 3s, 9s). If all fail, kiso logs the failure and continues. Outputs remain available via `/status`.
 - **Connector requirement**: connectors must implement a polling fallback — if no webhook callback arrives within a reasonable timeout, poll `GET /status/{session}?after={last_task_id}` to recover missed responses.
 
@@ -267,11 +267,11 @@ Path traversal protection: `(pub_dir / filename).resolve()` is verified with `Pa
 
 **404** if the token doesn't match any session, the file doesn't exist, or path traversal is detected.
 
-Files are published by exec or tool tasks that write to `pub/` in the session workspace. No DB registration needed — the worker scans `pub/` after exec tasks and appends URLs to the task output.
+Files are published by exec or wrapper tasks that write to `pub/` in the session workspace. No DB registration needed — the worker scans `pub/` after exec tasks and appends URLs to the task output.
 
 ## GET /health
 
-Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and monitoring tools.
+Health check. **No authentication required.** Used by Docker `HEALTHCHECK` and monitoring wrappers.
 
 **Response** `200 OK`:
 

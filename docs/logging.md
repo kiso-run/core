@@ -34,7 +34,7 @@ Everything that happens in a session, including full task output inline.
   Analyzing the request. I'll set up JWT authentication with
   login/logout endpoints and middleware for token validation.
 [2026-02-13 10:30:07] [1/4] done → delivered
-[2026-02-13 10:30:07] [2/4] tool:aider {"message": "add JWT auth to main.py"}
+[2026-02-13 10:30:07] [2/4] wrapper:aider {"message": "add JWT auth to main.py"}
 [2026-02-13 10:30:18] [2/4] output:
   Applied changes to main.py:
   + added /login and /logout endpoints
