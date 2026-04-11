@@ -6,12 +6,12 @@ import asyncio
 import json
 from pathlib import Path
 
-from kiso.tools import build_tool_env, build_tool_input
+from kiso.wrappers import build_wrapper_env, build_wrapper_input
 
 from kiso.worker.utils import _run_subprocess, _session_workspace
 
 
-async def _tool_task(
+async def _wrapper_task(
     session: str,
     tool: dict,
     args: dict,
@@ -28,12 +28,12 @@ async def _tool_task(
     """
     workspace = _session_workspace(session)
 
-    input_data = build_tool_input(
+    input_data = build_wrapper_input(
         tool, args, session, str(workspace),
         session_secrets=session_secrets,
         plan_outputs=plan_outputs,
     )
-    env = build_tool_env(tool)
+    env = build_wrapper_env(tool)
 
     tool_path = Path(tool["path"])
     venv_python = tool_path / ".venv" / "bin" / "python"

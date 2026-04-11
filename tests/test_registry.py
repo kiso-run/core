@@ -9,7 +9,7 @@ import pytest
 import kiso.registry as reg
 
 FAKE_REGISTRY = {
-    "tools": [
+    "wrappers": [
         {"name": "browser", "description": "Headless WebKit browser automation"},
         {"name": "aider", "description": "Code editing and refactoring"},
         {"name": "websearch", "description": "Web search engine"},
@@ -46,10 +46,10 @@ class TestRegistryJsonShape:
         return json.loads(path.read_text())
 
     def test_top_level_keys(self, registry):
-        assert set(registry.keys()) == {"tools", "recipes", "connectors", "presets"}
+        assert set(registry.keys()) == {"wrappers", "recipes", "connectors", "presets"}
 
     def test_tools_have_name_and_description(self, registry):
-        for entry in registry["tools"]:
+        for entry in registry["wrappers"]:
             assert entry.get("name")
             assert entry.get("description")
 
@@ -63,8 +63,8 @@ class TestRegistryJsonShape:
             assert entry.get("name")
             assert entry.get("description")
 
-    def test_tool_names_unique(self, registry):
-        names = [e["name"] for e in registry["tools"]]
+    def test_wrapper_names_unique(self, registry):
+        names = [e["name"] for e in registry["wrappers"]]
         assert len(names) == len(set(names))
 
     def test_connector_names_unique(self, registry):
@@ -74,7 +74,7 @@ class TestRegistryJsonShape:
     def test_official_tools_present(self, registry):
         """Pin the canonical official tool list. New official tools
         must be added here so coverage stays explicit."""
-        names = {e["name"] for e in registry["tools"]}
+        names = {e["name"] for e in registry["wrappers"]}
         official = {
             "websearch", "aider", "browser", "moltbook", "gworkspace",
             "docreader", "transcriber", "ocr",
@@ -97,10 +97,10 @@ class TestRegistryJsonShape:
 class TestFetchRegistry:
     def test_returns_registry_on_success(self):
         mock_resp = MagicMock()
-        mock_resp.text = '{"tools": [{"name": "browser", "description": "desc"}]}'
+        mock_resp.text = '{"wrappers": [{"name": "browser", "description": "desc"}]}'
         with patch("httpx.get", return_value=mock_resp):
             result = reg.fetch_registry()
-        assert result == {"tools": [{"name": "browser", "description": "desc"}]}
+        assert result == {"wrappers": [{"name": "browser", "description": "desc"}]}
 
     def test_returns_empty_on_network_error(self):
         import httpx
@@ -111,7 +111,7 @@ class TestFetchRegistry:
 
     def test_caches_result(self):
         mock_resp = MagicMock()
-        mock_resp.text = '{"tools": []}'
+        mock_resp.text = '{"wrappers": []}'
         with patch("httpx.get", return_value=mock_resp) as mock_get:
             reg.fetch_registry()
             reg.fetch_registry()
@@ -121,7 +121,7 @@ class TestFetchRegistry:
         import httpx
 
         mock_resp = MagicMock()
-        mock_resp.text = '{"tools": [{"name": "browser", "description": "d"}]}'
+        mock_resp.text = '{"wrappers": [{"name": "browser", "description": "d"}]}'
         with patch("httpx.get", return_value=mock_resp):
             first = reg.fetch_registry()
         # Expire cache
@@ -136,23 +136,23 @@ class TestFetchRegistry:
 
 class TestSearchEntries:
     def test_no_query_returns_all(self):
-        entries = FAKE_REGISTRY["tools"]
+        entries = FAKE_REGISTRY["wrappers"]
         assert reg.search_entries(entries, None) == entries
 
     def test_name_match(self):
-        entries = FAKE_REGISTRY["tools"]
+        entries = FAKE_REGISTRY["wrappers"]
         result = reg.search_entries(entries, "browser")
         assert len(result) == 1
         assert result[0]["name"] == "browser"
 
     def test_description_match(self):
-        entries = FAKE_REGISTRY["tools"]
+        entries = FAKE_REGISTRY["wrappers"]
         result = reg.search_entries(entries, "refactoring")
         assert len(result) == 1
         assert result[0]["name"] == "aider"
 
     def test_no_match(self):
-        entries = FAKE_REGISTRY["tools"]
+        entries = FAKE_REGISTRY["wrappers"]
         assert reg.search_entries(entries, "nonexistent") == []
 
 
@@ -163,39 +163,39 @@ class TestCrossTypeHint:
     def test_hint_found(self):
         hint = reg.cross_type_hint(FAKE_REGISTRY, "connectors", "browser")
         assert hint is not None
-        assert "kiso tool search browser" in hint
+        assert "kiso wrapper search browser" in hint
 
     def test_no_hint(self):
         hint = reg.cross_type_hint(FAKE_REGISTRY, "connectors", "nonexistent")
         assert hint is None
 
 
-# --- get_registry_tools ---
+# --- get_registry_wrappers ---
 
 
 class TestGetRegistryTools:
     def test_all_uninstalled(self):
         with patch.object(reg, "fetch_registry", return_value=FAKE_REGISTRY):
-            result = reg.get_registry_tools(set())
+            result = reg.get_registry_wrappers(set())
         assert "browser" in result
         assert "aider" in result
         assert "websearch" in result
 
     def test_filters_installed(self):
         with patch.object(reg, "fetch_registry", return_value=FAKE_REGISTRY):
-            result = reg.get_registry_tools({"browser", "aider"})
+            result = reg.get_registry_wrappers({"browser", "aider"})
         assert "browser" not in result
         assert "aider" not in result
         assert "websearch" in result
 
     def test_all_installed_returns_empty(self):
         with patch.object(reg, "fetch_registry", return_value=FAKE_REGISTRY):
-            result = reg.get_registry_tools({"browser", "aider", "websearch"})
+            result = reg.get_registry_wrappers({"browser", "aider", "websearch"})
         assert result == ""
 
     def test_empty_registry_returns_empty(self):
         with patch.object(reg, "fetch_registry", return_value={}):
-            result = reg.get_registry_tools(set())
+            result = reg.get_registry_wrappers(set())
         assert result == ""
 
 
@@ -203,19 +203,19 @@ class TestGetRegistryTools:
 
 
 class TestBrainRegistryIntegration:
-    """Verify that get_registry_tools is called from brain context building."""
+    """Verify that get_registry_wrappers is called from brain context building."""
 
-    def test_registry_tools_injected_when_no_tools_installed(self):
-        """When no tools installed, registry text is non-empty."""
+    def test_registry_wrappers_injected_when_none_installed(self):
+        """When no wrappers installed, registry text is non-empty."""
         with patch.object(reg, "fetch_registry", return_value=FAKE_REGISTRY):
-            text = reg.get_registry_tools(set())
-        assert "Available tools (not installed):" in text
+            text = reg.get_registry_wrappers(set())
+        assert "Available wrappers (not installed):" in text
         assert "browser" in text
         assert "aider" in text
 
-    def test_registry_tools_empty_when_all_installed(self):
-        """When all tools installed, registry text is empty."""
-        all_names = {t["name"] for t in FAKE_REGISTRY["tools"]}
+    def test_registry_wrappers_empty_when_all_installed(self):
+        """When all wrappers installed, registry text is empty."""
+        all_names = {t["name"] for t in FAKE_REGISTRY["wrappers"]}
         with patch.object(reg, "fetch_registry", return_value=FAKE_REGISTRY):
-            text = reg.get_registry_tools(all_names)
+            text = reg.get_registry_wrappers(all_names)
         assert text == ""

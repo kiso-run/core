@@ -37,15 +37,15 @@ _HALLUCINATION_MARKERS = [
     "github.com/guidance-ai",
 ]
 
-async def _ensure_tool(run_message, tool_name: str, prompt: str, *, timeout: float = TOOL_TIMEOUT):
+async def _ensure_tool(run_message, wrapper_name: str, prompt: str, *, timeout: float = TOOL_TIMEOUT):
     """Run prompt, handling tool install flow if needed."""
     result = await run_message(prompt, timeout=timeout)
-    if tool_installed(tool_name):
+    if tool_installed(wrapper_name):
         return result
     # Install the tool
-    await run_message(f"yes, install {tool_name}", timeout=timeout)
-    if not tool_installed(tool_name):
-        pytest.skip(f"Could not install {tool_name}")
+    await run_message(f"yes, install {wrapper_name}", timeout=timeout)
+    if not tool_installed(wrapper_name):
+        pytest.skip(f"Could not install {wrapper_name}")
     # Retry with tool available
     return await run_message(prompt, timeout=timeout)
 

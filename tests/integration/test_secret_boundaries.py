@@ -1,13 +1,13 @@
 """Scoped session_secrets containment end-to-end (M1273).
 
-Unit-level containment for ``build_tool_input`` is already covered in
+Unit-level containment for ``build_wrapper_input`` is already covered in
 ``tests/test_tools.py:1092-1138`` (test_scoped_session_secrets,
 test_no_declared_secrets_scoped_empty, test_none_session_secrets), and
 ``sanitize_output`` redaction is covered in
 ``tests/test_security.py:174-240``.
 
 This module covers the **end-to-end runtime path**: the full flow from
-session_secrets passed to ``_tool_task`` → real subprocess execution
+session_secrets passed to ``_wrapper_task`` → real subprocess execution
 → tool stdout. The fake tool from M1268 echoes the stdin payload so
 the test can assert exactly what the subprocess actually received.
 
@@ -26,7 +26,7 @@ import json
 
 import pytest
 
-from kiso.worker.tool import _tool_task
+from kiso.worker.wrapper import _wrapper_task
 
 from tests.integration.conftest import fake_tool  # noqa: F401  (fixture)
 
@@ -49,7 +49,7 @@ class TestSessionSecretContainmentEndToEnd:
         }
 
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
-            stdout, stderr, success, rc = await _tool_task(
+            stdout, stderr, success, rc = await _wrapper_task(
                 session="secret-containment-1",
                 tool=fake_tool,
                 args={},
@@ -77,7 +77,7 @@ class TestSessionSecretContainmentEndToEnd:
         }
 
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
-            stdout, _stderr, success, _rc = await _tool_task(
+            stdout, _stderr, success, _rc = await _wrapper_task(
                 session="secret-containment-2",
                 tool=fake_tool,
                 args={},
@@ -98,12 +98,12 @@ class TestSessionSecretContainmentEndToEnd:
     async def test_none_session_secrets_yields_empty_scope(
         self, fake_tool, tmp_path,
     ):
-        """Calling _tool_task with session_secrets=None yields an empty
+        """Calling _wrapper_task with session_secrets=None yields an empty
         session_secrets dict in the tool stdin payload."""
         from unittest.mock import patch
 
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
-            stdout, _stderr, success, _rc = await _tool_task(
+            stdout, _stderr, success, _rc = await _wrapper_task(
                 session="secret-containment-3",
                 tool=fake_tool,
                 args={},

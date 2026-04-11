@@ -248,7 +248,7 @@ class TestFunctionalResult:
         )
         assert r.task_types() == ["exec", "tool", "msg"]
 
-    def test_tool_tasks(self):
+    def test_wrapper_tasks(self):
         r = FunctionalResult(
             success=True,
             tasks=[

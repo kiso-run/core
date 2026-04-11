@@ -171,7 +171,7 @@ def test_connector_list_shows_connectors(capsys):
 
 
 FAKE_REGISTRY = {
-    "tools": [
+    "wrappers": [
         {"name": "search", "description": "Web search"},
     ],
     "connectors": [
@@ -239,11 +239,11 @@ def test_cross_type_hint_returns_hint_for_other_type():
 
     registry = {
         "connectors": [{"name": "discord", "description": "Discord bridge"}],
-        "tools": [{"name": "browser", "description": "Web browser"}],
+        "wrappers": [{"name": "browser", "description": "Web browser"}],
     }
     result = cross_type_hint(registry, "connectors", "browser")
     assert result is not None
-    assert "kiso tool search browser" in result
+    assert "kiso wrapper search browser" in result
     assert "browser" in result
 
 
@@ -287,7 +287,7 @@ def test_connector_search_cross_type_hint_shown(capsys):
         _connector_search(argparse.Namespace(query="search"))
     out = capsys.readouterr().out
     assert "No connectors found." in out
-    assert "kiso tool search" in out
+    assert "kiso wrapper search" in out
     assert "search" in out
 
 

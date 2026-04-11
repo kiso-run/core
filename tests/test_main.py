@@ -219,7 +219,7 @@ class TestInitKisoDirs:
         """_init_kiso_dirs creates tools/ for installed kiso tools."""
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
-        assert (tmp_path / "tools").is_dir()
+        assert (tmp_path / "wrappers").is_dir()
 
     def test_creates_connectors_directory(self, tmp_path):
         """_init_kiso_dirs creates connectors/ for installed connectors."""
@@ -255,7 +255,7 @@ class TestInitKisoDirs:
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
             _init_kiso_dirs()
-        for name in ("tools", "connectors", "recipes", "sessions", "roles"):
+        for name in ("wrappers", "connectors", "recipes", "sessions", "roles"):
             assert (tmp_path / name).is_dir(), f"{name}/ missing after 2nd run"
 
     # -- Roles copied to user dir at init (no overwrite, self-heal) --

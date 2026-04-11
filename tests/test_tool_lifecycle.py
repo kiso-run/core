@@ -13,12 +13,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.tools import (
-    build_planner_tool_list,
-    discover_tools,
-    invalidate_tools_cache,
+from kiso.wrappers import (
+    build_planner_wrapper_list,
+    discover_wrappers,
+    invalidate_wrappers_cache,
 )
-from kiso.tool_repair import repair_unhealthy_tools
+from kiso.wrapper_repair import repair_unhealthy_wrappers
 
 
 # Minimal valid kiso.toml
@@ -60,30 +60,30 @@ class TestToolLifecycleRecovery:
     """Full cycle: broken tool → detected → planner warned → repaired → healthy."""
 
     def test_broken_tool_detected_and_annotated(self, tmp_path):
-        """Step 1-2: discover_tools finds tool with healthy=False,
-        build_planner_tool_list shows [BROKEN] annotation."""
-        tools_dir = tmp_path / "tools"
+        """Step 1-2: discover_wrappers finds tool with healthy=False,
+        build_planner_wrapper_list shows [BROKEN] annotation."""
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "browser", "Browser automation",
                      binary="nonexistent_playwright_xyz")
 
-        invalidate_tools_cache()
-        tools = discover_tools(tools_dir)
+        invalidate_wrappers_cache()
+        tools = discover_wrappers(tools_dir)
         assert len(tools) == 1
         assert tools[0]["name"] == "browser"
         assert tools[0]["healthy"] is False
         assert "nonexistent_playwright_xyz" in tools[0]["missing_deps"]
 
         # Planner sees the broken annotation
-        tool_list = build_planner_tool_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(tools, "admin")
         assert "[BROKEN" in tool_list
         assert "missing: nonexistent_playwright_xyz" in tool_list
         assert "kiso tool remove browser" in tool_list
 
     async def test_repair_fixes_broken_tool(self, tmp_path):
-        """Step 3: repair_unhealthy_tools runs deps.sh which installs
+        """Step 3: repair_unhealthy_wrappers runs deps.sh which installs
         the missing binary, then re-discovery shows healthy=True."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
 
         # Create a fake binary dir that deps.sh will populate
@@ -100,58 +100,58 @@ class TestToolLifecycleRecovery:
                      binary="fake_playwright", deps_sh=deps_script)
 
         # Phase 1: tool is broken
-        invalidate_tools_cache()
-        tools = discover_tools(tools_dir)
+        invalidate_wrappers_cache()
+        tools = discover_wrappers(tools_dir)
         assert tools[0]["healthy"] is False
 
         # Phase 2: repair runs deps.sh
-        repaired = await repair_unhealthy_tools(tools_dir)
+        repaired = await repair_unhealthy_wrappers(tools_dir)
         assert "browser" in repaired
         assert fake_binary.exists()
 
         # Phase 3: re-discover with updated PATH
-        invalidate_tools_cache()
+        invalidate_wrappers_cache()
         env_path = os.environ.get("PATH", "") + ":" + str(bin_dir)
         with patch.dict(os.environ, {"PATH": env_path}):
-            tools = discover_tools(tools_dir)
+            tools = discover_wrappers(tools_dir)
 
         assert len(tools) == 1
         assert tools[0]["healthy"] is True
         assert tools[0]["missing_deps"] == []
 
         # Planner no longer sees [BROKEN]
-        tool_list = build_planner_tool_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(tools, "admin")
         assert "[BROKEN" not in tool_list
         assert "- browser — Browser automation" in tool_list
 
     def test_healthy_tool_stays_healthy(self, tmp_path):
         """Healthy tool is not touched by the repair flow."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         marker = tmp_path / "should_not_run.marker"
         _create_tool(tools_dir, "echo", "Echo skill",
                      binary="bash",
                      deps_sh=f"#!/bin/bash\ntouch {marker}")
 
-        invalidate_tools_cache()
-        tools = discover_tools(tools_dir)
+        invalidate_wrappers_cache()
+        tools = discover_wrappers(tools_dir)
         assert tools[0]["healthy"] is True
 
-        tool_list = build_planner_tool_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(tools, "admin")
         assert "- echo — Echo skill" in tool_list
         assert "[BROKEN" not in tool_list
         assert not marker.exists()  # deps.sh was never called
 
     def test_mixed_healthy_and_broken(self, tmp_path):
         """Multiple tools: one healthy, one broken — only broken is flagged."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", "Echo skill", binary="bash")
         _create_tool(tools_dir, "browser", "Browser automation",
                      binary="nonexistent_xyz_12345")
 
-        invalidate_tools_cache()
-        tools = discover_tools(tools_dir)
+        invalidate_wrappers_cache()
+        tools = discover_wrappers(tools_dir)
         assert len(tools) == 2
 
         healthy = [s for s in tools if s["healthy"]]
@@ -161,7 +161,7 @@ class TestToolLifecycleRecovery:
         assert healthy[0]["name"] == "echo"
         assert broken[0]["name"] == "browser"
 
-        tool_list = build_planner_tool_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(tools, "admin")
         # echo is clean
         assert "- echo — Echo skill" in tool_list
         # browser is annotated
@@ -171,7 +171,7 @@ class TestToolLifecycleRecovery:
     async def test_full_cycle_end_to_end(self, tmp_path):
         """Complete lifecycle: install → image rebuild (deps gone) → detect →
         repair → recover. Simulates the exact real-world failure."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
@@ -186,28 +186,28 @@ class TestToolLifecycleRecovery:
         )
 
         # 1. Discovery: broken
-        invalidate_tools_cache()
-        tools = discover_tools(tools_dir)
+        invalidate_wrappers_cache()
+        tools = discover_wrappers(tools_dir)
         assert tools[0]["healthy"] is False
 
         # 2. Planner sees broken annotation
-        tool_list = build_planner_tool_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(tools, "admin")
         assert "[BROKEN" in tool_list
 
         # 3. Auto-repair on startup
-        repaired = await repair_unhealthy_tools(tools_dir)
+        repaired = await repair_unhealthy_wrappers(tools_dir)
         assert "my-skill" in repaired
         assert fake_bin.exists()
 
         # 4. Re-discovery: healthy
-        invalidate_tools_cache()
+        invalidate_wrappers_cache()
         env_path = os.environ.get("PATH", "") + ":" + str(bin_dir)
         with patch.dict(os.environ, {"PATH": env_path}):
-            tools = discover_tools(tools_dir)
+            tools = discover_wrappers(tools_dir)
 
         assert tools[0]["healthy"] is True
 
         # 5. Planner sees clean tool
-        tool_list = build_planner_tool_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(tools, "admin")
         assert "[BROKEN" not in tool_list
         assert "- my-skill — My tool" in tool_list

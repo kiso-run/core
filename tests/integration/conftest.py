@@ -398,13 +398,13 @@ def fake_tool(tmp_path: Path):
     """Create a fake Kiso tool package in a temp directory.
 
     Returns a dict shaped like the entries produced by
-    ``kiso.tools.discover_tools``: ``{"name", "path", "session_secrets",
+    ``kiso.wrappers.discover_wrappers``: ``{"name", "path", "session_secrets",
     "env", ...}``. The tool's `run.py` reads stdin as JSON and prints
     a containment report. Used by M1273 secret containment tests to
     assert via real subprocess execution.
     """
     name = "faketool"
-    tool_dir = tmp_path / "tools" / name
+    tool_dir = tmp_path / "wrappers" / name
     tool_dir.mkdir(parents=True)
     (tool_dir / "manifest.toml").write_text(_FAKE_TOOL_MANIFEST.format(name=name))
     run_py = tool_dir / "run.py"

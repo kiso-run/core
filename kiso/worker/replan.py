@@ -80,8 +80,8 @@ def _task_type_label(task: dict) -> str:
     """Format task type, including tool name when present."""
     result = _task_result_from_source(task)
     label = result.task_type
-    if result.tool_name:
-        label += f"/{result.tool_name}"
+    if result.wrapper_name:
+        label += f"/{result.wrapper_name}"
     return label
 
 

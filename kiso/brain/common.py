@@ -22,7 +22,7 @@ from .prompts import (
 )
 from kiso.config import Config, KISO_DIR, setting_bool, setting_int
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
-from kiso.registry import get_registry_tools
+from kiso.registry import get_registry_wrappers
 from kiso.security import fence_content
 from kiso.connectors import discover_connectors
 from kiso.recipe_loader import (
@@ -31,11 +31,11 @@ from kiso.recipe_loader import (
     build_planner_recipe_list,
     filter_recipes_for_message,
 )
-from kiso.tools import (
-    discover_tools,
-    build_planner_tool_list,
-    validate_tool_args,
-    validate_tool_args_semantic,
+from kiso.wrappers import (
+    discover_wrappers,
+    build_planner_wrapper_list,
+    validate_wrapper_args,
+    validate_wrapper_args_semantic,
 )
 from kiso.store import (
     _normalize_entity_name,
@@ -54,11 +54,11 @@ log = logging.getLogger(__name__)
 # Task type constants
 TASK_TYPE_EXEC = "exec"
 TASK_TYPE_MSG = "msg"
-TASK_TYPE_TOOL = "tool"
+TASK_TYPE_WRAPPER = "tool"
 TASK_TYPE_SEARCH = "search"
 TASK_TYPE_REPLAN = "replan"
 TASK_TYPES: frozenset[str] = frozenset({
-    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_TOOL, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
+    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
 })
 
 # Review status constants
@@ -140,8 +140,8 @@ _APPROVAL_KEYWORDS = frozenset({
     "installa", "install",
 })
 _INSTALL_MODE_NONE = "none"
-_INSTALL_MODE_KISO_TOOL = "kiso_tool"
-_INSTALL_MODE_UNKNOWN_KISO_TOOL = "unknown_kiso_tool"
+_INSTALL_MODE_KISO_WRAPPER = "kiso_tool"
+_INSTALL_MODE_UNKNOWN_KISO_WRAPPER = "unknown_kiso_tool"
 _INSTALL_MODE_PYTHON_LIB = "python_lib"
 _INSTALL_MODE_SYSTEM_PKG = "system_pkg"
 _INSTALL_TARGET_RE = re.compile(
@@ -259,7 +259,7 @@ def _extract_install_target(message: str) -> str | None:
     return target
 
 
-def _is_explicit_named_tool_request(message: str, target: str) -> bool:
+def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
     """Return True when the user explicitly frames *target* as a named tool/plugin."""
     if not target:
         return False
@@ -273,7 +273,7 @@ def _classify_install_mode(
     message: str,
     sys_env: dict,
     *,
-    installed_tool_names: "list[str] | set[str] | None" = None,
+    installed_wrapper_names: "list[str] | set[str] | None" = None,
     registry_hint_names: "set[str] | frozenset[str] | None" = None,
 ) -> dict[str, str]:
     """Deterministically route install-family requests before planning."""
@@ -286,19 +286,19 @@ def _classify_install_mode(
         return {"mode": _INSTALL_MODE_NONE}
 
     hint_names = {n.lower() for n in (registry_hint_names or set())}
-    installed_names = {n.lower() for n in (installed_tool_names or set())}
+    installed_names = {n.lower() for n in (installed_wrapper_names or set())}
     if target in hint_names or target in installed_names:
         return {
-            "mode": _INSTALL_MODE_KISO_TOOL,
+            "mode": _INSTALL_MODE_KISO_WRAPPER,
             "target": target,
             "target_installed": target in installed_names,
             "explicit_install_request": True,
             "reason": "target matches kiso tool context",
         }
 
-    if _is_explicit_named_tool_request(message, target):
+    if _is_explicit_named_wrapper_request(message, target):
         return {
-            "mode": _INSTALL_MODE_UNKNOWN_KISO_TOOL,
+            "mode": _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
             "target": target,
             "reason": "user explicitly requested a named tool/plugin not present in current kiso tool context",
         }
@@ -349,10 +349,10 @@ def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
     target = route.get("target", "unknown")
     pkg_manager = (sys_env.get("os") or {}).get("pkg_manager") or "package manager"
     lines = [f"Target: {target}", f"Mode: {mode}"]
-    if mode == _INSTALL_MODE_KISO_TOOL:
+    if mode == _INSTALL_MODE_KISO_WRAPPER:
         lines.append("Route: kiso tool proposal — set needs_install + approval msg only.")
         lines.append("Do not use apt-get or uv pip install for this target.")
-    elif mode == _INSTALL_MODE_UNKNOWN_KISO_TOOL:
+    elif mode == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER:
         lines.append("Route: unknown named tool/plugin request — msg only.")
         lines.append("Do not set needs_install and do not use apt-get, uv pip install, or kiso tool install.")
         lines.append("Explain that the named tool is not available in the current registry/tool context and ask for a git URL or installation instructions if it is private.")
@@ -512,8 +512,8 @@ _UV_PIP_RE = re.compile(r"\buv\s+pip\b", re.IGNORECASE)
 # marker substring in validation errors for uninstalled-tool detection.
 # Used both when generating the error (validate_plan) and detecting it
 # (_retry_llm_with_validation).  Keep in sync.
-_TOOL_NOT_INSTALLED_MARKER = "is not installed"
-_TOOL_UNAVAILABLE_MARKER = "not available — not installed and not in the registry"
+_WRAPPER_NOT_INSTALLED_MARKER = "is not installed"
+_WRAPPER_UNAVAILABLE_MARKER = "not available — not installed and not in the registry"
 
 _ABS_PATH_RE = re.compile(r"(/[a-zA-Z0-9_./-]+)")
 
@@ -594,7 +594,7 @@ _ACTION_TO_USER_RE = re.compile(
 )
 
 FAILURE_CLASS_TASK_SHAPE = "task_shape_validation"
-FAILURE_CLASS_SEMANTIC_TOOL = "semantic_tool_validation"
+FAILURE_CLASS_SEMANTIC_WRAPPER = "semantic_tool_validation"
 FAILURE_CLASS_WORKSPACE_ROUTING = "workspace_file_routing"
 FAILURE_CLASS_BLOCKED_POLICY = "blocked_command_policy"
 FAILURE_CLASS_EXTERNAL_DEP = "external_dependency"
@@ -602,7 +602,7 @@ FAILURE_CLASS_PLAN_SHAPE = "plan_shape_error"
 FAILURE_CLASS_DELIVERY_SPLIT = "final_delivery_split"
 FAILURE_CLASSES: frozenset[str] = frozenset({
     FAILURE_CLASS_TASK_SHAPE,
-    FAILURE_CLASS_SEMANTIC_TOOL,
+    FAILURE_CLASS_SEMANTIC_WRAPPER,
     FAILURE_CLASS_WORKSPACE_ROUTING,
     FAILURE_CLASS_BLOCKED_POLICY,
     FAILURE_CLASS_EXTERNAL_DEP,
@@ -636,7 +636,7 @@ def classify_failure_class(errors_or_reason: list[str] | str | None) -> str:
         or "missing required arg:" in text
         or "files must contain file paths only" in text
     ):
-        return FAILURE_CLASS_SEMANTIC_TOOL
+        return FAILURE_CLASS_SEMANTIC_WRAPPER
     if (
         "workspace file" in text
         or "module not found" in text
@@ -679,7 +679,7 @@ def _classify_validation_errors(errors: list[str]) -> str:
     if any(pattern in joined for pattern in _APPROACH_RESET_ERROR_PATTERNS):
         return VALIDATION_RETRY_APPROACH_RESET
     failure_class = classify_failure_class(errors)
-    if failure_class in {FAILURE_CLASS_TASK_SHAPE, FAILURE_CLASS_SEMANTIC_TOOL}:
+    if failure_class in {FAILURE_CLASS_TASK_SHAPE, FAILURE_CLASS_SEMANTIC_WRAPPER}:
         return VALIDATION_RETRY_TASK_REPAIR
     if failure_class in {FAILURE_CLASS_PLAN_SHAPE, FAILURE_CLASS_DELIVERY_SPLIT}:
         return VALIDATION_RETRY_PLAN_REWRITE
@@ -909,7 +909,7 @@ async def _retry_llm_with_validation(
             raise exc
 
         # detect uninstalled-tool errors for install-proposal detection
-        if not saw_uninstalled_tool and any(_TOOL_NOT_INSTALLED_MARKER in e for e in errors):
+        if not saw_uninstalled_tool and any(_WRAPPER_NOT_INSTALLED_MARKER in e for e in errors):
             saw_uninstalled_tool = True
 
         # track consecutive identical errors for escalation
@@ -1599,7 +1599,7 @@ __brain_exports__ = [
     "TASK_TYPE_MSG",
     "TASK_TYPE_REPLAN",
     "TASK_TYPE_SEARCH",
-    "TASK_TYPE_TOOL",
+    "TASK_TYPE_WRAPPER",
     "TASK_TYPES",
     "WORKER_PHASE_CLASSIFYING",
     "WORKER_PHASE_EXECUTING",
@@ -1612,8 +1612,8 @@ __brain_exports__ = [
     "_MAX_MESSENGER_FACTS",
     "_MESSENGER_RETRY_BACKOFF",
     "_MIN_PROMOTED_FACT_LEN",
-    "_TOOL_UNAVAILABLE_MARKER",
-    "_TOOL_NOT_INSTALLED_MARKER",
+    "_WRAPPER_UNAVAILABLE_MARKER",
+    "_WRAPPER_NOT_INSTALLED_MARKER",
     "_VALID_FACT_CATEGORIES",
     "_build_strict_schema",
     "_build_validation_feedback",
@@ -1632,7 +1632,7 @@ __brain_exports__ = [
     "_format_message_history",
     "_format_pending_items",
     "_is_plugin_discovery_search",
-    "_is_explicit_named_tool_request",
+    "_is_explicit_named_wrapper_request",
     "_join_or_empty",
     "_load_modular_prompt",
     "_load_system_prompt",
@@ -1654,7 +1654,7 @@ __brain_exports__ = [
     "FAILURE_CLASS_BLOCKED_POLICY",
     "FAILURE_CLASS_DELIVERY_SPLIT",
     "FAILURE_CLASS_PLAN_SHAPE",
-    "FAILURE_CLASS_SEMANTIC_TOOL",
+    "FAILURE_CLASS_SEMANTIC_WRAPPER",
     "FAILURE_CLASS_TASK_SHAPE",
     "FAILURE_CLASS_WORKSPACE_ROUTING",
     "invalidate_prompt_cache",

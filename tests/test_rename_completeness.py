@@ -1,9 +1,9 @@
-"""Runtime-focused guards for the historical skill -> tool rename.
+"""Runtime-focused guards for the tool -> wrapper rename (M1306).
 
 These tests intentionally avoid source-tree string scans and doc/file-name
-policing. The goal is to protect runtime invariants that still matter:
-the new modules import, the legacy shim files are gone, and the registry uses
-the runtime key the CLI/runtime expects.
+policing. The goal is to protect runtime invariants: the new modules import,
+the legacy files are gone, and the registry uses the runtime key the
+CLI/runtime expects.
 """
 
 from __future__ import annotations
@@ -18,15 +18,15 @@ SRC = ROOT / "kiso"
 CLI = ROOT / "cli"
 
 
-class TestRenameRuntimeInvariants:
+class TestWrapperRenameRuntimeInvariants:
     """Verify that runtime entry points use the post-rename module layout."""
 
-    def test_current_tool_modules_import(self):
+    def test_current_wrapper_modules_import(self):
         modules = {
-            "kiso.tools": "discover_tools",
-            "kiso.tool_repair": "repair_unhealthy_tools",
-            "kiso.worker.tool": "_tool_task",
-            "cli.tool": "run_tool_command",
+            "kiso.wrappers": "discover_wrappers",
+            "kiso.wrapper_repair": "repair_unhealthy_wrappers",
+            "kiso.worker.wrapper": "_wrapper_task",
+            "cli.wrapper": "run_wrapper_command",
             "kiso.recipe_loader": "discover_recipes",
             "cli.recipe": "run_recipe_command",
         }
@@ -34,8 +34,13 @@ class TestRenameRuntimeInvariants:
             module = importlib.import_module(module_name)
             assert hasattr(module, attr), f"{module_name} missing {attr}"
 
-    def test_legacy_shim_files_removed(self):
+    def test_legacy_tool_files_removed(self):
         legacy_paths = [
+            SRC / "tools.py",
+            SRC / "tool_repair.py",
+            SRC / "worker" / "tool.py",
+            CLI / "tool.py",
+            # Also check old skill-era files are still gone
             SRC / "skills.py",
             SRC / "skill_repair.py",
             SRC / "skill_loader.py",
@@ -43,11 +48,11 @@ class TestRenameRuntimeInvariants:
             CLI / "skill.py",
         ]
         for path in legacy_paths:
-            assert not path.exists(), f"legacy shim still present: {path.relative_to(ROOT)}"
+            assert not path.exists(), f"legacy file still present: {path.relative_to(ROOT)}"
 
-    def test_registry_uses_tools_key(self):
+    def test_registry_uses_wrappers_key(self):
         registry = json.loads((ROOT / "registry.json").read_text())
-        assert "tools" in registry, "registry.json missing 'tools' key"
+        assert "wrappers" in registry, "registry.json missing 'wrappers' key"
 
     def test_registry_uses_connectors_key(self):
         registry = json.loads((ROOT / "registry.json").read_text())

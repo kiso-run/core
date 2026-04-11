@@ -156,12 +156,12 @@ def _format_dependency_context(dependencies: list[dict]) -> str:
     return "## Authoritative Dependencies\n" + "\n".join(lines)
 
 
-def _build_tool_file_refs(
+def _build_wrapper_file_refs(
     session: str,
     args: dict,
     *,
     task_index: int,
-    tool_name: str | None,
+    wrapper_name: str | None,
 ) -> list[dict]:
     """Build canonical file refs for tool args that point at real files.
 
@@ -189,7 +189,7 @@ def _build_tool_file_refs(
             candidate,
             workspace=workspace,
             origin_task_index=task_index,
-            origin_tool=tool_name,
+            origin_wrapper=wrapper_name,
         ).to_dict()
         if file_ref["file_id"] in seen:
             continue
@@ -203,7 +203,7 @@ def _build_new_artifact_refs(
     pre_snapshot: set[Path],
     *,
     task_index: int,
-    tool_name: str | None,
+    wrapper_name: str | None,
 ) -> list[dict]:
     """Build artifact refs for newly created visible files since *pre_snapshot*."""
     workspace = _session_workspace(session)
@@ -225,11 +225,11 @@ def _build_new_artifact_refs(
                 path,
                 workspace=workspace,
                 origin_task_index=task_index,
-                origin_tool=tool_name,
+                origin_wrapper=wrapper_name,
             ).to_dict(),
             "artifact_id": f"artifact:{rel.as_posix()}",
             "artifact_kind": "file",
-            "tool": tool_name,
+            "tool": wrapper_name,
         }
         refs.append(artifact)
     return refs
@@ -355,7 +355,7 @@ def _resolve_workspace_file_reference(session: str, value: str) -> str | None:
     return None
 
 
-def _repair_tool_workspace_args(tool_info: dict, args: dict, session: str) -> dict:
+def _repair_wrapper_workspace_args(tool_info: dict, args: dict, session: str) -> dict:
     """Repair missing local-file tool args when a unique workspace match exists."""
     corrected = dict(args)
     args_schema = tool_info.get("args_schema", {}) or {}

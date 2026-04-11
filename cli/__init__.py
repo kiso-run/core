@@ -153,7 +153,7 @@ def _save_readline_history() -> None:
         pass
 
 
-def _add_tool_subcommands(parent_parser: argparse.ArgumentParser) -> None:
+def _add_wrapper_subcommands(parent_parser: argparse.ArgumentParser) -> None:
     """Add tool subcommands (shared by 'tool' and 'skill' alias)."""
     s = parent_parser.add_subparsers(dest="tool_command")
     s.add_parser("list", help="list installed tools")
@@ -289,7 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("msg", help="send a message and print the response").add_argument("message", help="message text")
 
-    _add_tool_subcommands(sub.add_parser("tool", help="manage tools"))
+    _add_wrapper_subcommands(sub.add_parser("tool", help="manage tools"))
 
     # Role
     role_sub = sub.add_parser(
@@ -447,9 +447,9 @@ def main() -> None:
     elif args.command == "msg":
         _msg_cmd(args)
     elif args.command == "tool":
-        from cli.tool import run_tool_command
+        from cli.wrapper import run_wrapper_command
 
-        run_tool_command(args)
+        run_wrapper_command(args)
     elif args.command == "recipe":
         from cli.recipe import run_recipe_command
 

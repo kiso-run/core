@@ -412,18 +412,18 @@ class TestRevalidatePermissions:
 
     def test_revalidate_skill_allowed(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "skill", tool_name="search")
+        result = revalidate_permissions(cfg, "bob", "skill", wrapper_name="search")
         assert result.allowed is True
 
     def test_revalidate_skill_denied(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "skill", tool_name="forbidden")
+        result = revalidate_permissions(cfg, "bob", "skill", wrapper_name="forbidden")
         assert result.allowed is False
         assert "not in user's allowed tools" in result.reason
 
     def test_revalidate_admin_all_skills(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "alice", "skill", tool_name="anything")
+        result = revalidate_permissions(cfg, "alice", "skill", wrapper_name="anything")
         assert result.allowed is True
 
     def test_revalidate_no_username(self):
@@ -434,7 +434,7 @@ class TestRevalidatePermissions:
 
     def test_revalidate_wildcard_skills(self):
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "charlie", "skill", tool_name="anything")
+        result = revalidate_permissions(cfg, "charlie", "skill", wrapper_name="anything")
         assert result.allowed is True
 
     def test_revalidate_exec_allowed_for_user_role(self):
@@ -445,9 +445,9 @@ class TestRevalidatePermissions:
         assert result.role == "user"
 
     def test_revalidate_skill_name_none_skips_check(self):
-        """tool_name=None with task_type='skill' skips tool-level check."""
+        """wrapper_name=None with task_type='skill' skips tool-level check."""
         cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "skill", tool_name=None)
+        result = revalidate_permissions(cfg, "bob", "skill", wrapper_name=None)
         assert result.allowed is True
 
     def test_revalidate_returns_tools_field(self):

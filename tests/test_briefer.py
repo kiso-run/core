@@ -89,7 +89,7 @@ class TestBrieferScenarios:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "what time is it?",
             )
@@ -123,7 +123,7 @@ class TestBrieferScenarios:
              "path": "/fake", "version": "0.1.0", "description": ""},
         ]
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=fake_skills):
+             patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "admin", "vai su gazzetta.it",
             )
@@ -133,7 +133,7 @@ class TestBrieferScenarios:
         # Web module injected
         assert "Web interaction:" in system
         # Browser skill present
-        # build_planner_tool_list rebuilds full descriptions from installed tools
+        # build_planner_wrapper_list rebuilds full descriptions from installed tools
         assert "browser" in user_content
         assert "Navigate, click, fill, screenshot" in user_content
         # Other modules absent
@@ -153,7 +153,7 @@ class TestBrieferScenarios:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "retry the previous plan",
             )
@@ -208,7 +208,7 @@ class TestBrieferScenarios:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "scrape the site and analyze",
             )
@@ -242,7 +242,7 @@ class TestBrieferFallback:
             })
 
         with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "hello",
             )
@@ -262,7 +262,7 @@ class TestBrieferFallback:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_bad_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "hello",
             )
@@ -280,7 +280,7 @@ class TestBrieferFallback:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_logging_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(briefer_enabled=False), "sess1", "user", "hello",
             )
@@ -313,7 +313,7 @@ class TestBrieferTagPipeline:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, _config(), "sess1", "user", "check db status",
             )
@@ -341,7 +341,7 @@ class TestBrieferTagPipeline:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "Python version",
             )
@@ -360,7 +360,7 @@ class TestBrieferTagPipeline:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "hi",
             )
@@ -438,7 +438,7 @@ class TestRecipesInBriefer:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch("kiso.brain.discover_recipes", return_value=fake_recipes):
             await build_planner_messages(
                 db, _config(), "sess1", "user", "analyze this data",
@@ -463,7 +463,7 @@ class TestRecipesInBriefer:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch("kiso.brain.discover_recipes", return_value=[]):
             await build_planner_messages(
                 db, _config(), "sess1", "user", "hello",
@@ -489,7 +489,7 @@ class TestRecipesInBriefer:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch("kiso.brain.discover_recipes", return_value=fake_recipes):
             msgs, _, _ = await build_planner_messages(
                 db, _config(), "sess1", "user", "analyze this data",
@@ -541,7 +541,7 @@ class TestM824ToolFilterThreshold:
         )
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=fake_tools):
+             patch("kiso.brain.discover_wrappers", return_value=fake_tools):
             msgs, _, _ = await build_planner_messages(
                 db, cfg, "sess1", "admin", "read the screenshot",
             )
@@ -590,7 +590,7 @@ class TestM824ToolFilterThreshold:
         )
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=fake_tools):
+             patch("kiso.brain.discover_wrappers", return_value=fake_tools):
             msgs, _, _ = await build_planner_messages(
                 db, cfg, "sess1", "admin", "browse example.com",
             )
@@ -638,7 +638,7 @@ class TestM824ToolFilterThreshold:
         )
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=fake_tools):
+             patch("kiso.brain.discover_wrappers", return_value=fake_tools):
             msgs, _, _ = await build_planner_messages(
                 db, cfg, "sess1", "admin", "browse example.com",
             )
@@ -670,7 +670,7 @@ class TestM825SessionFilesModule:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch(
                  "kiso.worker.utils._build_execution_state",
                  return_value=ExecutionState(
@@ -711,7 +711,7 @@ class TestM825SessionFilesModule:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch(
                  "kiso.worker.utils._build_execution_state",
                  return_value=ExecutionState(

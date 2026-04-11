@@ -522,7 +522,7 @@ def _make_file_ref(
     *,
     workspace: Path | None = None,
     origin_task_index: int | None = None,
-    origin_tool: str | None = None,
+    origin_wrapper: str | None = None,
 ) -> FileRef:
     """Create a canonical FileRef from an absolute or relative path."""
     file_path = Path(path)
@@ -545,7 +545,7 @@ def _make_file_ref(
         exists=file_path.exists(),
         module_name=_module_name_for_path(file_path),
         origin_task_index=origin_task_index,
-        origin_tool=origin_tool,
+        origin_wrapper=origin_wrapper,
     )
 
 
@@ -554,14 +554,14 @@ def _make_artifact_ref(
     *,
     workspace: Path,
     origin_task_index: int | None = None,
-    origin_tool: str | None = None,
+    origin_wrapper: str | None = None,
 ) -> ArtifactRef:
     """Create a file-backed ArtifactRef."""
     file_ref = _make_file_ref(
         path,
         workspace=workspace,
         origin_task_index=origin_task_index,
-        origin_tool=origin_tool,
+        origin_wrapper=origin_wrapper,
     )
     artifact_key = file_ref.workspace_path or file_ref.abs_path
     return ArtifactRef(
@@ -637,7 +637,7 @@ def _format_workspace_files(files: list[dict]) -> str:
 def _build_provenance_index(
     plan_outputs: list[dict] | None,
 ) -> dict[str, tuple[str | None, int | None]]:
-    """Map workspace-relative path → (origin_tool, origin_task_index).
+    """Map workspace-relative path → (origin_wrapper, origin_task_index).
 
     Walks each plan_output's ``file_refs`` and ``artifact_refs`` and pulls
     the (tool, index) declared on each ref. Refs without a usable path
@@ -654,7 +654,7 @@ def _build_provenance_index(
                 if not key or key in index:
                     continue
                 index[key] = (
-                    ref.get("origin_tool"),
+                    ref.get("origin_wrapper"),
                     ref.get("origin_task_index"),
                 )
     return index
@@ -689,16 +689,16 @@ def _build_last_plan_summary_data(
         if any(p.startswith(".") for p in parts):
             continue
         rel_str = str(rel)
-        origin_tool, origin_task_index = provenance.get(
+        origin_wrapper, origin_task_index = provenance.get(
             rel_str, provenance.get(str(f), (None, None))
         )
         artifact = _make_artifact_ref(
             f,
             workspace=workspace,
             origin_task_index=origin_task_index,
-            origin_tool=origin_tool,
+            origin_wrapper=origin_wrapper,
         ).to_dict()
-        artifact["tool"] = origin_tool
+        artifact["tool"] = origin_wrapper
         produced_files.append(artifact)
 
     # Key results — reviewer summaries from completed tasks

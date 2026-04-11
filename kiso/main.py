@@ -245,7 +245,7 @@ def _populate_kiso_dir(target: Path) -> None:
         (target / "sys" / "bin").mkdir(parents=True, exist_ok=True)
         (target / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
         (target / "reference").mkdir(parents=True, exist_ok=True)
-        (target / "tools").mkdir(parents=True, exist_ok=True)
+        (target / "wrappers").mkdir(parents=True, exist_ok=True)
         (target / "connectors").mkdir(parents=True, exist_ok=True)
         (target / "recipes").mkdir(parents=True, exist_ok=True)
         (target / "sessions").mkdir(parents=True, exist_ok=True)
@@ -615,9 +615,9 @@ async def lifespan(app: FastAPI):
     await _startup_recovery(db, config)
 
     # Tool deps repair runs in background — doesn't block server healthcheck
-    from kiso.tool_repair import _is_container_rebuilt, _mark_image_id, rerun_all_deps, repair_unhealthy_tools
+    from kiso.wrapper_repair import _is_container_rebuilt, _mark_image_id, rerun_all_deps, repair_unhealthy_wrappers
 
-    async def _background_tool_repair():
+    async def _background_wrapper_repair():
         try:
             if _is_container_rebuilt():
                 log.info("Container rebuilt — re-running deps.sh in background...")
@@ -625,13 +625,13 @@ async def lifespan(app: FastAPI):
                 if reran:
                     log.info("Re-ran deps.sh for: %s", reran)
                 _mark_image_id()
-            repaired = await repair_unhealthy_tools()
+            repaired = await repair_unhealthy_wrappers()
             if repaired:
                 log.info("Repaired tools on startup: %s", repaired)
         except Exception as e:
             log.warning("Background tool repair failed: %s", e)
 
-    repair_task = asyncio.create_task(_background_tool_repair())
+    repair_task = asyncio.create_task(_background_wrapper_repair())
 
     # Webhook secret length warning
     webhook_secret = config.settings["webhook_secret"]

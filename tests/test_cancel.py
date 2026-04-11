@@ -205,7 +205,7 @@ def test_cancel_cli_no_active_job(capsys):
 
 
 # ---------------------------------------------------------------------------
-# cancel_event kills running subprocess via _exec_task / _tool_task
+# cancel_event kills running subprocess via _exec_task / _wrapper_task
 # ---------------------------------------------------------------------------
 
 

@@ -1,6 +1,6 @@
 """Docker integration tests for tool venv binary detection.
 
-Verifies that check_deps() and build_tool_env() correctly find
+Verifies that check_deps() and build_wrapper_env() correctly find
 pip-installed CLIs inside a tool's .venv/bin/ directory.
 
 Run inside the dev container:
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from kiso.tools import build_tool_env, check_deps
+from kiso.wrappers import build_wrapper_env, check_deps
 
 
 @pytest.fixture()
@@ -68,15 +68,15 @@ class TestCheckDepsVenv:
 
 
 class TestBuildToolEnvVenv:
-    """Verify build_tool_env includes .venv/bin/ in PATH."""
+    """Verify build_wrapper_env includes .venv/bin/ in PATH."""
 
     def test_venv_bin_in_path(self, tool_with_venv_binary):
-        """What: Checks that build_tool_env prepends .venv/bin/ to the PATH.
+        """What: Checks that build_wrapper_env prepends .venv/bin/ to the PATH.
 
         Why: Validates that venv binaries take precedence over system binaries in the tool environment.
         Expects: PATH starts with the tool's .venv/bin/ directory.
         """
-        env = build_tool_env(tool_with_venv_binary)
+        env = build_wrapper_env(tool_with_venv_binary)
         venv_bin = str(Path(tool_with_venv_binary["path"]) / ".venv" / "bin")
         assert env["PATH"].startswith(venv_bin)
 
@@ -86,18 +86,18 @@ class TestBuildToolEnvVenv:
         Why: Validates that adding the venv to PATH does not clobber system-wide binaries.
         Expects: PATH has at least 2 entries (venv + system).
         """
-        env = build_tool_env(tool_with_venv_binary)
+        env = build_wrapper_env(tool_with_venv_binary)
         path_parts = env["PATH"].split(":")
         assert len(path_parts) >= 2
 
     def test_no_venv_without_tool_path(self):
-        """What: Calls build_tool_env for a tool with an empty path string.
+        """What: Calls build_wrapper_env for a tool with an empty path string.
 
         Why: Validates graceful fallback — tools without a path get system PATH without a bogus venv prefix.
         Expects: PATH is non-empty and does not start with '/.venv/bin'.
         """
         tool = {"name": "no-path", "path": "", "deps": {}, "env": {}}
-        env = build_tool_env(tool)
+        env = build_wrapper_env(tool)
         # PATH should not start with a tool venv prefix
         assert not env["PATH"].startswith("/.venv/bin")
         assert env["PATH"]  # system PATH still present

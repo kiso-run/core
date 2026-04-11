@@ -148,12 +148,12 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
             print(f"warning: failed to seed behavior: {behavior[:60]}", file=sys.stderr)
 
     # auto-install tools and connectors
-    installed_tools: list[str] = []
+    installed_wrappers: list[str] = []
     installed_connectors: list[str] = []
 
     if manifest.tools:
-        from cli.tool import _tool_install
-        installed_tools = _auto_install_plugins(manifest.tools, _tool_install)
+        from cli.wrapper import _wrapper_install
+        installed_wrappers = _auto_install_plugins(manifest.tools, _wrapper_install)
 
     if manifest.connectors:
         from cli.connector import _connector_install
@@ -185,7 +185,7 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         "tools": manifest.tools,
         "skills": manifest.skills,
         "connectors": manifest.connectors,
-        "installed_tools": installed_tools,
+        "installed_wrappers": installed_wrappers,
         "installed_connectors": installed_connectors,
         "recipe_files": recipe_files,
     }
@@ -193,9 +193,9 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
 
     # Report — clean summary
     parts: list[str] = []
-    if installed_tools:
-        parts.append(f"{len(installed_tools)} tools")
-    skipped_tools = set(manifest.tools) - set(installed_tools)
+    if installed_wrappers:
+        parts.append(f"{len(installed_wrappers)} tools")
+    skipped_tools = set(manifest.tools) - set(installed_wrappers)
     if skipped_tools:
         parts.append(f"{len(skipped_tools)} tools skipped")
     if installed_connectors:

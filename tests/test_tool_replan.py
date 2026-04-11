@@ -29,7 +29,7 @@ from kiso.worker.loop import _execute_plan
 from kiso.worker.loop import (
     _PlanCtx,
     _TaskHandlerResult,
-    _handle_tool_task,
+    _handle_wrapper_task,
     _make_plan_output,
     _persist_plan_tasks,
     _run_planning_loop,
@@ -113,11 +113,11 @@ class TestToolArgsReplanFlow:
 
         with patch("kiso.worker.loop.run_planner", side_effect=_mock_planner), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop._tool_task", new_callable=AsyncMock,
+             patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
                    return_value=("screenshot saved to file.png", "", True, 0)), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Screenshot taken!"), \
-             patch("kiso.worker.loop.discover_tools", return_value=[BROWSER_TOOL_INFO]), \
+             patch("kiso.worker.loop.discover_wrappers", return_value=[BROWSER_TOOL_INFO]), \
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "take screenshot of example.com",
@@ -156,11 +156,11 @@ class TestToolArgsReplanFlow:
             goal="Test", user_message="msg",
             deploy_secrets={}, session_secrets={},
             max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_tools=[tool_info_with_schema],
+            messenger_timeout=5, installed_wrappers=[tool_info_with_schema],
             slog=None, sandbox_uid=None,
         )
         tasks = await get_tasks_for_plan(db, plan_id)
-        result = await _handle_tool_task(ctx, tasks[0], 0, False, 0)
+        result = await _handle_wrapper_task(ctx, tasks[0], 0, False, 0)
 
         assert result.stop_replan is not None
         assert "missing required arg: action" in result.stop_replan

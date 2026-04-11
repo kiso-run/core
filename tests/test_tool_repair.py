@@ -1,4 +1,4 @@
-"""Tests for kiso.tool_repair — auto-repair unhealthy tools on startup."""
+"""Tests for kiso.wrapper_repair — auto-repair unhealthy tools on startup."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kiso.tool_repair import (
-    repair_unhealthy_tools, rerun_all_deps,
+from kiso.wrapper_repair import (
+    repair_unhealthy_wrappers, rerun_all_deps,
     _is_container_rebuilt, _mark_image_id,
 )
 
@@ -65,20 +65,20 @@ def _create_tool(tools_dir: Path, name: str, binary: str = "nonexistent_xyz",
 
 class TestRepairUnhealthyTools:
     async def test_no_unhealthy_tools_returns_empty(self, tmp_path):
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", binary="bash", has_deps=True)
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert result == []
 
     async def test_no_tools_at_all(self, tmp_path):
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert result == []
 
     async def test_unhealthy_tool_runs_deps_sh(self, tmp_path):
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         marker = tmp_path / "repaired.marker"
         _create_tool(
@@ -86,30 +86,30 @@ class TestRepairUnhealthyTools:
             binary="nonexistent_xyz_12345",
             deps_sh=f"#!/bin/bash\ntouch {marker}",
         )
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert "browser" in result
         assert marker.exists(), "deps.sh should have been executed"
 
     async def test_unhealthy_without_deps_sh_skipped(self, tmp_path):
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "broken", binary="nonexistent_xyz_12345", deps_sh=None)
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert result == []
 
     async def test_deps_sh_failure_does_not_crash(self, tmp_path):
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(
             tools_dir, "bad",
             binary="nonexistent_xyz_12345",
             deps_sh="#!/bin/bash\nexit 1",
         )
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert "bad" in result  # attempted, didn't crash
 
     async def test_multiple_unhealthy_tools(self, tmp_path):
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         m1 = tmp_path / "m1.marker"
         m2 = tmp_path / "m2.marker"
@@ -117,36 +117,36 @@ class TestRepairUnhealthyTools:
                       deps_sh=f"#!/bin/bash\ntouch {m1}")
         _create_tool(tools_dir, "tool-b", binary="nonexistent_b",
                       deps_sh=f"#!/bin/bash\ntouch {m2}")
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert len(result) == 2
         assert m1.exists()
         assert m2.exists()
 
     async def test_healthy_tool_not_repaired(self, tmp_path):
         """A healthy tool (bash exists) should not have deps.sh re-run."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         marker = tmp_path / "should_not_exist.marker"
         _create_tool(tools_dir, "healthy", binary="bash",
                       deps_sh=f"#!/bin/bash\ntouch {marker}")
-        result = await repair_unhealthy_tools(tools_dir)
+        result = await repair_unhealthy_wrappers(tools_dir)
         assert result == []
         assert not marker.exists()
 
     async def test_cache_invalidated_after_repair(self, tmp_path):
         """Tools cache should be invalidated after repairs."""
-        from kiso.tools import _tools_cache
-        tools_dir = tmp_path / "tools"
+        from kiso.wrappers import _wrappers_cache
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "fix-me", binary="nonexistent_xyz",
                       deps_sh="#!/bin/bash\ntrue")
         # Pre-populate cache
-        from kiso.tools import discover_tools
-        discover_tools(tools_dir)
-        assert tools_dir in _tools_cache
+        from kiso.wrappers import discover_wrappers
+        discover_wrappers(tools_dir)
+        assert tools_dir in _wrappers_cache
 
-        await repair_unhealthy_tools(tools_dir)
-        assert tools_dir not in _tools_cache
+        await repair_unhealthy_wrappers(tools_dir)
+        assert tools_dir not in _wrappers_cache
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ class TestRepairUnhealthyTools:
 class TestContainerRebuildDetection:
     def test_no_image_id_file(self, tmp_path):
         """No .image_id file → not rebuilt (not Docker or old image)."""
-        with patch("kiso.tool_repair._IMAGE_ID_PATH", tmp_path / "nope"):
+        with patch("kiso.wrapper_repair._IMAGE_ID_PATH", tmp_path / "nope"):
             assert _is_container_rebuilt() is False
 
     def test_first_boot(self, tmp_path):
@@ -165,8 +165,8 @@ class TestContainerRebuildDetection:
         image_id = tmp_path / ".image_id"
         image_id.write_text("abc123")
         with (
-            patch("kiso.tool_repair._IMAGE_ID_PATH", image_id),
-            patch("kiso.tool_repair._LAST_IMAGE_ID_PATH", tmp_path / ".last_image_id"),
+            patch("kiso.wrapper_repair._IMAGE_ID_PATH", image_id),
+            patch("kiso.wrapper_repair._LAST_IMAGE_ID_PATH", tmp_path / ".last_image_id"),
         ):
             assert _is_container_rebuilt() is True
 
@@ -177,8 +177,8 @@ class TestContainerRebuildDetection:
         last = tmp_path / ".last_image_id"
         last.write_text("abc123")
         with (
-            patch("kiso.tool_repair._IMAGE_ID_PATH", image_id),
-            patch("kiso.tool_repair._LAST_IMAGE_ID_PATH", last),
+            patch("kiso.wrapper_repair._IMAGE_ID_PATH", image_id),
+            patch("kiso.wrapper_repair._LAST_IMAGE_ID_PATH", last),
         ):
             assert _is_container_rebuilt() is False
 
@@ -189,8 +189,8 @@ class TestContainerRebuildDetection:
         last = tmp_path / ".last_image_id"
         last.write_text("old123")
         with (
-            patch("kiso.tool_repair._IMAGE_ID_PATH", image_id),
-            patch("kiso.tool_repair._LAST_IMAGE_ID_PATH", last),
+            patch("kiso.wrapper_repair._IMAGE_ID_PATH", image_id),
+            patch("kiso.wrapper_repair._LAST_IMAGE_ID_PATH", last),
         ):
             assert _is_container_rebuilt() is True
 
@@ -200,8 +200,8 @@ class TestContainerRebuildDetection:
         image_id.write_text("xyz789")
         last = tmp_path / ".last_image_id"
         with (
-            patch("kiso.tool_repair._IMAGE_ID_PATH", image_id),
-            patch("kiso.tool_repair._LAST_IMAGE_ID_PATH", last),
+            patch("kiso.wrapper_repair._IMAGE_ID_PATH", image_id),
+            patch("kiso.wrapper_repair._LAST_IMAGE_ID_PATH", last),
         ):
             _mark_image_id()
         assert last.read_text() == "xyz789"
@@ -216,7 +216,7 @@ class TestContainerRebuildDetection:
 class TestRerunAllDeps:
     async def test_reruns_deps_for_all_tools(self, tmp_path):
         """Re-runs deps.sh for ALL tools, not just unhealthy ones."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         m1 = tmp_path / "m1.marker"
         m2 = tmp_path / "m2.marker"
@@ -232,14 +232,14 @@ class TestRerunAllDeps:
 
     async def test_no_tools(self, tmp_path):
         """No installed tools → empty list, no errors."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         result = await rerun_all_deps(tools_dir)
         assert result == []
 
     async def test_skips_tools_without_deps_sh(self, tmp_path):
         """Tools without deps.sh are skipped."""
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "no-deps", binary="bash", has_deps=False)
         # No deps.sh created

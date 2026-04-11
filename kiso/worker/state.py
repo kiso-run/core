@@ -17,7 +17,7 @@ class FileRef:
     exists: bool
     module_name: str | None = None
     origin_task_index: int | None = None
-    origin_tool: str | None = None
+    origin_wrapper: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -29,7 +29,7 @@ class FileRef:
             "exists": self.exists,
             "module_name": self.module_name,
             "origin_task_index": self.origin_task_index,
-            "origin_tool": self.origin_tool,
+            "origin_wrapper": self.origin_wrapper,
         }
 
 
@@ -54,7 +54,7 @@ class TaskContract:
 
     task_type: str
     intent: str
-    tool_name: str | None
+    wrapper_name: str | None
     args: dict | None
     expect: str | None
     delivery_mode: str
@@ -70,7 +70,7 @@ class TaskContract:
         return {
             "task_type": self.task_type,
             "intent": self.intent,
-            "tool_name": self.tool_name,
+            "wrapper_name": self.wrapper_name,
             "args": self.args,
             "expect": self.expect,
             "delivery_mode": self.delivery_mode,
@@ -111,7 +111,7 @@ def _coerce_task_contract(contract: object) -> TaskContract | None:
     return TaskContract(
         task_type=str(contract.get("task_type") or ""),
         intent=str(contract.get("intent") or ""),
-        tool_name=contract.get("tool_name"),
+        wrapper_name=contract.get("wrapper_name"),
         args=_coerce_task_args(contract.get("args")),
         expect=contract.get("expect"),
         delivery_mode=str(contract.get("delivery_mode") or ""),
@@ -134,7 +134,7 @@ def _normalize_task_contract(
     """Derive a declarative contract from an existing planner task shape."""
     task_type = str(task.get("type") or "")
     intent = str(task.get("detail") or "")
-    tool_name = task.get("tool") or task.get("skill")
+    wrapper_name = task.get("tool") or task.get("skill")
     args = _coerce_task_args(task.get("args"))
     expect = task.get("expect")
 
@@ -143,8 +143,8 @@ def _normalize_task_contract(
     allowed_repair_scope = "plan" if task_type in {"msg", "replan"} else "task"
 
     declared_inputs: list[str] = []
-    if tool_name:
-        declared_inputs.append(f"tool:{tool_name}")
+    if wrapper_name:
+        declared_inputs.append(f"tool:{wrapper_name}")
     if args:
         declared_inputs.extend(
             f"{name}={value}"
@@ -157,7 +157,7 @@ def _normalize_task_contract(
     return TaskContract(
         task_type=task_type,
         intent=intent,
-        tool_name=tool_name,
+        wrapper_name=wrapper_name,
         args=args,
         expect=expect,
         delivery_mode=delivery_mode,
@@ -185,7 +185,7 @@ class TaskResult:
     retry_hint: str | None = None
     failure_class: str | None = None
     exit_code: int | None = None
-    tool_name: str | None = None
+    wrapper_name: str | None = None
     contract: TaskContract | None = None
     file_refs: list[dict] = field(default_factory=list)
     artifact_refs: list[dict] = field(default_factory=list)
@@ -203,7 +203,7 @@ class TaskResult:
             "retry_hint": self.retry_hint,
             "failure_class": self.failure_class,
             "exit_code": self.exit_code,
-            "tool": self.tool_name,
+            "tool": self.wrapper_name,
             "contract": self.contract.to_dict() if self.contract else None,
             "file_refs": list(self.file_refs),
             "artifact_refs": list(self.artifact_refs),
@@ -225,7 +225,7 @@ def _task_result_from_source(entry: dict) -> TaskResult:
         retry_hint=entry.get("retry_hint"),
         failure_class=entry.get("failure_class"),
         exit_code=entry.get("exit_code"),
-        tool_name=entry.get("tool") or entry.get("skill"),
+        wrapper_name=entry.get("tool") or entry.get("skill"),
         contract=contract,
         file_refs=list(entry.get("file_refs") or []),
         artifact_refs=list(entry.get("artifact_refs") or []),

@@ -7,7 +7,7 @@ import sys
 from cli.plugin_ops import fetch_registry, search_entries
 from kiso.connectors import discover_connectors
 from kiso.recipe_loader import discover_recipes, invalidate_recipes_cache
-from kiso.tools import discover_tools
+from kiso.wrappers import discover_wrappers
 
 
 def run_plugin_command(args) -> None:
@@ -20,7 +20,7 @@ def run_plugin_command(args) -> None:
 
 def _plugin_list() -> None:
     """List all installed plugins grouped by type."""
-    tools = discover_tools()
+    tools = discover_wrappers()
     invalidate_recipes_cache()
     recipes = discover_recipes()
     connectors = discover_connectors()

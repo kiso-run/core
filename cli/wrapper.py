@@ -27,10 +27,10 @@ from cli.plugin_ops import (
     search_entries,
     url_to_name,
 )
-from kiso.tools import _env_var_name, _validate_manifest, check_deps, discover_tools
+from kiso.wrappers import _env_var_name, _validate_manifest, check_deps, discover_wrappers
 
-TOOLS_DIR = KISO_DIR / "tools"
-OFFICIAL_PREFIX = "tool-"
+WRAPPERS_DIR = KISO_DIR / "wrappers"
+OFFICIAL_PREFIX = "wrapper-"
 
 # Aliases used by tool.py functions and patched by tests.
 _require_admin = require_admin
@@ -38,14 +38,14 @@ _fetch_registry = fetch_registry
 _search_entries = search_entries
 
 
-def _tool_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
+def _wrapper_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
     """Tool-specific post-install steps: env var warnings, usage guide, git exclude."""
     kiso_section = manifest.get("kiso", {})
     tool_section = kiso_section.get("tool", kiso_section.get("skill", {}))
     env_decl = tool_section.get("env", {})
-    tool_name = kiso_section.get("name", name)
+    wrapper_name = kiso_section.get("name", name)
     for key in env_decl:
-        var_name = _env_var_name(tool_name, key)
+        var_name = _env_var_name(wrapper_name, key)
         if not os.environ.get(var_name):
             print(f"warning: {var_name} not set")
 
@@ -64,64 +64,64 @@ def _tool_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
                 f.write("\nusage_guide.local.md\n")
 
 
-def run_tool_command(args) -> None:
+def run_wrapper_command(args) -> None:
     """Dispatch to the appropriate tool subcommand."""
     from cli.plugin_ops import dispatch_subcommand
     dispatch_subcommand(args, "tool_command", {
-        "list": _tool_list, "search": _tool_search, "install": _tool_install,
-        "update": _tool_update, "remove": _tool_remove, "test": _tool_test,
+        "list": _wrapper_list, "search": _wrapper_search, "install": _wrapper_install,
+        "update": _wrapper_update, "remove": _wrapper_remove, "test": _wrapper_test,
     }, "usage: kiso tool {list,search,install,update,remove,test}")
 
 
-def _tool_list(args) -> None:
+def _wrapper_list(args) -> None:
     """List installed tools."""
-    _list_plugins(discover_tools, "tools")
+    _list_plugins(discover_wrappers, "tools")
 
 
-def _tool_search(args) -> None:
+def _wrapper_search(args) -> None:
     """Search official tools from the registry."""
     registry = _fetch_registry()
     results = _search_entries(registry.get("tools", []), args.query)
     _render_search_results(results, args.query, "tool", registry)
 
 
-def _tool_install(args) -> None:
+def _wrapper_install(args) -> None:
     """Install a tool from official repo or git URL."""
     _require_admin()
     _plugin_install(
         plugin_type="tool",
         official_prefix=OFFICIAL_PREFIX,
-        parent_dir=TOOLS_DIR,
+        parent_dir=WRAPPERS_DIR,
         validate_fn=_validate_manifest,
         check_deps_fn=check_deps,
         args=args,
-        post_install=_tool_post_install,
+        post_install=_wrapper_post_install,
     )
 
 
-def _tool_update(args) -> None:
+def _wrapper_update(args) -> None:
     """Update an installed tool or all tools."""
     _require_admin()
     from kiso.sysenv import invalidate_cache
     _update_plugin(
-        args.target, TOOLS_DIR, "tool", check_deps,
+        args.target, WRAPPERS_DIR, "tool", check_deps,
         [invalidate_cache], uv_before_deps=True,
     )
 
 
-def _tool_remove(args) -> None:
+def _wrapper_remove(args) -> None:
     """Remove an installed tool."""
     _require_admin()
     from kiso.sysenv import invalidate_cache
-    from kiso.tools import invalidate_tools_cache
-    _remove_plugin(args.name, TOOLS_DIR / args.name, "tool", [invalidate_cache, invalidate_tools_cache])
+    from kiso.wrappers import invalidate_wrappers_cache
+    _remove_plugin(args.name, WRAPPERS_DIR / args.name, "tool", [invalidate_cache, invalidate_wrappers_cache])
 
 
-def _tool_test(args) -> None:
+def _wrapper_test(args) -> None:
     """Run a tool's test suite."""
     from cli.plugin_ops import _check_plugin_installed
     name = args.name
-    tool_dir = TOOLS_DIR / name
+    tool_dir = WRAPPERS_DIR / name
     _check_plugin_installed(tool_dir, "tool", name)
     test_dir = tool_dir / "tests"
     if not test_dir.exists():

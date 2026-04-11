@@ -56,7 +56,7 @@ class TestExecChaining:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -276,7 +276,7 @@ class TestFullPipeline:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -312,7 +312,7 @@ class TestFullPipeline:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -364,7 +364,7 @@ class TestReplanRecovery:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -459,7 +459,7 @@ class TestSkillExecution:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[tool_info]),
+            patch("kiso.brain.discover_wrappers", return_value=[tool_info]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -486,7 +486,7 @@ class TestSkillExecution:
 
         with (
             mock_noop_infra,
-            patch("kiso.worker.loop.discover_tools", return_value=[tool_info]),
+            patch("kiso.worker.loop.discover_wrappers", return_value=[tool_info]),
         ):
             success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
                 _execute_plan(
@@ -602,7 +602,7 @@ class TestPerStepTokenTracking:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -659,7 +659,7 @@ class TestPerStepTokenTracking:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(

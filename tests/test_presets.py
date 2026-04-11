@@ -561,7 +561,7 @@ class TestDefaultPresetInRegistry:
 class TestM758AutoInstallTools:
     """install_preset auto-installs tools from manifest."""
 
-    def test_auto_install_calls_tool_install(self, tmp_path):
+    def test_auto_install_calls_wrapper_install(self, tmp_path):
         """install_preset calls _auto_install_tools for manifest.tools."""
         from cli.preset_ops import install_preset
 
@@ -572,7 +572,7 @@ class TestM758AutoInstallTools:
         args = MagicMock()
         installed = []
 
-        def fake_tool_install(fake_args):
+        def fake_wrapper_install(fake_args):
             installed.append(fake_args.target)
 
         with patch("cli.preset_ops._auto_install_plugins") as mock_auto, \
@@ -585,8 +585,8 @@ class TestM758AutoInstallTools:
 
         mock_auto.assert_called_once()
 
-    def test_tracking_includes_installed_tools(self):
-        """Tracking JSON includes installed_tools list."""
+    def test_tracking_includes_installed_wrappers(self):
+        """Tracking JSON includes installed_wrappers list."""
         from cli.preset_ops import install_preset
 
         manifest = PresetManifest(
@@ -607,7 +607,7 @@ class TestM758AutoInstallTools:
             mock_post.return_value = MagicMock(json=lambda: {"id": 1})
             install_preset(args, manifest)
 
-        assert saved_data["installed_tools"] == ["websearch"]
+        assert saved_data["installed_wrappers"] == ["websearch"]
 
 
 # --- M760: Preset validation in CI ---
@@ -738,7 +738,7 @@ class TestM819CleanProgressOutput:
         assert "1 behaviors" in out
 
     def test_deps_sh_runs_via_plugin_install(self):
-        """Verify deps.sh execution path: _auto_install → _tool_install → _plugin_install runs deps.sh."""
+        """Verify deps.sh execution path: _auto_install → _wrapper_install → _plugin_install runs deps.sh."""
         import inspect
         from cli.plugin_ops import _plugin_install
         source = inspect.getsource(_plugin_install)

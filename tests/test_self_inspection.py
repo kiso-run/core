@@ -91,7 +91,7 @@ class TestM358SelfInspection:
 
     # ── 4. Planner validation semantics for self-inspection ──
 
-    def test_validate_plan_rejects_kiso_as_tool_task(self):
+    def test_validate_plan_rejects_kiso_as_wrapper_task(self):
         """self-inspection must use exec/tasks, not type='tool' with kiso."""
         plan = {"tasks": [
             {"type": "tool", "detail": "inspect the local host", "tool": "kiso",

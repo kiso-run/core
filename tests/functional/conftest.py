@@ -38,7 +38,7 @@ from kiso.config import (
     SETTINGS_DEFAULTS,
     User,
 )
-from kiso.tools import discover_tools, invalidate_tools_cache
+from kiso.wrappers import discover_wrappers, invalidate_wrappers_cache
 from kiso.main import _collect_boot_facts, _init_ssh_keys
 from kiso.store import create_session, init_db, save_message
 from kiso.worker.loop import _process_message
@@ -82,8 +82,8 @@ _RU_WORDS = frozenset(
 
 def tool_installed(name: str) -> bool:
     """Return True when a named tool is currently installed."""
-    invalidate_tools_cache()
-    return any(t["name"] == name for t in discover_tools())
+    invalidate_wrappers_cache()
+    return any(t["name"] == name for t in discover_wrappers())
 
 _LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS, "ru": _RU_WORDS}
 _LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish", "ru": "Russian",
@@ -330,7 +330,7 @@ class FunctionalResult:
         return [t for t in self.tasks if t.get("type") == "tool"]
 
     @staticmethod
-    def task_tool_name(task: dict) -> str:
+    def task_wrapper_name(task: dict) -> str:
         """Return the tool name for a task (handles DB column `skill` vs `tool`)."""
         return task.get("skill") or task.get("tool") or ""
 
@@ -376,7 +376,7 @@ def func_config() -> Config:
 _KISO_DIR_MODULES = [
     "kiso.config",
     "kiso.brain",
-    "kiso.tools",
+    "kiso.wrappers",
     "kiso.main",
     "kiso.pub",
     "kiso.log",
@@ -384,7 +384,7 @@ _KISO_DIR_MODULES = [
     "kiso.sysenv",
     "kiso.connectors",
     "kiso.recipe_loader",
-    "kiso.tool_repair",
+    "kiso.wrapper_repair",
     "kiso.worker.loop",
     "kiso.worker.utils",
 ]
@@ -427,7 +427,7 @@ def _write_test_config(kiso_dir: Path, cfg: Config) -> None:
 def _func_kiso_dir(func_config, tmp_path_factory):
     """Isolate functional tests from the host ~/.kiso directory.
 
-    Creates a temp KISO_DIR with clean ``tools/`` and ``sys/ssh/`` dirs,
+    Creates a temp KISO_DIR with clean ``wrappers/`` and ``sys/ssh/`` dirs,
     patches every module that imports KISO_DIR, stubs ``reload_config``
     so mid-execution config reloads return func_config, writes a config.toml
     so subprocess CLI commands can load it, and sets KISO_HOME so subprocess
@@ -632,10 +632,10 @@ def preset_tools_installed():
     Session-scoped — runs once per test session.
     """
     import subprocess
-    from kiso.tools import discover_tools, invalidate_tools_cache
+    from kiso.wrappers import discover_wrappers, invalidate_wrappers_cache
 
-    invalidate_tools_cache()
-    installed = {t["name"] for t in discover_tools()}
+    invalidate_wrappers_cache()
+    installed = {t["name"] for t in discover_wrappers()}
 
     for name in _PRESET_TOOLS:
         if name in installed:
@@ -649,8 +649,8 @@ def preset_tools_installed():
                 f"Could not install {name}: {result.stderr[:200]}"
             )
 
-    invalidate_tools_cache()
-    installed = {t["name"] for t in discover_tools()}
+    invalidate_wrappers_cache()
+    installed = {t["name"] for t in discover_wrappers()}
     missing = [n for n in _PRESET_TOOLS if n not in installed]
     if missing:
         pytest.skip(f"Tools not available after install: {missing}")
@@ -673,16 +673,16 @@ def preset_tools_installed():
 
 async def drive_install_flow(
     run_message,
-    tool_name: str,
+    wrapper_name: str,
     prompt: str,
     *,
     max_turns: int = 4,
     timeout: float | None = None,
 ):
-    """Drive a conversation forward until *tool_name* is installed.
+    """Drive a conversation forward until *wrapper_name* is installed.
 
     Sends *prompt*, then loops sending follow-up "sì, installa il
-    tool {tool_name}" messages until the tool is installed or
+    tool {wrapper_name}" messages until the tool is installed or
     *max_turns* is reached. When the tool finally installs, re-issues
     the original prompt one more time so the returned result reflects
     the installed-tool path.
@@ -709,12 +709,12 @@ async def drive_install_flow(
     kwargs = {"timeout": timeout}
     result = await run_message(prompt, **kwargs)
     turns_used = 1
-    while not tool_installed(tool_name) and turns_used < max_turns:
+    while not tool_installed(wrapper_name) and turns_used < max_turns:
         result = await run_message(
-            f"sì, installa il tool {tool_name}", **kwargs,
+            f"sì, installa il tool {wrapper_name}", **kwargs,
         )
         turns_used += 1
-    if tool_installed(tool_name):
+    if tool_installed(wrapper_name):
         result = await run_message(prompt, **kwargs)
     return result
 

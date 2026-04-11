@@ -58,7 +58,7 @@ def test_worker_public_surface_is_minimal():
     """`kiso.worker` exposes only the real runtime entrypoint."""
     assert worker.__all__ == ["run_worker"]
     assert callable(worker.run_worker)
-    assert not hasattr(worker, "_handle_tool_task")
+    assert not hasattr(worker, "_handle_wrapper_task")
     assert not hasattr(worker, "_build_execution_state")
 
 

@@ -216,7 +216,7 @@ def revalidate_permissions(
     config: Config,
     username: str | None,
     task_type: str,
-    tool_name: str | None = None,
+    wrapper_name: str | None = None,
 ) -> PermissionResult:
     """Re-check user permissions against current config."""
     if username is None:
@@ -234,12 +234,12 @@ def revalidate_permissions(
     if task_type == "search":
         return PermissionResult(allowed=True, role=user.role, tools=user.tools)
 
-    if task_type in ("skill", "tool") and tool_name and user.role == "user":
+    if task_type in ("skill", "tool") and wrapper_name and user.role == "user":
         if user.tools != "*":
-            if tool_name not in (user.tools or []):
+            if wrapper_name not in (user.tools or []):
                 return PermissionResult(
                     allowed=False,
-                    reason=f"Tool '{tool_name}' not in user's allowed tools",
+                    reason=f"Tool '{wrapper_name}' not in user's allowed tools",
                 )
 
     return PermissionResult(allowed=True, role=user.role, tools=user.tools)

@@ -5,7 +5,7 @@ Gated behind ``--live-network`` flag.
 
 These are optional smoke tests, not the primary semantic coverage for CLI
 search/install behavior. Stronger deterministic coverage lives in the unit
-tests for `cli.tool`, `cli.connector`, and `cli.plugin_ops`.
+tests for `cli.wrapper`, `cli.connector`, and `cli.plugin_ops`.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ class TestSkillSearch:
         Why: Validates the skill search fetches the remote registry and lists available skills.
         Expects: Non-empty stdout output.
         """
-        from cli.tool import _tool_search as _skill_search
+        from cli.wrapper import _wrapper_search as _skill_search
 
         try:
             _skill_search(Namespace(query=""))
@@ -69,7 +69,7 @@ class TestSkillSearch:
         Why: Validates the skill search filters by keyword without crashing.
         Expects: Non-empty stdout output.
         """
-        from cli.tool import _tool_search as _skill_search
+        from cli.wrapper import _wrapper_search as _skill_search
 
         try:
             _skill_search(Namespace(query="search"))
@@ -133,11 +133,11 @@ class TestSkillInstallRemove:
         )
 
         with (
-            patch("cli.tool.TOOLS_DIR", skills_dir),
-            patch("cli.tool._require_admin"),
-            patch("cli.tool.check_deps", return_value=[]),
+            patch("cli.wrapper.WRAPPERS_DIR", skills_dir),
+            patch("cli.wrapper._require_admin"),
+            patch("cli.wrapper.check_deps", return_value=[]),
         ):
-            from cli.tool import _tool_install as _skill_install
+            from cli.wrapper import _wrapper_install as _skill_install
 
             _skill_install(args)
 
@@ -152,10 +152,10 @@ class TestSkillInstallRemove:
         # Now remove
         remove_args = Namespace(name=skill_name)
         with (
-            patch("cli.tool.TOOLS_DIR", skills_dir),
-            patch("cli.tool._require_admin"),
+            patch("cli.wrapper.WRAPPERS_DIR", skills_dir),
+            patch("cli.wrapper._require_admin"),
         ):
-            from cli.tool import _tool_remove as _skill_remove
+            from cli.wrapper import _wrapper_remove as _skill_remove
 
             _skill_remove(remove_args)
 
@@ -248,10 +248,10 @@ class TestSkillInstallNotFound:
         )
 
         with (
-            patch("cli.tool.TOOLS_DIR", skills_dir),
-            patch("cli.tool._require_admin"),
+            patch("cli.wrapper.WRAPPERS_DIR", skills_dir),
+            patch("cli.wrapper._require_admin"),
         ):
-            from cli.tool import _tool_install as _skill_install
+            from cli.wrapper import _wrapper_install as _skill_install
 
             with pytest.raises(SystemExit):
                 _skill_install(args)

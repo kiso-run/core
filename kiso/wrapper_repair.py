@@ -9,7 +9,7 @@ from pathlib import Path
 
 from kiso._subprocess_utils import communicate_with_timeout
 from kiso.config import KISO_DIR
-from kiso.tools import check_deps, discover_tools, invalidate_tools_cache
+from kiso.wrappers import check_deps, discover_wrappers, invalidate_wrappers_cache
 
 
 def _clean_env() -> dict[str, str]:
@@ -30,13 +30,13 @@ _PER_TOOL_TIMEOUT = 60  # seconds per tool deps.sh
 _TOTAL_TIMEOUT = 180  # seconds total for all repairs
 
 
-async def repair_unhealthy_tools(tools_dir: Path | None = None) -> list[str]:
+async def repair_unhealthy_wrappers(tools_dir: Path | None = None) -> list[str]:
     """Re-run deps.sh for tools with missing binary deps.
 
     Returns list of tool names where repair was attempted.
     """
-    resolved_dir = tools_dir or (KISO_DIR / "tools")
-    tools = discover_tools(resolved_dir)
+    resolved_dir = tools_dir or (KISO_DIR / "wrappers")
+    tools = discover_wrappers(resolved_dir)
     unhealthy = [t for t in tools if not t.get("healthy", True)]
 
     if not unhealthy:
@@ -86,7 +86,7 @@ async def repair_unhealthy_tools(tools_dir: Path | None = None) -> list[str]:
         repaired.append(tool["name"])
 
     if repaired:
-        invalidate_tools_cache()
+        invalidate_wrappers_cache()
 
     return repaired
 
@@ -124,8 +124,8 @@ async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
 
     Returns list of tool names where deps.sh was executed.
     """
-    resolved_dir = tools_dir or (KISO_DIR / "tools")
-    tools = discover_tools(resolved_dir)
+    resolved_dir = tools_dir or (KISO_DIR / "wrappers")
+    tools = discover_wrappers(resolved_dir)
     if not tools:
         return []
 
@@ -173,6 +173,6 @@ async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
         executed.append(tool["name"])
 
     if executed:
-        invalidate_tools_cache()
+        invalidate_wrappers_cache()
 
     return executed

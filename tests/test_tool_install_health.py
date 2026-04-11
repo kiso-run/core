@@ -42,9 +42,9 @@ class TestToolInstallHealthSmoke:
 
     def test_install_detects_missing_binary(self, tmp_path, capsys, mock_admin):
         """_plugin_install passes deps from manifest to check_deps."""
-        from cli.tool import _tool_install
+        from cli.wrapper import _wrapper_install
 
-        tools_dir = tmp_path / "tools"
+        tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
 
         def fake_clone(cmd, **kwargs):
@@ -73,11 +73,11 @@ class TestToolInstallHealthSmoke:
             return ["fake_binary"]
 
         with (
-            patch("cli.tool.TOOLS_DIR", tools_dir),
+            patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
             patch("subprocess.run", side_effect=run_dispatch),
-            patch("cli.tool.check_deps", side_effect=spy_check_deps),
+            patch("cli.wrapper.check_deps", side_effect=spy_check_deps),
         ):
-            _tool_install(argparse.Namespace(
+            _wrapper_install(argparse.Namespace(
                 target="browser", name=None, no_deps=False, show_deps=False,
             ))
 
@@ -87,9 +87,9 @@ class TestToolInstallHealthSmoke:
         out = capsys.readouterr().out
         assert "fake_binary" in out
 
-    def test_discover_tools_marks_unhealthy(self, tmp_path):
-        """discover_tools adds healthy=False for missing binary deps."""
-        from kiso.tools import discover_tools
+    def test_discover_wrappers_marks_unhealthy(self, tmp_path):
+        """discover_wrappers adds healthy=False for missing binary deps."""
+        from kiso.wrappers import discover_wrappers
 
         tool_dir = tmp_path / "browser"
         tool_dir.mkdir()
@@ -103,14 +103,14 @@ class TestToolInstallHealthSmoke:
         (tool_dir / "run.py").write_text("pass\n")
         (tool_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
 
-        tools = discover_tools(tmp_path)
+        tools = discover_wrappers(tmp_path)
         assert len(tools) == 1
         assert tools[0]["healthy"] is False
         assert "fake_binary" in tools[0]["missing_deps"]
 
-    def test_planner_tool_list_shows_broken(self, tmp_path):
-        """build_planner_tool_list annotates unhealthy tools."""
-        from kiso.tools import build_planner_tool_list, discover_tools
+    def test_planner_wrapper_list_shows_broken(self, tmp_path):
+        """build_planner_wrapper_list annotates unhealthy tools."""
+        from kiso.wrappers import build_planner_wrapper_list, discover_wrappers
 
         tool_dir = tmp_path / "browser"
         tool_dir.mkdir()
@@ -124,8 +124,8 @@ class TestToolInstallHealthSmoke:
         (tool_dir / "run.py").write_text("pass\n")
         (tool_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
 
-        tools = discover_tools(tmp_path)
-        result = build_planner_tool_list(tools)
+        tools = discover_wrappers(tmp_path)
+        result = build_planner_wrapper_list(tools)
         assert "[BROKEN" in result
         assert "fake_binary" in result
         assert "kiso tool remove" in result

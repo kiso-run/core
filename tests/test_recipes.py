@@ -96,7 +96,7 @@ class TestRecipeEndToEnd:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch("kiso.brain.discover_recipes",
                    side_effect=lambda *a, **k: discover_recipes(tmp_path)):
             msgs, _, _ = await build_planner_messages(
@@ -123,7 +123,7 @@ class TestRecipeEndToEnd:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch("kiso.brain.discover_recipes",
                    side_effect=lambda *a, **k: discover_recipes(tmp_path)):
             await build_planner_messages(

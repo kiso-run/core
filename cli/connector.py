@@ -20,7 +20,7 @@ from kiso.connectors import (
     discover_connectors,
     invalidate_connectors_cache,
 )
-from kiso.tools import check_deps
+from kiso.wrappers import check_deps
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,

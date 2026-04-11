@@ -38,15 +38,15 @@ pytestmark = pytest.mark.functional
 # ---------------------------------------------------------------------------
 
 
-def _assert_tool_used(result: FunctionalResult, tool_name: str) -> None:
-    """Assert that *tool_name* appears as a tool-type task in *result*."""
+def _assert_tool_used(result: FunctionalResult, wrapper_name: str) -> None:
+    """Assert that *wrapper_name* appears as a tool-type task in *result*."""
     tasks = [
         t for t in result.tasks
         if t.get("type") == "tool"
-        and FunctionalResult.task_tool_name(t) == tool_name
+        and FunctionalResult.task_wrapper_name(t) == wrapper_name
     ]
     assert tasks, (
-        f"Expected {tool_name} tool task, got types: {result.task_types()}"
+        f"Expected {wrapper_name} tool task, got types: {result.task_types()}"
     )
 
 
@@ -232,12 +232,12 @@ class TestF39ToolInstallAndUse:
         assert r3.success, f"Stage 3 failed: {r3.task_types()}"
 
         # Browser tool must have been used
-        tool_names = [
-            FunctionalResult.task_tool_name(t) for t in r3.tasks
+        wrapper_names = [
+            FunctionalResult.task_wrapper_name(t) for t in r3.tasks
             if t.get("type") == "tool"
         ]
-        assert "browser" in tool_names, (
-            f"Browser not used in stage 3. Tool names: {tool_names}"
+        assert "browser" in wrapper_names, (
+            f"Browser not used in stage 3. Tool names: {wrapper_names}"
         )
 
         # Keywords aligned with F1b (test_browser.py:139-141)

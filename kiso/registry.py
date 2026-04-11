@@ -55,12 +55,12 @@ def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None
     """Check the other plugin type for matches and return a hint string.
 
     When a search in one type (e.g. "connectors") yields no results, this
-    function checks the other type ("tools") for matches.  Returns a hint
-    string like 'Did you mean `kiso tool search browser`?' or ``None``.
+    function checks the other type ("wrappers") for matches.  Returns a hint
+    string like 'Did you mean `kiso wrapper search browser`?' or ``None``.
     """
     if current_type == "connectors":
-        other_type = "tools"
-        other_cmd = "tool"
+        other_type = "wrappers"
+        other_cmd = "wrapper"
     else:
         other_type = "connectors"
         other_cmd = "connector"
@@ -75,16 +75,16 @@ def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None
     return None
 
 
-def get_registry_tools(installed_names: set[str]) -> str:
-    """Return formatted list of available-but-not-installed registry tools.
+def get_registry_wrappers(installed_names: set[str]) -> str:
+    """Return formatted list of available-but-not-installed registry wrappers.
 
-    Returns empty string when registry is unavailable or all tools are
+    Returns empty string when registry is unavailable or all wrappers are
     already installed.
     """
     reg = fetch_registry()
-    tools = reg.get("tools", [])
-    uninstalled = [t for t in tools if t["name"] not in installed_names]
+    wrappers = reg.get("wrappers", [])
+    uninstalled = [w for w in wrappers if w["name"] not in installed_names]
     if not uninstalled:
         return ""
-    lines = [f"- {t['name']} — {t['description']}" for t in uninstalled]
-    return "Available tools (not installed):\n" + "\n".join(lines)
+    lines = [f"- {w['name']} — {w['description']}" for w in uninstalled]
+    return "Available wrappers (not installed):\n" + "\n".join(lines)

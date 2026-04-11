@@ -1,4 +1,4 @@
-"""Tests for cli.tool — tool management CLI commands."""
+"""Tests for cli.wrapper — tool management CLI commands."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cli import build_parser
-from cli.tool import run_tool_command
+from cli.wrapper import run_wrapper_command
 from cli.plugin_ops import is_url as _is_url, url_to_name
 from kiso.config import User
 from tests._cli_plugin_helpers import mock_admin, _ok_run, fake_clone_plugin  # noqa: F401
@@ -74,13 +74,13 @@ def test_is_url(target: str, expected: bool):
 # Parse tests now in _cli_plugin_helpers.py (M601)
 
 
-# ── run_tool_command dispatcher ─────────────────────────────
+# ── run_wrapper_command dispatcher ─────────────────────────────
 
 
-def test_run_tool_command_no_subcommand(capsys):
+def test_run_wrapper_command_no_subcommand(capsys):
     args = argparse.Namespace(tool_command=None)
     with pytest.raises(SystemExit, match="1"):
-        run_tool_command(args)
+        run_wrapper_command(args)
     out = capsys.readouterr().out
     assert "usage:" in out
 
@@ -134,23 +134,23 @@ def test_require_admin_unknown_user_exits(capsys):
 
 
 def test_skill_list_empty(capsys):
-    from cli.tool import _tool_list
+    from cli.wrapper import _wrapper_list
 
-    with patch("cli.tool.discover_tools", return_value=[]):
-        _tool_list(argparse.Namespace())
+    with patch("cli.wrapper.discover_wrappers", return_value=[]):
+        _wrapper_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "No tools installed." in out
 
 
 def test_skill_list_shows_skills(capsys):
-    from cli.tool import _tool_list
+    from cli.wrapper import _wrapper_list
 
     skills = [
         {"name": "search", "version": "0.1.0", "summary": "Web search"},
         {"name": "aider", "version": "0.3.2", "summary": "Code editing"},
     ]
-    with patch("cli.tool.discover_tools", return_value=skills):
-        _tool_list(argparse.Namespace())
+    with patch("cli.wrapper.discover_wrappers", return_value=skills):
+        _wrapper_list(argparse.Namespace())
     out = capsys.readouterr().out
     assert "search" in out
     assert "0.1.0" in out
@@ -160,14 +160,14 @@ def test_skill_list_shows_skills(capsys):
 
 
 def test_skill_list_column_alignment(capsys):
-    from cli.tool import _tool_list
+    from cli.wrapper import _wrapper_list
 
     skills = [
         {"name": "a", "version": "1.0", "summary": "Short"},
         {"name": "longname", "version": "10.20.30", "summary": "Long"},
     ]
-    with patch("cli.tool.discover_tools", return_value=skills):
-        _tool_list(argparse.Namespace())
+    with patch("cli.wrapper.discover_wrappers", return_value=skills):
+        _wrapper_list(argparse.Namespace())
     lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
     assert len(lines) == 2
     # Both lines should have the dash separator at the same column
@@ -192,10 +192,10 @@ FAKE_REGISTRY = {
 
 
 def test_skill_search_no_query(capsys):
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
-    with patch("cli.tool._fetch_registry", return_value=FAKE_REGISTRY):
-        _tool_search(argparse.Namespace(query=""))
+    with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
+        _wrapper_search(argparse.Namespace(query=""))
 
     out = capsys.readouterr().out
     assert "search" in out
@@ -203,10 +203,10 @@ def test_skill_search_no_query(capsys):
 
 
 def test_skill_search_by_name(capsys):
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
-    with patch("cli.tool._fetch_registry", return_value=FAKE_REGISTRY):
-        _tool_search(argparse.Namespace(query="search"))
+    with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
+        _wrapper_search(argparse.Namespace(query="search"))
 
     out = capsys.readouterr().out
     assert "search" in out
@@ -214,10 +214,10 @@ def test_skill_search_by_name(capsys):
 
 
 def test_skill_search_by_description(capsys):
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
-    with patch("cli.tool._fetch_registry", return_value=FAKE_REGISTRY):
-        _tool_search(argparse.Namespace(query="refactoring"))
+    with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
+        _wrapper_search(argparse.Namespace(query="refactoring"))
 
     out = capsys.readouterr().out
     assert "aider" in out
@@ -228,29 +228,29 @@ def test_skill_search_network_error(capsys):
     import httpx
 
     with (
-        patch("cli.tool._fetch_registry", side_effect=SystemExit(1)),
+        patch("cli.wrapper._fetch_registry", side_effect=SystemExit(1)),
         pytest.raises(SystemExit, match="1"),
     ):
-        from cli.tool import _tool_search
+        from cli.wrapper import _wrapper_search
 
-        _tool_search(argparse.Namespace(query=""))
+        _wrapper_search(argparse.Namespace(query=""))
 
 
 def test_skill_search_no_results(capsys):
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
-    with patch("cli.tool._fetch_registry", return_value=FAKE_REGISTRY):
-        _tool_search(argparse.Namespace(query="nonexistent"))
+    with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
+        _wrapper_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No tools found." in out
 
 
 def test_skill_search_cross_type_hint_shown(capsys):
     """M102b: when skill search finds nothing, hint about matching connectors."""
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
-    with patch("cli.tool._fetch_registry", return_value=FAKE_REGISTRY):
-        _tool_search(argparse.Namespace(query="discord"))
+    with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
+        _wrapper_search(argparse.Namespace(query="discord"))
     out = capsys.readouterr().out
     assert "No tools found." in out
     assert "kiso connector search" in out
@@ -259,10 +259,10 @@ def test_skill_search_cross_type_hint_shown(capsys):
 
 def test_skill_search_cross_type_hint_not_shown_when_no_match(capsys):
     """M102b: no cross-type hint when the other type also has no matches."""
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
-    with patch("cli.tool._fetch_registry", return_value=FAKE_REGISTRY):
-        _tool_search(argparse.Namespace(query="nonexistent"))
+    with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
+        _wrapper_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No tools found." in out
     assert "kiso connector search" not in out
@@ -270,11 +270,11 @@ def test_skill_search_cross_type_hint_not_shown_when_no_match(capsys):
 
 def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
     """M102b: no cross-type hint when query is empty (all results shown)."""
-    from cli.tool import _tool_search
+    from cli.wrapper import _wrapper_search
 
     empty_registry = {"tools": [], "connectors": [{"name": "discord", "description": "Discord bridge"}]}
-    with patch("cli.tool._fetch_registry", return_value=empty_registry):
-        _tool_search(argparse.Namespace(query=""))
+    with patch("cli.wrapper._fetch_registry", return_value=empty_registry):
+        _wrapper_search(argparse.Namespace(query=""))
     out = capsys.readouterr().out
     assert "No tools found." in out
     assert "kiso connector search" not in out
@@ -289,9 +289,9 @@ def _fake_clone_with_manifest(name="search", summary="Web search", usage_guide="
 
 
 def test_skill_install_official(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     clone_fn = _fake_clone_with_manifest()
@@ -302,23 +302,23 @@ def test_skill_install_official(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     out = capsys.readouterr().out
     assert "installed successfully" in out
 
 
 def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     clone_fn = _fake_clone_with_manifest("myskill", "Custom skill")
@@ -329,9 +329,9 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
         patch("builtins.input", return_value="y"),
     ):
         args = argparse.Namespace(
@@ -340,7 +340,7 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
             no_deps=False,
             show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     out = capsys.readouterr().out
     assert "unofficial" in out.lower()
@@ -348,9 +348,9 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     clone_fn = _fake_clone_with_manifest("myskill", "Custom skill")
@@ -361,7 +361,7 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
         patch("builtins.input", return_value="n"),
         pytest.raises(SystemExit, match="1"),
@@ -372,7 +372,7 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
             no_deps=False,
             show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     out = capsys.readouterr().out
     assert "cancelled" in out.lower()
@@ -380,9 +380,9 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     clone_fn = _fake_clone_with_manifest("myskill", "Custom")
@@ -393,9 +393,9 @@ def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
         patch("builtins.input", return_value="y"),
     ):
         args = argparse.Namespace(
@@ -404,15 +404,15 @@ def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
             no_deps=False,
             show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     assert (tools_dir / "custom").exists()
 
 
 def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def clone_with_deps(cmd, **kwargs):
@@ -438,14 +438,14 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=tracking_run),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=True, show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     # deps.sh should not have been called
     bash_calls = [c for c in run_calls if c[0] == "bash"]
@@ -453,7 +453,7 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
 
 
 def test_skill_install_show_deps(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
     deps_content = "#!/bin/bash\napt install ffmpeg\n"
 
@@ -467,24 +467,24 @@ def test_skill_install_show_deps(tmp_path, mock_admin, capsys):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=True,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     out = capsys.readouterr().out
     assert "apt install ffmpeg" in out
 
 
 def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     (tools_dir / "search").mkdir()
 
-    with patch("cli.tool.TOOLS_DIR", tools_dir):
+    with patch("cli.wrapper.WRAPPERS_DIR", tools_dir):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         )
-        _tool_install(args)  # should NOT raise SystemExit
+        _wrapper_install(args)  # should NOT raise SystemExit
 
     out = capsys.readouterr().out
     assert "already installed" in out
@@ -492,9 +492,9 @@ def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
 
 def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_admin, capsys):
     """git pull failure in already-installed path prints a warning (does not abort)."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     (tools_dir / "search").mkdir()
 
@@ -504,13 +504,13 @@ def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_a
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=fake_run),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         )
-        _tool_install(args)  # should NOT raise SystemExit
+        _wrapper_install(args)  # should NOT raise SystemExit
 
     out = capsys.readouterr().out
     assert "already installed" in out
@@ -520,9 +520,9 @@ def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_a
 
 def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, mock_admin, capsys):
     """git pull in already-installed path passes safe.directory config."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     tool_dir = tools_dir / "search"
     tool_dir.mkdir()
@@ -534,13 +534,13 @@ def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, 
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=fake_run),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     # Find the git pull command
     pull_cmds = [c for c in git_cmds if "pull" in c]
@@ -554,9 +554,9 @@ def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, 
 
 
 def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone_fail(cmd, **kwargs):
@@ -565,14 +565,14 @@ def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 1, stderr="fatal: repo not found")
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=fake_clone_fail),
         pytest.raises(SystemExit, match="1"),
     ):
         args = argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         )
-        _tool_install(args)
+        _wrapper_install(args)
 
     out = capsys.readouterr().out
     assert "not found" in out
@@ -583,29 +583,29 @@ def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_single(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     tool_dir = tools_dir / "search"
     tool_dir.mkdir()
     (tool_dir / "kiso.toml").write_text('[kiso]\ntype = "tool"\nname = "search"\n')
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=_ok_run),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_update(argparse.Namespace(target="search"))
+        _wrapper_update(argparse.Namespace(target="search"))
 
     out = capsys.readouterr().out
     assert "updated" in out
 
 
 def test_skill_update_all(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     for name in ["search", "aider"]:
         d = tools_dir / name
@@ -613,11 +613,11 @@ def test_skill_update_all(tmp_path, mock_admin, capsys):
         (d / "kiso.toml").write_text(f'[kiso]\ntype = "tool"\nname = "{name}"\n')
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=_ok_run),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_update(argparse.Namespace(target="all"))
+        _wrapper_update(argparse.Namespace(target="all"))
 
     out = capsys.readouterr().out
     assert "aider" in out and "updated" in out
@@ -625,25 +625,25 @@ def test_skill_update_all(tmp_path, mock_admin, capsys):
 
 
 def test_skill_update_nonexistent(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         pytest.raises(SystemExit, match="1"),
     ):
-        _tool_update(argparse.Namespace(target="nonexistent"))
+        _wrapper_update(argparse.Namespace(target="nonexistent"))
 
     out = capsys.readouterr().out
     assert "not installed" in out
 
 
 def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     (tools_dir / "search").mkdir()
 
@@ -651,11 +651,11 @@ def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 1, stderr="error: cannot pull")
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=fake_pull_fail),
         pytest.raises(SystemExit, match="1"),
     ):
-        _tool_update(argparse.Namespace(target="search"))
+        _wrapper_update(argparse.Namespace(target="search"))
 
     out = capsys.readouterr().out
     assert "git pull failed" in out
@@ -665,14 +665,14 @@ def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
 
 
 def test_skill_remove_existing(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_remove
+    from cli.wrapper import _wrapper_remove
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     (tools_dir / "search").mkdir()
 
-    with patch("cli.tool.TOOLS_DIR", tools_dir):
-        _tool_remove(argparse.Namespace(name="search"))
+    with patch("cli.wrapper.WRAPPERS_DIR", tools_dir):
+        _wrapper_remove(argparse.Namespace(name="search"))
 
     out = capsys.readouterr().out
     assert "removed" in out
@@ -680,16 +680,16 @@ def test_skill_remove_existing(tmp_path, mock_admin, capsys):
 
 
 def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
-    from cli.tool import _tool_remove
+    from cli.wrapper import _wrapper_remove
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         pytest.raises(SystemExit, match="1"),
     ):
-        _tool_remove(argparse.Namespace(name="nonexistent"))
+        _wrapper_remove(argparse.Namespace(name="nonexistent"))
 
     captured = capsys.readouterr()
     assert "not installed" in (captured.out + captured.err)
@@ -700,7 +700,7 @@ def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
 
 def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
     """show-deps when git clone fails."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
     def fail(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stderr="fatal: not found")
@@ -709,7 +709,7 @@ def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
         patch("subprocess.run", side_effect=fail),
         pytest.raises(SystemExit, match="1"),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=True,
         ))
 
@@ -718,7 +718,7 @@ def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
 
 def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
     """show-deps when repo has no deps.sh."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
     def fake_clone(cmd, **kwargs):
         dest = Path(cmd[3])
@@ -726,7 +726,7 @@ def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 0)
 
     with patch("subprocess.run", side_effect=fake_clone):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=True,
         ))
 
@@ -735,9 +735,9 @@ def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
 
 def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
     """Clone succeeds but no kiso.toml — cleaned up."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -746,11 +746,11 @@ def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 0)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=fake_clone),
         pytest.raises(SystemExit, match="1"),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -761,9 +761,9 @@ def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
 
 def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
     """kiso.toml exists but fails validation — cleaned up."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -776,11 +776,11 @@ def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
         return subprocess.CompletedProcess(cmd, 0)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=fake_clone),
         pytest.raises(SystemExit, match="1"),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -791,9 +791,9 @@ def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
 
 def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     """deps.sh fails — warning printed but install continues."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -818,11 +818,11 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -833,9 +833,9 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
     """check_deps returns missing binaries — warning printed."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     clone_fn = _fake_clone_with_manifest("search", "Search")
 
@@ -845,11 +845,11 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=["ffmpeg", "node"]),
+        patch("cli.wrapper.check_deps", return_value=["ffmpeg", "node"]),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -861,9 +861,9 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, capsys):
     """check_deps_fn receives deps from manifest, not empty dict."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -892,11 +892,11 @@ def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, c
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", side_effect=spy_check_deps),
+        patch("cli.wrapper.check_deps", side_effect=spy_check_deps),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="browser", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -909,9 +909,9 @@ def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, c
 
 def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin, capsys):
     """auto-retry deps.sh when binaries missing after first install."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -942,11 +942,11 @@ def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin,
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", side_effect=check_deps_missing_then_ok),
+        patch("cli.wrapper.check_deps", side_effect=check_deps_missing_then_ok),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="browser", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -959,9 +959,9 @@ def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin,
 
 def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
     """Env vars declared in manifest but not in environment — warning printed."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -985,12 +985,12 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
         patch.dict("os.environ", {}, clear=False),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -1004,32 +1004,32 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
     """Update all when skills dir doesn't exist."""
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    with patch("cli.tool.TOOLS_DIR", tmp_path / "nonexistent"):
-        _tool_update(argparse.Namespace(target="all"))
+    with patch("cli.wrapper.WRAPPERS_DIR", tmp_path / "nonexistent"):
+        _wrapper_update(argparse.Namespace(target="all"))
 
     assert "No tools installed" in capsys.readouterr().out
 
 
 def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
     """Update all when skills dir is empty."""
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
-    with patch("cli.tool.TOOLS_DIR", tools_dir):
-        _tool_update(argparse.Namespace(target="all"))
+    with patch("cli.wrapper.WRAPPERS_DIR", tools_dir):
+        _wrapper_update(argparse.Namespace(target="all"))
 
     assert "No tools installed" in capsys.readouterr().out
 
 
 def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     """deps.sh fails during update — warning printed but update continues."""
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     tool_dir = tools_dir / "search"
     tool_dir.mkdir()
@@ -1046,11 +1046,11 @@ def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_update(argparse.Namespace(target="search"))
+        _wrapper_update(argparse.Namespace(target="search"))
 
     out = capsys.readouterr().out
     assert "warning: deps.sh failed" in out
@@ -1059,18 +1059,18 @@ def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
 
 def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
     """check_deps returns missing binaries during update — warning printed."""
-    from cli.tool import _tool_update
+    from cli.wrapper import _wrapper_update
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
     (tools_dir / "search").mkdir()
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=_ok_run),
-        patch("cli.tool.check_deps", return_value=["docker"]),
+        patch("cli.wrapper.check_deps", return_value=["docker"]),
     ):
-        _tool_update(argparse.Namespace(target="search"))
+        _wrapper_update(argparse.Namespace(target="search"))
 
     out = capsys.readouterr().out
     assert "missing binaries: docker" in out
@@ -1082,9 +1082,9 @@ def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
 
 def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
     """Install creates usage_guide.local.md from toml default."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     guide_text = "Use short queries. Prefer English."
@@ -1111,11 +1111,11 @@ def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -1126,9 +1126,9 @@ def test_install_creates_usage_guide_override(tmp_path, mock_admin, capsys):
 
 def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
     """Install adds usage_guide.local.md to .git/info/exclude."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     def fake_clone(cmd, **kwargs):
@@ -1152,11 +1152,11 @@ def test_install_adds_git_exclude(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -1168,9 +1168,9 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
     """No usage_guide in toml → no override file created (skill won't validate
     but we test the file-creation logic in isolation via a passing manifest
     that has an empty usage_guide-like value)."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     # usage_guide present but empty string — file should not be created
@@ -1193,11 +1193,11 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -1207,9 +1207,9 @@ def test_install_no_guide_no_file(tmp_path, mock_admin, capsys):
 
 def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
     """Install does not overwrite an existing usage_guide.local.md."""
-    from cli.tool import _tool_install
+    from cli.wrapper import _wrapper_install
 
-    tools_dir = tmp_path / "tools"
+    tools_dir = tmp_path / "wrappers"
     tools_dir.mkdir()
 
     custom_content = "My custom guide\n"
@@ -1235,11 +1235,11 @@ def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
         return _ok_run(cmd, **kwargs)
 
     with (
-        patch("cli.tool.TOOLS_DIR", tools_dir),
+        patch("cli.wrapper.WRAPPERS_DIR", tools_dir),
         patch("subprocess.run", side_effect=run_dispatch),
-        patch("cli.tool.check_deps", return_value=[]),
+        patch("cli.wrapper.check_deps", return_value=[]),
     ):
-        _tool_install(argparse.Namespace(
+        _wrapper_install(argparse.Namespace(
             target="search", name=None, no_deps=False, show_deps=False,
         ))
 
@@ -1277,25 +1277,25 @@ class TestUpdatePlugin:
 
 class TestToolTest:
     def test_tool_not_installed(self, tmp_path, capsys, monkeypatch):
-        import cli.tool as mod
-        monkeypatch.setattr(mod, "TOOLS_DIR", tmp_path)
+        import cli.wrapper as mod
+        monkeypatch.setattr(mod, "WRAPPERS_DIR", tmp_path)
         args = argparse.Namespace(name="nonexistent")
         with pytest.raises(SystemExit):
-            mod._tool_test(args)
+            mod._wrapper_test(args)
         assert "not installed" in capsys.readouterr().err
 
     def test_tool_no_tests_dir(self, tmp_path, capsys, monkeypatch):
-        import cli.tool as mod
-        monkeypatch.setattr(mod, "TOOLS_DIR", tmp_path)
+        import cli.wrapper as mod
+        monkeypatch.setattr(mod, "WRAPPERS_DIR", tmp_path)
         (tmp_path / "mytool").mkdir()
         args = argparse.Namespace(name="mytool")
         with pytest.raises(SystemExit):
-            mod._tool_test(args)
+            mod._wrapper_test(args)
         assert "no tests/ directory" in capsys.readouterr().err
 
-    def test_tool_test_runs_pytest(self, tmp_path, monkeypatch):
-        import cli.tool as mod
-        monkeypatch.setattr(mod, "TOOLS_DIR", tmp_path)
+    def test_wrapper_test_runs_pytest(self, tmp_path, monkeypatch):
+        import cli.wrapper as mod
+        monkeypatch.setattr(mod, "WRAPPERS_DIR", tmp_path)
         tool_dir = tmp_path / "mytool"
         tool_dir.mkdir()
         (tool_dir / "tests").mkdir()
@@ -1310,7 +1310,7 @@ class TestToolTest:
         monkeypatch.setattr(mod.subprocess, "run", mock_run)
         with pytest.raises(SystemExit) as exc_info:
             args = argparse.Namespace(name="mytool")
-            mod._tool_test(args)
+            mod._wrapper_test(args)
         assert exc_info.value.code == 0
         assert len(calls) == 1
         assert "pytest" in calls[0][0][2]

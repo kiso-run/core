@@ -121,7 +121,7 @@ def _plugin_install(
     Args:
         plugin_type: "tool" or "connector" — used in user-facing messages.
         official_prefix: Git repo name prefix ("tool-" or "connector-").
-        parent_dir: Directory where the plugin is installed (TOOLS_DIR/CONNECTORS_DIR).
+        parent_dir: Directory where the plugin is installed (WRAPPERS_DIR/CONNECTORS_DIR).
         validate_fn: callable(manifest, plugin_dir) -> list[str] — manifest validator.
         check_deps_fn: callable(plugin_info) -> list[str] — binary deps checker.
         args: argparse Namespace with .target, .name, .show_deps, .no_deps.
@@ -294,8 +294,8 @@ def _plugin_install(
 
         print(f"{plugin_type.capitalize()} '{name}' installed successfully.")
         invalidate_cache()
-        from kiso.tools import invalidate_tools_cache
-        invalidate_tools_cache()
+        from kiso.wrappers import invalidate_wrappers_cache
+        invalidate_wrappers_cache()
 
     except Exception:
         if plugin_dir.exists():

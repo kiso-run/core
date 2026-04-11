@@ -19,7 +19,7 @@ class TestPluginTaxonomyCLIEntrypoints:
     """All CLI entrypoints import and dispatch without errors."""
 
     @pytest.mark.parametrize("module,func,attr", [
-        ("cli.tool", "run_tool_command", "tool_command"),
+        ("cli.wrapper", "run_wrapper_command", "tool_command"),
         ("cli.recipe", "run_recipe_command", "recipe_command"),
         ("cli.connector", "run_connector_command", "connector_command"),
         ("cli.plugin", "run_plugin_command", "plugin_command"),
@@ -50,7 +50,7 @@ class TestPluginListAggregation:
         fake_connectors = [{"name": "discord", "description": "Discord", "version": "1.0",
                             "path": "/f", "summary": "", "env": {}}]
 
-        with patch("cli.plugin.discover_tools", return_value=fake_tools), \
+        with patch("cli.plugin.discover_wrappers", return_value=fake_tools), \
              patch("cli.plugin.discover_recipes", return_value=fake_recipes), \
              patch("cli.plugin.discover_connectors", return_value=fake_connectors), \
              patch("cli.plugin.invalidate_recipes_cache"):
@@ -70,7 +70,7 @@ class TestRegistryStructure:
 
     def test_entries_have_name_and_description(self):
         registry = json.loads((ROOT / "registry.json").read_text())
-        for section in ("tools", "recipes", "connectors"):
+        for section in ("wrappers", "recipes", "connectors"):
             for entry in registry[section]:
                 assert "name" in entry, f"{section} entry missing 'name'"
                 assert "description" in entry, f"{section} entry missing 'description'"

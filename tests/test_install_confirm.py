@@ -448,7 +448,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=None)),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             pytest.raises(PlanError, match="only msg tasks"),
         ):
             await run_planner(db, config, "sess1", "admin", "vai su google.com")
@@ -460,7 +460,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=None)),
-            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
             pytest.raises(PlanError, match="only msg tasks"),
         ):
             await run_planner(db, config, "sess1", "admin", "ciao")
@@ -471,7 +471,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=["browser"])),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
         assert plan["install_proposal"] is True
@@ -482,7 +482,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_exec_msg_plan()),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "scrivi hello world")
         assert plan["install_proposal"] is False
@@ -593,14 +593,14 @@ class TestM901NeedsInstallFilter:
         yield conn
         await conn.close()
 
-    async def test_installed_tool_removed_from_needs_install(self, db):
+    async def test_installed_wrapper_removed_from_needs_install(self, db):
         """needs_install: ["browser"] with browser installed → filtered out, proposal=False."""
         config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=["browser"])),
-            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "vai su example.com")
         assert plan["install_proposal"] is False
@@ -613,7 +613,7 @@ class TestM901NeedsInstallFilter:
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=["ocr"])),
-            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "fai OCR")
         assert plan["install_proposal"] is True
@@ -626,7 +626,7 @@ class TestM901NeedsInstallFilter:
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
                   return_value=_msg_only_plan(needs_install=["browser", "ocr"])),
-            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
         ):
             plan = await run_planner(db, config, "sess1", "admin", "fai screenshot e OCR")
         assert plan["install_proposal"] is True

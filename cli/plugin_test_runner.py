@@ -190,14 +190,14 @@ def _resolve_filter(registry: dict, filter_arg: str) -> list[tuple[str, str]]:
         return [("connector", c["name"]) for c in connectors]
 
     # Specific names — auto-detect type
-    tool_names = {t["name"] for t in tools}
+    wrapper_names = {t["name"] for t in tools}
     connector_names = {c["name"] for c in connectors}
     result = []
     for name in filter_arg.split(","):
         name = name.strip()
         if not name:
             continue
-        if name in tool_names:
+        if name in wrapper_names:
             result.append(("tool", name))
         elif name in connector_names:
             result.append(("connector", name))

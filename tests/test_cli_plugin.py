@@ -35,7 +35,7 @@ _FAKE_CONNECTORS = [
 
 class TestPluginList:
     def test_list_all_types(self, capsys):
-        with patch("cli.plugin.discover_tools", return_value=_FAKE_TOOLS), \
+        with patch("cli.plugin.discover_wrappers", return_value=_FAKE_TOOLS), \
              patch("cli.plugin.discover_recipes", return_value=_FAKE_RECIPES), \
              patch("cli.plugin.discover_connectors", return_value=_FAKE_CONNECTORS), \
              patch("cli.plugin.invalidate_recipes_cache"):
@@ -50,7 +50,7 @@ class TestPluginList:
         assert "discord" in out
 
     def test_list_tools_only(self, capsys):
-        with patch("cli.plugin.discover_tools", return_value=_FAKE_TOOLS), \
+        with patch("cli.plugin.discover_wrappers", return_value=_FAKE_TOOLS), \
              patch("cli.plugin.discover_recipes", return_value=[]), \
              patch("cli.plugin.discover_connectors", return_value=[]), \
              patch("cli.plugin.invalidate_recipes_cache"):
@@ -62,7 +62,7 @@ class TestPluginList:
         assert "Connectors:" not in out
 
     def test_list_empty(self, capsys):
-        with patch("cli.plugin.discover_tools", return_value=[]), \
+        with patch("cli.plugin.discover_wrappers", return_value=[]), \
              patch("cli.plugin.discover_recipes", return_value=[]), \
              patch("cli.plugin.discover_connectors", return_value=[]), \
              patch("cli.plugin.invalidate_recipes_cache"):
@@ -111,10 +111,10 @@ class TestPluginInstallGitPull:
 
     def test_git_pull_called_on_reinstall(self, tmp_path):
         from cli.plugin_ops import _plugin_install
-        from kiso.tools import _validate_manifest as validate_fn, check_deps
+        from kiso.wrappers import _validate_manifest as validate_fn, check_deps
 
         # Create a fake installed plugin dir with kiso.toml
-        plugin_dir = tmp_path / "tools" / "test-tool"
+        plugin_dir = tmp_path / "wrappers" / "test-tool"
         plugin_dir.mkdir(parents=True)
         (plugin_dir / "kiso.toml").write_text(
             '[kiso]\nname = "test-tool"\ntype = "tool"\n\n'
@@ -134,7 +134,7 @@ class TestPluginInstallGitPull:
         with patch("cli.plugin_ops.subprocess.run", side_effect=_mock_run):
             _plugin_install(
                 "tool", "tool-",
-                tmp_path / "tools",
+                tmp_path / "wrappers",
                 validate_fn, check_deps,
                 args,
             )

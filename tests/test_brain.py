@@ -87,7 +87,7 @@ from kiso.brain import (
     FAILURE_CLASS_BLOCKED_POLICY,
     FAILURE_CLASS_DELIVERY_SPLIT,
     FAILURE_CLASS_PLAN_SHAPE,
-    FAILURE_CLASS_SEMANTIC_TOOL,
+    FAILURE_CLASS_SEMANTIC_WRAPPER,
     FAILURE_CLASS_TASK_SHAPE,
     FAILURE_CLASS_WORKSPACE_ROUTING,
 )
@@ -450,7 +450,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("Goal mentions creating" in e for e in errors)
 
-    def test_tool_name_is_task_type_exec(self):
+    def test_wrapper_name_is_task_type_exec(self):
         """tool='exec' is a task type confusion, not a real tool."""
         plan = {"tasks": [
             {"type": "tool", "detail": "create file", "expect": "ok", "tool": "exec", "args": "{}"},
@@ -460,7 +460,7 @@ class TestValidatePlan:
         assert any("'exec' is a task TYPE" in e for e in errors)
         assert any("type='exec'" in e for e in errors)
 
-    def test_tool_name_is_task_type_msg(self):
+    def test_wrapper_name_is_task_type_msg(self):
         """tool='msg' is a task type confusion."""
         plan = {"tasks": [
             {"type": "tool", "detail": "send", "expect": "ok", "tool": "msg", "args": "{}"},
@@ -469,7 +469,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("'msg' is a task TYPE" in e for e in errors)
 
-    def test_tool_name_is_prompt_module_web(self):
+    def test_wrapper_name_is_prompt_module_web(self):
         """tool='web' is a prompt module, not a tool."""
         plan = {"tasks": [
             {"type": "tool", "detail": "browse site", "expect": "ok", "tool": "web", "args": "{}"},
@@ -997,14 +997,14 @@ class TestLoadSystemPrompt:
         fails reported in the M1296 problem statement.
         """
         _modules = [
-            "kiso.config", "kiso.brain", "kiso.tools", "kiso.main",
+            "kiso.config", "kiso.brain", "kiso.wrappers", "kiso.main",
             "kiso.pub", "kiso.log", "kiso.audit", "kiso.sysenv",
-            "kiso.connectors", "kiso.recipe_loader", "kiso.tool_repair",
+            "kiso.connectors", "kiso.recipe_loader", "kiso.wrapper_repair",
             "kiso.worker.loop", "kiso.worker.utils",
         ]
         invalidate_prompt_cache()
         # Mirror _func_kiso_dir: create the dir, do NOT touch roles/
-        (tmp_path / "tools").mkdir()
+        (tmp_path / "wrappers").mkdir()
         (tmp_path / "sys" / "ssh").mkdir(parents=True)
         patches = [patch(f"{m}.KISO_DIR", tmp_path) for m in _modules]
         for p in patches:
@@ -1259,7 +1259,7 @@ class TestBuildPlannerMessages:
                 "query": {"type": "string", "required": True, "description": "search query"},
             }, "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
         ]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "search for X")
         content = msgs[1]["content"]
         assert "## Tools" in content
@@ -1389,7 +1389,7 @@ class TestBuildPlannerMessages:
 
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "## Skills" not in content
@@ -1422,7 +1422,7 @@ class TestBuildPlannerMessages:
             {"name": "discord", "description": "Discord messaging", "platform": "discord", "version": "0.1.0", "path": "/fake"},
         ]
         with (
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=fake_connectors),
         ):
             msgs, *_ = await build_planner_messages(db, config, "sess1", "admin", "setup discord")
@@ -1434,7 +1434,7 @@ class TestBuildPlannerMessages:
         """no connector section when none installed."""
         await create_session(db, "sess1")
         with (
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
         ):
             msgs, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
@@ -1454,7 +1454,7 @@ class TestBuildPlannerMessages:
             raw={},
         )
         with (
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Mock briefer to return empty modules (simulates aggressive filtering)
             patch("kiso.brain.run_briefer", return_value={
@@ -1494,7 +1494,7 @@ class TestBuildPlannerMessages:
             "version": "0.1", "description": "",
         }
         with (
-            patch("kiso.brain.discover_tools", return_value=[fake_tool]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer selects 0 tools AND 0 modules — tools_rules still forced
             patch("kiso.brain.run_briefer", return_value={
@@ -1522,7 +1522,7 @@ class TestBuildPlannerMessages:
             raw={},
         )
         with (
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": [], "exclude_recipes": [], "context": "",
@@ -1550,7 +1550,7 @@ class TestBuildPlannerMessages:
             raw={},
         )
         with (
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer selects plugin_install → triggers full sysenv
             patch("kiso.brain.run_briefer", return_value={
@@ -1598,7 +1598,7 @@ class TestBuildPlannerMessages:
         }
         with (
             patch("kiso.brain.get_system_env", return_value=fake_env),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": [], "exclude_recipes": [], "context": "",
@@ -1642,7 +1642,7 @@ class TestBuildPlannerMessages:
         }
         with (
             patch("kiso.brain.get_system_env", return_value=fake_env),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": [], "exclude_recipes": [], "context": "",
@@ -1686,7 +1686,7 @@ class TestBuildPlannerMessages:
         }
         with (
             patch("kiso.brain.get_system_env", return_value=fake_env),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": [], "exclude_recipes": [], "context": "",
@@ -1722,7 +1722,7 @@ class TestBuildPlannerMessages:
                 "reference_docs_path": str(KISO_DIR / "reference"),
                 "registry_url": "https://example.com/registry.json",
             }),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [],
@@ -1752,10 +1752,10 @@ class TestBuildPlannerMessages:
             "args": [], "guide": "",
         }
         with (
-            patch("kiso.brain.discover_tools", return_value=[fake_skill]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_skill]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Empty registry → kiso_native not force-added
-            patch("kiso.brain.get_registry_tools", return_value=""),
+            patch("kiso.brain.get_registry_wrappers", return_value=""),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "tools": ["browser — navigate"],
                 "context": "", "output_indices": [],
@@ -1786,7 +1786,7 @@ class TestBuildPlannerMessages:
             "args": [], "guide": "",
         }
         with (
-            patch("kiso.brain.discover_tools", return_value=[fake_skill]),
+            patch("kiso.brain.discover_wrappers", return_value=[fake_skill]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer returns zero modules (single-tool task)
             patch("kiso.brain.run_briefer", return_value={
@@ -1815,7 +1815,7 @@ class TestBuildPlannerMessages:
             {"name": "aider", "summary": "Code edit", "args_schema": {},
              "env": {}, "session_secrets": [], "path": "/fake2", "version": "0.1.0", "description": ""},
         ]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(
                 db, config, "sess1", "user", "hello", user_tools=["search"],
             )
@@ -1827,21 +1827,21 @@ class TestBuildPlannerMessages:
         assert "aider" not in skills_section
 
     async def test_logs_warning_when_no_skills(self, db, config, caplog):
-        """M3: build_planner_messages logs warning when discover_tools returns empty."""
+        """M3: build_planner_messages logs warning when discover_wrappers returns empty."""
         import logging
         await create_session(db, "sess1")
         with (
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             caplog.at_level(logging.WARNING, logger="kiso.brain"),
         ):
             msgs, names, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         assert names == []
-        assert "discover_tools() returned empty" in caplog.text
+        assert "discover_wrappers() returned empty" in caplog.text
 
     async def test_upload_hint_when_docreader_missing(self, db, config):
         """Upload hint injected when message has [Uploaded files:] and docreader not installed."""
         await create_session(db, "sess1")
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "Read this file\n\n[Uploaded files: report.pdf]",
@@ -1856,7 +1856,7 @@ class TestBuildPlannerMessages:
             "name": "docreader", "summary": "Read docs", "path": "/t",
             "args_schema": {}, "healthy": True, "usage_guide": "",
         }
-        with patch("kiso.brain.discover_tools", return_value=[fake_tool]):
+        with patch("kiso.brain.discover_wrappers", return_value=[fake_tool]):
             msgs, *_ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "Read this\n\n[Uploaded files: report.pdf]",
@@ -2241,7 +2241,7 @@ class TestM83PlanSchema:
     def test_valid_task_type(self, t):
         self._valid(self._plan(tasks=[{"type": t, "detail": "x", "tool": None, "args": None, "expect": None}]))
 
-    def test_tool_task_object_args_valid(self):
+    def test_wrapper_task_object_args_valid(self):
         self._valid(self._plan(tasks=[
             {"type": "tool", "detail": "search", "tool": "search", "args": {"q": "test"}, "expect": "results"},
         ]))
@@ -4945,8 +4945,8 @@ class TestPlannerContextualRules:
     async def test_generic_message_has_no_appendix(self, db):
         """A message like 'what time is it' should not inject any appendix (when skills exist)."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse the web", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
-             patch("kiso.brain.get_registry_tools", return_value=""):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_wrappers", return_value=""):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
@@ -5002,7 +5002,7 @@ class TestPlannerContextualRules:
 
     async def test_no_skills_injects_plugin_install(self, db):
         """when no skills are installed, always inject plugin-install appendix."""
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "what time is it",
             )
@@ -5011,7 +5011,7 @@ class TestPlannerContextualRules:
 
     async def test_no_skills_no_duplicate_appendix(self, db):
         """if keyword already triggered plugin-install, no duplicate on empty skills."""
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin", "install the browser skill",
             )
@@ -5788,7 +5788,7 @@ class TestValidationRetryClassification:
     def test_failure_classifies_semantic_tool_validation(self):
         assert classify_failure_class(
             ["Tool args validation failed: files must contain file paths only"]
-        ) == FAILURE_CLASS_SEMANTIC_TOOL
+        ) == FAILURE_CLASS_SEMANTIC_WRAPPER
 
     def test_failure_classifies_workspace_routing(self):
         assert classify_failure_class(
@@ -5995,7 +5995,7 @@ class TestM194ReviewerDomainCheck:
 
 class TestPlannerSemanticToolValidation:
     def test_validate_plan_rejects_semantically_invalid_tool_args(self, tmp_path):
-        tool_dir = tmp_path / "tools" / "echo"
+        tool_dir = tmp_path / "wrappers" / "echo"
         tool_dir.mkdir(parents=True)
         (tool_dir / "run.py").write_text("print('ok')\n")
         (tool_dir / "pyproject.toml").write_text("[project]\nname='echo'\nversion='0.1.0'\n")
@@ -6875,7 +6875,7 @@ class TestBrieferPlannerIntegration:
         ]
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=fake_skills):
+             patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "go to example.com",
             )
@@ -6888,7 +6888,7 @@ class TestBrieferPlannerIntegration:
         assert "extend_replan" not in system
         # Briefer's synthesized context used
         assert "## Context\nUser wants to browse a website." in user_content
-        # build_planner_tool_list rebuilds full descriptions from installed tools
+        # build_planner_wrapper_list rebuilds full descriptions from installed tools
         assert "browser" in user_content
         assert "Navigate, click, fill, screenshot, text" in user_content
         # System Environment always included — planner needs registry_hints
@@ -6897,7 +6897,7 @@ class TestBrieferPlannerIntegration:
     async def test_briefer_disabled_uses_full_context(self, db):
         """When briefer_enabled=False, full context is used (original behavior)."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "hello",
             )
@@ -6924,7 +6924,7 @@ class TestBrieferPlannerIntegration:
         )
         config = self._config(briefer_enabled=False)
         # Message mentions "flask" (entity name) but NOT "Jinja2" or "WSGI"
-        with patch("kiso.brain.discover_tools", return_value=[]), \
+        with patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch("kiso.brain.search_facts", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "tell me about flask",
@@ -6950,7 +6950,7 @@ class TestBrieferPlannerIntegration:
             })
 
         with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "what time is it?",
             )
@@ -6981,7 +6981,7 @@ class TestBrieferPlannerIntegration:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -7012,7 +7012,7 @@ class TestBrieferPlannerIntegration:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "install the browser skill",
             )
@@ -7074,7 +7074,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "Python version",
             )
@@ -7106,7 +7106,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "Python version",
             )
@@ -7134,7 +7134,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -7162,7 +7162,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "tell me about the db",
             )
@@ -7189,7 +7189,7 @@ class TestBrieferTagRetrieval:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -7246,7 +7246,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", "Python version",
             )
@@ -7275,7 +7275,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", "Flask web framework",
             )
@@ -7303,7 +7303,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, self._config(), "sess1", "user", "hello",
             )
@@ -7332,7 +7332,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, self._config(), "sess1", "user", "show ssh key",
             )
@@ -7360,7 +7360,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, self._config(), "sess1", "user", "hello",
             )
@@ -7383,7 +7383,7 @@ class TestM346BrieferEntityRetrieval:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", "hello",
             )
@@ -7437,7 +7437,7 @@ class TestM258SysEnvAndGapFiltering:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "tell me a joke",
             )
@@ -7449,7 +7449,7 @@ class TestM258SysEnvAndGapFiltering:
     async def test_fallback_path_has_sys_env(self, db):
         """fallback path (no briefer) still includes sys_env."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin", "hello",
             )
@@ -7476,7 +7476,7 @@ class TestM258SysEnvAndGapFiltering:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "hello",
             )
@@ -7532,7 +7532,7 @@ class TestM266BrowserAvailability:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "vai su guidance.studio",
             )
@@ -7564,7 +7564,7 @@ class TestM266BrowserAvailability:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[fake_skill]):
+             patch("kiso.brain.discover_wrappers", return_value=[fake_skill]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "vai su guidance.studio",
             )
@@ -7590,7 +7590,7 @@ class TestM266BrowserAvailability:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "tell me a joke",
             )
@@ -7601,7 +7601,7 @@ class TestM266BrowserAvailability:
     async def test_fallback_path_web_module_no_browser(self, db):
         """Fallback path (no briefer) also shows warning when web module active."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_tools", return_value=[]):
+        with patch("kiso.brain.discover_wrappers", return_value=[]):
             # "go to" triggers web module via fallback_modules (web is always included)
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "user", "go to guidance.studio",
@@ -7659,8 +7659,8 @@ class TestM954BuiltinSearchNote:
 
         config = self._config(briefer_enabled=True)
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.get_registry_tools", return_value=self._REGISTRY_TEXT):
+             patch("kiso.brain.discover_wrappers", return_value=[]), \
+             patch("kiso.brain.get_registry_wrappers", return_value=self._REGISTRY_TEXT):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "cerca i 5 linguaggi più usati",
@@ -7691,10 +7691,10 @@ class TestM954BuiltinSearchNote:
             return "{}"
 
         config = self._config(briefer_enabled=True)
-        # get_registry_tools filters out installed tools → empty
+        # get_registry_wrappers filters out installed tools → empty
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=[fake_skill]), \
-             patch("kiso.brain.get_registry_tools", return_value=""):
+             patch("kiso.brain.discover_wrappers", return_value=[fake_skill]), \
+             patch("kiso.brain.get_registry_wrappers", return_value=""):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "cerca qualcosa online",
@@ -7706,8 +7706,8 @@ class TestM954BuiltinSearchNote:
     async def test_no_registry_no_note(self, db):
         """When registry returns empty, M954 note is not shown."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.get_registry_tools", return_value=""):
+        with patch("kiso.brain.discover_wrappers", return_value=[]), \
+             patch("kiso.brain.get_registry_wrappers", return_value=""):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "cerca qualcosa",
@@ -7721,8 +7721,8 @@ class TestM954BuiltinSearchNote:
     async def test_fallback_path_also_shows_note(self, db):
         """Fallback path (no briefer) also shows note when websearch not installed."""
         config = self._config(briefer_enabled=False)
-        with patch("kiso.brain.discover_tools", return_value=[]), \
-             patch("kiso.brain.get_registry_tools", return_value=self._REGISTRY_TEXT):
+        with patch("kiso.brain.discover_wrappers", return_value=[]), \
+             patch("kiso.brain.get_registry_wrappers", return_value=self._REGISTRY_TEXT):
             msgs, _, _ = await build_planner_messages(
                 db, config, "sess1", "admin",
                 "cerca linguaggi di programmazione",
@@ -7828,7 +7828,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "install browser",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "kiso_tool"
@@ -7838,7 +7838,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "install flask",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "uv", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "python_lib"
@@ -7848,7 +7848,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "install timg",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "system_pkg"
@@ -7858,7 +7858,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "installa e usa il tool 'zzz_test_notreal' per analizzare il sistema",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "unknown_kiso_tool"
@@ -7888,7 +7888,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "install jq",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "system_pkg"
@@ -7898,7 +7898,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "Check the plugin registry to find what skills are available, then install one that can do web search.",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "none"
@@ -7907,7 +7907,7 @@ class TestM1083InstallRoutingHelper:
         route = _classify_install_mode(
             "sì, installa il tool browser.",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
-            installed_tool_names=[],
+            installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "kiso_tool"
@@ -7955,7 +7955,7 @@ class TestM261BrieferModuleCoverage:
 
         # Provide a fake skill so plugin_install safety net doesn't trigger
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_tools", return_value=self._fake_skill()):
+             patch("kiso.brain.discover_wrappers", return_value=self._fake_skill()):
             msgs, _, _ = await build_planner_messages(
                 db, self._config(), "sess1", "user", message,
             )
@@ -8371,7 +8371,7 @@ class TestM309ReplanContextDedup:
                     "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "test msg", is_replan=True,
             )
@@ -8397,7 +8397,7 @@ class TestM309ReplanContextDedup:
                     "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
-             patch("kiso.brain.discover_tools", return_value=[]):
+             patch("kiso.brain.discover_wrappers", return_value=[]):
             await build_planner_messages(
                 db, config, "sess1", "user", "test msg", is_replan=False,
             )
@@ -8507,7 +8507,7 @@ class TestM274NoItalianKeywords:
     async def test_utente_does_not_trigger_user_mgmt(self, db):
         """Italian 'utente' no longer triggers user_mgmt module."""
         fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "crea un utente nuovo",
@@ -8518,8 +8518,8 @@ class TestM274NoItalianKeywords:
     async def test_installa_does_not_trigger_plugin_install(self, db):
         """Italian 'installa' no longer triggers plugin_install module."""
         fake_skills = [{"name": "s1", "version": "1.0", "summary": "x", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
-             patch("kiso.brain.get_registry_tools", return_value=""):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_wrappers", return_value=""):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "installa il browser",
@@ -8564,8 +8564,8 @@ class TestM899RegistryToolsInjection:
         """Planner context includes registry tools when some are uninstalled."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
         registry = "- ocr — Image OCR\n- aider — Code editing"
-        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
-             patch("kiso.brain.get_registry_tools", return_value=registry):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_wrappers", return_value=registry):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "extract text from screenshot",
@@ -8576,10 +8576,10 @@ class TestM899RegistryToolsInjection:
         assert "aider" in user
 
     async def test_no_registry_section_when_all_installed(self, db):
-        """No registry section when get_registry_tools returns empty."""
+        """No registry section when get_registry_wrappers returns empty."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
-        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
-             patch("kiso.brain.get_registry_tools", return_value=""):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_wrappers", return_value=""):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "what time is it",
@@ -8591,8 +8591,8 @@ class TestM899RegistryToolsInjection:
         """Registry text is NOT in context_pool (injected directly, not via briefer)."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
         registry = "- ocr — Image OCR"
-        with patch("kiso.brain.discover_tools", return_value=fake_skills), \
-             patch("kiso.brain.get_registry_tools", return_value=registry):
+        with patch("kiso.brain.discover_wrappers", return_value=fake_skills), \
+             patch("kiso.brain.get_registry_wrappers", return_value=registry):
             msgs, *_ = await build_planner_messages(
                 db, self._config(), "test-session", "admin",
                 "do OCR on image",
@@ -9838,7 +9838,7 @@ class TestValidatePlanGroups:
         ]
         assert _validate_plan_groups(tasks) == []
 
-    def test_tool_tasks_in_group_valid(self):
+    def test_wrapper_tasks_in_group_valid(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
             {"type": "tool", "detail": "fetch page A", "group": 1},
@@ -9941,7 +9941,7 @@ class TestInstalledToolExecRouting:
         )
         assert any("routes installed tool 'browser'" in e for e in errors)
 
-    def test_valid_tool_task_still_accepted(self):
+    def test_valid_wrapper_task_still_accepted(self):
         plan = {"goal": "test", "tasks": [
             {"type": "tool", "detail": "Write hello.py", "tool": "aider",
              "args": "{}", "expect": "hello.py created"},
@@ -9949,7 +9949,7 @@ class TestInstalledToolExecRouting:
         ]}
         assert not validate_plan(plan, installed_skills=["aider"])
 
-    def test_kiso_tool_install_exec_still_accepted(self):
+    def test_kiso_wrapper_install_exec_still_accepted(self):
         errors = validate_plan(
             self._plan("Run kiso tool install aider"),
             installed_skills=["aider"],
@@ -10111,7 +10111,7 @@ class TestSystemPackageInstallSemantics:
         assert not any("not in the kiso plugin registry" in e for e in errors)
         assert not any("needs_install" in e for e in errors)
 
-    def test_system_package_exec_not_treated_as_kiso_tool_install(self):
+    def test_system_package_exec_not_treated_as_kiso_wrapper_install(self):
         errors = validate_plan(
             self._plan("Install timg with apt-get"),
             registry_hint_names=frozenset({"browser", "aider", "websearch"}),
@@ -10175,7 +10175,7 @@ class TestM950ForceMsgOnly:
 
     def test_marker_in_unavailable_error(self):
         """The unavailable-tool error contains the marker string."""
-        from kiso.brain import _TOOL_UNAVAILABLE_MARKER
+        from kiso.brain import _WRAPPER_UNAVAILABLE_MARKER
         plan = {"tasks": [
             {"type": "tool", "detail": "magic", "expect": "ok",
              "tool": "zzz_fake", "args": "{}"},
@@ -10183,11 +10183,11 @@ class TestM950ForceMsgOnly:
         ]}
         errors = validate_plan(plan, installed_skills=[],
                                registry_hint_names=frozenset({"browser"}))
-        assert any(_TOOL_UNAVAILABLE_MARKER in e for e in errors)
+        assert any(_WRAPPER_UNAVAILABLE_MARKER in e for e in errors)
 
     def test_marker_not_in_registry_available_error(self):
         """Tool in registry but not installed does NOT contain unavailable marker."""
-        from kiso.brain import _TOOL_UNAVAILABLE_MARKER
+        from kiso.brain import _WRAPPER_UNAVAILABLE_MARKER
         plan = {"tasks": [
             {"type": "tool", "detail": "search", "expect": "ok",
              "tool": "websearch", "args": "{}"},
@@ -10195,7 +10195,7 @@ class TestM950ForceMsgOnly:
         ]}
         errors = validate_plan(plan, installed_skills=[],
                                registry_hint_names=frozenset({"websearch"}))
-        assert not any(_TOOL_UNAVAILABLE_MARKER in e for e in errors)
+        assert not any(_WRAPPER_UNAVAILABLE_MARKER in e for e in errors)
 
 
 class TestM1198InstallRouteValidation:

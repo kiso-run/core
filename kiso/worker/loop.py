@@ -35,7 +35,7 @@ from kiso.brain import (
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
     TASK_TYPE_SEARCH,
-    TASK_TYPE_TOOL,
+    TASK_TYPE_WRAPPER,
     WORKER_PHASE_CLASSIFYING,
     WORKER_PHASE_EXECUTING,
     WORKER_PHASE_IDLE,
@@ -74,24 +74,24 @@ from kiso.llm import (
     reset_usage_tracking,
     set_llm_budget,
 )
-from kiso.tools import (
-    ToolError,
-    discover_tools,
-    invalidate_tools_cache,
-    auto_correct_tool_args,
-    repair_tool_args,
-    validate_tool_args,
-    validate_tool_args_semantic,
+from kiso.wrappers import (
+    WrapperError,
+    discover_wrappers,
+    invalidate_wrappers_cache,
+    auto_correct_wrapper_args,
+    repair_wrapper_args,
+    validate_wrapper_args,
+    validate_wrapper_args_semantic,
 )
 from kiso.sysenv import get_system_env, build_system_env_section, invalidate_cache
 from kiso.webhook import deliver_webhook
 from kiso.worker.dependencies import (
     _build_new_artifact_refs,
-    _build_tool_file_refs,
+    _build_wrapper_file_refs,
     _format_dependency_context,
     _infer_task_dependencies,
     _repair_exec_pythonpath,
-    _repair_tool_workspace_args,
+    _repair_wrapper_workspace_args,
     _resolve_workspace_file_reference,
     _workspace_visible_files,
 )
@@ -169,7 +169,7 @@ from kiso.worker.utils import (
     get_replan_message,
 )
 from kiso.worker.exec import _exec_task
-from kiso.worker.tool import _tool_task
+from kiso.worker.wrapper import _wrapper_task
 
 log = logging.getLogger(__name__)
 
@@ -746,7 +746,7 @@ async def _persist_plan_tasks(
             db, plan_id, session,
             type=contract.task_type,
             detail=contract.intent,
-            skill=contract.tool_name,
+            skill=contract.wrapper_name,
             args=args_payload,
             expect=contract.expect,
             parallel_group=t.get("group"),
@@ -794,7 +794,7 @@ class _PlanCtx:
     max_output_size: int
     max_worker_retries: int
     messenger_timeout: int
-    installed_tools: list[dict]
+    installed_wrappers: list[dict]
     slog: "SessionLogger | None"
     sandbox_uid: "int | None"
     base_url: str = ""
@@ -806,17 +806,17 @@ class _PlanCtx:
     cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     task_contracts: dict[int, dict] = field(default_factory=dict)
-    # Derived from installed_tools for O(1) lookup by name (populated in __post_init__)
-    installed_tools_by_name: dict[str, dict] = field(init=False)
+    # Derived from installed_wrappers for O(1) lookup by name (populated in __post_init__)
+    installed_wrappers_by_name: dict[str, dict] = field(init=False)
 
     def __post_init__(self) -> None:
-        self.installed_tools_by_name = {s["name"]: s for s in self.installed_tools}
+        self.installed_wrappers_by_name = {s["name"]: s for s in self.installed_wrappers}
 
-    def refresh_tool_cache(self) -> None:
+    def refresh_wrapper_cache(self) -> None:
         """Invalidate cache, rediscover tools, rebuild lookup dict."""
-        invalidate_tools_cache()
-        self.installed_tools = discover_tools()
-        self.installed_tools_by_name = {s["name"]: s for s in self.installed_tools}
+        invalidate_wrappers_cache()
+        self.installed_wrappers = discover_wrappers()
+        self.installed_wrappers_by_name = {s["name"]: s for s in self.installed_wrappers}
 
 
 @dataclass
@@ -1221,16 +1221,16 @@ async def _review_finalize_ok(
     return _TaskHandlerResult(completed_row=task_row, plan_output=plan_output)
 
 
-async def _handle_tool_task(
+async def _handle_wrapper_task(
     ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
     """Handle a tool task (external subprocess via tool plugin)."""
     task_id = task_row["id"]
     _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
-    tool_name = task_row.get("skill")  # DB field still "skill" until schema migration
+    wrapper_name = task_row.get("skill")  # DB field still "skill" until schema migration
     args_raw = task_row.get("args")
-    tool_info = ctx.installed_tools_by_name.get(tool_name)
+    tool_info = ctx.installed_wrappers_by_name.get(wrapper_name)
     t0 = time.perf_counter()
     dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
     if dependencies:
@@ -1241,7 +1241,7 @@ async def _handle_tool_task(
     setup_error: str | None = None
     args: dict | None = None
     if tool_info is None:
-        setup_error = f"Tool '{tool_name}' not installed"
+        setup_error = f"Tool '{wrapper_name}' not installed"
     else:
         if args_raw is None:
             args = {}
@@ -1261,18 +1261,18 @@ async def _handle_tool_task(
             setup_error = "Invalid tool args JSON: expected object"
 
         if setup_error is None and args is not None:
-            corrected = auto_correct_tool_args(args, tool_info["args_schema"])
+            corrected = auto_correct_wrapper_args(args, tool_info["args_schema"])
             if corrected != args:
                 log.warning("Auto-corrected tool args for task %d: %s → %s", task_id, args, corrected)
                 args = corrected
-            workspace_corrected = _repair_tool_workspace_args(tool_info, args, ctx.session)
+            workspace_corrected = _repair_wrapper_workspace_args(tool_info, args, ctx.session)
             if workspace_corrected != args:
                 log.warning(
                     "Resolved workspace file args for task %d: %s → %s",
                     task_id, args, workspace_corrected,
                 )
                 args = workspace_corrected
-            plugin_repaired = repair_tool_args(
+            plugin_repaired = repair_wrapper_args(
                 tool_info,
                 args,
                 {
@@ -1290,9 +1290,9 @@ async def _handle_tool_task(
                     task_id, args, plugin_repaired,
                 )
                 args = plugin_repaired
-            validation_errors = validate_tool_args(args, tool_info["args_schema"])
+            validation_errors = validate_wrapper_args(args, tool_info["args_schema"])
             validation_errors.extend(
-                validate_tool_args_semantic(
+                validate_wrapper_args_semantic(
                     tool_info,
                     args,
                     {
@@ -1319,23 +1319,23 @@ async def _handle_tool_task(
     # Disk limit check
     disk_err = _check_disk_limit(ctx.config)
     if disk_err:
-        return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_TOOL, detail, disk_err, i + 1)
+        return await _fail_task_and_audit(ctx, task_id, TASK_TYPE_WRAPPER, detail, disk_err, i + 1)
 
     # Snapshot workspace before execution to detect new files
     pre_snapshot = _snapshot_workspace(ctx.session)
-    input_file_refs = _build_tool_file_refs(
+    input_file_refs = _build_wrapper_file_refs(
         ctx.session,
         args,
         task_index=i + 1,
-        tool_name=tool_name,
+        wrapper_name=wrapper_name,
     )
 
-    tool_retries = 0
+    wrapper_retries = 0
     plan_output_entry: "dict | None" = None
     while True:
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
-        stdout, stderr, success, exit_code = await _tool_task(
+        stdout, stderr, success, exit_code = await _wrapper_task(
             ctx.session, tool_info, args, ctx.plan_outputs,
             ctx.session_secrets,
             sandbox_uid=ctx.sandbox_uid,
@@ -1388,7 +1388,7 @@ async def _handle_tool_task(
                 ctx.session,
                 pre_snapshot,
                 task_index=i + 1,
-                tool_name=tool_name,
+                wrapper_name=wrapper_name,
             ),
         )
 
@@ -1400,10 +1400,10 @@ async def _handle_tool_task(
             return await _review_stop_stuck(ctx, task_id, review, plan_output_entry, usage_idx_before)
 
         if review["status"] == REVIEW_STATUS_REPLAN:
-            if await _should_retry_task(ctx, task_id, review, tool_retries, "tool"):
-                tool_retries += 1
+            if await _should_retry_task(ctx, task_id, review, wrapper_retries, "tool"):
+                wrapper_retries += 1
                 continue
-            return await _review_stop_replan(ctx, task_id, review, plan_output_entry, usage_idx_before, tool_retries)
+            return await _review_stop_replan(ctx, task_id, review, plan_output_entry, usage_idx_before, wrapper_retries)
 
         # review ok → break out of retry loop
         break
@@ -1604,7 +1604,7 @@ async def _handle_exec_task(
                 ctx.session,
                 pre_snapshot,
                 task_index=i + 1,
-                tool_name="exec",
+                wrapper_name="exec",
             ),
         )
         await _write_plan_outputs(ctx.session, ctx.plan_outputs + [local_plan_output])
@@ -1730,7 +1730,7 @@ async def _handle_search_task(
 _TASK_HANDLERS: dict = {
     TASK_TYPE_EXEC: _handle_exec_task,
     TASK_TYPE_MSG: _handle_msg_task,
-    TASK_TYPE_TOOL: _handle_tool_task,
+    TASK_TYPE_WRAPPER: _handle_wrapper_task,
     TASK_TYPE_SEARCH: _handle_search_task,
     TASK_TYPE_REPLAN: _handle_replan_task,
 }
@@ -1806,7 +1806,7 @@ async def _execute_plan(
     max_output_size = setting_int(config.settings, "max_output_size", lo=0)
     max_worker_retries = setting_int(config.settings, "max_worker_retries", lo=0)
     # Cache installed tools for the whole plan execution (avoid rescanning per task)
-    installed_tools = discover_tools()
+    installed_wrappers = discover_wrappers()
 
     ctx = _PlanCtx(
         db=db,
@@ -1819,7 +1819,7 @@ async def _execute_plan(
         max_output_size=max_output_size,
         max_worker_retries=max_worker_retries,
         messenger_timeout=messenger_timeout,
-        installed_tools=installed_tools,
+        installed_wrappers=installed_wrappers,
         slog=slog,
         base_url=base_url,
         install_approved=install_approved,
@@ -1870,7 +1870,7 @@ async def _execute_plan(
         for idx, task_row in batch:
             perm = revalidate_permissions(
                 fresh_config, username, task_row["type"],
-                tool_name=task_row.get("skill"),
+                wrapper_name=task_row.get("skill"),
             )
             if not perm.allowed:
                 await update_task(db, task_row["id"], "failed", output=perm.reason)
@@ -1924,8 +1924,8 @@ async def _execute_plan(
                     completed.append(result.completed_row)
 
             # Refresh tool cache if any task was exec/tool.
-            if any(tr["type"] in (TASK_TYPE_EXEC, TASK_TYPE_TOOL) for _, tr in batch):
-                ctx.refresh_tool_cache()
+            if any(tr["type"] in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER) for _, tr in batch):
+                ctx.refresh_wrapper_cache()
 
             # Check for stop signals (use first stop encountered).
             stop_result = next((r for r in results if r.stop), None)
@@ -1975,20 +1975,20 @@ async def _execute_plan(
             result = await handler(ctx, task_row, idx, is_final, usage_idx_before)
 
             # Refresh tool cache after exec/tool tasks
-            if task_type in (TASK_TYPE_EXEC, TASK_TYPE_TOOL):
-                ctx.refresh_tool_cache()
+            if task_type in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER):
+                ctx.refresh_wrapper_cache()
                 if (
                     task_type == TASK_TYPE_EXEC
                     and not result.stop
                     and _INSTALL_CMD_RE.search(detail or "")
-                    and any(not t.get("healthy", True) for t in ctx.installed_tools)
+                    and any(not t.get("healthy", True) for t in ctx.installed_wrappers)
                 ):
                     await asyncio.sleep(_POST_INSTALL_RESCAN_DELAY)
-                    ctx.refresh_tool_cache()
-                    still_unhealthy = [t["name"] for t in ctx.installed_tools if not t.get("healthy", True)]
+                    ctx.refresh_wrapper_cache()
+                    still_unhealthy = [t["name"] for t in ctx.installed_wrappers if not t.get("healthy", True)]
                     log.info(
                         "Post-install rescan complete: %d tools, %d still unhealthy%s",
-                        len(ctx.installed_tools),
+                        len(ctx.installed_wrappers),
                         len(still_unhealthy),
                         f" ({', '.join(still_unhealthy)})" if still_unhealthy else "",
                     )
@@ -2667,7 +2667,7 @@ async def _run_planning_loop(
         _effective_max = max(4, _max_plan_tasks - replan_depth * 3)
         # force fresh tool discovery — tools may have been installed
         # during the previous plan execution.
-        invalidate_tools_cache()
+        invalidate_wrappers_cache()
         try:
             new_plan = await run_planner(
                 db, config, session, user_role, enriched_message,
@@ -2914,7 +2914,7 @@ async def _process_message(
     _install_approved = await session_has_install_proposal(db, session)
 
     # force fresh tool discovery for every planning decision.
-    invalidate_tools_cache()
+    invalidate_wrappers_cache()
     try:
         plan = await run_planner(
             db, config, session, user_role, content,

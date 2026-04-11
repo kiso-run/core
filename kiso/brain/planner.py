@@ -13,7 +13,7 @@ import aiosqlite
 
 from kiso.config import Config, setting_bool, setting_int
 from kiso.connectors import discover_connectors
-from kiso.registry import get_registry_tools
+from kiso.registry import get_registry_wrappers
 from kiso.recipe_loader import (
     build_planner_recipe_list,
     discover_recipes,
@@ -41,11 +41,11 @@ from kiso.sysenv import (
     build_user_settings_text,
     get_system_env,
 )
-from kiso.tools import (
-    build_planner_tool_list,
-    discover_tools,
-    validate_tool_args,
-    validate_tool_args_semantic,
+from kiso.wrappers import (
+    build_planner_wrapper_list,
+    discover_wrappers,
+    validate_wrapper_args,
+    validate_wrapper_args_semantic,
 )
 
 from .common import (
@@ -58,18 +58,18 @@ from .common import (
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
     TASK_TYPE_SEARCH,
-    TASK_TYPE_TOOL,
+    TASK_TYPE_WRAPPER,
     TASK_TYPES,
     _INSTALL_CMD_RE,
-    _INSTALL_MODE_KISO_TOOL,
+    _INSTALL_MODE_KISO_WRAPPER,
     _INSTALL_MODE_NONE,
-    _INSTALL_MODE_UNKNOWN_KISO_TOOL,
+    _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
     _INSTALL_NAME_RE,
     _MIN_PROMOTED_FACT_LEN,
     _PIP_INSTALL_RE,
     _SYSTEM_INSTALL_HINT_RE,
     _TYPE_EXAMPLES,
-    _TOOL_UNAVAILABLE_MARKER,
+    _WRAPPER_UNAVAILABLE_MARKER,
     _UV_PIP_RE,
     _VALID_FACT_CATEGORIES,
     _add_context_section,
@@ -152,7 +152,7 @@ def _is_non_actionable_exec(detail: str) -> bool:
     return True
 
 
-def _find_direct_tool_exec(
+def _find_direct_wrapper_exec(
     detail: str, installed_skills: list[str] | None,
 ) -> str | None:
     """Return tool name if exec detail tries to use an installed kiso tool.
@@ -200,7 +200,7 @@ def _validate_plan_tasks(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_TOOL, TASK_TYPE_SEARCH) and task.get("expect") is None:
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH) and task.get("expect") is None:
             errors.append(
                 f"Task {i}: {t} task must have expect describing WHAT RESULT you need "
                 f"(e.g., 'list of search results', 'file created successfully')"
@@ -218,7 +218,7 @@ def _validate_plan_tasks(
                 f"rewrite as a concrete shell command description "
                 f"(e.g., 'Run kiso tool install browser')"
             )
-        direct_tool_exec = _find_direct_tool_exec(detail, installed_skills)
+        direct_tool_exec = _find_direct_wrapper_exec(detail, installed_skills)
         if t == TASK_TYPE_EXEC and direct_tool_exec:
             errors.append(
                 f"Task {i}: exec detail directly routes installed tool '{direct_tool_exec}'. "
@@ -230,7 +230,7 @@ def _validate_plan_tasks(
                 f"Task {i}: use 'uv pip install' instead of bare 'pip install'. "
                 f"Direct pip can corrupt the system environment."
             )
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_TOOL, TASK_TYPE_SEARCH) and _mentions_user_delivery(detail):
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH) and _mentions_user_delivery(detail):
             errors.append(
                 f"Task {i}: action task detail includes user-delivery wording. "
                 f"Action tasks should do the work only; use a final msg task "
@@ -287,51 +287,51 @@ def _validate_plan_tasks(
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
                 errors.append(f"Task {i}: replan task can only be the last task")
-        if t == TASK_TYPE_TOOL:
-            tool_name = task.get("tool")
-            if not tool_name:
+        if t == TASK_TYPE_WRAPPER:
+            wrapper_name = task.get("tool")
+            if not wrapper_name:
                 errors.append(f"Task {i}: tool task must have a non-null tool name")
-            elif tool_name in (TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_REPLAN):
+            elif wrapper_name in (TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_REPLAN):
                 errors.append(
-                    f"Task {i}: '{tool_name}' is a task TYPE, not a tool. "
-                    f"Use type='{tool_name}' instead of type='tool' with "
-                    f"tool='{tool_name}'."
+                    f"Task {i}: '{wrapper_name}' is a task TYPE, not a tool. "
+                    f"Use type='{wrapper_name}' instead of type='tool' with "
+                    f"tool='{wrapper_name}'."
                 )
-            elif tool_name in BRIEFER_MODULES:
+            elif wrapper_name in BRIEFER_MODULES:
                 errors.append(
-                    f"Task {i}: '{tool_name}' is a prompt module, not a tool. "
+                    f"Task {i}: '{wrapper_name}' is a prompt module, not a tool. "
                     f"For shell commands, use type='exec'. For installed tools, "
                     f"use type='tool' with an actual tool name from the available list."
                 )
-            elif installed_skills is not None and tool_name not in installed_skills:
+            elif installed_skills is not None and wrapper_name not in installed_skills:
                 available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
                 if install_approved:
                     errors.append(
-                        f"Task {i}: tool '{tool_name}' is not installed. "
+                        f"Task {i}: tool '{wrapper_name}' is not installed. "
                         f"Available tools: {available}. "
                         f"You CANNOT use type=tool for uninstalled tools. "
                         f"Installation is approved — plan an exec task to install "
-                        f"{tool_name} via the kiso CLI, then replan to use it."
+                        f"{wrapper_name} via the kiso CLI, then replan to use it."
                     )
-                elif registry_hint_names and tool_name in registry_hint_names:
+                elif registry_hint_names and wrapper_name in registry_hint_names:
                     errors.append(
-                        f"Task {i}: tool '{tool_name}' is not installed but IS "
+                        f"Task {i}: tool '{wrapper_name}' is not installed but IS "
                         f"available in the registry. If a built-in task type "
                         f"(e.g. search) can achieve the same goal, use that "
                         f"instead. Otherwise, plan a SINGLE msg task asking "
-                        f"whether to install '{tool_name}', then end the plan."
+                        f"whether to install '{wrapper_name}', then end the plan."
                     )
                 else:
                     errors.append(
-                        f"Task {i}: tool '{tool_name}' is "
-                        f"{_TOOL_UNAVAILABLE_MARKER}. Plan a SINGLE msg task "
-                        f"informing the user that '{tool_name}' cannot be found "
+                        f"Task {i}: tool '{wrapper_name}' is "
+                        f"{_WRAPPER_UNAVAILABLE_MARKER}. Plan a SINGLE msg task "
+                        f"informing the user that '{wrapper_name}' cannot be found "
                         f"in the public registry. If the user may have a private "
                         f"source, suggest providing a git URL or installation "
                         f"instructions. Do NOT plan any exec, search, or tool "
                         f"tasks referencing this tool."
                     )
-            elif installed_skills_info and tool_name in installed_skills_info:
+            elif installed_skills_info and wrapper_name in installed_skills_info:
                 args_raw = task.get("args") or "{}"
                 try:
                     args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
@@ -345,10 +345,10 @@ def _validate_plan_tasks(
                             f"Task {i}: tool args must be a JSON object with named fields"
                         )
                         continue
-                    schema = installed_skills_info[tool_name].get("args_schema", {})
-                    arg_errors = validate_tool_args(args, schema)
-                    semantic_errors = validate_tool_args_semantic(
-                        installed_skills_info[tool_name],
+                    schema = installed_skills_info[wrapper_name].get("args_schema", {})
+                    arg_errors = validate_wrapper_args(args, schema)
+                    semantic_errors = validate_wrapper_args_semantic(
+                        installed_skills_info[wrapper_name],
                         args,
                         {
                             "phase": "planner",
@@ -369,12 +369,12 @@ def _validate_plan_tasks(
                         }
                         example_json = json.dumps(required_args)
                         errors.append(
-                            f"Task {i}: tool '{tool_name}' args invalid: "
+                            f"Task {i}: tool '{wrapper_name}' args invalid: "
                             + "; ".join(arg_errors)
                             + f". Required args object: '{example_json}'"
                         )
                     # browser must use web URLs, not local file paths
-                    if tool_name == "browser":
+                    if wrapper_name == "browser":
                         for v in args.values():
                             if isinstance(v, str) and v.startswith("file://"):
                                 errors.append(
@@ -416,7 +416,7 @@ def _validate_plan_ordering(
     # needs_install (install proposal), knowledge (storage), kb_answer
     # (M1303: KB recall from briefer context), or allow_msg_only
     # (structural fallback).
-    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL, TASK_TYPE_REPLAN}
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
         if (
@@ -483,7 +483,7 @@ def _validate_plan_ordering(
     # where tool comes after other tasks are intentional, not verification.
     if (
         len(tasks) >= 2
-        and tasks[0].get("type") == TASK_TYPE_TOOL
+        and tasks[0].get("type") == TASK_TYPE_WRAPPER
         and tasks[1].get("type") == TASK_TYPE_EXEC
         and not bool(set(goal.lower().split()) & _GOAL_RUN_KEYWORDS)
     ):
@@ -520,7 +520,7 @@ def _validate_install_route_consistency(
     ]
     non_msg_types = [t.get("type") for t in tasks if t.get("type") != TASK_TYPE_MSG]
 
-    if mode == _INSTALL_MODE_UNKNOWN_KISO_TOOL:
+    if mode == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER:
         if plan.get("needs_install"):
             errors.append(
                 f"Unknown named tool '{target}' is not in the installed/registry context. "
@@ -534,7 +534,7 @@ def _validate_install_route_consistency(
             )
         return errors
 
-    if mode != _INSTALL_MODE_KISO_TOOL or install_route.get("target_installed"):
+    if mode != _INSTALL_MODE_KISO_WRAPPER or install_route.get("target_installed"):
         return errors
 
     has_target_mention_install = False
@@ -588,7 +588,7 @@ def _validate_install_route_consistency(
 
 
 # Types that can participate in parallel groups.
-_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_TOOL})
+_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER})
 
 
 def _validate_plan_groups(tasks: list[dict]) -> list[str]:
@@ -682,7 +682,7 @@ def validate_plan(
             or plan.get("msg_only_fallback") == "unavailable_named_tool"
             or (
                 bool(install_route)
-                and install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_TOOL
+                and install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER
             )
         ),
         goal=plan.get("goal", ""),
@@ -697,7 +697,7 @@ def validate_plan(
     has_verb = bool(goal_words & _ARTIFACT_VERBS)
     has_noun = bool(goal_words & _ARTIFACT_NOUNS)
     has_action_task = any(
-        t.get("type") in (TASK_TYPE_EXEC, TASK_TYPE_TOOL) for t in tasks
+        t.get("type") in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER) for t in tasks
     )
     has_needs_install = bool(plan.get("needs_install"))
     if has_verb and has_noun and not has_action_task and not is_replan and not has_needs_install:
@@ -747,7 +747,7 @@ def validate_plan(
     needs = plan.get("needs_install") or []
     if needs:
         for i, t in enumerate(tasks, 1):
-            if t.get("type") == TASK_TYPE_TOOL and t.get("tool") in needs:
+            if t.get("type") == TASK_TYPE_WRAPPER and t.get("tool") in needs:
                 if install_approved:
                     errors.append(
                         f"Task {i}: tool '{t['tool']}' is not installed yet. "
@@ -959,7 +959,7 @@ async def build_planner_messages(
     select prompt modules, filter tools, and synthesize context. Falls
     back to full context on briefer failure.
 
-    Returns (messages, installed_tool_names, installed_tools_info) — the
+    Returns (messages, installed_wrapper_names, installed_wrappers_info) — the
     caller can reuse the tool names list for plan validation and the
     tools_info list for args validation without rescanning the filesystem.
     """
@@ -981,15 +981,15 @@ async def build_planner_messages(
         context_pool.pop("system_env", None)
 
     # Tool discovery — rescan on each planner call
-    installed = discover_tools()
+    installed = discover_wrappers()
     installed_names = [s["name"] for s in installed]
     if installed_names:
-        log.info("discover_tools() found: %s", ", ".join(installed_names))
+        log.info("discover_wrappers() found: %s", ", ".join(installed_names))
 
     # Build the tool list text for context pool
-    full_tool_list = build_planner_tool_list(installed, user_role, user_tools)
-    if full_tool_list:
-        context_pool["tools"] = full_tool_list
+    full_wrapper_list = build_planner_wrapper_list(installed, user_role, user_tools)
+    if full_wrapper_list:
+        context_pool["tools"] = full_wrapper_list
 
     # Connector discovery — show installed connectors to planner
     connectors = discover_connectors()
@@ -1019,12 +1019,12 @@ async def build_planner_messages(
     registry_text = ""
     if not is_replan:
         registry_text = await asyncio.to_thread(
-            get_registry_tools, set(installed_names),
+            get_registry_wrappers, set(installed_names),
         )
     install_route = _classify_install_mode(
         new_message,
         get_system_env(config),
-        installed_tool_names=installed_names,
+        installed_wrapper_names=installed_names,
         registry_hint_names=_sysenv_registry_hint_names,
     )
     install_mode_ctx = _build_install_mode_context(install_route, get_system_env(config))
@@ -1100,7 +1100,7 @@ async def build_planner_messages(
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
     if not installed:
-        log.warning("discover_tools() returned empty — no tools available for planner")
+        log.warning("discover_wrappers() returned empty — no tools available for planner")
 
     is_admin = user_role == "admin"
 
@@ -1240,17 +1240,17 @@ async def build_planner_messages(
             log.debug("Skipping briefer tool filter: %d tools <= threshold %d",
                       len(installed), tool_filter_threshold)
             _selected = set(briefing["tools"])
-            tiered_list = build_planner_tool_list(installed, user_role, user_tools, selected_names=_selected)
+            tiered_list = build_planner_wrapper_list(installed, user_role, user_tools, selected_names=_selected)
             if tiered_list:
                 context_parts.append(f"## Tools\n{tiered_list}")
         else:
             selected_names = set(briefing["tools"])
             selected_tools = [t for t in installed if t["name"] in selected_names]
-            selected_tool_text = build_planner_tool_list(selected_tools, user_role, user_tools)
+            selected_tool_text = build_planner_wrapper_list(selected_tools, user_role, user_tools)
             if selected_tool_text:
                 context_parts.append(f"## Tools\n{selected_tool_text}")
-    elif full_tool_list:
-        context_parts.append(f"## Tools\n{full_tool_list}")
+    elif full_wrapper_list:
+        context_parts.append(f"## Tools\n{full_wrapper_list}")
 
     # warn planner when web module is active but browser isn't installed.
     # Emphasise that built-in search works without any tool for research queries.
@@ -1361,7 +1361,7 @@ async def run_planner(
     install_route = _classify_install_mode(
         new_message,
         _sysenv,
-        installed_tool_names=installed_names,
+        installed_wrapper_names=installed_names,
         registry_hint_names=_reg_hint_names,
     )
 
@@ -1389,7 +1389,7 @@ async def run_planner(
             force_msg_only=_force_msg,
             install_route=install_route,
         )
-        if any(_TOOL_UNAVAILABLE_MARKER in e for e in errs):
+        if any(_WRAPPER_UNAVAILABLE_MARKER in e for e in errs):
             _force_msg = True
         return errs
 
@@ -1412,7 +1412,7 @@ async def run_planner(
         and all(t.get("type") == TASK_TYPE_MSG for t in tasks)
         and (
             _force_msg
-            or install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_TOOL
+            or install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER
         )
     ):
         plan["msg_only_fallback"] = "unavailable_named_tool"

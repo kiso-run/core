@@ -104,7 +104,7 @@ class TestPlanValidationRetry:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.validate_plan", side_effect=rejecting_validate),
         ):
             plan = await asyncio.wait_for(
@@ -348,7 +348,7 @@ class TestDiscoveryPlanReplanFlow:
         # Step 1: Planner produces a discovery plan with investigation + replan
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             discovery_plan = await asyncio.wait_for(
                 run_planner(
@@ -426,7 +426,7 @@ class TestDiscoveryPlanReplanFlow:
         #         an action plan based on the investigation results
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             action_plan = await asyncio.wait_for(
                 run_planner(
@@ -468,7 +468,7 @@ class TestSearchTaskFlow:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_tools", return_value=[]),
+            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(

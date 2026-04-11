@@ -22,21 +22,21 @@ _ARG_TYPES = {"string", "int", "float", "bool"}
 # Valid vocabulary for kiso.tool.consumes
 _CONSUMES_VOCAB = frozenset({"image", "document", "audio", "video", "code", "web_page"})
 
-# TTL cache for discover_tools() — keyed by resolved tools dir path.
+# TTL cache for discover_wrappers() — keyed by resolved tools dir path.
 # Avoids repeated filesystem scans on every planner/executor call.
-# Cleared by invalidate_tools_cache() after install/remove.
-_TOOLS_TTL: float = 30.0
-_tools_cache: dict[Path, tuple[float, list[dict]]] = {}
+# Cleared by invalidate_wrappers_cache() after install/remove.
+_WRAPPERS_TTL: float = 30.0
+_wrappers_cache: dict[Path, tuple[float, list[dict]]] = {}
 _validator_cache: dict[Path, ModuleType | None] = {}
 
 
-def invalidate_tools_cache() -> None:
-    """Clear the discover_tools() TTL cache.
+def invalidate_wrappers_cache() -> None:
+    """Clear the discover_wrappers() TTL cache.
 
     Call after installing or removing a tool so the next
-    discover_tools() call rescans the directory.
+    discover_wrappers() call rescans the directory.
     """
-    _tools_cache.clear()
+    _wrappers_cache.clear()
     _validator_cache.clear()
 
 
@@ -44,7 +44,7 @@ MAX_ARGS_SIZE = 64 * 1024  # 64 KB
 MAX_ARGS_DEPTH = 5
 
 
-class ToolError(Exception):
+class WrapperError(Exception):
     """Tool discovery, validation, or execution error."""
 
 
@@ -96,12 +96,12 @@ def _validate_manifest(manifest: dict, tool_dir: Path) -> list[str]:
     return errors
 
 
-def _env_var_name(tool_name: str, key: str) -> str:
+def _env_var_name(wrapper_name: str, key: str) -> str:
     """Build env var name: KISO_TOOL_{NAME}_{KEY}."""
-    return plugin_env_var_name("TOOL", tool_name, key)
+    return plugin_env_var_name("TOOL", wrapper_name, key)
 
 
-def discover_tools(tools_dir: Path | None = None) -> list[dict]:
+def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
     """Scan ~/.kiso/tools/ and return list of valid tool info dicts.
 
     Each dict has: name, summary, args_schema, env, session_secrets, path,
@@ -109,19 +109,19 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
 
     Skips directories with .installing marker.
 
-    Results are cached per directory for _TOOLS_TTL seconds to avoid
+    Results are cached per directory for _WRAPPERS_TTL seconds to avoid
     repeated filesystem scans on every planner call. Call
-    invalidate_tools_cache() after installing or removing a tool.
+    invalidate_wrappers_cache() after installing or removing a tool.
 
     """
-    resolved_dir = tools_dir or (KISO_DIR / "tools")
+    resolved_dir = tools_dir or (KISO_DIR / "wrappers")
 
     now = time.monotonic()
-    cached = _tools_cache.get(resolved_dir)
-    if cached is not None and now - cached[0] < _TOOLS_TTL:
+    cached = _wrappers_cache.get(resolved_dir)
+    if cached is not None and now - cached[0] < _WRAPPERS_TTL:
         return cached[1]
 
-    log.debug("discover_tools: scanning %s", resolved_dir)
+    log.debug("discover_wrappers: scanning %s", resolved_dir)
 
     if not resolved_dir.is_dir():
         log.warning(
@@ -182,17 +182,17 @@ def discover_tools(tools_dir: Path | None = None) -> list[dict]:
         tools.append(info)
 
     if tools:
-        log.debug("discover_tools: found %d tools: %s",
+        log.debug("discover_wrappers: found %d tools: %s",
                   len(tools), ", ".join(t["name"] for t in tools))
     else:
         subdirs = [e.name for e in resolved_dir.iterdir() if e.is_dir()] if resolved_dir.is_dir() else []
-        log.debug("discover_tools: 0 tools found (subdirs: %s)", subdirs or "none")
+        log.debug("discover_wrappers: 0 tools found (subdirs: %s)", subdirs or "none")
 
-    _tools_cache[resolved_dir] = (now, tools)
+    _wrappers_cache[resolved_dir] = (now, tools)
     return tools
 
 
-def _tool_venv_bin(tool: dict) -> str:
+def _wrapper_venv_bin(tool: dict) -> str:
     """Return the tool's ``.venv/bin`` path, or ``""`` if no path is set."""
     tool_path = tool.get("path", "")
     return str(Path(tool_path) / ".venv" / "bin") if tool_path else ""
@@ -210,7 +210,7 @@ def check_deps(tool: dict) -> list[str]:
         return []
 
     # Build an extended PATH that includes the tool's venv bin
-    venv_bin = _tool_venv_bin(tool)
+    venv_bin = _wrapper_venv_bin(tool)
     search_path = (
         f"{venv_bin}:{os.environ.get('PATH', '')}" if venv_bin else None
     )
@@ -222,7 +222,7 @@ def check_deps(tool: dict) -> list[str]:
     return missing
 
 
-def build_planner_tool_list(
+def build_planner_wrapper_list(
     tools: list[dict],
     user_role: str = "admin",
     user_tools: str | list[str] | None = None,
@@ -356,7 +356,7 @@ _ARG_ALIASES: dict[str, str] = {
 }
 
 
-def auto_correct_tool_args(args: dict, args_schema: dict) -> dict:
+def auto_correct_wrapper_args(args: dict, args_schema: dict) -> dict:
     """Fix common LLM arg name hallucinations. Returns corrected copy."""
     corrected = dict(args)
     for alias, canonical in _ARG_ALIASES.items():
@@ -365,7 +365,7 @@ def auto_correct_tool_args(args: dict, args_schema: dict) -> dict:
     return corrected
 
 
-def validate_tool_args(args: dict, args_schema: dict) -> list[str]:
+def validate_wrapper_args(args: dict, args_schema: dict) -> list[str]:
     """Validate parsed tool args against the schema. Returns list of errors."""
     errors: list[str] = []
 
@@ -406,7 +406,7 @@ def _validator_module_name(validator_path: Path) -> str:
     return f"kiso_tool_validator_{sanitized}"
 
 
-def _load_tool_validator(tool: dict) -> ModuleType | None:
+def _load_wrapper_validator(tool: dict) -> ModuleType | None:
     """Load an optional lightweight validator.py from a tool directory."""
     tool_path = tool.get("path")
     if not tool_path:
@@ -425,7 +425,7 @@ def _load_tool_validator(tool: dict) -> ModuleType | None:
             _validator_module_name(validator_path), validator_path
         )
         if spec is None or spec.loader is None:
-            raise ToolError(f"validator.py could not be loaded from {validator_path}")
+            raise WrapperError(f"validator.py could not be loaded from {validator_path}")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     except Exception as exc:  # noqa: BLE001
@@ -444,13 +444,13 @@ def _load_tool_validator(tool: dict) -> ModuleType | None:
     return module
 
 
-def validate_tool_args_semantic(
+def validate_wrapper_args_semantic(
     tool: dict,
     args: dict,
     context: dict | None = None,
 ) -> list[str]:
     """Run optional plugin-side semantic validation for tool args."""
-    module = _load_tool_validator(tool)
+    module = _load_wrapper_validator(tool)
     if module is None:
         return []
 
@@ -475,13 +475,13 @@ def validate_tool_args_semantic(
     return result
 
 
-def repair_tool_args(
+def repair_wrapper_args(
     tool: dict,
     args: dict,
     context: dict | None = None,
 ) -> dict:
     """Run optional plugin-side conservative arg repair for a tool."""
-    module = _load_tool_validator(tool)
+    module = _load_wrapper_validator(tool)
     if module is None:
         return dict(args)
 
@@ -504,7 +504,7 @@ def repair_tool_args(
     return result
 
 
-def build_tool_input(
+def build_wrapper_input(
     tool: dict,
     args: dict,
     session: str,
@@ -528,13 +528,13 @@ def build_tool_input(
     }
 
 
-def build_tool_env(tool: dict) -> dict[str, str]:
+def build_wrapper_env(tool: dict) -> dict[str, str]:
     """Build the environment dict for a tool subprocess.
 
     Includes PATH, the base LLM API key (when set), and any tool-specific
     deploy secret env vars (KISO_TOOL_{NAME}_{KEY}).
     """
-    venv_bin = _tool_venv_bin(tool)
+    venv_bin = _wrapper_venv_bin(tool)
     sys_path = os.environ.get("PATH", "/usr/bin:/bin")
     env: dict[str, str] = {
         "PATH": f"{venv_bin}:{sys_path}" if venv_bin else sys_path,
@@ -546,13 +546,13 @@ def build_tool_env(tool: dict) -> dict[str, str]:
         env[LLM_API_KEY_ENV] = llm_key
 
     env_decl = tool.get("env", {})
-    tool_name = tool["name"]
+    wrapper_name = tool["name"]
     for key, decl in env_decl.items():
-        var_name = _env_var_name(tool_name, key)
+        var_name = _env_var_name(wrapper_name, key)
         value = os.environ.get(var_name)
         if value is not None:
             env[var_name] = value
         elif isinstance(decl, dict) and decl.get("required"):
-            log.warning("Env var %s not set (required by tool %s)", var_name, tool_name)
+            log.warning("Env var %s not set (required by tool %s)", var_name, wrapper_name)
 
     return env
