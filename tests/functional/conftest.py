@@ -707,7 +707,15 @@ async def drive_install_flow(
         from tests.conftest import LLM_INSTALL_TIMEOUT
         timeout = LLM_INSTALL_TIMEOUT
     kwargs = {"timeout": timeout}
+    # M1329: if the wrapper is already installed before turn 1, the
+    # first call already executes the prompt with the wrapper available
+    # — no need to re-issue. The re-issue at the end exists specifically
+    # for the install-happened path (where turns 2..N are install
+    # approvals, not the actual task).
+    preinstalled = tool_installed(wrapper_name)
     result = await run_message(prompt, **kwargs)
+    if preinstalled:
+        return result
     turns_used = 1
     while not tool_installed(wrapper_name) and turns_used < max_turns:
         result = await run_message(

@@ -402,6 +402,11 @@ class TestDriveInstallFlow:
     """
 
     async def test_tool_already_installed_returns_after_first_call(self):
+        """M1329: if the wrapper is already installed when called, the
+        helper runs the prompt EXACTLY ONCE. The old behavior re-issued
+        the prompt a second time (harmless but inflated the plan count
+        for pipeline tests like F17/F30 that chain multiple install_flow
+        calls against already-installed wrappers)."""
         from unittest.mock import patch
         from tests.functional.conftest import drive_install_flow
 
@@ -418,8 +423,9 @@ class TestDriveInstallFlow:
                 fake_run, "browser", "do something", max_turns=4,
             )
 
-        # 2 calls: original + re-issued original after install confirmed
-        assert calls == ["do something", "do something"]
+        # Exactly 1 call — no redundant re-issue when the wrapper was
+        # already installed before turn 1.
+        assert calls == ["do something"]
         assert result == "result-of:do something"
 
     async def test_installs_after_one_followup(self):
