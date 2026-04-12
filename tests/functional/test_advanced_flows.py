@@ -2,7 +2,7 @@
 
 F37: Safety rule enforcement (reviewer compliance module)
 F38: Recipe-driven planning
-F39: Tool install + immediate use (single session)
+F39: Wrapper install + immediate use (single session)
 F40: Search → code → exec pipeline
 F41: Aider edit existing file (bug fix)
 F42: Aider add feature to existing code
@@ -39,14 +39,14 @@ pytestmark = pytest.mark.functional
 
 
 def _assert_tool_used(result: FunctionalResult, wrapper_name: str) -> None:
-    """Assert that *wrapper_name* appears as a tool-type task in *result*."""
+    """Assert that *wrapper_name* appears as a wrapper-type task in *result*."""
     tasks = [
         t for t in result.tasks
         if t.get("type") == "wrapper"
         and FunctionalResult.task_wrapper_name(t) == wrapper_name
     ]
     assert tasks, (
-        f"Expected {wrapper_name} tool task, got types: {result.task_types()}"
+        f"Expected {wrapper_name} wrapper task, got types: {result.task_types()}"
     )
 
 
@@ -168,7 +168,7 @@ class TestF38RecipeDrivenPlanning:
 
 
 # ---------------------------------------------------------------------------
-# F39 — Tool install + immediate use (single session)
+# F39 — Wrapper install + immediate use (single session)
 # ---------------------------------------------------------------------------
 
 
@@ -177,7 +177,7 @@ class TestF39ToolInstallAndUse:
 
     @pytest.mark.extended
     async def test_install_then_use_single_session(self, run_message):
-        """What: 3-stage flow: proposal → install → use browser tool.
+        """What: 3-stage flow: proposal → install → use browser wrapper.
 
         Why: F1a/F1b test install and use separately. This tests the
         actual user flow in a single conversation session.
@@ -195,7 +195,7 @@ class TestF39ToolInstallAndUse:
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r1.plans, "No plans created"
-        # Planner should produce a msg-only install proposal (no exec/tool
+        # Planner should produce a msg-only install proposal (no exec/wrapper
         # since browser isn't installed). Check for msg-only OR install keywords.
         r1_types = set(r1.task_types())
         r1_output = r1.msg_output.lower()
@@ -212,7 +212,7 @@ class TestF39ToolInstallAndUse:
 
         # Stage 2: approve installation
         r2 = await run_message(
-            "sì, installa il tool browser",
+            "sì, installa il wrapper browser",
             timeout=LLM_INSTALL_TIMEOUT,
         )
         assert r2.plans, "No plans created for install"
@@ -231,13 +231,13 @@ class TestF39ToolInstallAndUse:
         )
         assert r3.success, f"Stage 3 failed: {r3.task_types()}"
 
-        # Browser tool must have been used
+        # Browser wrapper must have been used
         wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in r3.tasks
             if t.get("type") == "wrapper"
         ]
         assert "browser" in wrapper_names, (
-            f"Browser not used in stage 3. Tool names: {wrapper_names}"
+            f"Browser not used in stage 3. Wrapper names: {wrapper_names}"
         )
 
         # Keywords aligned with F1b (test_browser.py:139-141)

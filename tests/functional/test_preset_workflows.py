@@ -1,8 +1,8 @@
-"""F27-F30: Post-preset workflow tests — tools pre-installed.
+"""F27-F30: Post-preset workflow tests — wrappers pre-installed.
 
 These tests assume the default preset (browser, ocr, aider) is installed
 before any test runs. The session-scoped fixture handles the install once.
-This separates tool USAGE testing from install FLOW testing (done by F1).
+This separates wrapper USAGE testing from install FLOW testing (done by F1).
 
 Marked @pytest.mark.extended because the initial preset install is slow.
 """
@@ -26,12 +26,12 @@ pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
 
 class TestF27BrowseAndDescribe:
-    """Browse a website and describe its content — browser tool only."""
+    """Browse a website and describe its content — browser wrapper only."""
 
     async def test_browse_and_describe(self, preset_tools_installed, run_message):
         """What: Navigates to example.com and describes the page.
 
-        Why: Validates browser tool works end-to-end without install flow.
+        Why: Validates browser wrapper works end-to-end without install flow.
         Expects: Success, Italian response, mentions 'example' or 'domain'.
         """
         result = await run_message(
@@ -68,7 +68,7 @@ class TestF28ScreenshotOCR:
     async def test_screenshot_and_ocr(self, preset_tools_installed, run_message):
         """What: Screenshots example.com and extracts text via OCR.
 
-        Why: Validates browser→ocr cross-tool pipeline and file routing (M826).
+        Why: Validates browser→ocr cross-wrapper pipeline and file routing (M826).
         Expects: Success, screenshot published, OCR output mentions 'example'.
         """
         result = await run_message(
@@ -80,7 +80,7 @@ class TestF28ScreenshotOCR:
             f"Plan failed: {[p.get('status') for p in result.plans]}"
         )
 
-        # Should have used both browser and ocr tools
+        # Should have used both browser and ocr wrappers
         wrapper_names = [
             FunctionalResult.task_wrapper_name(t) for t in result.tasks
             if t.get("type") == "wrapper"
@@ -104,18 +104,18 @@ class TestF28ScreenshotOCR:
 
 
 class TestF29AiderWriteCode:
-    """Write a non-trivial Python module using aider tool.
+    """Write a non-trivial Python module using aider wrapper.
 
     M1304: the original test asked for a one-liner hello.py, which the
     planner legitimately handled via exec (echo "print(...)"). The prompt
     now requests a multi-method class with real logic — complex enough
-    that aider is the natural tool choice over exec.
+    that aider is the natural wrapper choice over exec.
     """
 
     async def test_aider_write_script(self, preset_tools_installed, run_message):
         """What: Asks aider to create a Calculator class with four methods.
 
-        Why: Validates aider tool works for non-trivial code generation.
+        Why: Validates aider wrapper works for non-trivial code generation.
         A multi-method class with error handling (division by zero) is
         complex enough that the planner should choose aider over exec.
         Expects: Success, aider wrapper task used, calculator.py referenced
@@ -133,14 +133,14 @@ class TestF29AiderWriteCode:
             f"Plan failed: {[p.get('status') for p in result.plans]}"
         )
 
-        # Aider should have been used as a tool task
+        # Aider should have been used as a wrapper task
         aider_tasks = [
             t for t in result.tasks
             if t.get("type") == "wrapper"
             and FunctionalResult.task_wrapper_name(t) == "aider"
         ]
         assert aider_tasks, (
-            f"Expected aider tool task, got types: {result.task_types()}"
+            f"Expected aider wrapper task, got types: {result.task_types()}"
         )
         task_blob = "\n".join(
             (t.get("detail") or "") + "\n" + (t.get("command") or "")
@@ -157,13 +157,13 @@ class TestF29AiderWriteCode:
 
 
 class TestF30FullPipeline:
-    """Full multi-tool pipeline without install flow fragility."""
+    """Full multi-wrapper pipeline without install flow fragility."""
 
     async def test_browse_ocr_aider_exec(self, preset_tools_installed, run_message):
         """What: Screenshot + OCR, then write + run a deterministic text-stats script.
 
-        Why: Replaces F17 — same coverage but tools pre-installed, no install
-        flow fragility. Tests cross-plan file awareness and tool orchestration.
+        Why: Replaces F17 — same coverage but wrappers pre-installed, no install
+        flow fragility. Tests cross-plan file awareness and wrapper orchestration.
 
         Plan 1: screenshot + OCR text extraction
         Plan 2: aider writes text_stats script + exec runs it
@@ -179,8 +179,8 @@ class TestF30FullPipeline:
             FunctionalResult.task_wrapper_name(t) for t in r1.tasks
             if t.get("type") == "wrapper"
         ]
-        assert "browser" in r1_wrapper_names, f"Plan 1 missing browser tool: {r1_wrapper_names}"
-        assert "ocr" in r1_wrapper_names, f"Plan 1 missing ocr tool: {r1_wrapper_names}"
+        assert "browser" in r1_wrapper_names, f"Plan 1 missing browser wrapper: {r1_wrapper_names}"
+        assert "ocr" in r1_wrapper_names, f"Plan 1 missing ocr wrapper: {r1_wrapper_names}"
 
         # Plan 2: write script + execute
         r2 = await run_message(
@@ -194,7 +194,7 @@ class TestF30FullPipeline:
             FunctionalResult.task_wrapper_name(t) for t in r2.tasks
             if t.get("type") == "wrapper"
         ]
-        assert "aider" in r2_wrapper_names, f"Plan 2 missing aider tool: {r2_wrapper_names}"
+        assert "aider" in r2_wrapper_names, f"Plan 2 missing aider wrapper: {r2_wrapper_names}"
         assert "exec" in r2.task_types(), f"Plan 2 missing exec task: {r2.task_types()}"
 
         output = r2.last_plan_msg_output.lower()

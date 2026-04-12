@@ -81,7 +81,7 @@ _RU_WORDS = frozenset(
 
 
 def tool_installed(name: str) -> bool:
-    """Return True when a named tool is currently installed."""
+    """Return True when a named wrapper is currently installed."""
     invalidate_wrappers_cache()
     return any(t["name"] == name for t in discover_wrappers())
 
@@ -326,12 +326,12 @@ class FunctionalResult:
         return [t.get("type", "?") for t in self.tasks]
 
     def tool_tasks(self) -> list[dict]:
-        """Return only tool-type tasks."""
+        """Return only wrapper-type tasks."""
         return [t for t in self.tasks if t.get("type") == "wrapper"]
 
     @staticmethod
     def task_wrapper_name(task: dict) -> str:
-        """Return the wrapper name for a task (handles DB column `wrapper` vs `tool`)."""
+        """Return the wrapper name for a task (handles DB column `wrapper`)."""
         return task.get("wrapper") or task.get("wrapper") or ""
 
 
@@ -618,7 +618,7 @@ async def run_message(func_config, func_db, func_session):
 
 
 # ---------------------------------------------------------------------------
-# Tool install helpers (shared across functional test files)
+# Wrapper install helpers (shared across functional test files)
 # ---------------------------------------------------------------------------
 
 
@@ -653,7 +653,7 @@ def preset_tools_installed():
     installed = {t["name"] for t in discover_wrappers()}
     missing = [n for n in _PRESET_TOOLS if n not in installed]
     if missing:
-        pytest.skip(f"Tools not available after install: {missing}")
+        pytest.skip(f"Wrappers not available after install: {missing}")
 
 
 # ---------------------------------------------------------------------------
@@ -682,10 +682,10 @@ async def drive_install_flow(
     """Drive a conversation forward until *wrapper_name* is installed.
 
     Sends *prompt*, then loops sending follow-up "sì, installa il
-    tool {wrapper_name}" messages until the wrapper is installed or
+    wrapper {wrapper_name}" messages until the wrapper is installed or
     *max_turns* is reached. When the wrapper finally installs, re-issues
     the original prompt one more time so the returned result reflects
-    the installed-tool path.
+    the installed-wrapper path.
 
     The helper does NOT prescribe what the planner should do on any
     given turn — it just drives the conversation forward the way a
@@ -711,7 +711,7 @@ async def drive_install_flow(
     turns_used = 1
     while not tool_installed(wrapper_name) and turns_used < max_turns:
         result = await run_message(
-            f"sì, installa il tool {wrapper_name}", **kwargs,
+            f"sì, installa il wrapper {wrapper_name}", **kwargs,
         )
         turns_used += 1
     if tool_installed(wrapper_name):

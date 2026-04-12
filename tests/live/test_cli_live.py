@@ -46,7 +46,7 @@ def _assert_search_smoke_output(out: str, *, kind: str, query: str) -> None:
 
 
 class TestWrapperSearch:
-    """Optional smoke tests for remote registry-backed tool search."""
+    """Optional smoke tests for remote registry-backed wrapper search."""
 
     def test_search_returns_results(self, capsys):
         """What: Runs 'kiso wrapper search' with an empty query string.
@@ -61,7 +61,7 @@ class TestWrapperSearch:
         except SystemExit:
             pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
-        _assert_search_smoke_output(out, kind="tool", query="")
+        _assert_search_smoke_output(out, kind="wrapper", query="")
 
     def test_search_with_query(self, capsys):
         """What: Runs 'kiso wrapper search' with query 'search' to filter results.
@@ -76,7 +76,7 @@ class TestWrapperSearch:
         except SystemExit:
             pytest.skip("Registry fetch failed (network unavailable)")
         out = capsys.readouterr().out
-        _assert_search_smoke_output(out, kind="tool", query="search")
+        _assert_search_smoke_output(out, kind="wrapper", query="search")
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ class TestConnectorSearch:
 
 class TestWrapperInstallRemove:
     def test_install_and_remove_official_wrapper(self, tmp_path: Path, capsys):
-        """What: Installs the 'websearch' tool from kiso-run org, verifies the directory, then removes it.
+        """What: Installs the 'websearch' wrapper from kiso-run org, verifies the directory, then removes it.
 
         Why: Validates the full wrapper install/remove lifecycle with a real git clone.
         Expects: After install: dir exists, kiso.toml present, no .installing marker. After remove: dir gone.
@@ -121,8 +121,8 @@ class TestWrapperInstallRemove:
         skills_dir = tmp_path / "wrappers"
         skills_dir.mkdir()
 
-        # Pick a tool that is likely to exist in the org.
-        # "websearch" is the canonical example tool.
+        # Pick a wrapper that is likely to exist in the org.
+        # "websearch" is the canonical example wrapper.
         skill_name = "websearch"
 
         args = Namespace(

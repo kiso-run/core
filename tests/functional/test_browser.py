@@ -1,11 +1,11 @@
 """F1-F2: Browser navigation functional tests.
 
 These tests exercise the full pipeline: user message → classifier → planner →
-worker (with real browser tool) → messenger.  They require a running kiso
-instance with real LLM, network access, and the browser tool available in
+worker (with real browser wrapper) → messenger.  They require a running kiso
+instance with real LLM, network access, and the browser wrapper available in
 the registry.
 
-When the browser tool is not pre-installed, the tests exercise the full
+When the browser wrapper is not pre-installed, the tests exercise the full
 multi-turn install flow: first message triggers an install proposal, second
 message ("sì, installa") confirms, and the agent installs + proceeds.
 """
@@ -33,14 +33,14 @@ from tests.conftest import LLM_INSTALL_TIMEOUT as BROWSER_TIMEOUT
 
 
 class TestF1BrowserInstall:
-    """F1a: Browser tool install flow."""
+    """F1a: Browser wrapper install flow."""
 
     async def test_browser_install_flow(self, run_message):
         """What: Trigger browser install via multi-turn approval flow.
 
         Why: Validates the install proposal → user approval → exec install cycle
-        for the browser tool specifically. Isolates install issues from navigation.
-        Expects: After the flow, the browser tool is installed and discoverable.
+        for the browser wrapper specifically. Isolates install issues from navigation.
+        Expects: After the flow, the browser wrapper is installed and discoverable.
         """
         if tool_installed("browser"):
             pytest.skip("Browser already installed — nothing to test")
@@ -57,7 +57,7 @@ class TestF1BrowserInstall:
         )
 
         assert tool_installed("browser"), (
-            "Browser tool not installed after approval flow"
+            "Browser wrapper not installed after approval flow"
         )
 
 
@@ -67,13 +67,13 @@ class TestF1BrowserNavigate:
     async def test_navigate_and_describe(self, run_message):
         """What: Navigate to example.com and describe the page content.
 
-        Why: Validates that the browser tool can navigate a real page and
+        Why: Validates that the browser wrapper can navigate a real page and
         the messenger produces an Italian description of the content.
         example.com is IANA-maintained, no CAPTCHA, always available.
         Expects: Italian response >50 chars mentioning example/dominio/IANA.
         """
         if not tool_installed("browser"):
-            pytest.skip("Browser tool not installed — run F1a first or install manually")
+            pytest.skip("Browser wrapper not installed — run F1a first or install manually")
 
         result = await run_message(
             "vai su example.com e dimmi cosa c'è scritto nella pagina",
@@ -108,7 +108,7 @@ class TestF1BrowserScreenshot:
         Expects: .png file published with a reachable URL (>10KB).
         """
         if not tool_installed("browser"):
-            pytest.skip("Browser tool not installed — run F1a first or install manually")
+            pytest.skip("Browser wrapper not installed — run F1a first or install manually")
 
         result = await run_message(
             "vai su example.com e mandami uno screenshot della pagina",
@@ -141,7 +141,7 @@ class TestF2WikipediaPython:
     async def test_wikipedia_lookup(self, run_message):
         """What: Navigate to the Python Wikipedia page and ask what Python is.
 
-        Why: Validates that the browser tool can navigate to a stable, well-known
+        Why: Validates that the browser wrapper can navigate to a stable, well-known
         URL and extract factual information. Wikipedia is always reachable, has
         structured content, and "Python" appears in any reasonable summary.
         Deterministic target avoids fragile dynamic-content assertions.

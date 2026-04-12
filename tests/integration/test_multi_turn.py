@@ -31,10 +31,10 @@ class TestMultiTurnApproval:
             headers=AUTH_HEADER,
         )
 
-        # First message: "install the browser tool"
+        # First message: "install the browser wrapper"
         resp = await kiso_client.post(
             "/msg",
-            json={"session": session, "user": "testadmin", "content": "install the browser tool"},
+            json={"session": session, "user": "testadmin", "content": "install the browser wrapper"},
             headers=AUTH_HEADER,
         )
         assert resp.status_code == 202

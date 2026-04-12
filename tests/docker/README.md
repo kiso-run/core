@@ -1,7 +1,7 @@
 # Docker Integration Tests
 
 Tests that require root privileges or Docker-specific features (sandbox users,
-skill venv binary detection, etc.).
+wrapper venv binary detection, etc.).
 
 ## Running
 
@@ -23,7 +23,7 @@ docker compose -f docker-compose.test.yml --profile live run --rm test-live
 ## Test files
 
 - `test_sandbox.py` — Per-session exec sandbox isolation (user creation, workspace permissions)
-- `test_tool_venv.py` — Tool `.venv/bin/` binary detection via `check_deps` and `build_tool_env`
+- `test_wrapper_venv.py` — Wrapper `.venv/bin/` binary detection via `check_deps` and `build_wrapper_env`
 
 ## Prerequisites
 

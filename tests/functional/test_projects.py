@@ -121,12 +121,12 @@ class TestFProjGlobalFact:
     async def test_global_fact_always_visible(self, run_message, func_db):
         await save_fact(
             func_db,
-            "The internal deployment tool is called Rocketship v3",
+            "The internal deployment wrapper is called Rocketship v3",
             source="curator", category="general",
         )
 
         result = await run_message(
-            "qual è il nostro tool di deployment interno?",
+            "qual è il nostro wrapper di deployment interno?",
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         output_lower = result.msg_output.lower()

@@ -1,10 +1,10 @@
 """F18-F26, F31-F32: Core pipeline functional tests.
 
-F18: Simple Q&A without tools.
+F18: Simple Q&A without wrappers.
 F19: English response quality.
 F20: Spanish response quality.
 F21: Replan recovery after exec failure.
-F22: Nonexistent tool request.
+F22: Nonexistent wrapper request.
 F23: Cross-session knowledge sharing.
 F24-F26: Multistep (2-plan) flows.
 F31: Russian response quality.
@@ -40,19 +40,19 @@ pytestmark = pytest.mark.functional
 
 
 # ---------------------------------------------------------------------------
-# F18 — Simple Q&A without tools
+# F18 — Simple Q&A without wrappers
 # ---------------------------------------------------------------------------
 
 
 class TestF18SimpleQA:
-    """Ask a factual question — no exec, no tools, pure msg path."""
+    """Ask a factual question — no exec, no wrappers, pure msg path."""
 
     async def test_simple_qa_no_tools(self, run_message):
         """What: Asks 'What is the capital of Japan?' — a factual question.
 
         Why: Most basic interaction path. Validates the system can answer
         without over-planning exec tasks for something that needs no execution.
-        Expects: Success, English response, 'Tokyo' in output, no exec/tool tasks.
+        Expects: Success, English response, 'Tokyo' in output, no exec/wrapper tasks.
         """
         result = await run_message(
             "What is the capital of Japan?",
@@ -66,10 +66,10 @@ class TestF18SimpleQA:
         assert "tokyo" in result.last_plan_msg_output.lower(), (
             f"Expected 'Tokyo' in output: {result.last_plan_msg_output[:300]}"
         )
-        # Should be pure msg — no exec or tool tasks
+        # Should be pure msg — no exec or wrapper tasks
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in types: {types}"
-        assert "tool" not in types, f"Unexpected wrapper task in types: {types}"
+        assert "wrapper" not in types, f"Unexpected wrapper task in types: {types}"
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ class TestF19EnglishResponse:
         """What: Asks about recursion in English.
 
         Why: Validates language detection + messenger respects English.
-        Pure knowledge question — unambiguously chat, no tool needed.
+        Pure knowledge question — unambiguously chat, no wrapper needed.
         Expects: Success, English response, mentions recursion-related terms,
         substantive output (>100 chars).
         """
@@ -101,7 +101,7 @@ class TestF19EnglishResponse:
         assert_no_failure_language(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
+        assert "wrapper" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["recursion", "recursive", "function", "base case", "call",
@@ -125,7 +125,7 @@ class TestF20SpanishResponse:
         """What: Asks about recursion in Spanish.
 
         Why: Validates non-Italian, non-English language handling.
-        Pure knowledge question — unambiguously chat, no tool needed.
+        Pure knowledge question — unambiguously chat, no wrapper needed.
         Expects: Success, Spanish response, mentions recursion-related terms.
         """
         result = await run_message(
@@ -141,7 +141,7 @@ class TestF20SpanishResponse:
         assert_spanish(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
+        assert "wrapper" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["recursión", "recursiva", "recursivo", "función", "caso base",
@@ -196,22 +196,22 @@ class TestF21ReplanRecovery:
 
 
 # ---------------------------------------------------------------------------
-# F22 — Nonexistent tool request
+# F22 — Nonexistent wrapper request
 # ---------------------------------------------------------------------------
 
 
 class TestF22NonexistentTool:
-    """Ask to install a tool that doesn't exist in the registry."""
+    """Ask to install a wrapper that doesn't exist in the registry."""
 
     async def test_nonexistent_tool_request(self, run_message):
         """What: Asks to install 'zzz_test_notreal' — not in registry.
 
-        Why: Validates that the planner uses registry_hints to decide tool
+        Why: Validates that the planner uses registry_hints to decide wrapper
         availability and doesn't blindly attempt installation.
-        Expects: Success, msg explains tool is not available, no install exec.
+        Expects: Success, msg explains wrapper is not available, no install exec.
         """
         result = await run_message(
-            "installa e usa il tool 'zzz_test_notreal' per analizzare il sistema",
+            "installa e usa il wrapper 'zzz_test_notreal' per analizzare il sistema",
             timeout=LLM_REPLAN_TIMEOUT,
         )
 
@@ -220,13 +220,13 @@ class TestF22NonexistentTool:
         # exhaust retries trying to produce a valid plan.
         assert result.plans, "No plans were created"
 
-        # Should NOT have tried to install the nonexistent tool
+        # Should NOT have tried to install the nonexistent wrapper
         all_output = "\n".join(
             t.get("output") or "" for t in result.tasks
             if t.get("type") == "exec"
         ).lower()
         assert "kiso wrapper install zzz_test_notreal" not in all_output, (
-            "Planner blindly attempted to install nonexistent tool"
+            "Planner blindly attempted to install nonexistent wrapper"
         )
 
 
@@ -436,7 +436,7 @@ class TestF31RussianResponse:
         """What: Asks about recursion in Russian.
 
         Why: Validates non-Latin script (Cyrillic) handling.
-        Pure knowledge question — unambiguously chat, no tool needed.
+        Pure knowledge question — unambiguously chat, no wrapper needed.
         Expects: Success, Russian response, mentions recursion-related terms.
         """
         result = await run_message(
@@ -452,7 +452,7 @@ class TestF31RussianResponse:
         assert_russian(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
+        assert "wrapper" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["рекурси", "функци", "базов", "вызов", "факториал",
@@ -476,7 +476,7 @@ class TestF32ChineseResponse:
         """What: Asks about recursion in Chinese.
 
         Why: Validates CJK script handling.
-        Pure knowledge question — unambiguously chat, no tool needed.
+        Pure knowledge question — unambiguously chat, no wrapper needed.
         Expects: Success, Chinese response, mentions recursion-related terms.
         """
         result = await run_message(
@@ -491,7 +491,7 @@ class TestF32ChineseResponse:
         assert_chinese(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
+        assert "wrapper" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["递归", "函数", "基", "调用", "阶乘",

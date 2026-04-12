@@ -93,27 +93,27 @@ def _load_registry() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# L6.1 — Tool plugin tests
+# L6.1 — Wrapper plugin tests
 # ---------------------------------------------------------------------------
 
 
-class TestToolPlugins:
+class TestWrapperPlugins:
     @pytest.fixture(autouse=True)
     def _load(self):
         self.registry = _load_registry()
 
-    def test_tool_plugins(self, tmp_path: Path):
-        """What: Clones each official tool plugin from the registry, installs deps, runs its test suite.
+    def test_wrapper_plugins(self, tmp_path: Path):
+        """What: Clones each official wrapper plugin from the registry, installs deps, runs its test suite.
 
         Why: Validates that all official wrapper plugins build and pass their own tests.
         Expects: All plugin tests pass (non-zero exit causes failure).
         """
-        tools = self.registry.get("tools", [])
-        if not tools:
-            pytest.skip("No tools in registry")
+        wrappers = self.registry.get("wrappers", [])
+        if not wrappers:
+            pytest.skip("No wrappers in registry")
 
-        for tool in tools:
-            _clone_and_test(tmp_path, "tool", tool["name"])
+        for wrapper in wrappers:
+            _clone_and_test(tmp_path, "wrapper", wrapper["name"])
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +166,9 @@ class TestRegistryIntegrity:
         )
 
     def test_all_tools_exist(self):
-        """Every tool in registry.json has a GitHub repo."""
-        for tool in self.registry.get("tools", []):
-            self._check_repo_exists("tool-", tool["name"])
+        """Every wrapper in registry.json has a GitHub repo."""
+        for wrapper in self.registry.get("wrappers", []):
+            self._check_repo_exists("wrapper-", wrapper["name"])
 
     def test_all_connectors_exist(self):
         """Every connector in registry.json has a GitHub repo."""

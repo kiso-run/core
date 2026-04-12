@@ -246,7 +246,7 @@ class TestFunctionalResult:
                 {"type": "msg", "status": "done"},
             ],
         )
-        assert r.task_types() == ["exec", "tool", "msg"]
+        assert r.task_types() == ["exec", "wrapper", "msg"]
 
     def test_wrapper_tasks(self):
         r = FunctionalResult(
@@ -257,9 +257,9 @@ class TestFunctionalResult:
                 {"type": "msg", "wrapper": None},
             ],
         )
-        tools = r.tool_tasks()
-        assert len(tools) == 1
-        assert tools[0]["wrapper"] == "browser"
+        wrappers = r.tool_tasks()
+        assert len(wrappers) == 1
+        assert wrappers[0]["wrapper"] == "browser"
 
     def test_last_plan_msg_output_single_plan(self):
         r = FunctionalResult(
@@ -391,11 +391,11 @@ class TestAssertNoCommandWord:
 class TestDriveInstallFlow:
     """Verify the drive-until-done install loop:
 
-    - if tool already installed when called, sends prompt once and
+    - if wrapper already installed when called, sends prompt once and
       returns
-    - if tool installs after one follow-up, re-issues prompt so the
-      result reflects the installed-tool path
-    - if tool never installs, gives up at max_turns and returns the
+    - if wrapper installs after one follow-up, re-issues prompt so the
+      result reflects the installed-wrapper path
+    - if wrapper never installs, gives up at max_turns and returns the
       last result so the caller's assertion shows what went wrong
     - does not constrain what the planner does — just drives the
       conversation forward
@@ -436,7 +436,7 @@ class TestDriveInstallFlow:
 
         async def fake_run(content, **kwargs):
             calls.append(content)
-            if "installa il tool" in content:
+            if "installa il wrapper" in content:
                 installed_state["value"] = True
             return f"result-of:{content}"
 
@@ -450,7 +450,7 @@ class TestDriveInstallFlow:
 
         assert calls == [
             "do something",
-            "sì, installa il tool browser",
+            "sì, installa il wrapper browser",
             "do something",
         ]
         # final result is the re-issued prompt
@@ -468,7 +468,7 @@ class TestDriveInstallFlow:
 
         async def fake_run(content, **kwargs):
             calls.append(content)
-            if "installa il tool" in content:
+            if "installa il wrapper" in content:
                 followup_count["n"] += 1
             return f"result-of:{content}"
 
@@ -483,8 +483,8 @@ class TestDriveInstallFlow:
         # original + 2 follow-ups + re-issued original
         assert calls == [
             "extract text",
-            "sì, installa il tool ocr",
-            "sì, installa il tool ocr",
+            "sì, installa il wrapper ocr",
+            "sì, installa il wrapper ocr",
             "extract text",
         ]
 
@@ -510,7 +510,7 @@ class TestDriveInstallFlow:
         assert len(calls) == 3
         assert calls[0] == "go"
         assert all(
-            "installa il tool aider" in c for c in calls[1:]
+            "installa il wrapper aider" in c for c in calls[1:]
         )
         # caller still gets a result (the last follow-up's response)
         # so their assertion can show diagnostic state

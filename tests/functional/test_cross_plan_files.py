@@ -9,7 +9,7 @@ Two messages in the same session:
 
 Key assertions:
 - Planner uses local file path (no curl/download task)
-- OCR tool receives correct relative path (pub/...)
+- OCR wrapper receives correct relative path (pub/...)
 - No replan needed on either step
 - Messenger does not hallucinate results
 """
@@ -38,15 +38,15 @@ _HALLUCINATION_MARKERS = [
 ]
 
 async def _ensure_tool(run_message, wrapper_name: str, prompt: str, *, timeout: float = TOOL_TIMEOUT):
-    """Run prompt, handling tool install flow if needed."""
+    """Run prompt, handling wrapper install flow if needed."""
     result = await run_message(prompt, timeout=timeout)
     if tool_installed(wrapper_name):
         return result
-    # Install the tool
+    # Install the wrapper
     await run_message(f"yes, install {wrapper_name}", timeout=timeout)
     if not tool_installed(wrapper_name):
         pytest.skip(f"Could not install {wrapper_name}")
-    # Retry with tool available
+    # Retry with wrapper available
     return await run_message(prompt, timeout=timeout)
 
 

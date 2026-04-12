@@ -8,16 +8,16 @@ test_no_declared_secrets_scoped_empty, test_none_session_secrets), and
 
 This module covers the **end-to-end runtime path**: the full flow from
 session_secrets passed to ``_wrapper_task`` → real subprocess execution
-→ tool stdout. The fake tool from M1268 echoes the stdin payload so
+→ wrapper stdout. The fake wrapper from M1268 echoes the stdin payload so
 the test can assert exactly what the subprocess actually received.
 
 The goal is to prove that:
 
 - declared secrets reach the wrapper subprocess via stdin
-- undeclared secrets do NOT reach the tool, neither via stdin nor as
+- undeclared secrets do NOT reach the wrapper, neither via stdin nor as
   env vars (containment)
 - the value of an undeclared secret never appears anywhere in the
-  tool's view of the world
+  wrapper's view of the world
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class TestSessionSecretContainmentEndToEnd:
                 session_secrets=secrets,
             )
 
-        assert success, f"tool subprocess failed: stderr={stderr!r}"
+        assert success, f"wrapper subprocess failed: stderr={stderr!r}"
         report = json.loads(stdout)
 
         assert report["session_secrets_keys"] == ["DECLARED_KEY"]
@@ -68,7 +68,7 @@ class TestSessionSecretContainmentEndToEnd:
         self, fake_wrapper, tmp_path,
     ):
         """The value of an undeclared secret must not appear in the
-        tool subprocess env, even by accident."""
+        wrapper subprocess env, even by accident."""
         from unittest.mock import patch
 
         secrets = {

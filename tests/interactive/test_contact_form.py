@@ -9,7 +9,7 @@ Exercises the full human-relay loop:
 6. Test verifies success
 
 Requires:
-- Docker (functional test environment) with browser tool
+- Docker (functional test environment) with browser wrapper
 - Human at terminal
 - ``--interactive --functional`` flags
 

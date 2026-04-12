@@ -1,6 +1,6 @@
-"""F17: Multi-tool pipeline — browser → ocr → aider → exec → msg.
+"""F17: Multi-wrapper pipeline — browser → ocr → aider → exec → msg.
 
-Exercises the full cross-tool pipeline in a single session:
+Exercises the full cross-wrapper pipeline in a single session:
 1. Navigate to Wikipedia Python page and take a screenshot (browser)
 2. Extract text from the screenshot (ocr)
 3. Write a Python word count script using aider
@@ -8,7 +8,7 @@ Exercises the full cross-tool pipeline in a single session:
 5. Deliver results to the user (msg)
 
 Validates M822 (session file listing), M823 (cross-plan state),
-M824 (tool injection), M825/M826 (file routing).
+M824 (wrapper injection), M825/M826 (file routing).
 """
 
 from __future__ import annotations
@@ -28,15 +28,15 @@ from tests.conftest import LLM_INSTALL_TIMEOUT as TOOL_TIMEOUT
 
 
 # ---------------------------------------------------------------------------
-# F17 — Multi-tool pipeline: browser → ocr → aider → exec → msg
+# F17 — Multi-wrapper pipeline: browser → ocr → aider → exec → msg
 # ---------------------------------------------------------------------------
 
 
 class TestF17FullPipeline:
-    """F17: Full multi-tool pipeline — browser → ocr → aider → exec → msg.
+    """F17: Full multi-wrapper pipeline — browser → ocr → aider → exec → msg.
 
     Each step is a separate plan in the same session, exercising cross-plan
-    file awareness (M822-M826). Tools are installed via the standard
+    file awareness (M822-M826). Wrappers are installed via the standard
     conversational install flow (same as F1) if not already present.
     """
 
@@ -44,7 +44,7 @@ class TestF17FullPipeline:
         """What: 4-plan pipeline: screenshot → OCR → aider script → exec+msg.
 
         Why: End-to-end validation that the planner discovers files from
-        prior plans, routes them to the correct tool (via consumes metadata),
+        prior plans, routes them to the correct wrapper (via consumes metadata),
         and uses aider for code generation (not exec).
         Expects: Final message contains deterministic text stats from OCR text.
         """
@@ -65,7 +65,7 @@ class TestF17FullPipeline:
         )
         assert r2.success, f"Plan 2 (OCR) failed: {r2.task_types()}"
 
-        # Verify OCR found example.com content (filter to OCR tool tasks only,
+        # Verify OCR found example.com content (filter to OCR wrapper tasks only,
         # not msg tasks that might mention "example" without actual extraction)
         last_plan_id = r2.plans[-1]["id"]
         ocr_tool_outputs = [
@@ -75,7 +75,7 @@ class TestF17FullPipeline:
             and t.get("status") == "done"
         ]
         assert ocr_tool_outputs, (
-            f"No OCR tool tasks in last plan. Types: {r2.task_types()}"
+            f"No OCR wrapper tasks in last plan. Types: {r2.task_types()}"
         )
         ocr_output = " ".join(ocr_tool_outputs).lower()
         assert "python" in ocr_output, (
@@ -91,14 +91,14 @@ class TestF17FullPipeline:
         )
         assert r3.success, f"Plan 3 (aider) failed: {r3.task_types()}"
 
-        # Verify aider was used (tool task, not exec)
+        # Verify aider was used (wrapper task, not exec)
         aider_tasks = [
             t for t in r3.tasks
             if t.get("type") == "wrapper"
             and (t.get("wrapper") == "aider" or t.get("wrapper") == "aider")
         ]
         assert aider_tasks, (
-            f"Expected aider tool task, got types: {r3.task_types()}"
+            f"Expected aider wrapper task, got types: {r3.task_types()}"
         )
         last_plan_id = r3.plans[-1]["id"]
         last_plan_task_types = [

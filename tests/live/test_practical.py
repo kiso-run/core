@@ -405,14 +405,14 @@ class TestReplanRecovery:
 # ---------------------------------------------------------------------------
 
 
-class TestSkillExecution:
-    async def test_plan_and_execute_skill_task(
+class TestWrapperExecution:
+    async def test_plan_and_execute_wrapper_task(
         self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
     ):
-        """What: Creates a minimal echo-test tool, asks the planner to use it, then executes and reviews.
+        """What: Creates a minimal echo-test wrapper, asks the planner to use it, then executes and reviews.
 
         Why: Validates end-to-end wrapper/wrapper task execution — planner selection, subprocess run, reviewer approval.
-        Expects: Plan contains a tool task, execution succeeds, output contains 'hello from wrapper test'.
+        Expects: Plan contains a wrapper task, execution succeeds, output contains 'hello from wrapper test'.
         """
         # Create a minimal echo wrapper
         skill_dir = tmp_path / "wrappers" / "echo-test"
@@ -425,7 +425,7 @@ class TestSkillExecution:
             '[kiso.wrapper]\n'
             'type = "wrapper"\n'
             'summary = "Echoes the text argument back to stdout"\n'
-            '[kiso.tool.args.text]\n'
+            [kiso.wrapper.args.text]\n'
             'type = "string"\n'
             'required = true\n'
         )
@@ -451,7 +451,7 @@ class TestSkillExecution:
         }
 
         content = (
-            "Use the echo-test tool to echo the text 'hello from wrapper test'"
+            "Use the echo-test wrapper to echo the text 'hello from wrapper test'"
         )
         msg_id = await save_message(
             seeded_db, live_session, "testadmin", "user", content,
@@ -469,9 +469,9 @@ class TestSkillExecution:
             )
         assert validate_plan(plan, installed_skills=["echo-test"]) == []
 
-        # Verify the planner actually used the tool
-        tool_tasks = [t for t in plan["tasks"] if t["type"] == "tool"]
-        assert tool_tasks, "Planner should have produced a tool task"
+        # Verify the planner actually used the wrapper
+        wrapper_tasks = [t for t in plan["tasks"] if t["type"] == "wrapper"]
+        assert wrapper_tasks, "Planner should have produced a wrapper task"
 
         plan_id = await create_plan(
             seeded_db, live_session, msg_id, plan["goal"],
@@ -497,9 +497,9 @@ class TestSkillExecution:
             )
 
         assert success is True
-        tool_completed = [t for t in completed if t["type"] == "tool"]
-        assert tool_completed
-        assert "hello from wrapper test" in tool_completed[0]["output"]
+        wrapper_completed = [t for t in completed if t["type"] == "wrapper"]
+        assert wrapper_completed
+        assert "hello from wrapper test" in wrapper_completed[0]["output"]
 
 
 # ---------------------------------------------------------------------------

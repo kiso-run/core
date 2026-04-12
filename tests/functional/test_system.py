@@ -82,13 +82,13 @@ class TestF4GitAiderPush:
 
     @pytest.mark.destructive
     async def test_git_clone_edit_push(self, run_message):
-        """What: Full git workflow test: clone, edit with aider tool, push to remote.
+        """What: Full git workflow test: clone, edit with aider wrapper, push to remote.
 
-        Why: Validates the most complex multi-tool scenario (git + aider). Tests that
+        Why: Validates the most complex multi-wrapper scenario (git + aider). Tests that
         Kiso can clone a repository, make intelligent edits, and push changes. This
         is destructive -- it pushes to a real remote branch.
         Expects: Plan succeeds, Italian response, git push indicators in output,
-        aider tool or direct editing evidence in task outputs.
+        aider wrapper or direct editing evidence in task outputs.
         """
         result = await run_message(
             "clona git@github.com:kiso-run/core.git e sul branch test "

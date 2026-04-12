@@ -87,7 +87,7 @@ class TestCircularReplanDetectionContract:
              "strategy_fingerprint": frozenset({"exec:foo"})},
             {"failure": "delta epsilon zeta totally different",
              "goal": "g",
-             "strategy_fingerprint": frozenset({"tool:bar"})},
+             "strategy_fingerprint": frozenset({"wrapper:bar"})},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is False
 

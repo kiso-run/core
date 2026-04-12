@@ -450,14 +450,14 @@ class TestParaphraserLive:
 
 class TestPlannerSystemPackageLive:
     """planner uses apt-get for system packages, uv pip for Python libs,
-    and kiso wrapper install for kiso tools."""
+    and kiso wrapper install for kiso wrappers."""
 
     # validation retries + SSE stalls make planner-only live tests slower
     # than reviewer/worker calls, but they still belong to the role-only class.
     _TIMEOUT = LLM_ROLE_ONLY_TIMEOUT
 
     def _fake_sysenv_text(self) -> str:
-        """Sysenv showing Debian root, apt available, no kiso tools."""
+        """Sysenv showing Debian root, apt available, no kiso wrappers."""
         from kiso.config import KISO_DIR
         fake_env = {
             "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
@@ -483,7 +483,7 @@ class TestPlannerSystemPackageLive:
     async def test_system_package_uses_apt(
         self, live_config, seeded_db, live_session, tmp_path,
     ):
-        """What: Asks 'installa timg' with Debian sysenv and no kiso tools.
+        """What: Asks 'installa timg' with Debian sysenv and no kiso wrappers.
 
         Why: Validates the planner produces an apt-get exec task — not a web search
         or a 'use your package manager' message — for a non-kiso system package.
@@ -589,7 +589,7 @@ class TestPlannerSystemPackageLive:
     async def test_kiso_tool_uses_needs_install(
         self, live_config, seeded_db, live_session, tmp_path,
     ):
-        """What: Asks 'installa browser' — a known kiso tool (in registry hints).
+        """What: Asks 'installa browser' — a known kiso wrapper (in registry hints).
 
         Why: Validates the planner proposes kiso wrapper install, not apt-get.
         Expects: needs_install or msg asking to install, no apt-get exec.
@@ -600,7 +600,7 @@ class TestPlannerSystemPackageLive:
             patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.get_registry_wrappers", return_value=(
-                "Available tools (not installed):\n"
+                "Available wrappers (not installed):\n"
                 "- websearch — Web search\n"
                 "- aider — Code editing\n"
                 "- browser — Browser automation"
@@ -634,9 +634,9 @@ class TestPlannerSystemPackageLive:
 
         assert validate_plan(plan) == []
         details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
-        # Should NOT use apt-get for a kiso tool
+        # Should NOT use apt-get for a kiso wrapper
         assert "apt-get" not in details and "apt install" not in details, (
-            f"Should not apt-get a kiso tool, got details: {details}"
+            f"Should not apt-get a kiso wrapper, got details: {details}"
         )
         # Should either set needs_install or have a msg asking about installation
         has_needs_install = plan.get("needs_install") is not None
@@ -645,7 +645,7 @@ class TestPlannerSystemPackageLive:
             for t in plan["tasks"]
         )
         assert has_needs_install or has_install_msg, (
-            f"Expected needs_install or install msg for kiso tool, "
+            f"Expected needs_install or install msg for kiso wrapper, "
             f"got needs_install={plan.get('needs_install')}, types={[t['type'] for t in plan['tasks']]}"
         )
 
@@ -724,7 +724,7 @@ class TestClassifierConversationLive:
         from kiso.brain import build_recent_context, run_classifier
         context = build_recent_context([
             {"role": "user", "user": "root", "content": "vai su guidance.studio e fai screenshot"},
-            {"role": "assistant", "content": "Per navigare serve il browser tool. Vuoi che lo installi?"},
+            {"role": "assistant", "content": "Per navigare serve il wrapper browser. Vuoi che lo installi?"},
         ])
         category, lang = await asyncio.wait_for(
             run_classifier(live_config, "oh yeah", recent_context=context),

@@ -347,7 +347,7 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
 
 
 # ---------------------------------------------------------------------------
-# Fake tool package
+# Fake wrapper package
 # ---------------------------------------------------------------------------
 
 # Minimal manifest schema accepted by Kiso. The script reads its stdin
@@ -359,7 +359,7 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
 _FAKE_TOOL_MANIFEST = """\
 [kiso.wrapper]
 name = "{name}"
-description = "Fake tool for integration tests — echoes stdin keys and env"
+description = "Fake wrapper for integration tests — echoes stdin keys and env"
 version = "0.0.1"
 session_secrets = ["DECLARED_KEY"]
 """
@@ -395,11 +395,11 @@ if __name__ == "__main__":
 
 @pytest.fixture()
 def fake_wrapper(tmp_path: Path):
-    """Create a fake Kiso tool package in a temp directory.
+    """Create a fake Kiso wrapper package in a temp directory.
 
     Returns a dict shaped like the entries produced by
     ``kiso.wrappers.discover_wrappers``: ``{"name", "path", "session_secrets",
-    "env", ...}``. The tool's `run.py` reads stdin as JSON and prints
+    "env", ...}``. The wrapper's `run.py` reads stdin as JSON and prints
     a containment report. Used by M1273 secret containment tests to
     assert via real subprocess execution.
     """

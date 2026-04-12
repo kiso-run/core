@@ -33,9 +33,9 @@ class TestChatKBSelfInspection:
         """What: chat_kb fast-path test for system introspection (hostname query).
 
         Why: Validates that the chat_kb classifier resolves self-inspection queries
-        from boot facts without spawning exec or tool tasks. If this breaks, simple
+        from boot facts without spawning exec or wrapper tasks. If this breaks, simple
         system queries would wastefully invoke the full planner pipeline.
-        Expects: Success, Italian response, no exec/tool tasks, hostname info in output.
+        Expects: Success, Italian response, no exec/wrapper tasks, hostname info in output.
         """
         result = await run_message(
             "qual è il tuo hostname?",
@@ -85,7 +85,7 @@ class TestMultiTurnLearning:
         assert_italian(r2.msg_output)
         types = r2.task_types()
         assert "exec" not in types, f"Knowledge recall should not need exec: {types}"
-        assert "tool" not in types, f"Knowledge recall should not need tools: {types}"
+        assert "wrapper" not in types, f"Knowledge recall should not need wrappers: {types}"
         # Should mention Flask
         assert "flask" in r2.msg_output.lower()
 
@@ -124,7 +124,7 @@ class TestEntityTagEnrichment:
         assert_italian(result.last_plan_msg_output)
         types = result.task_types()
         assert "exec" not in types, f"Pre-seeded fact recall should not need exec: {types}"
-        assert "tool" not in types, f"Pre-seeded fact recall should not need tools: {types}"
+        assert "wrapper" not in types, f"Pre-seeded fact recall should not need wrappers: {types}"
         # Should mention onboarding or SaaS from the pre-seeded fact
         output_lower = result.msg_output.lower()
         assert "onboarding" in output_lower or "saas" in output_lower
@@ -149,7 +149,7 @@ class TestF13ChatKBClassification:
         about user-defined entities without executing commands. If broken, every
         knowledge query would trigger unnecessary exec tasks.
         Expects: Success, Italian response with pre-seeded fact content, msg-only
-        tasks (no exec or tool), at least 1 msg task.
+        tasks (no exec or wrapper), at least 1 msg task.
         """
         from kiso.store import find_or_create_entity, save_fact
 
@@ -172,7 +172,7 @@ class TestF13ChatKBClassification:
         # chat_kb fast path: no exec or wrapper tasks, only msg
         types = result.task_types()
         assert "exec" not in types, f"Expected no exec tasks, got: {types}"
-        assert "tool" not in types, f"Expected no tool tasks, got: {types}"
+        assert "wrapper" not in types, f"Expected no wrapper tasks, got: {types}"
         # Should have exactly 1 msg task (fast-path produces single msg)
         msg_tasks = [t for t in result.tasks if t.get("type") == "msg"]
         assert len(msg_tasks) >= 1, f"Expected at least 1 msg task, got: {types}"
@@ -375,7 +375,7 @@ class TestF16ScoredFactRetrieval:
         output_lower = result.msg_output.lower()
         types = result.task_types()
         assert "exec" not in types, f"Scored fact retrieval should not need exec: {types}"
-        assert "tool" not in types, f"Scored fact retrieval should not need tools: {types}"
+        assert "wrapper" not in types, f"Scored fact retrieval should not need wrappers: {types}"
         # Should mention Flask and/or Django
         assert "flask" in output_lower or "django" in output_lower, (
             f"Expected Flask/Django in response: {result.msg_output[:300]}"

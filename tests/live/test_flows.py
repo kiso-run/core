@@ -341,7 +341,7 @@ class TestDiscoveryPlanReplanFlow:
         """What: Two-round planner flow: discovery plan with exec+replan, then action plan using simulated results.
 
         Why: Validates the full discovery-replan-action cycle with two real LLM planner calls.
-        Expects: First plan ends with 'replan', second plan is valid and references web/search/tool.
+        Expects: First plan ends with 'replan', second plan is valid and references web/search/wrapper.
         """
         await save_message(seeded_db, live_session, "testadmin", "user", "hi")
 
@@ -390,7 +390,7 @@ class TestDiscoveryPlanReplanFlow:
                     **task,
                     "status": "done",
                     "output": (
-                        '{"tools": [{"name": "websearch", "description": '
+                        '{"wrappers": [{"name": "websearch", "description": '
                         '"Search the web using Brave/Serper", "install": '
                         '"kiso wrapper install websearch"}]}'
                     ),
@@ -411,7 +411,7 @@ class TestDiscoveryPlanReplanFlow:
         replan_reason = (
             f"Self-directed replan: {discovery_plan['tasks'][-1]['detail']}"
             if not has_install_proposal
-            else "User approved installation of websearch tool"
+            else "User approved installation of websearch wrapper"
         )
         replan_context = _build_replan_context(
             completed, [], replan_reason, [],
@@ -447,7 +447,7 @@ class TestDiscoveryPlanReplanFlow:
         )
         # Should reference web-search or the wrapper from investigation
         plan_text = str(action_plan).lower()
-        assert "web" in plan_text or "search" in plan_text or "tool" in plan_text, (
+        assert "web" in plan_text or "search" in plan_text or "wrapper" in plan_text, (
             f"Action plan should reference investigation results, got: {action_plan}"
         )
 
@@ -483,9 +483,9 @@ class TestSearchTaskFlow:
         task_types = [t["type"] for t in plan["tasks"]]
         # accept search or exec as data-gathering task — the planner
         # sometimes uses exec+curl instead of the built-in search type.
-        _DATA_TYPES = {"search", "exec", "tool"}
+        _DATA_TYPES = {"search", "exec", "wrapper"}
         assert any(t in _DATA_TYPES for t in task_types), (
-            f"Expected at least one data-gathering task (search/exec/tool), got: {task_types}"
+            f"Expected at least one data-gathering task (search/exec/wrapper), got: {task_types}"
         )
         # Last task should be msg or replan
         assert task_types[-1] in ("msg", "replan"), (
