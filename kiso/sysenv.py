@@ -486,7 +486,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
     if env["available_binaries"]:
         lines.append(f"Available binaries: {', '.join(env['available_binaries'])}")
     if env["missing_binaries"]:
-        lines.append(f"Missing common tools: {', '.join(env['missing_binaries'])}")
+        lines.append(f"Missing common wrappers: {', '.join(env['missing_binaries'])}")
     lines.append("")
 
     connectors = env["connectors"]

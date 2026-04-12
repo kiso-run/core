@@ -191,10 +191,10 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     # Report — clean summary
     parts: list[str] = []
     if installed_wrappers:
-        parts.append(f"{len(installed_wrappers)} tools")
-    skipped_tools = set(manifest.wrappers) - set(installed_wrappers)
-    if skipped_tools:
-        parts.append(f"{len(skipped_tools)} tools skipped")
+        parts.append(f"{len(installed_wrappers)} wrappers")
+    skipped_wrappers = set(manifest.wrappers) - set(installed_wrappers)
+    if skipped_wrappers:
+        parts.append(f"{len(skipped_wrappers)} wrappers skipped")
     if installed_connectors:
         parts.append(f"{len(installed_connectors)} connectors")
     if behavior_ids:
@@ -205,8 +205,8 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
         parts.append(f"{len(recipe_files)} recipes")
     summary = ", ".join(parts) if parts else "no components"
     print(f"\n  {_c('✓', _GREEN)} Preset installed — {summary}")
-    if skipped_tools:
-        print(f"  Skipped (install manually): {', '.join(skipped_tools)}")
+    if skipped_wrappers:
+        print(f"  Skipped (install manually): {', '.join(skipped_wrappers)}")
 
     # Env var hints
     if manifest.env_vars:

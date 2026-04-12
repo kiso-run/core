@@ -182,11 +182,11 @@ def discover_wrappers(wrappers_dir: Path | None = None) -> list[dict]:
         tools.append(info)
 
     if tools:
-        log.debug("discover_wrappers: found %d tools: %s",
+        log.debug("discover_wrappers: found %d wrappers: %s",
                   len(tools), ", ".join(t["name"] for t in tools))
     else:
         subdirs = [e.name for e in resolved_dir.iterdir() if e.is_dir()] if resolved_dir.is_dir() else []
-        log.debug("discover_wrappers: 0 tools found (subdirs: %s)", subdirs or "none")
+        log.debug("discover_wrappers: 0 wrappers found (subdirs: %s)", subdirs or "none")
 
     _wrappers_cache[resolved_dir] = (now, tools)
     return tools
@@ -250,7 +250,7 @@ def build_planner_wrapper_list(
     if not tools:
         return ""
 
-    lines: list[str] = ["Available tools:"]
+    lines: list[str] = ["Available wrappers:"]
     for t in tools:
         if t.get("healthy") is False:
             missing = ", ".join(t.get("missing_deps", []))

@@ -989,7 +989,7 @@ async def build_planner_messages(
     # Build the wrapper list text for context pool
     full_wrapper_list = build_planner_wrapper_list(installed, user_role, user_wrappers)
     if full_wrapper_list:
-        context_pool["tools"] = full_wrapper_list
+        context_pool["wrappers"] = full_wrapper_list
 
     # Connector discovery — show installed connectors to planner
     connectors = discover_connectors()
@@ -1065,7 +1065,7 @@ async def build_planner_messages(
             modules.append("planning_rules")
         # wrappers_rules needed when any tools are installed — contains
         # "use directly" rule and args/guide validation.  Broader than M1049
-        # (which checked briefing["tools"]) because the briefer sometimes
+        # (which checked briefing["wrappers"]) because the briefer sometimes
         # skips wrapper selection even when tools are relevant.
         if installed and "wrappers_rules" not in modules:
             modules.append("wrappers_rules")
@@ -1234,23 +1234,23 @@ async def build_planner_messages(
     tool_filter_threshold = setting_int(
         config.settings, "briefer_wrapper_filter_threshold", lo=0,
     )
-    if briefing and briefing["tools"]:
+    if briefing and briefing["wrappers"]:
         if len(installed) <= tool_filter_threshold:
             # Few tools — inject all but with guides only for selected tools
             log.debug("Skipping briefer wrapper filter: %d tools <= threshold %d",
                       len(installed), tool_filter_threshold)
-            _selected = set(briefing["tools"])
+            _selected = set(briefing["wrappers"])
             tiered_list = build_planner_wrapper_list(installed, user_role, user_wrappers, selected_names=_selected)
             if tiered_list:
-                context_parts.append(f"## Tools\n{tiered_list}")
+                context_parts.append(f"## Wrappers\n{tiered_list}")
         else:
-            selected_names = set(briefing["tools"])
+            selected_names = set(briefing["wrappers"])
             selected_tools = [t for t in installed if t["name"] in selected_names]
             selected_tool_text = build_planner_wrapper_list(selected_tools, user_role, user_wrappers)
             if selected_tool_text:
-                context_parts.append(f"## Tools\n{selected_tool_text}")
+                context_parts.append(f"## Wrappers\n{selected_tool_text}")
     elif full_wrapper_list:
-        context_parts.append(f"## Tools\n{full_wrapper_list}")
+        context_parts.append(f"## Wrappers\n{full_wrapper_list}")
 
     # warn planner when web module is active but browser isn't installed.
     # Emphasise that built-in search works without any wrapper for research queries.

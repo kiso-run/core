@@ -992,13 +992,13 @@ REVIEW_SCHEMA: dict = _build_strict_schema("review", {
 
 BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "modules": {"type": "array", "items": {"type": "string"}},
-    "tools": {"type": "array", "items": {"type": "string"}},
+    "wrappers": {"type": "array", "items": {"type": "string"}},
     "exclude_recipes": {"type": "array", "items": {"type": "string"}},
     "context": {"type": "string"},
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "tools", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
+}, ["modules", "wrappers", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1230,7 +1230,7 @@ def _load_modular_prompt(role: str, modules: list[str]) -> str:
 
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("tools", "Available Wrappers"),
+    ("wrappers", "Available Wrappers"),
     ("recipes", "Available Recipes"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
@@ -1301,7 +1301,7 @@ def build_briefer_messages(
         parts.append(f"## Available Modules\n{_BRIEFER_MODULES_STR}")
 
     # skip sections irrelevant for simple consumers
-    _skip_keys = {"tools", "system_env", "connectors"} if _simple_consumer else set()
+    _skip_keys = {"wrappers", "system_env", "connectors"} if _simple_consumer else set()
 
     for key, heading in _CONTEXT_POOL_SECTIONS:
         if key in _skip_keys:
@@ -1327,8 +1327,8 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
         for m in briefing["modules"]:
             if m not in BRIEFER_MODULES:
                 errors.append(f"unknown module: {m!r}")
-    if not isinstance(briefing.get("tools"), list):
-        errors.append("tools must be an array")
+    if not isinstance(briefing.get("wrappers"), list):
+        errors.append("wrappers must be an array")
     if not isinstance(briefing.get("exclude_recipes"), list):
         errors.append("exclude_recipes must be an array")
     if not isinstance(briefing.get("context"), str):
@@ -1407,8 +1407,8 @@ async def run_briefer(
         briefing["exclude_recipes"] = []
 
     # post-validation filtering — remove hallucinated names
-    briefing["tools"] = _filter_briefer_names(
-        briefing.get("tools", []), context_pool.get("tools"), "wrapper")
+    briefing["wrappers"] = _filter_briefer_names(
+        briefing.get("wrappers", []), context_pool.get("wrappers"), "wrapper")
     briefing["exclude_recipes"] = _filter_briefer_names(
         briefing.get("exclude_recipes", []), context_pool.get("recipes"), "recipe")
 
@@ -1416,7 +1416,7 @@ async def run_briefer(
         "Briefer for %s: %d modules, %d tools, %d exclude_recipes, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
-        len(briefing["tools"]),
+        len(briefing["wrappers"]),
         len(briefing.get("exclude_recipes", [])),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),

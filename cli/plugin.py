@@ -1,4 +1,4 @@
-"""Plugin umbrella CLI commands — unified view across tools, wrappers, connectors."""
+"""Plugin umbrella CLI commands — unified view across wrappers, recipes, connectors."""
 
 from __future__ import annotations
 
@@ -20,16 +20,16 @@ def run_plugin_command(args) -> None:
 
 def _plugin_list() -> None:
     """List all installed plugins grouped by type."""
-    tools = discover_wrappers()
+    wrappers = discover_wrappers()
     invalidate_recipes_cache()
     recipes = discover_recipes()
     connectors = discover_connectors()
 
-    if not tools and not recipes and not connectors:
+    if not wrappers and not recipes and not connectors:
         print("No plugins installed.")
         return
 
-    for label, items in [("Tools", tools), ("Recipes", recipes), ("Connectors", connectors)]:
+    for label, items in [("Wrappers", wrappers), ("Recipes", recipes), ("Connectors", connectors)]:
         if not items:
             continue
         print(f"{label}:")
@@ -46,7 +46,7 @@ def _plugin_search(args) -> None:
     query = getattr(args, "query", "")
 
     found_any = False
-    for section, label in [("tools", "Tools"), ("recipes", "Recipes"), ("connectors", "Connectors")]:
+    for section, label in [("wrappers", "Wrappers"), ("recipes", "Recipes"), ("connectors", "Connectors")]:
         entries = registry.get(section, [])
         results = search_entries(entries, query)
         if results:

@@ -56,7 +56,7 @@ Rules:
 
 <!-- MODULE: wrappers_rules -->
 Wrappers efficiency:
-- Listed tools are confirmed installed — use directly, no verification needed.
+- Listed wrappers are confirmed installed — use directly, no verification needed.
 - If an installed kiso wrapper should perform the work, use `type="wrapper"` with that wrapper name and structured object args. Do not route installed wrappers through `type="exec"` using wording like "use aider to ..." or "run browser on ...".
 - Uninstalled wrappers cannot be used. Never wrapper-task an uninstalled wrapper. To request installation: set `needs_install` with the wrapper name, add a msg for approval, end plan (see core install rule). After approval: exec install, replan.
 - After approval for a known registry wrapper, the install exec must be explicit: `kiso wrapper install NAME`. Do not write vague details like "install browser" or switch to apt/pip.
