@@ -52,17 +52,24 @@ def _format_plan_outputs_for_msg(
     for result in reversed(_collect_task_results(plan_outputs=plan_outputs)):
         idx = result.task_index
         header = f"[{idx}] {result.task_type}: {result.detail}"
-        if result.reviewer_summary:
-            output = f"Summary: {result.reviewer_summary}"
-        else:
-            output = result.output or "(no output)"
+        # M1327: raw output is ground truth. Always include it verbatim
+        # when it fits the budget, even when a reviewer_summary exists.
+        # The reviewer_summary is a budget-fallback, not a replacement:
+        # downstream consumers (messenger, replan) need the actual values
+        # from the task output to cite them correctly.
+        output = result.output or "(no output)"
         full_text = f"{header}\nStatus: {result.status}\n{fence_content(output, 'TASK_OUTPUT')}"
 
         if budget_used + len(full_text) <= budget:
             full_parts.append((idx, full_text))
             budget_used += len(full_text)
         else:
-            summary_parts.append((idx, f"[{idx}] {result.task_type}: {result.detail} -> {result.status}"))
+            # Raw output too large for budget: fall back to reviewer
+            # summary if available, otherwise header-only.
+            fallback = f"[{idx}] {result.task_type}: {result.detail} -> {result.status}"
+            if result.reviewer_summary:
+                fallback += f"\n(Summary: {result.reviewer_summary})"
+            summary_parts.append((idx, fallback))
 
     full_parts.sort(key=lambda x: x[0])
     summary_parts.sort(key=lambda x: x[0])

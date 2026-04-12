@@ -2766,18 +2766,21 @@ class TestFormatPlanOutputsForMsg:
         pos3 = result.index("[3]")
         assert pos1 < pos2 < pos3
 
-    def test_prefers_reviewer_summary_over_raw_output(self):
-        """reviewer_summary is used instead of raw output when available."""
+    def test_raw_output_primary_even_with_summary_when_fits(self):
+        """M1327: raw output is ground truth — always included when it fits
+        the budget, even if a reviewer_summary is present. The summary is
+        a budget-fallback, not a replacement for the raw output that the
+        messenger needs to cite verbatim."""
         outputs = [
             {
-                "index": 1, "type": "exec", "detail": "search news",
-                "output": "raw HTML noise...", "status": "done",
-                "reviewer_summary": "Top headlines: A, B, C",
+                "index": 1, "type": "exec", "detail": "wc hello.txt",
+                "output": " 1  2 11 hello.txt\n", "status": "done",
+                "reviewer_summary": "File contains 1 word",  # LLM misreading
             },
         ]
         result = _format_plan_outputs_for_msg(outputs)
-        assert "Summary: Top headlines: A, B, C" in result
-        assert "raw HTML noise" not in result
+        # Raw output present verbatim — messenger has ground truth
+        assert "1  2 11 hello.txt" in result
 
     def test_falls_back_to_raw_output_without_summary(self):
         """Without reviewer_summary, raw output is used as before."""
@@ -2789,21 +2792,38 @@ class TestFormatPlanOutputsForMsg:
         assert "Summary:" not in result
 
     def test_mixed_with_and_without_summary(self):
-        """entries with summary use it, entries without use raw output."""
+        """M1327: raw output is primary for all entries when it fits the
+        budget, regardless of whether a summary is available."""
         outputs = [
             {"index": 1, "type": "exec", "detail": "step 1", "output": "raw1", "status": "done"},
             {
                 "index": 2, "type": "search", "detail": "search",
-                "output": "long raw search output...", "status": "done",
+                "output": "raw search output", "status": "done",
                 "reviewer_summary": "Found: X, Y, Z",
             },
         ]
         result = _format_plan_outputs_for_msg(outputs, budget=8000)
-        # Entry 1: raw output
+        # Both raw outputs present as ground truth
         assert "raw1" in result
-        # Entry 2: reviewer summary
-        assert "Summary: Found: X, Y, Z" in result
-        assert "long raw search output" not in result
+        assert "raw search output" in result
+
+    def test_oversized_raw_falls_back_to_reviewer_summary(self):
+        """M1327: when raw output exceeds budget, fall back to the
+        reviewer_summary in the summary_parts section — this is the only
+        case where the summary replaces the raw output."""
+        big_raw = "x" * 20000
+        outputs = [
+            {
+                "index": 1, "type": "search", "detail": "search HTML",
+                "output": big_raw, "status": "done",
+                "reviewer_summary": "Top headlines: A, B, C",
+            },
+        ]
+        result = _format_plan_outputs_for_msg(outputs, budget=8000)
+        # Raw doesn't fit → summary surfaces as fallback
+        assert "Top headlines: A, B, C" in result
+        # Raw noise is not included
+        assert big_raw not in result
 
 
 # --- _extract_published_urls (M763) ---
