@@ -392,7 +392,7 @@ class TestDiscoveryPlanReplanFlow:
                     "output": (
                         '{"tools": [{"name": "websearch", "description": '
                         '"Search the web using Brave/Serper", "install": '
-                        '"kiso tool install websearch"}]}'
+                        '"kiso wrapper install websearch"}]}'
                     ),
                 })
             elif task["type"] == "replan":

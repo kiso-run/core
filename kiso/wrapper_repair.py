@@ -13,7 +13,7 @@ from kiso.wrappers import check_deps, discover_wrappers, invalidate_wrappers_cac
 
 
 def _clean_env() -> dict[str, str]:
-    """Environment without VIRTUAL_ENV — prevents uv confusion in tool venvs."""
+    """Environment without VIRTUAL_ENV — prevents uv confusion in wrapper venvs."""
     env = dict(os.environ)
     env.pop("VIRTUAL_ENV", None)
     return env
@@ -26,16 +26,16 @@ _IMAGE_ID_PATH = Path("/opt/kiso/.image_id")
 _LAST_IMAGE_ID_PATH = KISO_DIR / ".last_image_id"
 
 # Limits to prevent startup from hanging
-_PER_TOOL_TIMEOUT = 60  # seconds per tool deps.sh
+_PER_TOOL_TIMEOUT = 60  # seconds per wrapper deps.sh
 _TOTAL_TIMEOUT = 180  # seconds total for all repairs
 
 
-async def repair_unhealthy_wrappers(tools_dir: Path | None = None) -> list[str]:
+async def repair_unhealthy_wrappers(wrappers_dir: Path | None = None) -> list[str]:
     """Re-run deps.sh for tools with missing binary deps.
 
-    Returns list of tool names where repair was attempted.
+    Returns list of wrapper names where repair was attempted.
     """
-    resolved_dir = tools_dir or (KISO_DIR / "wrappers")
+    resolved_dir = wrappers_dir or (KISO_DIR / "wrappers")
     tools = discover_wrappers(resolved_dir)
     unhealthy = [t for t in tools if not t.get("healthy", True)]
 
@@ -45,24 +45,24 @@ async def repair_unhealthy_wrappers(tools_dir: Path | None = None) -> list[str]:
     repaired: list[str] = []
     total_start = asyncio.get_event_loop().time()
 
-    for tool in unhealthy:
+    for wrapper in unhealthy:
         elapsed = asyncio.get_event_loop().time() - total_start
         if elapsed >= _TOTAL_TIMEOUT:
-            log.warning("Tool repair total timeout (%ds) reached, skipping remaining", _TOTAL_TIMEOUT)
+            log.warning("Wrapper repair total timeout (%ds) reached, skipping remaining", _TOTAL_TIMEOUT)
             break
 
-        tool_path = Path(tool["path"])
-        deps_sh = tool_path / "deps.sh"
+        wrapper_path = Path(wrapper["path"])
+        deps_sh = wrapper_path / "deps.sh"
         if not deps_sh.exists():
-            log.info("Tool '%s' is unhealthy but has no deps.sh — skipping", tool["name"])
+            log.info("Wrapper '%s' is unhealthy but has no deps.sh — skipping", wrapper["name"])
             continue
 
-        log.info("Repairing tool '%s' (missing: %s)...", tool["name"], tool.get("missing_deps", []))
+        log.info("Repairing wrapper '%s' (missing: %s)...", wrapper["name"], wrapper.get("missing_deps", []))
         remaining = min(_PER_TOOL_TIMEOUT, _TOTAL_TIMEOUT - elapsed)
         try:
             proc = await asyncio.create_subprocess_exec(
                 "bash", str(deps_sh),
-                cwd=str(tool_path),
+                cwd=str(wrapper_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_clean_env(),
@@ -72,18 +72,18 @@ async def repair_unhealthy_wrappers(tools_dir: Path | None = None) -> list[str]:
             )
             stdout, stderr = await communicate_with_timeout(proc, None, remaining)
             if proc.returncode == 0:
-                log.info("Tool '%s' deps.sh succeeded", tool["name"])
+                log.info("Wrapper '%s' deps.sh succeeded", wrapper["name"])
             else:
                 log.warning(
-                    "Tool '%s' deps.sh failed (exit %d): %s",
-                    tool["name"], proc.returncode, stderr.decode(errors="replace")[:500],
+                    "Wrapper '%s' deps.sh failed (exit %d): %s",
+                    wrapper["name"], proc.returncode, stderr.decode(errors="replace")[:500],
                 )
         except asyncio.TimeoutError:
-            log.warning("Tool '%s' deps.sh timed out after %ds", tool["name"], remaining)
+            log.warning("Wrapper '%s' deps.sh timed out after %ds", wrapper["name"], remaining)
         except OSError as e:
-            log.warning("Tool '%s' deps.sh error: %s", tool["name"], e)
+            log.warning("Wrapper '%s' deps.sh error: %s", wrapper["name"], e)
 
-        repaired.append(tool["name"])
+        repaired.append(wrapper["name"])
 
     if repaired:
         invalidate_wrappers_cache()
@@ -119,37 +119,37 @@ def _mark_image_id() -> None:
         _LAST_IMAGE_ID_PATH.write_text(current)
 
 
-async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
-    """Re-run deps.sh for ALL installed tools (after container rebuild).
+async def rerun_all_deps(wrappers_dir: Path | None = None) -> list[str]:
+    """Re-run deps.sh for ALL installed wrappers (after container rebuild).
 
-    Returns list of tool names where deps.sh was executed.
+    Returns list of wrapper names where deps.sh was executed.
     """
-    resolved_dir = tools_dir or (KISO_DIR / "wrappers")
-    tools = discover_wrappers(resolved_dir)
-    if not tools:
+    resolved_dir = wrappers_dir or (KISO_DIR / "wrappers")
+    wrappers = discover_wrappers(resolved_dir)
+    if not wrappers:
         return []
 
-    log.info("Container rebuilt — re-running deps.sh for %d installed tool(s)", len(tools))
+    log.info("Container rebuilt — re-running deps.sh for %d installed wrapper(s)", len(wrappers))
     executed: list[str] = []
     total_start = asyncio.get_event_loop().time()
 
-    for tool in tools:
+    for wrapper in wrappers:
         elapsed = asyncio.get_event_loop().time() - total_start
         if elapsed >= _TOTAL_TIMEOUT:
             log.warning("deps.sh re-run total timeout (%ds) reached, skipping remaining", _TOTAL_TIMEOUT)
             break
 
-        tool_path = Path(tool["path"])
-        deps_sh = tool_path / "deps.sh"
+        wrapper_path = Path(wrapper["path"])
+        deps_sh = wrapper_path / "deps.sh"
         if not deps_sh.exists():
             continue
 
-        log.info("Re-running deps.sh for '%s'...", tool["name"])
+        log.info("Re-running deps.sh for '%s'...", wrapper["name"])
         remaining = min(_PER_TOOL_TIMEOUT, _TOTAL_TIMEOUT - elapsed)
         try:
             proc = await asyncio.create_subprocess_exec(
                 "bash", str(deps_sh),
-                cwd=str(tool_path),
+                cwd=str(wrapper_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_clean_env(),
@@ -159,18 +159,18 @@ async def rerun_all_deps(tools_dir: Path | None = None) -> list[str]:
             )
             stdout, stderr = await communicate_with_timeout(proc, None, remaining)
             if proc.returncode == 0:
-                log.info("Tool '%s' deps.sh succeeded", tool["name"])
+                log.info("Wrapper '%s' deps.sh succeeded", wrapper["name"])
             else:
                 log.warning(
-                    "Tool '%s' deps.sh failed (exit %d): %s",
-                    tool["name"], proc.returncode, stderr.decode(errors="replace")[:500],
+                    "Wrapper '%s' deps.sh failed (exit %d): %s",
+                    wrapper["name"], proc.returncode, stderr.decode(errors="replace")[:500],
                 )
         except asyncio.TimeoutError:
-            log.warning("Tool '%s' deps.sh timed out after %ds", tool["name"], remaining)
+            log.warning("Wrapper '%s' deps.sh timed out after %ds", wrapper["name"], remaining)
         except OSError as e:
-            log.warning("Tool '%s' deps.sh error: %s", tool["name"], e)
+            log.warning("Wrapper '%s' deps.sh error: %s", wrapper["name"], e)
 
-        executed.append(tool["name"])
+        executed.append(wrapper["name"])
 
     if executed:
         invalidate_wrappers_cache()

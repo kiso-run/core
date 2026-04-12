@@ -163,7 +163,7 @@ def _build_wrapper_file_refs(
     task_index: int,
     wrapper_name: str | None,
 ) -> list[dict]:
-    """Build canonical file refs for tool args that point at real files.
+    """Build canonical file refs for wrapper args that point at real files.
 
     Only inspects args that are plausible file references — free-form
     instruction strings (e.g. aider.message) are skipped to avoid
@@ -229,7 +229,7 @@ def _build_new_artifact_refs(
             ).to_dict(),
             "artifact_id": f"artifact:{rel.as_posix()}",
             "artifact_kind": "file",
-            "tool": wrapper_name,
+            "wrapper": wrapper_name,
         }
         refs.append(artifact)
     return refs
@@ -260,7 +260,7 @@ def _repair_exec_pythonpath(command: str, plan_outputs: list[dict]) -> str:
 
 
 def _looks_like_workspace_file_arg(arg_name: str, arg_schema: dict, value: object) -> bool:
-    """Heuristic: True when a tool arg likely references a workspace file."""
+    """Heuristic: True when a wrapper arg likely references a workspace file."""
     if not isinstance(value, str):
         return False
     text = value.strip()
@@ -355,10 +355,10 @@ def _resolve_workspace_file_reference(session: str, value: str) -> str | None:
     return None
 
 
-def _repair_wrapper_workspace_args(tool_info: dict, args: dict, session: str) -> dict:
-    """Repair missing local-file tool args when a unique workspace match exists."""
+def _repair_wrapper_workspace_args(wrapper_info: dict, args: dict, session: str) -> dict:
+    """Repair missing local-file wrapper args when a unique workspace match exists."""
     corrected = dict(args)
-    args_schema = tool_info.get("args_schema", {}) or {}
+    args_schema = wrapper_info.get("args_schema", {}) or {}
     for arg_name, value in list(corrected.items()):
         schema = args_schema.get(arg_name, {})
         if not _looks_like_workspace_file_arg(arg_name, schema, value):

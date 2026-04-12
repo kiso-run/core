@@ -1,4 +1,4 @@
-"""Shared plugin validation utilities (tool, connector)."""
+"""Shared plugin validation utilities (wrapper, connector)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 def _validate_plugin_manifest_base(
     manifest: dict, plugin_dir: Path, plugin_type: str,
 ) -> list[str]:
-    """Validate fields common to all kiso plugins (tool, connector).
+    """Validate fields common to all kiso plugins (wrapper, connector).
 
     Returns list of error strings.  Early-returns on structural errors
     ([kiso] or [kiso.{plugin_type}] missing) so callers can detect when

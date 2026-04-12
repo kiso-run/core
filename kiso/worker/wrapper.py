@@ -1,4 +1,4 @@
-"""Tool task handler for the kiso worker."""
+"""Wrapper task handler for the kiso worker."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from kiso.worker.utils import _run_subprocess, _session_workspace
 
 async def _wrapper_task(
     session: str,
-    tool: dict,
+    wrapper: dict,
     args: dict,
     plan_outputs: list[dict] | None,
     session_secrets: dict[str, str] | None,
@@ -21,7 +21,7 @@ async def _wrapper_task(
     max_output_size: int = 0,
     cancel_event: "asyncio.Event | None" = None,
 ) -> tuple[str, str, bool, int]:
-    """Run a tool subprocess. Returns (stdout, stderr, success, exit_code).
+    """Run a wrapper subprocess. Returns (stdout, stderr, success, exit_code).
 
     When *max_output_size* > 0, stdout and stderr are each truncated to
     that many characters to prevent memory exhaustion from oversized output.
@@ -29,18 +29,18 @@ async def _wrapper_task(
     workspace = _session_workspace(session)
 
     input_data = build_wrapper_input(
-        tool, args, session, str(workspace),
+        wrapper, args, session, str(workspace),
         session_secrets=session_secrets,
         plan_outputs=plan_outputs,
     )
-    env = build_wrapper_env(tool)
+    env = build_wrapper_env(wrapper)
 
-    tool_path = Path(tool["path"])
-    venv_python = tool_path / ".venv" / "bin" / "python"
+    wrapper_path = Path(wrapper["path"])
+    venv_python = wrapper_path / ".venv" / "bin" / "python"
     if not venv_python.exists():
         venv_python = Path("python3")
 
-    run_py = tool_path / "run.py"
+    run_py = wrapper_path / "run.py"
     input_bytes = json.dumps(input_data).encode()
 
     return await _run_subprocess(

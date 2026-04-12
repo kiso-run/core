@@ -57,7 +57,7 @@ def _create_tool(tools_dir: Path, name: str, summary: str,
 
 
 class TestToolLifecycleRecovery:
-    """Full cycle: broken tool → detected → planner warned → repaired → healthy."""
+    """Full cycle: broken wrapper → detected → planner warned → repaired → healthy."""
 
     def test_broken_tool_detected_and_annotated(self, tmp_path):
         """Step 1-2: discover_wrappers finds tool with healthy=False,
@@ -78,7 +78,7 @@ class TestToolLifecycleRecovery:
         tool_list = build_planner_wrapper_list(tools, "admin")
         assert "[BROKEN" in tool_list
         assert "missing: nonexistent_playwright_xyz" in tool_list
-        assert "kiso tool remove browser" in tool_list
+        assert "kiso wrapper remove browser" in tool_list
 
     async def test_repair_fixes_broken_tool(self, tmp_path):
         """Step 3: repair_unhealthy_wrappers runs deps.sh which installs

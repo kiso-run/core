@@ -231,7 +231,7 @@ def _collect_connectors() -> list[dict[str, str]]:
 
 
 def _load_registry_hints() -> str:
-    """Load brief tool/connector descriptions from the online registry."""
+    """Load brief wrapper/connector descriptions from the online registry."""
     from kiso.registry import fetch_registry
 
     data = fetch_registry()
@@ -320,7 +320,7 @@ def invalidate_cache() -> None:
 
 
 _KISO_CLI_COMMANDS = """\
-  kiso tool list | search [query] | install <name|url> | update <name|all> | remove <name>
+  kiso wrapper list | search [query] | install <name|url> | update <name|all> | remove <name>
   kiso connector list | search [query] | install <name|url> | update <name|all> | remove <name>
   kiso connector run <name> | stop <name> | status <name>
   kiso env set <KEY> <VALUE> | get <KEY> | list | delete <KEY> | reload"""
@@ -478,7 +478,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
         persistent_parts.append(f"ssh pub key: {ssh_pub}")
     lines.append(f"Persistent dir: {sys_dir} ({', '.join(persistent_parts)})")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
-    lines.append(f"Reference docs: {env['reference_docs_path']} (tool/connector authoring guides — cat before planning)")
+    lines.append(f"Reference docs: {env['reference_docs_path']} (wrapper/connector authoring guides — cat before planning)")
     lines.append(f"Plugin registry: {env['registry_url']}")
     lines.append(f"Max output: {_format_size(env['max_output_size'])}")
     lines.append("")

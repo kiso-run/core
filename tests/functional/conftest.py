@@ -331,7 +331,7 @@ class FunctionalResult:
 
     @staticmethod
     def task_wrapper_name(task: dict) -> str:
-        """Return the tool name for a task (handles DB column `wrapper` vs `tool`)."""
+        """Return the wrapper name for a task (handles DB column `wrapper` vs `tool`)."""
         return task.get("wrapper") or task.get("wrapper") or ""
 
 
@@ -682,8 +682,8 @@ async def drive_install_flow(
     """Drive a conversation forward until *wrapper_name* is installed.
 
     Sends *prompt*, then loops sending follow-up "sì, installa il
-    tool {wrapper_name}" messages until the tool is installed or
-    *max_turns* is reached. When the tool finally installs, re-issues
+    tool {wrapper_name}" messages until the wrapper is installed or
+    *max_turns* is reached. When the wrapper finally installs, re-issues
     the original prompt one more time so the returned result reflects
     the installed-tool path.
 
@@ -694,14 +694,14 @@ async def drive_install_flow(
     mid-flow. This preserves Kiso's generalist nature in functional
     tests.
 
-    If *max_turns* is exhausted without the tool being installed,
+    If *max_turns* is exhausted without the wrapper being installed,
     returns the last result so the caller's assertion can show the
     diagnostic state.
 
     *timeout* defaults to ``LLM_INSTALL_TIMEOUT`` (15 min) because the
     install plan often downloads multi-hundred-MB packages and runs
     deps.sh. Caller can override with a smaller value for tests where
-    the tool is already installed.
+    the wrapper is already installed.
     """
     if timeout is None:
         from tests.conftest import LLM_INSTALL_TIMEOUT

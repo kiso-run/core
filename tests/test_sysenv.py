@@ -521,7 +521,7 @@ class TestBuildSystemEnvSection:
         """Output contains the Reference docs line."""
         section = build_system_env_section(sample_env)
         assert "Reference docs:" in section
-        assert "tool/connector authoring guides" in section
+        assert "wrapper/connector authoring guides" in section
 
     def test_contains_persistent_dir_line(self, sample_env):
         """Output contains the Persistent dir line with KISO_DIR path."""

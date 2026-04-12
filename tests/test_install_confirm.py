@@ -54,7 +54,7 @@ class TestPlannerPromptInstallRules:
         assert "needs_install" in core
 
     def test_m733_wrapper_recovery_still_blocks_apt_for_deps(self):
-        """wrapper_recovery module still blocks apt-get for broken tool deps."""
+        """wrapper_recovery module still blocks apt-get for broken wrapper deps."""
         wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
         assert "Never apt-get/pip install to fix" in wrapper_recovery
 
@@ -295,12 +295,12 @@ from tests.conftest import make_config
 
 @pytest.mark.asyncio
 class TestRetryLoopUninstalledToolFlag:
-    """_retry_llm_with_validation propagates _saw_uninstalled_tool."""
+    """_retry_llm_with_validation propagates _saw_uninstalled_wrapper."""
 
     async def test_flag_set_when_validation_sees_uninstalled_tool(self):
         """If validation produces 'is not installed' error then valid plan,
-        result has _saw_uninstalled_tool=True."""
-        # First call: LLM returns plan with tool task → validation rejects
+        result has _saw_uninstalled_wrapper=True."""
+        # First call: LLM returns plan with wrapper task → validation rejects
         bad_plan = json.dumps({
             "goal": "Navigate", "secrets": None, "extend_replan": None,
             "tasks": [{"type": "wrapper", "wrapper": "browser",
@@ -329,10 +329,10 @@ class TestRetryLoopUninstalledToolFlag:
                 config, "planner", [{"role": "user", "content": "test"}],
                 {"type": "json_object"}, validate, Exception, "Plan",
             )
-        assert result["_saw_uninstalled_tool"] is True
+        assert result["_saw_uninstalled_wrapper"] is True
 
     async def test_flag_false_when_no_uninstalled_tool_errors(self):
-        """Normal validation (no tool errors) → _saw_uninstalled_tool=False."""
+        """Normal validation (no tool errors) → _saw_uninstalled_wrapper=False."""
         good_plan = json.dumps({
             "goal": "Say hello", "secrets": None, "extend_replan": None,
             "tasks": [{"type": "msg", "wrapper": None,
@@ -347,7 +347,7 @@ class TestRetryLoopUninstalledToolFlag:
                 config, "planner", [{"role": "user", "content": "test"}],
                 {"type": "json_object"}, lambda p: [], Exception, "Plan",
             )
-        assert result["_saw_uninstalled_tool"] is False
+        assert result["_saw_uninstalled_wrapper"] is False
 
     async def test_flag_set_even_with_multiple_error_types(self):
         """If uninstalled-tool error mixed with other errors, flag still set."""
@@ -381,7 +381,7 @@ class TestRetryLoopUninstalledToolFlag:
                 config, "planner", [{"role": "user", "content": "test"}],
                 {"type": "json_object"}, validate, Exception, "Plan",
             )
-        assert result["_saw_uninstalled_tool"] is True
+        assert result["_saw_uninstalled_wrapper"] is True
 
 
 # --- M670: msg-only plan on fresh instance → install_proposal ---
@@ -443,7 +443,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         await conn.close()
 
     async def test_msg_only_no_tools_rejected(self, db):
-        """msg-only plan + no installed tools + needs_install=null → rejected."""
+        """msg-only plan + no installed wrappers + needs_install=null → rejected."""
         config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,
@@ -578,12 +578,12 @@ class TestReplanInstallProposalPersistence:
         await db.close()
 
 
-# --- M901: filter needs_install against installed tools ---
+# --- M901: filter needs_install against installed wrappers ---
 
 
 @pytest.mark.asyncio
 class TestM901NeedsInstallFilter:
-    """needs_install is filtered to remove already-installed tools."""
+    """needs_install is filtered to remove already-installed wrappers."""
 
     @pytest.fixture()
     async def db(self, tmp_path):

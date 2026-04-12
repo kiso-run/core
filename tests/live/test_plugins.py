@@ -105,7 +105,7 @@ class TestToolPlugins:
     def test_tool_plugins(self, tmp_path: Path):
         """What: Clones each official tool plugin from the registry, installs deps, runs its test suite.
 
-        Why: Validates that all official tool plugins build and pass their own tests.
+        Why: Validates that all official wrapper plugins build and pass their own tests.
         Expects: All plugin tests pass (non-zero exit causes failure).
         """
         tools = self.registry.get("tools", [])

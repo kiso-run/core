@@ -366,7 +366,7 @@ class TestValidatePlan:
         assert any("not available" in e for e in errors)
 
     def test_m903_uninstalled_registry_tool_proposes_install(self):
-        """uninstalled tool in registry → 'propose install' not 'use exec'."""
+        """uninstalled wrapper in registry → 'propose install' not 'use exec'."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse", "expect": "ok", "wrapper": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -379,7 +379,7 @@ class TestValidatePlan:
         assert "built-in task type" in err
 
     def test_m903_uninstalled_unknown_tool_informs_user(self):
-        """uninstalled tool NOT in registry → inform user."""
+        """uninstalled wrapper NOT in registry → inform user."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "magic", "expect": "ok", "wrapper": "magic_tool", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -5731,7 +5731,7 @@ class TestM186EscalatingValidationError:
             ]})
 
         def always_fail(plan):
-            return ["tool args invalid: missing required arg: action"]
+            return ["wrapper args invalid: missing required arg: action"]
 
         with patch("kiso.brain.call_llm", side_effect=mock_call_llm):
             with pytest.raises(PlanError):
@@ -5787,7 +5787,7 @@ class TestValidationRetryClassification:
 
     def test_failure_classifies_semantic_tool_validation(self):
         assert classify_failure_class(
-            ["Tool args validation failed: files must contain file paths only"]
+            ["Wrapper args validation failed: files must contain file paths only"]
         ) == FAILURE_CLASS_SEMANTIC_WRAPPER
 
     def test_failure_classifies_workspace_routing(self):
@@ -6602,7 +6602,7 @@ class TestRunBriefer:
 
     @pytest.mark.asyncio
     async def test_m368_filters_hallucinated_skills(self, config):
-        """run_briefer filters tool names not matching installed tools."""
+        """run_briefer filters tool names not matching installed wrappers."""
         response = json.dumps({
             "modules": [],
             "tools": ["browser", "cpu-info"],
@@ -6614,13 +6614,13 @@ class TestRunBriefer:
         ctx = {"tools": "Available wrappers:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit example.com", ctx)
-        # "browser" matches installed tools, "cpu-info" does not
+        # "browser" matches installed wrappers, "cpu-info" does not
         assert "browser" in result["tools"]
         assert "cpu-info" not in result["tools"]
 
     @pytest.mark.asyncio
     async def test_m368_preserves_valid_skills(self, config):
-        """run_briefer preserves tool names that match installed tools."""
+        """run_briefer preserves tool names that match installed wrappers."""
         response = json.dumps({
             "modules": [],
             "tools": ["search"],
@@ -6888,7 +6888,7 @@ class TestBrieferPlannerIntegration:
         assert "extend_replan" not in system
         # Briefer's synthesized context used
         assert "## Context\nUser wants to browse a website." in user_content
-        # build_planner_wrapper_list rebuilds full descriptions from installed tools
+        # build_planner_wrapper_list rebuilds full descriptions from installed wrappers
         assert "browser" in user_content
         assert "Navigate, click, fill, screenshot, text" in user_content
         # System Environment always included — planner needs registry_hints
@@ -7539,7 +7539,7 @@ class TestM266BrowserAvailability:
 
         user_content = msgs[1]["content"]
         assert "## Browser Availability" in user_content
-        assert "browser tool is NOT installed" in user_content
+        assert "browser wrapper is NOT installed" in user_content
 
     async def test_web_module_with_browser_installed_no_warning(self, db):
         """Briefer selects web module, browser IS installed → no warning."""
@@ -7668,7 +7668,7 @@ class TestM954BuiltinSearchNote:
 
         user_content = msgs[1]["content"]
         assert "built-in `search` task type" in user_content
-        assert "without any tool installation" in user_content
+        assert "without any wrapper installation" in user_content
 
     async def test_websearch_installed_no_note(self, db):
         """When websearch IS installed, registry_text won't contain it → no note."""
@@ -7691,7 +7691,7 @@ class TestM954BuiltinSearchNote:
             return "{}"
 
         config = self._config(briefer_enabled=True)
-        # get_registry_wrappers filters out installed tools → empty
+        # get_registry_wrappers filters out installed wrappers → empty
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
              patch("kiso.brain.discover_wrappers", return_value=[fake_skill]), \
              patch("kiso.brain.get_registry_wrappers", return_value=""):
@@ -7714,9 +7714,9 @@ class TestM954BuiltinSearchNote:
             )
 
         user_content = msgs[1]["content"]
-        # note uses "without any tool installation"; Browser Availability
+        # note uses "without any wrapper installation"; Browser Availability
         # section uses "it requires no tool" — check the M954-specific phrase.
-        assert "without any tool installation" not in user_content
+        assert "without any wrapper installation" not in user_content
 
     async def test_fallback_path_also_shows_note(self, db):
         """Fallback path (no briefer) also shows note when websearch not installed."""
@@ -7801,7 +7801,7 @@ class TestM261PromptSizeReduction:
         assert "Install Routing" in core_only
 
     def test_m743_wrapper_recovery_module_still_blocks_apt(self):
-        """wrapper_recovery module still blocks apt-get for broken tool deps."""
+        """wrapper_recovery module still blocks apt-get for broken wrapper deps."""
         wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
         assert "Never apt-get/pip install to fix" in wrapper_recovery
 
@@ -9365,7 +9365,7 @@ class TestValidatePlanOrdering:
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False, has_needs_install=True)
-        assert any("installs a tool" in e for e in errors)
+        assert any("installs a wrapper" in e for e in errors)
 
     def test_install_without_needs_install_allowed(self):
         """install exec without needs_install → user-initiated, allowed."""
@@ -9375,7 +9375,7 @@ class TestValidatePlanOrdering:
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=False, install_approved=False, has_needs_install=False)
-        assert not any("installs a tool" in e for e in errors)
+        assert not any("installs a wrapper" in e for e in errors)
 
     def test_install_in_replan_allowed(self):
         from kiso.brain import _validate_plan_ordering
@@ -9384,7 +9384,7 @@ class TestValidatePlanOrdering:
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=False)
-        assert not any("installs a tool" in e for e in errors)
+        assert not any("installs a wrapper" in e for e in errors)
 
     def test_last_task_must_be_msg_or_replan(self):
         from kiso.brain import _validate_plan_ordering
@@ -9680,7 +9680,7 @@ class TestM1303KbAnswerFlag:
         )
 
     def test_kb_answer_rejects_mixed_plan_with_tool(self):
-        """kb_answer=True + tool task → coherence rejection."""
+        """kb_answer=True + wrapper task → coherence rejection."""
         plan = {
             "goal": "Answer from KB and use a tool",
             "secrets": [],
@@ -9932,14 +9932,14 @@ class TestInstalledToolExecRouting:
             self._plan("Use aider to write hello.py"),
             installed_skills=["aider"],
         )
-        assert any("routes installed tool 'aider'" in e for e in errors)
+        assert any("routes installed wrapper 'aider'" in e for e in errors)
 
     def test_run_installed_browser_via_exec_rejected(self):
         errors = validate_plan(
             self._plan("Run browser on https://example.com and take a screenshot"),
             installed_skills=["browser"],
         )
-        assert any("routes installed tool 'browser'" in e for e in errors)
+        assert any("routes installed wrapper 'browser'" in e for e in errors)
 
     def test_valid_wrapper_task_still_accepted(self):
         plan = {"goal": "test", "tasks": [
@@ -9954,14 +9954,14 @@ class TestInstalledToolExecRouting:
             self._plan("Run kiso wrapper install aider"),
             installed_skills=["aider"],
         )
-        assert not any("routes installed tool" in e for e in errors)
+        assert not any("routes installed wrapper" in e for e in errors)
 
     def test_unrelated_exec_wording_not_blocked(self):
         errors = validate_plan(
             self._plan("Run browser tests with playwright"),
             installed_skills=["browser"],
         )
-        assert not any("routes installed tool" in e for e in errors)
+        assert not any("routes installed wrapper" in e for e in errors)
 
 
 class TestActionTaskUserDeliveryRouting:
@@ -10186,7 +10186,7 @@ class TestM950ForceMsgOnly:
         assert any(_WRAPPER_UNAVAILABLE_MARKER in e for e in errors)
 
     def test_marker_not_in_registry_available_error(self):
-        """Tool in registry but not installed does NOT contain unavailable marker."""
+        """Wrapper in registry but not installed does NOT contain unavailable marker."""
         from kiso.brain import _WRAPPER_UNAVAILABLE_MARKER
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok",
@@ -10369,7 +10369,7 @@ class TestM1210ExplicitInstallRequest:
 
 
 class TestNeedsInstallCoherence:
-    """needs_install + tool task for same tool → error."""
+    """needs_install + wrapper task for same tool → error."""
 
     def test_tool_in_needs_install_used_as_task_rejected(self):
         plan = {"goal": "test", "needs_install": ["browser"], "tasks": [
@@ -10391,7 +10391,7 @@ class TestNeedsInstallCoherence:
         assert any("needs_install is set" in e for e in errors)
 
     def test_install_approved_gives_specific_guidance(self):
-        """needs_install set with tool task → M984 fires (only msg tasks allowed).
+        """needs_install set with wrapper task → M984 fires (only msg tasks allowed).
         Previously M868 coherence check fired here, but M984 supersedes it."""
         plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
             {"type": "wrapper", "detail": "write script", "wrapper": "aider",

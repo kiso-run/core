@@ -69,7 +69,7 @@ class TestF18SimpleQA:
         # Should be pure msg — no exec or tool tasks
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in types: {types}"
-        assert "tool" not in types, f"Unexpected tool task in types: {types}"
+        assert "tool" not in types, f"Unexpected wrapper task in types: {types}"
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ class TestF19EnglishResponse:
         assert_no_failure_language(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["recursion", "recursive", "function", "base case", "call",
@@ -141,7 +141,7 @@ class TestF20SpanishResponse:
         assert_spanish(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["recursión", "recursiva", "recursivo", "función", "caso base",
@@ -216,7 +216,7 @@ class TestF22NonexistentTool:
         )
 
         # Either success (explained unavailability) or planning failure are
-        # acceptable — the tool genuinely doesn't exist and the planner may
+        # acceptable — the wrapper genuinely doesn't exist and the planner may
         # exhaust retries trying to produce a valid plan.
         assert result.plans, "No plans were created"
 
@@ -225,7 +225,7 @@ class TestF22NonexistentTool:
             t.get("output") or "" for t in result.tasks
             if t.get("type") == "exec"
         ).lower()
-        assert "kiso tool install zzz_test_notreal" not in all_output, (
+        assert "kiso wrapper install zzz_test_notreal" not in all_output, (
             "Planner blindly attempted to install nonexistent tool"
         )
 
@@ -452,7 +452,7 @@ class TestF31RussianResponse:
         assert_russian(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["рекурси", "функци", "базов", "вызов", "факториал",
@@ -491,7 +491,7 @@ class TestF32ChineseResponse:
         assert_chinese(output)
         types = result.task_types()
         assert "exec" not in types, f"Unexpected exec task in pure QA flow: {types}"
-        assert "tool" not in types, f"Unexpected tool task in pure QA flow: {types}"
+        assert "tool" not in types, f"Unexpected wrapper task in pure QA flow: {types}"
 
         lower = output.lower()
         keywords = ["递归", "函数", "基", "调用", "阶乘",

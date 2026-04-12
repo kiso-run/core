@@ -1,4 +1,4 @@
-"""Tool discovery, validation, and execution."""
+"""Wrapper discovery, validation, and execution."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ from kiso.plugins import _scan_plugin_dirs, _validate_plugin_manifest_base, plug
 
 log = logging.getLogger(__name__)
 
-# Supported arg types in kiso.toml [kiso.tool.args]
+# Supported arg types in kiso.toml [kiso.wrapper.args]
 _ARG_TYPES = {"string", "int", "float", "bool"}
 
-# Valid vocabulary for kiso.tool.consumes
+# Valid vocabulary for kiso.wrapper.consumes
 _CONSUMES_VOCAB = frozenset({"image", "document", "audio", "video", "code", "web_page"})
 
 # TTL cache for discover_wrappers() — keyed by resolved tools dir path.
@@ -33,7 +33,7 @@ _validator_cache: dict[Path, ModuleType | None] = {}
 def invalidate_wrappers_cache() -> None:
     """Clear the discover_wrappers() TTL cache.
 
-    Call after installing or removing a tool so the next
+    Call after installing or removing a wrapper so the next
     discover_wrappers() call rescans the directory.
     """
     _wrappers_cache.clear()
@@ -45,7 +45,7 @@ MAX_ARGS_DEPTH = 5
 
 
 class WrapperError(Exception):
-    """Tool discovery, validation, or execution error."""
+    """Wrapper discovery, validation, or execution error."""
 
 
 def _validate_manifest(manifest: dict, wrapper_dir: Path) -> list[str]:
@@ -101,8 +101,8 @@ def _env_var_name(wrapper_name: str, key: str) -> str:
     return plugin_env_var_name("WRAPPER", wrapper_name, key)
 
 
-def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
-    """Scan ~/.kiso/tools/ and return list of valid tool info dicts.
+def discover_wrappers(wrappers_dir: Path | None = None) -> list[dict]:
+    """Scan ~/.kiso/wrappers/ and return list of valid wrapper info dicts.
 
     Each dict has: name, summary, args_schema, env, session_secrets, path,
     version, description.
@@ -111,10 +111,10 @@ def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
 
     Results are cached per directory for _WRAPPERS_TTL seconds to avoid
     repeated filesystem scans on every planner call. Call
-    invalidate_wrappers_cache() after installing or removing a tool.
+    invalidate_wrappers_cache() after installing or removing a wrapper.
 
     """
-    resolved_dir = tools_dir or (KISO_DIR / "wrappers")
+    resolved_dir = wrappers_dir or (KISO_DIR / "wrappers")
 
     now = time.monotonic()
     cached = _wrappers_cache.get(resolved_dir)
@@ -125,7 +125,7 @@ def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
 
     if not resolved_dir.is_dir():
         log.warning(
-            "Tools directory not found: %s (exists=%s)",
+            "Wrappers directory not found: %s (exists=%s)",
             resolved_dir, resolved_dir.exists(),
         )
         return []
@@ -136,17 +136,17 @@ def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
         kiso = manifest["kiso"]
         name = kiso["name"]
         if name in seen_names:
-            log.warning("Duplicate tool name '%s' in %s (skipped)", name, entry)
+            log.warning("Duplicate wrapper name '%s' in %s (skipped)", name, entry)
             continue
         seen_names.add(name)
 
-        tool_section = kiso.get("wrapper", {})
-        args_schema = tool_section.get("args", {})
-        env_decl = tool_section.get("env", {})
-        session_secrets = tool_section.get("session_secrets", [])
+        wrapper_section = kiso.get("wrapper", {})
+        args_schema = wrapper_section.get("args", {})
+        env_decl = wrapper_section.get("env", {})
+        session_secrets = wrapper_section.get("session_secrets", [])
 
         # usage_guide: local override file takes priority over toml default
-        usage_guide_default = tool_section.get("usage_guide", "")
+        usage_guide_default = wrapper_section.get("usage_guide", "")
         override_path = entry / "usage_guide.local.md"
         if override_path.is_file():
             usage_guide = override_path.read_text().strip()
@@ -154,18 +154,18 @@ def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
             usage_guide = usage_guide_default
 
         # Parse and validate consumes field
-        raw_consumes = tool_section.get("consumes", [])
+        raw_consumes = wrapper_section.get("consumes", [])
         consumes: list[str] = []
         if isinstance(raw_consumes, list):
             for val in raw_consumes:
                 if isinstance(val, str) and val in _CONSUMES_VOCAB:
                     consumes.append(val)
                 elif isinstance(val, str):
-                    log.warning("Tool '%s': unknown consumes value '%s' (skipped)", name, val)
+                    log.warning("Wrapper '%s': unknown consumes value '%s' (skipped)", name, val)
 
         info = {
             "name": kiso["name"],
-            "summary": tool_section["summary"],
+            "summary": wrapper_section["summary"],
             "args_schema": args_schema,
             "env": env_decl,
             "session_secrets": session_secrets or [],
@@ -192,25 +192,25 @@ def discover_wrappers(tools_dir: Path | None = None) -> list[dict]:
     return tools
 
 
-def _wrapper_venv_bin(tool: dict) -> str:
-    """Return the tool's ``.venv/bin`` path, or ``""`` if no path is set."""
-    tool_path = tool.get("path", "")
-    return str(Path(tool_path) / ".venv" / "bin") if tool_path else ""
+def _wrapper_venv_bin(wrapper: dict) -> str:
+    """Return the wrapper's ``.venv/bin`` path, or ``""`` if no path is set."""
+    wrapper_path = wrapper.get("path", "")
+    return str(Path(wrapper_path) / ".venv" / "bin") if wrapper_path else ""
 
 
-def check_deps(tool: dict) -> list[str]:
+def check_deps(wrapper: dict) -> list[str]:
     """Check [kiso.deps].bin entries with `which`. Returns list of missing binaries.
 
-    Also searches the tool's own ``.venv/bin/`` directory, since pip-installed
+    Also searches the wrapper's own ``.venv/bin/`` directory, since pip-installed
     CLIs (e.g. ``playwright``) live there and the system PATH won't include it.
     """
-    deps = tool.get("deps", {})
+    deps = wrapper.get("deps", {})
     bins = deps.get("bin", [])
     if not isinstance(bins, list):
         return []
 
-    # Build an extended PATH that includes the tool's venv bin
-    venv_bin = _wrapper_venv_bin(tool)
+    # Build an extended PATH that includes the wrapper's venv bin
+    venv_bin = _wrapper_venv_bin(wrapper)
     search_path = (
         f"{venv_bin}:{os.environ.get('PATH', '')}" if venv_bin else None
     )
@@ -228,11 +228,11 @@ def build_planner_wrapper_list(
     user_wrappers: str | list[str] | None = None,
     selected_names: set[str] | None = None,
 ) -> str:
-    """Build the tool list text for the planner context.
+    """Build the wrapper list text for the planner context.
 
     Filters tools based on user role and tools field:
-    - admin: sees all tools
-    - user with tools="*": sees all tools
+    - admin: sees all wrappers
+    - user with tools="*": sees all wrappers
     - user with tools=["a","b"]: sees only listed tools
 
     When *selected_names* is provided, only those tools get the full
@@ -256,7 +256,7 @@ def build_planner_wrapper_list(
             missing = ", ".join(t.get("missing_deps", []))
             lines.append(
                 f"- {t['name']} — {t['summary']}  [BROKEN — missing: {missing}. "
-                f"Reinstall with: kiso tool remove {t['name']} && kiso tool install {t['name']}]"
+                f"Reinstall with: kiso wrapper remove {t['name']} && kiso wrapper install {t['name']}]"
             )
         else:
             lines.append(f"- {t['name']} — {t['summary']}")
@@ -366,7 +366,7 @@ def auto_correct_wrapper_args(args: dict, args_schema: dict) -> dict:
 
 
 def validate_wrapper_args(args: dict, args_schema: dict) -> list[str]:
-    """Validate parsed tool args against the schema. Returns list of errors."""
+    """Validate parsed wrapper args against the schema. Returns list of errors."""
     errors: list[str] = []
 
     # Size check (on original JSON)
@@ -401,18 +401,18 @@ def validate_wrapper_args(args: dict, args_schema: dict) -> list[str]:
 
 
 def _validator_module_name(validator_path: Path) -> str:
-    """Return a stable synthetic module name for a tool validator."""
+    """Return a stable synthetic module name for a wrapper validator."""
     sanitized = "_".join(validator_path.parts[-3:]).replace("-", "_").replace(".", "_")
     return f"kiso_tool_validator_{sanitized}"
 
 
-def _load_wrapper_validator(tool: dict) -> ModuleType | None:
-    """Load an optional lightweight validator.py from a tool directory."""
-    tool_path = tool.get("path")
-    if not tool_path:
+def _load_wrapper_validator(wrapper: dict) -> ModuleType | None:
+    """Load an optional lightweight validator.py from a wrapper directory."""
+    wrapper_path = wrapper.get("path")
+    if not wrapper_path:
         return None
 
-    validator_path = Path(tool_path) / "validator.py"
+    validator_path = Path(wrapper_path) / "validator.py"
     if validator_path in _validator_cache:
         return _validator_cache[validator_path]
 
@@ -429,7 +429,7 @@ def _load_wrapper_validator(tool: dict) -> ModuleType | None:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to load tool validator %s: %s", validator_path, exc)
+        log.warning("Failed to load wrapper validator %s: %s", validator_path, exc)
         _validator_cache[validator_path] = None
         return None
 
@@ -445,12 +445,12 @@ def _load_wrapper_validator(tool: dict) -> ModuleType | None:
 
 
 def validate_wrapper_args_semantic(
-    tool: dict,
+    wrapper: dict,
     args: dict,
     context: dict | None = None,
 ) -> list[str]:
-    """Run optional plugin-side semantic validation for tool args."""
-    module = _load_wrapper_validator(tool)
+    """Run optional plugin-side semantic validation for wrapper args."""
+    module = _load_wrapper_validator(wrapper)
     if module is None:
         return []
 
@@ -461,27 +461,27 @@ def validate_wrapper_args_semantic(
     try:
         result = validate_fn(dict(args), dict(context or {}))
     except Exception as exc:  # noqa: BLE001
-        log.warning("Tool validator validate_args failed for %s: %s", tool.get("name"), exc)
+        log.warning("Wrapper validator validate_args failed for %s: %s", wrapper.get("name"), exc)
         return []
 
     if result is None:
         return []
     if not isinstance(result, list) or not all(isinstance(item, str) for item in result):
         log.warning(
-            "Tool validator validate_args returned invalid result for %s: %r",
-            tool.get("name"), result,
+            "Wrapper validator validate_args returned invalid result for %s: %r",
+            wrapper.get("name"), result,
         )
         return []
     return result
 
 
 def repair_wrapper_args(
-    tool: dict,
+    wrapper: dict,
     args: dict,
     context: dict | None = None,
 ) -> dict:
-    """Run optional plugin-side conservative arg repair for a tool."""
-    module = _load_wrapper_validator(tool)
+    """Run optional plugin-side conservative arg repair for a wrapper."""
+    module = _load_wrapper_validator(wrapper)
     if module is None:
         return dict(args)
 
@@ -492,29 +492,29 @@ def repair_wrapper_args(
     try:
         result = repair_fn(dict(args), dict(context or {}))
     except Exception as exc:  # noqa: BLE001
-        log.warning("Tool validator repair_args failed for %s: %s", tool.get("name"), exc)
+        log.warning("Wrapper validator repair_args failed for %s: %s", wrapper.get("name"), exc)
         return dict(args)
 
     if not isinstance(result, dict):
         log.warning(
-            "Tool validator repair_args returned invalid result for %s: %r",
-            tool.get("name"), result,
+            "Wrapper validator repair_args returned invalid result for %s: %r",
+            wrapper.get("name"), result,
         )
         return dict(args)
     return result
 
 
 def build_wrapper_input(
-    tool: dict,
+    wrapper: dict,
     args: dict,
     session: str,
     workspace: str,
     session_secrets: dict[str, str] | None = None,
     plan_outputs: list[dict] | None = None,
 ) -> dict:
-    """Build the input JSON dict for a tool subprocess."""
+    """Build the input JSON dict for a wrapper subprocess."""
     # Scope session_secrets to only declared ones
-    declared = set(tool.get("session_secrets", []))
+    declared = set(wrapper.get("session_secrets", []))
     scoped_secrets: dict[str, str] = {}
     if session_secrets:
         scoped_secrets = {k: v for k, v in session_secrets.items() if k in declared}
@@ -528,13 +528,13 @@ def build_wrapper_input(
     }
 
 
-def build_wrapper_env(tool: dict) -> dict[str, str]:
-    """Build the environment dict for a tool subprocess.
+def build_wrapper_env(wrapper: dict) -> dict[str, str]:
+    """Build the environment dict for a wrapper subprocess.
 
-    Includes PATH, the base LLM API key (when set), and any tool-specific
+    Includes PATH, the base LLM API key (when set), and any wrapper-specific
     deploy secret env vars (KISO_WRAPPER_{NAME}_{KEY}).
     """
-    venv_bin = _wrapper_venv_bin(tool)
+    venv_bin = _wrapper_venv_bin(wrapper)
     sys_path = os.environ.get("PATH", "/usr/bin:/bin")
     env: dict[str, str] = {
         "PATH": f"{venv_bin}:{sys_path}" if venv_bin else sys_path,
@@ -545,14 +545,14 @@ def build_wrapper_env(tool: dict) -> dict[str, str]:
     if llm_key:
         env[LLM_API_KEY_ENV] = llm_key
 
-    env_decl = tool.get("env", {})
-    wrapper_name = tool["name"]
+    env_decl = wrapper.get("env", {})
+    wrapper_name = wrapper["name"]
     for key, decl in env_decl.items():
         var_name = _env_var_name(wrapper_name, key)
         value = os.environ.get(var_name)
         if value is not None:
             env[var_name] = value
         elif isinstance(decl, dict) and decl.get("required"):
-            log.warning("Env var %s not set (required by tool %s)", var_name, wrapper_name)
+            log.warning("Env var %s not set (required by wrapper %s)", var_name, wrapper_name)
 
     return env

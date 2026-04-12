@@ -313,7 +313,7 @@ class TestF41AiderEditFile:
 
         Why: All existing aider tests create files from scratch. This tests
         aider's primary use case: editing existing code.
-        Expects: aider tool task present, exec output contains '7' (3+4).
+        Expects: aider wrapper task present, exec output contains '7' (3+4).
         """
         # create file in session workspace so both aider (git) and
         # exec (cwd) can access it with relative or absolute paths.
@@ -362,7 +362,7 @@ class TestF42AiderAddFeature:
 
         Why: Tests aider's ability to understand existing code structure and
         extend it — the most common real-world aider use case.
-        Expects: aider tool task present, exec output contains '30' (5*6).
+        Expects: aider wrapper task present, exec output contains '30' (5*6).
         """
         # create file in session workspace so both aider (git) and
         # exec (cwd) can access it with relative or absolute paths.

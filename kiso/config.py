@@ -230,7 +230,7 @@ fast_path_enabled         = true     # skip planner for conversational messages
 
 # --- briefer (context intelligence layer) ---
 briefer_enabled           = true     # LLM-based context selection for each pipeline stage
-briefer_wrapper_filter_threshold = 10   # only invoke the briefer's tool-filtering pass when this many tools are available
+briefer_wrapper_filter_threshold = 10   # only invoke the briefer's wrapper-filtering pass when this many tools are available
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check

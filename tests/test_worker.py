@@ -1989,7 +1989,7 @@ class TestExecutePlan:
         assert result.stop is True
         assert result.stop_success is False
         assert result.stop_replan is not None
-        assert "Invalid tool args JSON" in result.stop_replan
+        assert "Invalid wrapper args JSON" in result.stop_replan
         assert result.plan_output is not None
 
     async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
@@ -3423,7 +3423,7 @@ class TestExecutePlanTool:
 
         assert success is False
         tasks = await get_tasks_for_plan(db, plan_id)
-        assert "Invalid tool args JSON" in tasks[0]["output"]
+        assert "Invalid wrapper args JSON" in tasks[0]["output"]
 
     async def test_skill_args_validation_error(self, db, tmp_path):
         config = make_config()
@@ -8560,7 +8560,7 @@ class TestTaskHandlers:
 
     async def test_handle_exec_wrapper_list_not_blocked(self, db, plan_id, tmp_path):
         """kiso wrapper list is not blocked (not an install command)."""
-        task_row = await _make_task_row(db, plan_id, "exec", "List installed tools")
+        task_row = await _make_task_row(db, plan_id, "exec", "List installed wrappers")
         ctx = _make_ctx(db)
         assert ctx.install_approved is False
         with patch(
@@ -9547,9 +9547,9 @@ class TestDetectCircularReplanUnit:
         from kiso.worker.loop import _detect_circular_replan
         history = [
             {"failure": "Package 'zzz_test_notreal' not found on PyPI.",
-             "goal": "Install and use the tool 'zzz_test_notreal' for system analysis"},
+             "goal": "Install and use the wrapper 'zzz_test_notreal' for system analysis"},
             {"failure": "The package could not be found in the registry",
-             "goal": "Install and use the tool 'zzz_test_notreal'"},
+             "goal": "Install and use the wrapper 'zzz_test_notreal'"},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is True
 
@@ -13434,7 +13434,7 @@ class TestWorkspaceFileRouting:
         ctx = _make_ctx(conn, installed_wrappers=[tool_info])
 
         with (
-            patch("kiso.worker.loop._wrapper_task", side_effect=AssertionError("tool task should not run")),
+            patch("kiso.worker.loop._wrapper_task", side_effect=AssertionError("wrapper task should not run")),
             _patch_kiso_dir(tmp_path),
         ):
             result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)

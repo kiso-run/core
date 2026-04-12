@@ -350,7 +350,7 @@ async def run_messenger(
     )
 
 
-# strip hallucinated XML/tool markup from messenger output
+# strip hallucinated XML/wrapper markup from messenger output
 _TOOL_CALL_BLOCK_RE = re.compile(
     r"<(tool_call|function_call)[^>]*>.*?</\1>", re.DOTALL,
 )

@@ -13,7 +13,7 @@ the test can assert exactly what the subprocess actually received.
 
 The goal is to prove that:
 
-- declared secrets reach the tool subprocess via stdin
+- declared secrets reach the wrapper subprocess via stdin
 - undeclared secrets do NOT reach the tool, neither via stdin nor as
   env vars (containment)
 - the value of an undeclared secret never appears anywhere in the
@@ -28,7 +28,7 @@ import pytest
 
 from kiso.worker.wrapper import _wrapper_task
 
-from tests.integration.conftest import fake_tool  # noqa: F401  (fixture)
+from tests.integration.conftest import fake_wrapper  # noqa: F401  (fixture)
 
 
 pytestmark = pytest.mark.integration
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.integration
 class TestSessionSecretContainmentEndToEnd:
 
     async def test_only_declared_secret_reaches_subprocess(
-        self, fake_tool, tmp_path,
+        self, fake_wrapper, tmp_path,
     ):
         """The declared key DECLARED_KEY is passed; UNDECLARED_KEY is
         scoped out and never visible to the subprocess."""
@@ -51,7 +51,7 @@ class TestSessionSecretContainmentEndToEnd:
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             stdout, stderr, success, rc = await _wrapper_task(
                 session="secret-containment-1",
-                tool=fake_tool,
+                wrapper=fake_wrapper,
                 args={},
                 plan_outputs=[],
                 session_secrets=secrets,
@@ -65,7 +65,7 @@ class TestSessionSecretContainmentEndToEnd:
         assert "UNDECLARED_KEY" not in report["session_secrets_keys"]
 
     async def test_undeclared_secret_value_not_in_env(
-        self, fake_tool, tmp_path,
+        self, fake_wrapper, tmp_path,
     ):
         """The value of an undeclared secret must not appear in the
         tool subprocess env, even by accident."""
@@ -79,7 +79,7 @@ class TestSessionSecretContainmentEndToEnd:
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             stdout, _stderr, success, _rc = await _wrapper_task(
                 session="secret-containment-2",
-                tool=fake_tool,
+                wrapper=fake_wrapper,
                 args={},
                 plan_outputs=[],
                 session_secrets=secrets,
@@ -96,16 +96,16 @@ class TestSessionSecretContainmentEndToEnd:
         )
 
     async def test_none_session_secrets_yields_empty_scope(
-        self, fake_tool, tmp_path,
+        self, fake_wrapper, tmp_path,
     ):
         """Calling _wrapper_task with session_secrets=None yields an empty
-        session_secrets dict in the tool stdin payload."""
+        session_secrets dict in the wrapper stdin payload."""
         from unittest.mock import patch
 
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             stdout, _stderr, success, _rc = await _wrapper_task(
                 session="secret-containment-3",
-                tool=fake_tool,
+                wrapper=fake_wrapper,
                 args={},
                 plan_outputs=[],
                 session_secrets=None,

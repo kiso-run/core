@@ -94,3 +94,62 @@ class TestWrapperRenameRuntimeInvariants:
         from kiso.brain.common import _INSTALL_CMD_RE
         assert _INSTALL_CMD_RE.search("kiso wrapper install browser")
         assert _INSTALL_CMD_RE.search("kiso connector install discord")
+
+
+class TestM1320NoStrayToolSkillReferences:
+    """M1320: source/tests/docs must not contain stray tool/skill refs.
+
+    Allowed exceptions:
+    - [tool.uv], [tool.pytest], [tool.hatch] TOML sections (Python ecosystem)
+    - User-facing regex patterns matching natural language in common.py
+    - Inline comments documenting an exception
+    """
+
+    EXCEPTIONS_PER_FILE_THRESHOLD = 30  # absolute fence; should be << this
+
+    def _scan(self, paths: list[Path]) -> list[tuple[Path, int, str]]:
+        import re
+        hits: list[tuple[Path, int, str]] = []
+        word = re.compile(r"\b(tool|skill|Tool|Skill|TOOL|SKILL)\b")
+        for base in paths:
+            if not base.exists():
+                continue
+            for f in base.rglob("*"):
+                if not f.is_file():
+                    continue
+                if f.suffix not in {".py", ".md", ".json", ".sh"}:
+                    continue
+                if "__pycache__" in f.parts:
+                    continue
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+                for lineno, line in enumerate(text.splitlines(), 1):
+                    if not word.search(line):
+                        continue
+                    # Skip TOML [tool.xxx] sections
+                    if re.search(r"\[tool\.(uv|pytest|hatch|setuptools|poetry)", line):
+                        continue
+                    # Skip lines that are part of a regex alternative (kiso/brain/common.py)
+                    if "\\b" in line and ("|tool" in line or "tool|" in line):
+                        continue
+                    # Skip lines explicitly documenting the exception
+                    if "M1320-allow" in line:
+                        continue
+                    hits.append((f.relative_to(ROOT), lineno, line.strip()[:120]))
+        return hits
+
+    def test_kiso_source_clean(self):
+        hits = self._scan([SRC])
+        assert len(hits) <= self.EXCEPTIONS_PER_FILE_THRESHOLD, (
+            f"kiso/ has {len(hits)} stray tool/skill refs:\n" +
+            "\n".join(f"  {p}:{n}: {t}" for p, n, t in hits[:15])
+        )
+
+    def test_cli_source_clean(self):
+        hits = self._scan([CLI])
+        assert len(hits) <= self.EXCEPTIONS_PER_FILE_THRESHOLD, (
+            f"cli/ has {len(hits)} stray tool/skill refs:\n" +
+            "\n".join(f"  {p}:{n}: {t}" for p, n, t in hits[:15])
+        )

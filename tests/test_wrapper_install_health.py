@@ -128,7 +128,7 @@ class TestToolInstallHealthSmoke:
         result = build_planner_wrapper_list(tools)
         assert "[BROKEN" in result
         assert "fake_binary" in result
-        assert "kiso tool remove" in result
+        assert "kiso wrapper remove" in result
 
     def test_validation_error_includes_args_example(self):
         """validation error for null args includes example format."""

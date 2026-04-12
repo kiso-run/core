@@ -70,7 +70,7 @@ class TestUntrustedMessageNeverReachesPlannerLiterally:
 
 
 class TestMaliciousToolOutputSanitizedBeforeReuse:
-    """Tool stdout containing secret-like patterns must be redacted
+    """Wrapper stdout containing secret-like patterns must be redacted
     by sanitize_output before being passed to reviewer/replan."""
 
     def test_secret_value_redacted_in_sanitized_output(self):

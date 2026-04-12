@@ -24,7 +24,7 @@ class PresetManifest:
 
 _VALID_FACT_KEYS = {"content", "category", "tags"}
 _VALID_FACT_CATEGORIES = frozenset(
-    {"general", "project", "tool", "user", "system", "behavior"}
+    {"general", "project", "wrapper", "user", "system", "behavior"}
 )
 
 

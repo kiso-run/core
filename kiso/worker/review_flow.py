@@ -30,7 +30,7 @@ async def _review_task_impl(
     run_reviewer_fn=run_reviewer,
     audit_mod=audit,
 ) -> dict:
-    """Review an exec/tool task. Returns review dict. Stores learning if present."""
+    """Review an exec/wrapper task. Returns review dict. Stores learning if present."""
     output = task_row.get("output") or ""
     stderr = task_row.get("stderr") or ""
     full_output = prepare_reviewer_output(output, stderr)

@@ -231,7 +231,7 @@ class TestRerunAllDeps:
         assert m2.exists()
 
     async def test_no_tools(self, tmp_path):
-        """No installed tools → empty list, no errors."""
+        """No installed wrappers → empty list, no errors."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         result = await rerun_all_deps(tools_dir)

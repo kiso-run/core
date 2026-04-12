@@ -506,7 +506,7 @@ class TestDriveInstallFlow:
             )
 
         # 1 original + 2 follow-ups (max_turns=3 total user turns), no
-        # final re-issued prompt because the tool never installed
+        # final re-issued prompt because the wrapper never installed
         assert len(calls) == 3
         assert calls[0] == "go"
         assert all(

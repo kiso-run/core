@@ -107,7 +107,7 @@ class TestRunPluginCommand:
 
 
 class TestPluginInstallGitPull:
-    """kiso tool install runs git pull when plugin already exists."""
+    """kiso wrapper install runs git pull when plugin already exists."""
 
     def test_git_pull_called_on_reinstall(self, tmp_path):
         from cli.plugin_ops import _plugin_install

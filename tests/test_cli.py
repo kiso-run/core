@@ -3177,7 +3177,7 @@ def test_spinner_restored_after_inflight_clears_it():
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
     running_task = {
         "id": 10, "plan_id": 1, "type": "exec", "detail": "install browser",
-        "status": "running", "output": "", "command": "kiso tool install browser",
+        "status": "running", "output": "", "command": "kiso wrapper install browser",
     }
     inflight = {
         "role": "worker", "model": "deepseek/deepseek-v3",

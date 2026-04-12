@@ -702,7 +702,7 @@ class TestM819CleanProgressOutput:
         from cli.preset_ops import _auto_install_plugins
 
         def noisy_install(args):
-            print("Tool 'test' installed successfully.")
+            print("Wrapper 'test' installed successfully.")
 
         _auto_install_plugins(["test"], noisy_install)
 

@@ -138,7 +138,7 @@ class TestToolArgsReplanFlow:
         assert plans[1]["status"] == "done"  # replan with corrected args
 
     async def test_tool_setup_error_provides_context_for_replan(self, db, tmp_path):
-        """The replan context includes the tool setup error for the planner to fix."""
+        """The replan context includes the wrapper setup error for the planner to fix."""
         config = make_config()
         tool_info_with_schema = {
             "name": "browser",

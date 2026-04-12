@@ -218,7 +218,7 @@ def _populate_kiso_dir(target: Path) -> None:
 
     Behavior:
 
-    - Creates the standard subdirs (``tools``, ``connectors``,
+    - Creates the standard subdirs (``wrappers``, ``connectors``,
       ``recipes``, ``sessions``, ``roles``, ``reference``,
       ``sys/bin``, ``sys/ssh``).
     - Runs the M1293 ``summarizer-session.md → summarizer.md``
@@ -515,7 +515,7 @@ async def _startup_recovery(db, config) -> None:
     for sess_id, msgs in by_session.items():
         queue = _ensure_worker(sess_id, db, config)
         for msg in msgs:
-            # Re-resolve user role/tools from current config
+            # Re-resolve user role/wrappers from current config
             resolved = resolve_user(config, msg["user"] or "", "")
             user_role = resolved.user.role if resolved.user else "user"
             user_wrappers = resolved.user.wrappers if resolved.user else None
@@ -614,7 +614,7 @@ async def lifespan(app: FastAPI):
 
     await _startup_recovery(db, config)
 
-    # Tool deps repair runs in background — doesn't block server healthcheck
+    # Wrapper deps repair runs in background — doesn't block server healthcheck
     from kiso.wrapper_repair import _is_container_rebuilt, _mark_image_id, rerun_all_deps, repair_unhealthy_wrappers
 
     async def _background_wrapper_repair():
@@ -627,7 +627,7 @@ async def lifespan(app: FastAPI):
                 _mark_image_id()
             repaired = await repair_unhealthy_wrappers()
             if repaired:
-                log.info("Repaired tools on startup: %s", repaired)
+                log.info("Repaired wrappers on startup: %s", repaired)
         except Exception as e:
             log.warning("Background wrapper repair failed: %s", e)
 

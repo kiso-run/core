@@ -144,17 +144,19 @@ _INSTALL_MODE_KISO_WRAPPER = "kiso_wrapper"
 _INSTALL_MODE_UNKNOWN_KISO_WRAPPER = "unknown_kiso_wrapper"
 _INSTALL_MODE_PYTHON_LIB = "python_lib"
 _INSTALL_MODE_SYSTEM_PKG = "system_pkg"
+# M1320-allow: regex alternatives keep matching "tool" — users still say "tool" in natural language
 _INSTALL_TARGET_RE = re.compile(
     r"\b(?:install|installa|installare|installer)\b"
     r"(?:\s+(?:the|a|an|il|lo|la|i|gli|le|un|una))?"
-    r"(?:\s+(?:kiso\s+wrapper|wrapper|tool|plugin|package|pkg|pacchetto|libreria|library|module|modulo|python\s+package|python\s+library|python\s+module|system\s+package|pacchetto\s+di\s+sistema))?"
+    r"(?:\s+(?:kiso\s+wrapper|wrapper|tool|plugin|package|pkg|pacchetto|libreria|library|module|modulo|python\s+package|python\s+library|python\s+module|system\s+package|pacchetto\s+di\s+sistema))?"  # noqa: M1320-allow
     r"\s+['\"`]?"
     r"([a-z0-9][a-z0-9._+-]{0,63})"
     r"['\"`]?\b",
     re.IGNORECASE,
 )
+# M1320-allow: regex alternatives keep matching "tool"
 _NAMED_TOOL_TARGET_RE = re.compile(
-    r"\b(?:kiso\s+wrapper|wrapper|tool|plugin|connector)\b\s+['\"`]([a-z0-9][a-z0-9._+-]{0,63})['\"`]",
+    r"\b(?:kiso\s+wrapper|wrapper|tool|plugin|connector)\b\s+['\"`]([a-z0-9][a-z0-9._+-]{0,63})['\"`]",  # noqa: M1320-allow
     re.IGNORECASE,
 )
 _SYSTEM_INSTALL_HINT_RE = re.compile(
@@ -165,8 +167,9 @@ _PYTHON_INSTALL_HINT_RE = re.compile(
     r"\b(?:uv\s+pip|pip|pypi|python\s+package|python\s+library|python\s+module|pacchetto python|libreria python|modulo python)\b",
     re.IGNORECASE,
 )
+# M1320-allow: regex alternatives keep matching "tool"
 _KISO_WRAPPER_SIGNAL_RE = re.compile(
-    r"\b(?:kiso\s+wrapper|kiso\s+plugin|plugin|connector|wrapper|tool|registry)\b",
+    r"\b(?:kiso\s+wrapper|kiso\s+plugin|plugin|connector|wrapper|tool|registry)\b",  # noqa: M1320-allow
     re.IGNORECASE,
 )
 _COMMON_PYTHON_PACKAGES = frozenset({
@@ -220,7 +223,7 @@ def _compress_install_turns(lines: list[str]) -> list[str]:
             is_result = "install" in kiso_result or "replan" in kiso_result
 
             if is_proposal and is_approval and is_result:
-                # Compress: extract tool name heuristically
+                # Compress: extract wrapper name heuristically
                 result.append("[install completed] wrapper installed and available.")
                 i += 3
                 continue
@@ -266,7 +269,8 @@ def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
     if _KISO_WRAPPER_SIGNAL_RE.search(message):
         return True
     escaped = re.escape(target)
-    return bool(re.search(rf"\b(?:wrapper|tool)\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))
+    # M1320-allow: regex matches user natural language ("tool" or "wrapper")
+    return bool(re.search(rf"\b(?:wrapper|tool)\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))  # noqa
 
 
 def _classify_install_mode(
@@ -376,7 +380,7 @@ def build_recent_context(
     Formats messages as::
 
         [user] root: vai su guidance.studio
-        [kiso] Per navigare serve il browser tool. Vuoi che lo installi?
+        [kiso] Per navigare serve il wrapper browser. Vuoi che lo installi?
         [user] root: oh yeah
 
     User messages use ``[user] {username}``. Assistant/system messages use
@@ -543,9 +547,10 @@ def check_safety_rules(detail: str, safety_facts: list[dict]) -> str | None:
     return None
 
 
+# M1320-allow: regex alternatives keep matching "tool" — natural language
 _PLUGIN_DISCOVERY_RE = re.compile(
-    r"(?:tool|wrapper|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"
-    r"|(?:registr|kiso).*(?:tool|wrapper|connector|plugin)",
+    r"(?:tool|wrapper|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"  # noqa: M1320-allow
+    r"|(?:registr|kiso).*(?:tool|wrapper|connector|plugin)",  # noqa: M1320-allow
     re.IGNORECASE,
 )
 
@@ -579,7 +584,7 @@ _TASK_REPAIR_ERROR_PATTERNS = (
     "wrapper args must be a json object",
     "missing required arg:",
     "must have expect = null",
-    "must have tool = null",
+    "must have wrapper = null",
     "must have args = null",
 )
 
@@ -647,7 +652,7 @@ def classify_failure_class(errors_or_reason: list[str] | str | None) -> str:
         return FAILURE_CLASS_WORKSPACE_ROUTING
     if (
         "blocked by safety rule" in text
-        or "tool installation blocked" in text
+        or "wrapper installation blocked" in text
         or "blocked by pre-exec hook" in text
         or "command blocked" in text
     ):
@@ -719,7 +724,7 @@ def _build_validation_feedback(
         guidance = (
             f"Keep the same goal, but rewrite the {error_noun.lower()} structure so it is valid. "
             "Do not patch only one field if the task sequence itself is wrong. "
-            "For normal action requests, keep at least one exec/tool/search task and end with "
+            "For normal action requests, keep at least one exec/wrapper/search task and end with "
             "a final msg or replan. Do not collapse to msg-only unless the validation errors "
             "explicitly require a msg-only fallback."
         )
@@ -797,7 +802,7 @@ async def _retry_llm_with_validation(
     validation_errors = 0
     attempt = 0
     active_model: str | None = None  # None means use default from config
-    saw_uninstalled_tool = False  # track uninstalled-tool validation errors
+    saw_uninstalled_wrapper = False  # track uninstalled-wrapper validation errors
 
     while attempt < max_total:
         attempt += 1
@@ -894,8 +899,8 @@ async def _retry_llm_with_validation(
         errors = validate_fn(result)
         if not errors:
             log.info("%s accepted (attempt %d)", error_noun, attempt)
-            # propagate uninstalled-tool signal on the result dict
-            result["_saw_uninstalled_tool"] = saw_uninstalled_tool
+            # propagate uninstalled-wrapper signal on the result dict
+            result["_saw_uninstalled_wrapper"] = saw_uninstalled_wrapper
             return result
 
         validation_errors += 1
@@ -908,9 +913,9 @@ async def _retry_llm_with_validation(
             exc.last_errors = errors
             raise exc
 
-        # detect uninstalled-tool errors for install-proposal detection
-        if not saw_uninstalled_tool and any(_WRAPPER_NOT_INSTALLED_MARKER in e for e in errors):
-            saw_uninstalled_tool = True
+        # detect uninstalled-wrapper errors for install-proposal detection
+        if not saw_uninstalled_wrapper and any(_WRAPPER_NOT_INSTALLED_MARKER in e for e in errors):
+            saw_uninstalled_wrapper = True
 
         # track consecutive identical errors for escalation
         error_set = frozenset(errors)
@@ -1403,7 +1408,7 @@ async def run_briefer(
 
     # post-validation filtering — remove hallucinated names
     briefing["tools"] = _filter_briefer_names(
-        briefing.get("tools", []), context_pool.get("tools"), "tool")
+        briefing.get("tools", []), context_pool.get("tools"), "wrapper")
     briefing["exclude_recipes"] = _filter_briefer_names(
         briefing.get("exclude_recipes", []), context_pool.get("recipes"), "recipe")
 

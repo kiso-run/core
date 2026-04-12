@@ -411,7 +411,7 @@ class TestSkillExecution:
     ):
         """What: Creates a minimal echo-test tool, asks the planner to use it, then executes and reviews.
 
-        Why: Validates end-to-end wrapper/tool task execution — planner selection, subprocess run, reviewer approval.
+        Why: Validates end-to-end wrapper/wrapper task execution — planner selection, subprocess run, reviewer approval.
         Expects: Plan contains a tool task, execution succeeds, output contains 'hello from wrapper test'.
         """
         # Create a minimal echo wrapper

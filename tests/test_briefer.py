@@ -133,7 +133,7 @@ class TestBrieferScenarios:
         # Web module injected
         assert "Web interaction:" in system
         # Browser wrapper present
-        # build_planner_wrapper_list rebuilds full descriptions from installed tools
+        # build_planner_wrapper_list rebuilds full descriptions from installed wrappers
         assert "browser" in user_content
         assert "Navigate, click, fill, screenshot" in user_content
         # Other modules absent
@@ -219,7 +219,7 @@ class TestBrieferScenarios:
         assert "One-liner execution" in system or "One-liners" in system
         # Replan and tool_recovery NOT included
         assert "extend_replan" not in system
-        assert "Broken tool deps" not in system
+        assert "Broken wrapper deps" not in system
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +505,7 @@ class TestRecipesInBriefer:
 
 
 class TestM824ToolFilterThreshold:
-    """briefer tool filter is skipped when installed tools <= threshold."""
+    """briefer tool filter is skipped when installed wrappers <= threshold."""
 
     async def test_few_tools_injects_all(self, db):
         """5 tools installed with threshold=10 → planner sees all 5."""
@@ -549,7 +549,7 @@ class TestM824ToolFilterThreshold:
         user_content = msgs[1]["content"]
         # All 5 tools should be present, not just briefer's selection
         for name in ["browser", "ocr", "aider", "docreader", "transcriber"]:
-            assert name in user_content, f"Tool '{name}' missing from planner context"
+            assert name in user_content, f"Wrapper '{name}' missing from planner context"
 
     async def test_many_tools_uses_briefer_filter(self, db):
         """15 tools with threshold=10 → only briefer-selected tools appear."""

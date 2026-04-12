@@ -174,7 +174,7 @@ from kiso.worker.wrapper import _wrapper_task
 log = logging.getLogger(__name__)
 
 _MAX_EXTEND_REPLAN = 3  # maximum extra replan attempts the planner can request
-_POST_INSTALL_RESCAN_DELAY: float = 3.0  # seconds to wait before rescan after tool install
+_POST_INSTALL_RESCAN_DELAY: float = 3.0  # seconds to wait before rescan after wrapper install
 # Task substatus labels written to the DB during execution
 _SUBSTATUS_TRANSLATING = "translating"
 _SUBSTATUS_EXECUTING = "executing"
@@ -763,7 +763,7 @@ async def _review_task(
     task_row: dict,
     user_message: str,
 ) -> dict:
-    """Review an exec/tool task. Returns review dict. Stores learning if present."""
+    """Review an exec/wrapper task. Returns review dict. Stores learning if present."""
     return await _review_task_impl(
         config,
         db,
@@ -813,7 +813,7 @@ class _PlanCtx:
         self.installed_wrappers_by_name = {s["name"]: s for s in self.installed_wrappers}
 
     def refresh_wrapper_cache(self) -> None:
-        """Invalidate cache, rediscover tools, rebuild lookup dict."""
+        """Invalidate cache, rediscover wrappers, rebuild lookup dict."""
         invalidate_wrappers_cache()
         self.installed_wrappers = discover_wrappers()
         self.installed_wrappers_by_name = {s["name"]: s for s in self.installed_wrappers}
@@ -1138,7 +1138,7 @@ async def _handle_msg_task(
     )
 
 
-# shared review-result helpers (used by tool, exec, search handlers)
+# shared review-result helpers (used by wrapper, exec, search handlers)
 
 
 async def _should_retry_task(
@@ -1165,7 +1165,7 @@ async def _review_stop_stuck(
     ctx: _PlanCtx, task_id: int, review: dict, plan_output: "dict | None",
     usage_idx_before: int,
 ) -> _TaskHandlerResult:
-    """Handle REVIEW_STATUS_STUCK — shared by tool/exec/search handlers."""
+    """Handle REVIEW_STATUS_STUCK — shared by wrapper/exec/search handlers."""
     stuck_reason = review.get("reason", "")
     if ctx.slog:
         ctx.slog.info("Review → stuck: %s", stuck_reason)
@@ -1206,7 +1206,7 @@ async def _review_finalize_ok(
     ctx: _PlanCtx, task_id: int, task_row: dict, review: dict,
     plan_output: "dict | None", usage_idx_before: int,
 ) -> _TaskHandlerResult:
-    """Handle review ok after loop — shared by tool/exec/search handlers."""
+    """Handle review ok after loop — shared by wrapper/exec/search handlers."""
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:
         ctx.slog.info("Review → %s", review["status"])
@@ -1224,23 +1224,23 @@ async def _review_finalize_ok(
 async def _handle_wrapper_task(
     ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
 ) -> _TaskHandlerResult:
-    """Handle a tool task (external subprocess via tool plugin)."""
+    """Handle a wrapper task (external subprocess via wrapper plugin)."""
     task_id = task_row["id"]
     _ensure_task_contract(ctx, task_row, i + 1)
     detail = task_row["detail"]
     wrapper_name = task_row.get("wrapper")  
     args_raw = task_row.get("args")
-    tool_info = ctx.installed_wrappers_by_name.get(wrapper_name)
+    wrapper_info = ctx.installed_wrappers_by_name.get(wrapper_name)
     t0 = time.perf_counter()
     dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
     if dependencies:
         task_row["contract"]["dependencies"] = dependencies
         ctx.task_contracts[task_id] = task_row["contract"]
 
-    # Pre-flight: tool installed, args valid
+    # Pre-flight: wrapper installed, args valid
     setup_error: str | None = None
     args: dict | None = None
-    if tool_info is None:
+    if wrapper_info is None:
         setup_error = f"Wrapper '{wrapper_name}' not installed"
     else:
         if args_raw is None:
@@ -1251,21 +1251,21 @@ async def _handle_wrapper_task(
             try:
                 parsed_args = json.loads(args_raw or "{}")
             except json.JSONDecodeError as e:
-                setup_error = f"Invalid tool args JSON: {e}"
+                setup_error = f"Invalid wrapper args JSON: {e}"
             else:
                 if not isinstance(parsed_args, dict):
-                    setup_error = "Invalid tool args JSON: expected object"
+                    setup_error = "Invalid wrapper args JSON: expected object"
                 else:
                     args = parsed_args
         else:
-            setup_error = "Invalid tool args JSON: expected object"
+            setup_error = "Invalid wrapper args JSON: expected object"
 
         if setup_error is None and args is not None:
-            corrected = auto_correct_wrapper_args(args, tool_info["args_schema"])
+            corrected = auto_correct_wrapper_args(args, wrapper_info["args_schema"])
             if corrected != args:
-                log.warning("Auto-corrected tool args for task %d: %s → %s", task_id, args, corrected)
+                log.warning("Auto-corrected wrapper args for task %d: %s → %s", task_id, args, corrected)
                 args = corrected
-            workspace_corrected = _repair_wrapper_workspace_args(tool_info, args, ctx.session)
+            workspace_corrected = _repair_wrapper_workspace_args(wrapper_info, args, ctx.session)
             if workspace_corrected != args:
                 log.warning(
                     "Resolved workspace file args for task %d: %s → %s",
@@ -1273,7 +1273,7 @@ async def _handle_wrapper_task(
                 )
                 args = workspace_corrected
             plugin_repaired = repair_wrapper_args(
-                tool_info,
+                wrapper_info,
                 args,
                 {
                     "phase": "worker",
@@ -1286,14 +1286,14 @@ async def _handle_wrapper_task(
             )
             if plugin_repaired != args:
                 log.warning(
-                    "Validator repaired tool args for task %d: %s → %s",
+                    "Validator repaired wrapper args for task %d: %s → %s",
                     task_id, args, plugin_repaired,
                 )
                 args = plugin_repaired
-            validation_errors = validate_wrapper_args(args, tool_info["args_schema"])
+            validation_errors = validate_wrapper_args(args, wrapper_info["args_schema"])
             validation_errors.extend(
                 validate_wrapper_args_semantic(
-                    tool_info,
+                    wrapper_info,
                     args,
                     {
                         "phase": "worker",
@@ -1336,7 +1336,7 @@ async def _handle_wrapper_task(
         await update_task_substatus(ctx.db, task_id, _SUBSTATUS_EXECUTING)
         t0 = time.perf_counter()
         stdout, stderr, success, exit_code = await _wrapper_task(
-            ctx.session, tool_info, args, ctx.plan_outputs,
+            ctx.session, wrapper_info, args, ctx.plan_outputs,
             ctx.session_secrets,
             sandbox_uid=ctx.sandbox_uid,
             max_output_size=ctx.max_output_size,
@@ -1805,7 +1805,7 @@ async def _execute_plan(
     deploy_secrets = collect_deploy_secrets()
     max_output_size = setting_int(config.settings, "max_output_size", lo=0)
     max_worker_retries = setting_int(config.settings, "max_worker_retries", lo=0)
-    # Cache installed tools for the whole plan execution (avoid rescanning per task)
+    # Cache installed wrappers for the whole plan execution (avoid rescanning per task)
     installed_wrappers = discover_wrappers()
 
     ctx = _PlanCtx(
@@ -1923,7 +1923,7 @@ async def _execute_plan(
                 if result.completed_row is not None:
                     completed.append(result.completed_row)
 
-            # Refresh tool cache if any task was exec/tool.
+            # Refresh wrapper cache if any task was exec/wrapper.
             if any(tr["type"] in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER) for _, tr in batch):
                 ctx.refresh_wrapper_cache()
 
@@ -1974,7 +1974,7 @@ async def _execute_plan(
             is_final = idx == all_task_count - 1
             result = await handler(ctx, task_row, idx, is_final, usage_idx_before)
 
-            # Refresh tool cache after exec/tool tasks
+            # Refresh wrapper cache after exec/wrapper tasks
             if task_type in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER):
                 ctx.refresh_wrapper_cache()
                 if (
@@ -2665,7 +2665,7 @@ async def _run_planning_loop(
         # shrink task limit at deeper replan depths — forces focused plans.
         _max_plan_tasks = int(config.settings["max_plan_tasks"])
         _effective_max = max(4, _max_plan_tasks - replan_depth * 3)
-        # force fresh tool discovery — tools may have been installed
+        # force fresh wrapper discovery — tools may have been installed
         # during the previous plan execution.
         invalidate_wrappers_cache()
         try:
@@ -2913,7 +2913,7 @@ async def _process_message(
     # check if user approved install in a prior msg cycle
     _install_approved = await session_has_install_proposal(db, session)
 
-    # force fresh tool discovery for every planning decision.
+    # force fresh wrapper discovery for every planning decision.
     invalidate_wrappers_cache()
     try:
         plan = await run_planner(

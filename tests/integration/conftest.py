@@ -354,7 +354,7 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
 # (a JSON payload from the worker), echoes the keys it received plus
 # the env vars it can see and any session_secrets keys, and exits 0.
 # Designed for M1273 secret-containment tests where the test asserts
-# what the tool actually receives vs what was declared.
+# what the wrapper actually receives vs what was declared.
 
 _FAKE_TOOL_MANIFEST = """\
 [kiso.wrapper]
@@ -394,7 +394,7 @@ if __name__ == "__main__":
 
 
 @pytest.fixture()
-def fake_tool(tmp_path: Path):
+def fake_wrapper(tmp_path: Path):
     """Create a fake Kiso tool package in a temp directory.
 
     Returns a dict shaped like the entries produced by

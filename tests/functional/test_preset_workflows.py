@@ -118,7 +118,7 @@ class TestF29AiderWriteCode:
         Why: Validates aider tool works for non-trivial code generation.
         A multi-method class with error handling (division by zero) is
         complex enough that the planner should choose aider over exec.
-        Expects: Success, aider tool task used, calculator.py referenced
+        Expects: Success, aider wrapper task used, calculator.py referenced
         in task details.
         """
         result = await run_message(

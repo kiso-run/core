@@ -640,7 +640,7 @@ def _build_provenance_index(
     """Map workspace-relative path → (origin_wrapper, origin_task_index).
 
     Walks each plan_output's ``file_refs`` and ``artifact_refs`` and pulls
-    the (tool, index) declared on each ref. Refs without a usable path
+    the (wrapper, index) declared on each ref. Refs without a usable path
     are skipped. When two refs target the same path, the first wins
     (consistent with append-order semantics of plan_outputs).
     """

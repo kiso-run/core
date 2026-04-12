@@ -328,7 +328,7 @@ class TestDiscoverTools:
         import logging
         with caplog.at_level(logging.WARNING, logger="kiso.wrappers"):
             discover_wrappers(tmp_path / "missing_tools")
-        assert "Tools directory not found" in caplog.text
+        assert "Wrappers directory not found" in caplog.text
 
     def test_discovers_valid_tool(self, tmp_path):
         tools_dir = tmp_path / "wrappers"
@@ -553,7 +553,7 @@ class TestCheckDeps:
         assert tool["deps"] == {}
 
     def test_discover_healthy_when_deps_present(self, tmp_path):
-        """Tool with all binary deps present is healthy=True."""
+        """Wrapper with all binary deps present is healthy=True."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         # FULL_TOML requires bin=["curl"] — curl should be available in test env
@@ -563,7 +563,7 @@ class TestCheckDeps:
         assert tool["missing_deps"] == []
 
     def test_discover_unhealthy_when_deps_missing(self, tmp_path):
-        """Tool with missing binary deps is healthy=False."""
+        """Wrapper with missing binary deps is healthy=False."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["nonexistent_binary_xyz_12345"]')
@@ -573,7 +573,7 @@ class TestCheckDeps:
         assert "nonexistent_binary_xyz_12345" in tool["missing_deps"]
 
     def test_discover_healthy_no_deps_declared(self, tmp_path):
-        """Tool with no [kiso.deps].bin is healthy=True."""
+        """Wrapper with no [kiso.deps].bin is healthy=True."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", MINIMAL_TOML)
@@ -601,29 +601,29 @@ class TestBuildPlannerToolList:
         assert build_planner_wrapper_list([]) == ""
 
     def test_admin_sees_all(self):
-        tools = [self._make_tool("a", "Tool A"), self._make_tool("b", "Tool B")]
+        tools = [self._make_tool("a", "Wrapper A"), self._make_tool("b", "Wrapper B")]
         result = build_planner_wrapper_list(tools, "admin")
-        assert "- a — Tool A" in result
-        assert "- b — Tool B" in result
+        assert "- a — Wrapper A" in result
+        assert "- b — Wrapper B" in result
 
     def test_user_star_sees_all(self):
-        tools = [self._make_tool("a", "Tool A")]
+        tools = [self._make_tool("a", "Wrapper A")]
         result = build_planner_wrapper_list(tools, "user", "*")
-        assert "- a — Tool A" in result
+        assert "- a — Wrapper A" in result
 
     def test_user_list_filters(self):
-        tools = [self._make_tool("a", "Tool A"), self._make_tool("b", "Tool B")]
+        tools = [self._make_tool("a", "Wrapper A"), self._make_tool("b", "Wrapper B")]
         result = build_planner_wrapper_list(tools, "user", ["a"])
-        assert "- a — Tool A" in result
-        assert "- b — Tool B" not in result
+        assert "- a — Wrapper A" in result
+        assert "- b — Wrapper B" not in result
 
     def test_user_empty_list(self):
-        tools = [self._make_tool("a", "Tool A")]
+        tools = [self._make_tool("a", "Wrapper A")]
         result = build_planner_wrapper_list(tools, "user", [])
         assert result == ""
 
     def test_user_none_tools(self):
-        tools = [self._make_tool("a", "Tool A")]
+        tools = [self._make_tool("a", "Wrapper A")]
         result = build_planner_wrapper_list(tools, "user", None)
         assert result == ""
 
@@ -692,8 +692,8 @@ class TestBuildPlannerToolList:
         result = build_planner_wrapper_list([tool], "admin")
         assert "[BROKEN" in result
         assert "missing: playwright" in result
-        assert "kiso tool remove browser" in result
-        assert "kiso tool install browser" in result
+        assert "kiso wrapper remove browser" in result
+        assert "kiso wrapper install browser" in result
 
     def test_healthy_tool_no_broken_annotation(self):
         tool = self._make_tool("browser", "Browser automation")

@@ -73,7 +73,7 @@ class TestBuildToolEnvVenv:
     def test_venv_bin_in_path(self, tool_with_venv_binary):
         """What: Checks that build_wrapper_env prepends .venv/bin/ to the PATH.
 
-        Why: Validates that venv binaries take precedence over system binaries in the tool environment.
+        Why: Validates that venv binaries take precedence over system binaries in the wrapper environment.
         Expects: PATH starts with the tool's .venv/bin/ directory.
         """
         env = build_wrapper_env(tool_with_venv_binary)

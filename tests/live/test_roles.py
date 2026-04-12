@@ -450,7 +450,7 @@ class TestParaphraserLive:
 
 class TestPlannerSystemPackageLive:
     """planner uses apt-get for system packages, uv pip for Python libs,
-    and kiso tool install for kiso tools."""
+    and kiso wrapper install for kiso tools."""
 
     # validation retries + SSE stalls make planner-only live tests slower
     # than reviewer/worker calls, but they still belong to the role-only class.
@@ -591,7 +591,7 @@ class TestPlannerSystemPackageLive:
     ):
         """What: Asks 'installa browser' — a known kiso tool (in registry hints).
 
-        Why: Validates the planner proposes kiso tool install, not apt-get.
+        Why: Validates the planner proposes kiso wrapper install, not apt-get.
         Expects: needs_install or msg asking to install, no apt-get exec.
         """
         await save_message(seeded_db, live_session, "testadmin", "user", "hi")

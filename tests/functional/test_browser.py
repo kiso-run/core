@@ -45,7 +45,7 @@ class TestF1BrowserInstall:
         if tool_installed("browser"):
             pytest.skip("Browser already installed — nothing to test")
 
-        # drive_install_flow keeps sending follow-ups until the tool is
+        # drive_install_flow keeps sending follow-ups until the wrapper is
         # actually installed (or max_turns is reached). Robust to LLM
         # behavior on Turn 1: planner is free to propose install,
         # install directly, or attempt a workaround.
